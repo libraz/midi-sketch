@@ -71,8 +71,8 @@ class TrackCollisionDetector {
    * @return true if pitch doesn't clash with other tracks
    */
   bool isConsonantWithOtherTracks(uint8_t pitch, Tick start, Tick duration, TrackRole exclude,
-                   const ChordProgressionTracker* chord_tracker = nullptr,
-                   bool is_weak_beat = false) const;
+                                  const ChordProgressionTracker* chord_tracker = nullptr,
+                                  bool is_weak_beat = false) const;
 
   /**
    * @brief Get detailed collision information for a pitch.
@@ -243,8 +243,7 @@ class TrackCollisionDetector {
    * @param desired_end The desired end tick
    * @return Safe end tick (may be less than desired_end)
    */
-  Tick getMaxSafeEnd(Tick note_start, uint8_t pitch, TrackRole exclude,
-                     Tick desired_end) const;
+  Tick getMaxSafeEnd(Tick note_start, uint8_t pitch, TrackRole exclude, Tick desired_end) const;
 
  private:
   // Registered note from a track.

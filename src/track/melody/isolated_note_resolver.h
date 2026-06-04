@@ -45,8 +45,8 @@ bool isIsolatedNote(int prev_pitch, int curr_pitch, int next_pitch);
 /// @param vocal_low Minimum allowed pitch
 /// @param vocal_high Maximum allowed pitch
 /// @return Suggested connecting pitch
-int findConnectingPitch(int prev_pitch, int next_pitch, int8_t chord_degree,
-                        uint8_t vocal_low, uint8_t vocal_high);
+int findConnectingPitch(int prev_pitch, int next_pitch, int8_t chord_degree, uint8_t vocal_low,
+                        uint8_t vocal_high);
 
 /// @brief Check if a pitch change improves melodic connectivity.
 ///

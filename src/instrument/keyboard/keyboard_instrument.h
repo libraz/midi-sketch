@@ -73,8 +73,7 @@ class IKeyboardInstrument {
   ///
   /// @param pitches Sorted MIDI pitches to distribute (low to high)
   /// @return Hand assignment with playability status
-  virtual VoicingHandAssignment assignHands(
-      const std::vector<uint8_t>& pitches) const = 0;
+  virtual VoicingHandAssignment assignHands(const std::vector<uint8_t>& pitches) const = 0;
 
   // =========================================================================
   // Playability Assessment
@@ -83,14 +82,12 @@ class IKeyboardInstrument {
   /// @brief Check if a set of pitches can be played by one hand.
   /// @param pitches MIDI pitches to check
   /// @return true if all pitches fit within one hand's span and note count
-  virtual bool isPlayableByOneHand(
-      const std::vector<uint8_t>& pitches) const = 0;
+  virtual bool isPlayableByOneHand(const std::vector<uint8_t>& pitches) const = 0;
 
   /// @brief Check if an entire voicing is playable using both hands.
   /// @param pitches MIDI pitches to check
   /// @return true if the pitches can be distributed between hands and played
-  virtual bool isVoicingPlayable(
-      const std::vector<uint8_t>& pitches) const = 0;
+  virtual bool isVoicingPlayable(const std::vector<uint8_t>& pitches) const = 0;
 
   // =========================================================================
   // Transition Analysis
@@ -106,11 +103,9 @@ class IKeyboardInstrument {
   /// @param available_ticks Time available for the transition
   /// @param bpm Current tempo (affects real-time duration of ticks)
   /// @return true if the transition can be performed
-  virtual bool isTransitionFeasible(
-      const std::vector<uint8_t>& from_pitches,
-      const std::vector<uint8_t>& to_pitches,
-      uint32_t available_ticks,
-      uint16_t bpm) const = 0;
+  virtual bool isTransitionFeasible(const std::vector<uint8_t>& from_pitches,
+                                    const std::vector<uint8_t>& to_pitches,
+                                    uint32_t available_ticks, uint16_t bpm) const = 0;
 
   /// @brief Calculate the playability cost of a voicing transition.
   ///
@@ -124,11 +119,10 @@ class IKeyboardInstrument {
   /// @param available_ticks Time available for the transition
   /// @param bpm Current tempo
   /// @return Decomposed playability cost
-  virtual KeyboardPlayabilityCost calculateTransitionCost(
-      const std::vector<uint8_t>& from_pitches,
-      const std::vector<uint8_t>& to_pitches,
-      uint32_t available_ticks,
-      uint16_t bpm) const = 0;
+  virtual KeyboardPlayabilityCost calculateTransitionCost(const std::vector<uint8_t>& from_pitches,
+                                                          const std::vector<uint8_t>& to_pitches,
+                                                          uint32_t available_ticks,
+                                                          uint16_t bpm) const = 0;
 
   // =========================================================================
   // Voicing Suggestion
@@ -150,9 +144,8 @@ class IKeyboardInstrument {
   /// @param desired_pitches Ideal voicing pitches (may not be playable)
   /// @param root_pitch_class Root note pitch class (0-11, for identifying chord tones)
   /// @return Playable voicing pitches, or empty if no solution found
-  virtual std::vector<uint8_t> suggestPlayableVoicing(
-      const std::vector<uint8_t>& desired_pitches,
-      uint8_t root_pitch_class) const = 0;
+  virtual std::vector<uint8_t> suggestPlayableVoicing(const std::vector<uint8_t>& desired_pitches,
+                                                      uint8_t root_pitch_class) const = 0;
 
   // =========================================================================
   // State Management

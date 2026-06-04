@@ -16,8 +16,7 @@
 namespace midisketch {
 namespace chord_voicing {
 
-namespace {
-}  // namespace
+namespace {}  // namespace
 
 VoicingType selectVoicingType(SectionType section, Mood mood, bool /*bass_has_root*/,
                               std::mt19937* rng) {
@@ -71,8 +70,8 @@ VoicingType selectVoicingType(SectionType section, Mood mood, bool /*bass_has_ro
   return VoicingType::Close;
 }
 
-OpenVoicingType selectOpenVoicingSubtype(SectionType section, Mood mood,
-                                         const Chord& chord, std::mt19937& rng) {
+OpenVoicingType selectOpenVoicingSubtype(SectionType section, Mood mood, const Chord& chord,
+                                         std::mt19937& rng) {
   bool is_ballad = MoodClassification::isBallad(mood);
   bool is_dramatic = MoodClassification::isDramatic(mood) || mood == Mood::DarkPop;
   bool has_7th = (chord.note_count >= 4 && chord.intervals[3] >= 0);
@@ -119,7 +118,7 @@ int getParallelPenalty(Mood mood) {
     case Mood::EnergeticDance:
     case Mood::IdolPop:
     case Mood::ElectroPop:
-    case Mood::Yoasobi:
+    case Mood::AnimeHighEnergy:
     case Mood::FutureBass:
     case Mood::Synthwave:
     case Mood::BrightUpbeat:
@@ -217,8 +216,8 @@ VoicedChord selectVoicing(uint8_t root, const Chord& chord, const VoicedChord& p
     int score = type_bonus + common * 100 + parallel_penalty - distance;
 
     // Penalize identical voicing when repeated 3+ times consecutively
-    score += voicingRepetitionPenalty(candidates[i], prev_voicing, has_prev,
-                                      consecutive_same_count);
+    score +=
+        voicingRepetitionPenalty(candidates[i], prev_voicing, has_prev, consecutive_same_count);
 
     if (score > best_score) {
       tied_indices.clear();
@@ -233,8 +232,8 @@ VoicedChord selectVoicing(uint8_t root, const Chord& chord, const VoicedChord& p
   return candidates[rng_util::selectRandom(rng, tied_indices)];
 }
 
-int voicingRepetitionPenalty(const VoicedChord& candidate, const VoicedChord& prev,
-                             bool has_prev, int consecutive_count) {
+int voicingRepetitionPenalty(const VoicedChord& candidate, const VoicedChord& prev, bool has_prev,
+                             int consecutive_count) {
   if (consecutive_count >= 3 && has_prev && areVoicingsIdentical(candidate, prev)) {
     return -50 * (consecutive_count - 2);
   }
@@ -254,8 +253,8 @@ bool isDominant(int8_t degree) {
   return degree == 4;  // V chord
 }
 
-bool shouldAddDominantPreparation(SectionType current, SectionType next,
-                                  int8_t current_degree, Mood mood) {
+bool shouldAddDominantPreparation(SectionType current, SectionType next, int8_t current_degree,
+                                  Mood mood) {
   // Only add dominant preparation before Chorus
   if (next != SectionType::Chorus) return false;
 
@@ -269,8 +268,8 @@ bool shouldAddDominantPreparation(SectionType current, SectionType next,
   return current == SectionType::B;
 }
 
-bool needsCadenceFix(uint8_t section_bars, uint8_t progression_length,
-                     SectionType section, SectionType next_section) {
+bool needsCadenceFix(uint8_t section_bars, uint8_t progression_length, SectionType section,
+                     SectionType next_section) {
   // Only apply to main content sections
   if (isTransitionalSection(section)) {
     return false;

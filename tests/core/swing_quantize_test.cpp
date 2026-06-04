@@ -3,11 +3,12 @@
  * @brief Tests for triplet-grid swing quantization.
  */
 
+#include "core/swing_quantize.h"
+
 #include <gtest/gtest.h>
 
 #include "core/midi_track.h"
 #include "core/section_types.h"
-#include "core/swing_quantize.h"
 #include "core/timing_constants.h"
 
 namespace midisketch {
@@ -20,12 +21,12 @@ namespace {
 TEST(QuantizeToSwingGridTest, ZeroSwingReturnsUnchanged) {
   // At swing_amount=0, all positions should be unchanged
   EXPECT_EQ(quantizeToSwingGrid(0, 0.0f), 0u);
-  EXPECT_EQ(quantizeToSwingGrid(240, 0.0f), 240u);   // Off-beat 8th
-  EXPECT_EQ(quantizeToSwingGrid(480, 0.0f), 480u);   // Beat 2
-  EXPECT_EQ(quantizeToSwingGrid(720, 0.0f), 720u);   // Off-beat 8th beat 2
-  EXPECT_EQ(quantizeToSwingGrid(960, 0.0f), 960u);   // Beat 3
-  EXPECT_EQ(quantizeToSwingGrid(1200, 0.0f), 1200u); // Off-beat 8th beat 3
-  EXPECT_EQ(quantizeToSwingGrid(1920, 0.0f), 1920u); // Bar 2 beat 1
+  EXPECT_EQ(quantizeToSwingGrid(240, 0.0f), 240u);    // Off-beat 8th
+  EXPECT_EQ(quantizeToSwingGrid(480, 0.0f), 480u);    // Beat 2
+  EXPECT_EQ(quantizeToSwingGrid(720, 0.0f), 720u);    // Off-beat 8th beat 2
+  EXPECT_EQ(quantizeToSwingGrid(960, 0.0f), 960u);    // Beat 3
+  EXPECT_EQ(quantizeToSwingGrid(1200, 0.0f), 1200u);  // Off-beat 8th beat 3
+  EXPECT_EQ(quantizeToSwingGrid(1920, 0.0f), 1920u);  // Bar 2 beat 1
 }
 
 TEST(QuantizeToSwingGridTest, FullSwingMovesToTripletPosition) {
@@ -48,12 +49,9 @@ TEST(QuantizeToSwingGridTest, FullSwingMovesToTripletPosition) {
 TEST(QuantizeToSwingGridTest, OnBeatPositionsNeverAffected) {
   // On-beat positions must remain unchanged regardless of swing amount
   for (float swing = 0.0f; swing <= 1.0f; swing += 0.1f) {
-    EXPECT_EQ(quantizeToSwingGrid(0, swing), 0u)
-        << "Beat 1 should not move at swing=" << swing;
-    EXPECT_EQ(quantizeToSwingGrid(480, swing), 480u)
-        << "Beat 2 should not move at swing=" << swing;
-    EXPECT_EQ(quantizeToSwingGrid(960, swing), 960u)
-        << "Beat 3 should not move at swing=" << swing;
+    EXPECT_EQ(quantizeToSwingGrid(0, swing), 0u) << "Beat 1 should not move at swing=" << swing;
+    EXPECT_EQ(quantizeToSwingGrid(480, swing), 480u) << "Beat 2 should not move at swing=" << swing;
+    EXPECT_EQ(quantizeToSwingGrid(960, swing), 960u) << "Beat 3 should not move at swing=" << swing;
     EXPECT_EQ(quantizeToSwingGrid(1440, swing), 1440u)
         << "Beat 4 should not move at swing=" << swing;
   }
@@ -90,9 +88,9 @@ TEST(QuantizeToSwingGridTest, SwingAboveOneClampedToOne) {
 
 TEST(QuantizeToSwingGrid16thTest, ZeroSwingReturnsUnchanged) {
   EXPECT_EQ(quantizeToSwingGrid16th(0, 0.0f), 0u);
-  EXPECT_EQ(quantizeToSwingGrid16th(120, 0.0f), 120u);   // 16th position 1
-  EXPECT_EQ(quantizeToSwingGrid16th(240, 0.0f), 240u);   // 16th position 2
-  EXPECT_EQ(quantizeToSwingGrid16th(360, 0.0f), 360u);   // 16th position 3
+  EXPECT_EQ(quantizeToSwingGrid16th(120, 0.0f), 120u);  // 16th position 1
+  EXPECT_EQ(quantizeToSwingGrid16th(240, 0.0f), 240u);  // 16th position 2
+  EXPECT_EQ(quantizeToSwingGrid16th(360, 0.0f), 360u);  // 16th position 3
 }
 
 TEST(QuantizeToSwingGrid16thTest, FullSwingMovesPosition1ToTriplet) {
@@ -141,31 +139,23 @@ TEST(QuantizeToSwingGrid16thTest, HalfSwingInterpolates) {
 // swingOffsetForEighth / swingOffsetFor16th
 // ============================================================================
 
-TEST(SwingOffsetTest, EighthOffsetAtZero) {
-  EXPECT_EQ(swingOffsetForEighth(0.0f), 0u);
-}
+TEST(SwingOffsetTest, EighthOffsetAtZero) { EXPECT_EQ(swingOffsetForEighth(0.0f), 0u); }
 
 TEST(SwingOffsetTest, EighthOffsetAtFull) {
   // Max delta: 320 - 240 = 80 ticks
   EXPECT_EQ(swingOffsetForEighth(1.0f), 80u);
 }
 
-TEST(SwingOffsetTest, EighthOffsetAtHalf) {
-  EXPECT_EQ(swingOffsetForEighth(0.5f), 40u);
-}
+TEST(SwingOffsetTest, EighthOffsetAtHalf) { EXPECT_EQ(swingOffsetForEighth(0.5f), 40u); }
 
-TEST(SwingOffsetTest, SixteenthOffsetAtZero) {
-  EXPECT_EQ(swingOffsetFor16th(0.0f), 0u);
-}
+TEST(SwingOffsetTest, SixteenthOffsetAtZero) { EXPECT_EQ(swingOffsetFor16th(0.0f), 0u); }
 
 TEST(SwingOffsetTest, SixteenthOffsetAtFull) {
   // Max delta: 160 - 120 = 40 ticks
   EXPECT_EQ(swingOffsetFor16th(1.0f), 40u);
 }
 
-TEST(SwingOffsetTest, SixteenthOffsetAtHalf) {
-  EXPECT_EQ(swingOffsetFor16th(0.5f), 20u);
-}
+TEST(SwingOffsetTest, SixteenthOffsetAtHalf) { EXPECT_EQ(swingOffsetFor16th(0.5f), 20u); }
 
 TEST(SwingOffsetTest, OffsetClampedForNegative) {
   EXPECT_EQ(swingOffsetForEighth(-1.0f), 0u);
@@ -183,9 +173,9 @@ TEST(SwingOffsetTest, OffsetClampedAboveOne) {
 
 TEST(ApplySwingToTrackTest, NoSwingLeavesNotesUnchanged) {
   MidiTrack track;
-  track.addNote(NoteEventBuilder::create(0, 240, 60, 100));      // On-beat
-  track.addNote(NoteEventBuilder::create(240, 240, 64, 90));     // Off-beat 8th
-  track.addNote(NoteEventBuilder::create(480, 240, 67, 85));     // On-beat
+  track.addNote(NoteEventBuilder::create(0, 240, 60, 100));   // On-beat
+  track.addNote(NoteEventBuilder::create(240, 240, 64, 90));  // Off-beat 8th
+  track.addNote(NoteEventBuilder::create(480, 240, 67, 85));  // On-beat
 
   applySwingToTrack(track, 0.0f);
 
@@ -196,10 +186,10 @@ TEST(ApplySwingToTrackTest, NoSwingLeavesNotesUnchanged) {
 
 TEST(ApplySwingToTrackTest, FullSwingMovesOffBeats) {
   MidiTrack track;
-  track.addNote(NoteEventBuilder::create(0, 240, 60, 100));      // On-beat - should not move
-  track.addNote(NoteEventBuilder::create(240, 240, 64, 90));     // Off-beat 8th - should move to 320
-  track.addNote(NoteEventBuilder::create(480, 240, 67, 85));     // On-beat - should not move
-  track.addNote(NoteEventBuilder::create(720, 240, 72, 80));     // Off-beat 8th - should move to 800
+  track.addNote(NoteEventBuilder::create(0, 240, 60, 100));   // On-beat - should not move
+  track.addNote(NoteEventBuilder::create(240, 240, 64, 90));  // Off-beat 8th - should move to 320
+  track.addNote(NoteEventBuilder::create(480, 240, 67, 85));  // On-beat - should not move
+  track.addNote(NoteEventBuilder::create(720, 240, 72, 80));  // Off-beat 8th - should move to 800
 
   applySwingToTrack(track, 1.0f);
 
@@ -240,8 +230,7 @@ TEST(QuantizeToSwingGridTest, ContinuousSwingAmountRange) {
   for (int idx = 1; idx <= 10; ++idx) {
     float swing = idx * 0.1f;
     Tick result = quantizeToSwingGrid(240, swing);
-    EXPECT_GE(result, previous)
-        << "Swing offset should increase monotonically at swing=" << swing;
+    EXPECT_GE(result, previous) << "Swing offset should increase monotonically at swing=" << swing;
     previous = result;
   }
 

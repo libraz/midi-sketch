@@ -84,8 +84,7 @@ class TimingOffsetCalculator {
   /// @param humanize_timing Global humanization scaling (0.0-1.0, scales all timing offsets)
   /// @param paradigm Generation paradigm (RhythmSync adds beat-strength-aware vocal offsets)
   TimingOffsetCalculator(uint8_t drive_feel, VocalStylePreset vocal_style,
-                         DrumStyle drum_style = DrumStyle::Standard,
-                         float humanize_timing = 1.0f,
+                         DrumStyle drum_style = DrumStyle::Standard, float humanize_timing = 1.0f,
                          GenerationParadigm paradigm = GenerationParadigm::Traditional);
 
   // ============================================================================
@@ -140,8 +139,7 @@ class TimingOffsetCalculator {
   /// @return Timing offset in ticks
   int getVocalTimingOffset(const NoteEvent& note, size_t note_idx,
                            const std::vector<NoteEvent>& vocal_notes,
-                           const std::vector<Section>& sections,
-                           uint8_t tessitura_center) const;
+                           const std::vector<Section>& sections, uint8_t tessitura_center) const;
 
   /// @brief Apply timing offsets to all notes in a vocal track.
   ///
@@ -153,8 +151,7 @@ class TimingOffsetCalculator {
   ///
   /// @param vocal_track Vocal track to modify (in-place)
   /// @param sections Song sections for phrase position lookup
-  void applyVocalOffsets(MidiTrack& vocal_track,
-                         const std::vector<Section>& sections) const;
+  void applyVocalOffsets(MidiTrack& vocal_track, const std::vector<Section>& sections) const;
 
   // ============================================================================
   // Utility
@@ -170,11 +167,11 @@ class TimingOffsetCalculator {
   static void applyUniformOffset(MidiTrack& track, int offset);
 
  private:
-  float timing_mult_;                   ///< Timing multiplier from drive feel
-  float humanize_timing_;               ///< Global humanization scaling (0.0-1.0)
-  VocalPhysicsParams physics_;          ///< Vocal physics parameters
-  const DrumTimingProfile& profile_;    ///< Drum timing profile for selected style
-  GenerationParadigm paradigm_;         ///< Generation paradigm for beat-strength offsets
+  float timing_mult_;                 ///< Timing multiplier from drive feel
+  float humanize_timing_;             ///< Global humanization scaling (0.0-1.0)
+  VocalPhysicsParams physics_;        ///< Vocal physics parameters
+  const DrumTimingProfile& profile_;  ///< Drum timing profile for selected style
+  GenerationParadigm paradigm_;       ///< Generation paradigm for beat-strength offsets
 
   /// @brief Get phrase position for a tick within sections.
   static PhrasePosition getPhrasePosition(Tick tick, const std::vector<Section>& sections);

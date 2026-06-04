@@ -71,7 +71,7 @@ void PostProcessingPipeline::applyPostProcessingPipeline(const Context& ctx) {
 }
 
 void PostProcessingPipeline::applyVelocityShaping(const Context& ctx,
-                                                   std::vector<MidiTrack*>& tracks) {
+                                                  std::vector<MidiTrack*>& tracks) {
   const auto& sections = ctx.song.arrangement().sections();
 
   // Apply melody contour-following velocity to vocal track
@@ -100,8 +100,8 @@ void PostProcessingPipeline::applyVelocityShaping(const Context& ctx,
 }
 
 void PostProcessingPipeline::applyTransitionEffects(const Context& ctx,
-                                                     std::vector<MidiTrack*>& tracks,
-                                                     const std::vector<TrackRole>& track_roles) {
+                                                    std::vector<MidiTrack*>& tracks,
+                                                    const std::vector<TrackRole>& track_roles) {
   const auto& sections = ctx.song.arrangement().sections();
 
   // Apply transition dynamics (section endings)
@@ -116,8 +116,8 @@ void PostProcessingPipeline::applyTransitionEffects(const Context& ctx,
   // Apply chorus drop (moment of silence before chorus)
   // Note: Vocal is excluded - it's the main melody and should continue through
   // Only backing tracks (chord, bass, etc.) are truncated for dramatic effect
-  std::vector<MidiTrack*> backing_tracks = {&ctx.song.chord(), &ctx.song.bass(),
-                                             &ctx.song.motif(), &ctx.song.arpeggio()};
+  std::vector<MidiTrack*> backing_tracks = {&ctx.song.chord(), &ctx.song.bass(), &ctx.song.motif(),
+                                            &ctx.song.arpeggio()};
   if (ctx.params.guitar_enabled) {
     backing_tracks.push_back(&ctx.song.guitar());
   }
@@ -137,7 +137,7 @@ void PostProcessingPipeline::applyTransitionEffects(const Context& ctx,
   for (const auto& section : sections) {
     if (section.exit_pattern == ExitPattern::FinalHit) {
       PostProcessor::applyEnhancedFinalHit(&ctx.song.bass(), &ctx.song.drums(), &ctx.song.chord(),
-                                            &ctx.song.vocal(), section, &ctx.harmony);
+                                           &ctx.song.vocal(), section, &ctx.harmony);
     }
   }
 
@@ -148,7 +148,7 @@ void PostProcessingPipeline::applyTransitionEffects(const Context& ctx,
 
   // Apply blueprint constraints (e.g., IdolKawaii max_velocity=80, max_pitch=79)
   if (ctx.blueprint != nullptr) {
-    std::vector<MidiTrack*> all_tracks = {&ctx.song.vocal(), &ctx.song.chord(), &ctx.song.bass(),
+    std::vector<MidiTrack*> all_tracks = {&ctx.song.vocal(),    &ctx.song.chord(), &ctx.song.bass(),
                                           &ctx.song.arpeggio(), &ctx.song.motif(), &ctx.song.aux(),
                                           &ctx.song.guitar()};
 
@@ -215,7 +215,7 @@ void PostProcessingPipeline::applyFinalAdjustments(const Context& ctx) {
 // ============================================================================
 
 size_t PostProcessingPipeline::findSectionIndex(const std::vector<Section>& sections,
-                                                 Tick tick) const {
+                                                Tick tick) const {
   for (size_t i = 0; i < sections.size(); ++i) {
     Tick section_start = sections[i].start_tick;
     Tick section_end = section_start + sections[i].bars * TICKS_PER_BAR;
@@ -226,9 +226,8 @@ size_t PostProcessingPipeline::findSectionIndex(const std::vector<Section>& sect
   return sections.size();  // Not found
 }
 
-uint8_t PostProcessingPipeline::applyEmotionToVelocity(const Context& ctx,
-                                                        uint8_t base_velocity,
-                                                        const SectionEmotion& emotion) {
+uint8_t PostProcessingPipeline::applyEmotionToVelocity(const Context& ctx, uint8_t base_velocity,
+                                                       const SectionEmotion& emotion) {
   (void)ctx;  // Context not currently needed but kept for API consistency
 
   // 1. Energy adjustment: low energy = softer, high energy = louder
@@ -246,8 +245,8 @@ uint8_t PostProcessingPipeline::applyEmotionToVelocity(const Context& ctx,
 }
 
 void PostProcessingPipeline::applyEmotionBasedDynamics(const Context& ctx,
-                                                        std::vector<MidiTrack*>& tracks,
-                                                        const std::vector<Section>& sections) {
+                                                       std::vector<MidiTrack*>& tracks,
+                                                       const std::vector<Section>& sections) {
   // ========== Phase 1: Section-wide velocity adjustment based on emotion ==========
   for (auto* track : tracks) {
     for (auto& note : track->notes()) {
@@ -301,7 +300,7 @@ void PostProcessingPipeline::applyEmotionBasedDynamics(const Context& ctx,
 
 void PostProcessingPipeline::applyHumanization(const Context& ctx) {
   // Use PostProcessor for humanization
-  std::vector<MidiTrack*> tracks = {&ctx.song.vocal(), &ctx.song.chord(), &ctx.song.bass(),
+  std::vector<MidiTrack*> tracks = {&ctx.song.vocal(), &ctx.song.chord(),    &ctx.song.bass(),
                                     &ctx.song.motif(), &ctx.song.arpeggio(), &ctx.song.guitar()};
 
   PostProcessor::HumanizeParams humanize_params;
@@ -319,10 +318,9 @@ void PostProcessingPipeline::applyHumanization(const Context& ctx) {
   // vocal_style affects human timing physics (UltraVocaloid=mechanical, Human=natural)
   // humanize_timing globally scales all timing offsets (0.0 = grid, 1.0 = full variation)
   DrumStyle drum_style = getMoodDrumStyle(ctx.params.mood);
-  PostProcessor::applyMicroTimingOffsets(ctx.song.vocal(), ctx.song.bass(), ctx.song.drums(),
-                                          &sections, ctx.params.drive_feel, ctx.params.vocal_style,
-                                          drum_style, ctx.params.humanize_timing,
-                                          ctx.params.paradigm);
+  PostProcessor::applyMicroTimingOffsets(
+      ctx.song.vocal(), ctx.song.bass(), ctx.song.drums(), &sections, ctx.params.drive_feel,
+      ctx.params.vocal_style, drum_style, ctx.params.humanize_timing, ctx.params.paradigm);
 
   // Synchronize bass-kick timing for tighter groove pocket
   PostProcessor::synchronizeBassKick(ctx.song.bass(), ctx.song.drums(), drum_style);
@@ -333,7 +331,7 @@ void PostProcessingPipeline::applyHumanization(const Context& ctx) {
 // ============================================================================
 
 void PostProcessingPipeline::applyStaggeredEntry(const Context& ctx, const Section& section,
-                                                  const StaggeredEntryConfig& config) {
+                                                 const StaggeredEntryConfig& config) {
   if (section.type != SectionType::Intro || config.isEmpty()) {
     return;
   }
@@ -347,13 +345,13 @@ void PostProcessingPipeline::applyStaggeredEntry(const Context& ctx, const Secti
 
     // Map TrackMask → TrackRole for stagger-eligible tracks
     // Note: Drums and Vocal are excluded (drums establish beat, vocal enters with A melody)
-    static constexpr struct { TrackMask mask; TrackRole role; } kStaggerTracks[] = {
-        {TrackMask::Bass, TrackRole::Bass},
-        {TrackMask::Chord, TrackRole::Chord},
-        {TrackMask::Motif, TrackRole::Motif},
-        {TrackMask::Arpeggio, TrackRole::Arpeggio},
-        {TrackMask::Aux, TrackRole::Aux},
-        {TrackMask::Guitar, TrackRole::Guitar},
+    static constexpr struct {
+      TrackMask mask;
+      TrackRole role;
+    } kStaggerTracks[] = {
+        {TrackMask::Bass, TrackRole::Bass},   {TrackMask::Chord, TrackRole::Chord},
+        {TrackMask::Motif, TrackRole::Motif}, {TrackMask::Arpeggio, TrackRole::Arpeggio},
+        {TrackMask::Aux, TrackRole::Aux},     {TrackMask::Guitar, TrackRole::Guitar},
     };
     MidiTrack* track = nullptr;
     for (const auto& [mask, role] : kStaggerTracks) {
@@ -369,13 +367,13 @@ void PostProcessingPipeline::applyStaggeredEntry(const Context& ctx, const Secti
     Tick section_end = section_start + section.bars * TICKS_PER_BAR;
 
     // Remove notes before entry_tick within this section
-    notes.erase(
-        std::remove_if(notes.begin(), notes.end(),
-                       [section_start, section_end, entry_tick](const NoteEvent& note) {
-                         return note.start_tick >= section_start && note.start_tick < entry_tick &&
-                                note.start_tick < section_end;
-                       }),
-        notes.end());
+    notes.erase(std::remove_if(notes.begin(), notes.end(),
+                               [section_start, section_end, entry_tick](const NoteEvent& note) {
+                                 return note.start_tick >= section_start &&
+                                        note.start_tick < entry_tick &&
+                                        note.start_tick < section_end;
+                               }),
+                notes.end());
 
     // Apply fade-in if configured
     if (entry.fade_in_bars > 0) {
@@ -507,8 +505,8 @@ void generateSectionExpression(MidiTrack& track, const Section& section,
       value = static_cast<uint8_t>(value_start + (value_mid - value_start) * phase_progress);
     } else {
       // Second half: interpolate mid -> end
-      float phase_progress =
-          static_cast<float>(offset - half_length) / static_cast<float>(section_length - half_length);
+      float phase_progress = static_cast<float>(offset - half_length) /
+                             static_cast<float>(section_length - half_length);
       value = static_cast<uint8_t>(value_mid + (value_end - value_mid) * phase_progress);
     }
 
@@ -713,8 +711,8 @@ void generateBrightnessCurve(MidiTrack& track, const Section& section) {
       value = static_cast<uint8_t>(value_start + (value_mid - value_start) * phase_progress);
     } else {
       // Second half: interpolate mid -> end
-      float phase_progress =
-          static_cast<float>(offset - half_length) / static_cast<float>(section_length - half_length);
+      float phase_progress = static_cast<float>(offset - half_length) /
+                             static_cast<float>(section_length - half_length);
       value = static_cast<uint8_t>(value_mid + (value_end - value_mid) * phase_progress);
     }
 
@@ -762,7 +760,7 @@ void PostProcessingPipeline::generateExpressionCurves(const Context& ctx) {
 
   // Apply expression curves to melodic tracks (not drums or SE)
   std::vector<MidiTrack*> melodic_tracks = {&ctx.song.vocal(), &ctx.song.bass(), &ctx.song.chord(),
-                                             &ctx.song.aux(), &ctx.song.guitar()};
+                                            &ctx.song.aux(), &ctx.song.guitar()};
 
   for (auto* track : melodic_tracks) {
     if (track->notes().empty()) continue;
@@ -786,7 +784,7 @@ void PostProcessingPipeline::generateExpressionCurves(const Context& ctx) {
 
   // Generate CC7 (Volume) for fade-in/fade-out in Intro/Outro
   // Apply to all melodic tracks for smooth overall dynamics
-  std::vector<MidiTrack*> all_melodic = {&ctx.song.vocal(), &ctx.song.bass(),   &ctx.song.chord(),
+  std::vector<MidiTrack*> all_melodic = {&ctx.song.vocal(), &ctx.song.bass(),     &ctx.song.chord(),
                                          &ctx.song.motif(), &ctx.song.arpeggio(), &ctx.song.aux(),
                                          &ctx.song.guitar()};
   for (const auto& section : sections) {

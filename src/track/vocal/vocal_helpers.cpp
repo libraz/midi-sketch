@@ -8,8 +8,8 @@
 #include <algorithm>
 
 #include "core/chord_utils.h"
-#include "core/note_source.h"
 #include "core/note_creator.h"
+#include "core/note_source.h"
 #include "core/note_timeline_utils.h"
 #include "core/pitch_utils.h"
 #include "core/timing_constants.h"
@@ -159,17 +159,14 @@ float getThirtysecondRatio(SectionType type, const StyleMelodyParams& params) {
 float getSubdivisionRatio(SectionType type, const StyleMelodyParams& params) {
   switch (type) {
     case SectionType::A:
-      return params.verse_sub_ratio > 0.0f ? params.verse_sub_ratio
-                                            : params.syllabic_sub_ratio;
+      return params.verse_sub_ratio > 0.0f ? params.verse_sub_ratio : params.syllabic_sub_ratio;
     case SectionType::B:
       return params.prechorus_sub_ratio > 0.0f ? params.prechorus_sub_ratio
-                                                : params.syllabic_sub_ratio;
+                                               : params.syllabic_sub_ratio;
     case SectionType::Chorus:
-      return params.chorus_sub_ratio > 0.0f ? params.chorus_sub_ratio
-                                             : params.syllabic_sub_ratio;
+      return params.chorus_sub_ratio > 0.0f ? params.chorus_sub_ratio : params.syllabic_sub_ratio;
     case SectionType::Bridge:
-      return params.bridge_sub_ratio > 0.0f ? params.bridge_sub_ratio
-                                             : params.syllabic_sub_ratio;
+      return params.bridge_sub_ratio > 0.0f ? params.bridge_sub_ratio : params.syllabic_sub_ratio;
     default:
       return params.syllabic_sub_ratio;  // Fallback to base ratio
   }
@@ -178,7 +175,7 @@ float getSubdivisionRatio(SectionType type, const StyleMelodyParams& params) {
 float getConsecutiveSameNoteProb(SectionType type, const StyleMelodyParams& params) {
   // Hook sections (Chorus, B) benefit from same-note repetition for catchiness.
   // Higher probability = more pitch repetition = more memorable hooks.
-  // Example: YOASOBI "Yoru ni Kakeru" - repeated notes in chorus create earworm.
+  // Example: AnimeHighEnergy "reference pop track" - repeated notes in chorus create earworm.
   switch (type) {
     case SectionType::Chorus:
       return 0.75f;  // Hooks need same-note repetition for catchiness
@@ -337,9 +334,9 @@ void applyGrooveFeel(std::vector<NoteEvent>& notes, VocalGrooveFeel groove) {
   // Sort notes by start tick (pre-shift order)
   NoteTimeline::sortByStartTick(notes);
 
-  constexpr int32_t TICK_8TH = TICKS_PER_BEAT / 2;   // 240 ticks
-  constexpr Tick kMinGap = 10;                       // Minimum gap between notes
-  constexpr Tick kMinDuration = TICK_32ND;           // 60 ticks minimum duration
+  constexpr int32_t TICK_8TH = TICKS_PER_BEAT / 2;  // 240 ticks
+  constexpr Tick kMinGap = 10;                      // Minimum gap between notes
+  constexpr Tick kMinDuration = TICK_32ND;          // 60 ticks minimum duration
 
   // Pass 1: Calculate shift amounts for all notes
   std::vector<int32_t> shifts(notes.size(), 0);
@@ -420,7 +417,7 @@ void applyCollisionAvoidanceWithIntervalConstraint(std::vector<NoteEvent>& notes
 
     // Apply collision avoidance
     auto candidates = getSafePitchCandidates(harmony, note.note, note.start_tick, note.duration,
-                                              TrackRole::Vocal, vocal_low, vocal_high);
+                                             TrackRole::Vocal, vocal_low, vocal_high);
     // Prefer diatonic candidates for vocal track
     {
       auto it = std::remove_if(candidates.begin(), candidates.end(),
@@ -436,7 +433,8 @@ void applyCollisionAvoidanceWithIntervalConstraint(std::vector<NoteEvent>& notes
     }
     hints.note_duration = note.duration;
     hints.tessitura_center = (vocal_low + vocal_high) / 2;
-    uint8_t safe_pitch = candidates.empty() ? note.note : selectBestCandidate(candidates, note.note, hints);
+    uint8_t safe_pitch =
+        candidates.empty() ? note.note : selectBestCandidate(candidates, note.note, hints);
     // Snap to chord tone (to maintain harmonic stability)
     int snapped = nearestChordTonePitch(safe_pitch, chord_degree);
     snapped = std::clamp(snapped, static_cast<int>(vocal_low), static_cast<int>(vocal_high));
@@ -445,13 +443,15 @@ void applyCollisionAvoidanceWithIntervalConstraint(std::vector<NoteEvent>& notes
     uint8_t snapped_pitch = static_cast<uint8_t>(
         std::clamp(snapped, static_cast<int>(vocal_low), static_cast<int>(vocal_high)));
     // Re-verify collision safety after snapping (snapping can introduce new clashes)
-    if (!harmony.isConsonantWithOtherTracks(snapped_pitch, note.start_tick, note.duration, TrackRole::Vocal)) {
+    if (!harmony.isConsonantWithOtherTracks(snapped_pitch, note.start_tick, note.duration,
+                                            TrackRole::Vocal)) {
       // Snapping broke collision safety - try diatonic snap of safe_pitch first
       int diatonic_safe = snapToNearestScaleTone(safe_pitch, 0);
-      diatonic_safe = std::clamp(diatonic_safe, static_cast<int>(vocal_low), static_cast<int>(vocal_high));
+      diatonic_safe =
+          std::clamp(diatonic_safe, static_cast<int>(vocal_low), static_cast<int>(vocal_high));
       if (static_cast<uint8_t>(diatonic_safe) != snapped_pitch &&
           harmony.isConsonantWithOtherTracks(static_cast<uint8_t>(diatonic_safe), note.start_tick,
-                                              note.duration, TrackRole::Vocal)) {
+                                             note.duration, TrackRole::Vocal)) {
         snapped_pitch = static_cast<uint8_t>(diatonic_safe);
       } else {
         // Last resort: collision-safe pitch (may be non-diatonic)
@@ -480,7 +480,7 @@ void applyCollisionAvoidanceWithIntervalConstraint(std::vector<NoteEvent>& notes
                                            vocal_low, vocal_high, nullptr);
         // Re-verify collision safety after interval fix
         if (!harmony.isConsonantWithOtherTracks(static_cast<uint8_t>(new_pitch), note.start_tick,
-                                                 note.duration, TrackRole::Vocal)) {
+                                                note.duration, TrackRole::Vocal)) {
           new_pitch = note.note;  // Keep the collision-safe pitch
         }
         note.note = static_cast<uint8_t>(new_pitch);
@@ -489,7 +489,8 @@ void applyCollisionAvoidanceWithIntervalConstraint(std::vector<NoteEvent>& notes
           if (note.prov_original_pitch == 0) {
             note.prov_original_pitch = pre_interval_pitch;
           }
-          note.addTransformStep(TransformStepType::IntervalFix, pre_interval_pitch, note.note, 0, 0);
+          note.addTransformStep(TransformStepType::IntervalFix, pre_interval_pitch, note.note, 0,
+                                0);
         }
 #endif
       }
@@ -568,15 +569,15 @@ void applySectionEndSustain(std::vector<NoteEvent>& notes, const std::vector<Sec
     switch (type) {
       case SectionType::Chorus:
       case SectionType::Drop:
-        return TICK_WHOLE;       // 1920 ticks - maximum sustain
+        return TICK_WHOLE;  // 1920 ticks - maximum sustain
       case SectionType::B:
         return TICK_HALF + TICK_QUARTER;  // 1440 ticks - dotted half
       case SectionType::Bridge:
-        return TICK_HALF;        // 960 ticks
+        return TICK_HALF;  // 960 ticks
       case SectionType::A:
-        return TICK_QUARTER;     // 480 ticks - modest but natural
+        return TICK_QUARTER;  // 480 ticks - modest but natural
       default:
-        return TICK_HALF;        // 960 ticks - Intro/Outro resonance (lingering)
+        return TICK_HALF;  // 960 ticks - Intro/Outro resonance (lingering)
     }
   };
 
@@ -622,8 +623,8 @@ void applySectionEndSustain(std::vector<NoteEvent>& notes, const std::vector<Sec
     // Constraint 3: Check chord boundary safety
     Tick desired_duration = desired_end - last_note.start_tick;
     if (desired_duration > last_note.duration) {
-      auto boundary_info = harmony.analyzeChordBoundary(
-          last_note.note, last_note.start_tick, desired_duration);
+      auto boundary_info =
+          harmony.analyzeChordBoundary(last_note.note, last_note.start_tick, desired_duration);
 
       if (boundary_info.safety == CrossBoundarySafety::NonChordTone ||
           boundary_info.safety == CrossBoundarySafety::AvoidNote) {
@@ -636,9 +637,8 @@ void applySectionEndSustain(std::vector<NoteEvent>& notes, const std::vector<Sec
       }
 
       // Constraint 4: Check collision safety with other tracks
-      Tick safe_end = harmony.getMaxSafeEnd(
-          last_note.start_tick, last_note.note, TrackRole::Vocal,
-          last_note.start_tick + desired_duration);
+      Tick safe_end = harmony.getMaxSafeEnd(last_note.start_tick, last_note.note, TrackRole::Vocal,
+                                            last_note.start_tick + desired_duration);
       desired_duration = safe_end - last_note.start_tick;
     }
 
@@ -650,7 +650,7 @@ void applySectionEndSustain(std::vector<NoteEvent>& notes, const std::vector<Sec
 }
 
 void mergeSamePitchNotesNearSectionEnds(std::vector<NoteEvent>& notes,
-                                         const std::vector<Section>& sections, Tick max_gap) {
+                                        const std::vector<Section>& sections, Tick max_gap) {
   if (notes.size() < 2 || sections.empty()) return;
 
   // Sort by start tick
@@ -663,7 +663,7 @@ void mergeSamePitchNotesNearSectionEnds(std::vector<NoteEvent>& notes,
   for (const auto& section : sections) {
     Tick section_end = section.endTick();
     Tick merge_start = section_end - std::min(static_cast<Tick>(kMergeBarsFromEnd * TICKS_PER_BAR),
-                                               static_cast<Tick>(section.bars * TICKS_PER_BAR));
+                                              static_cast<Tick>(section.bars * TICKS_PER_BAR));
     merge_regions.push_back({merge_start, section_end});
   }
 
@@ -689,8 +689,7 @@ void mergeSamePitchNotesNearSectionEnds(std::vector<NoteEvent>& notes,
         Tick current_end = current.start_tick + current.duration;
         Tick gap = (next.start_tick > current_end) ? (next.start_tick - current_end) : 0;
 
-        if (next.note == current.note && gap <= max_gap &&
-            isInMergeRegion(next.start_tick)) {
+        if (next.note == current.note && gap <= max_gap && isInMergeRegion(next.start_tick)) {
 #ifdef MIDISKETCH_NOTE_PROVENANCE
           if (current.prov_source == static_cast<uint8_t>(NoteSource::SyllabicSub) ||
               next.prov_source == static_cast<uint8_t>(NoteSource::SyllabicSub)) {

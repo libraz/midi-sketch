@@ -32,13 +32,13 @@ class IHarmonyCoordinator;
 /// - Minimum note duration (e.g., staccato limit)
 /// - Legato capability
 struct PhysicalModel {
-  uint8_t pitch_low = 0;              ///< Lowest playable pitch
-  uint8_t pitch_high = 127;           ///< Highest playable pitch
-  uint8_t velocity_min = 1;           ///< Minimum velocity
-  uint8_t velocity_max = 127;         ///< Maximum velocity
-  Tick min_note_duration = 60;        ///< Minimum note duration (ticks)
-  bool supports_legato = true;        ///< Can play legato passages
-  int8_t vocal_ceiling_offset = 0;    ///< Offset from vocal high (-2 = 2 semitones below)
+  uint8_t pitch_low = 0;            ///< Lowest playable pitch
+  uint8_t pitch_high = 127;         ///< Highest playable pitch
+  uint8_t velocity_min = 1;         ///< Minimum velocity
+  uint8_t velocity_max = 127;       ///< Maximum velocity
+  Tick min_note_duration = 60;      ///< Minimum note duration (ticks)
+  bool supports_legato = true;      ///< Can play legato passages
+  int8_t vocal_ceiling_offset = 0;  ///< Offset from vocal high (-2 = 2 semitones below)
 
   /// @brief Clamp a pitch to the valid range.
   uint8_t clampPitch(uint8_t pitch) const {
@@ -55,9 +55,7 @@ struct PhysicalModel {
   }
 
   /// @brief Check if a pitch is within range.
-  bool isPitchInRange(uint8_t pitch) const {
-    return pitch >= pitch_low && pitch <= pitch_high;
-  }
+  bool isPitchInRange(uint8_t pitch) const { return pitch >= pitch_low && pitch <= pitch_high; }
 
   /// @brief Get effective upper limit considering vocal ceiling.
   /// @param vocal_high Vocal track's highest pitch
@@ -75,14 +73,10 @@ struct PhysicalModel {
 namespace PhysicalModels {
 
 /// Electric Bass: E1 (28) to G4 (67)
-inline constexpr PhysicalModel kElectricBass = {
-    28, 67, 40, 127, 120, true, 0
-};
+inline constexpr PhysicalModel kElectricBass = {28, 67, 40, 127, 120, true, 0};
 
 /// Synth Bass: C1 (24) to C4 (60)
-inline constexpr PhysicalModel kSynthBass = {
-    24, 60, 50, 127, 60, true, 0
-};
+inline constexpr PhysicalModel kSynthBass = {24, 60, 50, 127, 60, true, 0};
 
 /// Electric Piano: C3 (48) to C6 (84), respects vocal ceiling
 inline constexpr PhysicalModel kElectricPiano = {
@@ -100,44 +94,32 @@ inline constexpr PhysicalModel kElectricGuitar = {
 };
 
 /// Synth Pad: C2 (36) to C7 (96)
-inline constexpr PhysicalModel kSynthPad = {
-    36, 96, 40, 100, 480, true, 0
-};
+inline constexpr PhysicalModel kSynthPad = {36, 96, 40, 100, 480, true, 0};
 
 /// Synth Lead: C3 (48) to C7 (96)
-inline constexpr PhysicalModel kSynthLead = {
-    48, 96, 60, 127, 60, true, 0
-};
+inline constexpr PhysicalModel kSynthLead = {48, 96, 60, 127, 60, true, 0};
 
 /// Vocal: C4 (60) to G5 (79) default, configurable
-inline constexpr PhysicalModel kVocal = {
-    60, 79, 50, 127, 120, true, 0
-};
+inline constexpr PhysicalModel kVocal = {60, 79, 50, 127, 120, true, 0};
 
 /// Aux Vocal: Similar to main vocal
-inline constexpr PhysicalModel kAuxVocal = {
-    55, 84, 40, 110, 120, true, 0
-};
+inline constexpr PhysicalModel kAuxVocal = {55, 84, 40, 110, 120, true, 0};
 
 /// Motif Synth: C3 (48) to C6 (84)
-inline constexpr PhysicalModel kMotifSynth = {
-    48, 84, 60, 100, 60, false, 0
-};
+inline constexpr PhysicalModel kMotifSynth = {48, 84, 60, 100, 60, false, 0};
 
 /// Arpeggio Synth: C3 (48) to C8 (108)
-inline constexpr PhysicalModel kArpeggioSynth = {
-    48, 108, 60, 100, 30, false, 0
-};
+inline constexpr PhysicalModel kArpeggioSynth = {48, 108, 60, 100, 30, false, 0};
 
 }  // namespace PhysicalModels
 
 /// @brief Track configuration for generation.
 struct TrackConfig {
-  uint8_t vocal_low = 60;             ///< Vocal range low
-  uint8_t vocal_high = 79;            ///< Vocal range high
-  uint8_t base_velocity = 80;         ///< Base velocity
-  float density = 1.0f;               ///< Note density multiplier
-  bool is_coordinate_axis = false;    ///< True if this track is the axis (no adjustment)
+  uint8_t vocal_low = 60;           ///< Vocal range low
+  uint8_t vocal_high = 79;          ///< Vocal range high
+  uint8_t base_velocity = 80;       ///< Base velocity
+  float density = 1.0f;             ///< Note density multiplier
+  bool is_coordinate_axis = false;  ///< True if this track is the axis (no adjustment)
 };
 
 /// @brief Track generation context.
@@ -161,18 +143,18 @@ struct VocalAnalysis;
 /// Contains all parameters needed for full-track generation,
 /// allowing Coordinator to call generators with a unified interface.
 struct FullTrackContext {
-  Song* song = nullptr;                    ///< Song (mutable for setMotifPattern etc.)
-  const GeneratorParams* params = nullptr; ///< Generation parameters
-  std::mt19937* rng = nullptr;             ///< Random number generator
-  IHarmonyCoordinator* harmony = nullptr;  ///< Harmony coordinator
+  Song* song = nullptr;                                 ///< Song (mutable for setMotifPattern etc.)
+  const GeneratorParams* params = nullptr;              ///< Generation parameters
+  std::mt19937* rng = nullptr;                          ///< Random number generator
+  IHarmonyCoordinator* harmony = nullptr;               ///< Harmony coordinator
   const ChordProgression* chord_progression = nullptr;  ///< Chord progression (convenience)
 
   // Track-specific options (set by Coordinator based on paradigm)
   const DrumGrid* drum_grid = nullptr;            ///< DrumGrid for RhythmSync
   const KickPatternCache* kick_cache = nullptr;   ///< KickPatternCache for bass-kick sync
-  const MotifContext* vocal_ctx = nullptr;         ///< MotifContext for motif generation
-  const VocalAnalysis* vocal_analysis = nullptr;   ///< VocalAnalysis for adapting to vocal
-  const MidiTrack* motif_track = nullptr;          ///< MidiTrack for RhythmSync motif reference
+  const MotifContext* vocal_ctx = nullptr;        ///< MotifContext for motif generation
+  const VocalAnalysis* vocal_analysis = nullptr;  ///< VocalAnalysis for adapting to vocal
+  const MidiTrack* motif_track = nullptr;         ///< MidiTrack for RhythmSync motif reference
 
   // Call system options (for SE track)
   bool call_enabled = false;

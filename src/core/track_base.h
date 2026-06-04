@@ -35,9 +35,7 @@ class TrackBase : public ITrackBase {
   // ITrackBase interface
   // =========================================================================
 
-  void configure(const TrackConfig& config) override {
-    config_ = config;
-  }
+  void configure(const TrackConfig& config) override { config_ = config; }
 
   /// @brief Template Method: validates context, then delegates to doGenerateFullTrack().
   ///
@@ -53,9 +51,7 @@ class TrackBase : public ITrackBase {
   /// Override for tracks with different requirements (e.g., Drums don't need harmony,
   /// SE only needs song).
   /// @return true if context is valid and generation should proceed
-  virtual bool validateContext(const FullTrackContext& ctx) const {
-    return ctx.isValid();
-  }
+  virtual bool validateContext(const FullTrackContext& ctx) const { return ctx.isValid(); }
 
   /// @brief Generate the full track (called after context validation).
   ///
@@ -102,7 +98,6 @@ class TrackBase : public ITrackBase {
 
     return {low, high};
   }
-
 };
 
 }  // namespace midisketch

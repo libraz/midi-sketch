@@ -602,8 +602,8 @@ class Parser {
 
       // Skip whitespace to find the opening brace
       size_t pos = colon_pos + 1;
-      while (pos < json_.size() &&
-             (json_[pos] == ' ' || json_[pos] == '\t' || json_[pos] == '\n' || json_[pos] == '\r')) {
+      while (pos < json_.size() && (json_[pos] == ' ' || json_[pos] == '\t' || json_[pos] == '\n' ||
+                                    json_[pos] == '\r')) {
         ++pos;
       }
 

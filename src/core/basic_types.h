@@ -79,22 +79,22 @@ struct MidiEvent {
 /// @brief Transformation step type for pitch debugging.
 enum class TransformStepType : uint8_t {
   None = 0,
-  ChordLookup,     ///< chord_idx -> degree lookup
-  DegreeToRoot,    ///< degree -> root pitch conversion
-  OctaveAdjust,    ///< Octave adjustment (e.g., -12 for bass)
-  MotionAdjust,    ///< adjustPitchForMotion
-  VocalAvoid,      ///< Vocal pitch avoidance
-  RangeClamp,      ///< Clamp to instrument range
-  PatternOffset,   ///< Pattern-based offset (e.g., 5th, approach)
-  CollisionAvoid,  ///< Inter-track collision avoidance
-  ScaleSnap,       ///< snapToNearestScaleTone()
-  IntervalFix,        ///< nearestChordToneWithinInterval()
-  ChordToneSnap,      ///< nearestChordTonePitch()
-  ChordBoundaryClip,  ///< Duration clipped at chord boundary
-  ArticulationGate,   ///< Duration modified by articulation gate (bass staccato/legato)
-  PostProcessVelocity,   ///< PostProcessor velocity modification (input=old, output=new)
-  PostProcessDuration,   ///< PostProcessor duration modification (param1=reason)
-  PostProcessTiming,     ///< PostProcessor timing modification (param1=offset, param2=reason)
+  ChordLookup,          ///< chord_idx -> degree lookup
+  DegreeToRoot,         ///< degree -> root pitch conversion
+  OctaveAdjust,         ///< Octave adjustment (e.g., -12 for bass)
+  MotionAdjust,         ///< adjustPitchForMotion
+  VocalAvoid,           ///< Vocal pitch avoidance
+  RangeClamp,           ///< Clamp to instrument range
+  PatternOffset,        ///< Pattern-based offset (e.g., 5th, approach)
+  CollisionAvoid,       ///< Inter-track collision avoidance
+  ScaleSnap,            ///< snapToNearestScaleTone()
+  IntervalFix,          ///< nearestChordToneWithinInterval()
+  ChordToneSnap,        ///< nearestChordTonePitch()
+  ChordBoundaryClip,    ///< Duration clipped at chord boundary
+  ArticulationGate,     ///< Duration modified by articulation gate (bass staccato/legato)
+  PostProcessVelocity,  ///< PostProcessor velocity modification (input=old, output=new)
+  PostProcessDuration,  ///< PostProcessor duration modification (param1=reason)
+  PostProcessTiming,    ///< PostProcessor timing modification (param1=offset, param2=reason)
 };
 
 /// @brief Strategy used to resolve a pitch collision.
@@ -234,7 +234,8 @@ struct NoteEventBuilder;
 
 // Forward declarations for friend functions (drums)
 namespace drums {
-inline void addDrumNote(MidiTrack& track, Tick start, Tick duration, uint8_t note, uint8_t velocity);
+inline void addDrumNote(MidiTrack& track, Tick start, Tick duration, uint8_t note,
+                        uint8_t velocity);
 }  // namespace drums
 
 /// @brief Note event (combines note-on/off for easy editing).
@@ -269,21 +270,20 @@ struct NoteEvent {
       : start_tick(start), duration(dur), note(n), velocity(vel) {}
 
   // Friend declarations for classes that need direct construction
-  friend class FrettedNoteFactory;    ///< Factory for fretted instrument notes
-  friend class PostProcessor;         ///< Post-processing (drums only, no harmony)
-  friend class MidiReader;            ///< File reading (external MIDI files)
-  friend class MelodicEmbellisher;    ///< Embellishment (intentional non-chord tones)
-  friend class MidiTrack;             ///< Legacy API (deprecated)
-  friend class NoteEventTestHelper;   ///< Test helper
-  friend class AuxGenerator;     ///< Aux track generation
-  friend struct NoteEventBuilder;     ///< Track generation helper
+  friend class FrettedNoteFactory;   ///< Factory for fretted instrument notes
+  friend class PostProcessor;        ///< Post-processing (drums only, no harmony)
+  friend class MidiReader;           ///< File reading (external MIDI files)
+  friend class MelodicEmbellisher;   ///< Embellishment (intentional non-chord tones)
+  friend class MidiTrack;            ///< Legacy API (deprecated)
+  friend class NoteEventTestHelper;  ///< Test helper
+  friend class AuxGenerator;         ///< Aux track generation
+  friend struct NoteEventBuilder;    ///< Track generation helper
 
   // Friend declaration for drum note helper (no harmony context needed)
   friend void drums::addDrumNote(MidiTrack& track, Tick start, Tick duration, uint8_t note,
                                  uint8_t velocity);
 
  public:
-
 #ifdef MIDISKETCH_NOTE_PROVENANCE
   /// @brief Check if provenance is valid (source was explicitly set).
   bool hasValidProvenance() const { return prov_source != 0; }
@@ -396,10 +396,10 @@ inline constexpr size_t kTrackCount = 9;
 
 /// @brief Information about a pitch collision.
 struct CollisionInfo {
-  bool has_collision = false;       ///< True if a collision was found
-  uint8_t colliding_pitch = 0;      ///< Pitch of the colliding note
+  bool has_collision = false;                    ///< True if a collision was found
+  uint8_t colliding_pitch = 0;                   ///< Pitch of the colliding note
   TrackRole colliding_track = TrackRole::Vocal;  ///< Track the collision is with
-  int interval_semitones = 0;       ///< Interval in semitones
+  int interval_semitones = 0;                    ///< Interval in semitones
 };
 
 /// @brief Information about a registered note for collision snapshot.
@@ -420,27 +420,37 @@ struct ClashDetail {
 
 /// @brief Snapshot of collision state at a specific tick.
 struct CollisionSnapshot {
-  Tick tick;                                     ///< Target tick for the snapshot
-  Tick range_start;                              ///< Start of range analyzed
-  Tick range_end;                                ///< End of range analyzed
+  Tick tick;                                       ///< Target tick for the snapshot
+  Tick range_start;                                ///< Start of range analyzed
+  Tick range_end;                                  ///< End of range analyzed
   std::vector<RegisteredNoteInfo> notes_in_range;  ///< Notes overlapping with range
   std::vector<RegisteredNoteInfo> sounding_notes;  ///< Notes sounding at tick
-  std::vector<ClashDetail> clashes;              ///< Detected clashes at tick
+  std::vector<ClashDetail> clashes;                ///< Detected clashes at tick
 };
 
 /// @brief Convert TrackRole to string for debugging/display.
 inline const char* trackRoleToString(TrackRole role) {
   switch (role) {
-    case TrackRole::Vocal: return "vocal";
-    case TrackRole::Chord: return "chord";
-    case TrackRole::Bass: return "bass";
-    case TrackRole::Drums: return "drums";
-    case TrackRole::SE: return "se";
-    case TrackRole::Motif: return "motif";
-    case TrackRole::Arpeggio: return "arpeggio";
-    case TrackRole::Aux: return "aux";
-    case TrackRole::Guitar: return "guitar";
-    default: return "unknown";
+    case TrackRole::Vocal:
+      return "vocal";
+    case TrackRole::Chord:
+      return "chord";
+    case TrackRole::Bass:
+      return "bass";
+    case TrackRole::Drums:
+      return "drums";
+    case TrackRole::SE:
+      return "se";
+    case TrackRole::Motif:
+      return "motif";
+    case TrackRole::Arpeggio:
+      return "arpeggio";
+    case TrackRole::Aux:
+      return "aux";
+    case TrackRole::Guitar:
+      return "guitar";
+    default:
+      return "unknown";
   }
 }
 
@@ -450,28 +460,28 @@ inline const char* trackRoleToString(TrackRole role) {
 
 /// @brief Pitch safety classification when a note crosses a chord boundary.
 enum class CrossBoundarySafety : uint8_t {
-  NoBoundary,   ///< Note does not reach a chord boundary
-  ChordTone,    ///< Pitch is a chord tone in the next chord (safe to sustain)
-  Tension,      ///< Pitch is an available tension in the next chord (9th, 11th, 13th)
-  NonChordTone, ///< Pitch is not a chord tone or tension in the next chord
-  AvoidNote     ///< Pitch is an avoid note in the next chord (resolution required)
+  NoBoundary,    ///< Note does not reach a chord boundary
+  ChordTone,     ///< Pitch is a chord tone in the next chord (safe to sustain)
+  Tension,       ///< Pitch is an available tension in the next chord (9th, 11th, 13th)
+  NonChordTone,  ///< Pitch is not a chord tone or tension in the next chord
+  AvoidNote      ///< Pitch is an avoid note in the next chord (resolution required)
 };
 
 /// @brief Information about a note's interaction with the next chord boundary.
 struct ChordBoundaryInfo {
-  Tick boundary_tick = 0;           ///< Next chord change tick (0 = none)
-  Tick overlap_ticks = 0;           ///< Amount of overlap past the boundary
-  int8_t next_degree = -1;         ///< Chord degree after the boundary
+  Tick boundary_tick = 0;   ///< Next chord change tick (0 = none)
+  Tick overlap_ticks = 0;   ///< Amount of overlap past the boundary
+  int8_t next_degree = -1;  ///< Chord degree after the boundary
   CrossBoundarySafety safety = CrossBoundarySafety::NoBoundary;
-  Tick safe_duration = 0;          ///< Duration trimmed to before boundary (with gap)
+  Tick safe_duration = 0;  ///< Duration trimmed to before boundary (with gap)
 };
 
 /// @brief Policy for handling notes that cross chord boundaries.
 enum class ChordBoundaryPolicy : uint8_t {
-  None,           ///< No boundary processing (backward-compatible default)
-  ClipAtBoundary, ///< Always clip at chord boundary (Arpeggio, Chord)
-  ClipIfUnsafe,   ///< Clip only if non-chord/avoid in next chord (Bass, Motif, Vocal)
-  PreferSafe      ///< Prefer boundary-safe pitch in candidate ranking + fallback clip (Aux)
+  None,            ///< No boundary processing (backward-compatible default)
+  ClipAtBoundary,  ///< Always clip at chord boundary (Arpeggio, Chord)
+  ClipIfUnsafe,    ///< Clip only if non-chord/avoid in next chord (Bass, Motif, Vocal)
+  PreferSafe       ///< Prefer boundary-safe pitch in candidate ranking + fallback clip (Aux)
 };
 
 /// @brief Pitch selection preference for createNote().
@@ -490,81 +500,94 @@ enum class PitchPreference : uint8_t {
 /// @brief Convert PitchPreference to string for debugging.
 inline const char* pitchPreferenceToString(PitchPreference pref) {
   switch (pref) {
-    case PitchPreference::Default: return "default";
-    case PitchPreference::PreferRootFifth: return "prefer_root_fifth";
-    case PitchPreference::PreferChordTones: return "prefer_chord_tones";
-    case PitchPreference::PreserveContour: return "preserve_contour";
-    case PitchPreference::SkipIfUnsafe: return "skip_if_unsafe";
-    case PitchPreference::NoCollisionCheck: return "no_collision_check";
-    default: return "unknown";
+    case PitchPreference::Default:
+      return "default";
+    case PitchPreference::PreferRootFifth:
+      return "prefer_root_fifth";
+    case PitchPreference::PreferChordTones:
+      return "prefer_chord_tones";
+    case PitchPreference::PreserveContour:
+      return "preserve_contour";
+    case PitchPreference::SkipIfUnsafe:
+      return "skip_if_unsafe";
+    case PitchPreference::NoCollisionCheck:
+      return "no_collision_check";
+    default:
+      return "unknown";
   }
 }
 
 /// @brief A safe pitch candidate returned by getSafePitchCandidates().
 struct PitchCandidate {
-  uint8_t pitch;                       ///< Candidate pitch (MIDI note number)
-  Tick max_safe_duration;              ///< Maximum duration before collision
-  CollisionAvoidStrategy strategy;     ///< How this candidate was found
-  int8_t interval_from_desired;        ///< Semitones from desired pitch
+  uint8_t pitch;                    ///< Candidate pitch (MIDI note number)
+  Tick max_safe_duration;           ///< Maximum duration before collision
+  CollisionAvoidStrategy strategy;  ///< How this candidate was found
+  int8_t interval_from_desired;     ///< Semitones from desired pitch
 
   // Musical attributes
-  bool is_chord_tone;                  ///< Is a chord tone at this tick
-  bool is_scale_tone;                  ///< Is a scale tone
-  bool is_root_or_fifth;               ///< Is root or 5th (useful for Bass)
-  bool is_guide_tone;                  ///< Is 3rd or 7th (guide tone)
+  bool is_chord_tone;     ///< Is a chord tone at this tick
+  bool is_scale_tone;     ///< Is a scale tone
+  bool is_root_or_fifth;  ///< Is root or 5th (useful for Bass)
+  bool is_guide_tone;     ///< Is 3rd or 7th (guide tone)
 
   // Collision info (if this was resolved from a collision)
-  TrackRole colliding_track;           ///< Track that was colliding
-  uint8_t colliding_pitch;             ///< Pitch that was colliding
+  TrackRole colliding_track;  ///< Track that was colliding
+  uint8_t colliding_pitch;    ///< Pitch that was colliding
 
   // Cross-boundary safety (populated when ChordBoundaryPolicy != None)
   CrossBoundarySafety cross_boundary_safety = CrossBoundarySafety::NoBoundary;
   bool is_safe_across_boundary = true;  ///< NoBoundary or ChordTone
 
   PitchCandidate()
-      : pitch(0), max_safe_duration(0), strategy(CollisionAvoidStrategy::None),
-        interval_from_desired(0), is_chord_tone(false), is_scale_tone(false),
-        is_root_or_fifth(false), is_guide_tone(false),
-        colliding_track(TrackRole::Vocal), colliding_pitch(0),
+      : pitch(0),
+        max_safe_duration(0),
+        strategy(CollisionAvoidStrategy::None),
+        interval_from_desired(0),
+        is_chord_tone(false),
+        is_scale_tone(false),
+        is_root_or_fifth(false),
+        is_guide_tone(false),
+        colliding_track(TrackRole::Vocal),
+        colliding_pitch(0),
         cross_boundary_safety(CrossBoundarySafety::NoBoundary),
         is_safe_across_boundary(true) {}
 };
 
 /// @brief MIDI Control Change event for continuous controller data.
 struct CCEvent {
-  Tick tick;       ///< Position in ticks
-  uint8_t cc;      ///< CC number (0-127)
-  uint8_t value;   ///< CC value (0-127)
+  Tick tick;      ///< Position in ticks
+  uint8_t cc;     ///< CC number (0-127)
+  uint8_t value;  ///< CC value (0-127)
 };
 
 /// @brief MIDI CC numbers for commonly used controllers.
 namespace MidiCC {
-constexpr uint8_t kModulation = 1;    ///< Modulation wheel
-constexpr uint8_t kVolume = 7;        ///< Channel volume
-constexpr uint8_t kPan = 10;          ///< Pan position
-constexpr uint8_t kExpression = 11;   ///< Expression controller
-constexpr uint8_t kSustain = 64;      ///< Sustain pedal
-constexpr uint8_t kBrightness = 74;   ///< Brightness (filter cutoff)
+constexpr uint8_t kModulation = 1;   ///< Modulation wheel
+constexpr uint8_t kVolume = 7;       ///< Channel volume
+constexpr uint8_t kPan = 10;         ///< Pan position
+constexpr uint8_t kExpression = 11;  ///< Expression controller
+constexpr uint8_t kSustain = 64;     ///< Sustain pedal
+constexpr uint8_t kBrightness = 74;  ///< Brightness (filter cutoff)
 }  // namespace MidiCC
 
 /// @brief MIDI Pitch Bend event.
 /// 14-bit value where 8192 (0x2000) is center (no bend).
 /// Internal representation uses signed values (-8192 to +8191) for convenience.
 struct PitchBendEvent {
-  Tick tick;       ///< Position in ticks
-  int16_t value;   ///< Bend value (-8192 to +8191, 0=center)
+  Tick tick;      ///< Position in ticks
+  int16_t value;  ///< Bend value (-8192 to +8191, 0=center)
 };
 
 /// @brief Pitch bend value constants.
 /// Assumes standard +/- 2 semitone bend range.
 namespace PitchBend {
-constexpr int16_t kCenter = 0;           ///< No bend (center position)
-constexpr int16_t kSemitone = 4096;      ///< One semitone (assuming +/- 2 semitone range)
-constexpr int16_t kQuarterTone = 2048;   ///< Quarter tone (50 cents)
-constexpr int16_t kCent50 = 2048;        ///< 50 cents (same as quarter tone)
-constexpr int16_t kCent25 = 1024;        ///< 25 cents
-constexpr int16_t kMax = 8191;           ///< Maximum positive bend
-constexpr int16_t kMin = -8192;          ///< Maximum negative bend
+constexpr int16_t kCenter = 0;          ///< No bend (center position)
+constexpr int16_t kSemitone = 4096;     ///< One semitone (assuming +/- 2 semitone range)
+constexpr int16_t kQuarterTone = 2048;  ///< Quarter tone (50 cents)
+constexpr int16_t kCent50 = 2048;       ///< 50 cents (same as quarter tone)
+constexpr int16_t kCent25 = 1024;       ///< 25 cents
+constexpr int16_t kMax = 8191;          ///< Maximum positive bend
+constexpr int16_t kMin = -8192;         ///< Maximum negative bend
 }  // namespace PitchBend
 
 /// @brief MIDI text/marker event.
@@ -575,8 +598,8 @@ struct TextEvent {
 
 /// A tempo change event for MIDI Set Tempo meta-events
 struct TempoEvent {
-  Tick tick;      ///< Event time in ticks
-  uint16_t bpm;   ///< Tempo in beats per minute
+  Tick tick;     ///< Event time in ticks
+  uint16_t bpm;  ///< Tempo in beats per minute
 };
 
 /// @brief Musical key (C=0 through B=11).

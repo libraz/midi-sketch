@@ -26,11 +26,11 @@ constexpr uint8_t kInvalidFretValue = 255;
 
 /// @brief Fretted instrument type enumeration.
 enum class FrettedInstrumentType : uint8_t {
-  Bass4String,   ///< 4-string bass (E1-A1-D2-G2)
-  Bass5String,   ///< 5-string bass (B0-E1-A1-D2-G2)
-  Bass6String,   ///< 6-string bass (B0-E1-A1-D2-G2-C3)
-  Guitar6String, ///< 6-string guitar (E2-A2-D3-G3-B3-E4)
-  Guitar7String  ///< 7-string guitar (B1-E2-A2-D3-G3-B3-E4)
+  Bass4String,    ///< 4-string bass (E1-A1-D2-G2)
+  Bass5String,    ///< 5-string bass (B0-E1-A1-D2-G2)
+  Bass6String,    ///< 6-string bass (B0-E1-A1-D2-G2-C3)
+  Guitar6String,  ///< 6-string guitar (E2-A2-D3-G3-B3-E4)
+  Guitar7String   ///< 7-string guitar (B1-E2-A2-D3-G3-B3-E4)
 };
 
 /// @brief Get the number of strings for a given instrument type.
@@ -56,8 +56,7 @@ inline uint8_t getStringCount(FrettedInstrumentType type) {
 /// @param type Instrument type
 /// @return true if bass, false if guitar
 inline bool isBassType(FrettedInstrumentType type) {
-  return type == FrettedInstrumentType::Bass4String ||
-         type == FrettedInstrumentType::Bass5String ||
+  return type == FrettedInstrumentType::Bass4String || type == FrettedInstrumentType::Bass5String ||
          type == FrettedInstrumentType::Bass6String;
 }
 
@@ -104,7 +103,7 @@ struct StringState {
 struct FretboardState {
   std::array<StringState, kMaxFrettedStrings> strings;  ///< Per-string state
   uint8_t string_count;                                 ///< Number of active strings
-  uint8_t hand_position;  ///< Current hand position (1st finger base fret)
+  uint8_t hand_position;      ///< Current hand position (1st finger base fret)
   uint8_t available_fingers;  ///< Bitmask of available fingers (bits 0-3 = index-pinky)
 
   /// @brief Default constructor.
@@ -156,13 +155,14 @@ struct FretboardState {
 /// @brief Standard tuning definitions (MIDI note numbers).
 namespace StandardTuning {
 // Bass tunings (low string to high string)
-constexpr std::array<uint8_t, 4> kBass4 = {28, 33, 38, 43};       // E1, A1, D2, G2
-constexpr std::array<uint8_t, 5> kBass5 = {23, 28, 33, 38, 43};   // B0, E1, A1, D2, G2
+constexpr std::array<uint8_t, 4> kBass4 = {28, 33, 38, 43};          // E1, A1, D2, G2
+constexpr std::array<uint8_t, 5> kBass5 = {23, 28, 33, 38, 43};      // B0, E1, A1, D2, G2
 constexpr std::array<uint8_t, 6> kBass6 = {23, 28, 33, 38, 43, 48};  // B0, E1, A1, D2, G2, C3
 
 // Guitar tunings (low string to high string)
-constexpr std::array<uint8_t, 6> kGuitar6 = {40, 45, 50, 55, 59, 64};       // E2, A2, D3, G3, B3, E4
-constexpr std::array<uint8_t, 7> kGuitar7 = {35, 40, 45, 50, 55, 59, 64};   // B1, E2, A2, D3, G3, B3, E4
+constexpr std::array<uint8_t, 6> kGuitar6 = {40, 45, 50, 55, 59, 64};  // E2, A2, D3, G3, B3, E4
+constexpr std::array<uint8_t, 7> kGuitar7 = {35, 40, 45, 50,
+                                             55, 59, 64};  // B1, E2, A2, D3, G3, B3, E4
 }  // namespace StandardTuning
 
 /// @brief Get the standard tuning for an instrument type.

@@ -65,15 +65,15 @@ struct PhraseCacheKeyHash {
 };
 
 // ============================================================================
-// Rhythm Lock for Orangestar-style generation
+// Rhythm Lock for RhythmSync-style generation
 // ============================================================================
 
 /**
- * @brief Cached rhythm pattern for Orangestar-style "coordinate axis" locking.
+ * @brief Cached rhythm pattern for RhythmSync-style "coordinate axis" locking.
  *
  * Stores onset positions (in beats) for reuse across sections.
  * The rhythm pattern becomes the fixed "coordinate axis" while pitch can vary.
- * This creates the addictive repeating riff characteristic of Orangestar style.
+ * This creates the addictive repeating riff characteristic of RhythmSync style.
  */
 struct CachedRhythmPattern {
   std::vector<float> onset_beats;  ///< Onset positions in beats (0.0, 0.25, 0.5, ...)
@@ -188,7 +188,7 @@ inline CachedRhythmPattern extractRhythmPattern(const std::vector<NoteEvent>& no
  * The Motif acts as the "coordinate axis" and Vocal should follow its rhythm.
  */
 inline CachedRhythmPattern extractRhythmPatternFromTrack(const std::vector<NoteEvent>& track_notes,
-                                                          Tick section_start, Tick section_end) {
+                                                         Tick section_start, Tick section_end) {
   CachedRhythmPattern pattern;
   uint8_t section_beats = static_cast<uint8_t>((section_end - section_start) / TICKS_PER_BEAT);
   pattern.phrase_beats = section_beats;
@@ -301,8 +301,7 @@ inline std::vector<float> detectPhraseBoundariesFromRhythm(
  * @return Breath duration in ticks
  */
 inline Tick getBreathDuration(SectionType section_type, bool is_ballad,
-                               bool is_section_boundary = false,
-                               uint16_t bpm = 120) {
+                              bool is_section_boundary = false, uint16_t bpm = 120) {
   Tick base;
   if (is_section_boundary) {
     // Section boundary: larger breath for dramatic pause
@@ -315,7 +314,7 @@ inline Tick getBreathDuration(SectionType section_type, bool is_ballad,
         base = TICK_SIXTEENTH;  // 120 ticks - minimal breath for energy
         break;
       case SectionType::Bridge:
-        base = TICK_EIGHTH;     // 240 ticks - spacious
+        base = TICK_EIGHTH;  // 240 ticks - spacious
         break;
       default:
         base = TICK_SIXTEENTH;  // 120 ticks
@@ -331,8 +330,7 @@ inline Tick getBreathDuration(SectionType section_type, bool is_ballad,
   // BPM compensation: singers need ~150ms minimum for a breath regardless of tempo.
   // At fast tempos, fewer ticks correspond to the same real time, so we need more ticks.
   constexpr float kMinBreathSeconds = 0.15f;
-  Tick min_breath_ticks = static_cast<Tick>(
-      kMinBreathSeconds * bpm * TICKS_PER_BEAT / 60.0f);
+  Tick min_breath_ticks = static_cast<Tick>(kMinBreathSeconds * bpm * TICKS_PER_BEAT / 60.0f);
   base = std::max(base, min_breath_ticks);
 
   return base;
@@ -347,8 +345,7 @@ constexpr float kMinVocalOnsetSeconds = 0.2f;
 
 /// @brief Calculate BPM-dependent minimum onset interval in ticks.
 inline Tick calcMinOnsetInterval(uint16_t bpm) {
-  return static_cast<Tick>(
-      std::ceil(kMinVocalOnsetSeconds * bpm * TICKS_PER_BEAT / 60.0f));
+  return static_cast<Tick>(std::ceil(kMinVocalOnsetSeconds * bpm * TICKS_PER_BEAT / 60.0f));
 }
 
 /// @brief Position bonus constants for onset scoring.
@@ -370,12 +367,8 @@ constexpr float kStrongBeatBonus = 0.1f;
 /// @param section_start Section start tick (absolute)
 /// @return Filtered CachedRhythmPattern (onset_beats only, durations empty)
 inline CachedRhythmPattern buildRunBasedOnsetMap(
-    const CachedRhythmPattern& pattern,
-    const PhrasePlan& phrase_plan,
-    const motif_detail::MotifRhythmTemplateConfig& tmpl_config,
-    uint16_t bpm,
-    Tick section_start) {
-
+    const CachedRhythmPattern& pattern, const PhrasePlan& phrase_plan,
+    const motif_detail::MotifRhythmTemplateConfig& tmpl_config, uint16_t bpm, Tick section_start) {
   CachedRhythmPattern result;
   result.phrase_beats = pattern.phrase_beats;
   result.is_locked = pattern.is_locked;
@@ -472,9 +465,7 @@ inline CachedRhythmPattern buildRunBasedOnsetMap(
 
       // Sort by score descending (keep highest scored)
       std::sort(scored.begin(), scored.end(),
-                [](const ScoredOnset& a, const ScoredOnset& b) {
-                  return a.score > b.score;
-                });
+                [](const ScoredOnset& a, const ScoredOnset& b) { return a.score > b.score; });
 
       // Keep top `target` onsets
       size_t keep_count = static_cast<size_t>(std::max(target, 2));

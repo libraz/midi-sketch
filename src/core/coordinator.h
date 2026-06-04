@@ -86,9 +86,7 @@ class Coordinator {
   /// @param arrangement Pre-built arrangement (with density progression, etc.)
   /// @param rng Reference to external RNG (shared state)
   /// @param harmony Pointer to external harmony coordinator
-  void initialize(const GeneratorParams& params,
-                  const Arrangement& arrangement,
-                  std::mt19937& rng,
+  void initialize(const GeneratorParams& params, const Arrangement& arrangement, std::mt19937& rng,
                   IHarmonyCoordinator* harmony);
 
   /// @brief Validate all parameters for musical correctness.
@@ -160,16 +158,14 @@ class Coordinator {
   /// @brief Apply a motif pattern across sections.
   /// @param pattern Motif note pattern
   /// @param track Target track
-  void applyMotifAcrossSections(const std::vector<NoteEvent>& pattern,
-                                 MidiTrack& track);
+  void applyMotifAcrossSections(const std::vector<NoteEvent>& pattern, MidiTrack& track);
 
   /// @brief Apply a hook to target section types.
   /// @param hook Hook note pattern
   /// @param targets Section types to apply to
   /// @param track Target track
   void applyHookToSections(const std::vector<NoteEvent>& hook,
-                           const std::vector<SectionType>& targets,
-                           MidiTrack& track);
+                           const std::vector<SectionType>& targets, MidiTrack& track);
 
   // =========================================================================
   // Accessors
@@ -208,23 +204,23 @@ class Coordinator {
   // Song Structure (Coordinator-owned)
   // =========================================================================
 
-  GeneratorParams params_;          ///< Current parameters
-  uint16_t bpm_ = 120;              ///< Resolved BPM
-  uint8_t chord_id_ = 0;            ///< Chord progression ID
-  Arrangement arrangement_;         ///< Song arrangement
+  GeneratorParams params_;   ///< Current parameters
+  uint16_t bpm_ = 120;       ///< Resolved BPM
+  uint8_t chord_id_ = 0;     ///< Chord progression ID
+  Arrangement arrangement_;  ///< Song arrangement
   GenerationParadigm paradigm_ = GenerationParadigm::Traditional;
   RiffPolicy riff_policy_ = RiffPolicy::Free;
-  uint8_t blueprint_id_ = 0;        ///< Resolved blueprint ID
+  uint8_t blueprint_id_ = 0;                        ///< Resolved blueprint ID
   const ProductionBlueprint* blueprint_ = nullptr;  ///< Blueprint pointer
 
   // =========================================================================
   // Generation Engine
   // =========================================================================
 
-  std::unique_ptr<IHarmonyCoordinator> harmony_;  ///< Harmony coordinator (owned)
+  std::unique_ptr<IHarmonyCoordinator> harmony_;     ///< Harmony coordinator (owned)
   IHarmonyCoordinator* external_harmony_ = nullptr;  ///< External harmony (not owned)
   std::map<TrackRole, std::unique_ptr<ITrackBase>> track_generators_;  ///< Track generators
-  std::mt19937 rng_;                ///< Random number generator (owned)
+  std::mt19937 rng_;                      ///< Random number generator (owned)
   std::mt19937* external_rng_ = nullptr;  ///< External RNG (not owned)
 
   /// @brief Get the active RNG (external if set, otherwise owned).
@@ -239,9 +235,9 @@ class Coordinator {
   // State
   // =========================================================================
 
-  std::vector<std::string> warnings_;  ///< Accumulated warnings
+  std::vector<std::string> warnings_;              ///< Accumulated warnings
   std::map<TrackRole, TrackPriority> priorities_;  ///< Track priorities
-  DrumGrid drum_grid_;  ///< Drum grid for RhythmSync paradigm
+  DrumGrid drum_grid_;                             ///< Drum grid for RhythmSync paradigm
 
   // =========================================================================
   // Initialization Helpers

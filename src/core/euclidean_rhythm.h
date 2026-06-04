@@ -88,13 +88,13 @@ struct EuclideanDrumPattern {
  * all drum elements into a cohesive groove.
  */
 enum class GrooveTemplate : uint8_t {
-  Standard,   ///< Standard pop (kick on 1&3, snare on 2&4)
-  Funk,       ///< 16th note feel, syncopated ghost notes
-  Shuffle,    ///< Triplet swing feel
-  Bossa,      ///< Bossa nova pattern
-  Trap,       ///< Hi-hat roll centered, sparse kick
-  HalfTime,   ///< Half-time feel (snare on 3)
-  Breakbeat   ///< Syncopated breakbeat pattern
+  Standard,  ///< Standard pop (kick on 1&3, snare on 2&4)
+  Funk,      ///< 16th note feel, syncopated ghost notes
+  Shuffle,   ///< Triplet swing feel
+  Bossa,     ///< Bossa nova pattern
+  Trap,      ///< Hi-hat roll centered, sparse kick
+  HalfTime,  ///< Half-time feel (snare on 3)
+  Breakbeat  ///< Syncopated breakbeat pattern
 };
 
 /**

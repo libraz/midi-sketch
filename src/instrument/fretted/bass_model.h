@@ -75,7 +75,7 @@ class BassModel : public FrettedInstrumentBase {
  protected:
   // Override position scoring for bass-specific preferences
   float scorePosition(const FretPosition& pos, const HandPosition& current_hand,
-                       PlayingTechnique technique) const override;
+                      PlayingTechnique technique) const override;
 
  private:
   /// @brief Initialize bass-specific technique constraints.

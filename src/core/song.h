@@ -70,14 +70,10 @@ class Song {
   /// Useful for melody-related post-processing and analysis.
   ///
   /// @return Vector of pointers to melodic tracks
-  std::vector<MidiTrack*> getMelodicTracks() {
-    return {&vocal(), &aux(), &motif()};
-  }
+  std::vector<MidiTrack*> getMelodicTracks() { return {&vocal(), &aux(), &motif()}; }
 
   /// @brief Get melodic tracks (const version).
-  std::vector<const MidiTrack*> getMelodicTracks() const {
-    return {&vocal(), &aux(), &motif()};
-  }
+  std::vector<const MidiTrack*> getMelodicTracks() const { return {&vocal(), &aux(), &motif()}; }
 
   /// @brief Get backing/accompaniment tracks (Chord, Bass, Arpeggio, Guitar).
   ///
@@ -85,9 +81,7 @@ class Song {
   /// Useful for backing-specific operations like chorus drop.
   ///
   /// @return Vector of pointers to backing tracks
-  std::vector<MidiTrack*> getBackingTracks() {
-    return {&chord(), &bass(), &arpeggio(), &guitar()};
-  }
+  std::vector<MidiTrack*> getBackingTracks() { return {&chord(), &bass(), &arpeggio(), &guitar()}; }
 
   /// @brief Get backing tracks (const version).
   std::vector<const MidiTrack*> getBackingTracks() const {

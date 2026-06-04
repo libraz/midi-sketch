@@ -288,7 +288,7 @@ std::vector<VoicedChord> generateSpreadVoicings(uint8_t root, const Chord& chord
 }
 
 std::vector<VoicedChord> generateRootlessVoicings(uint8_t root, const Chord& chord,
-                                                   uint16_t bass_pitch_mask) {
+                                                  uint16_t bass_pitch_mask) {
   std::vector<VoicedChord> voicings;
 
   // Rootless voicing: omit root, use 3rd + 5th + 7th + optional 9th
@@ -391,8 +391,7 @@ std::vector<VoicedChord> generateRootlessVoicings(uint8_t root, const Chord& cho
 }
 
 std::vector<VoicedChord> generateVoicings(uint8_t root, const Chord& chord,
-                                          VoicingType preferred_type,
-                                          uint16_t bass_pitch_mask,
+                                          VoicingType preferred_type, uint16_t bass_pitch_mask,
                                           OpenVoicingType open_subtype) {
   std::vector<VoicedChord> voicings;
 

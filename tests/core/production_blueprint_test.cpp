@@ -16,9 +16,9 @@
 #include "core/preset_types.h"
 #include "core/structure.h"
 #include "test_helpers/note_event_test_helper.h"
-#include "track/vocal/phrase_cache.h"
 #include "track/generators/motif.h"
 #include "track/generators/vocal.h"
+#include "track/vocal/phrase_cache.h"
 
 namespace midisketch {
 namespace {
@@ -59,6 +59,7 @@ TEST_F(ProductionBlueprintTest, GetBlueprintName) {
   EXPECT_STREQ(getProductionBlueprintName(6), "IdolKawaii");
   EXPECT_STREQ(getProductionBlueprintName(7), "IdolCoolPop");
   EXPECT_STREQ(getProductionBlueprintName(8), "IdolEmo");
+  EXPECT_STREQ(getProductionBlueprintName(9), "BehavioralLoop");
   EXPECT_STREQ(getProductionBlueprintName(255), "Unknown");
 }
 
@@ -72,6 +73,7 @@ TEST_F(ProductionBlueprintTest, FindBlueprintByName) {
   EXPECT_EQ(findProductionBlueprintByName("IdolKawaii"), 6);
   EXPECT_EQ(findProductionBlueprintByName("IdolCoolPop"), 7);
   EXPECT_EQ(findProductionBlueprintByName("IdolEmo"), 8);
+  EXPECT_EQ(findProductionBlueprintByName("BehavioralLoop"), 9);
 
   // Case insensitive
   EXPECT_EQ(findProductionBlueprintByName("traditional"), 0);
@@ -80,10 +82,11 @@ TEST_F(ProductionBlueprintTest, FindBlueprintByName) {
   EXPECT_EQ(findProductionBlueprintByName("ballad"), 3);
   EXPECT_EQ(findProductionBlueprintByName("idolstandard"), 4);
   EXPECT_EQ(findProductionBlueprintByName("IDOLHYPER"), 5);
+  EXPECT_EQ(findProductionBlueprintByName("behavioralloop"), 9);
 
   // Not found (old names should not work)
-  EXPECT_EQ(findProductionBlueprintByName("Orangestar"), 255);
-  EXPECT_EQ(findProductionBlueprintByName("YOASOBI"), 255);
+  EXPECT_EQ(findProductionBlueprintByName("RhythmSync"), 255);
+  EXPECT_EQ(findProductionBlueprintByName("AnimeHighEnergy"), 255);
   EXPECT_EQ(findProductionBlueprintByName("NotExists"), 255);
   EXPECT_EQ(findProductionBlueprintByName(nullptr), 255);
 }
@@ -217,16 +220,18 @@ TEST_F(ProductionBlueprintTest, BalladBlueprint) {
 TEST_F(ProductionBlueprintTest, RhythmLockSectionFlowContainsDropChorus) {
   const auto& bp = getProductionBlueprint(1);  // RhythmLock
 
-  // Check for drop chorus (vocal solo section)
-  bool has_vocal_solo = false;
+  // Check for drop chorus (vocal-forward section with rhythm floor)
+  bool has_vocal_breakdown = false;
   for (uint8_t i = 0; i < bp.section_count; ++i) {
     const auto& slot = bp.section_flow[i];
-    if (slot.type == SectionType::Chorus && slot.enabled_tracks == TrackMask::Vocal) {
-      has_vocal_solo = true;
+    TrackMask expected = TrackMask::Vocal | TrackMask::Drums | TrackMask::Bass | TrackMask::Motif;
+    if (slot.type == SectionType::Chorus && slot.enabled_tracks == expected) {
+      has_vocal_breakdown = true;
       break;
     }
   }
-  EXPECT_TRUE(has_vocal_solo) << "RhythmLock should have a drop chorus (vocal solo)";
+  EXPECT_TRUE(has_vocal_breakdown)
+      << "RhythmLock should have a drop chorus with a light rhythm floor";
 }
 
 TEST_F(ProductionBlueprintTest, IdolHyperHasChorusFirst) {
@@ -770,11 +775,14 @@ TEST_F(ProductionBlueprintTest, ExtractRhythmPattern) {
   Tick section_start = 0;
 
   // Note at beat 0, duration 0.5 beats
-  notes.push_back(NoteEventTestHelper::create(0, 240, 60, 100));  // tick 0, duration 240 (half beat)
+  notes.push_back(
+      NoteEventTestHelper::create(0, 240, 60, 100));  // tick 0, duration 240 (half beat)
   // Note at beat 1, duration 1 beat
-  notes.push_back(NoteEventTestHelper::create(480, 480, 64, 100));  // tick 480 (beat 1), duration 480 (1 beat)
+  notes.push_back(
+      NoteEventTestHelper::create(480, 480, 64, 100));  // tick 480 (beat 1), duration 480 (1 beat)
   // Note at beat 3, duration 0.25 beats
-  notes.push_back(NoteEventTestHelper::create(1440, 120, 67, 100));  // tick 1440 (beat 3), duration 120 (quarter beat)
+  notes.push_back(NoteEventTestHelper::create(
+      1440, 120, 67, 100));  // tick 1440 (beat 3), duration 120 (quarter beat)
 
   auto pattern = extractRhythmPattern(notes, section_start, 4);
 
@@ -968,8 +976,7 @@ TEST_F(ProductionBlueprintTest, BgmOnlyWithRhythmSyncHasTemplateConsistentParams
   EXPECT_NE(applied_params.motif.rhythm_template, MotifRhythmTemplate::None)
       << "RhythmSync should select a rhythm template";
 
-  const auto& tmpl =
-      motif_detail::getTemplateConfig(applied_params.motif.rhythm_template);
+  const auto& tmpl = motif_detail::getTemplateConfig(applied_params.motif.rhythm_template);
   EXPECT_EQ(applied_params.motif.note_count, tmpl.note_count);
   EXPECT_EQ(applied_params.motif.rhythm_density, tmpl.effective_density);
 
@@ -1078,8 +1085,7 @@ TEST_F(ProductionBlueprintTest, IdolHyperHasPushedTimeFeel) {
     }
   }
   // Most sections should have Pushed time_feel
-  EXPECT_GE(pushed_count, bp.section_count / 2)
-      << "IdolHyper should have mostly Pushed time_feel";
+  EXPECT_GE(pushed_count, bp.section_count / 2) << "IdolHyper should have mostly Pushed time_feel";
 }
 
 TEST_F(ProductionBlueprintTest, IdolHyperBSectionHasDramaticDrop) {
@@ -1095,8 +1101,7 @@ TEST_F(ProductionBlueprintTest, IdolHyperBSectionHasDramaticDrop) {
       break;
     }
   }
-  EXPECT_TRUE(found_dramatic_b)
-      << "IdolHyper B section should have Dramatic drop_style";
+  EXPECT_TRUE(found_dramatic_b) << "IdolHyper B section should have Dramatic drop_style";
 }
 
 TEST_F(ProductionBlueprintTest, IdolHyperBSectionHasCutOffExitPattern) {
@@ -1112,8 +1117,7 @@ TEST_F(ProductionBlueprintTest, IdolHyperBSectionHasCutOffExitPattern) {
       break;
     }
   }
-  EXPECT_TRUE(found_cutoff_b)
-      << "IdolHyper B section should have CutOff exit pattern";
+  EXPECT_TRUE(found_cutoff_b) << "IdolHyper B section should have CutOff exit pattern";
 }
 
 TEST_F(ProductionBlueprintTest, IdolCoolPopHasPushedTimeFeel) {
@@ -1140,8 +1144,7 @@ TEST_F(ProductionBlueprintTest, IdolCoolPopBSectionHasDramaticDrop) {
       break;
     }
   }
-  EXPECT_TRUE(found_dramatic_b)
-      << "IdolCoolPop B section should have Dramatic drop_style";
+  EXPECT_TRUE(found_dramatic_b) << "IdolCoolPop B section should have Dramatic drop_style";
 }
 
 TEST_F(ProductionBlueprintTest, IdolEmoHasMixedTimeFeel) {
@@ -1182,7 +1185,8 @@ TEST_F(ProductionBlueprintTest, IdolEmoOutroHasFadeout) {
 
 TEST_F(ProductionBlueprintTest, LastChorusHasFinalHitExitPattern) {
   // Blueprints with explicit section flow should have FinalHit on last chorus
-  const std::vector<uint8_t> blueprints_with_finalchorus = {3, 5, 7, 8};  // Ballad, IdolHyper, IdolCoolPop, IdolEmo
+  const std::vector<uint8_t> blueprints_with_finalchorus = {
+      3, 5, 7, 8};  // Ballad, IdolHyper, IdolCoolPop, IdolEmo
 
   for (uint8_t bp_id : blueprints_with_finalchorus) {
     const auto& bp = getProductionBlueprint(bp_id);
@@ -1245,8 +1249,7 @@ TEST_F(ProductionBlueprintTest, BuildStructureTransfersDropStyle) {
       break;
     }
   }
-  EXPECT_TRUE(found_b)
-      << "drop_style should be transferred from SectionSlot to Section";
+  EXPECT_TRUE(found_b) << "drop_style should be transferred from SectionSlot to Section";
 }
 
 TEST_F(ProductionBlueprintTest, BuildStructurePreservesExplicitExitPattern) {

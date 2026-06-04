@@ -214,7 +214,7 @@ class Generator {
   /// @{
 
   /** @brief Get resolved blueprint ID after generation.
-   *  @return Blueprint ID (0-3), or 0 if not generated */
+   *  @return Blueprint ID (0-9), or 0 if not generated */
   uint8_t resolvedBlueprintId() const { return resolved_blueprint_id_; }
 
   /** @brief Get pre-computed drum grid for RhythmSync paradigm.
@@ -233,9 +233,9 @@ class Generator {
    * Used by refineVocalForAccompaniment() to identify and resolve conflicts.
    */
   struct VocalClash {
-    Tick tick;               ///< Position of the clash
-    uint8_t vocal_pitch;     ///< Current vocal pitch
-    uint8_t clashing_pitch;  ///< Pitch from accompaniment track
+    Tick tick;                 ///< Position of the clash
+    uint8_t vocal_pitch;       ///< Current vocal pitch
+    uint8_t clashing_pitch;    ///< Pitch from accompaniment track
     TrackRole clashing_track;  ///< Which track is clashing
     uint8_t suggested_pitch;   ///< Suggested safe pitch
   };
@@ -260,7 +260,8 @@ class Generator {
   GeneratorParams params_;  ///< Current generation parameters
   Song song_;               ///< Generated song data
   std::mt19937 rng_;        ///< Random number generator (Mersenne Twister)
-  std::unique_ptr<IHarmonyCoordinator> harmony_context_;  ///< Harmony coordinator for collision avoidance
+  std::unique_ptr<IHarmonyCoordinator>
+      harmony_context_;  ///< Harmony coordinator for collision avoidance
 
   /// Blueprint state
   uint8_t resolved_blueprint_id_ = 0;               ///< Resolved blueprint ID after selection

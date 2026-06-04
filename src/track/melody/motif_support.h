@@ -40,7 +40,7 @@ GlobalMotif extractGlobalMotif(const std::vector<NoteEvent>& notes);
 /// @param global_motif Reference motif from chorus
 /// @return Bonus score (0.0-0.25)
 float evaluateWithGlobalMotif(const std::vector<NoteEvent>& candidate,
-                                  const GlobalMotif& global_motif);
+                              const GlobalMotif& global_motif);
 
 }  // namespace melody
 }  // namespace midisketch

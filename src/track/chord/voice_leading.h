@@ -42,8 +42,8 @@ VoicingType selectVoicingType(SectionType section, Mood mood, bool bass_has_root
 /// @param chord Current chord
 /// @param rng Random number generator
 /// @return Recommended open voicing subtype
-OpenVoicingType selectOpenVoicingSubtype(SectionType section, Mood mood,
-                                         const Chord& chord, std::mt19937& rng);
+OpenVoicingType selectOpenVoicingSubtype(SectionType section, Mood mood, const Chord& chord,
+                                         std::mt19937& rng);
 
 /// @}
 
@@ -76,8 +76,7 @@ int getParallelPenalty(Mood mood);
 VoicedChord selectVoicing(uint8_t root, const Chord& chord, const VoicedChord& prev_voicing,
                           bool has_prev, VoicingType preferred_type, uint16_t bass_pitch_mask,
                           std::mt19937& rng, OpenVoicingType open_subtype = OpenVoicingType::Drop2,
-                          Mood mood = Mood::StraightPop,
-                          int consecutive_same_count = 0);
+                          Mood mood = Mood::StraightPop, int consecutive_same_count = 0);
 
 /// @}
 
@@ -91,8 +90,8 @@ VoicedChord selectVoicing(uint8_t root, const Chord& chord, const VoicedChord& p
 /// @param has_prev Whether there is a previous voicing
 /// @param consecutive_count Current consecutive identical count
 /// @return Penalty to add to score (0 or negative)
-int voicingRepetitionPenalty(const VoicedChord& candidate, const VoicedChord& prev,
-                             bool has_prev, int consecutive_count);
+int voicingRepetitionPenalty(const VoicedChord& candidate, const VoicedChord& prev, bool has_prev,
+                             int consecutive_count);
 
 /// Update consecutive identical voicing counter.
 /// Call BEFORE assigning new_voicing to prev_voicing.
@@ -119,8 +118,8 @@ bool isDominant(int8_t degree);
 /// @param current_degree Current chord degree
 /// @param mood Current mood
 /// @return True if dominant preparation should be added
-bool shouldAddDominantPreparation(SectionType current, SectionType next,
-                                  int8_t current_degree, Mood mood);
+bool shouldAddDominantPreparation(SectionType current, SectionType next, int8_t current_degree,
+                                  Mood mood);
 
 /// Check if section ending needs a cadence fix for irregular progression lengths.
 /// Returns true if the progression ends mid-cycle at section end.
@@ -129,8 +128,8 @@ bool shouldAddDominantPreparation(SectionType current, SectionType next,
 /// @param section Current section type
 /// @param next_section Next section type
 /// @return True if cadence fix is needed
-bool needsCadenceFix(uint8_t section_bars, uint8_t progression_length,
-                     SectionType section, SectionType next_section);
+bool needsCadenceFix(uint8_t section_bars, uint8_t progression_length, SectionType section,
+                     SectionType next_section);
 
 /// Check if section type allows anticipation.
 /// @param section Section type

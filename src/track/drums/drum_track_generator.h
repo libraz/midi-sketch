@@ -34,9 +34,9 @@ namespace drums {
 /// @param velocity Base velocity for kicks
 /// @param rng Random number generator
 /// @return true if kicks were added (no fallback needed), false for fallback pattern
-using VocalSyncCallback = std::function<bool(
-    MidiTrack& track, Tick bar_start, Tick bar_end, const Section& section,
-    uint8_t velocity, std::mt19937& rng)>;
+using VocalSyncCallback =
+    std::function<bool(MidiTrack& track, Tick bar_start, Tick bar_end, const Section& section,
+                       uint8_t velocity, std::mt19937& rng)>;
 
 /// @brief Parameters for drum track generation.
 struct DrumGenerationParams {
@@ -46,7 +46,7 @@ struct DrumGenerationParams {
   CompositionStyle composition_style;
   GenerationParadigm paradigm;
   MotifDrumParams motif_drum;
-  bool humanize = false;                ///< Master humanize switch
+  bool humanize = false;         ///< Master humanize switch
   float humanize_timing = 1.0f;  ///< Global humanization scaling (0.0-1.0)
 };
 
@@ -71,10 +71,8 @@ struct DrumSectionContext {
 /// @param style Base drum style
 /// @param rng Random number generator
 /// @return Section context for drum generation
-DrumSectionContext computeSectionContext(const Section& section,
-                                          const DrumGenerationParams& params,
-                                          DrumStyle style,
-                                          std::mt19937& rng);
+DrumSectionContext computeSectionContext(const Section& section, const DrumGenerationParams& params,
+                                         DrumStyle style, std::mt19937& rng);
 
 /// @brief Unified drum track generation implementation.
 ///
@@ -88,10 +86,8 @@ DrumSectionContext computeSectionContext(const Section& section,
 /// @param params Generation parameters
 /// @param rng Random number generator
 /// @param vocal_sync_callback Optional callback for vocal-synced kicks
-void generateDrumsTrackImpl(MidiTrack& track, const Song& song,
-                            const DrumGenerationParams& params,
-                            std::mt19937& rng,
-                            VocalSyncCallback vocal_sync_callback = nullptr);
+void generateDrumsTrackImpl(MidiTrack& track, const Song& song, const DrumGenerationParams& params,
+                            std::mt19937& rng, VocalSyncCallback vocal_sync_callback = nullptr);
 
 /// @brief Create vocal sync callback for kick drum synchronization.
 /// @param vocal_analysis Vocal analysis data

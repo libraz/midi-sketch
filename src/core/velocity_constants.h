@@ -318,8 +318,8 @@ constexpr float kClimaxPositionOther = 0.75f;
  * @return Interpolated multiplier
  */
 inline float calculateTieredMultiplier(float value, float low_threshold, float high_threshold,
-                                        float low_min, float low_max, float high_min,
-                                        float high_max) {
+                                       float low_min, float low_max, float high_min,
+                                       float high_max) {
   if (value < low_threshold) {
     // Low range: interpolate from low_min to low_max
     return low_min + (value / low_threshold) * (low_max - low_min);

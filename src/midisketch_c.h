@@ -154,8 +154,8 @@ uint16_t midisketch_mood_default_bpm(uint8_t id);
 /// @brief Generation paradigm for blueprint.
 typedef enum {
   MIDISKETCH_PARADIGM_TRADITIONAL = 0,   ///< Existing behavior
-  MIDISKETCH_PARADIGM_RHYTHM_SYNC = 1,   ///< Orangestar style (rhythm-synced)
-  MIDISKETCH_PARADIGM_MELODY_DRIVEN = 2  ///< YOASOBI style (melody-driven)
+  MIDISKETCH_PARADIGM_RHYTHM_SYNC = 1,   ///< RhythmSync style (rhythm-synced)
+  MIDISKETCH_PARADIGM_MELODY_DRIVEN = 2  ///< AnimeHighEnergy style (melody-driven)
 } MidiSketchParadigm;
 
 /// @brief Riff policy for blueprint.
@@ -187,7 +187,7 @@ uint8_t midisketch_blueprint_drums_required(uint8_t id);
 
 /** @brief Get resolved blueprint ID after generation.
  *  @param handle MidiSketch handle
- *  @return Resolved blueprint ID (0-8), or 255 if not generated
+ *  @return Resolved blueprint ID (0-9), or 255 if not generated
  */
 uint8_t midisketch_get_resolved_blueprint_id(MidiSketchHandle handle);
 
@@ -431,7 +431,7 @@ const char* midisketch_collision_to_string(const MidiSketchCollisionInfo* collis
  * @return MIDISKETCH_OK on success
  */
 MidiSketchError midisketch_generate_from_json(MidiSketchHandle handle, const char* config_json,
-                                               size_t json_length);
+                                              size_t json_length);
 
 /**
  * @brief Get default config as JSON string for a style preset.
@@ -462,7 +462,7 @@ MidiSketchConfigError midisketch_validate_config_json(const char* config_json, s
  * @return MIDISKETCH_OK on success
  */
 MidiSketchError midisketch_generate_vocal_from_json(MidiSketchHandle handle,
-                                                     const char* config_json, size_t json_length);
+                                                    const char* config_json, size_t json_length);
 
 /**
  * @brief Generate all tracks (vocal-first) from a JSON config string.
@@ -473,8 +473,8 @@ MidiSketchError midisketch_generate_vocal_from_json(MidiSketchHandle handle,
  * @return MIDISKETCH_OK on success
  */
 MidiSketchError midisketch_generate_with_vocal_from_json(MidiSketchHandle handle,
-                                                          const char* config_json,
-                                                          size_t json_length);
+                                                         const char* config_json,
+                                                         size_t json_length);
 
 // ============================================================================
 // JSON Vocal/Accompaniment/SetVocalNotes API
@@ -492,7 +492,7 @@ MidiSketchError midisketch_generate_with_vocal_from_json(MidiSketchHandle handle
  * @return MIDISKETCH_OK on success
  */
 MidiSketchError midisketch_regenerate_vocal_from_json(MidiSketchHandle handle,
-                                                       const char* config_json, size_t json_length);
+                                                      const char* config_json, size_t json_length);
 
 /**
  * @brief Generate accompaniment tracks from a JSON AccompanimentConfig string.
@@ -505,8 +505,8 @@ MidiSketchError midisketch_regenerate_vocal_from_json(MidiSketchHandle handle,
  * @return MIDISKETCH_OK on success
  */
 MidiSketchError midisketch_generate_accompaniment_from_json(MidiSketchHandle handle,
-                                                              const char* config_json,
-                                                              size_t json_length);
+                                                            const char* config_json,
+                                                            size_t json_length);
 
 /**
  * @brief Regenerate accompaniment tracks from a JSON AccompanimentConfig string.
@@ -519,8 +519,8 @@ MidiSketchError midisketch_generate_accompaniment_from_json(MidiSketchHandle han
  * @return MIDISKETCH_OK on success
  */
 MidiSketchError midisketch_regenerate_accompaniment_from_json(MidiSketchHandle handle,
-                                                                const char* config_json,
-                                                                size_t json_length);
+                                                              const char* config_json,
+                                                              size_t json_length);
 
 /**
  * @brief Set custom vocal notes from a JSON string.
@@ -534,7 +534,7 @@ MidiSketchError midisketch_regenerate_accompaniment_from_json(MidiSketchHandle h
  * @return MIDISKETCH_OK on success
  */
 MidiSketchError midisketch_set_vocal_notes_from_json(MidiSketchHandle handle, const char* json,
-                                                       size_t json_length);
+                                                     size_t json_length);
 
 // ============================================================================
 // Utilities

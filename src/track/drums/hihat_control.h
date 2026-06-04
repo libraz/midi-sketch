@@ -25,11 +25,11 @@ enum class HiHatLevel {
 
 /// @brief Hi-hat type for section-aware timekeeping.
 enum class HiHatType : uint8_t {
-  Closed,     ///< Standard closed HH (GM 42)
-  Pedal,      ///< Foot/pedal HH (GM 44) - subtle, short
-  Open,       ///< Open HH (GM 46) - bright, sustaining
-  HalfOpen,   ///< Half-open: emulated with Closed HH at 70-80% velocity
-  Ride        ///< Ride cymbal (GM 51) - for Bridge/contrast
+  Closed,    ///< Standard closed HH (GM 42)
+  Pedal,     ///< Foot/pedal HH (GM 44) - subtle, short
+  Open,      ///< Open HH (GM 46) - bright, sustaining
+  HalfOpen,  ///< Half-open: emulated with Closed HH at 70-80% velocity
+  Ride       ///< Ride cymbal (GM 51) - for Bridge/contrast
 };
 
 // BPM threshold for 16th note hi-hat playability

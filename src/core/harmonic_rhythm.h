@@ -31,7 +31,7 @@ inline HarmonicDensity harmonicRhythmToDensity(float harmonic_rhythm) {
 struct HarmonicRhythmInfo {
   HarmonicDensity density;
   bool double_at_phrase_end;  // Add extra chord change at phrase end
-  uint8_t subdivision = 1;   // 1 = full bar (default), 2 = half-bar chord changes
+  uint8_t subdivision = 1;    // 1 = full bar (default), 2 = half-bar chord changes
 
   /// @brief Get harmonic rhythm info from Section (uses explicit setting if available).
   /// @param section Section with optional harmonic_rhythm override
@@ -107,7 +107,7 @@ inline bool shouldSplitPhraseEnd(int bar, int section_bars, int prog_length,
   // for energetic moods (more dynamic harmonic motion)
   bool is_dense_extra = (section_type == SectionType::Chorus) && (bar % 2 == 0) && (bar > 0) &&
                         (mood == Mood::EnergeticDance || mood == Mood::IdolPop ||
-                         mood == Mood::Yoasobi || mood == Mood::FutureBass);
+                         mood == Mood::AnimeHighEnergy || mood == Mood::FutureBass);
 
   return is_phrase_end || is_dense_extra;
 }

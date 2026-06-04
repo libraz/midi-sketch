@@ -21,8 +21,7 @@ class PianoRollTest : public ::testing::Test {
     handle_ = midisketch_create();
 
     // Generate a simple song for testing
-    const char* json =
-        R"({"style_preset_id":0,"seed":12345,"skip_vocal":true,"form":0})";
+    const char* json = R"({"style_preset_id":0,"seed":12345,"skip_vocal":true,"form":0})";
     midisketch_generate_from_json(handle_, json, strlen(json));
   }
 

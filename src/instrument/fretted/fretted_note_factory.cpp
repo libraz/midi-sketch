@@ -29,9 +29,8 @@ FrettedNoteFactory::FrettedNoteFactory(const IHarmonyContext& harmony,
 }
 
 std::optional<NoteEvent> FrettedNoteFactory::create(Tick start, Tick duration, uint8_t pitch,
-                                                     uint8_t velocity,
-                                                     PlayingTechnique technique,
-                                                     NoteSource source) {
+                                                    uint8_t velocity, PlayingTechnique technique,
+                                                    NoteSource source) {
   // Check if pitch is playable at all
   if (!instrument_.isPitchPlayable(pitch)) {
     // Try to find a playable alternative
@@ -118,18 +117,19 @@ std::optional<NoteEvent> FrettedNoteFactory::create(Tick start, Tick duration, u
 }
 
 std::optional<NoteEvent> FrettedNoteFactory::create(Tick start, Tick duration, uint8_t pitch,
-                                                     uint8_t velocity, NoteSource source) {
+                                                    uint8_t velocity, NoteSource source) {
   return create(start, duration, pitch, velocity, PlayingTechnique::Normal, source);
 }
 
 std::optional<NoteEvent> FrettedNoteFactory::createIfNoDissonance(Tick start, Tick duration,
-                                                         uint8_t pitch, uint8_t velocity,
-                                                         TrackRole track,
-                                                         PlayingTechnique technique,
-                                                         NoteSource source) {
+                                                                  uint8_t pitch, uint8_t velocity,
+                                                                  TrackRole track,
+                                                                  PlayingTechnique technique,
+                                                                  NoteSource source) {
   // First check harmony safety - get candidates and use best one if available
-  auto candidates = getSafePitchCandidates(harmony_, pitch, start, duration, track,
-                                            instrument_.getLowestPitch(), instrument_.getHighestPitch());
+  auto candidates =
+      getSafePitchCandidates(harmony_, pitch, start, duration, track, instrument_.getLowestPitch(),
+                             instrument_.getHighestPitch());
   if (!candidates.empty() && candidates[0].pitch != pitch) {
     // Found a different safe pitch - verify it's playable
     uint8_t safe_pitch = candidates[0].pitch;
@@ -145,7 +145,7 @@ std::optional<NoteEvent> FrettedNoteFactory::createIfNoDissonance(Tick start, Ti
 }
 
 uint8_t FrettedNoteFactory::findPlayablePitch(uint8_t desired, Tick start, Tick duration,
-                                               float max_cost) {
+                                              float max_cost) {
   (void)duration;
   // If already playable and low cost, return as-is
   if (instrument_.isPitchPlayable(desired)) {
@@ -191,8 +191,7 @@ uint8_t FrettedNoteFactory::findPlayablePitch(uint8_t desired, Tick start, Tick 
 
     // Calculate score: playability + distance from desired
     float score = fingering.playability_cost;
-    score += static_cast<float>(std::abs(static_cast<int>(candidate) -
-                                          static_cast<int>(desired))) *
+    score += static_cast<float>(std::abs(static_cast<int>(candidate) - static_cast<int>(desired))) *
              2.0f;
 
     // Bonus if it's a chord tone
@@ -210,8 +209,7 @@ uint8_t FrettedNoteFactory::findPlayablePitch(uint8_t desired, Tick start, Tick 
   return best_pitch;
 }
 
-uint8_t FrettedNoteFactory::ensurePlayable(uint8_t pitch, Tick /* start */,
-                                            Tick /* duration */) {
+uint8_t FrettedNoteFactory::ensurePlayable(uint8_t pitch, Tick /* start */, Tick /* duration */) {
   if (instrument_.isPitchPlayable(pitch)) {
     return pitch;
   }
@@ -239,8 +237,8 @@ uint8_t FrettedNoteFactory::ensurePlayable(uint8_t pitch, Tick /* start */,
 }
 
 std::vector<Fingering> FrettedNoteFactory::planSequence(const std::vector<uint8_t>& pitches,
-                                                         const std::vector<Tick>& durations,
-                                                         PlayingTechnique technique) {
+                                                        const std::vector<Tick>& durations,
+                                                        PlayingTechnique technique) {
   return instrument_.findBestFingeringSequence(pitches, durations, state_, technique);
 }
 
@@ -252,7 +250,7 @@ void FrettedNoteFactory::resetState() {
 }
 
 void FrettedNoteFactory::applyFingeringProvenance(NoteEvent& note, const Fingering& fingering,
-                                                   PlayingTechnique technique) {
+                                                  PlayingTechnique technique) {
   (void)note;
   if (fingering.assignments.empty()) return;
 

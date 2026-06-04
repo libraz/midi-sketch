@@ -25,7 +25,7 @@ namespace midisketch {
 namespace {
 
 // Identify motif rhythm template from pattern fingerprint.
-// Returns template index (1-7 matching MotifRhythmTemplate enum) or 0 for unknown.
+// Returns template index matching MotifRhythmTemplate enum or 0 for unknown.
 int identifyMotifTemplate(const std::vector<NoteEvent>& pattern) {
   if (pattern.empty()) return 0;
   int n = static_cast<int>(pattern.size());
@@ -48,10 +48,18 @@ int identifyMotifTemplate(const std::vector<NoteEvent>& pattern) {
   }
 
   if (n == 8) {
+    bool short_stabs = std::all_of(pattern.begin(), pattern.end(), [](const NoteEvent& note) {
+      return note.duration <= TICK_SIXTEENTH;
+    });
+    if (short_stabs && !ticks.count(1800)) {
+      return static_cast<int>(MotifRhythmTemplate::ChordPulseStabs);
+    }
     // EighthPickup: has 3.75 beat (tick 1800)
     if (ticks.count(1800)) return 7;  // EighthPickup
     return 1;                         // EighthDrive
   }
+
+  if (n == 16) return static_cast<int>(MotifRhythmTemplate::StraightSixteenth);
 
   return 0;  // Unknown
 }
@@ -103,9 +111,9 @@ TEST_F(RhythmSyncTest, VocalOnsetsMatchMotifOnsets) {
   // At least 70% of vocal onsets should match motif onsets
   // (some variation allowed for breathing, phrase boundaries)
   float match_ratio = static_cast<float>(matching_onsets) / total_vocal_onsets;
-  EXPECT_GE(match_ratio, 0.70f)
-      << "Only " << (match_ratio * 100) << "% of vocal onsets match motif onsets. "
-      << "Expected at least 70% for RhythmSync paradigm.";
+  EXPECT_GE(match_ratio, 0.70f) << "Only " << (match_ratio * 100)
+                                << "% of vocal onsets match motif onsets. "
+                                << "Expected at least 70% for RhythmSync paradigm.";
 }
 
 // Test: No overlapping vocal notes (end_tick <= next_start_tick)
@@ -122,9 +130,7 @@ TEST_F(RhythmSyncTest, NoOverlappingVocalNotes) {
   // Notes should be sorted by start_tick
   std::vector<NoteEvent> sorted_notes = notes;
   std::sort(sorted_notes.begin(), sorted_notes.end(),
-            [](const NoteEvent& a, const NoteEvent& b) {
-              return a.start_tick < b.start_tick;
-            });
+            [](const NoteEvent& a, const NoteEvent& b) { return a.start_tick < b.start_tick; });
 
   int overlap_count = 0;
   for (size_t i = 0; i + 1 < sorted_notes.size(); ++i) {
@@ -136,14 +142,13 @@ TEST_F(RhythmSyncTest, NoOverlappingVocalNotes) {
       // Report first few overlaps for debugging
       if (overlap_count <= 3) {
         ADD_FAILURE() << "Overlap at note " << i << ": end_tick=" << end_tick
-                      << " > next_start=" << next_start
-                      << " (overlap=" << (end_tick - next_start) << " ticks)";
+                      << " > next_start=" << next_start << " (overlap=" << (end_tick - next_start)
+                      << " ticks)";
       }
     }
   }
 
-  EXPECT_EQ(overlap_count, 0)
-      << "Found " << overlap_count << " overlapping note pairs";
+  EXPECT_EQ(overlap_count, 0) << "Found " << overlap_count << " overlapping note pairs";
 }
 
 // Test: Limited consecutive same pitch (no more than 6 in a row)
@@ -160,9 +165,7 @@ TEST_F(RhythmSyncTest, LimitedConsecutiveSamePitch) {
   // Sort by start_tick to ensure correct ordering
   std::vector<NoteEvent> sorted_notes = notes;
   std::sort(sorted_notes.begin(), sorted_notes.end(),
-            [](const NoteEvent& a, const NoteEvent& b) {
-              return a.start_tick < b.start_tick;
-            });
+            [](const NoteEvent& a, const NoteEvent& b) { return a.start_tick < b.start_tick; });
 
   int consecutive_count = 1;
   uint8_t prev_pitch = sorted_notes[0].note;
@@ -186,10 +189,9 @@ TEST_F(RhythmSyncTest, LimitedConsecutiveSamePitch) {
   // - 1-2 is natural (rhythmic figure)
   // - 3-4 is OK for emphasis
   // - 5+ is monotonous and should be avoided in pop vocals
-  EXPECT_LE(max_consecutive, 4)
-      << "Found " << max_consecutive << " consecutive same pitch ("
-      << static_cast<int>(prev_pitch) << ") near tick " << worst_streak_tick
-      << ". Maximum allowed is 4.";
+  EXPECT_LE(max_consecutive, 4) << "Found " << max_consecutive << " consecutive same pitch ("
+                                << static_cast<int>(prev_pitch) << ") near tick "
+                                << worst_streak_tick << ". Maximum allowed is 4.";
 }
 
 // Test: Verify that the improvement reduces same-pitch streaks compared to baseline
@@ -210,9 +212,7 @@ TEST_F(RhythmSyncTest, ReducedSamePitchStreaksAcrossSeeds) {
     // Sort by start_tick
     std::vector<NoteEvent> sorted_notes = notes;
     std::sort(sorted_notes.begin(), sorted_notes.end(),
-              [](const NoteEvent& a, const NoteEvent& b) {
-                return a.start_tick < b.start_tick;
-              });
+              [](const NoteEvent& a, const NoteEvent& b) { return a.start_tick < b.start_tick; });
 
     int consecutive_count = 1;
     uint8_t prev_pitch = sorted_notes[0].note;
@@ -236,14 +236,12 @@ TEST_F(RhythmSyncTest, ReducedSamePitchStreaksAcrossSeeds) {
 
   // Average max streak should be reasonable (< 4 on average)
   float avg_max_streak = static_cast<float>(total_max_streak) / kNumSeeds;
-  EXPECT_LT(avg_max_streak, 4.0f)
-      << "Average max consecutive same pitch is " << avg_max_streak
-      << ", expected < 4.0";
+  EXPECT_LT(avg_max_streak, 4.0f) << "Average max consecutive same pitch is " << avg_max_streak
+                                  << ", expected < 4.0";
 
   // At most 1 out of 5 seeds should have streaks > 4
   EXPECT_LE(seeds_with_long_streaks, 1)
-      << seeds_with_long_streaks << " out of " << kNumSeeds
-      << " seeds had streaks > 4";
+      << seeds_with_long_streaks << " out of " << kNumSeeds << " seeds had streaks > 4";
 }
 
 // Test: Breath insertion does not shift note onsets
@@ -298,8 +296,8 @@ TEST_F(RhythmSyncTest, BreathDoesNotShiftNoteOnsets) {
   if (total_vocal > 0) {
     float suspicious_ratio = static_cast<float>(suspicious_count) / total_vocal;
     EXPECT_LE(suspicious_ratio, 0.10f)
-        << suspicious_count << " of " << total_vocal
-        << " vocal notes (" << (suspicious_ratio * 100) << "%) appear shifted from motif onsets. "
+        << suspicious_count << " of " << total_vocal << " vocal notes (" << (suspicious_ratio * 100)
+        << "%) appear shifted from motif onsets. "
         << "Expected <= 10%.";
   }
 }
@@ -329,14 +327,12 @@ TEST_F(RhythmSyncTest, MelodicVarietyInPitchDistribution) {
 
   // The most common pitch should not dominate (< 40% of all notes)
   float max_ratio = static_cast<float>(max_count) / notes.size();
-  EXPECT_LT(max_ratio, 0.40f)
-      << "Single pitch appears in " << (max_ratio * 100) << "% of notes. "
-      << "Expected more melodic variety (< 40%).";
+  EXPECT_LT(max_ratio, 0.40f) << "Single pitch appears in " << (max_ratio * 100) << "% of notes. "
+                              << "Expected more melodic variety (< 40%).";
 
   // Should have at least 4 distinct pitches
-  EXPECT_GE(pitch_counts.size(), 4u)
-      << "Only " << pitch_counts.size() << " distinct pitches. "
-      << "Expected at least 4 for melodic variety.";
+  EXPECT_GE(pitch_counts.size(), 4u) << "Only " << pitch_counts.size() << " distinct pitches. "
+                                     << "Expected at least 4 for melodic variety.";
 }
 
 // Test: Phrases should have adequate pitch movement (not static)
@@ -354,9 +350,7 @@ TEST_F(RhythmSyncTest, PhraseHasAdequatePitchMovement) {
   // Sort by time
   std::vector<NoteEvent> sorted_notes = notes;
   std::sort(sorted_notes.begin(), sorted_notes.end(),
-            [](const NoteEvent& a, const NoteEvent& b) {
-              return a.start_tick < b.start_tick;
-            });
+            [](const NoteEvent& a, const NoteEvent& b) { return a.start_tick < b.start_tick; });
 
   // Analyze in 8-note windows (approximately 1-2 bars in RhythmSync)
   constexpr size_t kWindowSize = 8;
@@ -400,33 +394,36 @@ TEST_F(RhythmSyncTest, BalancedMelodicIntervals) {
   // Sort by time
   std::vector<NoteEvent> sorted_notes = notes;
   std::sort(sorted_notes.begin(), sorted_notes.end(),
-            [](const NoteEvent& a, const NoteEvent& b) {
-              return a.start_tick < b.start_tick;
-            });
+            [](const NoteEvent& a, const NoteEvent& b) { return a.start_tick < b.start_tick; });
 
   // Categorize intervals
-  int unison = 0;      // 0 semitones
-  int steps = 0;       // 1-2 semitones
-  int small_skips = 0; // 3-4 semitones
-  int large_skips = 0; // 5-7 semitones
-  int leaps = 0;       // 8+ semitones
+  int unison = 0;       // 0 semitones
+  int steps = 0;        // 1-2 semitones
+  int small_skips = 0;  // 3-4 semitones
+  int large_skips = 0;  // 5-7 semitones
+  int leaps = 0;        // 8+ semitones
 
   for (size_t i = 1; i < sorted_notes.size(); ++i) {
     int interval = std::abs(static_cast<int>(sorted_notes[i].note) -
                             static_cast<int>(sorted_notes[i - 1].note));
-    if (interval == 0) unison++;
-    else if (interval <= 2) steps++;
-    else if (interval <= 4) small_skips++;
-    else if (interval <= 7) large_skips++;
-    else leaps++;
+    if (interval == 0)
+      unison++;
+    else if (interval <= 2)
+      steps++;
+    else if (interval <= 4)
+      small_skips++;
+    else if (interval <= 7)
+      large_skips++;
+    else
+      leaps++;
   }
 
   int total = static_cast<int>(sorted_notes.size()) - 1;
 
   // Unison (same pitch) should not dominate
   float unison_ratio = static_cast<float>(unison) / total;
-  EXPECT_LT(unison_ratio, 0.50f)
-      << "Unison ratio is " << (unison_ratio * 100) << "%, expected < 50%";
+  EXPECT_LT(unison_ratio, 0.50f) << "Unison ratio is " << (unison_ratio * 100)
+                                 << "%, expected < 50%";
 
   // Should have some variety - at least 3 interval categories used
   int categories_used = 0;
@@ -436,9 +433,8 @@ TEST_F(RhythmSyncTest, BalancedMelodicIntervals) {
   if (large_skips > 0) categories_used++;
   if (leaps > 0) categories_used++;
 
-  EXPECT_GE(categories_used, 3)
-      << "Only " << categories_used << " interval categories used. "
-      << "Expected at least 3 for melodic variety.";
+  EXPECT_GE(categories_used, 3) << "Only " << categories_used << " interval categories used. "
+                                << "Expected at least 3 for melodic variety.";
 
   // Steps + small skips should be significant (smooth melodic motion)
   float smooth_motion_ratio = static_cast<float>(steps + small_skips) / total;
@@ -463,9 +459,7 @@ TEST_F(RhythmSyncTest, ConsistentPhraseQualityAcrossSeeds) {
     // Sort by time
     std::vector<NoteEvent> sorted_notes = notes;
     std::sort(sorted_notes.begin(), sorted_notes.end(),
-              [](const NoteEvent& a, const NoteEvent& b) {
-                return a.start_tick < b.start_tick;
-              });
+              [](const NoteEvent& a, const NoteEvent& b) { return a.start_tick < b.start_tick; });
 
     // Check: unique pitches >= 5 and max consecutive < 5
     std::set<uint8_t> unique_pitches;
@@ -520,8 +514,8 @@ TEST_F(RhythmSyncTest, MotifRhythmTemplateVariety) {
   // Should observe at least 2 different note counts (different templates selected)
   // With 20 seeds and 7 templates at weighted probabilities, we expect variety
   EXPECT_GE(observed_note_counts.size(), 2u)
-      << "Only " << observed_note_counts.size()
-      << " distinct rhythm pattern sizes observed across " << kNumSeeds << " seeds. "
+      << "Only " << observed_note_counts.size() << " distinct rhythm pattern sizes observed across "
+      << kNumSeeds << " seeds. "
       << "Expected at least 2 different patterns for template variety.";
 }
 
@@ -545,8 +539,7 @@ TEST_F(RhythmSyncTest, MotifAccentPatternApplied) {
 
   // Accent patterns should produce at least 2 different velocity levels
   EXPECT_GE(unique_velocities.size(), 2u)
-      << "Only " << unique_velocities.size()
-      << " distinct velocity levels in motif pattern. "
+      << "Only " << unique_velocities.size() << " distinct velocity levels in motif pattern. "
       << "Expected at least 2 for accent pattern variation.";
 }
 
@@ -587,9 +580,8 @@ TEST_F(RhythmSyncTest, RhythmSyncHumanizeKeepsVocalTimingStable) {
     }
   }
   float vel_diff_ratio = static_cast<float>(vel_diffs) / compare_count;
-  EXPECT_GT(vel_diff_ratio, 0.1f)
-      << "Velocity humanization should still affect vocal (found "
-      << (vel_diff_ratio * 100) << "% differences)";
+  EXPECT_GT(vel_diff_ratio, 0.1f) << "Velocity humanization should still affect vocal (found "
+                                  << (vel_diff_ratio * 100) << "% differences)";
 }
 
 // Test: RhythmSync motif should maintain density consistent with its template
@@ -625,10 +617,9 @@ TEST_F(RhythmSyncTest, MotifMinimumDensity) {
 
   // Allow up to 15% of bars below minimum (section boundaries may have partial bars)
   float below_ratio = static_cast<float>(bars_below_minimum) / bar_note_counts.size();
-  EXPECT_LT(below_ratio, 0.15f)
-      << bars_below_minimum << " out of " << bar_note_counts.size()
-      << " bars have fewer than " << min_notes_per_bar << " notes. "
-      << "RhythmSync riffs should maintain template-consistent density.";
+  EXPECT_LT(below_ratio, 0.15f) << bars_below_minimum << " out of " << bar_note_counts.size()
+                                << " bars have fewer than " << min_notes_per_bar << " notes. "
+                                << "RhythmSync riffs should maintain template-consistent density.";
 }
 
 // =============================================================================
@@ -662,8 +653,8 @@ TEST_F(RhythmSyncTest, BpmClampReflectedInOutput) {
         << "Input BPM=" << tc.input_bpm << ": output BPM=" << actual_bpm
         << " is below expected min " << tc.expected_min;
     EXPECT_LE(actual_bpm, tc.expected_max)
-        << "Input BPM=" << tc.input_bpm << ": output BPM=" << actual_bpm
-        << " exceeds expected max " << tc.expected_max;
+        << "Input BPM=" << tc.input_bpm << ": output BPM=" << actual_bpm << " exceeds expected max "
+        << tc.expected_max;
   }
 }
 
@@ -707,10 +698,9 @@ TEST_F(RhythmSyncTest, MotifSurvivesLayerScheduleInRhythmSync) {
         }
       }
 
-      EXPECT_GT(motif_count, 0)
-          << "Motif has no notes at bar " << (section.start_bar + bar_offset) << " in section '"
-          << section.name << "' (tick " << bar_start << "-" << bar_end
-          << ") despite being active in layer schedule";
+      EXPECT_GT(motif_count, 0) << "Motif has no notes at bar " << (section.start_bar + bar_offset)
+                                << " in section '" << section.name << "' (tick " << bar_start << "-"
+                                << bar_end << ") despite being active in layer schedule";
     }
 
     // Verify layer schedule is actually working by checking if Arpeggio
@@ -725,9 +715,8 @@ TEST_F(RhythmSyncTest, MotifSurvivesLayerScheduleInRhythmSync) {
           arp_count++;
         }
       }
-      EXPECT_EQ(arp_count, 0)
-          << "Arpeggio should be absent at bar 0 of section '" << section.name
-          << "' per layer schedule, but found " << arp_count << " notes";
+      EXPECT_EQ(arp_count, 0) << "Arpeggio should be absent at bar 0 of section '" << section.name
+                              << "' per layer schedule, but found " << arp_count << " notes";
     }
   }
 
@@ -787,10 +776,10 @@ TEST_F(RhythmSyncTest, PerSectionVocalMotifAlignment) {
     }
 
     float ratio = static_cast<float>(matching) / sec_vocal_onsets.size();
-    EXPECT_GE(ratio, 0.60f)
-        << "Section '" << section.name << "' (tick " << sec_start << "-" << sec_end
-        << "): vocal-motif onset match = " << (ratio * 100) << "%, expected >= 60%. " << matching
-        << "/" << sec_vocal_onsets.size() << " onsets matched.";
+    EXPECT_GE(ratio, 0.60f) << "Section '" << section.name << "' (tick " << sec_start << "-"
+                            << sec_end << "): vocal-motif onset match = " << (ratio * 100)
+                            << "%, expected >= 60%. " << matching << "/" << sec_vocal_onsets.size()
+                            << " onsets matched.";
   }
 
   EXPECT_GT(sections_checked, 0) << "No sections with sufficient vocal+motif notes to check";
@@ -831,9 +820,9 @@ TEST_F(RhythmSyncTest, MotifRhythmTemplateDistribution) {
   }
 
   float max_ratio = static_cast<float>(max_count) / total;
-  EXPECT_LE(max_ratio, 0.50f)
-      << "Template " << max_id << " appears " << (max_ratio * 100) << "% of the time (" << max_count
-      << "/" << total << "). Expected <= 50%.";
+  EXPECT_LE(max_ratio, 0.50f) << "Template " << max_id << " appears " << (max_ratio * 100)
+                              << "% of the time (" << max_count << "/" << total
+                              << "). Expected <= 50%.";
 }
 
 // Test: Beat position diversity (on-beat < 80%, offbeat > 15%, 16th exists)
@@ -871,13 +860,13 @@ TEST_F(RhythmSyncTest, MotifBeatPositionDiversity) {
   float onbeat_ratio = static_cast<float>(total_onbeat) / total_notes;
   float offbeat_ratio = static_cast<float>(total_offbeat) / total_notes;
 
-  EXPECT_LT(onbeat_ratio, 0.80f)
-      << "On-beat ratio = " << (onbeat_ratio * 100) << "%, expected < 80%. "
-      << "Patterns are too rhythmically uniform.";
+  EXPECT_LT(onbeat_ratio, 0.80f) << "On-beat ratio = " << (onbeat_ratio * 100)
+                                 << "%, expected < 80%. "
+                                 << "Patterns are too rhythmically uniform.";
 
-  EXPECT_GT(offbeat_ratio, 0.15f)
-      << "8th-note offbeat ratio = " << (offbeat_ratio * 100) << "%, expected > 15%. "
-      << "Patterns lack syncopation.";
+  EXPECT_GT(offbeat_ratio, 0.15f) << "8th-note offbeat ratio = " << (offbeat_ratio * 100)
+                                  << "%, expected > 15%. "
+                                  << "Patterns lack syncopation.";
 
   EXPECT_GT(total_sixteenth, 0)
       << "No 16th-note positions found across " << kNumSeeds
@@ -941,8 +930,8 @@ TEST_F(RhythmSyncTest, MotifContinuityAcrossVocalSections) {
   }
 
   EXPECT_EQ(missing_bars, 0) << "Found " << missing_bars
-                              << " bars where Vocal is present but Motif is absent. "
-                              << "First missing bars: [" << detail << "]";
+                             << " bars where Vocal is present but Motif is absent. "
+                             << "First missing bars: [" << detail << "]";
 }
 
 // =============================================================================
@@ -1005,9 +994,7 @@ TEST_F(RhythmLockVocalQuality, PhraseStartOnStrongBeat) {
     // Sort by time
     std::vector<NoteEvent> sorted = vocal_notes;
     std::sort(sorted.begin(), sorted.end(),
-              [](const NoteEvent& a, const NoteEvent& b) {
-                return a.start_tick < b.start_tick;
-              });
+              [](const NoteEvent& a, const NoteEvent& b) { return a.start_tick < b.start_tick; });
 
     // Detect phrase starts: first note, or after a gap >= half beat
     constexpr Tick kGapThreshold = TICKS_PER_BEAT / 2;
@@ -1034,9 +1021,9 @@ TEST_F(RhythmLockVocalQuality, PhraseStartOnStrongBeat) {
   }
 
   float ratio = static_cast<float>(strong_beat_starts) / total_phrase_starts;
-  EXPECT_GE(ratio, 0.33f)
-      << "Only " << (ratio * 100) << "% of phrase starts on strong beats. "
-      << "Expected >= 33% (" << strong_beat_starts << "/" << total_phrase_starts << ").";
+  EXPECT_GE(ratio, 0.33f) << "Only " << (ratio * 100) << "% of phrase starts on strong beats. "
+                          << "Expected >= 33% (" << strong_beat_starts << "/" << total_phrase_starts
+                          << ").";
 }
 
 // Test: Strong beat notes should have minimum duration (no grace notes on downbeats)
@@ -1052,8 +1039,8 @@ TEST_F(RhythmLockVocalQuality, MinStrongBeatDuration) {
 
     const auto& vocal_notes = gen.getSong().vocal().notes();
     for (const auto& note : vocal_notes) {
-      float beat_in_bar = std::fmod(
-          static_cast<float>(note.start_tick % TICKS_PER_BAR) / TICKS_PER_BEAT, 4.0f);
+      float beat_in_bar =
+          std::fmod(static_cast<float>(note.start_tick % TICKS_PER_BAR) / TICKS_PER_BEAT, 4.0f);
       bool is_strong = (beat_in_bar < 0.1f || std::abs(beat_in_bar - 2.0f) < 0.1f);
       if (!is_strong) continue;
 
@@ -1069,10 +1056,10 @@ TEST_F(RhythmLockVocalQuality, MinStrongBeatDuration) {
   }
 
   float short_ratio = static_cast<float>(short_strong_beat_notes) / total_strong_beat_notes;
-  EXPECT_LE(short_ratio, 0.15f)
-      << short_strong_beat_notes << " of " << total_strong_beat_notes
-      << " strong beat notes (" << (short_ratio * 100) << "%) are shorter than an 8th note. "
-      << "Expected <= 15%.";
+  EXPECT_LE(short_ratio, 0.15f) << short_strong_beat_notes << " of " << total_strong_beat_notes
+                                << " strong beat notes (" << (short_ratio * 100)
+                                << "%) are shorter than an 8th note. "
+                                << "Expected <= 15%.";
 }
 
 // Test: Chorus sections should have adequate note density
@@ -1128,9 +1115,8 @@ TEST_F(RhythmLockVocalQuality, ChorusPitchRangeAdequate) {
   }
 
   // At least 3 out of 5 seeds should have adequate chorus range
-  EXPECT_GE(seeds_with_good_range, 3)
-      << "Only " << seeds_with_good_range << " out of " << kNumSeeds
-      << " seeds had Chorus pitch range >= 7 semitones.";
+  EXPECT_GE(seeds_with_good_range, 3) << "Only " << seeds_with_good_range << " out of " << kNumSeeds
+                                      << " seeds had Chorus pitch range >= 7 semitones.";
 }
 
 // Test: Phrase contour coherence (pitch trajectory should follow contour direction)
@@ -1150,9 +1136,7 @@ TEST_F(RhythmLockVocalQuality, PhraseContourCoherence) {
     // Sort by time
     std::vector<NoteEvent> sorted = vocal_notes;
     std::sort(sorted.begin(), sorted.end(),
-              [](const NoteEvent& a, const NoteEvent& b) {
-                return a.start_tick < b.start_tick;
-              });
+              [](const NoteEvent& a, const NoteEvent& b) { return a.start_tick < b.start_tick; });
 
     // Segment into phrases (gap >= half beat)
     constexpr Tick kGapThreshold = TICKS_PER_BEAT / 2;
@@ -1175,11 +1159,9 @@ TEST_F(RhythmLockVocalQuality, PhraseContourCoherence) {
       // Compute net pitch direction (first half vs second half)
       size_t mid = phrase.size() / 2;
       float first_half_avg = 0.0f, second_half_avg = 0.0f;
-      for (size_t j = 0; j < mid; ++j)
-        first_half_avg += phrase[j].note;
+      for (size_t j = 0; j < mid; ++j) first_half_avg += phrase[j].note;
       first_half_avg /= mid;
-      for (size_t j = mid; j < phrase.size(); ++j)
-        second_half_avg += phrase[j].note;
+      for (size_t j = mid; j < phrase.size(); ++j) second_half_avg += phrase[j].note;
       second_half_avg /= (phrase.size() - mid);
 
       // A phrase is "coherent" if it has a discernible direction
@@ -1205,9 +1187,9 @@ TEST_F(RhythmLockVocalQuality, PhraseContourCoherence) {
   }
 
   float ratio = static_cast<float>(coherent_phrases) / total_phrases;
-  EXPECT_GE(ratio, 0.50f)
-      << "Only " << (ratio * 100) << "% of phrases have coherent contour. "
-      << "Expected >= 50% (" << coherent_phrases << "/" << total_phrases << ").";
+  EXPECT_GE(ratio, 0.50f) << "Only " << (ratio * 100) << "% of phrases have coherent contour. "
+                          << "Expected >= 50% (" << coherent_phrases << "/" << total_phrases
+                          << ").";
 }
 
 // =============================================================================
@@ -1261,11 +1243,13 @@ TEST_F(RhythmLockVocalQuality, MotifVocalRegisterOverlap) {
     int vocal_range = vocal_max - vocal_min;
     if (vocal_range <= 0) continue;
 
-    int overlap_low = std::max(static_cast<int>(vocal_min), static_cast<int>(motif_pitches.front()));
-    int overlap_high = std::min(static_cast<int>(vocal_max), static_cast<int>(motif_pitches.back()));
+    int overlap_low =
+        std::max(static_cast<int>(vocal_min), static_cast<int>(motif_pitches.front()));
+    int overlap_high =
+        std::min(static_cast<int>(vocal_max), static_cast<int>(motif_pitches.back()));
     float overlap_ratio = (overlap_high > overlap_low)
-        ? static_cast<float>(overlap_high - overlap_low) / vocal_range
-        : 0.0f;
+                              ? static_cast<float>(overlap_high - overlap_low) / vocal_range
+                              : 0.0f;
 
     // Good separation: overlap <= 50% OR median distance >= 5
     if (overlap_ratio <= 0.50f || separation >= 5) {
@@ -1303,8 +1287,8 @@ TEST_F(RhythmLockVocalQuality, VocalShortNoteRatio) {
       total_notes++;
       if (note.duration < threshold) {
         // Also check if it's on a weak beat (strong beat short notes are OK for articulation)
-        float beat_in_bar = std::fmod(
-            static_cast<float>(note.start_tick % TICKS_PER_BAR) / TICKS_PER_BEAT, 4.0f);
+        float beat_in_bar =
+            std::fmod(static_cast<float>(note.start_tick % TICKS_PER_BAR) / TICKS_PER_BEAT, 4.0f);
         bool is_strong = (beat_in_bar < 0.1f || std::abs(beat_in_bar - 2.0f) < 0.1f);
         if (!is_strong) {
           short_notes++;
@@ -1318,10 +1302,9 @@ TEST_F(RhythmLockVocalQuality, VocalShortNoteRatio) {
   }
 
   float short_ratio = static_cast<float>(short_notes) / total_notes;
-  EXPECT_LE(short_ratio, 0.20f)
-      << short_notes << " of " << total_notes
-      << " vocal notes (" << (short_ratio * 100) << "%) are weak-beat short notes. "
-      << "Expected <= 20%.";
+  EXPECT_LE(short_ratio, 0.20f) << short_notes << " of " << total_notes << " vocal notes ("
+                                << (short_ratio * 100) << "%) are weak-beat short notes. "
+                                << "Expected <= 20%.";
 }
 
 // Test: Chorus note density should be stable across seeds
@@ -1356,9 +1339,8 @@ TEST_F(RhythmLockVocalQuality, ChorusNoteDensityStable) {
   float stddev = std::sqrt(var_sum / densities.size());
 
   // Standard deviation should be reasonable (< 1.5 notes/bar)
-  EXPECT_LT(stddev, 1.5f)
-      << "Chorus density stddev = " << stddev << " (mean = " << mean
-      << "). Expected < 1.5 for stable density.";
+  EXPECT_LT(stddev, 1.5f) << "Chorus density stddev = " << stddev << " (mean = " << mean
+                          << "). Expected < 1.5 for stable density.";
 }
 
 // Test: Chorus pitch range should be adequate across seeds
@@ -1390,9 +1372,8 @@ TEST_F(RhythmLockVocalQuality, ChorusPitchRangeStatistical) {
   std::sort(ranges.begin(), ranges.end());
   int median_range = ranges[ranges.size() / 2];
 
-  EXPECT_GE(median_range, 5)
-      << "Median chorus pitch range = " << median_range << " semitones. "
-      << "Expected >= 5 for adequate melodic variety.";
+  EXPECT_GE(median_range, 5) << "Median chorus pitch range = " << median_range << " semitones. "
+                             << "Expected >= 5 for adequate melodic variety.";
 }
 
 // =============================================================================
@@ -1417,15 +1398,12 @@ TEST_F(RhythmLockVocalQuality, RhythmSyncVocalNoIsolatedShortNotes) {
 
       uint16_t bpm = gen.getSong().bpm();
       // min_interval based on 200ms vocal onset constraint
-      Tick min_interval = static_cast<Tick>(
-          std::ceil(0.2f * bpm * TICKS_PER_BEAT / 60.0f));
+      Tick min_interval = static_cast<Tick>(std::ceil(0.2f * bpm * TICKS_PER_BEAT / 60.0f));
 
       // Sort by time
       std::vector<NoteEvent> sorted = vocal_notes;
       std::sort(sorted.begin(), sorted.end(),
-                [](const NoteEvent& a, const NoteEvent& b) {
-                  return a.start_tick < b.start_tick;
-                });
+                [](const NoteEvent& a, const NoteEvent& b) { return a.start_tick < b.start_tick; });
 
       int isolated_short_count = 0;
       for (size_t i = 0; i < sorted.size(); ++i) {
@@ -1439,13 +1417,12 @@ TEST_F(RhythmLockVocalQuality, RhythmSyncVocalNoIsolatedShortNotes) {
           // Check exceptions: phrase boundary vicinity
           bool near_phrase_boundary = false;
           if (i > 0) {
-            Tick gap_before = sorted[i].start_tick -
-                (sorted[i - 1].start_tick + sorted[i - 1].duration);
+            Tick gap_before =
+                sorted[i].start_tick - (sorted[i - 1].start_tick + sorted[i - 1].duration);
             if (gap_before > TICK_QUARTER) near_phrase_boundary = true;
           }
           if (i + 1 < sorted.size()) {
-            Tick gap_after = sorted[i + 1].start_tick -
-                (sorted[i].start_tick + sorted[i].duration);
+            Tick gap_after = sorted[i + 1].start_tick - (sorted[i].start_tick + sorted[i].duration);
             if (gap_after > TICK_QUARTER) near_phrase_boundary = true;
           }
           // Last note in section is also exempt
@@ -1459,10 +1436,10 @@ TEST_F(RhythmLockVocalQuality, RhythmSyncVocalNoIsolatedShortNotes) {
 
       // Allow at most 12% isolated short notes
       float ratio = static_cast<float>(isolated_short_count) / sorted.size();
-      EXPECT_LE(ratio, 0.12f)
-          << "Blueprint " << bp << " seed " << params_.seed
-          << ": " << isolated_short_count << "/" << sorted.size()
-          << " isolated short notes (" << (ratio * 100) << "%). Expected <= 12%.";
+      EXPECT_LE(ratio, 0.12f) << "Blueprint " << bp << " seed " << params_.seed << ": "
+                              << isolated_short_count << "/" << sorted.size()
+                              << " isolated short notes (" << (ratio * 100)
+                              << "%). Expected <= 12%.";
     }
   }
 }
@@ -1488,9 +1465,7 @@ TEST_F(RhythmLockVocalQuality, RhythmSyncVocalDensityControl) {
       // Sort vocal notes by time
       std::vector<NoteEvent> sorted = vocal_notes;
       std::sort(sorted.begin(), sorted.end(),
-                [](const NoteEvent& a, const NoteEvent& b) {
-                  return a.start_tick < b.start_tick;
-                });
+                [](const NoteEvent& a, const NoteEvent& b) { return a.start_tick < b.start_tick; });
 
       // Check overall vocal density across all non-empty sections
       int total_vocal = 0;
@@ -1515,13 +1490,11 @@ TEST_F(RhythmLockVocalQuality, RhythmSyncVocalDensityControl) {
         if (note_count >= 2) {
           float notes_per_bar = static_cast<float>(note_count) / section.bars;
           EXPECT_GE(notes_per_bar, 1.0f)
-              << "Blueprint " << bp << " seed " << params_.seed
-              << " section '" << section.name << "': " << notes_per_bar
-              << " notes/bar is below lower bound of 1.0.";
+              << "Blueprint " << bp << " seed " << params_.seed << " section '" << section.name
+              << "': " << notes_per_bar << " notes/bar is below lower bound of 1.0.";
           EXPECT_LE(notes_per_bar, 10.0f)
-              << "Blueprint " << bp << " seed " << params_.seed
-              << " section '" << section.name << "': " << notes_per_bar
-              << " notes/bar exceeds upper bound of 10.0.";
+              << "Blueprint " << bp << " seed " << params_.seed << " section '" << section.name
+              << "': " << notes_per_bar << " notes/bar exceeds upper bound of 10.0.";
         }
       }
 
@@ -1529,9 +1502,8 @@ TEST_F(RhythmLockVocalQuality, RhythmSyncVocalDensityControl) {
       if (total_bars > 0) {
         float overall_density = static_cast<float>(total_vocal) / total_bars;
         EXPECT_GE(overall_density, 1.5f)
-            << "Blueprint " << bp << " seed " << params_.seed
-            << ": overall vocal density " << overall_density
-            << " notes/bar is below 1.5.";
+            << "Blueprint " << bp << " seed " << params_.seed << ": overall vocal density "
+            << overall_density << " notes/bar is below 1.5.";
       }
     }
   }

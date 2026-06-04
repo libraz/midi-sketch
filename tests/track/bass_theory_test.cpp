@@ -48,15 +48,13 @@ bool isDiatonic(int pitch) {
 
 // Pitch class names for diagnostic output
 const char* pitchClassName(int pitch_class) {
-  static const char* names[] = {"C", "C#", "D", "D#", "E", "F",
-                                "F#", "G", "G#", "A", "A#", "B"};
+  static const char* names[] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
   return names[((pitch_class % 12) + 12) % 12];
 }
 
 // Degree names for diagnostic output
 const char* degreeName(int8_t degree) {
-  static const char* names[] = {"I(C)", "ii(Dm)", "iii(Em)", "IV(F)",
-                                "V(G)", "vi(Am)", "vii(B)"};
+  static const char* names[] = {"I(C)", "ii(Dm)", "iii(Em)", "IV(F)", "V(G)", "vi(Am)", "vii(B)"};
   if (degree >= 0 && degree < 7) return names[degree];
   return "??";
 }
@@ -219,8 +217,7 @@ TEST_F(BassDiatonicTest, WalkingBassPatternIsDiatonic) {
           static_cast<double>(non_diatonic_other) / static_cast<double>(total_notes);
       EXPECT_LT(chromatic_ratio, 0.10)
           << "CityPop seed " << seed << ": too many non-diatonic notes on beats 1-3 ("
-          << non_diatonic_other << "/" << total_notes << " = " << (chromatic_ratio * 100.0)
-          << "%)";
+          << non_diatonic_other << "/" << total_notes << " = " << (chromatic_ratio * 100.0) << "%)";
     }
   }
 }
@@ -285,10 +282,8 @@ TEST_F(BassDiatonicTest, RegressionOriginalBugCase) {
 
 // Test: Diatonic chord progressions produce diatonic bass
 TEST_F(BassDiatonicTest, DiatonicChordProgressionsProduceDiatonicBass) {
-  std::vector<uint8_t> diatonic_progressions = {
-      0,  1,  2,  3,  4,  5,  6, 7, 8, 9, 10,
-      13, 14, 15, 16, 17, 18, 19
-  };
+  std::vector<uint8_t> diatonic_progressions = {0, 1,  2,  3,  4,  5,  6,  7,  8,
+                                                9, 10, 13, 14, 15, 16, 17, 18, 19};
 
   for (uint8_t chord_id : diatonic_progressions) {
     params_.chord_id = chord_id;
@@ -335,8 +330,8 @@ TEST_F(BassDiatonicTest, BorrowedChordProgressionsUseCorrectRoots) {
 TEST_F(BassDiatonicTest, BassOnBeatOneMustBeChordTone) {
   const Tick BEAT_THRESHOLD = TICKS_PER_BEAT / 4;
 
-  std::vector<Mood> test_moods = {Mood::StraightPop, Mood::ElectroPop, Mood::Yoasobi, Mood::IdolPop,
-                                  Mood::CityPop};
+  std::vector<Mood> test_moods = {Mood::StraightPop, Mood::ElectroPop, Mood::AnimeHighEnergy,
+                                  Mood::IdolPop, Mood::CityPop};
 
   for (Mood mood : test_moods) {
     params_.mood = mood;
@@ -396,8 +391,9 @@ TEST_F(BassDiatonicTest, BassOnBeatOneMustBeChordTone) {
             non_chord_tone_count++;
             if (issues.size() < 3) {
               std::string issue = "Bar " + std::to_string(bar) +
-                                  ": bass=" + pitchClassName(pitch_class) + " not in chord (degree " +
-                                  std::to_string(degree) + ", gen_degree=" + std::to_string(gen_degree) + ")";
+                                  ": bass=" + pitchClassName(pitch_class) +
+                                  " not in chord (degree " + std::to_string(degree) +
+                                  ", gen_degree=" + std::to_string(gen_degree) + ")";
               issues.push_back(issue);
             }
           }
@@ -428,7 +424,8 @@ class ChordFunctionApproachTest : public ::testing::Test {
 TEST_F(ChordFunctionApproachTest, TonicChordFunctionClassification) {
   std::vector<int8_t> tonic_degrees = {0, 2, 5};
   for (int8_t deg : tonic_degrees) {
-    EXPECT_TRUE(deg == 0 || deg == 2 || deg == 5) << "Degree " << (int)deg << " should be tonic function";
+    EXPECT_TRUE(deg == 0 || deg == 2 || deg == 5)
+        << "Degree " << (int)deg << " should be tonic function";
   }
 }
 
@@ -469,7 +466,8 @@ TEST_F(ChromaticApproachTest, ChromaticApproachPitchClasses) {
   for (const auto& test_case : cases) {
     int approach = (test_case.target_pc - 1 + 12) % 12;
     EXPECT_EQ(approach, test_case.expected_approach_pc)
-        << "Target PC " << test_case.target_pc << " should have approach PC " << test_case.expected_approach_pc;
+        << "Target PC " << test_case.target_pc << " should have approach PC "
+        << test_case.expected_approach_pc;
   }
 }
 
@@ -571,14 +569,13 @@ TEST_F(WalkingBassApproachTest, ChromaticApproachPreferredForSmallIntervals) {
   };
 
   for (const auto& test_case : cases) {
-    int interval = std::abs(static_cast<int>(test_case.next_root) -
-                            static_cast<int>(test_case.current_root));
+    int interval =
+        std::abs(static_cast<int>(test_case.next_root) - static_cast<int>(test_case.current_root));
     interval = interval % 12;
     bool use_chromatic = (interval >= 2 && interval <= 3);
     EXPECT_EQ(use_chromatic, test_case.expect_chromatic)
         << "Current root=" << static_cast<int>(test_case.current_root)
-        << " Next root=" << static_cast<int>(test_case.next_root)
-        << " Interval=" << interval;
+        << " Next root=" << static_cast<int>(test_case.next_root) << " Interval=" << interval;
   }
 }
 
@@ -649,8 +646,8 @@ class BassChordToneTest : public ::testing::Test {
     return pitches;
   }
 
-  std::vector<NonChordToneInfo> findNonChordToneNotes(
-      const Song& song, const IHarmonyContext& harmony) {
+  std::vector<NonChordToneInfo> findNonChordToneNotes(const Song& song,
+                                                      const IHarmonyContext& harmony) {
     std::vector<NonChordToneInfo> results;
     const auto& bass_track = song.bass();
     const auto& motif_track = song.motif();
@@ -686,8 +683,7 @@ class BassChordToneTest : public ::testing::Test {
     for (const auto& info : infos) {
       oss << "  Bar " << info.bar << " beat " << info.beat
           << (info.is_approach_note ? " [APPROACH]" : "")
-          << (info.is_strong_beat ? " [STRONG]" : "")
-          << " | tick=" << info.tick
+          << (info.is_strong_beat ? " [STRONG]" : "") << " | tick=" << info.tick
           << " | bass=" << pitchToNoteName(info.pitch)
           << " (pc=" << pitchClassName(info.pitch_class) << ")"
           << " | chord=" << degreeName(info.chord_degree)
@@ -766,15 +762,13 @@ TEST_F(BassChordToneTest, DiagnoseRhythmLockSeed42NonChordTones) {
   }
 
   int non_approach_nct = strong_beat_nct + weak_beat_nct;
-  double non_approach_ratio = total_notes > 0
-      ? static_cast<double>(non_approach_nct) / total_notes
-      : 0.0;
+  double non_approach_ratio =
+      total_notes > 0 ? static_cast<double>(non_approach_nct) / total_notes : 0.0;
 
   EXPECT_LT(non_approach_ratio, 0.06)
-      << "Non-approach non-chord-tone bass notes exceed 5%: "
-      << non_approach_nct << "/" << total_notes
-      << " (" << std::fixed << std::setprecision(1)
-      << (non_approach_ratio * 100.0) << "%)" << diag;
+      << "Non-approach non-chord-tone bass notes exceed 5%: " << non_approach_nct << "/"
+      << total_notes << " (" << std::fixed << std::setprecision(1) << (non_approach_ratio * 100.0)
+      << "%)" << diag;
 }
 
 TEST_F(BassChordToneTest, DiagnoseCollisionCandidatesOnFChord) {
@@ -792,37 +786,34 @@ TEST_F(BassChordToneTest, DiagnoseCollisionCandidatesOnFChord) {
     if (info.is_approach_note) continue;
     f_chord_issues++;
 
-    std::cout << "\n=== F chord non-chord-tone at bar "
-              << info.bar << " beat " << info.beat << " ===\n";
-    std::cout << "Bass pitch: " << pitchToNoteName(info.pitch)
-              << " (MIDI " << static_cast<int>(info.pitch) << ")\n";
+    std::cout << "\n=== F chord non-chord-tone at bar " << info.bar << " beat " << info.beat
+              << " ===\n";
+    std::cout << "Bass pitch: " << pitchToNoteName(info.pitch) << " (MIDI "
+              << static_cast<int>(info.pitch) << ")\n";
     std::cout << "F chord tones: " << formatChordTones(info.chord_tones) << "\n";
 
     if (!info.motif_pitches_at_tick.empty()) {
       std::cout << "Motif sounding: ";
       for (auto pitch : info.motif_pitches_at_tick) {
-        std::cout << pitchToNoteName(pitch)
-                  << "(" << static_cast<int>(pitch) << ") ";
+        std::cout << pitchToNoteName(pitch) << "(" << static_cast<int>(pitch) << ") ";
       }
       std::cout << "\n";
     }
     if (!info.vocal_pitches_at_tick.empty()) {
       std::cout << "Vocal sounding: ";
       for (auto pitch : info.vocal_pitches_at_tick) {
-        std::cout << pitchToNoteName(pitch)
-                  << "(" << static_cast<int>(pitch) << ") ";
+        std::cout << pitchToNoteName(pitch) << "(" << static_cast<int>(pitch) << ") ";
       }
       std::cout << "\n";
     }
 
     uint8_t desired_root = 53;
-    auto candidates = getSafePitchCandidates(
-        harmony, desired_root, info.tick, TICKS_PER_BEAT,
-        TrackRole::Bass, BASS_LOW, BASS_HIGH,
-        PitchPreference::PreferRootFifth, 10);
+    auto candidates =
+        getSafePitchCandidates(harmony, desired_root, info.tick, TICKS_PER_BEAT, TrackRole::Bass,
+                               BASS_LOW, BASS_HIGH, PitchPreference::PreferRootFifth, 10);
 
-    std::cout << "\nCandidates for desired " << pitchToNoteName(desired_root)
-              << " (MIDI " << static_cast<int>(desired_root) << "):\n";
+    std::cout << "\nCandidates for desired " << pitchToNoteName(desired_root) << " (MIDI "
+              << static_cast<int>(desired_root) << "):\n";
     for (size_t idx = 0; idx < candidates.size(); ++idx) {
       const auto& cand = candidates[idx];
       bool cand_is_ct = false;
@@ -832,30 +823,27 @@ TEST_F(BassChordToneTest, DiagnoseCollisionCandidatesOnFChord) {
           break;
         }
       }
-      std::cout << "  [" << idx << "] "
-                << pitchToNoteName(cand.pitch)
-                << " (MIDI " << static_cast<int>(cand.pitch) << ")"
+      std::cout << "  [" << idx << "] " << pitchToNoteName(cand.pitch) << " (MIDI "
+                << static_cast<int>(cand.pitch) << ")"
                 << " ct=" << (cand_is_ct ? "Y" : "N")
                 << " r5=" << (cand.is_root_or_fifth ? "Y" : "N")
                 << " strat=" << collisionAvoidStrategyToString(cand.strategy)
                 << " interval=" << static_cast<int>(cand.interval_from_desired)
-                << " collider=" << trackRoleToString(cand.colliding_track)
-                << "(" << static_cast<int>(cand.colliding_pitch) << ")"
+                << " collider=" << trackRoleToString(cand.colliding_track) << "("
+                << static_cast<int>(cand.colliding_pitch) << ")"
                 << "\n";
     }
 
     uint8_t desired_fifth = 48;
-    auto fifth_candidates = getSafePitchCandidates(
-        harmony, desired_fifth, info.tick, TICKS_PER_BEAT,
-        TrackRole::Bass, BASS_LOW, BASS_HIGH,
-        PitchPreference::PreferRootFifth, 5);
+    auto fifth_candidates =
+        getSafePitchCandidates(harmony, desired_fifth, info.tick, TICKS_PER_BEAT, TrackRole::Bass,
+                               BASS_LOW, BASS_HIGH, PitchPreference::PreferRootFifth, 5);
 
     if (!fifth_candidates.empty()) {
       std::cout << "\nCandidates for C3(48) as 5th of F:\n";
       for (size_t idx = 0; idx < fifth_candidates.size(); ++idx) {
         const auto& cand = fifth_candidates[idx];
-        std::cout << "  [" << idx << "] "
-                  << pitchToNoteName(cand.pitch)
+        std::cout << "  [" << idx << "] " << pitchToNoteName(cand.pitch)
                   << " strat=" << collisionAvoidStrategyToString(cand.strategy)
                   << " safe=" << (cand.strategy == CollisionAvoidStrategy::None ? "YES" : "no")
                   << "\n";
@@ -867,8 +855,7 @@ TEST_F(BassChordToneTest, DiagnoseCollisionCandidatesOnFChord) {
     std::cout << "\n" << test::CollisionTestHelper::formatSnapshot(snapshot);
   }
 
-  std::cout << "\nTotal F chord non-approach non-chord-tone issues: "
-            << f_chord_issues << "\n";
+  std::cout << "\nTotal F chord non-approach non-chord-tone issues: " << f_chord_issues << "\n";
 }
 
 TEST_F(BassChordToneTest, RhythmLockNonChordToneRatioAcrossSeeds) {
@@ -898,33 +885,30 @@ TEST_F(BassChordToneTest, RhythmLockNonChordToneRatioAcrossSeeds) {
     total_notes_all += static_cast<int>(total);
     non_chord_tone_non_approach_all += non_approach;
 
-    double ratio = total > 0
-        ? static_cast<double>(non_approach) / total : 0.0;
+    double ratio = total > 0 ? static_cast<double>(non_approach) / total : 0.0;
     if (ratio > worst_ratio) {
       worst_ratio = ratio;
       worst_seed = seed;
     }
   }
 
-  double overall_ratio = total_notes_all > 0
-      ? static_cast<double>(non_chord_tone_non_approach_all) / total_notes_all
-      : 0.0;
+  double overall_ratio =
+      total_notes_all > 0 ? static_cast<double>(non_chord_tone_non_approach_all) / total_notes_all
+                          : 0.0;
 
   std::cout << "\n=== RhythmLock bass chord-tone analysis (excluding approach notes) ===\n";
   std::cout << "Seeds tested: " << NUM_SEEDS << "\n";
   std::cout << "Total bass notes: " << total_notes_all << "\n";
   std::cout << "Non-approach non-chord-tone: " << non_chord_tone_non_approach_all << "\n";
-  std::cout << "Overall ratio: " << std::fixed << std::setprecision(1)
-            << (overall_ratio * 100.0) << "%\n";
-  std::cout << "Worst seed: " << worst_seed << " ("
-            << std::fixed << std::setprecision(1)
+  std::cout << "Overall ratio: " << std::fixed << std::setprecision(1) << (overall_ratio * 100.0)
+            << "%\n";
+  std::cout << "Worst seed: " << worst_seed << " (" << std::fixed << std::setprecision(1)
             << (worst_ratio * 100.0) << "%)\n";
 
-  EXPECT_LT(overall_ratio, 0.05)
-      << "Non-approach non-chord-tone ratio exceeds 5% across "
-      << NUM_SEEDS << " seeds: " << non_chord_tone_non_approach_all << "/"
-      << total_notes_all << " (" << std::fixed << std::setprecision(1)
-      << (overall_ratio * 100.0) << "%)";
+  EXPECT_LT(overall_ratio, 0.05) << "Non-approach non-chord-tone ratio exceeds 5% across "
+                                 << NUM_SEEDS << " seeds: " << non_chord_tone_non_approach_all
+                                 << "/" << total_notes_all << " (" << std::fixed
+                                 << std::setprecision(1) << (overall_ratio * 100.0) << "%)";
 }
 
 TEST_F(BassChordToneTest, CollisionAvoidanceShouldPreferChordTones) {
@@ -943,15 +927,13 @@ TEST_F(BassChordToneTest, CollisionAvoidanceShouldPreferChordTones) {
   for (const auto& info : non_chord_tones) {
     if (info.is_approach_note) continue;
 
-    uint8_t root_pitch = static_cast<uint8_t>(
-        degreeToRoot(info.chord_degree, Key::C));
+    uint8_t root_pitch = static_cast<uint8_t>(degreeToRoot(info.chord_degree, Key::C));
     while (root_pitch > BASS_HIGH) root_pitch -= 12;
     while (root_pitch < BASS_LOW) root_pitch += 12;
 
-    auto candidates = getSafePitchCandidates(
-        harmony, root_pitch, info.tick, TICKS_PER_BEAT,
-        TrackRole::Bass, BASS_LOW, BASS_HIGH,
-        PitchPreference::PreferRootFifth, 10);
+    auto candidates =
+        getSafePitchCandidates(harmony, root_pitch, info.tick, TICKS_PER_BEAT, TrackRole::Bass,
+                               BASS_LOW, BASS_HIGH, PitchPreference::PreferRootFifth, 10);
 
     if (candidates.empty()) continue;
     candidate_analysis_count++;
@@ -971,19 +953,15 @@ TEST_F(BassChordToneTest, CollisionAvoidanceShouldPreferChordTones) {
       chord_tone_preferred_count++;
     } else {
       non_chord_tone_preferred_count++;
-      std::cout << "  NON-CHORD-TONE preferred at bar " << info.bar
-                << " beat " << info.beat
+      std::cout << "  NON-CHORD-TONE preferred at bar " << info.bar << " beat " << info.beat
                 << ": top=" << pitchToNoteName(top.pitch)
-                << " strat=" << collisionAvoidStrategyToString(top.strategy)
-                << "\n";
+                << " strat=" << collisionAvoidStrategyToString(top.strategy) << "\n";
       for (size_t idx = 0; idx < candidates.size() && idx < 5; ++idx) {
         const auto& cand = candidates[idx];
-        std::cout << "    [" << idx << "] "
-                  << pitchToNoteName(cand.pitch)
+        std::cout << "    [" << idx << "] " << pitchToNoteName(cand.pitch)
                   << " ct=" << (cand.is_chord_tone ? "Y" : "N")
                   << " r5=" << (cand.is_root_or_fifth ? "Y" : "N")
-                  << " strat=" << collisionAvoidStrategyToString(cand.strategy)
-                  << "\n";
+                  << " strat=" << collisionAvoidStrategyToString(cand.strategy) << "\n";
       }
     }
   }
@@ -994,8 +972,7 @@ TEST_F(BassChordToneTest, CollisionAvoidanceShouldPreferChordTones) {
   std::cout << "Non-chord-tone preferred: " << non_chord_tone_preferred_count << "\n";
 
   if (candidate_analysis_count > 0) {
-    double ct_ratio = static_cast<double>(chord_tone_preferred_count)
-                      / candidate_analysis_count;
+    double ct_ratio = static_cast<double>(chord_tone_preferred_count) / candidate_analysis_count;
     EXPECT_GT(ct_ratio, 0.8)
         << "Bass collision avoidance should prefer chord tones in >80% of cases.";
   }
@@ -1029,21 +1006,19 @@ TEST_F(BassChordToneTest, GOnFChordBars) {
 
       uint32_t bar = note.start_tick / TICKS_PER_BAR;
       std::cout << "  G on F chord: bar " << bar << " beat " << beat
-                << " pitch=" << pitchToNoteName(note.note)
-                << (is_strong ? " [STRONG]" : "")
+                << " pitch=" << pitchToNoteName(note.note) << (is_strong ? " [STRONG]" : "")
                 << "\n";
     }
   }
 
-  std::cout << "\nG notes on F chord: " << g_on_f_chord
-            << " / " << total_f_chord_notes << " F-chord bass notes"
+  std::cout << "\nG notes on F chord: " << g_on_f_chord << " / " << total_f_chord_notes
+            << " F-chord bass notes"
             << " (strong beat: " << g_on_f_chord_strong << ")\n";
 
   if (total_f_chord_notes > 0) {
     double g_ratio = static_cast<double>(g_on_f_chord) / total_f_chord_notes;
-    EXPECT_LT(g_ratio, 0.25)
-        << "G notes on F chord exceed 25%: " << g_on_f_chord
-        << "/" << total_f_chord_notes;
+    EXPECT_LT(g_ratio, 0.25) << "G notes on F chord exceed 25%: " << g_on_f_chord << "/"
+                             << total_f_chord_notes;
   }
 }
 
@@ -1073,18 +1048,15 @@ TEST_F(BassChordToneTest, CompareNonChordToneRatesByBlueprint) {
       if (!info.is_approach_note) non_approach++;
     }
 
-    double ratio = total > 0
-        ? static_cast<double>(non_approach) / total : 0.0;
+    double ratio = total > 0 ? static_cast<double>(non_approach) / total : 0.0;
 
-    std::cout << "  Blueprint " << static_cast<int>(bp_id) << ": "
-              << non_approach << "/" << total
-              << " (" << std::fixed << std::setprecision(1)
-              << (ratio * 100.0) << "% non-chord-tone, excluding approach)\n";
+    std::cout << "  Blueprint " << static_cast<int>(bp_id) << ": " << non_approach << "/" << total
+              << " (" << std::fixed << std::setprecision(1) << (ratio * 100.0)
+              << "% non-chord-tone, excluding approach)\n";
 
-    EXPECT_LT(ratio, 0.15)
-        << "Blueprint " << static_cast<int>(bp_id)
-        << " has too many non-approach non-chord-tone bass notes: "
-        << non_approach << "/" << total;
+    EXPECT_LT(ratio, 0.15) << "Blueprint " << static_cast<int>(bp_id)
+                           << " has too many non-approach non-chord-tone bass notes: "
+                           << non_approach << "/" << total;
   }
 }
 
@@ -1107,30 +1079,27 @@ TEST_F(BassChordToneTest, IdentifyNonChordToneSourcePath) {
       continue;
     }
 
-    bool is_safe = harmony.isConsonantWithOtherTracks(
-        info.pitch, info.tick, TICKS_PER_BEAT, TrackRole::Bass);
+    bool is_safe =
+        harmony.isConsonantWithOtherTracks(info.pitch, info.tick, TICKS_PER_BEAT, TrackRole::Bass);
 
-    uint8_t correct_root = static_cast<uint8_t>(
-        degreeToRoot(info.chord_degree, Key::C));
+    uint8_t correct_root = static_cast<uint8_t>(degreeToRoot(info.chord_degree, Key::C));
     while (correct_root > BASS_HIGH) correct_root -= 12;
     while (correct_root < BASS_LOW) correct_root += 12;
 
-    bool root_is_safe = harmony.isConsonantWithOtherTracks(
-        correct_root, info.tick, TICKS_PER_BEAT, TrackRole::Bass);
+    bool root_is_safe = harmony.isConsonantWithOtherTracks(correct_root, info.tick, TICKS_PER_BEAT,
+                                                           TrackRole::Bass);
 
     if (is_safe) {
       from_safe_path++;
       std::cout << "  SAFE-BUT-WRONG: bar " << info.bar << " beat " << info.beat
-                << " bass=" << pitchToNoteName(info.pitch)
-                << " on " << degreeName(info.chord_degree)
-                << " (root " << pitchToNoteName(correct_root)
+                << " bass=" << pitchToNoteName(info.pitch) << " on "
+                << degreeName(info.chord_degree) << " (root " << pitchToNoteName(correct_root)
                 << " safe=" << (root_is_safe ? "yes" : "no") << ")\n";
     } else {
       from_collision_path++;
       std::cout << "  COLLISION-RESULT: bar " << info.bar << " beat " << info.beat
-                << " bass=" << pitchToNoteName(info.pitch)
-                << " on " << degreeName(info.chord_degree)
-                << " (root " << pitchToNoteName(correct_root)
+                << " bass=" << pitchToNoteName(info.pitch) << " on "
+                << degreeName(info.chord_degree) << " (root " << pitchToNoteName(correct_root)
                 << " safe=" << (root_is_safe ? "yes" : "no") << ")\n";
     }
   }

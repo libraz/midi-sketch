@@ -379,8 +379,7 @@ TEST(SETextEventTest, FullPopHasSectionMarkers) {
   const auto& se = gen.getSong().se();
 
   // FullPop has many sections; SE should have text events for section markers
-  EXPECT_GT(se.textEvents().size(), 4u)
-      << "FullPop should produce multiple section markers";
+  EXPECT_GT(se.textEvents().size(), 4u) << "FullPop should produce multiple section markers";
 }
 
 TEST(SETextEventTest, StandardPopHasSectionMarkers) {
@@ -395,8 +394,7 @@ TEST(SETextEventTest, StandardPopHasSectionMarkers) {
   const auto& se = gen.getSong().se();
 
   // StandardPop should have at least a few section markers
-  EXPECT_GT(se.textEvents().size(), 2u)
-      << "StandardPop should produce section markers";
+  EXPECT_GT(se.textEvents().size(), 2u) << "StandardPop should produce section markers";
 }
 
 TEST(SETextEventTest, SectionMarkersAtSectionBoundaries) {
@@ -474,8 +472,7 @@ TEST(SETextEventTest, ModulationMarkerPresent) {
     }
   }
 
-  EXPECT_TRUE(found_modulation)
-      << "SE track should contain a modulation marker text event";
+  EXPECT_TRUE(found_modulation) << "SE track should contain a modulation marker text event";
 }
 
 }  // namespace

@@ -61,7 +61,7 @@ enum class BeatStrength : uint8_t {
 enum class PentatonicMode : uint8_t {
   Major,  ///< Major pentatonic (yonanuki): C D E G A
   Minor,  ///< Minor pentatonic: C Eb F G Bb
-  Blues    ///< Blues scale: C Eb F F# G Bb
+  Blues   ///< Blues scale: C Eb F F# G Bb
 };
 
 /**
@@ -83,10 +83,10 @@ struct EmbellishmentConfig {
   float tension_ratio = 0.0f;    ///< Ratio of tension usage (replaces some CTs)
 
   // === Style Modifiers ===
-  bool prefer_pentatonic = true;            ///< Prefer pentatonic scale (J-POP characteristic)
+  bool prefer_pentatonic = true;  ///< Prefer pentatonic scale (J-POP characteristic)
   PentatonicMode pentatonic_mode = PentatonicMode::Major;  ///< Which pentatonic scale to use
-  bool chromatic_approach = false;  ///< Allow chromatic approach notes
-  float syncopation_level = 0.3f;   ///< Likelihood of syncopation (0.0-1.0)
+  bool chromatic_approach = false;                         ///< Allow chromatic approach notes
+  float syncopation_level = 0.3f;                          ///< Likelihood of syncopation (0.0-1.0)
 
   // === Safety ===
   bool resolve_all_ncts = true;  ///< Ensure all NCTs resolve properly
@@ -121,7 +121,7 @@ struct EmbellishmentConfig {
         nct_multiplier = 0.9f;  // Chord-focused for memorability
         break;
       case SectionType::Bridge:
-        nct_multiplier = 1.4f;  // Most NCT for exploration
+        nct_multiplier = 1.4f;       // Most NCT for exploration
         appoggiatura_ratio *= 1.3f;  // Extra expressive tension in bridge
         break;
       case SectionType::Interlude:
@@ -134,8 +134,8 @@ struct EmbellishmentConfig {
     }
 
     // Scale non-chord-tone ratios (keep chord_tone_ratio as complement)
-    float total_nct = passing_tone_ratio + neighbor_tone_ratio +
-                      appoggiatura_ratio + anticipation_ratio;
+    float total_nct =
+        passing_tone_ratio + neighbor_tone_ratio + appoggiatura_ratio + anticipation_ratio;
     float new_total_nct = total_nct * nct_multiplier;
 
     // Clamp to prevent chord_tone_ratio from going below 50%
@@ -170,8 +170,8 @@ struct EmbellishmentConfig {
     float multiplier = (occurrence >= 3) ? 1.4f : 1.2f;
 
     // Scale non-chord-tone ratios
-    float total_nct = passing_tone_ratio + neighbor_tone_ratio +
-                      appoggiatura_ratio + anticipation_ratio;
+    float total_nct =
+        passing_tone_ratio + neighbor_tone_ratio + appoggiatura_ratio + anticipation_ratio;
     float new_total_nct = total_nct * multiplier;
 
     // Clamp to prevent chord_tone_ratio from going below 50%

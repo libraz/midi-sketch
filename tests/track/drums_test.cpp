@@ -75,12 +75,12 @@ TEST_F(DrumsTest, DrumsNotesInValidMidiRange) {
 TEST_F(DrumsTest, DrumsUseGMDrumNotes) {
   // Valid GM drum notes (subset)
   std::set<uint8_t> valid_drums = {
-      35, 36,                      // Kick drums
-      37, 38, 39, 40,              // Snare, Sidestick, Hand Clap
-      42, 44, 46,                  // Hi-hats
+      35, 36,                          // Kick drums
+      37, 38, 39, 40,                  // Snare, Sidestick, Hand Clap
+      42, 44, 46,                      // Hi-hats
       49, 51, 52, 53, 54, 55, 57, 59,  // Cymbals, Tambourine
-      41, 43, 45, 47, 48, 50,     // Toms
-      82                           // Shaker (GM2)
+      41, 43, 45, 47, 48, 50,          // Toms
+      82                               // Shaker (GM2)
   };
 
   Generator gen;
@@ -966,8 +966,7 @@ TEST_F(DrumsTest, FutureBassUsesTrapGroove) {
 
   // Trap groove: hi-hats should be comparable to or more than kicks
   // (Ratio depends on seed and generation path; relaxed from 2x requirement)
-  EXPECT_GT(hihat_count, kick_count)
-      << "Trap groove should have more hi-hats than kicks";
+  EXPECT_GT(hihat_count, kick_count) << "Trap groove should have more hi-hats than kicks";
 }
 
 TEST_F(DrumsTest, CityPopUsesShuffleGroove) {
@@ -1053,13 +1052,13 @@ TEST_F(DrumsTest, LaidBackMoodHasLaterTiming) {
 TEST_F(DrumsTest, TimeFeelDoesNotBreakGeneration) {
   // Verify all moods with time feel still generate valid drums
   std::vector<Mood> moods_with_time_feel = {
-      Mood::Ballad,        // LaidBack
-      Mood::Chill,         // LaidBack
-      Mood::CityPop,       // LaidBack
-      Mood::EnergeticDance, // Pushed
-      Mood::Yoasobi,       // Pushed
-      Mood::ElectroPop,    // Pushed
-      Mood::StraightPop,   // OnBeat
+      Mood::Ballad,           // LaidBack
+      Mood::Chill,            // LaidBack
+      Mood::CityPop,          // LaidBack
+      Mood::EnergeticDance,   // Pushed
+      Mood::AnimeHighEnergy,  // Pushed
+      Mood::ElectroPop,       // Pushed
+      Mood::StraightPop,      // OnBeat
   };
 
   for (Mood mood : moods_with_time_feel) {
@@ -1074,8 +1073,7 @@ TEST_F(DrumsTest, TimeFeelDoesNotBreakGeneration) {
 
     // Verify no negative tick values
     for (const auto& note : drums.notes()) {
-      EXPECT_GE(note.start_tick, 0u)
-          << "Mood " << static_cast<int>(mood) << " has invalid tick";
+      EXPECT_GE(note.start_tick, 0u) << "Mood " << static_cast<int>(mood) << " has invalid tick";
     }
   }
 }
@@ -1127,8 +1125,8 @@ TEST_F(DrumsTest, GhostDensitySparserAtHighBPM) {
   // The adjustGhostDensityForBPM function reduces density by one level at BPM >= 160
   EXPECT_GT(total_slow_ghosts, total_fast_ghosts)
       << "Slow BPM total (" << total_slow_ghosts << " ghosts) should have more ghost notes "
-      << "than fast BPM total (" << total_fast_ghosts << " ghosts) across "
-      << NUM_SEEDS << " seeds";
+      << "than fast BPM total (" << total_fast_ghosts << " ghosts) across " << NUM_SEEDS
+      << " seeds";
 }
 
 // ============================================================================
@@ -1163,8 +1161,7 @@ TEST_F(DrumsTest, StandardStyleKickDensity) {
   for (const auto& note : track.notes()) {
     if (note.note == KICK || note.note == 35) {
       Tick remainder = note.start_tick % TICKS_PER_BEAT;
-      if (remainder <= kHumanizeTolerance ||
-          remainder >= TICKS_PER_BEAT - kHumanizeTolerance) {
+      if (remainder <= kHumanizeTolerance || remainder >= TICKS_PER_BEAT - kHumanizeTolerance) {
         kicks_on_quarters++;
       }
     }
@@ -1177,9 +1174,8 @@ TEST_F(DrumsTest, StandardStyleKickDensity) {
     EXPECT_LT(kicks_per_bar, 3.5)
         << "Standard style should have fewer than 4 kicks per bar on quarter beats "
         << "(got " << kicks_per_bar << ")";
-    EXPECT_GT(kicks_per_bar, 0.2)
-        << "Standard style should still have some kicks on quarter beats "
-        << "(got " << kicks_per_bar << ")";
+    EXPECT_GT(kicks_per_bar, 0.2) << "Standard style should still have some kicks on quarter beats "
+                                  << "(got " << kicks_per_bar << ")";
   }
 }
 
@@ -1313,8 +1309,7 @@ TEST_F(DrumsTest, TambourineOnBackbeats) {
   }
   // At least some tambourine should be on backbeats
   if (total_tam > 0) {
-    EXPECT_GT(backbeat_count, 0)
-        << "At least some tambourine notes should be on backbeats";
+    EXPECT_GT(backbeat_count, 0) << "At least some tambourine notes should be on backbeats";
   }
 }
 
@@ -1332,8 +1327,8 @@ TEST_F(DrumsTest, ShakerHas16thNotePattern) {
   int shaker_count = countDrumNotes(track, SHAKER);
 
   // Shaker in 16th note pattern: 16 notes per bar. Should have many notes.
-  EXPECT_GT(shaker_count, 16)
-      << "Expected at least a bar's worth of shaker 16th notes, got " << shaker_count;
+  EXPECT_GT(shaker_count, 16) << "Expected at least a bar's worth of shaker 16th notes, got "
+                              << shaker_count;
 
   // Verify spacing: shaker notes should be on 16th note grid
   for (const auto& note : track.notes()) {
@@ -1381,9 +1376,8 @@ TEST_F(DrumsTest, ShakerVelocityDynamics) {
   if (on_beat_count > 0 && off_beat_count > 0) {
     float avg_on = total_on_beat_vel / on_beat_count;
     float avg_off = total_off_beat_vel / off_beat_count;
-    EXPECT_GT(avg_on, avg_off)
-        << "Shaker on-beat velocity (" << avg_on
-        << ") should be higher than off-beat velocity (" << avg_off << ")";
+    EXPECT_GT(avg_on, avg_off) << "Shaker on-beat velocity (" << avg_on
+                               << ") should be higher than off-beat velocity (" << avg_off << ")";
   }
 }
 
@@ -1456,9 +1450,12 @@ TEST_F(DrumsTest, CalmMoodsHaveMinimalExtraPercussion) {
     int clap_count = countDrumNotes(track, HANDCLAP);
 
     // Allow some tolerance for probabilistic variation
-    EXPECT_LE(tam_count, 50) << "Mood " << static_cast<int>(mood) << " should have minimal tambourine";
-    EXPECT_LE(shaker_count, 50) << "Mood " << static_cast<int>(mood) << " should have minimal shaker";
-    EXPECT_LE(clap_count, 50) << "Mood " << static_cast<int>(mood) << " should have minimal hand clap";
+    EXPECT_LE(tam_count, 50) << "Mood " << static_cast<int>(mood)
+                             << " should have minimal tambourine";
+    EXPECT_LE(shaker_count, 50) << "Mood " << static_cast<int>(mood)
+                                << " should have minimal shaker";
+    EXPECT_LE(clap_count, 50) << "Mood " << static_cast<int>(mood)
+                              << " should have minimal hand clap";
   }
 }
 
@@ -1644,7 +1641,7 @@ TEST_F(DrumsTest, PeakMaxRespectsPolicyNone) {
 
 TEST_F(DrumsTest, StandardMoodNoShakerInVerse) {
   // Standard mood category should have no shaker in A sections (verse).
-  params_.blueprint_id = 0;  // Traditional (Standard policy)
+  params_.blueprint_id = 0;          // Traditional (Standard policy)
   params_.mood = Mood::StraightPop;  // Standard mood category
   params_.structure = StructurePattern::StandardPop;
   params_.seed = 42;
@@ -1658,8 +1655,7 @@ TEST_F(DrumsTest, StandardMoodNoShakerInVerse) {
     Tick sec_end = sec.endTick();
     int sec_shaker = 0;
     for (const auto& note : track.notes()) {
-      if (note.note == SHAKER && note.start_tick >= sec.start_tick &&
-          note.start_tick < sec_end) {
+      if (note.note == SHAKER && note.start_tick >= sec.start_tick && note.start_tick < sec_end) {
         sec_shaker++;
       }
     }
@@ -1669,7 +1665,7 @@ TEST_F(DrumsTest, StandardMoodNoShakerInVerse) {
 
 TEST_F(DrumsTest, StandardMoodShakerInPreChorus) {
   // Standard mood category should still have shaker in B sections (pre-chorus).
-  params_.blueprint_id = 0;  // Traditional (Standard policy)
+  params_.blueprint_id = 0;          // Traditional (Standard policy)
   params_.mood = Mood::StraightPop;  // Standard mood category
   params_.structure = StructurePattern::StandardPop;
   params_.seed = 42;
@@ -1685,8 +1681,7 @@ TEST_F(DrumsTest, StandardMoodShakerInPreChorus) {
     Tick sec_end = sec.endTick();
     int sec_shaker = 0;
     for (const auto& note : track.notes()) {
-      if (note.note == SHAKER && note.start_tick >= sec.start_tick &&
-          note.start_tick < sec_end) {
+      if (note.note == SHAKER && note.start_tick >= sec.start_tick && note.start_tick < sec_end) {
         sec_shaker++;
       }
     }
@@ -1729,7 +1724,10 @@ TEST_F(DrumsTest, OpenHiHatAppearsInGeneratedTrack) {
     Generator gen;
     gen.generate(params_);
     for (const auto& note : gen.getSong().drums().notes()) {
-      if (note.note == OHH) { found_open_hh = true; break; }
+      if (note.note == OHH) {
+        found_open_hh = true;
+        break;
+      }
     }
     if (found_open_hh) break;
   }
@@ -1811,14 +1809,20 @@ TEST_F(DrumsTest, ChorusHasMoreOpenHiHatThanVerse) {
     for (const auto& note : track.notes()) {
       if (note.note == OHH && note.start_tick >= sec.start_tick && note.start_tick < sec_end) cnt++;
     }
-    if (sec.type == SectionType::A) { verse_ohh += cnt; verse_bars += sec.bars; }
-    else if (sec.type == SectionType::Chorus) { chorus_ohh += cnt; chorus_bars += sec.bars; }
+    if (sec.type == SectionType::A) {
+      verse_ohh += cnt;
+      verse_bars += sec.bars;
+    } else if (sec.type == SectionType::Chorus) {
+      chorus_ohh += cnt;
+      chorus_bars += sec.bars;
+    }
   }
   if (verse_bars > 0 && chorus_bars > 0) {
     double vd = static_cast<double>(verse_ohh) / verse_bars;
     double cd = static_cast<double>(chorus_ohh) / chorus_bars;
     // Allow 15% tolerance for seed-dependent variations
-    EXPECT_GE(cd * 1.15, vd) << "Chorus open HH density (" << cd << ") should be close to or >= Verse (" << vd << ")";
+    EXPECT_GE(cd * 1.15, vd) << "Chorus open HH density (" << cd
+                             << ") should be close to or >= Verse (" << vd << ")";
   }
 }
 
@@ -1892,12 +1896,12 @@ constexpr uint8_t RIDE = 51;
 constexpr uint8_t SIDESTICK_NOTE = 37;
 
 // Helper: count notes of a specific pitch within a section tick range
-int countNotesInSection(const MidiTrack& track, uint8_t note_num,
-                        Tick section_start, Tick section_end) {
+int countNotesInSection(const MidiTrack& track, uint8_t note_num, Tick section_start,
+                        Tick section_end) {
   int count = 0;
   for (const auto& note : track.notes()) {
-    if (note.note == note_num &&
-        note.start_tick >= section_start && note.start_tick < section_end) {
+    if (note.note == note_num && note.start_tick >= section_start &&
+        note.start_tick < section_end) {
       count++;
     }
   }
@@ -1907,7 +1911,7 @@ int countNotesInSection(const MidiTrack& track, uint8_t note_num,
 TEST_F(DrumsTest, VerseUsesClosedHiHat) {
   // Verse (A) sections should primarily use closed hi-hat (42) for timekeeping
   params_.structure = StructurePattern::StandardPop;  // A -> B -> Chorus
-  params_.mood = Mood::StraightPop;  // Standard style
+  params_.mood = Mood::StraightPop;                   // Standard style
   params_.seed = 42;
 
   Generator gen;
@@ -1923,10 +1927,8 @@ TEST_F(DrumsTest, VerseUsesClosedHiHat) {
       int ride_count = countNotesInSection(track, RIDE, sec.start_tick, sec_end);
 
       // Verse should have closed HH, not ride
-      EXPECT_GT(chh_count, 0)
-          << "Verse (A) section should have closed hi-hat notes";
-      EXPECT_EQ(ride_count, 0)
-          << "Verse (A) section should not use ride cymbal as timekeeping";
+      EXPECT_GT(chh_count, 0) << "Verse (A) section should have closed hi-hat notes";
+      EXPECT_EQ(ride_count, 0) << "Verse (A) section should not use ride cymbal as timekeeping";
     }
   }
 }
@@ -1934,7 +1936,7 @@ TEST_F(DrumsTest, VerseUsesClosedHiHat) {
 TEST_F(DrumsTest, ChorusUsesRideCymbal) {
   // Chorus sections should use ride cymbal (51) for bigger, wider sound
   params_.structure = StructurePattern::StandardPop;  // A -> B -> Chorus
-  params_.mood = Mood::StraightPop;  // Standard style (not Sparse)
+  params_.mood = Mood::StraightPop;                   // Standard style (not Sparse)
   params_.seed = 42;
 
   Generator gen;
@@ -1949,8 +1951,7 @@ TEST_F(DrumsTest, ChorusUsesRideCymbal) {
       int ride_count = countNotesInSection(track, RIDE, sec.start_tick, sec_end);
 
       // Chorus should have ride cymbal as timekeeping
-      EXPECT_GT(ride_count, 0)
-          << "Chorus section should use ride cymbal for timekeeping";
+      EXPECT_GT(ride_count, 0) << "Chorus section should use ride cymbal for timekeeping";
     }
   }
 }
@@ -1958,7 +1959,7 @@ TEST_F(DrumsTest, ChorusUsesRideCymbal) {
 TEST_F(DrumsTest, BridgeUsesRideAndCrossStick) {
   // Bridge sections should use ride cymbal with cross-stick alternation
   params_.structure = StructurePattern::FullWithBridge;  // Has Bridge section
-  params_.mood = Mood::StraightPop;  // Standard style
+  params_.mood = Mood::StraightPop;                      // Standard style
   params_.seed = 42;
 
   Generator gen;
@@ -1976,8 +1977,7 @@ TEST_F(DrumsTest, BridgeUsesRideAndCrossStick) {
       int sidestick_count = countNotesInSection(track, SIDESTICK_NOTE, sec.start_tick, sec_end);
 
       // Bridge should have both ride and cross-stick
-      EXPECT_GT(ride_count, 0)
-          << "Bridge section should use ride cymbal on downbeats";
+      EXPECT_GT(ride_count, 0) << "Bridge section should use ride cymbal on downbeats";
       EXPECT_GT(sidestick_count, 0)
           << "Bridge section should use cross-stick (side stick) on backbeats";
     }
@@ -2003,8 +2003,7 @@ TEST_F(DrumsTest, OutroUsesClosedHiHat) {
       int ride_count = countNotesInSection(track, RIDE, sec.start_tick, sec_end);
 
       // Outro should not use ride (uses closed HH like intro)
-      EXPECT_EQ(ride_count, 0)
-          << "Outro section should use closed hi-hat, not ride cymbal";
+      EXPECT_EQ(ride_count, 0) << "Outro section should use closed hi-hat, not ride cymbal";
     }
   }
 }
@@ -2053,13 +2052,13 @@ TEST_F(DrumsTest, RhythmPatternMaintainedAcrossInstrumentChanges) {
   if (verse_bars > 0 && chorus_bars > 0) {
     // Rhythm pattern density should be in the same ballpark.
     // Chorus may use denser subdivision (16th vs 8th) so allow up to 3x.
-    double ratio = (verse_hits_per_bar > 0)
-        ? chorus_hits_per_bar / verse_hits_per_bar
-        : 0;
+    double ratio = (verse_hits_per_bar > 0) ? chorus_hits_per_bar / verse_hits_per_bar : 0;
     EXPECT_GT(ratio, 0.3) << "Chorus timekeeping density (" << chorus_hits_per_bar
-        << "/bar) should not be drastically sparser than Verse (" << verse_hits_per_bar << "/bar)";
+                          << "/bar) should not be drastically sparser than Verse ("
+                          << verse_hits_per_bar << "/bar)";
     EXPECT_LE(ratio, 4.5) << "Chorus timekeeping density (" << chorus_hits_per_bar
-        << "/bar) should not be drastically denser than Verse (" << verse_hits_per_bar << "/bar)";
+                          << "/bar) should not be drastically denser than Verse ("
+                          << verse_hits_per_bar << "/bar)";
   }
 }
 
@@ -2082,9 +2081,8 @@ TEST_F(DrumsTest, SparseStyleDoesNotUseRide) {
     // Sparse style should not use ride in any section
     // (except when DrumRole::Ambient overrides, which Ballad may use)
     if (sec.drum_role != DrumRole::Ambient) {
-      EXPECT_EQ(ride_count, 0)
-          << "Sparse style should not use ride cymbal in "
-          << sec.name << " section";
+      EXPECT_EQ(ride_count, 0) << "Sparse style should not use ride cymbal in " << sec.name
+                               << " section";
     }
   }
 }
@@ -2133,8 +2131,7 @@ TEST_F(DrumsTest, ChorusRideVelocityInRange) {
     if (sec.type == SectionType::Chorus) {
       Tick sec_end = sec.endTick();
       for (const auto& note : track.notes()) {
-        if (note.note == RIDE &&
-            note.start_tick >= sec.start_tick && note.start_tick < sec_end) {
+        if (note.note == RIDE && note.start_tick >= sec.start_tick && note.start_tick < sec_end) {
           EXPECT_GE(note.velocity, 20) << "Ride velocity too low at tick " << note.start_tick;
           EXPECT_LE(note.velocity, 127) << "Ride velocity too high at tick " << note.start_tick;
         }
@@ -2151,7 +2148,7 @@ TEST_F(DrumsTest, PreChorusLiftReducesKickSnareInLastTwoBars) {
   // B section before Chorus should have reduced kick/snare in last 2 bars
   // This creates a "lift" effect for anticipation
   params_.structure = StructurePattern::StandardPop;  // A -> B -> Chorus
-  params_.mood = Mood::StraightPop;  // Standard style (has kick/snare)
+  params_.mood = Mood::StraightPop;                   // Standard style (has kick/snare)
   params_.seed = 42;
 
   Generator gen;
@@ -2189,12 +2186,16 @@ TEST_F(DrumsTest, PreChorusLiftReducesKickSnareInLastTwoBars) {
         bool in_lift = (note.start_tick >= lift_start);
 
         if (note.note == KICK) {
-          if (in_lift) kick_in_lift++;
-          else kick_before_lift++;
+          if (in_lift)
+            kick_in_lift++;
+          else
+            kick_before_lift++;
         }
         if (note.note == SNARE) {
-          if (in_lift) snare_in_lift++;
-          else snare_before_lift++;
+          if (in_lift)
+            snare_in_lift++;
+          else
+            snare_before_lift++;
         }
       }
     }
@@ -2267,8 +2268,8 @@ TEST_F(DrumsTest, PreChorusLiftHiHatContinues) {
     }
 
     // Hi-hat should still be present in lift zone
-    EXPECT_GT(hh_in_lift, 4)
-        << "Hi-hat should continue during pre-chorus lift (found " << hh_in_lift << " notes)";
+    EXPECT_GT(hh_in_lift, 4) << "Hi-hat should continue during pre-chorus lift (found "
+                             << hh_in_lift << " notes)";
   }
 }
 
@@ -2281,7 +2282,7 @@ TEST_F(DrumsTest, GhostNotesHaveContextDependentVelocity) {
   // The getGhostVelocity function provides context-dependent velocities
   // (35-55% of base velocity depending on section)
   params_.structure = StructurePattern::FullPop;  // Has both A and Chorus
-  params_.mood = Mood::CityPop;  // CityPop has good ghost notes
+  params_.mood = Mood::CityPop;                   // CityPop has good ghost notes
   params_.seed = 100;
 
   Generator gen;
@@ -2350,8 +2351,7 @@ TEST_F(DrumsTest, HighEnergyChorusAllowsLongerFills) {
   const auto& track = gen.getSong().drums();
 
   // Verify drums are generated
-  EXPECT_GT(track.notes().size(), 100u)
-      << "High energy song should have substantial drum content";
+  EXPECT_GT(track.notes().size(), 100u) << "High energy song should have substantial drum content";
 
   // Count tom notes (fills typically use toms)
   int tom_notes = 0;
@@ -2362,8 +2362,7 @@ TEST_F(DrumsTest, HighEnergyChorusAllowsLongerFills) {
   }
 
   // High energy styles should have fill activity
-  EXPECT_GE(tom_notes, 0)
-      << "High energy style should allow fills with toms";
+  EXPECT_GE(tom_notes, 0) << "High energy style should allow fills with toms";
 }
 
 // ============================================================================
@@ -2400,8 +2399,8 @@ TEST_F(DrumsTest, IntroVerseUsesDifferentHiHatThanChorus) {
     int total_hh = closed_hh + open_hh + foot_hh;
     if (section.type == SectionType::Intro || section.type == SectionType::A ||
         section.type == SectionType::Chorus) {
-      EXPECT_GT(total_hh, 0)
-          << "Section " << static_cast<int>(section.type) << " should have hi-hat activity";
+      EXPECT_GT(total_hh, 0) << "Section " << static_cast<int>(section.type)
+                             << " should have hi-hat activity";
     }
   }
 }
@@ -2463,8 +2462,8 @@ TEST_F(DrumsTest, SnareBuildupEveryBeatIn8thPattern) {
     // Allow some flexibility: at least 50% coverage
     double coverage = static_cast<double>(snares_on_8th) / total_8th_positions;
     EXPECT_GT(coverage, 0.5)
-        << "Pre-chorus buildup should have snares on most 8th positions (coverage: "
-        << coverage << ")";
+        << "Pre-chorus buildup should have snares on most 8th positions (coverage: " << coverage
+        << ")";
   }
 }
 
@@ -2501,8 +2500,8 @@ TEST_F(DrumsTest, SnareBuildupVelocityCrescendo) {
     std::vector<uint8_t> second_half_vels;
 
     for (const auto& note : track.notes()) {
-      if ((note.note == SNARE || note.note == 40) &&
-          note.start_tick >= buildup_start && note.start_tick < section_end) {
+      if ((note.note == SNARE || note.note == 40) && note.start_tick >= buildup_start &&
+          note.start_tick < section_end) {
         if (note.start_tick < buildup_mid) {
           first_half_vels.push_back(note.velocity);
         } else {
@@ -2628,8 +2627,8 @@ TEST_F(DrumsTest, IntroKickEnabledFlagDifferenceTest) {
     int kick_disabled = countKickInIntro(gen_disabled.getSong());
 
     // Disabled blueprint should have no kick in intro
-    EXPECT_EQ(kick_disabled, 0)
-        << "Seed " << seed << ": intro_kick_enabled=false should have no kick in intro";
+    EXPECT_EQ(kick_disabled, 0) << "Seed " << seed
+                                << ": intro_kick_enabled=false should have no kick in intro";
 
     // When enabled blueprint has kick in intro, verify the flag works
     if (kick_enabled > 0) {
@@ -2679,9 +2678,8 @@ TEST_F(DrumsTest, RhythmSyncHighBPMUsesEighthHiHat) {
       double hh_per_bar = static_cast<double>(hh_count) / sec.bars;
       // 8th note HH = 8 per bar, 16th = 16 per bar
       // Allow some margin for open HH accents etc.
-      EXPECT_LE(hh_per_bar, 12.0)
-          << "At BPM 170, RhythmSync HH should be 8th notes (~8/bar), got "
-          << hh_per_bar << "/bar";
+      EXPECT_LE(hh_per_bar, 12.0) << "At BPM 170, RhythmSync HH should be 8th notes (~8/bar), got "
+                                  << hh_per_bar << "/bar";
     }
     break;  // Check first Chorus only
   }
@@ -2718,8 +2716,8 @@ TEST_F(DrumsTest, RhythmSyncHighBPMReducesDrumDensityPerBar) {
   // At high BPM, drums per bar should generally be lower due to HH/shaker/kick density limits.
   // Allow small margin since blueprint-specific aux profiles can shift RNG state slightly.
   EXPECT_GT(slow_density, fast_density - 1.0)
-      << "Slow BPM drums/bar (" << slow_density
-      << ") should be within 1.0 of fast BPM drums/bar (" << fast_density << ")";
+      << "Slow BPM drums/bar (" << slow_density << ") should be within 1.0 of fast BPM drums/bar ("
+      << fast_density << ")";
 }
 
 TEST_F(DrumsTest, ShakerHighBPMUsesEighthGrid) {
@@ -2745,8 +2743,8 @@ TEST_F(DrumsTest, ShakerHighBPMUsesEighthGrid) {
       Tick eighth = TICKS_PER_BEAT / 2;  // 240 ticks
       EXPECT_EQ(tick_in_beat % eighth, 0u)
           << "Shaker at tick " << note.start_tick
-          << " should be on 8th note grid at high BPM (remainder = "
-          << (tick_in_beat % eighth) << ")";
+          << " should be on 8th note grid at high BPM (remainder = " << (tick_in_beat % eighth)
+          << ")";
     }
   }
   // Should still have shaker notes
@@ -2760,16 +2758,14 @@ TEST_F(DrumsTest, ShakerHighBPMUsesEighthGrid) {
     Tick sec_end = sec.endTick();
     int sec_shaker = 0;
     for (const auto& note : track.notes()) {
-      if (note.note == SHAKER && note.start_tick >= sec.start_tick &&
-          note.start_tick < sec_end) {
+      if (note.note == SHAKER && note.start_tick >= sec.start_tick && note.start_tick < sec_end) {
         sec_shaker++;
       }
     }
     if (sec.bars > 0) {
       double shaker_per_bar = static_cast<double>(sec_shaker) / sec.bars;
       EXPECT_LE(shaker_per_bar, 10.0)
-          << "At BPM 170, shaker should be ~8/bar (8th grid), got "
-          << shaker_per_bar << "/bar";
+          << "At BPM 170, shaker should be ~8/bar (8th grid), got " << shaker_per_bar << "/bar";
     }
     break;
   }
@@ -2798,8 +2794,8 @@ TEST_F(DrumsTest, VocalSyncKickLimitedAtHighBPM) {
 
       int kick_count = 0;
       for (const auto& note : track.notes()) {
-        if (note.note == KICK && note.start_tick >= bar_start &&
-            note.start_tick < bar_end && note.start_tick < sec_end) {
+        if (note.note == KICK && note.start_tick >= bar_start && note.start_tick < bar_end &&
+            note.start_tick < sec_end) {
           kick_count++;
         }
       }
@@ -2807,9 +2803,8 @@ TEST_F(DrumsTest, VocalSyncKickLimitedAtHighBPM) {
       // At high BPM, kicks per bar should be reasonable (max ~6 including
       // both vocal-sync and fallback kicks). Chorus sections with dense
       // vocal rhythm may produce up to 6 kicks.
-      EXPECT_LE(kick_count, 6)
-          << "Bar at tick " << bar_start << " in " << sec.name
-          << " has " << kick_count << " kicks at BPM 170 (should be <= 6)";
+      EXPECT_LE(kick_count, 6) << "Bar at tick " << bar_start << " in " << sec.name << " has "
+                               << kick_count << " kicks at BPM 170 (should be <= 6)";
     }
   }
 }
@@ -2835,8 +2830,7 @@ TEST(FillTypeEnergyTest, LowEnergyProducesSubtleFills) {
 
   // Low energy destination should only produce subtle fill types
   for (auto fill : low_fills) {
-    EXPECT_TRUE(fill == FillType::SimpleCrash ||
-                fill == FillType::BreakdownFill ||
+    EXPECT_TRUE(fill == FillType::SimpleCrash || fill == FillType::BreakdownFill ||
                 fill == FillType::HalfTimeFill)
         << "Low energy fill should be subtle, got: " << static_cast<int>(fill);
   }
@@ -2853,10 +2847,8 @@ TEST(FillTypeEnergyTest, PeakEnergyProducesDramaticFills) {
 
   // Peak energy destination should produce dramatic fill types
   for (auto fill : peak_fills) {
-    EXPECT_TRUE(fill == FillType::TomDescend ||
-                fill == FillType::SnareRoll ||
-                fill == FillType::LinearFill ||
-                fill == FillType::FlamsAndDrags)
+    EXPECT_TRUE(fill == FillType::TomDescend || fill == FillType::SnareRoll ||
+                fill == FillType::LinearFill || fill == FillType::FlamsAndDrags)
         << "Peak energy fill should be dramatic, got: " << static_cast<int>(fill);
   }
 }
@@ -2899,8 +2891,8 @@ TEST(FillTypeEnergyTest, HighEnergyUsesExistingSectionLogic) {
   std::set<FillType> high_fills;
   for (int idx = 0; idx < 50; ++idx) {
     std::mt19937 test_rng(static_cast<unsigned>(idx));
-    auto fill = selectFillType(SectionType::A, SectionType::B, DrumStyle::Rock,
-                               SectionEnergy::High, test_rng);
+    auto fill = selectFillType(SectionType::A, SectionType::B, DrumStyle::Rock, SectionEnergy::High,
+                               test_rng);
     high_fills.insert(fill);
   }
 

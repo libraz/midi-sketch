@@ -19,8 +19,7 @@ namespace {
 
 // Helper to check if a boundary safety level is considered safe
 bool isSafeBoundary(CrossBoundarySafety safety) {
-  return safety == CrossBoundarySafety::NoBoundary ||
-         safety == CrossBoundarySafety::ChordTone ||
+  return safety == CrossBoundarySafety::NoBoundary || safety == CrossBoundarySafety::ChordTone ||
          safety == CrossBoundarySafety::Tension;
 }
 
@@ -34,9 +33,9 @@ bool isRootOrFifth(int pitch_class, const std::vector<int>& chord_tones) {
 }
 
 // Create NoteEvent with provenance
-NoteEvent buildNoteEvent(const IHarmonyContext& harmony, Tick start, Tick duration,
-                          uint8_t pitch, uint8_t velocity, NoteSource source,
-                          bool record_provenance, uint8_t original_pitch = 0) {
+NoteEvent buildNoteEvent(const IHarmonyContext& harmony, Tick start, Tick duration, uint8_t pitch,
+                         uint8_t velocity, NoteSource source, bool record_provenance,
+                         uint8_t original_pitch = 0) {
   NoteEvent event = NoteEventBuilder::create(start, duration, pitch, velocity);
 
 #ifdef MIDISKETCH_NOTE_PROVENANCE
@@ -59,69 +58,70 @@ NoteEvent buildNoteEvent(const IHarmonyContext& harmony, Tick start, Tick durati
 
 // Rank candidates based on preference and monotony avoidance
 void rankCandidates(std::vector<PitchCandidate>& candidates, PitchPreference preference,
-                    bool consider_boundary = false,
-                    uint8_t prev_pitch = 0, int consecutive_same_count = 0) {
+                    bool consider_boundary = false, uint8_t prev_pitch = 0,
+                    int consecutive_same_count = 0) {
   // Monotony threshold: if 3+ consecutive same pitches, strongly penalize repeating
   constexpr int kMonotonyThreshold = 3;
   bool avoid_same_as_prev = (prev_pitch > 0 && consecutive_same_count >= kMonotonyThreshold);
 
-  std::stable_sort(candidates.begin(), candidates.end(),
-    [preference, consider_boundary, prev_pitch, avoid_same_as_prev](
-        const PitchCandidate& a, const PitchCandidate& b) {
-      // Pre-primary: avoid consecutive same pitch when monotony threshold exceeded
-      if (avoid_same_as_prev) {
-        bool a_same = (a.pitch == prev_pitch);
-        bool b_same = (b.pitch == prev_pitch);
-        if (a_same != b_same) {
-          return !a_same;  // Prefer the one that's different
+  std::stable_sort(
+      candidates.begin(), candidates.end(),
+      [preference, consider_boundary, prev_pitch, avoid_same_as_prev](const PitchCandidate& a,
+                                                                      const PitchCandidate& b) {
+        // Pre-primary: avoid consecutive same pitch when monotony threshold exceeded
+        if (avoid_same_as_prev) {
+          bool a_same = (a.pitch == prev_pitch);
+          bool b_same = (b.pitch == prev_pitch);
+          if (a_same != b_same) {
+            return !a_same;  // Prefer the one that's different
+          }
         }
-      }
 
-      // Primary: prefer pitches that didn't need resolution
-      if (a.strategy != b.strategy) {
-        if (a.strategy == CollisionAvoidStrategy::None) return true;
-        if (b.strategy == CollisionAvoidStrategy::None) return false;
-      }
+        // Primary: prefer pitches that didn't need resolution
+        if (a.strategy != b.strategy) {
+          if (a.strategy == CollisionAvoidStrategy::None) return true;
+          if (b.strategy == CollisionAvoidStrategy::None) return false;
+        }
 
-      // Cross-boundary safety (when chord boundary policy is active)
-      if (consider_boundary && a.is_safe_across_boundary != b.is_safe_across_boundary) {
-        return a.is_safe_across_boundary;
-      }
+        // Cross-boundary safety (when chord boundary policy is active)
+        if (consider_boundary && a.is_safe_across_boundary != b.is_safe_across_boundary) {
+          return a.is_safe_across_boundary;
+        }
 
-      // Secondary: preference-specific ranking
-      switch (preference) {
-        case PitchPreference::PreferRootFifth:
-          // Prefer root/5th over other chord tones
-          if (a.is_root_or_fifth != b.is_root_or_fifth) {
-            return a.is_root_or_fifth;
-          }
-          break;
-
-        case PitchPreference::PreferChordTones:
-          // Prefer chord tones
-          if (a.is_chord_tone != b.is_chord_tone) {
-            return a.is_chord_tone;
-          }
-          break;
-
-        case PitchPreference::PreserveContour:
-          // Prefer smaller intervals to preserve melodic shape
-          break;
-
-        default:
-          // Guide tones (3rd/7th) preferred as tiebreaker among chord tones.
-          // Non-chord-tone candidates are not affected (melodic freedom preserved).
-          if (a.is_chord_tone && b.is_chord_tone) {
-            if (a.is_guide_tone != b.is_guide_tone) {
-              return a.is_guide_tone;
+        // Secondary: preference-specific ranking
+        switch (preference) {
+          case PitchPreference::PreferRootFifth:
+            // Prefer root/5th over other chord tones
+            if (a.is_root_or_fifth != b.is_root_or_fifth) {
+              return a.is_root_or_fifth;
             }
-          }
-          break;
-      }
+            break;
 
-      // Tertiary: prefer smaller interval from desired
-      return std::abs(a.interval_from_desired) < std::abs(b.interval_from_desired);
-    });
+          case PitchPreference::PreferChordTones:
+            // Prefer chord tones
+            if (a.is_chord_tone != b.is_chord_tone) {
+              return a.is_chord_tone;
+            }
+            break;
+
+          case PitchPreference::PreserveContour:
+            // Prefer smaller intervals to preserve melodic shape
+            break;
+
+          default:
+            // Guide tones (3rd/7th) preferred as tiebreaker among chord tones.
+            // Non-chord-tone candidates are not affected (melodic freedom preserved).
+            if (a.is_chord_tone && b.is_chord_tone) {
+              if (a.is_guide_tone != b.is_guide_tone) {
+                return a.is_guide_tone;
+              }
+            }
+            break;
+        }
+
+        // Tertiary: prefer smaller interval from desired
+        return std::abs(a.interval_from_desired) < std::abs(b.interval_from_desired);
+      });
 }
 
 // Overlap threshold below which crossing a boundary is treated as a passing tone
@@ -129,18 +129,18 @@ constexpr Tick kPassingToneThreshold = 240;  // 8th note
 
 // Parameters for provenance transform recording, used by recordProvenanceTransforms().
 struct ProvenanceParams {
-  uint8_t true_original = 0;      // Pre-adjustment pitch
-  uint8_t desired_pitch = 0;      // Desired pitch from NoteOptions
-  uint8_t final_pitch = 0;        // Actual pitch used for the note
-  bool record_provenance = true;  // Whether to record provenance at all
+  uint8_t true_original = 0;       // Pre-adjustment pitch
+  uint8_t desired_pitch = 0;       // Desired pitch from NoteOptions
+  uint8_t final_pitch = 0;         // Actual pitch used for the note
+  bool record_provenance = true;   // Whether to record provenance at all
   bool was_chord_clipped = false;  // Whether chord boundary clipping occurred
-  Tick original_duration = 0;     // Duration before any clipping
-  Tick final_duration = 0;        // Duration after clipping
-  int8_t next_degree = -1;       // Chord degree after the boundary
+  Tick original_duration = 0;      // Duration before any clipping
+  Tick final_duration = 0;         // Duration after clipping
+  int8_t next_degree = -1;         // Chord degree after the boundary
 
   // Collision avoidance info (only for candidate-based paths)
   bool has_collision_avoid = false;
-  int8_t colliding_pitch = 0;    // Pitch that caused the collision
+  int8_t colliding_pitch = 0;  // Pitch that caused the collision
 
   // MotionAdjust target: which pitch the MotionAdjust step targets.
   // For candidate-based paths, this is desired_pitch (MotionAdjust covers
@@ -160,12 +160,11 @@ void recordProvenanceTransforms(NoteEvent& event, const ProvenanceParams& params
 
   // MotionAdjust: original pitch was different from target pitch (pre-collision resolution).
   // For candidate-based paths, target is desired_pitch; for octave fallback, target is final_pitch.
-  uint8_t motion_target = (params.motion_adjust_target != 0)
-                              ? params.motion_adjust_target
-                              : params.desired_pitch;
+  uint8_t motion_target =
+      (params.motion_adjust_target != 0) ? params.motion_adjust_target : params.desired_pitch;
   if (params.true_original != motion_target) {
-    event.addTransformStep(TransformStepType::MotionAdjust, params.true_original,
-                           motion_target, 0, 0);
+    event.addTransformStep(TransformStepType::MotionAdjust, params.true_original, motion_target, 0,
+                           0);
   }
 
   // CollisionAvoid: pitch was changed to avoid dissonance
@@ -176,10 +175,11 @@ void recordProvenanceTransforms(NoteEvent& event, const ProvenanceParams& params
 
   // ChordBoundaryClip: duration was shortened at chord boundary
   if (params.was_chord_clipped) {
-    event.addTransformStep(TransformStepType::ChordBoundaryClip,
-                           static_cast<uint8_t>(params.original_duration > 255 ? 255 : params.original_duration),
-                           static_cast<uint8_t>(params.final_duration > 255 ? 255 : params.final_duration),
-                           params.next_degree, 0);
+    event.addTransformStep(
+        TransformStepType::ChordBoundaryClip,
+        static_cast<uint8_t>(params.original_duration > 255 ? 255 : params.original_duration),
+        static_cast<uint8_t>(params.final_duration > 255 ? 255 : params.final_duration),
+        params.next_degree, 0);
   }
 #else
   (void)event;
@@ -191,10 +191,8 @@ void recordProvenanceTransforms(NoteEvent& event, const ProvenanceParams& params
 // are available. Returns the resolved pitch, or nullopt if all attempts fail.
 // Handles: octave-down for out-of-range, octave sweep for dissonance, and
 // PreserveContour monotony check.
-std::optional<uint8_t> resolveWithOctaveFallback(
-    const IHarmonyContext& harmony,
-    const NoteOptions& opts,
-    Tick effective_duration) {
+std::optional<uint8_t> resolveWithOctaveFallback(const IHarmonyContext& harmony,
+                                                 const NoteOptions& opts, Tick effective_duration) {
   // Try octave-down if desired exceeds range_high, then clamp as last resort
   uint8_t fallback_pitch = opts.desired_pitch;
   if (fallback_pitch > opts.range_high) {
@@ -208,14 +206,15 @@ std::optional<uint8_t> resolveWithOctaveFallback(
   }
 
   // Final safety check: if fallback still causes dissonance, try octave shifts
-  if (!harmony.isConsonantWithOtherTracks(fallback_pitch, opts.start, effective_duration, opts.role)) {
+  if (!harmony.isConsonantWithOtherTracks(fallback_pitch, opts.start, effective_duration,
+                                          opts.role)) {
     bool found_safe = false;
     for (int oct_offset : {-1, 1, -2, 2}) {
       int adjusted = static_cast<int>(fallback_pitch) + oct_offset * 12;
       if (adjusted >= static_cast<int>(opts.range_low) &&
           adjusted <= static_cast<int>(opts.range_high) &&
           harmony.isConsonantWithOtherTracks(static_cast<uint8_t>(adjusted), opts.start,
-                                              effective_duration, opts.role)) {
+                                             effective_duration, opts.role)) {
         fallback_pitch = static_cast<uint8_t>(adjusted);
         found_safe = true;
         break;
@@ -227,9 +226,8 @@ std::optional<uint8_t> resolveWithOctaveFallback(
   }
 
   // PreserveContour: skip if fallback would cause severe monotony
-  if (opts.preference == PitchPreference::PreserveContour &&
-      opts.prev_pitch > 0 && opts.consecutive_same_count >= 4 &&
-      fallback_pitch == opts.prev_pitch) {
+  if (opts.preference == PitchPreference::PreserveContour && opts.prev_pitch > 0 &&
+      opts.consecutive_same_count >= 4 && fallback_pitch == opts.prev_pitch) {
     return std::nullopt;
   }
 
@@ -239,14 +237,9 @@ std::optional<uint8_t> resolveWithOctaveFallback(
 // Finalize a CreateNoteResult: set all result fields and optionally register
 // the note with the harmony context. Consolidates the result construction
 // code that was previously duplicated across all exit paths.
-void finalizeResult(CreateNoteResult& result,
-                    NoteEvent event,
-                    uint8_t final_pitch,
-                    uint8_t true_original,
-                    CollisionAvoidStrategy strategy,
-                    Tick final_duration,
-                    IHarmonyContext& harmony,
-                    const NoteOptions& opts) {
+void finalizeResult(CreateNoteResult& result, NoteEvent event, uint8_t final_pitch,
+                    uint8_t true_original, CollisionAvoidStrategy strategy, Tick final_duration,
+                    IHarmonyContext& harmony, const NoteOptions& opts) {
   result.note = event;
   result.final_pitch = final_pitch;
   result.strategy_used = strategy;
@@ -269,7 +262,7 @@ std::optional<NoteEvent> createNote(IHarmonyContext& harmony, const NoteOptions&
 }
 
 std::optional<NoteEvent> createNoteAndAdd(MidiTrack& track, IHarmonyContext& harmony,
-                                           const NoteOptions& opts) {
+                                          const NoteOptions& opts) {
   auto result = createNoteWithResult(harmony, opts);
   if (result.note) {
     track.addNote(*result.note);
@@ -332,9 +325,9 @@ CreateNoteResult createNoteWithResult(IHarmonyContext& harmony, const NoteOption
       if (final_pitch < opts.range_low) final_pitch = opts.range_low;
     }
 
-    NoteEvent event = buildNoteEvent(harmony, opts.start, effective_duration,
-                                      final_pitch, opts.velocity,
-                                      opts.source, opts.record_provenance, true_original);
+    NoteEvent event =
+        buildNoteEvent(harmony, opts.start, effective_duration, final_pitch, opts.velocity,
+                       opts.source, opts.record_provenance, true_original);
 
     ProvenanceParams prov;
     prov.true_original = true_original;
@@ -347,28 +340,27 @@ CreateNoteResult createNoteWithResult(IHarmonyContext& harmony, const NoteOption
     prov.next_degree = boundary_info.next_degree;
     recordProvenanceTransforms(event, prov);
 
-    finalizeResult(result, event, final_pitch, true_original,
-                   CollisionAvoidStrategy::None, effective_duration, harmony, opts);
+    finalizeResult(result, event, final_pitch, true_original, CollisionAvoidStrategy::None,
+                   effective_duration, harmony, opts);
     return result;
   }
 
   // Check if desired pitch is within range AND safe (with effective duration)
   bool in_range = (opts.desired_pitch >= opts.range_low && opts.desired_pitch <= opts.range_high);
-  bool is_safe = in_range &&
-      harmony.isConsonantWithOtherTracks(opts.desired_pitch, opts.start, effective_duration, opts.role);
+  bool is_safe = in_range && harmony.isConsonantWithOtherTracks(opts.desired_pitch, opts.start,
+                                                                effective_duration, opts.role);
 
   // Chord: try shortening duration before changing pitch.
   // Preserves correct voicing even when Motif enters mid-sustain.
   if (opts.role == TrackRole::Chord && in_range && !is_safe) {
-    Tick safe_end = harmony.getMaxSafeEnd(
-        opts.start, opts.desired_pitch, opts.role,
-        opts.start + effective_duration);
+    Tick safe_end = harmony.getMaxSafeEnd(opts.start, opts.desired_pitch, opts.role,
+                                          opts.start + effective_duration);
     Tick safe_dur = safe_end - opts.start;
     constexpr Tick kMinChordDuration = 480;  // Quarter note minimum
     if (safe_dur >= kMinChordDuration && safe_dur < effective_duration) {
       effective_duration = safe_dur;
-      is_safe = harmony.isConsonantWithOtherTracks(
-          opts.desired_pitch, opts.start, effective_duration, opts.role);
+      is_safe = harmony.isConsonantWithOtherTracks(opts.desired_pitch, opts.start,
+                                                   effective_duration, opts.role);
     }
   }
 
@@ -394,9 +386,8 @@ CreateNoteResult createNoteWithResult(IHarmonyContext& harmony, const NoteOption
 
     // PreserveContour: even if desired pitch is safe, check for severe monotony
     // and try to find an alternative pitch to break the repetition.
-    if (opts.preference == PitchPreference::PreserveContour &&
-        opts.prev_pitch > 0 && opts.consecutive_same_count >= 4 &&
-        opts.desired_pitch == opts.prev_pitch) {
+    if (opts.preference == PitchPreference::PreserveContour && opts.prev_pitch > 0 &&
+        opts.consecutive_same_count >= 4 && opts.desired_pitch == opts.prev_pitch) {
       // Desired pitch would continue monotony - try to find alternative
       is_safe = false;  // Force candidate generation
     }
@@ -412,8 +403,8 @@ CreateNoteResult createNoteWithResult(IHarmonyContext& harmony, const NoteOption
 
   if (is_safe) {
     // For PreferSafe: check if this pitch needs boundary clip
-    if (opts.chord_boundary == ChordBoundaryPolicy::PreferSafe &&
-        boundary_info.boundary_tick > 0 && boundary_info.overlap_ticks >= kPassingToneThreshold &&
+    if (opts.chord_boundary == ChordBoundaryPolicy::PreferSafe && boundary_info.boundary_tick > 0 &&
+        boundary_info.overlap_ticks >= kPassingToneThreshold &&
         (boundary_info.safety == CrossBoundarySafety::NonChordTone ||
          boundary_info.safety == CrossBoundarySafety::AvoidNote)) {
       // Pitch is collision-safe but not boundary-safe: clip as fallback
@@ -421,9 +412,9 @@ CreateNoteResult createNoteWithResult(IHarmonyContext& harmony, const NoteOption
       result.was_chord_clipped = true;
     }
 
-    NoteEvent event = buildNoteEvent(harmony, opts.start, effective_duration,
-                                      opts.desired_pitch, opts.velocity,
-                                      opts.source, opts.record_provenance, true_original);
+    NoteEvent event =
+        buildNoteEvent(harmony, opts.start, effective_duration, opts.desired_pitch, opts.velocity,
+                       opts.source, opts.record_provenance, true_original);
 
     ProvenanceParams prov;
     prov.true_original = true_original;
@@ -436,8 +427,8 @@ CreateNoteResult createNoteWithResult(IHarmonyContext& harmony, const NoteOption
     prov.next_degree = boundary_info.next_degree;
     recordProvenanceTransforms(event, prov);
 
-    finalizeResult(result, event, opts.desired_pitch, true_original,
-                   CollisionAvoidStrategy::None, effective_duration, harmony, opts);
+    finalizeResult(result, event, opts.desired_pitch, true_original, CollisionAvoidStrategy::None,
+                   effective_duration, harmony, opts);
     return result;
   }
 
@@ -448,14 +439,13 @@ CreateNoteResult createNoteWithResult(IHarmonyContext& harmony, const NoteOption
   }
 
   // Get candidates and select the best one
-  bool consider_boundary = (opts.chord_boundary == ChordBoundaryPolicy::PreferSafe &&
-                            boundary_info.boundary_tick > 0 &&
-                            boundary_info.overlap_ticks >= kPassingToneThreshold);
+  bool consider_boundary =
+      (opts.chord_boundary == ChordBoundaryPolicy::PreferSafe && boundary_info.boundary_tick > 0 &&
+       boundary_info.overlap_ticks >= kPassingToneThreshold);
 
-  auto candidates = getSafePitchCandidates(harmony, opts.desired_pitch, opts.start,
-                                            effective_duration, opts.role, opts.range_low,
-                                            opts.range_high, opts.preference, 5,
-                                            opts.prev_pitch, opts.consecutive_same_count);
+  auto candidates = getSafePitchCandidates(
+      harmony, opts.desired_pitch, opts.start, effective_duration, opts.role, opts.range_low,
+      opts.range_high, opts.preference, 5, opts.prev_pitch, opts.consecutive_same_count);
 
   // Annotate candidates with cross-boundary safety for PreferSafe
   if (consider_boundary && !candidates.empty()) {
@@ -465,19 +455,18 @@ CreateNoteResult createNoteWithResult(IHarmonyContext& harmony, const NoteOption
       c.is_safe_across_boundary = isSafeBoundary(c_boundary.safety);
     }
     // Re-rank with boundary awareness and monotony avoidance
-    rankCandidates(candidates, opts.preference, true,
-                   opts.prev_pitch, opts.consecutive_same_count);
+    rankCandidates(candidates, opts.preference, true, opts.prev_pitch, opts.consecutive_same_count);
   } else if (!candidates.empty() && opts.prev_pitch > 0 && opts.consecutive_same_count >= 3) {
     // Re-rank with monotony avoidance only (no boundary consideration)
-    rankCandidates(candidates, opts.preference, false,
-                   opts.prev_pitch, opts.consecutive_same_count);
+    rankCandidates(candidates, opts.preference, false, opts.prev_pitch,
+                   opts.consecutive_same_count);
   }
 
   // PreserveContour: filter out candidates that would cause large leaps from prev_pitch
   // This prevents collision avoidance from creating jarring melodic discontinuities.
   constexpr int kMaxLeapFromPrev = 12;  // 1 octave maximum
-  if (opts.preference == PitchPreference::PreserveContour &&
-      opts.prev_pitch > 0 && !candidates.empty()) {
+  if (opts.preference == PitchPreference::PreserveContour && opts.prev_pitch > 0 &&
+      !candidates.empty()) {
     std::vector<PitchCandidate> leap_safe_candidates;
     for (const auto& c : candidates) {
       int leap_from_prev = std::abs(static_cast<int>(c.pitch) - static_cast<int>(opts.prev_pitch));
@@ -495,8 +484,8 @@ CreateNoteResult createNoteWithResult(IHarmonyContext& harmony, const NoteOption
   // PreserveContour: if monotony is severe (4+ consecutive), filter out prev_pitch entirely
   // and skip the note if no alternatives exist. This prevents long runs of repeated pitches.
   // Note: prev_pitch is the actual output pitch from the previous note, not the desired pitch.
-  if (opts.preference == PitchPreference::PreserveContour &&
-      opts.prev_pitch > 0 && opts.consecutive_same_count >= 4 && !candidates.empty()) {
+  if (opts.preference == PitchPreference::PreserveContour && opts.prev_pitch > 0 &&
+      opts.consecutive_same_count >= 4 && !candidates.empty()) {
     std::vector<PitchCandidate> different_pitch_candidates;
     for (const auto& c : candidates) {
       if (c.pitch != opts.prev_pitch) {
@@ -521,9 +510,9 @@ CreateNoteResult createNoteWithResult(IHarmonyContext& harmony, const NoteOption
     }
 
     uint8_t fallback_pitch = *resolved;
-    NoteEvent event = buildNoteEvent(harmony, opts.start, effective_duration,
-                                      fallback_pitch, opts.velocity,
-                                      opts.source, opts.record_provenance, true_original);
+    NoteEvent event =
+        buildNoteEvent(harmony, opts.start, effective_duration, fallback_pitch, opts.velocity,
+                       opts.source, opts.record_provenance, true_original);
 
     ProvenanceParams prov;
     prov.true_original = true_original;
@@ -551,15 +540,15 @@ CreateNoteResult createNoteWithResult(IHarmonyContext& harmony, const NoteOption
   if (opts.chord_boundary == ChordBoundaryPolicy::PreferSafe && best.is_safe_across_boundary) {
     final_duration = opts.duration;
     result.was_chord_clipped = false;  // Safe pitch found, no clip needed
-  } else if (opts.chord_boundary == ChordBoundaryPolicy::PreferSafe && !best.is_safe_across_boundary) {
+  } else if (opts.chord_boundary == ChordBoundaryPolicy::PreferSafe &&
+             !best.is_safe_across_boundary) {
     // Fallback: clip duration for boundary-unsafe candidate
     final_duration = boundary_info.safe_duration;
     result.was_chord_clipped = true;
   }
 
-  NoteEvent event = buildNoteEvent(harmony, opts.start, final_duration,
-                                    best.pitch, opts.velocity,
-                                    opts.source, opts.record_provenance, true_original);
+  NoteEvent event = buildNoteEvent(harmony, opts.start, final_duration, best.pitch, opts.velocity,
+                                   opts.source, opts.record_provenance, true_original);
 
   ProvenanceParams prov;
   prov.true_original = true_original;
@@ -574,8 +563,8 @@ CreateNoteResult createNoteWithResult(IHarmonyContext& harmony, const NoteOption
   prov.next_degree = boundary_info.next_degree;
   recordProvenanceTransforms(event, prov);
 
-  finalizeResult(result, event, best.pitch, true_original,
-                 best.strategy, final_duration, harmony, opts);
+  finalizeResult(result, event, best.pitch, true_original, best.strategy, final_duration, harmony,
+                 opts);
 
   return result;
 }
@@ -588,8 +577,8 @@ NoteEvent createNoteWithoutHarmony(Tick start, Tick duration, uint8_t pitch, uin
   return NoteEventBuilder::create(start, duration, pitch, velocity);
 }
 
-NoteEvent createNoteWithoutHarmonyAndAdd(MidiTrack& track, Tick start, Tick duration,
-                                          uint8_t pitch, uint8_t velocity) {
+NoteEvent createNoteWithoutHarmonyAndAdd(MidiTrack& track, Tick start, Tick duration, uint8_t pitch,
+                                         uint8_t velocity) {
   NoteEvent event = createNoteWithoutHarmony(start, duration, pitch, velocity);
   track.addNote(event);
   return event;
@@ -599,19 +588,12 @@ NoteEvent createNoteWithoutHarmonyAndAdd(MidiTrack& track, Tick start, Tick dura
 // Candidate-based API
 // ============================================================================
 
-std::vector<PitchCandidate> getSafePitchCandidates(
-    const ICollisionDetector& harmony,
-    uint8_t desired_pitch,
-    Tick start,
-    Tick duration,
-    TrackRole role,
-    uint8_t range_low,
-    uint8_t range_high,
-    PitchPreference preference,
-    size_t max_candidates,
-    uint8_t prev_pitch,
-    int consecutive_same_count) {
-
+std::vector<PitchCandidate> getSafePitchCandidates(const ICollisionDetector& harmony,
+                                                   uint8_t desired_pitch, Tick start, Tick duration,
+                                                   TrackRole role, uint8_t range_low,
+                                                   uint8_t range_high, PitchPreference preference,
+                                                   size_t max_candidates, uint8_t prev_pitch,
+                                                   int consecutive_same_count) {
   std::vector<PitchCandidate> candidates;
   candidates.reserve(max_candidates * 2);  // May generate more, then trim
 
@@ -625,14 +607,17 @@ std::vector<PitchCandidate> getSafePitchCandidates(
     PitchCandidate candidate;
     candidate.pitch = pitch;
     candidate.strategy = strategy;
-    candidate.interval_from_desired = static_cast<int8_t>(pitch) - static_cast<int8_t>(desired_pitch);
+    candidate.interval_from_desired =
+        static_cast<int8_t>(pitch) - static_cast<int8_t>(desired_pitch);
 
     // Calculate max_safe_duration
-    candidate.max_safe_duration = harmony.getMaxSafeEnd(start, pitch, role, start + duration) - start;
+    candidate.max_safe_duration =
+        harmony.getMaxSafeEnd(start, pitch, role, start + duration) - start;
 
     // Musical attributes
     int pc = getPitchClass(pitch);
-    candidate.is_chord_tone = std::find(chord_tones.begin(), chord_tones.end(), pc) != chord_tones.end();
+    candidate.is_chord_tone =
+        std::find(chord_tones.begin(), chord_tones.end(), pc) != chord_tones.end();
     candidate.is_scale_tone = isScaleTone(pc);
     candidate.is_root_or_fifth = isRootOrFifth(pc, chord_tones);
 
@@ -640,7 +625,8 @@ std::vector<PitchCandidate> getSafePitchCandidates(
     {
       int8_t degree = harmony.getChordDegreeAt(start);
       auto guide_pcs = getGuideTonePitchClasses(degree);
-      candidate.is_guide_tone = std::find(guide_pcs.begin(), guide_pcs.end(), pc) != guide_pcs.end();
+      candidate.is_guide_tone =
+          std::find(guide_pcs.begin(), guide_pcs.end(), pc) != guide_pcs.end();
     }
 
     // Annotate cross-boundary safety for notes with meaningful duration
@@ -670,7 +656,10 @@ std::vector<PitchCandidate> getSafePitchCandidates(
     bool desired_is_chord_tone = false;
     int dpc = getPitchClass(desired_pitch);
     for (int ct : chord_tones) {
-      if (ct == dpc) { desired_is_chord_tone = true; break; }
+      if (ct == dpc) {
+        desired_is_chord_tone = true;
+        break;
+      }
     }
     if (desired_is_chord_tone && candidates.size() >= max_candidates) {
       rankCandidates(candidates, preference);
@@ -708,8 +697,10 @@ std::vector<PitchCandidate> getSafePitchCandidates(
         for (int oct_offset = -1; oct_offset <= 1; ++oct_offset) {
           int oct = octave + oct_offset;
           if (oct >= 0 && oct <= 10) {
-            tryAddCandidate(static_cast<uint8_t>(oct * 12 + root), CollisionAvoidStrategy::ChordTones);
-            tryAddCandidate(static_cast<uint8_t>(oct * 12 + fifth), CollisionAvoidStrategy::ChordTones);
+            tryAddCandidate(static_cast<uint8_t>(oct * 12 + root),
+                            CollisionAvoidStrategy::ChordTones);
+            tryAddCandidate(static_cast<uint8_t>(oct * 12 + fifth),
+                            CollisionAvoidStrategy::ChordTones);
           }
         }
       }
@@ -721,7 +712,8 @@ std::vector<PitchCandidate> getSafePitchCandidates(
         for (int oct_offset = -1; oct_offset <= 1; ++oct_offset) {
           int oct = octave + oct_offset;
           if (oct >= 0 && oct <= 10) {
-            tryAddCandidate(static_cast<uint8_t>(oct * 12 + ct), CollisionAvoidStrategy::ChordTones);
+            tryAddCandidate(static_cast<uint8_t>(oct * 12 + ct),
+                            CollisionAvoidStrategy::ChordTones);
           }
         }
       }
@@ -760,7 +752,8 @@ std::vector<PitchCandidate> getSafePitchCandidates(
         for (int oct_offset = -1; oct_offset <= 1; ++oct_offset) {
           int oct = octave + oct_offset;
           if (oct >= 0 && oct <= 10) {
-            tryAddCandidate(static_cast<uint8_t>(oct * 12 + ct), CollisionAvoidStrategy::ChordTones);
+            tryAddCandidate(static_cast<uint8_t>(oct * 12 + ct),
+                            CollisionAvoidStrategy::ChordTones);
           }
         }
       }
@@ -772,7 +765,8 @@ std::vector<PitchCandidate> getSafePitchCandidates(
         for (int oct_offset = -1; oct_offset <= 1; ++oct_offset) {
           int oct = octave + oct_offset;
           if (oct >= 0 && oct <= 10) {
-            tryAddCandidate(static_cast<uint8_t>(oct * 12 + ct), CollisionAvoidStrategy::ChordTones);
+            tryAddCandidate(static_cast<uint8_t>(oct * 12 + ct),
+                            CollisionAvoidStrategy::ChordTones);
           }
         }
       }
@@ -866,7 +860,8 @@ std::vector<PitchCandidate> getSafePitchCandidates(
   // PreferChordTones / PreferRootFifth: filter to chord tones only.
   // This prevents ConsonantInterval/ExhaustiveSearch from selecting non-chord tones.
   if ((preference == PitchPreference::PreferChordTones ||
-       preference == PitchPreference::PreferRootFifth) && !candidates.empty()) {
+       preference == PitchPreference::PreferRootFifth) &&
+      !candidates.empty()) {
     std::vector<PitchCandidate> chord_tone_candidates;
     for (const auto& c : candidates) {
       if (c.is_chord_tone) {
@@ -925,39 +920,39 @@ struct SectionWeights {
 };
 
 static const SectionWeights kSectionWeightTable[] = {
-  // Intro:      balanced
-  {1.0f, 1.0f, 1.0f, 1.0f, 1.0f},
-  // A (Verse):  baseline reference
-  {1.0f, 1.0f, 1.0f, 1.0f, 1.0f},
-  // B (Pre-chorus): non-chord tones permitted, contour emphasized, wider range
-  {1.0f, 0.8f, 1.2f, 0.8f, 1.0f},
-  // Chorus:     harmonic stability, relax intent constraint
-  {1.0f, 1.2f, 1.0f, 1.0f, 0.8f},
-  // Bridge:     exploratory - relax all constraints
-  {0.8f, 0.7f, 0.8f, 0.5f, 1.0f},
-  // Interlude:  balanced
-  {1.0f, 1.0f, 1.0f, 1.0f, 1.0f},
-  // Outro:      stable, converge range
-  {1.0f, 1.1f, 1.0f, 1.2f, 1.0f},
-  // Chant:      balanced
-  {1.0f, 1.0f, 1.0f, 1.0f, 1.0f},
-  // MixBreak:   balanced
-  {1.0f, 1.0f, 1.0f, 1.0f, 1.0f},
-  // Drop:       balanced
-  {1.0f, 1.0f, 1.0f, 1.0f, 1.0f},
+    // Intro:      balanced
+    {1.0f, 1.0f, 1.0f, 1.0f, 1.0f},
+    // A (Verse):  baseline reference
+    {1.0f, 1.0f, 1.0f, 1.0f, 1.0f},
+    // B (Pre-chorus): non-chord tones permitted, contour emphasized, wider range
+    {1.0f, 0.8f, 1.2f, 0.8f, 1.0f},
+    // Chorus:     harmonic stability, relax intent constraint
+    {1.0f, 1.2f, 1.0f, 1.0f, 0.8f},
+    // Bridge:     exploratory - relax all constraints
+    {0.8f, 0.7f, 0.8f, 0.5f, 1.0f},
+    // Interlude:  balanced
+    {1.0f, 1.0f, 1.0f, 1.0f, 1.0f},
+    // Outro:      stable, converge range
+    {1.0f, 1.1f, 1.0f, 1.2f, 1.0f},
+    // Chant:      balanced
+    {1.0f, 1.0f, 1.0f, 1.0f, 1.0f},
+    // MixBreak:   balanced
+    {1.0f, 1.0f, 1.0f, 1.0f, 1.0f},
+    // Drop:       balanced
+    {1.0f, 1.0f, 1.0f, 1.0f, 1.0f},
 };
 
 static const SectionWeights& getSectionWeights(int8_t section_type_int) {
   if (section_type_int < 0 ||
-      section_type_int >= static_cast<int8_t>(sizeof(kSectionWeightTable) / sizeof(kSectionWeightTable[0]))) {
+      section_type_int >=
+          static_cast<int8_t>(sizeof(kSectionWeightTable) / sizeof(kSectionWeightTable[0]))) {
     return kSectionWeightTable[1];  // Default: A (verse) baseline
   }
   return kSectionWeightTable[section_type_int];
 }
 
-uint8_t selectBestCandidate(const std::vector<PitchCandidate>& candidates,
-                             uint8_t fallback_pitch,
-                             const PitchSelectionHints& hints) {
+uint8_t selectBestCandidate(const std::vector<PitchCandidate>& candidates, uint8_t fallback_pitch,
+                            const PitchSelectionHints& hints) {
   if (candidates.empty()) {
     return fallback_pitch;
   }
@@ -998,26 +993,42 @@ uint8_t selectBestCandidate(const std::vector<PitchCandidate>& candidates,
     float melodic_score = 0.0f;
     switch (dur_cat) {
       case DurationCat::Short:
-        if (abs_interval == 0) melodic_score = 33.0f;
-        else if (abs_interval <= 2) melodic_score = 35.0f;
-        else if (abs_interval <= 4) melodic_score = 20.0f;
-        else if (abs_interval <= 7) melodic_score = 5.0f;
-        else melodic_score = -1.5f * abs_interval;
+        if (abs_interval == 0)
+          melodic_score = 33.0f;
+        else if (abs_interval <= 2)
+          melodic_score = 35.0f;
+        else if (abs_interval <= 4)
+          melodic_score = 20.0f;
+        else if (abs_interval <= 7)
+          melodic_score = 5.0f;
+        else
+          melodic_score = -1.5f * abs_interval;
         break;
       case DurationCat::Long:
-        if (abs_interval == 0) melodic_score = 15.0f;
-        else if (abs_interval <= 2) melodic_score = 25.0f;
-        else if (abs_interval <= 4) melodic_score = 30.0f;
-        else if (abs_interval <= 7) melodic_score = 25.0f;
-        else if (abs_interval <= 12) melodic_score = 15.0f;
-        else melodic_score = -1.0f * abs_interval;
+        if (abs_interval == 0)
+          melodic_score = 15.0f;
+        else if (abs_interval <= 2)
+          melodic_score = 25.0f;
+        else if (abs_interval <= 4)
+          melodic_score = 30.0f;
+        else if (abs_interval <= 7)
+          melodic_score = 25.0f;
+        else if (abs_interval <= 12)
+          melodic_score = 15.0f;
+        else
+          melodic_score = -1.0f * abs_interval;
         break;
       case DurationCat::Medium:
-        if (abs_interval == 0) melodic_score = 25.0f;
-        else if (abs_interval <= 2) melodic_score = 30.0f;
-        else if (abs_interval <= 4) melodic_score = 25.0f;
-        else if (abs_interval <= 7) melodic_score = 15.0f;
-        else melodic_score = -1.0f * abs_interval;
+        if (abs_interval == 0)
+          melodic_score = 25.0f;
+        else if (abs_interval <= 2)
+          melodic_score = 30.0f;
+        else if (abs_interval <= 4)
+          melodic_score = 25.0f;
+        else if (abs_interval <= 7)
+          melodic_score = 15.0f;
+        else
+          melodic_score = -1.0f * abs_interval;
         break;
     }
 
@@ -1056,15 +1067,17 @@ uint8_t selectBestCandidate(const std::vector<PitchCandidate>& candidates,
         score += 5.0f;  // Phrase start: anchor on root/5th
       }
       if (hints.phrase_position > 0.85f) {
-        if (c.is_root_or_fifth) score += 8.0f;  // Phrase end: resolve to root/5th
-        else if (c.is_chord_tone) score += 3.0f;  // Phrase end: chord tone OK
+        if (c.is_root_or_fifth)
+          score += 8.0f;  // Phrase end: resolve to root/5th
+        else if (c.is_chord_tone)
+          score += 3.0f;  // Phrase end: chord tone OK
       }
 
       // Sub-phrase mid-point anchoring (development → climax boundary)
       if (hints.sub_phrase_index >= 0) {
         // Sub-phrase 1 (development): breathing point at 0.45-0.55
-        if (hints.sub_phrase_index == 1 &&
-            hints.phrase_position >= 0.45f && hints.phrase_position <= 0.55f) {
+        if (hints.sub_phrase_index == 1 && hints.phrase_position >= 0.45f &&
+            hints.phrase_position <= 0.55f) {
           if (c.is_chord_tone) score += 3.0f;  // Mid-phrase chord tone anchor
         }
       }
@@ -1074,9 +1087,8 @@ uint8_t selectBestCandidate(const std::vector<PitchCandidate>& candidates,
     {
       float contour_score = 0.0f;
       if (hints.contour_direction != 0) {
-        bool moving_in_preferred_direction =
-            (hints.contour_direction > 0 && interval > 0) ||
-            (hints.contour_direction < 0 && interval < 0);
+        bool moving_in_preferred_direction = (hints.contour_direction > 0 && interval > 0) ||
+                                             (hints.contour_direction < 0 && interval < 0);
         if (moving_in_preferred_direction) {
           contour_score = 20.0f;
         } else if (interval != 0) {
@@ -1110,8 +1122,7 @@ uint8_t selectBestCandidate(const std::vector<PitchCandidate>& candidates,
 // ============================================================================
 
 void annotateBoundarySafety(std::vector<PitchCandidate>& candidates,
-                            const ICollisionDetector& harmony,
-                            Tick start, Tick duration) {
+                            const ICollisionDetector& harmony, Tick start, Tick duration) {
   for (auto& c : candidates) {
     auto info = harmony.analyzeChordBoundary(c.pitch, start, duration);
     c.cross_boundary_safety = info.safety;

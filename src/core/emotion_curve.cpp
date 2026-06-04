@@ -32,7 +32,7 @@ constexpr float kMoodIntensity[24] = {
     1.0f,   // 13: ElectroPop
     1.2f,   // 14: IdolPop
     1.2f,   // 15: Anthem
-    1.1f,   // 16: Yoasobi
+    1.1f,   // 16: AnimeHighEnergy
     0.95f,  // 17: Synthwave
     1.1f,   // 18: FutureBass
     0.95f,  // 19: CityPop
@@ -185,8 +185,8 @@ void EmotionCurve::adjustForContext() {
       if (current == SectionType::B && next == SectionType::Chorus) {
         emotions_[i].tension = std::min(1.0f, emotions_[i].tension + 0.15f);
         emotions_[i].resolution_need = std::min(1.0f, emotions_[i].resolution_need + 0.2f);
-        emotions_[i].pitch_tendency = std::min(static_cast<int8_t>(3),
-                                               static_cast<int8_t>(emotions_[i].pitch_tendency + 1));
+        emotions_[i].pitch_tendency =
+            std::min(static_cast<int8_t>(3), static_cast<int8_t>(emotions_[i].pitch_tendency + 1));
       }
     }
 
@@ -243,8 +243,8 @@ void EmotionCurve::applyMoodScaling() {
     emotion.tension = std::clamp(emotion.tension, 0.0f, 1.0f);
     emotion.resolution_need = std::clamp(emotion.resolution_need, 0.0f, 1.0f);
     emotion.density_factor = std::clamp(emotion.density_factor, 0.5f, 1.5f);
-    emotion.pitch_tendency = std::clamp(emotion.pitch_tendency, static_cast<int8_t>(-3),
-                                        static_cast<int8_t>(3));
+    emotion.pitch_tendency =
+        std::clamp(emotion.pitch_tendency, static_cast<int8_t>(-3), static_cast<int8_t>(3));
   }
 }
 

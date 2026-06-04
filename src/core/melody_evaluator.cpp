@@ -268,15 +268,15 @@ float MelodyEvaluator::calcRhythmIntervalCorrelation(const std::vector<NoteEvent
     Tick prev_duration = notes[i - 1].duration;
     int interval = std::abs(notes[i].note - notes[i - 1].note);
 
-    bool is_long = prev_duration >= TICKS_PER_BEAT;       // Quarter note or longer
-    bool is_short = prev_duration < TICKS_PER_BEAT / 2;   // Less than 8th note
-    bool is_leap = interval >= 5;                          // Perfect 4th or larger
-    bool is_step = interval <= 2;                          // Major 2nd or smaller
+    bool is_long = prev_duration >= TICKS_PER_BEAT;      // Quarter note or longer
+    bool is_short = prev_duration < TICKS_PER_BEAT / 2;  // Less than 8th note
+    bool is_leap = interval >= 5;                        // Perfect 4th or larger
+    bool is_step = interval <= 2;                        // Major 2nd or smaller
 
     if ((is_long && is_leap) || (is_short && is_step)) {
       good_correlations++;  // Ideal combinations for singability
     } else if (is_short && is_leap) {
-      bad_correlations++;   // Difficult to sing: no time to prepare for jump
+      bad_correlations++;  // Difficult to sing: no time to prepare for jump
     }
     total_pairs++;
   }
@@ -336,8 +336,8 @@ float MelodyEvaluator::calcCatchiness(const std::vector<NoteEvent>& notes) {
   }
 
   if (total_patterns > 0) {
-    pattern_score = std::min(1.0f, static_cast<float>(pattern_matches) /
-                                       static_cast<float>(total_patterns) * 2.0f);
+    pattern_score = std::min(
+        1.0f, static_cast<float>(pattern_matches) / static_cast<float>(total_patterns) * 2.0f);
   }
 
   // === 1b. High repetition bonus: same interval appearing 4+ times ===
@@ -397,7 +397,8 @@ float MelodyEvaluator::calcCatchiness(const std::vector<NoteEvent>& notes) {
   }
 
   if (total_intervals > 0) {
-    simple_interval_score = static_cast<float>(simple_intervals) / static_cast<float>(total_intervals);
+    simple_interval_score =
+        static_cast<float>(simple_intervals) / static_cast<float>(total_intervals);
   }
 
   // === 4. Hook contour recognition (20%) ===
@@ -424,11 +425,11 @@ float MelodyEvaluator::calcCatchiness(const std::vector<NoteEvent>& notes) {
   if (max_consecutive_same >= 5) {
     repeat_bonus = -0.3f;  // PENALTY for excessive repetition (5+ consecutive)
   } else if (max_consecutive_same >= 4) {
-    repeat_bonus = 0.3f;   // Reduced bonus for 4 (borderline)
+    repeat_bonus = 0.3f;  // Reduced bonus for 4 (borderline)
   } else if (max_consecutive_same >= 3) {
-    repeat_bonus = 0.4f;   // Good for catchy hook
+    repeat_bonus = 0.4f;  // Good for catchy hook
   } else if (max_consecutive_same >= 2) {
-    repeat_bonus = 0.2f;   // Mild bonus
+    repeat_bonus = 0.2f;  // Mild bonus
   }
 
   // Check for AscendDrop (rising then falling)
@@ -578,8 +579,7 @@ float MelodyEvaluator::calcRapidDirectionChangePenalty(const std::vector<NoteEve
 }
 
 float MelodyEvaluator::calcIsolatedNotePenalty(const std::vector<NoteEvent>& notes,
-                                               int prev_section_last_pitch,
-                                               int threshold) {
+                                               int prev_section_last_pitch, int threshold) {
   if (notes.size() < 2) return 0.0f;
 
   int isolated_count = 0;
@@ -587,7 +587,8 @@ float MelodyEvaluator::calcIsolatedNotePenalty(const std::vector<NoteEvent>& not
   // Check first note against previous section's last note
   if (prev_section_last_pitch >= 0 && notes.size() >= 2) {
     int interval_before = std::abs(static_cast<int>(notes[0].note) - prev_section_last_pitch);
-    int interval_after = std::abs(static_cast<int>(notes[1].note) - static_cast<int>(notes[0].note));
+    int interval_after =
+        std::abs(static_cast<int>(notes[1].note) - static_cast<int>(notes[0].note));
     if (interval_before >= threshold && interval_after >= threshold) {
       isolated_count++;
     }
@@ -595,8 +596,10 @@ float MelodyEvaluator::calcIsolatedNotePenalty(const std::vector<NoteEvent>& not
 
   // Check internal notes
   for (size_t i = 1; i + 1 < notes.size(); ++i) {
-    int interval_before = std::abs(static_cast<int>(notes[i].note) - static_cast<int>(notes[i - 1].note));
-    int interval_after = std::abs(static_cast<int>(notes[i + 1].note) - static_cast<int>(notes[i].note));
+    int interval_before =
+        std::abs(static_cast<int>(notes[i].note) - static_cast<int>(notes[i - 1].note));
+    int interval_after =
+        std::abs(static_cast<int>(notes[i + 1].note) - static_cast<int>(notes[i].note));
     if (interval_before >= threshold && interval_after >= threshold) {
       isolated_count++;
     }
@@ -904,8 +907,7 @@ float MelodyEvaluator::getGapThreshold(VocalStylePreset style) {
 
 float MelodyEvaluator::evaluateForCulling(const std::vector<NoteEvent>& notes,
                                           const IHarmonyContext& harmony, Tick phrase_duration,
-                                          VocalStylePreset style,
-                                          int prev_section_last_pitch) {
+                                          VocalStylePreset style, int prev_section_last_pitch) {
   if (notes.empty()) return 0.0f;  // Empty = reject
 
   float score = 1.0f;

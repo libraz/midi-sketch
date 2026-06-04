@@ -33,7 +33,7 @@ enum class GhostDensityLevel : uint8_t {
 enum class MoodCategory : uint8_t {
   Calm = 0,      ///< Ballad, Sentimental, Chill
   Standard = 1,  ///< Most moods
-  Energetic = 2  ///< IdolPop, EnergeticDance, Anthem, Yoasobi
+  Energetic = 2  ///< IdolPop, EnergeticDance, Anthem, AnimeHighEnergy
 };
 
 /// @brief Classify mood into category for table lookup.
@@ -54,8 +54,7 @@ GhostDensityLevel adjustGhostDensityForBPM(GhostDensityLevel level, uint16_t bpm
 /// @param backing_density Backing density (thin/normal/thick)
 /// @param bpm Tempo (affects density at extreme tempos)
 /// @return Ghost note probability (0.0 - 0.45)
-float getGhostDensity(Mood mood, SectionType section, BackingDensity backing_density,
-                      uint16_t bpm);
+float getGhostDensity(Mood mood, SectionType section, BackingDensity backing_density, uint16_t bpm);
 
 /// @brief Get ghost note velocity multiplier based on section and position.
 /// @param section Current section type

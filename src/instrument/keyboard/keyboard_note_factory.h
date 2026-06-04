@@ -61,8 +61,8 @@ class KeyboardNoteFactory {
   /// @param duration Duration in ticks
   /// @return Playable voicing (may be same as input)
   std::vector<uint8_t> ensurePlayableVoicing(const std::vector<uint8_t>& pitches,
-                                              uint8_t root_pitch_class, uint32_t start,
-                                              uint32_t duration);
+                                             uint8_t root_pitch_class, uint32_t start,
+                                             uint32_t duration);
 
   /// @brief Check if a voicing is playable without modifying it.
   /// @param pitches Voicing pitches to check
@@ -73,8 +73,7 @@ class KeyboardNoteFactory {
   /// @param to_pitches Target voicing
   /// @param available_ticks Time available for transition
   /// @return true if transition is feasible
-  bool isTransitionFeasible(const std::vector<uint8_t>& to_pitches,
-                            uint32_t available_ticks) const;
+  bool isTransitionFeasible(const std::vector<uint8_t>& to_pitches, uint32_t available_ticks) const;
 
   // =========================================================================
   // State Management

@@ -36,6 +36,7 @@ GUITAR_STRUM_MIN_VOICES = 3      # Minimum voices for proper strum chord
 NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
 
 # VocalStylePreset IDs (from melody_types.h)
+VOCAL_STYLE_VOCALOID = 2
 VOCAL_STYLE_ULTRA_VOCALOID = 3
 
 BLUEPRINT_NAMES = {

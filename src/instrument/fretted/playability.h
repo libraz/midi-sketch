@@ -21,49 +21,68 @@ namespace midisketch {
 ///
 /// TAB notation symbols shown in brackets where applicable.
 enum class PlayingTechnique : uint8_t {
-  Normal,            ///< Standard fretting
-  Slap,              ///< Slap (thumbpicking) [T]
-  Pop,               ///< Pop/pull [P]
-  Tapping,           ///< Two-hand tapping [t]
-  HammerOn,          ///< Hammer-on [h]
-  PullOff,           ///< Pull-off [p]
-  SlideUp,           ///< Slide up [/]
-  SlideDown,         ///< Slide down [\]
-  Bend,              ///< String bend [b]
-  BendRelease,       ///< Bend release [r]
-  Vibrato,           ///< Vibrato [~]
-  Harmonic,          ///< Natural harmonic [<>]
-  ArtificialHarmonic,///< Artificial harmonic [AH]
-  PalmMute,          ///< Palm mute [PM]
-  LetRing,           ///< Let ring [LR]
-  Tremolo,           ///< Tremolo picking
-  Strum,             ///< Chord strum
-  ChordStrum,        ///< Full chord strum
-  GhostNote          ///< Ghost note (muted) [(x)]
+  Normal,              ///< Standard fretting
+  Slap,                ///< Slap (thumbpicking) [T]
+  Pop,                 ///< Pop/pull [P]
+  Tapping,             ///< Two-hand tapping [t]
+  HammerOn,            ///< Hammer-on [h]
+  PullOff,             ///< Pull-off [p]
+  SlideUp,             ///< Slide up [/]
+  SlideDown,           ///< Slide down [\]
+  Bend,                ///< String bend [b]
+  BendRelease,         ///< Bend release [r]
+  Vibrato,             ///< Vibrato [~]
+  Harmonic,            ///< Natural harmonic [<>]
+  ArtificialHarmonic,  ///< Artificial harmonic [AH]
+  PalmMute,            ///< Palm mute [PM]
+  LetRing,             ///< Let ring [LR]
+  Tremolo,             ///< Tremolo picking
+  Strum,               ///< Chord strum
+  ChordStrum,          ///< Full chord strum
+  GhostNote            ///< Ghost note (muted) [(x)]
 };
 
 /// @brief Convert PlayingTechnique to string.
 inline const char* playingTechniqueToString(PlayingTechnique tech) {
   switch (tech) {
-    case PlayingTechnique::Normal: return "normal";
-    case PlayingTechnique::Slap: return "slap";
-    case PlayingTechnique::Pop: return "pop";
-    case PlayingTechnique::Tapping: return "tapping";
-    case PlayingTechnique::HammerOn: return "hammer_on";
-    case PlayingTechnique::PullOff: return "pull_off";
-    case PlayingTechnique::SlideUp: return "slide_up";
-    case PlayingTechnique::SlideDown: return "slide_down";
-    case PlayingTechnique::Bend: return "bend";
-    case PlayingTechnique::BendRelease: return "bend_release";
-    case PlayingTechnique::Vibrato: return "vibrato";
-    case PlayingTechnique::Harmonic: return "harmonic";
-    case PlayingTechnique::ArtificialHarmonic: return "artificial_harmonic";
-    case PlayingTechnique::PalmMute: return "palm_mute";
-    case PlayingTechnique::LetRing: return "let_ring";
-    case PlayingTechnique::Tremolo: return "tremolo";
-    case PlayingTechnique::Strum: return "strum";
-    case PlayingTechnique::ChordStrum: return "chord_strum";
-    case PlayingTechnique::GhostNote: return "ghost_note";
+    case PlayingTechnique::Normal:
+      return "normal";
+    case PlayingTechnique::Slap:
+      return "slap";
+    case PlayingTechnique::Pop:
+      return "pop";
+    case PlayingTechnique::Tapping:
+      return "tapping";
+    case PlayingTechnique::HammerOn:
+      return "hammer_on";
+    case PlayingTechnique::PullOff:
+      return "pull_off";
+    case PlayingTechnique::SlideUp:
+      return "slide_up";
+    case PlayingTechnique::SlideDown:
+      return "slide_down";
+    case PlayingTechnique::Bend:
+      return "bend";
+    case PlayingTechnique::BendRelease:
+      return "bend_release";
+    case PlayingTechnique::Vibrato:
+      return "vibrato";
+    case PlayingTechnique::Harmonic:
+      return "harmonic";
+    case PlayingTechnique::ArtificialHarmonic:
+      return "artificial_harmonic";
+    case PlayingTechnique::PalmMute:
+      return "palm_mute";
+    case PlayingTechnique::LetRing:
+      return "let_ring";
+    case PlayingTechnique::Tremolo:
+      return "tremolo";
+    case PlayingTechnique::Strum:
+      return "strum";
+    case PlayingTechnique::ChordStrum:
+      return "chord_strum";
+    case PlayingTechnique::GhostNote:
+      return "ghost_note";
   }
   return "unknown";
 }
@@ -78,21 +97,26 @@ enum class PickDirection : uint8_t {
 
 /// @brief Bend amount in semitones.
 enum class BendAmount : uint8_t {
-  Quarter = 0,  ///< Quarter tone (microtonal)
-  Half = 1,     ///< Half step (1 semitone)
-  Full = 2,     ///< Whole step (2 semitones)
-  OneAndHalf = 3, ///< 1.5 steps (3 semitones)
-  Double = 4    ///< Double step (4 semitones)
+  Quarter = 0,     ///< Quarter tone (microtonal)
+  Half = 1,        ///< Half step (1 semitone)
+  Full = 2,        ///< Whole step (2 semitones)
+  OneAndHalf = 3,  ///< 1.5 steps (3 semitones)
+  Double = 4       ///< Double step (4 semitones)
 };
 
 /// @brief Get semitones for a bend amount.
 inline float getBendSemitones(BendAmount amount) {
   switch (amount) {
-    case BendAmount::Quarter: return 0.25f;
-    case BendAmount::Half: return 0.5f;
-    case BendAmount::Full: return 1.0f;
-    case BendAmount::OneAndHalf: return 1.5f;
-    case BendAmount::Double: return 2.0f;
+    case BendAmount::Quarter:
+      return 0.25f;
+    case BendAmount::Half:
+      return 0.5f;
+    case BendAmount::Full:
+      return 1.0f;
+    case BendAmount::OneAndHalf:
+      return 1.5f;
+    case BendAmount::Double:
+      return 2.0f;
   }
   return 1.0f;
 }
@@ -105,18 +129,15 @@ enum class StrumDirection : uint8_t {
 
 /// @brief Strum configuration.
 struct StrumConfig {
-  StrumDirection direction;   ///< Strum direction
-  uint8_t first_string;       ///< First string to strum (0-based)
-  uint8_t last_string;        ///< Last string to strum
-  Tick strum_duration;        ///< Time to complete the strum (in ticks)
-  std::vector<bool> muted;    ///< Per-string mute state
+  StrumDirection direction;  ///< Strum direction
+  uint8_t first_string;      ///< First string to strum (0-based)
+  uint8_t last_string;       ///< Last string to strum
+  Tick strum_duration;       ///< Time to complete the strum (in ticks)
+  std::vector<bool> muted;   ///< Per-string mute state
 
   /// @brief Default constructor.
   StrumConfig()
-      : direction(StrumDirection::Down),
-        first_string(0),
-        last_string(5),
-        strum_duration(30) {}
+      : direction(StrumDirection::Down), first_string(0), last_string(5), strum_duration(30) {}
 
   /// @brief Get the delay between string hits.
   Tick getStringDelay() const {
@@ -147,9 +168,7 @@ struct TechniqueConstraints {
   bool isValidFret(uint8_t fret) const { return fret >= min_fret && fret <= max_fret; }
 
   /// @brief Check if a string is preferred for this technique.
-  bool isPreferredString(uint8_t string) const {
-    return (preferred_strings & (1 << string)) != 0;
-  }
+  bool isPreferredString(uint8_t string) const { return (preferred_strings & (1 << string)) != 0; }
 };
 
 /// @brief Playability cost components.
@@ -188,14 +207,14 @@ struct PlayabilityCost {
 
 /// @brief Cost calculation constants.
 namespace PlayabilityCostWeights {
-constexpr float kPositionShiftPerFret = 5.0f;   ///< Per-fret position change
-constexpr float kStretchPerFret = 8.0f;         ///< Per-fret beyond normal span
-constexpr float kStringSkipPerString = 3.0f;    ///< Per-string skip
-constexpr float kOpenStringBonus = -2.0f;       ///< Bonus for open strings (negative = easier)
-constexpr float kBarreFormationCost = 15.0f;    ///< Cost to form a new barre
-constexpr float kBarreReleaseCost = 5.0f;       ///< Cost to release a barre
-constexpr uint16_t kTempoThreshold = 120;       ///< BPM threshold for tempo penalty
-constexpr float kTempoFactorPerBPM = 0.1f;      ///< Cost per BPM above threshold
+constexpr float kPositionShiftPerFret = 5.0f;  ///< Per-fret position change
+constexpr float kStretchPerFret = 8.0f;        ///< Per-fret beyond normal span
+constexpr float kStringSkipPerString = 3.0f;   ///< Per-string skip
+constexpr float kOpenStringBonus = -2.0f;      ///< Bonus for open strings (negative = easier)
+constexpr float kBarreFormationCost = 15.0f;   ///< Cost to form a new barre
+constexpr float kBarreReleaseCost = 5.0f;      ///< Cost to release a barre
+constexpr uint16_t kTempoThreshold = 120;      ///< BPM threshold for tempo penalty
+constexpr float kTempoFactorPerBPM = 0.1f;     ///< Cost per BPM above threshold
 }  // namespace PlayabilityCostWeights
 
 /// @brief Harmonic fret positions (where natural harmonics sound).
@@ -245,9 +264,9 @@ enum class PickingPattern : uint8_t {
 
 /// @brief Hand physics constraints.
 struct HandPhysics {
-  Tick position_change_time;          ///< Minimum time to change position (ticks)
+  Tick position_change_time;            ///< Minimum time to change position (ticks)
   uint8_t max_hammer_pulloff_sequence;  ///< Max consecutive H/P without picking
-  Tick min_interval_same_string;      ///< Minimum time between notes on same string
+  Tick min_interval_same_string;        ///< Minimum time between notes on same string
 
   /// @brief Default intermediate constraints.
   static HandPhysics intermediate() { return {60, 4, 30}; }
@@ -290,8 +309,7 @@ struct BendConstraint {
 /// @param to Next technique
 /// @param interval Time between notes (ticks)
 /// @return true if transition is valid
-inline bool isValidTechniqueTransition(PlayingTechnique from, PlayingTechnique to,
-                                        Tick interval) {
+inline bool isValidTechniqueTransition(PlayingTechnique from, PlayingTechnique to, Tick interval) {
   // Slap -> Tapping requires hand repositioning
   if (from == PlayingTechnique::Slap && to == PlayingTechnique::Tapping) {
     return interval >= 120;  // At least 16th note at 120 BPM
@@ -311,14 +329,14 @@ inline bool isValidTechniqueTransition(PlayingTechnique from, PlayingTechnique t
 ///
 /// Stores complete fingering information for debugging and analysis.
 struct FingeringProvenance {
-  uint8_t string;         ///< String number (0=lowest, 255=unset)
-  uint8_t fret;           ///< Fret number (0=open, 255=unset)
-  uint8_t finger;         ///< Finger used (1-4, 0=open/unset)
-  bool is_barre;          ///< Part of a barre chord
-  uint8_t barre_fret;     ///< Barre fret (0=no barre)
-  uint8_t barre_span;     ///< Number of strings in barre
+  uint8_t string;              ///< String number (0=lowest, 255=unset)
+  uint8_t fret;                ///< Fret number (0=open, 255=unset)
+  uint8_t finger;              ///< Finger used (1-4, 0=open/unset)
+  bool is_barre;               ///< Part of a barre chord
+  uint8_t barre_fret;          ///< Barre fret (0=no barre)
+  uint8_t barre_span;          ///< Number of strings in barre
   PlayingTechnique technique;  ///< Playing technique used
-  PickDirection pick_dir; ///< Picking direction
+  PickDirection pick_dir;      ///< Picking direction
 
   /// @brief Default constructor.
   FingeringProvenance()
@@ -337,13 +355,20 @@ struct FingeringProvenance {
   /// @brief Get finger name.
   static const char* fingerName(uint8_t f) {
     switch (f) {
-      case 0: return "Open";
-      case 1: return "Index";
-      case 2: return "Middle";
-      case 3: return "Ring";
-      case 4: return "Pinky";
-      case 5: return "Thumb";
-      default: return "?";
+      case 0:
+        return "Open";
+      case 1:
+        return "Index";
+      case 2:
+        return "Middle";
+      case 3:
+        return "Ring";
+      case 4:
+        return "Pinky";
+      case 5:
+        return "Thumb";
+      default:
+        return "?";
     }
   }
 };

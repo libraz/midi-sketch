@@ -448,7 +448,7 @@ export class MidiSketch {
    * Returns the actual blueprint ID used for generation.
    * If blueprintId was set to 255 (random), this returns the selected ID.
    *
-   * @returns Resolved blueprint ID (0-3), or 255 if not generated
+   * @returns Resolved blueprint ID (0-9), or 255 if not generated
    */
   getResolvedBlueprintId(): number {
     const a = getApi();

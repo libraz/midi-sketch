@@ -28,8 +28,7 @@ int barHeadSkipCap(size_t i, const std::vector<float>& onsets, int max_skip) {
 }
 
 LongNoteDesire evaluateLongNoteDesire(size_t i, const std::vector<float>& onsets,
-                                      const Section& section,
-                                      const std::set<float>& boundary_set,
+                                      const Section& section, const std::set<float>& boundary_set,
                                       int onsets_since_long, uint16_t bpm,
                                       const std::set<float>& phrase_start_beats) {
   LongNoteDesire desire{0, 0.0f};
@@ -38,9 +37,11 @@ LongNoteDesire evaluateLongNoteDesire(size_t i, const std::vector<float>& onsets
   // Cooldown: prevent consecutive long notes from destroying rhythmic feel.
   // Chorus/Drop allow shorter cooldown since they benefit from more sustained singing.
   // At fast tempos (>=150), reduce cooldown to allow more frequent long notes.
-  int cooldown_threshold = (section.type == SectionType::Chorus ||
-                            section.type == SectionType::Drop ||
-                            section.type == SectionType::Bridge) ? 1 : 2;
+  int cooldown_threshold =
+      (section.type == SectionType::Chorus || section.type == SectionType::Drop ||
+       section.type == SectionType::Bridge)
+          ? 1
+          : 2;
   if (bpm >= 150) {
     // Chorus/Drop: keep minimum cooldown of 1 for rhythmic articulation
     if (section.type == SectionType::Chorus || section.type == SectionType::Drop) {
@@ -94,8 +95,7 @@ LongNoteDesire evaluateLongNoteDesire(size_t i, const std::vector<float>& onsets
   // note lengths with base max_skip; skip boost only for sparse patterns
   float avg_onset_spacing = 1.0f;
   if (onsets.size() > 1) {
-    avg_onset_spacing = (onsets.back() - onsets.front()) /
-                        static_cast<float>(onsets.size() - 1);
+    avg_onset_spacing = (onsets.back() - onsets.front()) / static_cast<float>(onsets.size() - 1);
   }
 
   float bpm_boost = 0.0f;
@@ -126,8 +126,8 @@ LongNoteDesire evaluateLongNoteDesire(size_t i, const std::vector<float>& onsets
 
   // (1) Section-end: last 3 onsets get high skip desire
   if (remaining <= 3) {
-    int section_end_skip = (section.type == SectionType::Chorus ||
-                            section.type == SectionType::Drop) ? 3 : 2;
+    int section_end_skip =
+        (section.type == SectionType::Chorus || section.type == SectionType::Drop) ? 3 : 2;
     desire.max_skip = std::max(desire.max_skip, section_end_skip);
     desire.probability = 0.95f;
     // Cap again
@@ -159,9 +159,9 @@ LongNoteDesire evaluateLongNoteDesire(size_t i, const std::vector<float>& onsets
   bool near_boundary = false;
   {
     constexpr float kEps = 0.01f;
-    float look_end = (i + 2 < onsets.size()) ? onsets[i + 2]
-                   : (i + 1 < onsets.size()) ? onsets[i + 1]
-                   : onsets[i] + 4.0f;
+    float look_end = (i + 2 < onsets.size())   ? onsets[i + 2]
+                     : (i + 1 < onsets.size()) ? onsets[i + 1]
+                                               : onsets[i] + 4.0f;
     for (float boundary : boundary_set) {
       if (boundary > onsets[i] + kEps && boundary <= look_end + kEps) {
         near_boundary = true;
@@ -226,9 +226,8 @@ LongNoteDesire evaluateLongNoteDesire(size_t i, const std::vector<float>& onsets
   return desire;
 }
 
-int computeSafeSkipCount(uint8_t pitch, Tick tick, const std::vector<float>& onsets,
-                         size_t i, int max_desired, const Section& section,
-                         const IHarmonyContext& harmony) {
+int computeSafeSkipCount(uint8_t pitch, Tick tick, const std::vector<float>& onsets, size_t i,
+                         int max_desired, const Section& section, const IHarmonyContext& harmony) {
   Tick section_end = section.endTick();
 
   // Don't skip over bar-head onsets (downbeats) — ensures every bar starts
@@ -239,8 +238,7 @@ int computeSafeSkipCount(uint8_t pitch, Tick tick, const std::vector<float>& ons
     size_t next_active = i + 1 + static_cast<size_t>(skip);
     Tick extended_end;
     if (next_active < onsets.size()) {
-      extended_end = section.start_tick +
-                     static_cast<Tick>(onsets[next_active] * TICKS_PER_BEAT);
+      extended_end = section.start_tick + static_cast<Tick>(onsets[next_active] * TICKS_PER_BEAT);
     } else {
       extended_end = section_end;
     }
@@ -252,10 +250,11 @@ int computeSafeSkipCount(uint8_t pitch, Tick tick, const std::vector<float>& ons
     auto info = harmony.analyzeChordBoundary(pitch, tick, extended_dur);
     if (info.safety == CrossBoundarySafety::NonChordTone ||
         info.safety == CrossBoundarySafety::AvoidNote) {
-      Tick min_useful = (i + static_cast<size_t>(skip) < onsets.size())
-          ? section.start_tick +
-            static_cast<Tick>(onsets[i + static_cast<size_t>(skip)] * TICKS_PER_BEAT) - tick
-          : extended_dur;
+      Tick min_useful =
+          (i + static_cast<size_t>(skip) < onsets.size())
+              ? section.start_tick +
+                    static_cast<Tick>(onsets[i + static_cast<size_t>(skip)] * TICKS_PER_BEAT) - tick
+              : extended_dur;
       if (info.safe_duration < min_useful) {
         continue;  // This skip count crosses into unsafe chord territory
       }
@@ -275,8 +274,7 @@ int computeSafeSkipCount(uint8_t pitch, Tick tick, const std::vector<float>& ons
 }
 
 std::set<float> buildPhraseBoundarySet(const PhrasePlan* phrase_plan,
-                                       const CachedRhythmPattern& rhythm,
-                                       const Section& section) {
+                                       const CachedRhythmPattern& rhythm, const Section& section) {
   std::set<float> boundary_set;
   if (phrase_plan != nullptr && !phrase_plan->phrases.empty()) {
     for (const auto& planned : phrase_plan->phrases) {

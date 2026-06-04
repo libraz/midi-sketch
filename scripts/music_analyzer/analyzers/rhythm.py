@@ -121,6 +121,36 @@ class RhythmAnalyzer(BaseAnalyzer):
         vocal_style = self.metadata.get('vocal_style')
         is_ultra = (vocal_style == VOCAL_STYLE_ULTRA_VOCALOID)
         monotony_threshold = 64 if is_ultra else 12
+
+        def add_monotony_issue(ch, track_name, run_count, ioi, start_index):
+            severity = Severity.ERROR if run_count >= 30 else Severity.WARNING
+            if (self.profile and self.profile.paradigm == "RhythmSync"
+                    and ch == 3 and ioi == 1):
+                run_notes = notes[start_index:start_index + run_count + 1]
+                unique_pitches = len({n.pitch for n in run_notes})
+                pitch_range = (
+                    max(n.pitch for n in run_notes) - min(n.pitch for n in run_notes)
+                    if run_notes else 0
+                )
+                if unique_pitches >= 4 and pitch_range >= 5:
+                    severity = Severity.INFO
+                elif unique_pitches <= 2 or pitch_range <= 2:
+                    severity = Severity.ERROR
+                else:
+                    severity = Severity.WARNING
+            self.add_issue(
+                severity=severity,
+                category=Category.RHYTHM,
+                subcategory="rhythmic_monotony",
+                message=f"{run_count} notes with same spacing",
+                tick=notes[start_index].start,
+                track=track_name,
+                details={
+                    "count": run_count,
+                    "ioi": ioi,
+                },
+            )
+
         for ch in melodic_channels:
             notes = self.notes_by_channel.get(ch, [])
             if len(notes) < monotony_threshold:
@@ -139,33 +169,17 @@ class RhythmAnalyzer(BaseAnalyzer):
                         same_ioi_count += 1
                     else:
                         if same_ioi_count >= monotony_threshold:
-                            self.add_issue(
-                                severity=Severity.ERROR if same_ioi_count >= 30 else Severity.WARNING,
-                                category=Category.RHYTHM,
-                                subcategory="rhythmic_monotony",
-                                message=f"{same_ioi_count} notes with same spacing",
-                                tick=notes[idx - same_ioi_count].start,
-                                track=track_name,
-                                details={
-                                    "count": same_ioi_count,
-                                    "ioi": current_ioi,
-                                },
+                            add_monotony_issue(
+                                ch, track_name, same_ioi_count, current_ioi,
+                                idx - same_ioi_count,
                             )
                         same_ioi_count = 1
                         current_ioi = quantized[idx]
                 # Final flush: check last run
                 if same_ioi_count >= monotony_threshold:
-                    self.add_issue(
-                        severity=Severity.ERROR if same_ioi_count >= 30 else Severity.WARNING,
-                        category=Category.RHYTHM,
-                        subcategory="rhythmic_monotony",
-                        message=f"{same_ioi_count} notes with same spacing",
-                        tick=notes[len(quantized) - same_ioi_count].start,
-                        track=track_name,
-                        details={
-                            "count": same_ioi_count,
-                            "ioi": current_ioi,
-                        },
+                    add_monotony_issue(
+                        ch, track_name, same_ioi_count, current_ioi,
+                        len(quantized) - same_ioi_count,
                     )
 
     def _analyze_beat_alignment(self):
@@ -422,6 +436,10 @@ class RhythmAnalyzer(BaseAnalyzer):
         melodic_channels = [0, 3, 5]
         grid_resolution = TICKS_PER_BEAT // 4
         tolerance = 10
+        if self.profile.name == "RhythmLock":
+            # RhythmLock can use a deliberate small pre-grid attack for vocal
+            # pickup/drive. This is composition timing, not humanization.
+            tolerance = 35
 
         total_notes = 0
         on_grid_notes = 0
@@ -438,14 +456,19 @@ class RhythmAnalyzer(BaseAnalyzer):
         ratio = on_grid_notes / total_notes
         paradigm = self.profile.paradigm
 
-        if paradigm == "RhythmSync":
+        if self.profile.name == "RhythmLock":
+            threshold = 0.85
+        elif paradigm == "RhythmSync":
             threshold = 0.95
         else:
             threshold = 0.70
 
         if ratio < threshold:
+            severity = Severity.WARNING
+            if self.profile.name == "RhythmLock" and ratio >= 0.75:
+                severity = Severity.INFO
             self.add_issue(
-                severity=Severity.WARNING,
+                severity=severity,
                 category=Category.RHYTHM,
                 subcategory="grid_strictness",
                 message=(
@@ -753,6 +776,8 @@ class RhythmAnalyzer(BaseAnalyzer):
         if inconsistent_sections > 0:
             ratio = inconsistent_sections / total_sections
             severity = Severity.WARNING if ratio > 0.5 else Severity.INFO
+            if self.profile is not None and self.profile.name == "RhythmLock":
+                severity = Severity.INFO
             self.add_issue(
                 severity=severity,
                 category=Category.RHYTHM,

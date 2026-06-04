@@ -65,9 +65,9 @@ inline int getArticulationVelocityDelta(BassArticulation art) {
     case BassArticulation::Accent:
       return +15;  // Emphasized
     case BassArticulation::Staccato:
-      return -5;   // Slightly softer
+      return -5;  // Slightly softer
     case BassArticulation::Legato:
-      return -3;   // Slightly softer for smoothness
+      return -3;  // Slightly softer for smoothness
     case BassArticulation::Normal:
     default:
       return 0;
@@ -102,17 +102,17 @@ enum class BassPattern : uint8_t {
   Walking,        ///< Quarter-note scale walk (Jazz, CityPop)
   // Aggressive/genre-specific patterns
   PowerDrive,      ///< Root-5th emphasis for rock (LightRock, Anthem)
-  Aggressive,      ///< 16th note patterns for high energy (Dance, Yoasobi chorus)
+  Aggressive,      ///< 16th note patterns for high energy (Dance, AnimeHighEnergy chorus)
   SidechainPulse,  ///< EDM sidechain compression style (ElectroPop, FutureBass)
   Groove,          ///< Smooth groove with passing tones (CityPop, ModernPop)
   OctaveJump,      ///< Octave alternation for dance music
   PedalTone,       ///< Sustained tonic/dominant pedal point
   // Genre expansion patterns
-  Tresillo,        ///< Latin 3+3+2 rhythmic pattern (LatinPop)
-  SubBass808,      ///< Long sustained 808-style sub-bass (Trap)
-  RnBNeoSoul,      ///< R&B/Neo-soul pattern (alias for groove context)
-  SlapPop,         ///< Slap + pop combination (funk technique)
-  FastRun          ///< 32nd note diatonic scale run
+  Tresillo,    ///< Latin 3+3+2 rhythmic pattern (LatinPop)
+  SubBass808,  ///< Long sustained 808-style sub-bass (Trap)
+  RnBNeoSoul,  ///< R&B/Neo-soul pattern (alias for groove context)
+  SlapPop,     ///< Slap + pop combination (funk technique)
+  FastRun      ///< 32nd note diatonic scale run
 };
 
 // ============================================================================

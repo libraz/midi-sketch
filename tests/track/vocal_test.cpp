@@ -30,6 +30,63 @@ namespace {
 
 class VocalTest : public test::GeneratorTestFixture {};
 
+std::vector<const NoteEvent*> collectNotesInSection(const MidiTrack& track, const Section& section,
+                                                    size_t max_count) {
+  std::vector<const NoteEvent*> notes;
+  for (const auto& note : track.notes()) {
+    if (note.start_tick >= section.start_tick && note.start_tick < section.endTick()) {
+      notes.push_back(&note);
+    }
+  }
+  std::sort(notes.begin(), notes.end(), [](const NoteEvent* a, const NoteEvent* b) {
+    if (a->start_tick != b->start_tick) return a->start_tick < b->start_tick;
+    return a->note < b->note;
+  });
+  if (max_count > 0 && notes.size() > max_count) {
+    notes.resize(max_count);
+  }
+  return notes;
+}
+
+const Section* firstSectionOfType(const Song& song, SectionType type) {
+  for (const auto& section : song.arrangement().sections()) {
+    if (section.type == type) {
+      return &section;
+    }
+  }
+  return nullptr;
+}
+
+double averagePitch(const std::vector<const NoteEvent*>& notes) {
+  if (notes.empty()) {
+    return 0.0;
+  }
+
+  int sum = 0;
+  for (const auto* note : notes) {
+    sum += note->note;
+  }
+  return static_cast<double>(sum) / notes.size();
+}
+
+uint8_t maxPitch(const std::vector<const NoteEvent*>& notes) {
+  uint8_t max_pitch = 0;
+  for (const auto* note : notes) {
+    max_pitch = std::max(max_pitch, note->note);
+  }
+  return max_pitch;
+}
+
+std::vector<const Section*> sectionsOfType(const Song& song, SectionType type) {
+  std::vector<const Section*> sections;
+  for (const auto& section : song.arrangement().sections()) {
+    if (section.type == type) {
+      sections.push_back(&section);
+    }
+  }
+  return sections;
+}
+
 TEST_F(VocalTest, VocalTrackGenerated) {
   Generator gen;
   gen.generate(params_);
@@ -44,6 +101,98 @@ TEST_F(VocalTest, VocalHasNotes) {
 
   const auto& track = gen.getSong().vocal();
   EXPECT_GT(track.notes().size(), 0u);
+}
+
+TEST_F(VocalTest, RhythmLockRhythmSyncChorusHasLeadContour) {
+  params_.blueprint_id = 1;  // RhythmLock
+  params_.mood = Mood::AnimeHighEnergy;
+  params_.bpm = 136;
+  params_.vocal_low = 57;
+  params_.vocal_high = 79;
+  params_.humanize = false;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const Section* chorus = firstSectionOfType(gen.getSong(), SectionType::Chorus);
+  ASSERT_NE(chorus, nullptr);
+  auto notes = collectNotesInSection(gen.getSong().vocal(), *chorus, 12);
+  ASSERT_GE(notes.size(), 8u);
+
+  EXPECT_EQ(notes[0]->note, notes[1]->note)
+      << "RhythmSync-like hook head should start with a repeated pitch.";
+  EXPECT_GE(static_cast<int>(notes[5]->note) - static_cast<int>(notes[0]->note), 5)
+      << "Chorus head should push upward quickly after the repeated start.";
+
+  uint8_t min_pitch = 127;
+  uint8_t max_pitch = 0;
+  for (size_t i = 0; i < 8; ++i) {
+    min_pitch = std::min(min_pitch, notes[i]->note);
+    max_pitch = std::max(max_pitch, notes[i]->note);
+  }
+  EXPECT_GE(static_cast<int>(max_pitch) - static_cast<int>(min_pitch), 7)
+      << "Chorus hook should expose a clear rising contour span.";
+}
+
+TEST_F(VocalTest, RhythmLockRhythmSyncSectionsFormRisingMelodicArc) {
+  params_.blueprint_id = 1;  // RhythmLock
+  params_.mood = Mood::AnimeHighEnergy;
+  params_.bpm = 136;
+  params_.vocal_low = 57;
+  params_.vocal_high = 79;
+  params_.humanize = false;
+  params_.target_duration_seconds = 212;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& song = gen.getSong();
+  const Section* verse = firstSectionOfType(song, SectionType::A);
+  const Section* prechorus = firstSectionOfType(song, SectionType::B);
+  const Section* chorus = firstSectionOfType(song, SectionType::Chorus);
+  ASSERT_NE(verse, nullptr);
+  ASSERT_NE(prechorus, nullptr);
+  ASSERT_NE(chorus, nullptr);
+
+  auto verse_notes = collectNotesInSection(song.vocal(), *verse, 0);
+  auto prechorus_notes = collectNotesInSection(song.vocal(), *prechorus, 0);
+  auto chorus_notes = collectNotesInSection(song.vocal(), *chorus, 0);
+  ASSERT_FALSE(verse_notes.empty());
+  ASSERT_FALSE(prechorus_notes.empty());
+  ASSERT_FALSE(chorus_notes.empty());
+
+  EXPECT_LT(maxPitch(verse_notes), 74)
+      << "A section should stay lower and narrower before the lift.";
+  EXPECT_GT(averagePitch(prechorus_notes), averagePitch(verse_notes) + 1.5)
+      << "B section should climb out of the verse register.";
+  EXPECT_GT(averagePitch(chorus_notes), averagePitch(verse_notes) + 3.0)
+      << "Chorus should land in a clearly higher hook register.";
+}
+
+TEST_F(VocalTest, RhythmLockRhythmSyncLaterChorusLiftsHook) {
+  params_.blueprint_id = 1;  // RhythmLock
+  params_.mood = Mood::AnimeHighEnergy;
+  params_.bpm = 136;
+  params_.vocal_low = 57;
+  params_.vocal_high = 79;
+  params_.humanize = false;
+  params_.target_duration_seconds = 212;
+
+  Generator gen;
+  gen.generate(params_);
+
+  auto choruses = sectionsOfType(gen.getSong(), SectionType::Chorus);
+  ASSERT_GE(choruses.size(), 2u);
+
+  auto first_chorus = collectNotesInSection(gen.getSong().vocal(), *choruses.front(), 12);
+  auto later_chorus = collectNotesInSection(gen.getSong().vocal(), *choruses.back(), 12);
+  ASSERT_GE(first_chorus.size(), 8u);
+  ASSERT_GE(later_chorus.size(), 8u);
+
+  EXPECT_GT(averagePitch(later_chorus), averagePitch(first_chorus) + 1.0)
+      << "Later chorus hook should lift instead of repeating the first chorus verbatim.";
+  EXPECT_GE(maxPitch(later_chorus), maxPitch(first_chorus))
+      << "Later chorus should preserve or raise the hook peak.";
 }
 
 // VocalNotesInValidMidiRange: consolidated into AllNotesHaveValidData below
@@ -106,9 +255,8 @@ TEST_F(VocalTest, VocalIntervalConstraints) {
 
     // Very few leaps should exceed an octave
     double large_leap_ratio = static_cast<double>(large_leaps) / (track.notes().size() - 1);
-    EXPECT_LT(large_leap_ratio, 0.1)
-        << "Too many large leaps at seed=" << seed << ": " << large_leaps << " of "
-        << track.notes().size() - 1;
+    EXPECT_LT(large_leap_ratio, 0.1) << "Too many large leaps at seed=" << seed << ": "
+                                     << large_leaps << " of " << track.notes().size() - 1;
   }
 }
 
@@ -142,8 +290,8 @@ TEST_F(VocalTest, VocalPrefersTessitura) {
   // catchiness scoring, and musical scoring that balances tessitura gravity
   // with melodic continuity and harmonic stability
   double tessitura_ratio = static_cast<double>(in_tessitura) / track.notes().size();
-  EXPECT_GT(tessitura_ratio, 0.30) << "Only " << (tessitura_ratio * 100)
-                                   << "% of notes in tessitura (expected >30%)";
+  EXPECT_GT(tessitura_ratio, 0.30)
+      << "Only " << (tessitura_ratio * 100) << "% of notes in tessitura (expected >30%)";
 }
 
 TEST_F(VocalTest, DifferentSeedsProduceDifferentMelodies) {
@@ -250,8 +398,8 @@ TEST_F(VocalTest, NoExcessiveOverlapWithVariousSeeds) {
   // (480 ticks) of overlap at section boundaries only.
   constexpr Tick kSectionBoundaryTolerance = 480;
 
-  for (uint32_t seed : {1u, 2u, 3u, 4u, 5u, 6u, 7u, 8u, 9u, 10u,
-                        12345u, 54321u, 99999u, 11111u, 77777u}) {
+  for (uint32_t seed :
+       {1u, 2u, 3u, 4u, 5u, 6u, 7u, 8u, 9u, 10u, 12345u, 54321u, 99999u, 11111u, 77777u}) {
     params_.seed = seed;
 
     Generator gen;
@@ -782,8 +930,7 @@ TEST_F(VocalTest, ChorusHasHigherDensityThanVerse) {
   for (const auto& sec : sections) {
     int notes_in_section = 0;
     for (const auto& note : vocal) {
-      if (note.start_tick >= sec.start_tick &&
-          note.start_tick < sec.endTick()) {
+      if (note.start_tick >= sec.start_tick && note.start_tick < sec.endTick()) {
         notes_in_section++;
       }
     }
@@ -830,8 +977,7 @@ TEST_F(VocalTest, BridgeHasLowerDensityThanChorus) {
   for (const auto& sec : sections) {
     int notes_in_section = 0;
     for (const auto& note : vocal) {
-      if (note.start_tick >= sec.start_tick &&
-          note.start_tick < sec.endTick()) {
+      if (note.start_tick >= sec.start_tick && note.start_tick < sec.endTick()) {
         notes_in_section++;
       }
     }
@@ -1098,8 +1244,7 @@ TEST_F(VocalTest, ExtremeLeapOnlyInChorusAndBridge) {
     // Find notes in this section
     std::vector<const NoteEvent*> section_notes;
     for (const auto& note : vocal) {
-      if (note.start_tick >= sec.start_tick &&
-          note.start_tick < sec.endTick()) {
+      if (note.start_tick >= sec.start_tick && note.start_tick < sec.endTick()) {
         section_notes.push_back(&note);
       }
     }
@@ -1512,9 +1657,8 @@ TEST_F(VocalTest, AllVocalGroovesProduceValidData) {
     constexpr Tick kSectionBoundaryTolerance = 480;
     for (size_t i = 0; i + 1 < notes.size(); ++i) {
       Tick end_tick = notes[i].start_tick + notes[i].duration;
-      Tick overlap = (end_tick > notes[i + 1].start_tick)
-                         ? (end_tick - notes[i + 1].start_tick)
-                         : 0;
+      Tick overlap =
+          (end_tick > notes[i + 1].start_tick) ? (end_tick - notes[i + 1].start_tick) : 0;
       EXPECT_LE(overlap, kSectionBoundaryTolerance)
           << "Excessive overlap for VocalGroove=" << groove << " at note " << i;
     }
@@ -2055,10 +2199,8 @@ TEST_F(VocalTest, VocalFirstModeGeneratesVocal) {
   vocal_gen.generateFullTrack(vocal_track, ctx);
 
   // Should still generate notes
-  EXPECT_FALSE(vocal_track.empty())
-      << "Vocal track should be generated in vocal-first mode";
-  EXPECT_GT(vocal_track.noteCount(), 0u)
-      << "Vocal track should have notes in vocal-first mode";
+  EXPECT_FALSE(vocal_track.empty()) << "Vocal track should be generated in vocal-first mode";
+  EXPECT_GT(vocal_track.noteCount(), 0u) << "Vocal track should have notes in vocal-first mode";
 }
 
 TEST_F(VocalTest, VocalFirstModePreservesScaleTones) {
@@ -2089,8 +2231,8 @@ TEST_F(VocalTest, VocalFirstModePreservesScaleTones) {
   for (const auto& note : vocal_track.notes()) {
     int pc = note.note % 12;
     EXPECT_TRUE(c_major_pcs.count(pc) > 0)
-        << "Chromatic note found in vocal-first mode: pitch "
-        << static_cast<int>(note.note) << " (pitch class " << pc << ")";
+        << "Chromatic note found in vocal-first mode: pitch " << static_cast<int>(note.note)
+        << " (pitch class " << pc << ")";
   }
 }
 
@@ -2221,9 +2363,9 @@ TEST_F(VocalTest, StandardVocalMinimumDurationIs16thNote) {
     Tick min_duration = (blueprint_id == 3) ? kMinDurationBallad : kMinDurationDefault;
     for (const auto& note : vocal.notes()) {
       EXPECT_GE(note.duration, min_duration)
-          << "Blueprint " << static_cast<int>(blueprint_id) << ": Note at tick "
-          << note.start_tick << " has duration " << note.duration
-          << " ticks, which is less than minimum (" << min_duration << ")";
+          << "Blueprint " << static_cast<int>(blueprint_id) << ": Note at tick " << note.start_tick
+          << " has duration " << note.duration << " ticks, which is less than minimum ("
+          << min_duration << ")";
     }
   }
 }
@@ -2295,8 +2437,8 @@ TEST_F(VocalTest, ExpressiveAttitudeGeneratesPitchBends) {
   if (phrase_starts >= 5) {
     // With 5+ phrase starts at 50% chance each, probability of 0 bends is low
     // But we're testing mechanism, not statistics, so just verify no crash
-    SUCCEED() << "Generated " << vocal.pitchBendEvents().size()
-              << " pitch bends with " << phrase_starts << " phrase starts";
+    SUCCEED() << "Generated " << vocal.pitchBendEvents().size() << " pitch bends with "
+              << phrase_starts << " phrase starts";
   }
 }
 
@@ -2327,8 +2469,8 @@ TEST_F(VocalTest, RawAttitudeGeneratesMorePitchBends) {
   if (phrase_starts >= 3) {
     // At 80% probability, having 0 bends with 3+ phrase starts is very unlikely
     // This is a smoke test, not a statistical guarantee
-    SUCCEED() << "Generated " << vocal.pitchBendEvents().size()
-              << " pitch bends with " << phrase_starts << " phrase starts";
+    SUCCEED() << "Generated " << vocal.pitchBendEvents().size() << " pitch bends with "
+              << phrase_starts << " phrase starts";
   }
 }
 
@@ -2368,10 +2510,8 @@ TEST(PhraseVariationOccurrence, Occurrence1ProducesAbout80PercentExact) {
 
   float exact_ratio = static_cast<float>(exact_count) / kTrials;
   // 80% exact with tolerance of +/-8% for statistical variance
-  EXPECT_GT(exact_ratio, 0.72f)
-      << "Occurrence 1 should produce ~80% Exact, got " << exact_ratio;
-  EXPECT_LT(exact_ratio, 0.88f)
-      << "Occurrence 1 should produce ~80% Exact, got " << exact_ratio;
+  EXPECT_GT(exact_ratio, 0.72f) << "Occurrence 1 should produce ~80% Exact, got " << exact_ratio;
+  EXPECT_LT(exact_ratio, 0.88f) << "Occurrence 1 should produce ~80% Exact, got " << exact_ratio;
 }
 
 TEST(PhraseVariationOccurrence, Occurrence2ProducesAbout60PercentExact) {
@@ -2389,10 +2529,8 @@ TEST(PhraseVariationOccurrence, Occurrence2ProducesAbout60PercentExact) {
 
   float exact_ratio = static_cast<float>(exact_count) / kTrials;
   // 60% exact with tolerance of +/-8%
-  EXPECT_GT(exact_ratio, 0.52f)
-      << "Occurrence 2 should produce ~60% Exact, got " << exact_ratio;
-  EXPECT_LT(exact_ratio, 0.68f)
-      << "Occurrence 2 should produce ~60% Exact, got " << exact_ratio;
+  EXPECT_GT(exact_ratio, 0.52f) << "Occurrence 2 should produce ~60% Exact, got " << exact_ratio;
+  EXPECT_LT(exact_ratio, 0.68f) << "Occurrence 2 should produce ~60% Exact, got " << exact_ratio;
 }
 
 TEST(PhraseVariationOccurrence, Occurrence3ProducesAbout30PercentExact) {
@@ -2410,10 +2548,8 @@ TEST(PhraseVariationOccurrence, Occurrence3ProducesAbout30PercentExact) {
 
   float exact_ratio = static_cast<float>(exact_count) / kTrials;
   // 30% exact with tolerance of +/-8%
-  EXPECT_GT(exact_ratio, 0.22f)
-      << "Occurrence 3+ should produce ~30% Exact, got " << exact_ratio;
-  EXPECT_LT(exact_ratio, 0.38f)
-      << "Occurrence 3+ should produce ~30% Exact, got " << exact_ratio;
+  EXPECT_GT(exact_ratio, 0.22f) << "Occurrence 3+ should produce ~30% Exact, got " << exact_ratio;
+  EXPECT_LT(exact_ratio, 0.38f) << "Occurrence 3+ should produce ~30% Exact, got " << exact_ratio;
 }
 
 TEST(PhraseVariationOccurrence, ReuseCountZeroAlwaysExact) {
@@ -2423,8 +2559,8 @@ TEST(PhraseVariationOccurrence, ReuseCountZeroAlwaysExact) {
       std::mt19937 rng(seed);
       PhraseVariation var = selectPhraseVariation(0, occurrence, rng);
       EXPECT_EQ(var, PhraseVariation::Exact)
-          << "reuse_count=0 should always be Exact (occurrence=" << occurrence
-          << ", seed=" << seed << ")";
+          << "reuse_count=0 should always be Exact (occurrence=" << occurrence << ", seed=" << seed
+          << ")";
     }
   }
 }
@@ -2518,10 +2654,8 @@ TEST(EmbellishmentOccurrenceScaling, NCTClampsAt50Percent) {
   float total_nct = config.passing_tone_ratio + config.neighbor_tone_ratio +
                     config.appoggiatura_ratio + config.anticipation_ratio;
   // Total NCT should be clamped at 0.5
-  EXPECT_LE(total_nct, 0.50f + 0.001f)
-      << "NCT total should be clamped at 50%, got " << total_nct;
-  EXPECT_GE(config.chord_tone_ratio, 0.49f)
-      << "Chord tone ratio should not go below ~50%";
+  EXPECT_LE(total_nct, 0.50f + 0.001f) << "NCT total should be clamped at 50%, got " << total_nct;
+  EXPECT_GE(config.chord_tone_ratio, 0.49f) << "Chord tone ratio should not go below ~50%";
 }
 
 // ============================================================================
@@ -2672,8 +2806,7 @@ TEST_F(VocalTest, ChorusVibratoWiderThanVerse) {
   EXPECT_FALSE(vocal.notes().empty());
 
   const auto& bends = vocal.pitchBendEvents();
-  EXPECT_FALSE(bends.empty())
-      << "Expressive attitude should produce pitch bends";
+  EXPECT_FALSE(bends.empty()) << "Expressive attitude should produce pitch bends";
 
   // Classify pitch bends by section type
   const auto& sections = gen.getSong().arrangement().sections();
@@ -2698,14 +2831,13 @@ TEST_F(VocalTest, ChorusVibratoWiderThanVerse) {
   // Note: Due to stochastic note generation, this may not always hold for every seed
   // Allow 1% tolerance since phrase timing variations can cause marginal differences
   if (max_chorus_amplitude > 0 && max_verse_amplitude > 0) {
-    int16_t tolerance = std::max(static_cast<int16_t>(1),
-                                 static_cast<int16_t>(max_verse_amplitude / 100));
+    int16_t tolerance =
+        std::max(static_cast<int16_t>(1), static_cast<int16_t>(max_verse_amplitude / 100));
     EXPECT_GE(max_chorus_amplitude + tolerance, max_verse_amplitude)
         << "Chorus vibrato (1.5x) should produce equal or larger bend amplitudes than Verse";
   } else {
     // At minimum, we must have bends in chorus sections
-    EXPECT_GT(max_chorus_amplitude, 0)
-        << "Chorus sections should have vibrato pitch bends";
+    EXPECT_GT(max_chorus_amplitude, 0) << "Chorus sections should have vibrato pitch bends";
   }
 }
 
@@ -2729,11 +2861,10 @@ TEST_F(VocalTest, RawAttitudePortamentoGeneratesPitchBends) {
     const auto& notes = vocal.notes();
     for (size_t idx = 0; idx + 1 < notes.size(); ++idx) {
       Tick this_end = notes[idx].start_tick + notes[idx].duration;
-      Tick gap = (notes[idx + 1].start_tick > this_end)
-                     ? (notes[idx + 1].start_tick - this_end)
-                     : 0;
-      int abs_diff = std::abs(static_cast<int>(notes[idx + 1].note) -
-                              static_cast<int>(notes[idx].note));
+      Tick gap =
+          (notes[idx + 1].start_tick > this_end) ? (notes[idx + 1].start_tick - this_end) : 0;
+      int abs_diff =
+          std::abs(static_cast<int>(notes[idx + 1].note) - static_cast<int>(notes[idx].note));
       if (abs_diff > 0 && abs_diff <= 5 && gap < TICK_EIGHTH) {
         ++total_portamento_candidates;
       }
@@ -2744,8 +2875,7 @@ TEST_F(VocalTest, RawAttitudePortamentoGeneratesPitchBends) {
   // Across 5 seeds, Raw attitude should produce portamento candidates and bends
   EXPECT_GT(total_portamento_candidates, 0)
       << "Raw attitude across 5 seeds should have portamento candidates";
-  EXPECT_GT(total_bends, 0)
-      << "Raw attitude with portamento candidates should produce pitch bends";
+  EXPECT_GT(total_bends, 0) << "Raw attitude with portamento candidates should produce pitch bends";
 }
 
 TEST_F(VocalTest, ExpressivePortamentoGlideHasCenterReset) {
@@ -2782,8 +2912,7 @@ TEST_F(VocalTest, ExpressivePortamentoGlideHasCenterReset) {
 
   // Expressive attitude produces scoop-up, fall-off, vibrato, and portamento.
   // All of these insert center resets at note boundaries.
-  EXPECT_GT(total_bends, 0)
-      << "Expressive attitude should produce pitch bends across 3 seeds";
+  EXPECT_GT(total_bends, 0) << "Expressive attitude should produce pitch bends across 3 seeds";
   EXPECT_GT(total_center_resets, 0)
       << "Pitch bend expressions should include center resets at note starts "
       << "(from portamento/fall-off resets)";
@@ -2819,8 +2948,7 @@ TEST_F(VocalTest, KPopStyleGeneratesValidOutput) {
   gen.generate(params_);
 
   const auto& vocal = gen.getSong().vocal();
-  EXPECT_FALSE(vocal.notes().empty())
-      << "KPop vocal style should generate notes";
+  EXPECT_FALSE(vocal.notes().empty()) << "KPop vocal style should generate notes";
 }
 
 TEST_F(VocalTest, KPopProfileHasExpectedBiases) {
@@ -2888,14 +3016,13 @@ TEST_F(VocalTest, RhythmSyncMelodyHasReasonableIntervals) {
   const auto& notes = gen.getSong().vocal().notes();
   ASSERT_GT(notes.size(), 10) << "Need enough notes to analyze intervals";
 
-  int step_count = 0;      // 1-2 semitones
-  int skip_count = 0;      // 3-4 semitones
-  int leap_count = 0;      // 5+ semitones
+  int step_count = 0;  // 1-2 semitones
+  int skip_count = 0;  // 3-4 semitones
+  int leap_count = 0;  // 5+ semitones
   int same_pitch_count = 0;
 
   for (size_t i = 1; i < notes.size(); ++i) {
-    int interval = std::abs(static_cast<int>(notes[i].note) -
-                            static_cast<int>(notes[i - 1].note));
+    int interval = std::abs(static_cast<int>(notes[i].note) - static_cast<int>(notes[i - 1].note));
     if (interval == 0) {
       same_pitch_count++;
     } else if (interval <= 2) {
@@ -2913,10 +3040,9 @@ TEST_F(VocalTest, RhythmSyncMelodyHasReasonableIntervals) {
   // Melodic quality assertion: steps + small skips should dominate
   // At least 60% should be stepwise or small skips (not leaps)
   float non_leap_ratio = static_cast<float>(step_count + skip_count + same_pitch_count) / total;
-  EXPECT_GE(non_leap_ratio, 0.60f)
-      << "RhythmSync melody should have primarily stepwise motion. "
-      << "Steps: " << step_count << ", Skips: " << skip_count
-      << ", Leaps: " << leap_count << ", Same: " << same_pitch_count;
+  EXPECT_GE(non_leap_ratio, 0.60f) << "RhythmSync melody should have primarily stepwise motion. "
+                                   << "Steps: " << step_count << ", Skips: " << skip_count
+                                   << ", Leaps: " << leap_count << ", Same: " << same_pitch_count;
 }
 
 TEST_F(VocalTest, RhythmSyncMelodyHasMelodicContour) {
@@ -3019,11 +3145,11 @@ TEST_F(VocalTest, RhythmSyncSameSectionTypeRepeats) {
     std::vector<int> intervals1, intervals2;
     for (size_t i = 1; i < std::min(static_cast<size_t>(5), chorus1_notes.size()); ++i) {
       intervals1.push_back(static_cast<int>(chorus1_notes[i]->note) -
-                          static_cast<int>(chorus1_notes[i-1]->note));
+                           static_cast<int>(chorus1_notes[i - 1]->note));
     }
     for (size_t i = 1; i < std::min(static_cast<size_t>(5), chorus2_notes.size()); ++i) {
       intervals2.push_back(static_cast<int>(chorus2_notes[i]->note) -
-                          static_cast<int>(chorus2_notes[i-1]->note));
+                           static_cast<int>(chorus2_notes[i - 1]->note));
     }
 
     // Check direction similarity (not exact interval match due to variation)
@@ -3063,10 +3189,8 @@ TEST_F(VocalTest, RhythmSyncMultipleSeedsAllGenerateMelodies) {
 
     // All notes should be within vocal range
     for (const auto& note : vocal.notes()) {
-      EXPECT_GE(note.note, params_.vocal_low - 12)
-          << "Seed " << seed << ": Note below range";
-      EXPECT_LE(note.note, params_.vocal_high + 12)
-          << "Seed " << seed << ": Note above range";
+      EXPECT_GE(note.note, params_.vocal_low - 12) << "Seed " << seed << ": Note below range";
+      EXPECT_LE(note.note, params_.vocal_high + 12) << "Seed " << seed << ": Note above range";
     }
   }
 }
@@ -3100,7 +3224,7 @@ TEST_F(VocalTest, RhythmSyncAllowsPerfectFifthLeaps) {
   int p5_count = 0;
   for (size_t i = 1; i < vocal.notes().size(); ++i) {
     int interval = std::abs(static_cast<int>(vocal.notes()[i].note) -
-                           static_cast<int>(vocal.notes()[i-1].note));
+                            static_cast<int>(vocal.notes()[i - 1].note));
     if (interval == 7) {
       p5_count++;
     }
@@ -3194,7 +3318,7 @@ TEST_F(VocalTest, RhythmSyncBreathOpportunities) {
   constexpr Tick kBreathGapThreshold = TICKS_PER_BEAT / 2;  // Half beat
 
   for (size_t i = 1; i < vocal.notes().size(); ++i) {
-    Tick prev_end = vocal.notes()[i-1].start_tick + vocal.notes()[i-1].duration;
+    Tick prev_end = vocal.notes()[i - 1].start_tick + vocal.notes()[i - 1].duration;
     Tick gap = vocal.notes()[i].start_tick - prev_end;
     if (gap >= kBreathGapThreshold) {
       breath_gaps++;
@@ -3227,8 +3351,8 @@ TEST_F(VocalTest, RhythmSyncDirectionInertiaLimits) {
   int current_down = 0;
 
   for (size_t i = 1; i < vocal.notes().size(); ++i) {
-    int movement = static_cast<int>(vocal.notes()[i].note) -
-                   static_cast<int>(vocal.notes()[i-1].note);
+    int movement =
+        static_cast<int>(vocal.notes()[i].note) - static_cast<int>(vocal.notes()[i - 1].note);
     if (movement > 0) {
       current_up++;
       current_down = 0;
@@ -3244,8 +3368,7 @@ TEST_F(VocalTest, RhythmSyncDirectionInertiaLimits) {
 
   // With inertia limits, shouldn't have extremely long consecutive movements
   // Allow up to 6 as reasonable given phrase lengths
-  EXPECT_LE(max_consecutive_up, 8)
-      << "Direction inertia should limit consecutive upward movements";
+  EXPECT_LE(max_consecutive_up, 8) << "Direction inertia should limit consecutive upward movements";
   EXPECT_LE(max_consecutive_down, 8)
       << "Direction inertia should limit consecutive downward movements";
 }
@@ -3269,15 +3392,14 @@ TEST_F(VocalTest, MelodyDrivenHasBreathGaps) {
   constexpr Tick kBreathGapThreshold = TICKS_PER_BEAT / 4;  // Quarter beat
 
   for (size_t i = 1; i < vocal.notes().size(); ++i) {
-    Tick prev_end = vocal.notes()[i-1].start_tick + vocal.notes()[i-1].duration;
+    Tick prev_end = vocal.notes()[i - 1].start_tick + vocal.notes()[i - 1].duration;
     Tick gap = vocal.notes()[i].start_tick - prev_end;
     if (gap >= kBreathGapThreshold) {
       breath_gaps++;
     }
   }
   // MelodyDriven should produce natural breath opportunities
-  EXPECT_GE(breath_gaps, 2)
-      << "MelodyDriven vocal should have breath gaps between phrases";
+  EXPECT_GE(breath_gaps, 2) << "MelodyDriven vocal should have breath gaps between phrases";
 }
 
 // ============================================================================
@@ -3303,8 +3425,7 @@ TEST_F(VocalTest, SyllabicSubdivisionProducesSyllabicSubNotes) {
       syllabic_count++;
     }
   }
-  EXPECT_GT(syllabic_count, 0)
-      << "syllabic_sub_ratio=0.30 should produce subdivided notes";
+  EXPECT_GT(syllabic_count, 0) << "syllabic_sub_ratio=0.30 should produce subdivided notes";
 #endif
 }
 

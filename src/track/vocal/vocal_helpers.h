@@ -216,7 +216,7 @@ void applySectionEndSustain(std::vector<NoteEvent>& notes, const std::vector<Sec
  * @param max_gap Maximum gap in ticks to merge
  */
 void mergeSamePitchNotesNearSectionEnds(std::vector<NoteEvent>& notes,
-                                         const std::vector<Section>& sections, Tick max_gap);
+                                        const std::vector<Section>& sections, Tick max_gap);
 
 }  // namespace midisketch
 

@@ -122,8 +122,7 @@ TEST_F(TrackClashIntegrationTest, SynthDrivenMode_NoDissonantClashes) {
     auto clashes = analyzeAllTrackPairs(gen.getSong(), gen.getHarmonyContext());
 
     EXPECT_LE(clashes.size(), kMaxClashesPerSeed)
-        << "SynthDriven mode (seed " << seed << ") has " << clashes.size()
-        << " dissonant clashes";
+        << "SynthDriven mode (seed " << seed << ") has " << clashes.size() << " dissonant clashes";
   }
 }
 
@@ -184,9 +183,9 @@ TEST_F(TrackClashIntegrationTest, AllMoods_NoDissonantClashes) {
   // (octave doubling at PeakLevel::Max can create additional close intervals)
   constexpr size_t kMaxClashesPerMood = 25;
 
-  std::vector<Mood> moods = {Mood::StraightPop, Mood::BrightUpbeat, Mood::EnergeticDance,
-                             Mood::LightRock,   Mood::Ballad,       Mood::CityPop,
-                             Mood::Yoasobi};
+  std::vector<Mood> moods = {Mood::StraightPop,    Mood::BrightUpbeat, Mood::EnergeticDance,
+                             Mood::LightRock,      Mood::Ballad,       Mood::CityPop,
+                             Mood::AnimeHighEnergy};
 
   for (Mood mood : moods) {
     params_.mood = mood;
@@ -425,11 +424,10 @@ TEST_F(TrackClashIntegrationTest, BSectionSustainNoOverlap) {
         // Notes at different start times should NOT overlap
         bool overlap = (a->start_tick < end_b) && (b->start_tick < end_a);
 
-        EXPECT_FALSE(overlap)
-            << "B section last bar has overlapping chords: "
-            << "note " << (int)a->note << " @" << a->start_tick << " (ends "
-            << end_a << ") vs note " << (int)b->note << " @" << b->start_tick
-            << " (ends " << end_b << ")";
+        EXPECT_FALSE(overlap) << "B section last bar has overlapping chords: "
+                              << "note " << (int)a->note << " @" << a->start_tick << " (ends "
+                              << end_a << ") vs note " << (int)b->note << " @" << b->start_tick
+                              << " (ends " << end_b << ")";
       }
     }
   }

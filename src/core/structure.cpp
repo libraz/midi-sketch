@@ -24,7 +24,7 @@ constexpr float kSecondsPerMinute = 60.0f;
 constexpr float kBeatsPerBar = 4.0f;
 constexpr float kSecondsToBarsDivisor = kSecondsPerMinute * kBeatsPerBar;  // 240.0f
 constexpr uint16_t kMinStructureBars = 12;   // Minimum structure length
-constexpr uint16_t kMaxStructureBars = 120;  // Maximum structure length (~4 min @120BPM)
+constexpr uint16_t kMaxStructureBars = 144;  // Maximum structure length (~4.8 min @120BPM)
 constexpr int kBarTolerance = 8;             // Bar tolerance for pattern matching
 constexpr int kExtensionBlockSize = 24;      // A(8) + B(8) + Chorus(8) = 24 bars
 
@@ -521,6 +521,18 @@ std::vector<Section> buildStructureForDuration(uint16_t target_seconds, uint16_t
       extra_sections.push_back(createSection(SectionType::B, 8, insert_bar, insert_tick));
       extra_sections.push_back(createSection(SectionType::Chorus, 8, insert_bar, insert_tick));
     }
+    int remaining_bars = extra_bars % kExtensionBlockSize;
+    if (remaining_bars >= 16) {
+      extra_sections.push_back(createSection(SectionType::B, 8, insert_bar, insert_tick));
+      remaining_bars -= 8;
+    }
+    if (remaining_bars >= 8) {
+      extra_sections.push_back(createSection(SectionType::Chorus, 8, insert_bar, insert_tick));
+      remaining_bars -= 8;
+    }
+    if (remaining_bars >= 4) {
+      extra_sections.push_back(createSection(SectionType::Chorus, 4, insert_bar, insert_tick));
+    }
 
     if (!extra_sections.empty()) {
       if (outro_it != sections.end()) {
@@ -923,8 +935,7 @@ void applyBlueprintOverlay(std::vector<Section>& sections, const ProductionBluep
 // Layer Scheduling Functions
 // ============================================================================
 
-std::vector<LayerEvent> generateDefaultLayerEvents(const Section& section,
-                                                   size_t section_index,
+std::vector<LayerEvent> generateDefaultLayerEvents(const Section& section, size_t section_index,
                                                    size_t /*total_sections*/) {
   std::vector<LayerEvent> events;
 
@@ -966,8 +977,9 @@ std::vector<LayerEvent> generateDefaultLayerEvents(const Section& section,
 
       if (section_index <= 1 && section.bars >= 4) {
         // First A section: gradual build
-        events.emplace_back(0, TrackMask::Vocal | TrackMask::Chord | TrackMask::Bass |
-                               TrackMask::Drums, TrackMask::None);
+        events.emplace_back(
+            0, TrackMask::Vocal | TrackMask::Chord | TrackMask::Bass | TrackMask::Drums,
+            TrackMask::None);
         events.emplace_back(2, TrackMask::Motif | TrackMask::Arpeggio, TrackMask::None);
       }
       // Later A sections: all tracks immediately (no layer events needed)
@@ -994,8 +1006,7 @@ std::vector<LayerEvent> generateDefaultLayerEvents(const Section& section,
         events.emplace_back(wind_down_bar, TrackMask::None,
                             TrackMask::Arpeggio | TrackMask::Motif | TrackMask::Aux);
         uint8_t final_bar = static_cast<uint8_t>(section.bars - 1);
-        events.emplace_back(final_bar, TrackMask::None,
-                            TrackMask::Chord | TrackMask::Bass);
+        events.emplace_back(final_bar, TrackMask::None, TrackMask::Chord | TrackMask::Bass);
       }
       break;
     }

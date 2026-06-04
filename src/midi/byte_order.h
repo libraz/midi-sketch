@@ -76,7 +76,7 @@ inline bool readVariableLength(const uint8_t* data, size_t& offset, size_t max_s
     }
     uint8_t byte = data[offset++];
     value = (value << 7) | (byte & 0x7F);  // NOLINT: bit operations for VLQ decoding
-    if (!(byte & 0x80)) break;              // NOLINT: bit check for continuation
+    if (!(byte & 0x80)) break;             // NOLINT: bit check for continuation
     count++;
   } while (true);
 

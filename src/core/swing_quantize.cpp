@@ -85,8 +85,7 @@ Tick quantizeToSwingGrid16th(Tick tick, float swing_amount) {
   }
 
   // Position 2: around 240 ticks (off-beat 8th). Window [180, 300)
-  if (beat_offset >= TICK_SIXTEENTH + kHalf16th &&
-      beat_offset < TICK_EIGHTH + kHalf16th) {
+  if (beat_offset >= TICK_SIXTEENTH + kHalf16th && beat_offset < TICK_EIGHTH + kHalf16th) {
     Tick beat_base = tick - beat_offset;
     // Off-beat 8th uses the larger 8th-note swing delta
     Tick swing_delta = static_cast<Tick>(kEighthSwingDelta * clamped_swing);
@@ -94,8 +93,7 @@ Tick quantizeToSwingGrid16th(Tick tick, float swing_amount) {
   }
 
   // Position 3: around 360 ticks. Window [300, 420)
-  if (beat_offset >= TICK_EIGHTH + kHalf16th &&
-      beat_offset < 3 * TICK_SIXTEENTH + kHalf16th) {
+  if (beat_offset >= TICK_EIGHTH + kHalf16th && beat_offset < 3 * TICK_SIXTEENTH + kHalf16th) {
     Tick beat_base = tick - beat_offset;
     // Position 3 = second 16th within the swung second-half of the beat.
     // The swung 8th position is at TICK_EIGHTH + swing_delta_8th.

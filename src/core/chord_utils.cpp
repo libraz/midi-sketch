@@ -10,8 +10,8 @@
 #include <random>
 
 #include "core/chord.h"
-#include "core/rng_util.h"
 #include "core/i_harmony_context.h"
+#include "core/rng_util.h"
 
 namespace midisketch {
 
@@ -210,9 +210,7 @@ std::vector<uint8_t> ChordToneHelper::allInRange(uint8_t low, uint8_t high) cons
   return result;
 }
 
-int ChordToneHelper::rootPitchClass() const {
-  return root_pc_;
-}
+int ChordToneHelper::rootPitchClass() const { return root_pc_; }
 
 // ============================================================================
 // Nearest Chord Tone Functions

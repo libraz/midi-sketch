@@ -9,17 +9,16 @@
 #include <array>
 #include <optional>
 #include <random>
-#include <vector>
-
 #include <unordered_map>
+#include <vector>
 
 #include "core/chord_utils.h"
 #include "core/melody_evaluator.h"
 #include "core/melody_templates.h"
 #include "core/melody_types.h"
 #include "core/motif.h"
-#include "core/motif_types.h"
 #include "core/motif_transform.h"
+#include "core/motif_types.h"
 #include "core/pitch_utils.h"
 #include "core/section_types.h"
 #include "core/types.h"
@@ -34,11 +33,11 @@ class IHarmonyContext;
 /// When provided, enables context-dependent adjustments such as deeper breaths
 /// after high-load phrases or before chorus entries.
 struct BreathContext {
-  float phrase_load = 0.5f;            ///< Previous phrase load (0.0-1.0)
-  uint8_t prev_phrase_high = 60;       ///< Highest note in previous phrase
-  float prev_phrase_density = 0.5f;    ///< Note density of previous phrase
-  SectionType next_section;            ///< Next section type
-  bool is_section_boundary = false;    ///< Whether this is a section boundary
+  float phrase_load = 0.5f;          ///< Previous phrase load (0.0-1.0)
+  uint8_t prev_phrase_high = 60;     ///< Highest note in previous phrase
+  float prev_phrase_density = 0.5f;  ///< Note density of previous phrase
+  SectionType next_section;          ///< Next section type
+  bool is_section_boundary = false;  ///< Whether this is a section boundary
 };
 
 /**
@@ -88,7 +87,7 @@ class MelodyDesigner {
 
     // Blueprint constraints for melodic leap and stepwise preference
     uint8_t max_leap_semitones = 12;  ///< Maximum melodic leap in semitones (default: octave)
-    bool prefer_stepwise = false;      ///< Prefer stepwise motion over leaps
+    bool prefer_stepwise = false;     ///< Prefer stepwise motion over leaps
 
     // Guide tone priority for downbeat pitch selection
     uint8_t guide_tone_rate = 0;  ///< Guide tone (3rd/7th) priority rate (0=disabled, 1-100%)
@@ -119,13 +118,14 @@ class MelodyDesigner {
     int section_occurrence = 1;  ///< Which occurrence of this section type (1-based)
 
     // Style melody params wired from StyleMelodyParams (zombie param connections)
-    bool chorus_long_tones = false;   ///< Extend short notes to longer tones in chorus
-    bool allow_bar_crossing = true;   ///< Allow notes to cross bar boundaries
-    uint8_t min_note_division = 0;    ///< Minimum note division (4/8/16/32, 0=no filter)
-    float tension_usage = 0.2f;       ///< Tension note probability (0.0-1.0)
-    float syncopation_prob = 0.15f;   ///< Syncopation probability scaling (0.0-0.5)
-    float long_note_ratio_override = -1.0f;  ///< Override MelodyTemplate long_note_ratio (-1=no override)
-    uint8_t phrase_length_bars = 0;   ///< Override phrase length in bars (0=use template)
+    bool chorus_long_tones = false;  ///< Extend short notes to longer tones in chorus
+    bool allow_bar_crossing = true;  ///< Allow notes to cross bar boundaries
+    uint8_t min_note_division = 0;   ///< Minimum note division (4/8/16/32, 0=no filter)
+    float tension_usage = 0.2f;      ///< Tension note probability (0.0-1.0)
+    float syncopation_prob = 0.15f;  ///< Syncopation probability scaling (0.0-0.5)
+    float long_note_ratio_override =
+        -1.0f;                       ///< Override MelodyTemplate long_note_ratio (-1=no override)
+    uint8_t phrase_length_bars = 0;  ///< Override phrase length in bars (0=use template)
 
     // ========================================================================
     // Task 5-2: Internal 4-Stage Structure within Section
@@ -155,8 +155,8 @@ class MelodyDesigner {
     /// @brief Get step size multiplier for internal arc.
     /// Development sub-phrase allows wider intervals.
     float getStepSizeMultiplier() const {
-      if (sub_phrase_index == 1) return 1.3f;   // Development: wider steps
-      if (isResolutionSubPhrase()) return 0.8f; // Resolution: smaller steps
+      if (sub_phrase_index == 1) return 1.3f;    // Development: wider steps
+      if (isResolutionSubPhrase()) return 0.8f;  // Resolution: smaller steps
       return 1.0f;
     }
   };
@@ -325,12 +325,12 @@ class MelodyDesigner {
    * @return Selected pitch (MIDI note number)
    */
   uint8_t selectPitchForLockedRhythmEnhanced(uint8_t prev_pitch, int8_t chord_degree,
-                                              uint8_t vocal_low, uint8_t vocal_high,
-                                              float phrase_position, int direction_inertia,
-                                              size_t note_index, std::mt19937& rng,
-                                              SectionType section_type = SectionType::A,
-                                              VocalAttitude vocal_attitude = VocalAttitude::Clean,
-                                              int same_pitch_streak = 0);
+                                             uint8_t vocal_low, uint8_t vocal_high,
+                                             float phrase_position, int direction_inertia,
+                                             size_t note_index, std::mt19937& rng,
+                                             SectionType section_type = SectionType::A,
+                                             VocalAttitude vocal_attitude = VocalAttitude::Clean,
+                                             int same_pitch_streak = 0);
 
  private:
   // Insert a leading tone at section boundary for smooth transition.

@@ -17,7 +17,7 @@
 namespace midisketch {
 
 VocalRangeResult calculateEffectiveVocalRange(const GeneratorParams& params, const Song& song,
-                                               const MidiTrack* motif_track) {
+                                              const MidiTrack* motif_track) {
   VocalRangeResult result;
   result.effective_low = params.vocal_low;
   result.effective_high = params.vocal_high;
@@ -61,9 +61,8 @@ VocalRangeResult calculateEffectiveVocalRange(const GeneratorParams& params, con
 
   // Calculate velocity scale for composition style
   if (params.composition_style == CompositionStyle::BackgroundMotif) {
-    result.velocity_scale = (params.motif_vocal.prominence == VocalProminence::Foreground)
-                                ? 0.85f
-                                : 0.65f;
+    result.velocity_scale =
+        (params.motif_vocal.prominence == VocalProminence::Foreground) ? 0.85f : 0.65f;
   } else if (params.composition_style == CompositionStyle::SynthDriven) {
     result.velocity_scale = 0.75f;
   }

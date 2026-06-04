@@ -16,8 +16,7 @@ namespace midisketch {
 GuitarModel::GuitarModel(FrettedInstrumentType type)
     : GuitarModel(type, HandSpanConstraints::intermediate(), HandPhysics::intermediate()) {}
 
-GuitarModel::GuitarModel(FrettedInstrumentType type,
-                         const HandSpanConstraints& span_constraints,
+GuitarModel::GuitarModel(FrettedInstrumentType type, const HandSpanConstraints& span_constraints,
                          const HandPhysics& physics)
     : FrettedInstrumentBase(getStandardTuning(type), type,
                             24,  // Guitar typically has 22-24 frets
@@ -36,7 +35,7 @@ void GuitarModel::initTechniqueConstraints() {
 
   // Strum technique: any fret, prefer chords
   strum_constraints_.min_fret = 0;
-  strum_constraints_.max_fret = 15;  // Higher frets harder to strum cleanly
+  strum_constraints_.max_fret = 15;             // Higher frets harder to strum cleanly
   strum_constraints_.preferred_strings = 0xFF;  // All strings
   strum_constraints_.min_duration = TICK_SIXTEENTH;
   strum_constraints_.max_duration = TICK_WHOLE;
@@ -126,8 +125,7 @@ TechniqueConstraints GuitarModel::getTechniqueConstraints(PlayingTechnique techn
 }
 
 float GuitarModel::getMaxBend(const FretPosition& pos) const {
-  return static_cast<float>(
-      BendConstraint::getMaxBend(pos.string, pos.fret, false /* is_bass */));
+  return static_cast<float>(BendConstraint::getMaxBend(pos.string, pos.fret, false /* is_bass */));
 }
 
 bool GuitarModel::canStrum(const std::vector<FretPosition>& positions) const {
@@ -156,7 +154,7 @@ StrumConfig GuitarModel::getStrumConfig(const std::vector<FretPosition>& positio
   config.first_string = lowest;
   config.last_string = highest;
   config.direction = StrumDirection::Down;  // Default to downstroke
-  config.strum_duration = 30;  // Fast strum by default
+  config.strum_duration = 30;               // Fast strum by default
 
   // Initialize mute vector
   config.muted.resize(getStringCount(), true);  // Start with all muted
@@ -176,8 +174,8 @@ bool GuitarModel::hasLowB() const {
 }
 
 PickingPattern GuitarModel::getRecommendedPickingPattern(const std::vector<uint8_t>& pitches,
-                                                          const std::vector<Tick>& durations,
-                                                          uint16_t bpm) const {
+                                                         const std::vector<Tick>& durations,
+                                                         uint16_t bpm) const {
   (void)durations;
   if (pitches.empty()) {
     return PickingPattern::Alternate;
@@ -215,8 +213,7 @@ PickingPattern GuitarModel::getRecommendedPickingPattern(const std::vector<uint8
   }
 
   // Fast tempo with consistent direction = sweep picking
-  if (bpm > 140 && (is_ascending || is_descending) && !has_string_jumps &&
-      pitches.size() >= 3) {
+  if (bpm > 140 && (is_ascending || is_descending) && !has_string_jumps && pitches.size() >= 3) {
     return PickingPattern::Sweep;
   }
 
@@ -230,7 +227,7 @@ PickingPattern GuitarModel::getRecommendedPickingPattern(const std::vector<uint8
 }
 
 Fingering GuitarModel::findChordFingering(const std::vector<uint8_t>& pitches,
-                                           const FretboardState& state) const {
+                                          const FretboardState& state) const {
   Fingering best;
   best.playability_cost = std::numeric_limits<float>::max();
 
@@ -334,8 +331,7 @@ Fingering GuitarModel::findChordFingering(const std::vector<uint8_t>& pitches,
   }
 
   // Build fingering
-  HandPosition hand(lowest_fret > 0 ? lowest_fret : 1,
-                    lowest_fret > 1 ? lowest_fret - 1 : 0,
+  HandPosition hand(lowest_fret > 0 ? lowest_fret : 1, lowest_fret > 1 ? lowest_fret - 1 : 0,
                     lowest_fret + span_constraints_.normal_span);
 
   float total_cost = 0.0f;
@@ -379,8 +375,7 @@ Fingering GuitarModel::findChordFingering(const std::vector<uint8_t>& pitches,
   best.hand_pos = hand;
   best.barre = barre;
   best.playability_cost = total_cost;
-  best.requires_position_shift =
-      (state.hand_position != hand.base_fret && lowest_fret > 0);
+  best.requires_position_shift = (state.hand_position != hand.base_fret && lowest_fret > 0);
   best.requires_barre_change = barre.isActive();
 
   return best;
@@ -407,7 +402,7 @@ bool GuitarModel::areConsecutiveStrings(const std::vector<FretPosition>& positio
 }
 
 float GuitarModel::scorePosition(const FretPosition& pos, const HandPosition& current_hand,
-                                  PlayingTechnique technique) const {
+                                 PlayingTechnique technique) const {
   // Start with base scoring
   float score = FrettedInstrumentBase::scorePosition(pos, current_hand, technique);
 

@@ -188,7 +188,7 @@ class MidiSketch {
 
   /**
    * @brief Get resolved blueprint ID after generation.
-   * @return Blueprint ID (0-3), or 255 if not generated
+   * @return Blueprint ID (0-9), or 255 if not generated
    */
   uint8_t resolvedBlueprintId() const { return generator_.resolvedBlueprintId(); }
 

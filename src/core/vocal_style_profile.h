@@ -35,27 +35,27 @@ constexpr VocalStyleProfile kIdolProfile = {
     "Idol",
     // StyleBias
     {
-        1.5f,  // stepwise_weight - encouraged
-        0.8f,  // skip_weight - moderate
-        0.3f,  // leap_weight - discouraged
-        1.2f,  // center_weight - preferred
-        0.6f,  // high_weight - limited
-        0.8f,  // low_weight - OK
-        1.2f,  // onbeat_weight - emphasis
-        0.8f,  // offbeat_weight - OK
-        0.5f,  // syncopation_weight - minimal
-        1.2f,  // same_pitch_weight - encouraged
-        1.5f,  // motif_repeat_weight - strong
+        1.45f,  // stepwise_weight - singable group melody
+        1.0f,   // skip_weight - allows memorable 3rd/4th movement
+        0.45f,  // leap_weight - limited, but not flattened
+        1.15f,  // center_weight - preferred
+        0.85f,  // high_weight - idol hooks often sit bright/high
+        0.75f,  // low_weight - less preferred
+        1.2f,   // onbeat_weight - clear danceable accents
+        0.95f,  // offbeat_weight - light upbeat motion
+        0.75f,  // syncopation_weight - enough for 8th/16th J-pop push
+        1.25f,  // same_pitch_weight - chantable repetition
+        1.65f,  // motif_repeat_weight - strong hook identity
     },
     // EvaluatorConfig (total = 1.0)
     {
-        0.20f,  // singability_weight - emphasized
+        0.18f,  // singability_weight - still important
         0.10f,  // chord_tone_weight
-        0.10f,  // contour_weight
+        0.12f,  // contour_weight - avoid flat chant-only lines
         0.05f,  // surprise_weight - low (predictable hooks)
         0.20f,  // aaab_weight - emphasized
-        0.15f,  // rhythm_interval_weight
-        0.20f,  // catchiness_weight - highest (idol hooks are crucial)
+        0.17f,  // rhythm_interval_weight - idol-pop style rhythmic hooks
+        0.18f,  // catchiness_weight - high, balanced with rhythm
     },
 };
 
@@ -117,7 +117,7 @@ constexpr VocalStyleProfile kBalladProfile = {
     },
 };
 
-/// @brief Anime/YOASOBI profile: dramatic contour, surprising intervals.
+/// @brief Anime/AnimeHighEnergy profile: dramatic contour, surprising intervals.
 constexpr VocalStyleProfile kAnimeProfile = {
     "Anime",
     // StyleBias
@@ -171,7 +171,7 @@ constexpr VocalStyleProfile kVocaloidProfile = {
         0.20f,  // surprise_weight - higher
         0.15f,  // aaab_weight
         0.10f,  // rhythm_interval_weight
-        0.15f,  // catchiness_weight - moderate (YOASOBI hooks matter)
+        0.15f,  // catchiness_weight - moderate (AnimeHighEnergy hooks matter)
     },
 };
 

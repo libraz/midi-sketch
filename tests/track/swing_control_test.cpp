@@ -93,8 +93,7 @@ TEST_F(SwingControlTest, DrumsGeneratedForAllSections) {
   for (const auto& section : sections) {
     bool has_drums_in_section = false;
     for (const auto& note : drums.notes()) {
-      if (note.start_tick >= section.start_tick &&
-          note.start_tick < section.endTick()) {
+      if (note.start_tick >= section.start_tick && note.start_tick < section.endTick()) {
         has_drums_in_section = true;
         break;
       }
@@ -125,8 +124,7 @@ TEST_F(SwingControlTest, ChorusSectionHasDrums) {
       // Check for drums in chorus
       bool has_drums = false;
       for (const auto& note : drums.notes()) {
-        if (note.start_tick >= section.start_tick &&
-            note.start_tick < section.endTick()) {
+        if (note.start_tick >= section.start_tick && note.start_tick < section.endTick()) {
           has_drums = true;
           break;
         }
@@ -151,8 +149,7 @@ TEST_F(SwingControlTest, IntroSectionHasDrums) {
       // Check for drums in intro
       bool has_drums = false;
       for (const auto& note : drums.notes()) {
-        if (note.start_tick >= section.start_tick &&
-            note.start_tick < section.endTick()) {
+        if (note.start_tick >= section.start_tick && note.start_tick < section.endTick()) {
           has_drums = true;
           break;
         }
@@ -226,18 +223,21 @@ TEST(CalculateSwingAmountTest, SwingClampedTo0_7) {
 TEST(GetSwingOffsetContinuousTest, StraightGrooveReturnsZero) {
   // Straight groove should always return 0 offset
   EXPECT_EQ(getSwingOffsetContinuous(DrumGrooveFeel::Straight, TICKS_PER_BEAT / 2,
-                                      SectionType::Chorus, 0, 8), 0);
-  EXPECT_EQ(getSwingOffsetContinuous(DrumGrooveFeel::Straight, TICKS_PER_BEAT / 2,
-                                      SectionType::A, 4, 8), 0);
-  EXPECT_EQ(getSwingOffsetContinuous(DrumGrooveFeel::Straight, TICKS_PER_BEAT / 4,
-                                      SectionType::B, 2, 8), 0);
+                                     SectionType::Chorus, 0, 8),
+            0);
+  EXPECT_EQ(
+      getSwingOffsetContinuous(DrumGrooveFeel::Straight, TICKS_PER_BEAT / 2, SectionType::A, 4, 8),
+      0);
+  EXPECT_EQ(
+      getSwingOffsetContinuous(DrumGrooveFeel::Straight, TICKS_PER_BEAT / 4, SectionType::B, 2, 8),
+      0);
 }
 
 TEST(GetSwingOffsetContinuousTest, SwingGrooveAppliesOffset) {
   // Swing groove in Chorus (swing amount 0.5)
   // Triplet-grid offset = 80 * swing_amount = 80 * 0.5 = 40
   Tick offset = getSwingOffsetContinuous(DrumGrooveFeel::Swing, TICKS_PER_BEAT / 2,
-                                          SectionType::Chorus, 0, 8);
+                                         SectionType::Chorus, 0, 8);
   EXPECT_EQ(offset, 40) << "Chorus swing offset should be 40 ticks (triplet grid)";
 }
 
@@ -246,27 +246,27 @@ TEST(GetSwingOffsetContinuousTest, ShuffleAmplifiesSwing) {
   // Chorus base swing = 0.5, shuffle = 0.5 * 1.5 = 0.75, clamped to 0.7
   // offset = 240 * 0.7 = 168
   Tick shuffle_offset = getSwingOffsetContinuous(DrumGrooveFeel::Shuffle, TICKS_PER_BEAT / 2,
-                                                  SectionType::Chorus, 0, 8);
+                                                 SectionType::Chorus, 0, 8);
   Tick swing_offset = getSwingOffsetContinuous(DrumGrooveFeel::Swing, TICKS_PER_BEAT / 2,
-                                                SectionType::Chorus, 0, 8);
+                                               SectionType::Chorus, 0, 8);
   EXPECT_GT(shuffle_offset, swing_offset) << "Shuffle should have more offset than swing";
 }
 
 TEST(GetSwingOffsetContinuousTest, SixteenthNoteHasSmallerOffset) {
   // 16th note (120 ticks) vs 8th note (240 ticks)
   Tick eighth_offset = getSwingOffsetContinuous(DrumGrooveFeel::Swing, TICKS_PER_BEAT / 2,
-                                                 SectionType::Chorus, 0, 8);
+                                                SectionType::Chorus, 0, 8);
   Tick sixteenth_offset = getSwingOffsetContinuous(DrumGrooveFeel::Swing, TICKS_PER_BEAT / 4,
-                                                    SectionType::Chorus, 0, 8);
+                                                   SectionType::Chorus, 0, 8);
   EXPECT_EQ(sixteenth_offset, eighth_offset / 2) << "16th note offset should be half of 8th";
 }
 
 TEST(GetSwingOffsetContinuousTest, ProgressiveSwingInASection) {
   // A section first bar (swing ~0.3) vs last bar (swing ~0.5)
-  Tick first_bar_offset = getSwingOffsetContinuous(DrumGrooveFeel::Swing, TICKS_PER_BEAT / 2,
-                                                    SectionType::A, 0, 8);
-  Tick last_bar_offset = getSwingOffsetContinuous(DrumGrooveFeel::Swing, TICKS_PER_BEAT / 2,
-                                                   SectionType::A, 7, 8);
+  Tick first_bar_offset =
+      getSwingOffsetContinuous(DrumGrooveFeel::Swing, TICKS_PER_BEAT / 2, SectionType::A, 0, 8);
+  Tick last_bar_offset =
+      getSwingOffsetContinuous(DrumGrooveFeel::Swing, TICKS_PER_BEAT / 2, SectionType::A, 7, 8);
   EXPECT_LT(first_bar_offset, last_bar_offset)
       << "A section first bar should have less swing than last bar";
 }
@@ -298,21 +298,21 @@ TEST(CalculateSwingAmountTest, NegativeOverrideUsesSectionDefault) {
   // -1.0 (or any negative) means use section default
   float with_default = calculateSwingAmount(SectionType::Chorus, 0, 8, -1.0f);
   float section_default = calculateSwingAmount(SectionType::Chorus, 0, 8);
-  EXPECT_FLOAT_EQ(with_default, section_default)
-      << "Negative override should use section default";
+  EXPECT_FLOAT_EQ(with_default, section_default) << "Negative override should use section default";
 }
 
 TEST(GetSwingOffsetContinuousTest, OverridePassedToSwingCalculation) {
   // Test that override is properly passed through getSwingOffsetContinuous
-  Tick offset_with_override = getSwingOffsetContinuous(
-      DrumGrooveFeel::Swing, TICKS_PER_BEAT / 2, SectionType::A, 0, 8, 0.5f);
-  Tick offset_section_default = getSwingOffsetContinuous(
-      DrumGrooveFeel::Swing, TICKS_PER_BEAT / 2, SectionType::A, 0, 8, -1.0f);
+  Tick offset_with_override = getSwingOffsetContinuous(DrumGrooveFeel::Swing, TICKS_PER_BEAT / 2,
+                                                       SectionType::A, 0, 8, 0.5f);
+  Tick offset_section_default = getSwingOffsetContinuous(DrumGrooveFeel::Swing, TICKS_PER_BEAT / 2,
+                                                         SectionType::A, 0, 8, -1.0f);
 
   // A section default at bar 0 is ~0.3, override is 0.5
   // Triplet-grid offset = 80 * swing_amount: 80 * 0.5 = 40 vs 80 * 0.3 = 24
   EXPECT_EQ(offset_with_override, 40) << "Override 0.5 should give 40 ticks (triplet grid)";
-  EXPECT_NEAR(offset_section_default, 24, 2) << "Section default should give ~24 ticks (triplet grid)";
+  EXPECT_NEAR(offset_section_default, 24, 2)
+      << "Section default should give ~24 ticks (triplet grid)";
 }
 
 // ============================================================================
@@ -346,8 +346,7 @@ TEST(HiHatSwingFactorTest, CityPopHasStrongerSwingThanIdolPop) {
   float citypop = getHiHatSwingFactor(Mood::CityPop);
   float idolpop = getHiHatSwingFactor(Mood::IdolPop);
 
-  EXPECT_GT(citypop, idolpop)
-      << "CityPop should have stronger swing than IdolPop for groove feel";
+  EXPECT_GT(citypop, idolpop) << "CityPop should have stronger swing than IdolPop for groove feel";
 }
 
 TEST(HiHatSwingFactorTest, BalladHasModerateSwing) {
@@ -363,11 +362,11 @@ TEST(HiHatSwingFactorTest, BalladHasModerateSwing) {
 TEST(HiHatSwingFactorTest, AllMoodsProduceValidSwingFactor) {
   // All moods must produce swing factors that result in musically valid timing
   std::vector<Mood> all_moods = {
-      Mood::StraightPop, Mood::BrightUpbeat, Mood::EnergeticDance, Mood::LightRock,
-      Mood::MidPop, Mood::EmotionalPop, Mood::Sentimental, Mood::Chill,
-      Mood::Ballad, Mood::DarkPop, Mood::Dramatic, Mood::Nostalgic,
-      Mood::ModernPop, Mood::ElectroPop, Mood::IdolPop, Mood::Anthem,
-      Mood::Yoasobi, Mood::Synthwave, Mood::FutureBass, Mood::CityPop};
+      Mood::StraightPop,     Mood::BrightUpbeat, Mood::EnergeticDance, Mood::LightRock,
+      Mood::MidPop,          Mood::EmotionalPop, Mood::Sentimental,    Mood::Chill,
+      Mood::Ballad,          Mood::DarkPop,      Mood::Dramatic,       Mood::Nostalgic,
+      Mood::ModernPop,       Mood::ElectroPop,   Mood::IdolPop,        Mood::Anthem,
+      Mood::AnimeHighEnergy, Mood::Synthwave,    Mood::FutureBass,     Mood::CityPop};
 
   for (Mood mood : all_moods) {
     float factor = getHiHatSwingFactor(mood);
@@ -404,7 +403,8 @@ TEST(TimeFeelTest, PushedSubtractsOffset) {
 
   EXPECT_LT(pushed, original) << "Pushed should pull notes earlier";
   // At 120 BPM, -7ms = ~-7 * 120 / 125 = ~-6-7 ticks
-  EXPECT_NEAR(static_cast<int>(original - pushed), 7, 2) << "Pushed offset should be ~7 ticks at 120 BPM";
+  EXPECT_NEAR(static_cast<int>(original - pushed), 7, 2)
+      << "Pushed offset should be ~7 ticks at 120 BPM";
 }
 
 TEST(TimeFeelTest, PushedDoesNotGoNegative) {
@@ -454,8 +454,8 @@ TEST(MoodTimeFeelTest, EnergeticDanceIsPushed) {
   EXPECT_EQ(getMoodTimeFeel(Mood::EnergeticDance), TimeFeel::Pushed);
 }
 
-TEST(MoodTimeFeelTest, YoasobiIsPushed) {
-  EXPECT_EQ(getMoodTimeFeel(Mood::Yoasobi), TimeFeel::Pushed);
+TEST(MoodTimeFeelTest, AnimeHighEnergyIsPushed) {
+  EXPECT_EQ(getMoodTimeFeel(Mood::AnimeHighEnergy), TimeFeel::Pushed);
 }
 
 TEST(MoodTimeFeelTest, StandardPopIsOnBeat) {
@@ -464,11 +464,11 @@ TEST(MoodTimeFeelTest, StandardPopIsOnBeat) {
 
 TEST(MoodTimeFeelTest, AllMoodsReturnValidTimeFeel) {
   std::vector<Mood> all_moods = {
-      Mood::StraightPop, Mood::BrightUpbeat, Mood::EnergeticDance, Mood::LightRock,
-      Mood::MidPop, Mood::EmotionalPop, Mood::Sentimental, Mood::Chill,
-      Mood::Ballad, Mood::DarkPop, Mood::Dramatic, Mood::Nostalgic,
-      Mood::ModernPop, Mood::ElectroPop, Mood::IdolPop, Mood::Anthem,
-      Mood::Yoasobi, Mood::Synthwave, Mood::FutureBass, Mood::CityPop};
+      Mood::StraightPop,     Mood::BrightUpbeat, Mood::EnergeticDance, Mood::LightRock,
+      Mood::MidPop,          Mood::EmotionalPop, Mood::Sentimental,    Mood::Chill,
+      Mood::Ballad,          Mood::DarkPop,      Mood::Dramatic,       Mood::Nostalgic,
+      Mood::ModernPop,       Mood::ElectroPop,   Mood::IdolPop,        Mood::Anthem,
+      Mood::AnimeHighEnergy, Mood::Synthwave,    Mood::FutureBass,     Mood::CityPop};
 
   for (Mood mood : all_moods) {
     TimeFeel feel = getMoodTimeFeel(mood);

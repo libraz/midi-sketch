@@ -42,9 +42,8 @@ namespace melody {
 /// @param note_eighths Note duration in eighths (affects chord tone preference)
 /// @param tension_usage Tension note probability (0.0=chord tones only, 1.0=always add tensions)
 /// @return New pitch after applying choice
-int applyPitchChoice(PitchChoice choice, int current_pitch, int target_pitch,
-                     int8_t chord_degree, int key_offset, uint8_t vocal_low,
-                     uint8_t vocal_high, VocalAttitude attitude,
+int applyPitchChoice(PitchChoice choice, int current_pitch, int target_pitch, int8_t chord_degree,
+                     int key_offset, uint8_t vocal_low, uint8_t vocal_high, VocalAttitude attitude,
                      bool disable_singability = false, float note_eighths = 2.0f,
                      float tension_usage = 0.2f);
 
@@ -59,9 +58,8 @@ int applyPitchChoice(PitchChoice choice, int current_pitch, int target_pitch,
 /// @param section_start Section start tick
 /// @param harmony Harmony context for chord lookup
 /// @return Target pitch
-int calculateTargetPitch(int tessitura_center, int tessitura_range,
-                         uint8_t vocal_low, uint8_t vocal_high, Tick section_start,
-                         const IHarmonyContext& harmony);
+int calculateTargetPitch(int tessitura_center, int tessitura_range, uint8_t vocal_low,
+                         uint8_t vocal_high, Tick section_start, const IHarmonyContext& harmony);
 
 }  // namespace melody
 }  // namespace midisketch

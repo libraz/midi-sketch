@@ -71,8 +71,7 @@ class IHarmonyCoordinator : public IHarmonyContext {
   /// @param targets Sections to apply the pattern to
   /// @param track Target track to add notes to
   virtual void applyMotifToSections(const std::vector<NoteEvent>& motif_pattern,
-                                     const std::vector<Section>& targets,
-                                     MidiTrack& track) = 0;
+                                    const std::vector<Section>& targets, MidiTrack& track) = 0;
 };
 
 }  // namespace midisketch

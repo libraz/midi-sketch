@@ -204,11 +204,20 @@ TEST(StructureTest, BuildForDurationMinimumBars) {
 }
 
 TEST(StructureTest, BuildForDurationMaximumBars) {
-  // Very long duration should be capped at 120 bars
+  // Very long duration should be capped around full-song length.
   auto sections = buildStructureForDuration(600, 120);  // ~300 bars normally
   uint16_t total_bars = calculateTotalBars(sections);
 
-  EXPECT_LE(total_bars, 150) << "Maximum structure should be around 120 bars";
+  EXPECT_LE(total_bars, 150) << "Maximum structure should be around 144 bars";
+}
+
+TEST(StructureTest, BuildForDurationAnimeHighEnergyReferenceLengthAt130BPM) {
+  // 259 seconds @ 130 BPM is about 140 bars.
+  auto sections = buildStructureForDuration(259, 130);
+  uint16_t total_bars = calculateTotalBars(sections);
+
+  EXPECT_GE(total_bars, 136u);
+  EXPECT_LE(total_bars, 144u);
 }
 
 TEST(StructureTest, BuildForDurationContainsIntroChorusOutro) {
@@ -563,8 +572,8 @@ TEST(StructureTest, BuildStructureFromBlueprint_Traditional) {
   EXPECT_TRUE(sections.empty());
 }
 
-TEST(StructureTest, BuildStructureFromBlueprint_Orangestar) {
-  // RhythmLock (formerly Orangestar) has a custom section flow
+TEST(StructureTest, BuildStructureFromBlueprint_RhythmSync) {
+  // RhythmLock (formerly RhythmSync) has a custom section flow
   const auto& bp = getProductionBlueprint(1);
   auto sections = buildStructureFromBlueprint(bp);
 
@@ -584,8 +593,8 @@ TEST(StructureTest, BuildStructureFromBlueprint_Orangestar) {
   }
 }
 
-TEST(StructureTest, BuildStructureFromBlueprint_YOASOBI) {
-  // YOASOBI has a custom section flow with full arrangement
+TEST(StructureTest, BuildStructureFromBlueprint_AnimeHighEnergy) {
+  // AnimeHighEnergy has a custom section flow with full arrangement
   const auto& bp = getProductionBlueprint(2);
   auto sections = buildStructureFromBlueprint(bp);
 
@@ -643,8 +652,7 @@ TEST(EnergyCurveTest, SteadyStateSetsAllToMedium) {
     if (section.type != SectionType::Intro && section.type != SectionType::Outro) {
       EXPECT_EQ(section.energy, SectionEnergy::Medium)
           << "SteadyState should set non-intro/outro sections to Medium";
-      EXPECT_EQ(section.base_velocity, 75)
-          << "SteadyState should set base_velocity to 75";
+      EXPECT_EQ(section.base_velocity, 75) << "SteadyState should set base_velocity to 75";
     }
   }
 }
@@ -714,7 +722,7 @@ TEST(EnergyCurveTest, WavePatternDropsAfterChorus) {
 
   // Find A section that follows a Chorus
   for (size_t i = 1; i < sections.size(); ++i) {
-    if (sections[i].type == SectionType::A && sections[i-1].type == SectionType::Chorus) {
+    if (sections[i].type == SectionType::A && sections[i - 1].type == SectionType::Chorus) {
       EXPECT_EQ(sections[i].energy, SectionEnergy::Low)
           << "WavePattern should drop A sections after Chorus to Low";
     }

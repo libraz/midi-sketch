@@ -27,5 +27,4 @@ void DrumsGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContex
   generateDrumsTrack(track, *ctx.song, *ctx.params, *ctx.rng);
 }
 
-
 }  // namespace midisketch

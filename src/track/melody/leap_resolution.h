@@ -40,7 +40,7 @@ constexpr int kLeapReversalThreshold = 4;
 /// @param vocal_high Maximum allowed pitch
 /// @return Best stepwise pitch, or -1 if none found
 int findStepwiseResolutionPitch(int current_pitch, const std::vector<int>& chord_tones,
-                                 int resolution_direction, uint8_t vocal_low, uint8_t vocal_high);
+                                int resolution_direction, uint8_t vocal_low, uint8_t vocal_high);
 
 /// @brief Apply leap-after-reversal rule.
 ///
@@ -64,8 +64,8 @@ int findStepwiseResolutionPitch(int current_pitch, const std::vector<int>& chord
 /// @param phrase_position Position in phrase 0.0-1.0 (-1 = unknown)
 /// @return Adjusted pitch (may be changed to reversal pitch)
 int applyLeapReversalRule(int new_pitch, int current_pitch, int prev_interval,
-                          const std::vector<int>& chord_tones, uint8_t vocal_low, uint8_t vocal_high,
-                          bool prefer_stepwise, std::mt19937& rng,
+                          const std::vector<int>& chord_tones, uint8_t vocal_low,
+                          uint8_t vocal_high, bool prefer_stepwise, std::mt19937& rng,
                           int8_t section_type_int = -1, float phrase_position = -1.0f);
 
 }  // namespace melody

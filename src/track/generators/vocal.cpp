@@ -14,29 +14,29 @@
 
 #include "core/chord.h"
 #include "core/chord_utils.h"
-#include "core/rng_util.h"
 #include "core/i_harmony_context.h"
 #include "core/melody_embellishment.h"
 #include "core/melody_evaluator.h"
 #include "core/melody_templates.h"
 #include "core/mood_utils.h"
 #include "core/note_creator.h"
-#include "core/note_timeline_utils.h"
 #include "core/note_source.h"
+#include "core/note_timeline_utils.h"
 #include "core/pitch_bend_curves.h"
 #include "core/pitch_utils.h"
 #include "core/production_blueprint.h"
+#include "core/rng_util.h"
 #include "core/song.h"
 #include "core/velocity.h"
+#include "track/generators/motif.h"
+#include "track/melody/melody_utils.h"
 #include "track/melody/motif_support.h"
+#include "track/melody/rhythm_generator.h"
+#include "track/vocal/locked_rhythm_generator.h"
 #include "track/vocal/melody_designer.h"
 #include "track/vocal/phrase_cache.h"
 #include "track/vocal/phrase_planner.h"
 #include "track/vocal/phrase_variation.h"
-#include "track/generators/motif.h"
-#include "track/melody/melody_utils.h"
-#include "track/melody/rhythm_generator.h"
-#include "track/vocal/locked_rhythm_generator.h"
 #include "track/vocal/rhythm_lock_evaluator.h"
 #include "track/vocal/vocal_helpers.h"
 #include "track/vocal/vocal_pitch_hints.h"
@@ -53,7 +53,7 @@ namespace midisketch {
 // ============================================================================
 
 bool shouldLockVocalRhythm(const GeneratorParams& params) {
-  // Rhythm lock is used for Orangestar style:
+  // Rhythm lock is used for RhythmSync style:
   // - RhythmSync paradigm (vocal syncs to drum grid)
   // - Locked riff policy (same rhythm throughout)
   if (params.paradigm != GenerationParadigm::RhythmSync) {
@@ -77,11 +77,9 @@ static bool shouldUsePerSectionTypeRhythmLock(const GeneratorParams& params) {
 // =============================================================================
 
 MelodyDesigner::SectionContext VocalGenerator::buildSectionContext(
-    const Section& section, const GeneratorParams& params,
-    const Song& song, const TessituraRange& tessitura,
-    uint8_t vocal_low, uint8_t vocal_high, int8_t chord_degree,
-    int occurrence, const DrumGrid* drum_grid,
-    const MelodyDesigner& designer) const {
+    const Section& section, const GeneratorParams& params, const Song& song,
+    const TessituraRange& tessitura, uint8_t vocal_low, uint8_t vocal_high, int8_t chord_degree,
+    int occurrence, const DrumGrid* drum_grid, const MelodyDesigner& designer) const {
   MelodyDesigner::SectionContext sctx;
   sctx.section_type = section.type;
   sctx.section_start = section.start_tick;
@@ -100,8 +98,7 @@ MelodyDesigner::SectionContext VocalGenerator::buildSectionContext(
   float density_factor = effective_density / 100.0f;
   sctx.density_modifier = base_density * density_factor;
   sctx.thirtysecond_ratio = getThirtysecondRatio(section.type, params.melody_params);
-  sctx.consecutive_same_note_prob =
-      getConsecutiveSameNoteProb(section.type, params.melody_params);
+  sctx.consecutive_same_note_prob = getConsecutiveSameNoteProb(section.type, params.melody_params);
   sctx.disable_vowel_constraints = params.melody_params.disable_vowel_constraints;
   sctx.disable_breathing_gaps = params.melody_params.disable_breathing_gaps;
   // Wire StyleMelodyParams zombie parameters to SectionContext
@@ -149,8 +146,8 @@ MelodyDesigner::SectionContext VocalGenerator::buildSectionContext(
 
   // Syllabic subdivision parameters
   sctx.syllabic_sub_ratio = getSubdivisionRatio(section.type, params.melody_params);
-  auto resolved_mora = melody::resolveMoraMode(
-      params.melody_params.mora_rhythm_mode, params.vocal_style);
+  auto resolved_mora =
+      melody::resolveMoraMode(params.melody_params.mora_rhythm_mode, params.vocal_style);
   sctx.is_mora_timed = (resolved_mora == MoraRhythmMode::MoraTimed);
 
   // Occurrence count for occurrence-dependent embellishment density
@@ -173,8 +170,8 @@ MelodyDesigner::SectionContext VocalGenerator::buildSectionContext(
   // Driving/Syncopated grooves benefit from anticipation rests for "tame" effect
   // Higher drive_feel increases anticipation intensity
   if (params.vocal_groove == VocalGrooveFeel::Driving16th) {
-    sctx.anticipation_rest = (params.drive_feel >= 70) ? AnticipationRestMode::Moderate
-                                                        : AnticipationRestMode::Subtle;
+    sctx.anticipation_rest =
+        (params.drive_feel >= 70) ? AnticipationRestMode::Moderate : AnticipationRestMode::Subtle;
   } else if (params.vocal_groove == VocalGrooveFeel::Syncopated) {
     sctx.anticipation_rest = AnticipationRestMode::Moderate;
   } else if (params.drive_feel >= 80) {
@@ -226,13 +223,10 @@ MelodyDesigner::SectionContext VocalGenerator::buildSectionContext(
 }
 
 CachedRhythmPattern* VocalGenerator::resolveRhythmLock(
-    const Section& section, const GeneratorParams& params,
-    const Song& song, const FullTrackContext& ctx,
-    CachedRhythmPattern& motif_storage,
-    bool use_per_section_type_lock,
+    const Section& section, const GeneratorParams& params, const Song& song,
+    const FullTrackContext& ctx, CachedRhythmPattern& motif_storage, bool use_per_section_type_lock,
     std::unordered_map<SectionType, CachedRhythmPattern>& section_type_locks,
-    CachedRhythmPattern* active_rhythm_lock,
-    Tick section_start, Tick section_end) const {
+    CachedRhythmPattern* active_rhythm_lock, Tick section_start, Tick section_end) const {
   CachedRhythmPattern* current_rhythm_lock = nullptr;
 
   // RhythmSync paradigm: extract rhythm from Motif track (coordinate axis)
@@ -244,8 +238,7 @@ CachedRhythmPattern* VocalGenerator::resolveRhythmLock(
   if (params.paradigm == GenerationParadigm::RhythmSync && motif_ref != nullptr &&
       !motif_ref->empty()) {
     // Extract Motif's rhythm pattern for this section
-    motif_storage = extractRhythmPatternFromTrack(
-        motif_ref->notes(), section_start, section_end);
+    motif_storage = extractRhythmPatternFromTrack(motif_ref->notes(), section_start, section_end);
     if (motif_storage.isValid()) {
       current_rhythm_lock = &motif_storage;
     }
@@ -284,12 +277,11 @@ CachedRhythmPattern* VocalGenerator::resolveRhythmLock(
   return current_rhythm_lock;
 }
 
-void VocalGenerator::postProcessVocalNotes(
-    std::vector<NoteEvent>& all_notes, MidiTrack& track,
-    const Song& song, const GeneratorParams& params,
-    IHarmonyContext& harmony, std::mt19937& rng,
-    float velocity_scale,
-    uint8_t effective_vocal_low, uint8_t effective_vocal_high) const {
+void VocalGenerator::postProcessVocalNotes(std::vector<NoteEvent>& all_notes, MidiTrack& track,
+                                           const Song& song, const GeneratorParams& params,
+                                           IHarmonyContext& harmony, std::mt19937& rng,
+                                           float velocity_scale, uint8_t effective_vocal_low,
+                                           uint8_t effective_vocal_high) const {
   // Apply section-end sustain - extend final notes of each section
   applySectionEndSustain(all_notes, song.arrangement().sections(), harmony);
 
@@ -316,8 +308,8 @@ void VocalGenerator::postProcessVocalNotes(
   // SKIP for UltraVocaloid: same-pitch rapid-fire is intentional (machine-gun style)
   if (params.vocal_style != VocalStylePreset::UltraVocaloid) {
     // BPM-aware merge gap: ~50ms in real time, minimum 30 ticks
-    Tick merge_gap = static_cast<Tick>(std::max(
-        30.0f, 0.05f * params.bpm * TICKS_PER_BEAT / 60.0f));
+    Tick merge_gap =
+        static_cast<Tick>(std::max(30.0f, 0.05f * params.bpm * TICKS_PER_BEAT / 60.0f));
     mergeSamePitchNotes(all_notes, merge_gap);
   }
 
@@ -462,12 +454,12 @@ void VocalGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContex
     // This ensures the Chorus climax is perceptually distinct.
     constexpr int kVerseCeilingMarginSt = 3;
     if (section.type == SectionType::A || section.type == SectionType::Bridge) {
-      int chorus_ceiling = static_cast<int>(effective_vocal_high)
-                           + params.melody_params.chorus_register_shift;
+      int chorus_ceiling =
+          static_cast<int>(effective_vocal_high) + params.melody_params.chorus_register_shift;
       int ceiling = chorus_ceiling - kVerseCeilingMarginSt;
       if (static_cast<int>(section_vocal_high) > ceiling) {
-        section_vocal_high = static_cast<uint8_t>(
-            std::max(ceiling, static_cast<int>(section_vocal_low) + 6));
+        section_vocal_high =
+            static_cast<uint8_t>(std::max(ceiling, static_cast<int>(section_vocal_low) + 6));
       }
     }
 
@@ -505,33 +497,29 @@ void VocalGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContex
                                                     section_vocal_high);
     } else {
       // Cache miss: generate new melody
-      MelodyDesigner::SectionContext sctx = buildSectionContext(
-          section, params, song, section_tessitura,
-          section_vocal_low, section_vocal_high, chord_degree,
-          occurrence, drum_grid, designer);
+      MelodyDesigner::SectionContext sctx =
+          buildSectionContext(section, params, song, section_tessitura, section_vocal_low,
+                              section_vocal_high, chord_degree, occurrence, drum_grid, designer);
 
       // Resolve rhythm lock for this section
       CachedRhythmPattern motif_rhythm_pattern;  // Local storage for Motif-derived pattern
       CachedRhythmPattern* current_rhythm_lock = nullptr;
       if (use_rhythm_lock) {
         current_rhythm_lock = resolveRhythmLock(
-            section, params, song, ctx, motif_rhythm_pattern,
-            use_per_section_type_lock, section_type_rhythm_locks,
-            active_rhythm_lock, section_start, section_end);
+            section, params, song, ctx, motif_rhythm_pattern, use_per_section_type_lock,
+            section_type_rhythm_locks, active_rhythm_lock, section_start, section_end);
       }
 
       // Build phrase plan for this section (uses rhythm lock if available)
       PhrasePlan phrase_plan = PhrasePlanner::buildPlan(
-          section.type, section_start, section_end, section.bars,
-          params.mood, params.vocal_style,
+          section.type, section_start, section_end, section.bars, params.mood, params.vocal_style,
           current_rhythm_lock, params.bpm);
 
       // Mark first chorus phrase as hold-burst entry if previous section was B
       if (section.type == SectionType::Chorus && !phrase_plan.phrases.empty()) {
         const auto& sections = song.arrangement().sections();
         for (size_t si = 0; si < sections.size(); ++si) {
-          if (&sections[si] == &section && si > 0 &&
-              sections[si - 1].type == SectionType::B) {
+          if (&sections[si] == &section && si > 0 && sections[si - 1].type == SectionType::B) {
             phrase_plan.phrases[0].is_hold_burst_entry = true;
             phrase_plan.phrases[0].density_modifier *= 1.3f;
             break;
@@ -541,21 +529,19 @@ void VocalGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContex
 
       // Run-based onset selection for RhythmSync (skip for UltraVocaloid)
       CachedRhythmPattern run_filtered_pattern;
-      if (current_rhythm_lock != nullptr &&
-          params.paradigm == GenerationParadigm::RhythmSync &&
+      if (current_rhythm_lock != nullptr && params.paradigm == GenerationParadigm::RhythmSync &&
           params.motif.rhythm_template != MotifRhythmTemplate::None &&
           params.vocal_style != VocalStylePreset::UltraVocaloid) {
         const auto& tmpl = motif_detail::getTemplateConfig(params.motif.rhythm_template);
-        run_filtered_pattern = buildRunBasedOnsetMap(
-            *current_rhythm_lock, phrase_plan, tmpl, params.bpm, section_start);
+        run_filtered_pattern = buildRunBasedOnsetMap(*current_rhythm_lock, phrase_plan, tmpl,
+                                                     params.bpm, section_start);
         current_rhythm_lock = &run_filtered_pattern;
       }
 
       if (current_rhythm_lock != nullptr) {
         // Use locked rhythm pattern with evaluation-based pitch selection
-        section_notes =
-            generateLockedRhythmWithEvaluation(*current_rhythm_lock, section, designer, harmony, sctx, rng,
-                                               &phrase_plan);
+        section_notes = generateLockedRhythmWithEvaluation(*current_rhythm_lock, section, designer,
+                                                           harmony, sctx, rng, &phrase_plan);
       } else {
         // Generate melody with evaluation (candidate count varies by section importance)
         int candidate_count = MelodyDesigner::getCandidateCountForSection(section.type);
@@ -646,9 +632,9 @@ void VocalGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContex
       }
       breath_ctx.prev_phrase_high = prev_high;
 
-      Tick desired_breath = melody::getBreathDuration(
-          prev_vocal_section_type, params.mood, 0.5f, prev_high,
-          &breath_ctx, params.vocal_style, params.bpm);
+      Tick desired_breath =
+          melody::getBreathDuration(prev_vocal_section_type, params.mood, 0.5f, prev_high,
+                                    &breath_ctx, params.vocal_style, params.bpm);
       desired_breath = std::max(desired_breath, TICK_EIGHTH);  // floor: 240 ticks
 
       if (current_gap < desired_breath) {
@@ -684,8 +670,8 @@ void VocalGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContex
             section_vocal_high, nullptr);
         // Re-verify collision safety after interval fix
         if (!harmony.isConsonantWithOtherTracks(static_cast<uint8_t>(new_pitch),
-                                                 section_notes.front().start_tick,
-                                                 section_notes.front().duration, TrackRole::Vocal)) {
+                                                section_notes.front().start_tick,
+                                                section_notes.front().duration, TrackRole::Vocal)) {
           new_pitch = first_note;  // Keep original if fix introduces collision
         }
         section_notes.front().note = static_cast<uint8_t>(new_pitch);
@@ -693,7 +679,7 @@ void VocalGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContex
         if (old_pitch != section_notes.front().note) {
           section_notes.front().prov_original_pitch = old_pitch;
           section_notes.front().addTransformStep(TransformStepType::IntervalFix, old_pitch,
-                                                  section_notes.front().note, 0, 0);
+                                                 section_notes.front().note, 0, 0);
         }
 #endif
       }
@@ -736,12 +722,12 @@ void VocalGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContex
         uint8_t old_pitch = note.note;
 #endif
         int snapped = snapToNearestScaleTone(note.note, 0);  // Always C major internally
-        uint8_t snapped_clamped = static_cast<uint8_t>(std::clamp(snapped, static_cast<int>(section_vocal_low),
-                                                    static_cast<int>(section_vocal_high)));
+        uint8_t snapped_clamped = static_cast<uint8_t>(std::clamp(
+            snapped, static_cast<int>(section_vocal_low), static_cast<int>(section_vocal_high)));
         // Re-verify collision safety after scale snap
         if (snapped_clamped != note.note &&
             !harmony.isConsonantWithOtherTracks(snapped_clamped, note.start_tick, note.duration,
-                                                 TrackRole::Vocal)) {
+                                                TrackRole::Vocal)) {
           // Scale snap would introduce collision - keep original pitch
           snapped_clamped = note.note;
         }
@@ -763,7 +749,7 @@ void VocalGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContex
         // Re-verify collision safety after range clamp
         if (clamped != note.note &&
             !harmony.isConsonantWithOtherTracks(clamped, note.start_tick, note.duration,
-                                                 TrackRole::Vocal)) {
+                                                TrackRole::Vocal)) {
           // Clamp would introduce collision - keep original pitch
           clamped = note.note;
         }
@@ -793,8 +779,8 @@ void VocalGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContex
 
   // Final post-processing: sustain, groove, overlaps, breath, merge, velocity,
   // pitch constraints, same-pitch breaks, and pitch bend expressions
-  postProcessVocalNotes(all_notes, track, song, params, harmony, rng,
-                        velocity_scale, effective_vocal_low, effective_vocal_high);
+  postProcessVocalNotes(all_notes, track, song, params, harmony, rng, velocity_scale,
+                        effective_vocal_low, effective_vocal_high);
 }
 
 }  // namespace midisketch

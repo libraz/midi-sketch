@@ -35,16 +35,15 @@ std::vector<FretPosition> FrettedInstrumentBase::getPositionsForPitch(uint8_t pi
   }
 
   // Sort by preference: lower frets first, then lower strings
-  std::sort(positions.begin(), positions.end(),
-            [](const FretPosition& a, const FretPosition& b) {
-              // Prefer open strings
-              if (a.fret == 0 && b.fret != 0) return true;
-              if (a.fret != 0 && b.fret == 0) return false;
-              // Then prefer lower frets
-              if (a.fret != b.fret) return a.fret < b.fret;
-              // Then prefer lower strings (thicker, usually easier)
-              return a.string < b.string;
-            });
+  std::sort(positions.begin(), positions.end(), [](const FretPosition& a, const FretPosition& b) {
+    // Prefer open strings
+    if (a.fret == 0 && b.fret != 0) return true;
+    if (a.fret != 0 && b.fret == 0) return false;
+    // Then prefer lower frets
+    if (a.fret != b.fret) return a.fret < b.fret;
+    // Then prefer lower strings (thicker, usually easier)
+    return a.string < b.string;
+  });
 
   return positions;
 }
@@ -63,9 +62,8 @@ uint8_t FrettedInstrumentBase::getHighestPitch() const {
   return tuning_.back() + max_fret_;  // Highest string at max fret
 }
 
-Fingering FrettedInstrumentBase::findBestFingering(uint8_t pitch,
-                                                    const FretboardState& state,
-                                                    PlayingTechnique technique) const {
+Fingering FrettedInstrumentBase::findBestFingering(uint8_t pitch, const FretboardState& state,
+                                                   PlayingTechnique technique) const {
   Fingering best;
   best.playability_cost = std::numeric_limits<float>::max();
 
@@ -104,9 +102,9 @@ Fingering FrettedInstrumentBase::findBestFingering(uint8_t pitch,
         best.hand_pos = HandPosition(new_base, new_base > 0 ? new_base - 1 : 0,
                                      new_base + span_constraints_.normal_span);
         best.requires_position_shift = true;
-        best.playability_cost += PlayabilityCostWeights::kPositionShiftPerFret *
-                                 std::abs(static_cast<int>(new_base) -
-                                          static_cast<int>(state.hand_position));
+        best.playability_cost +=
+            PlayabilityCostWeights::kPositionShiftPerFret *
+            std::abs(static_cast<int>(new_base) - static_cast<int>(state.hand_position));
       }
     }
   }
@@ -135,10 +133,10 @@ std::vector<Fingering> FrettedInstrumentBase::findBestFingeringSequence(
         for (const auto& curr_pos : getPositionsForPitch(pitches[i])) {
           for (const auto& next_pos : next_positions) {
             // Same string or adjacent strings, close frets = good
-            int string_diff = std::abs(static_cast<int>(curr_pos.string) -
-                                       static_cast<int>(next_pos.string));
-            int fret_diff = std::abs(static_cast<int>(curr_pos.fret) -
-                                     static_cast<int>(next_pos.fret));
+            int string_diff =
+                std::abs(static_cast<int>(curr_pos.string) - static_cast<int>(next_pos.string));
+            int fret_diff =
+                std::abs(static_cast<int>(curr_pos.fret) - static_cast<int>(next_pos.fret));
 
             if (string_diff <= 1 && fret_diff <= span_constraints_.normal_span) {
               // This position allows smooth transition to next
@@ -170,9 +168,9 @@ std::vector<Fingering> FrettedInstrumentBase::findBestFingeringSequence(
 }
 
 PlayabilityCost FrettedInstrumentBase::calculateTransitionCost(const Fingering& from,
-                                                                const Fingering& to,
-                                                                Tick time_between,
-                                                                uint16_t bpm) const {
+                                                               const Fingering& to,
+                                                               Tick time_between,
+                                                               uint16_t bpm) const {
   PlayabilityCost cost;
 
   if (!from.isValid() || !to.isValid()) {
@@ -180,8 +178,8 @@ PlayabilityCost FrettedInstrumentBase::calculateTransitionCost(const Fingering& 
   }
 
   // Position shift cost
-  int position_diff = std::abs(static_cast<int>(to.hand_pos.base_fret) -
-                                static_cast<int>(from.hand_pos.base_fret));
+  int position_diff =
+      std::abs(static_cast<int>(to.hand_pos.base_fret) - static_cast<int>(from.hand_pos.base_fret));
   if (position_diff > 0) {
     cost.position_shift =
         static_cast<float>(position_diff) * PlayabilityCostWeights::kPositionShiftPerFret;
@@ -190,7 +188,7 @@ PlayabilityCost FrettedInstrumentBase::calculateTransitionCost(const Fingering& 
   // String skip cost
   if (!from.assignments.empty() && !to.assignments.empty()) {
     int string_diff = std::abs(static_cast<int>(to.assignments[0].position.string) -
-                                static_cast<int>(from.assignments[0].position.string));
+                               static_cast<int>(from.assignments[0].position.string));
     if (string_diff > 1) {
       cost.string_skip =
           static_cast<float>(string_diff - 1) * PlayabilityCostWeights::kStringSkipPerString;
@@ -228,13 +226,13 @@ PlayabilityCost FrettedInstrumentBase::calculateTransitionCost(const Fingering& 
 }
 
 bool FrettedInstrumentBase::isTransitionPossible(const Fingering& from, const Fingering& to,
-                                                  Tick time_between, uint16_t bpm) const {
+                                                 Tick time_between, uint16_t bpm) const {
   if (!from.isValid()) return true;  // First note is always possible
   if (!to.isValid()) return false;   // Invalid target = impossible
 
   // Check if there's enough time for a position shift
-  int position_diff = std::abs(static_cast<int>(to.hand_pos.base_fret) -
-                                static_cast<int>(from.hand_pos.base_fret));
+  int position_diff =
+      std::abs(static_cast<int>(to.hand_pos.base_fret) - static_cast<int>(from.hand_pos.base_fret));
 
   if (position_diff > 0) {
     // Large shifts need more time
@@ -263,7 +261,7 @@ bool FrettedInstrumentBase::isTransitionPossible(const Fingering& from, const Fi
 }
 
 void FrettedInstrumentBase::updateState(FretboardState& state, const Fingering& fingering,
-                                         Tick /* start */, Tick /* duration */) const {
+                                        Tick /* start */, Tick /* duration */) const {
   // Update hand position
   state.hand_position = fingering.hand_pos.base_fret;
 
@@ -285,8 +283,8 @@ void FrettedInstrumentBase::updateState(FretboardState& state, const Fingering& 
 }
 
 float FrettedInstrumentBase::scorePosition(const FretPosition& pos,
-                                            const HandPosition& current_hand,
-                                            PlayingTechnique technique) const {
+                                           const HandPosition& current_hand,
+                                           PlayingTechnique technique) const {
   float score = 0.0f;
 
   // Open string bonus
@@ -347,9 +345,8 @@ float FrettedInstrumentBase::scorePosition(const FretPosition& pos,
   return score;
 }
 
-uint8_t FrettedInstrumentBase::determineFinger(const FretPosition& pos,
-                                                const HandPosition& hand,
-                                                const BarreState& barre) const {
+uint8_t FrettedInstrumentBase::determineFinger(const FretPosition& pos, const HandPosition& hand,
+                                               const BarreState& barre) const {
   if (pos.fret == 0) {
     return 0;  // Open string = no finger
   }
@@ -378,8 +375,7 @@ uint8_t FrettedInstrumentBase::determineFinger(const FretPosition& pos,
   return 4;
 }
 
-BarreState FrettedInstrumentBase::suggestBarre(
-    const std::vector<FretPosition>& positions) const {
+BarreState FrettedInstrumentBase::suggestBarre(const std::vector<FretPosition>& positions) const {
   if (positions.size() < 2) {
     return BarreState();  // No barre needed for single notes
   }
@@ -412,8 +408,7 @@ BarreState FrettedInstrumentBase::suggestBarre(
   // Check if barre at lowest_fret would help
   size_t covered_by_barre = 0;
   for (const auto& pos : positions) {
-    if (pos.fret == lowest_fret && pos.string >= lowest_string &&
-        pos.string <= highest_string) {
+    if (pos.fret == lowest_fret && pos.string >= lowest_string && pos.string <= highest_string) {
       ++covered_by_barre;
     }
   }

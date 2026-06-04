@@ -13,12 +13,11 @@
 #include <algorithm>
 #include <cmath>
 
-#include "core/rng_util.h"
-
 #include "core/chord_utils.h"
 #include "core/i_harmony_context.h"
 #include "core/note_source.h"
 #include "core/pitch_utils.h"
+#include "core/rng_util.h"
 
 namespace midisketch {
 
@@ -39,9 +38,9 @@ inline void setEmbellishmentProv(NoteEvent& note, int8_t chord_degree) {
 
 // Pentatonic scale pitch classes (yonanuki - no 4th or 7th)
 // Note: Major scale uses SCALE from pitch_utils.h
-constexpr int PENTATONIC[] = {0, 2, 4, 7, 9};              // C D E G A (major pentatonic)
-constexpr int MINOR_PENTATONIC[] = {0, 3, 5, 7, 10};      // C Eb F G Bb
-constexpr int BLUES_SCALE[] = {0, 3, 5, 6, 7, 10};        // C Eb F F# G Bb (minor penta + blue note)
+constexpr int PENTATONIC[] = {0, 2, 4, 7, 9};         // C D E G A (major pentatonic)
+constexpr int MINOR_PENTATONIC[] = {0, 3, 5, 7, 10};  // C Eb F G Bb
+constexpr int BLUES_SCALE[] = {0, 3, 5, 6, 7, 10};    // C Eb F F# G Bb (minor penta + blue note)
 
 // Minimum interval for passing tone insertion (minor 3rd)
 constexpr int MIN_PT_INTERVAL = 3;
@@ -56,7 +55,8 @@ constexpr int SIXTEENTH_NOTE_PROBABILITY = 25;
 // Returns the quantization grid size (TICK_EIGHTH or TICK_SIXTEENTH)
 // based on probability. 25% chance of using 16th note grid.
 inline Tick getQuantizationGrid(std::mt19937& rng) {
-  return (rng_util::rollRange(rng, 0, 99) < SIXTEENTH_NOTE_PROBABILITY) ? TICK_SIXTEENTH : TICK_EIGHTH;
+  return (rng_util::rollRange(rng, 0, 99) < SIXTEENTH_NOTE_PROBABILITY) ? TICK_SIXTEENTH
+                                                                        : TICK_EIGHTH;
 }
 
 }  // namespace
@@ -158,8 +158,8 @@ EmbellishmentConfig MelodicEmbellisher::getConfigForMood(Mood mood) {
       config.syncopation_level = 0.25f;
       break;
 
-    // === Anime/YOASOBI: fast, melodic, some tension ===
-    case Mood::Yoasobi:
+    // === Anime/AnimeHighEnergy: fast, melodic, some tension ===
+    case Mood::AnimeHighEnergy:
       config.chord_tone_ratio = 0.65f;
       config.passing_tone_ratio = 0.15f;
       config.neighbor_tone_ratio = 0.08f;
@@ -180,7 +180,7 @@ EmbellishmentConfig MelodicEmbellisher::getConfigForMood(Mood mood) {
     case Mood::ElectroPop:
     default:
       config.chord_tone_ratio = 0.65f;
-      config.passing_tone_ratio = 0.15f;  // Increased from 0.12
+      config.passing_tone_ratio = 0.15f;   // Increased from 0.12
       config.neighbor_tone_ratio = 0.10f;  // Increased from 0.08
       config.appoggiatura_ratio = 0.05f;
       config.anticipation_ratio = 0.05f;
@@ -236,10 +236,10 @@ std::vector<NoteEvent> MelodicEmbellisher::embellish(const std::vector<NoteEvent
       if (interval >= MIN_PT_INTERVAL) {
         auto pt = tryInsertPassingTone(current, *next, key_offset, config.prefer_pentatonic, rng);
         if (pt && harmony.isConsonantWithOtherTracks(pt->note, pt->start_tick, pt->duration,
-                                                      TrackRole::Vocal)) {
+                                                     TrackRole::Vocal)) {
           result.push_back(current);  // Original chord tone
           setEmbellishmentProv(*pt, chord_degree);
-          result.push_back(*pt);      // Passing tone
+          result.push_back(*pt);  // Passing tone
           consecutive_ncts++;
           continue;
         }
@@ -253,8 +253,9 @@ std::vector<NoteEvent> MelodicEmbellisher::embellish(const std::vector<NoteEvent
         consecutive_ncts < config.max_consecutive_ncts) {
       bool upper = rng_util::rollFloat(rng, 0.0f, 1.0f) > 0.5f;
       auto nt_pair = tryAddNeighborTone(current, upper, key_offset, config.prefer_pentatonic, rng);
-      if (nt_pair && harmony.isConsonantWithOtherTracks(nt_pair->first.note, nt_pair->first.start_tick,
-                                                         nt_pair->first.duration, TrackRole::Vocal)) {
+      if (nt_pair &&
+          harmony.isConsonantWithOtherTracks(nt_pair->first.note, nt_pair->first.start_tick,
+                                             nt_pair->first.duration, TrackRole::Vocal)) {
         setEmbellishmentProv(nt_pair->first, chord_degree);
         setEmbellishmentProv(nt_pair->second, chord_degree);
         result.push_back(nt_pair->first);   // Neighbor tone
@@ -272,10 +273,10 @@ std::vector<NoteEvent> MelodicEmbellisher::embellish(const std::vector<NoteEvent
       bool upper = rng_util::rollFloat(rng, 0.0f, 1.0f) > 0.5f;
       auto app_pair =
           tryConvertToAppoggiatura(current, upper, key_offset, config.chromatic_approach, rng);
-      if (app_pair && harmony.isConsonantWithOtherTracks(app_pair->first.note,
-                                                          app_pair->first.start_tick,
-                                                          app_pair->first.duration, TrackRole::Vocal,
-                                                          true /* is_weak_beat: appoggiatura is intentionally dissonant */)) {
+      if (app_pair &&
+          harmony.isConsonantWithOtherTracks(
+              app_pair->first.note, app_pair->first.start_tick, app_pair->first.duration,
+              TrackRole::Vocal, true /* is_weak_beat: appoggiatura is intentionally dissonant */)) {
         setEmbellishmentProv(app_pair->first, chord_degree);
         setEmbellishmentProv(app_pair->second, chord_degree);
         result.push_back(app_pair->first);   // Appoggiatura
@@ -287,7 +288,8 @@ std::vector<NoteEvent> MelodicEmbellisher::embellish(const std::vector<NoteEvent
 
     // 4. Anticipation: syncopation before chord change
     cumulative += config.anticipation_ratio;
-    if (roll < cumulative && next != nullptr && rng_util::rollFloat(rng, 0.0f, 1.0f) < config.syncopation_level &&
+    if (roll < cumulative && next != nullptr &&
+        rng_util::rollFloat(rng, 0.0f, 1.0f) < config.syncopation_level &&
         consecutive_ncts < config.max_consecutive_ncts) {
       // Check if chord changes between current and next
       int8_t next_chord_degree = harmony.getChordDegreeAt(next->start_tick);
@@ -295,7 +297,7 @@ std::vector<NoteEvent> MelodicEmbellisher::embellish(const std::vector<NoteEvent
         auto ant = tryAddAnticipation(current, *next, next->start_tick, next_chord_degree, rng);
         if (ant && ant->start_tick > current.start_tick &&
             harmony.isConsonantWithOtherTracks(ant->note, ant->start_tick, ant->duration,
-                                                TrackRole::Vocal)) {
+                                               TrackRole::Vocal)) {
           // Shorten current note (check for underflow)
           Tick ant_offset = ant->start_tick - current.start_tick;
           if (ant_offset < current.duration) {
@@ -315,9 +317,8 @@ std::vector<NoteEvent> MelodicEmbellisher::embellish(const std::vector<NoteEvent
     if (config.enable_tensions && config.tension_ratio > 0.0f &&
         rng_util::rollFloat(rng, 0.0f, 1.0f) < config.tension_ratio) {
       auto tension_pitch = getTensionPitch(chord_degree, current.note, 48, 84, rng);
-      if (tension_pitch &&
-          harmony.isConsonantWithOtherTracks(*tension_pitch, current.start_tick, current.duration,
-                                              TrackRole::Vocal)) {
+      if (tension_pitch && harmony.isConsonantWithOtherTracks(*tension_pitch, current.start_tick,
+                                                              current.duration, TrackRole::Vocal)) {
         NoteEvent tension_note = current;
         tension_note.note = *tension_pitch;
         setEmbellishmentProv(tension_note, chord_degree);
@@ -346,7 +347,7 @@ std::vector<NoteEvent> MelodicEmbellisher::embellish(const std::vector<NoteEvent
         uint8_t snapped = static_cast<uint8_t>(snapToNearestScaleTone(note.note, key_offset));
         // Re-verify collision safety after scale snap
         if (harmony.isConsonantWithOtherTracks(snapped, note.start_tick, note.duration,
-                                                TrackRole::Vocal)) {
+                                               TrackRole::Vocal)) {
           note.note = snapped;
         }
 #ifdef MIDISKETCH_NOTE_PROVENANCE
@@ -431,7 +432,6 @@ bool MelodicEmbellisher::isInPentatonicMode(int pitch_class, int key_offset, Pen
   }
   return false;
 }
-
 
 int MelodicEmbellisher::scaleStep(int pitch, int direction, int key_offset,
                                   bool prefer_pentatonic) {

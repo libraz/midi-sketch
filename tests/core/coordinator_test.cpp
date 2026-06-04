@@ -3,9 +3,10 @@
  * @brief Unit tests for Coordinator class.
  */
 
+#include "core/coordinator.h"
+
 #include <gtest/gtest.h>
 
-#include "core/coordinator.h"
 #include "core/harmony_coordinator.h"
 #include "core/i_track_base.h"
 #include "core/preset_data.h"
@@ -50,6 +51,34 @@ TEST(CoordinatorTest, ValidateParams_InvalidChordId) {
   GeneratorParams params;
   params.seed = 12345;
   params.chord_id = 25;  // Invalid (must be 0-19)
+
+  coord.initialize(params);
+  ValidationResult result = coord.validateParams();
+
+  EXPECT_FALSE(result.valid);
+  EXPECT_FALSE(result.errors.empty());
+}
+
+TEST(CoordinatorTest, ValidateParams_LastBlueprintIdIsValid) {
+  Coordinator coord;
+  GeneratorParams params;
+  params.seed = 12345;
+  params.chord_id = 0;
+  params.blueprint_id = getProductionBlueprintCount() - 1;
+
+  coord.initialize(params);
+  ValidationResult result = coord.validateParams();
+
+  EXPECT_TRUE(result.valid);
+  EXPECT_TRUE(result.errors.empty());
+}
+
+TEST(CoordinatorTest, ValidateParams_BlueprintIdPastEndIsInvalid) {
+  Coordinator coord;
+  GeneratorParams params;
+  params.seed = 12345;
+  params.chord_id = 0;
+  params.blueprint_id = getProductionBlueprintCount();
 
   coord.initialize(params);
   ValidationResult result = coord.validateParams();
@@ -240,8 +269,8 @@ TEST(HarmonyCoordinatorTest, MustAvoid_Drums) {
 TEST(PhysicalModelTest, ClampPitch) {
   PhysicalModel model = PhysicalModels::kElectricBass;
 
-  EXPECT_EQ(model.clampPitch(20), model.pitch_low);  // Below range
-  EXPECT_EQ(model.clampPitch(50), 50);               // Within range
+  EXPECT_EQ(model.clampPitch(20), model.pitch_low);    // Below range
+  EXPECT_EQ(model.clampPitch(50), 50);                 // Within range
   EXPECT_EQ(model.clampPitch(100), model.pitch_high);  // Above range
 }
 
@@ -255,9 +284,9 @@ TEST(PhysicalModelTest, ClampVelocity) {
 TEST(PhysicalModelTest, IsPitchInRange) {
   PhysicalModel model = PhysicalModels::kElectricBass;
 
-  EXPECT_FALSE(model.isPitchInRange(20));  // Below range
-  EXPECT_TRUE(model.isPitchInRange(50));   // Within range
-  EXPECT_FALSE(model.isPitchInRange(100)); // Above range
+  EXPECT_FALSE(model.isPitchInRange(20));   // Below range
+  EXPECT_TRUE(model.isPitchInRange(50));    // Within range
+  EXPECT_FALSE(model.isPitchInRange(100));  // Above range
 }
 
 TEST(PhysicalModelTest, VocalCeilingOffset) {

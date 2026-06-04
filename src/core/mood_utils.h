@@ -47,7 +47,7 @@ inline bool isRock(Mood mood) { return mood == Mood::LightRock; }
 // @param mood Mood to check
 // @returns true if synth-oriented mood
 inline bool isSynthOriented(Mood mood) {
-  return mood == Mood::Yoasobi || mood == Mood::Synthwave || mood == Mood::FutureBass ||
+  return mood == Mood::AnimeHighEnergy || mood == Mood::Synthwave || mood == Mood::FutureBass ||
          mood == Mood::ElectroPop;
 }
 
@@ -60,7 +60,7 @@ inline bool prefersSparsity(Mood mood) { return isBallad(mood) || isDramatic(moo
 // @param mood Mood to check
 // @returns true if aggressive bass patterns preferred
 inline bool isAggressive(Mood mood) {
-  return mood == Mood::LightRock || mood == Mood::Anthem || mood == Mood::Yoasobi;
+  return mood == Mood::LightRock || mood == Mood::Anthem || mood == Mood::AnimeHighEnergy;
 }
 
 // Check if mood is electronic/EDM (sidechain, pulse patterns).

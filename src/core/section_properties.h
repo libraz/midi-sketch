@@ -45,7 +45,8 @@ struct SectionProperties {
 ///
 /// Values are derived from the original switch statements in:
 /// - velocity.cpp: getSectionVelocityMultiplier(), getSectionEnergy()
-/// - structure.cpp: getVocalDensityForType(), getBackingDensityForType(), getAllowDeviationForType()
+/// - structure.cpp: getVocalDensityForType(), getBackingDensityForType(),
+/// getAllowDeviationForType()
 /// - chord.cpp: tryApplySlashChord()
 /// - chord_track.cpp: getSectionTensionForSecondary(), allowsAnticipation()
 /// - drums.cpp: shouldUseRide()

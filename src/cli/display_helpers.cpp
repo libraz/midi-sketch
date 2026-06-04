@@ -265,12 +265,11 @@ void showBarNotes(const midisketch::ParsedMidi& midi, int bar_num) {
       bool sustains_into_bar = (note.start_tick < bar_start && note_end > bar_start);
 
       if (starts_in_bar || sustains_into_bar) {
-        float beat =
-            (note.start_tick >= bar_start)
-                ? (static_cast<float>(note.start_tick - bar_start) /
-                       static_cast<float>(midisketch::TICKS_PER_BEAT) +
-                   1.0f)
-                : 0.0f;  // Sustained from previous bar
+        float beat = (note.start_tick >= bar_start)
+                         ? (static_cast<float>(note.start_tick - bar_start) /
+                                static_cast<float>(midisketch::TICKS_PER_BEAT) +
+                            1.0f)
+                         : 0.0f;  // Sustained from previous bar
 
         std::string note_name = midisketch::midiNoteToName(note.note);
         std::string desc;

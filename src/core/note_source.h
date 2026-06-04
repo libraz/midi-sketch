@@ -28,7 +28,7 @@ enum class NoteSource : uint8_t {
   Guitar,          ///< Guitar track generation
   Embellishment,   ///< Melodic embellishment (passing/neighbor/appoggiatura/anticipation)
   CollisionAvoid,  ///< Modified by collision avoidance
-  SyllabicSub,    ///< Syllabic subdivision (同音分割)
+  SyllabicSub,     ///< Syllabic subdivision (同音分割)
   PostProcess,     ///< Modified by post-processing
 };
 

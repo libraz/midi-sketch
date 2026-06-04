@@ -21,13 +21,13 @@ float ConsecutiveSameNoteTracker::getAllowProbability() const {
   switch (count) {
     case 0:
     case 1:
-      return 1.0f;   // First note always OK
+      return 1.0f;  // First note always OK
     case 2:
       return 0.70f;  // 2nd repetition: 70%
     case 3:
       return 0.30f;  // 3rd repetition: 30%
     default:
-      return 0.0f;   // 4+: never allow (force movement)
+      return 0.0f;  // 4+: never allow (force movement)
   }
 }
 
@@ -46,9 +46,8 @@ bool isChordTone(int pitch_pc, int8_t chord_degree) {
   return false;
 }
 
-int findNearestDifferentChordTone(int current_pitch, int8_t chord_degree,
-                                   uint8_t vocal_low, uint8_t vocal_high,
-                                   int max_interval) {
+int findNearestDifferentChordTone(int current_pitch, int8_t chord_degree, uint8_t vocal_low,
+                                  uint8_t vocal_high, int max_interval) {
   std::vector<int> candidates;
 
   // First priority: chord tones (most harmonically stable)
@@ -56,8 +55,7 @@ int findNearestDifferentChordTone(int current_pitch, int8_t chord_degree,
   for (int pc : chord_tones) {
     for (int oct = 3; oct <= 6; ++oct) {
       int candidate = oct * 12 + pc;
-      if (candidate >= vocal_low && candidate <= vocal_high &&
-          candidate != current_pitch) {
+      if (candidate >= vocal_low && candidate <= vocal_high && candidate != current_pitch) {
         if (max_interval > 0 && std::abs(candidate - current_pitch) > max_interval) {
           continue;
         }
@@ -73,8 +71,7 @@ int findNearestDifferentChordTone(int current_pitch, int8_t chord_degree,
     for (int pc : scale_tones) {
       for (int oct = 3; oct <= 6; ++oct) {
         int candidate = oct * 12 + pc;
-        if (candidate >= vocal_low && candidate <= vocal_high &&
-            candidate != current_pitch) {
+        if (candidate >= vocal_low && candidate <= vocal_high && candidate != current_pitch) {
           if (max_interval > 0 && std::abs(candidate - current_pitch) > max_interval) {
             continue;
           }
@@ -103,14 +100,13 @@ int findNearestDifferentChordTone(int current_pitch, int8_t chord_degree,
 }
 
 bool applyConsecutiveSameNoteConstraint(int& pitch, ConsecutiveSameNoteTracker& tracker,
-                                         int prev_pitch, int8_t chord_degree,
-                                         uint8_t vocal_low, uint8_t vocal_high,
-                                         int max_interval, std::mt19937& rng) {
+                                        int prev_pitch, int8_t chord_degree, uint8_t vocal_low,
+                                        uint8_t vocal_high, int max_interval, std::mt19937& rng) {
   if (pitch == prev_pitch) {
     tracker.increment();
     if (tracker.shouldForceMovement(rng)) {
-      int new_pitch = findNearestDifferentChordTone(
-          pitch, chord_degree, vocal_low, vocal_high, max_interval);
+      int new_pitch =
+          findNearestDifferentChordTone(pitch, chord_degree, vocal_low, vocal_high, max_interval);
       if (new_pitch != pitch) {
         pitch = new_pitch;
         tracker.reset();

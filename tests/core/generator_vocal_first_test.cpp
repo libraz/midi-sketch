@@ -181,8 +181,7 @@ TEST_F(GeneratorVocalFirstTest, GenerateAccompanimentPreservesVocal) {
   // Note: refineVocalForAccompaniment may adjust some pitches to resolve clashes,
   // but note count and timing must be preserved
   const auto& preserved_vocal = gen.getSong().vocal().notes();
-  ASSERT_EQ(preserved_vocal.size(), original_vocal.size())
-      << "Vocal note count must be preserved";
+  ASSERT_EQ(preserved_vocal.size(), original_vocal.size()) << "Vocal note count must be preserved";
 
   int pitch_adjustments = 0;
   for (size_t i = 0; i < original_vocal.size(); ++i) {
@@ -199,8 +198,8 @@ TEST_F(GeneratorVocalFirstTest, GenerateAccompanimentPreservesVocal) {
 
   // Most notes should remain unchanged (allow up to 15% adjustments for clash resolution)
   EXPECT_LE(pitch_adjustments, static_cast<int>(original_vocal.size() * 0.15 + 1))
-      << "Too many pitch adjustments: " << pitch_adjustments << " out of "
-      << original_vocal.size() << " notes";
+      << "Too many pitch adjustments: " << pitch_adjustments << " out of " << original_vocal.size()
+      << " notes";
 }
 
 // === regenerateAccompaniment Tests ===
@@ -593,7 +592,8 @@ TEST_F(GeneratorVocalFirstTest, RefineVocalForAccompanimentReducesClashes) {
   }
 
   // After refinement, should have very few clashes (less than 5% of vocal notes)
-  float clash_ratio = static_cast<float>(dissonant_count) / std::max(1u, static_cast<unsigned>(vocal.size()));
+  float clash_ratio =
+      static_cast<float>(dissonant_count) / std::max(1u, static_cast<unsigned>(vocal.size()));
   EXPECT_LE(clash_ratio, 0.05f) << "Vocal feedback loop should minimize clashes. Found: "
                                 << (clash_ratio * 100) << "%";
 }
@@ -685,8 +685,7 @@ TEST_F(RhythmSyncVocalFirstTest, MotifPreservedDuringRegenerateAccompaniment) {
   gen.regenerateAccompaniment(99999);
 
   const auto& motif_after = gen.getSong().motif();
-  ASSERT_FALSE(motif_after.empty())
-      << "Motif should still exist after regenerateAccompaniment";
+  ASSERT_FALSE(motif_after.empty()) << "Motif should still exist after regenerateAccompaniment";
 
   // Core pattern should be preserved (post-processing may modify some notes)
   const auto& final_notes = motif_after.notes();
@@ -763,8 +762,7 @@ TEST_F(RhythmSyncVocalFirstTest, GenerateVocalDoesNotClampExplicitBpm) {
   Generator gen;
   gen.generateVocal(params_);
 
-  EXPECT_EQ(gen.getSong().bpm(), 120u)
-      << "Explicit BPM should not be clamped";
+  EXPECT_EQ(gen.getSong().bpm(), 120u) << "Explicit BPM should not be clamped";
 }
 
 }  // namespace

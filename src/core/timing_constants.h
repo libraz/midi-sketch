@@ -42,9 +42,8 @@ inline double ticksToSeconds(Tick ticks, double bpm) {
 }
 
 /// Convert ticks to seconds accounting for tempo changes.
-inline double ticksToSecondsWithTempoMap(
-    Tick ticks, double base_bpm,
-    const std::vector<TempoEvent>& tempo_map) {
+inline double ticksToSecondsWithTempoMap(Tick ticks, double base_bpm,
+                                         const std::vector<TempoEvent>& tempo_map) {
   if (tempo_map.empty()) return ticksToSeconds(ticks, base_bpm);
 
   double seconds = 0.0;
@@ -53,14 +52,12 @@ inline double ticksToSecondsWithTempoMap(
 
   for (const auto& evt : tempo_map) {
     if (evt.tick >= ticks) break;
-    seconds += static_cast<double>(evt.tick - prev_tick) / TICKS_PER_BEAT /
-               current_bpm * 60.0;
+    seconds += static_cast<double>(evt.tick - prev_tick) / TICKS_PER_BEAT / current_bpm * 60.0;
     prev_tick = evt.tick;
     current_bpm = evt.bpm;
   }
 
-  seconds += static_cast<double>(ticks - prev_tick) / TICKS_PER_BEAT /
-             current_bpm * 60.0;
+  seconds += static_cast<double>(ticks - prev_tick) / TICKS_PER_BEAT / current_bpm * 60.0;
   return seconds;
 }
 

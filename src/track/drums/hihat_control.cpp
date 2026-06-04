@@ -79,7 +79,8 @@ HiHatLevel getHiHatLevel(SectionType section, DrumStyle style, BackingDensity ba
         base_level = HiHatLevel::Eighth;
         break;
       case SectionType::A:
-        base_level = rng_util::rollProbability(rng, 0.30f) ? HiHatLevel::Quarter : HiHatLevel::Eighth;
+        base_level =
+            rng_util::rollProbability(rng, 0.30f) ? HiHatLevel::Quarter : HiHatLevel::Eighth;
         break;
       case SectionType::B:
         if (allow_16th && rng_util::rollProbability(rng, 0.25f)) {

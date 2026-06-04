@@ -30,7 +30,7 @@ namespace PitchBendCurves {
 /// @param duration Curve length in ticks (default: 16th note)
 /// @return Vector of pitch bend events forming the curve
 std::vector<PitchBendEvent> generateAttackBend(Tick note_start, int depth_cents = -30,
-                                                Tick duration = TICK_SIXTEENTH);
+                                               Tick duration = TICK_SIXTEENTH);
 
 /// @brief Generate fall-off at phrase end (gobi-fall).
 ///
@@ -42,7 +42,7 @@ std::vector<PitchBendEvent> generateAttackBend(Tick note_start, int depth_cents 
 /// @param duration Curve length in ticks (default: 8th note)
 /// @return Vector of pitch bend events forming the curve
 std::vector<PitchBendEvent> generateFallOff(Tick note_end, int depth_cents = -80,
-                                             Tick duration = TICK_EIGHTH);
+                                            Tick duration = TICK_EIGHTH);
 
 /// @brief Generate pitch slide between notes (glide).
 ///
@@ -65,7 +65,7 @@ std::vector<PitchBendEvent> generateSlide(Tick from_tick, Tick to_tick, int semi
 /// @param bpm Tempo for timing calculation
 /// @return Vector of pitch bend events forming the vibrato
 std::vector<PitchBendEvent> generateVibrato(Tick start_tick, Tick duration, int depth_cents = 20,
-                                             float rate_hz = 5.5f, uint16_t bpm = 120);
+                                            float rate_hz = 5.5f, uint16_t bpm = 120);
 
 /// @brief Convert cents to pitch bend value.
 ///

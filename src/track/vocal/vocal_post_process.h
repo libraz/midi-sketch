@@ -27,9 +27,8 @@ class MidiTrack;
 /// @param all_notes All generated notes
 /// @param params Generation parameters
 /// @param harmony Harmony context for chord lookups
-void enforceVocalPitchConstraints(std::vector<NoteEvent>& all_notes,
-                                   const GeneratorParams& params,
-                                   IHarmonyContext& harmony);
+void enforceVocalPitchConstraints(std::vector<NoteEvent>& all_notes, const GeneratorParams& params,
+                                  IHarmonyContext& harmony);
 
 /// @brief Break up excessive consecutive same-pitch notes.
 /// @param all_notes Notes to process (modified in place)
@@ -42,10 +41,8 @@ void enforceVocalPitchConstraints(std::vector<NoteEvent>& all_notes,
 /// alternates some notes to nearby chord tones to create melodic interest.
 /// This is especially important for RhythmSync where collision avoidance
 /// can cause long runs of the same pitch.
-void breakConsecutiveSamePitch(std::vector<NoteEvent>& all_notes,
-                                const IHarmonyContext& harmony,
-                                uint8_t vocal_low, uint8_t vocal_high,
-                                int max_consecutive = 4);
+void breakConsecutiveSamePitch(std::vector<NoteEvent>& all_notes, const IHarmonyContext& harmony,
+                               uint8_t vocal_low, uint8_t vocal_high, int max_consecutive = 4);
 
 /// @brief Apply pitch bend expressions to vocal track.
 /// @param track Track to add pitch bends to
@@ -53,11 +50,9 @@ void breakConsecutiveSamePitch(std::vector<NoteEvent>& all_notes,
 /// @param params Generation parameters
 /// @param rng Random number generator
 /// @param sections Song sections for section-type aware vibrato (nullptr to skip)
-void applyVocalPitchBendExpressions(MidiTrack& track,
-                                     const std::vector<NoteEvent>& all_notes,
-                                     const GeneratorParams& params,
-                                     std::mt19937& rng,
-                                     const std::vector<Section>* sections = nullptr);
+void applyVocalPitchBendExpressions(MidiTrack& track, const std::vector<NoteEvent>& all_notes,
+                                    const GeneratorParams& params, std::mt19937& rng,
+                                    const std::vector<Section>* sections = nullptr);
 
 }  // namespace midisketch
 

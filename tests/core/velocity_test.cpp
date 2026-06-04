@@ -22,7 +22,7 @@ TEST(VelocityTest, MoodVelocityAdjustmentHighEnergy) {
   // High energy moods should have adjustment > 1.0
   EXPECT_GT(getMoodVelocityAdjustment(Mood::EnergeticDance), 1.0f);
   EXPECT_GT(getMoodVelocityAdjustment(Mood::IdolPop), 1.0f);
-  EXPECT_GT(getMoodVelocityAdjustment(Mood::Yoasobi), 1.0f);
+  EXPECT_GT(getMoodVelocityAdjustment(Mood::AnimeHighEnergy), 1.0f);
   EXPECT_GT(getMoodVelocityAdjustment(Mood::FutureBass), 1.0f);
 }
 
@@ -123,9 +123,10 @@ TEST(VelocityTest, TransitionDynamicsCrescendoToChorus) {
   Tick section_end = 2 * TICKS_PER_BAR;
   Tick transition_start = section_end - TICKS_PER_BAR;
 
-  track.addNote(NoteEventBuilder::create(0, 480, 60, 80));                                     // Before transition
-  track.addNote(NoteEventBuilder::create(transition_start, 480, 62, 80));                      // Start of transition
-  track.addNote(NoteEventBuilder::create(transition_start + TICKS_PER_BAR / 2, 480, 64, 80));  // Middle of transition
+  track.addNote(NoteEventBuilder::create(0, 480, 60, 80));                 // Before transition
+  track.addNote(NoteEventBuilder::create(transition_start, 480, 62, 80));  // Start of transition
+  track.addNote(NoteEventBuilder::create(transition_start + TICKS_PER_BAR / 2, 480, 64,
+                                         80));  // Middle of transition
 
   // B to Chorus applies crescendo across entire B section
   applyTransitionDynamics(track, 0, section_end, SectionType::B, SectionType::Chorus);
@@ -421,8 +422,8 @@ TEST(VelocityTest, ApplyBarVelocityCurveChorusCrescendo) {
 
   // Add notes with identical initial velocity
   uint8_t initial_vel = 100;
-  track.addNote(NoteEventBuilder::create(0, 480, 60, initial_vel));                   // Bar 0
-  track.addNote(NoteEventBuilder::create(3 * TICKS_PER_BAR, 480, 64, initial_vel));   // Bar 3
+  track.addNote(NoteEventBuilder::create(0, 480, 60, initial_vel));                  // Bar 0
+  track.addNote(NoteEventBuilder::create(3 * TICKS_PER_BAR, 480, 64, initial_vel));  // Bar 3
 
   applyBarVelocityCurve(track, section);
 
@@ -456,7 +457,8 @@ TEST(VelocityTest, ApplyBarVelocityCurveIgnoresNotesOutsideSection) {
   section.bars = 4;
 
   uint8_t initial_vel = 100;
-  track.addNote(NoteEventBuilder::create(0, 480, 60, initial_vel));  // Before section - should not change
+  track.addNote(
+      NoteEventBuilder::create(0, 480, 60, initial_vel));  // Before section - should not change
 
   applyBarVelocityCurve(track, section);
 
@@ -506,7 +508,7 @@ TEST(VelocityTest, CalculateVelocityCeilingHighTension) {
 
   EXPECT_GE(ceiling_07, 100);
   EXPECT_GT(ceiling_10, ceiling_07);  // Ceiling increases with tension
-  EXPECT_LE(ceiling_10, 127);  // Capped at MIDI max
+  EXPECT_LE(ceiling_10, 127);         // Capped at MIDI max
 }
 
 TEST(VelocityTest, CalculateEnergyAdjustedVelocityLowEnergy) {
@@ -525,7 +527,7 @@ TEST(VelocityTest, CalculateEnergyAdjustedVelocityHighEnergy) {
   uint8_t adjusted_07 = calculateEnergyAdjustedVelocity(base, 0.7f);
   uint8_t adjusted_10 = calculateEnergyAdjustedVelocity(base, 1.0f);
 
-  EXPECT_GE(adjusted_07, base);  // Starts at 100%
+  EXPECT_GE(adjusted_07, base);         // Starts at 100%
   EXPECT_GT(adjusted_10, adjusted_07);  // Higher energy = higher velocity
 }
 
@@ -636,10 +638,10 @@ TEST(VelocityTest, ApplyBeatMicroDynamics_ModifiesVelocity) {
 
   // Add notes on each beat
   uint8_t initial_vel = 100;
-  track.addNote(NoteEventBuilder::create(0, 480, 60, initial_vel));                    // Beat 1
-  track.addNote(NoteEventBuilder::create(TICKS_PER_BEAT, 480, 62, initial_vel));       // Beat 2
-  track.addNote(NoteEventBuilder::create(2 * TICKS_PER_BEAT, 480, 64, initial_vel));   // Beat 3
-  track.addNote(NoteEventBuilder::create(3 * TICKS_PER_BEAT, 480, 65, initial_vel));   // Beat 4
+  track.addNote(NoteEventBuilder::create(0, 480, 60, initial_vel));                   // Beat 1
+  track.addNote(NoteEventBuilder::create(TICKS_PER_BEAT, 480, 62, initial_vel));      // Beat 2
+  track.addNote(NoteEventBuilder::create(2 * TICKS_PER_BEAT, 480, 64, initial_vel));  // Beat 3
+  track.addNote(NoteEventBuilder::create(3 * TICKS_PER_BEAT, 480, 65, initial_vel));  // Beat 4
 
   applyBeatMicroDynamics(track);
 
@@ -654,10 +656,10 @@ TEST(VelocityTest, ApplyBeatMicroDynamics_PreservesMusicalRelations) {
   MidiTrack track;
 
   uint8_t initial_vel = 100;
-  track.addNote(NoteEventBuilder::create(0, 480, 60, initial_vel));                    // Beat 1
-  track.addNote(NoteEventBuilder::create(TICKS_PER_BEAT, 480, 62, initial_vel));       // Beat 2
-  track.addNote(NoteEventBuilder::create(2 * TICKS_PER_BEAT, 480, 64, initial_vel));   // Beat 3
-  track.addNote(NoteEventBuilder::create(3 * TICKS_PER_BEAT, 480, 65, initial_vel));   // Beat 4
+  track.addNote(NoteEventBuilder::create(0, 480, 60, initial_vel));                   // Beat 1
+  track.addNote(NoteEventBuilder::create(TICKS_PER_BEAT, 480, 62, initial_vel));      // Beat 2
+  track.addNote(NoteEventBuilder::create(2 * TICKS_PER_BEAT, 480, 64, initial_vel));  // Beat 3
+  track.addNote(NoteEventBuilder::create(3 * TICKS_PER_BEAT, 480, 65, initial_vel));  // Beat 4
 
   applyBeatMicroDynamics(track);
 
@@ -705,9 +707,9 @@ TEST(VelocityTest, ApplyPhraseEndDecay_ReducesEndVelocity) {
   // Note in decay region should be reduced
   // decay_factor = 1.0 - (1.0 - 0.85) * 0.5 = 1.0 - 0.075 = 0.925
   // Expected velocity ≈ 100 * 0.925 = 92-93
-  EXPECT_LT(track.notes()[4].velocity, initial_vel) << "Decay note velocity: "
-      << static_cast<int>(track.notes()[4].velocity) << " at tick " << decay_note_tick
-      << " (decay_start=" << decay_region_start << ")";
+  EXPECT_LT(track.notes()[4].velocity, initial_vel)
+      << "Decay note velocity: " << static_cast<int>(track.notes()[4].velocity) << " at tick "
+      << decay_note_tick << " (decay_start=" << decay_region_start << ")";
   EXPECT_GE(track.notes()[4].velocity, 85);  // Should be around 92
 }
 
@@ -723,8 +725,10 @@ TEST(VelocityTest, ApplyPhraseEndDecay_MultiplePhrases) {
 
   uint8_t initial_vel = 100;
   // Add notes at phrase ends
-  track.addNote(NoteEventBuilder::create(4 * TICKS_PER_BAR - TICKS_PER_BEAT / 2, 480, 60, initial_vel));  // End of phrase 1
-  track.addNote(NoteEventBuilder::create(8 * TICKS_PER_BAR - TICKS_PER_BEAT / 2, 480, 60, initial_vel));  // End of phrase 2
+  track.addNote(NoteEventBuilder::create(4 * TICKS_PER_BAR - TICKS_PER_BEAT / 2, 480, 60,
+                                         initial_vel));  // End of phrase 1
+  track.addNote(NoteEventBuilder::create(8 * TICKS_PER_BAR - TICKS_PER_BEAT / 2, 480, 60,
+                                         initial_vel));  // End of phrase 2
 
   applyPhraseEndDecay(track, sections);
 
@@ -940,7 +944,7 @@ TEST(VelocityTest, DriveMapping_PhraseEndStretch) {
 
 TEST(VelocityTest, DriveMapping_HighPitchDelay_BelowCenter) {
   // Notes at or below tessitura center should have no delay
-  uint8_t center = 67;  // G4
+  uint8_t center = 67;                                        // G4
   EXPECT_EQ(DriveMapping::getHighPitchDelay(60, center), 0);  // C4
   EXPECT_EQ(DriveMapping::getHighPitchDelay(67, center), 0);  // G4 (center)
   EXPECT_EQ(DriveMapping::getHighPitchDelay(50, center), 0);  // Below center
@@ -1190,8 +1194,8 @@ TEST(VelocityTest, GetPhraseNoteVelocityCurve_PeakContourEarlierClimax) {
 TEST(VelocityTest, GetPhraseNoteVelocityCurve_ValidRange) {
   // All values should be within reasonable range
   for (int i = 0; i < 20; ++i) {
-    for (auto contour : {ContourType::Ascending, ContourType::Descending,
-                         ContourType::Peak, ContourType::Valley, ContourType::Plateau}) {
+    for (auto contour : {ContourType::Ascending, ContourType::Descending, ContourType::Peak,
+                         ContourType::Valley, ContourType::Plateau}) {
       float result = getPhraseNoteVelocityCurve(i, 20, contour);
       EXPECT_GE(result, 0.85f) << "Should not go below 0.85";
       EXPECT_LE(result, 1.10f) << "Should not exceed 1.10";
@@ -1257,8 +1261,8 @@ TEST(VocalPhysicsParamsTest, StandardFullPhysics) {
 TEST(VocalPhysicsParamsTest, BalladEnhancedPhysics) {
   // Ballad should have enhanced human physics (more expressive)
   auto params = getVocalPhysicsParams(VocalStylePreset::Ballad);
-  EXPECT_GT(params.timing_scale, 1.0f);  // More timing variation
-  EXPECT_GT(params.breath_scale, 1.0f);  // Longer breaths
+  EXPECT_GT(params.timing_scale, 1.0f);      // More timing variation
+  EXPECT_GT(params.breath_scale, 1.0f);      // Longer breaths
   EXPECT_GT(params.pitch_bend_scale, 1.0f);  // More pitch expression
   EXPECT_TRUE(params.requires_breath);
   EXPECT_LT(params.max_phrase_bars, 8);  // Shorter phrases for emotional phrasing

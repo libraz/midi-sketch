@@ -164,8 +164,10 @@ TEST_F(ApplyGrooveFeelTest, SyncopatedGrooveDoesNotCauseUnderflow) {
   applyGrooveFeel(notes, VocalGrooveFeel::Syncopated);
 
   // Notes should be shifted earlier (anticipation), not to billions of ticks
-  EXPECT_LT(notes[0].start_tick, 480u) << "Note should be shifted earlier, not wrapped to huge value";
-  EXPECT_LT(notes[1].start_tick, 1440u) << "Note should be shifted earlier, not wrapped to huge value";
+  EXPECT_LT(notes[0].start_tick, 480u)
+      << "Note should be shifted earlier, not wrapped to huge value";
+  EXPECT_LT(notes[1].start_tick, 1440u)
+      << "Note should be shifted earlier, not wrapped to huge value";
   EXPECT_GT(notes[0].start_tick, 0u) << "Note should still have valid start time";
   EXPECT_GT(notes[1].start_tick, 0u) << "Note should still have valid start time";
 }
@@ -193,18 +195,18 @@ TEST_F(ApplyGrooveFeelTest, Driving16thGrooveDoesNotCauseUnderflow) {
 TEST_F(ApplyGrooveFeelTest, AllGrooveTypesProduceValidOutput) {
   // Test all groove types don't produce underflow or unreasonable values
   std::vector<VocalGrooveFeel> grooves = {
-      VocalGrooveFeel::Straight,    VocalGrooveFeel::OffBeat,     VocalGrooveFeel::Swing,
-      VocalGrooveFeel::Syncopated,  VocalGrooveFeel::Driving16th, VocalGrooveFeel::Bouncy8th,
+      VocalGrooveFeel::Straight,   VocalGrooveFeel::OffBeat,     VocalGrooveFeel::Swing,
+      VocalGrooveFeel::Syncopated, VocalGrooveFeel::Driving16th, VocalGrooveFeel::Bouncy8th,
   };
 
   for (auto groove : grooves) {
     // Create notes at various positions including edges
     auto notes = createNotes({
-        {0, 240, 60},      // Start of bar
-        {480, 240, 62},    // Beat 2
-        {960, 240, 64},    // Beat 3
-        {1440, 240, 66},   // Beat 4
-        {1920, 240, 68},   // Start of next bar
+        {0, 240, 60},     // Start of bar
+        {480, 240, 62},   // Beat 2
+        {960, 240, 64},   // Beat 3
+        {1440, 240, 66},  // Beat 4
+        {1920, 240, 68},  // Start of next bar
     });
 
     applyGrooveFeel(notes, groove);
@@ -258,8 +260,8 @@ TEST_F(ApplyGrooveFeelTest, GrooveShiftPreservesShiftedNoteDuration) {
   // The key fix: when groove shifts a note earlier, we shorten the PREVIOUS note,
   // not the shifted note. This preserves the musical intent of the shifted note.
   auto notes = createNotes({
-      {300, 240, 60},   // Note A: 300-540
-      {480, 360, 62},   // Note B: 480-840, will be shifted earlier by syncopation
+      {300, 240, 60},  // Note A: 300-540
+      {480, 360, 62},  // Note B: 480-840, will be shifted earlier by syncopation
   });
 
   Tick original_note_b_duration = notes[1].duration;
@@ -283,11 +285,11 @@ TEST_F(ApplyGrooveFeelTest, NoOverlapsAfterGrooveApplication) {
   for (auto groove : grooves) {
     // Create notes that could cause overlap when shifted
     auto notes = createNotes({
-        {0, 480, 60},      // Long note
-        {480, 240, 62},    // Beat 2 (syncopated will shift earlier)
-        {960, 240, 64},    // Beat 3
-        {1440, 240, 66},   // Beat 4 (syncopated will shift earlier)
-        {1920, 240, 68},   // Next bar
+        {0, 480, 60},     // Long note
+        {480, 240, 62},   // Beat 2 (syncopated will shift earlier)
+        {960, 240, 64},   // Beat 3
+        {1440, 240, 66},  // Beat 4 (syncopated will shift earlier)
+        {1920, 240, 68},  // Next bar
     });
 
     applyGrooveFeel(notes, groove);
@@ -296,17 +298,16 @@ TEST_F(ApplyGrooveFeelTest, NoOverlapsAfterGrooveApplication) {
     for (size_t i = 0; i + 1 < notes.size(); ++i) {
       Tick end_tick = notes[i].start_tick + notes[i].duration;
       EXPECT_LE(end_tick, notes[i + 1].start_tick)
-          << "Groove " << static_cast<int>(groove) << ": Note " << i
-          << " (end=" << end_tick << ") overlaps with note " << (i + 1)
-          << " (start=" << notes[i + 1].start_tick << ")";
+          << "Groove " << static_cast<int>(groove) << ": Note " << i << " (end=" << end_tick
+          << ") overlaps with note " << (i + 1) << " (start=" << notes[i + 1].start_tick << ")";
     }
 
     // Verify minimum duration
     constexpr Tick kMinDuration = 60;  // TICK_32ND
     for (size_t i = 0; i < notes.size(); ++i) {
       EXPECT_GE(notes[i].duration, kMinDuration)
-          << "Groove " << static_cast<int>(groove) << ": Note " << i
-          << " has duration " << notes[i].duration << " < minimum " << kMinDuration;
+          << "Groove " << static_cast<int>(groove) << ": Note " << i << " has duration "
+          << notes[i].duration << " < minimum " << kMinDuration;
     }
   }
 }
@@ -319,8 +320,8 @@ TEST_F(ApplyGrooveFeelTest, FirstNoteShiftedHasNoPreviousToAdjust) {
   // When the first note gets a negative shift, there's no previous note to adjust.
   // The shift should still be applied, and the note should remain valid.
   auto notes = createNotes({
-      {480, 240, 60},   // On beat 2 - will be shifted earlier by syncopation
-      {960, 240, 62},   // Beat 3
+      {480, 240, 60},  // On beat 2 - will be shifted earlier by syncopation
+      {960, 240, 62},  // Beat 3
   });
 
   applyGrooveFeel(notes, VocalGrooveFeel::Syncopated);
@@ -337,9 +338,9 @@ TEST_F(ApplyGrooveFeelTest, MultipleConsecutiveShiftsHandledCorrectly) {
   // When multiple consecutive notes all get negative shifts,
   // each should adjust its predecessor appropriately without domino effect issues.
   auto notes = createNotes({
-      {0, 480, 60},      // Long note extending to beat 2
-      {480, 480, 62},    // Beat 2 - shifted, also extends to beat 4
-      {1440, 240, 64},   // Beat 4 - also shifted
+      {0, 480, 60},     // Long note extending to beat 2
+      {480, 480, 62},   // Beat 2 - shifted, also extends to beat 4
+      {1440, 240, 64},  // Beat 4 - also shifted
   });
 
   applyGrooveFeel(notes, VocalGrooveFeel::Syncopated);
@@ -354,8 +355,7 @@ TEST_F(ApplyGrooveFeelTest, MultipleConsecutiveShiftsHandledCorrectly) {
   // All notes should have minimum duration
   constexpr Tick kMinDuration = 60;
   for (size_t i = 0; i < notes.size(); ++i) {
-    EXPECT_GE(notes[i].duration, kMinDuration)
-        << "Note " << i << " has duration below minimum";
+    EXPECT_GE(notes[i].duration, kMinDuration) << "Note " << i << " has duration below minimum";
   }
 }
 
@@ -363,8 +363,8 @@ TEST_F(ApplyGrooveFeelTest, PreviousNoteAlreadyShortProtected) {
   // When the previous note is already near minimum duration,
   // it should not be shortened below the minimum.
   auto notes = createNotes({
-      {350, 70, 60},    // Short note (70 ticks, just above minimum 60)
-      {480, 240, 62},   // On beat 2 - will try to shift to ~420
+      {350, 70, 60},   // Short note (70 ticks, just above minimum 60)
+      {480, 240, 62},  // On beat 2 - will try to shift to ~420
   });
 
   applyGrooveFeel(notes, VocalGrooveFeel::Syncopated);
@@ -379,16 +379,15 @@ TEST_F(ApplyGrooveFeelTest, Driving16thAdjustsPreviousNoteDuration) {
   // Driving16th also uses negative shifts (-30 ticks).
   // Verify it adjusts previous note duration like Syncopated does.
   auto notes = createNotes({
-      {0, 130, 60},     // Note ending at 130, overlaps with shifted next note
-      {120, 240, 62},   // At 16th position - will shift earlier by ~30
+      {0, 130, 60},    // Note ending at 130, overlaps with shifted next note
+      {120, 240, 62},  // At 16th position - will shift earlier by ~30
   });
 
   applyGrooveFeel(notes, VocalGrooveFeel::Driving16th);
 
   // Verify no overlap
   Tick note_a_end = notes[0].start_tick + notes[0].duration;
-  EXPECT_LE(note_a_end, notes[1].start_tick)
-      << "Note A should not overlap with shifted Note B";
+  EXPECT_LE(note_a_end, notes[1].start_tick) << "Note A should not overlap with shifted Note B";
 
   // Both notes should have reasonable duration
   constexpr Tick kMinDuration = 60;
@@ -400,8 +399,8 @@ TEST_F(ApplyGrooveFeelTest, MinimumGapMaintainedBetweenNotes) {
   // The implementation uses kMinGap = 10 ticks between notes.
   // Verify this gap is maintained after adjustment.
   auto notes = createNotes({
-      {0, 500, 60},     // Long note that will need shortening
-      {480, 240, 62},   // On beat 2 - shifts to ~420
+      {0, 500, 60},    // Long note that will need shortening
+      {480, 240, 62},  // On beat 2 - shifts to ~420
   });
 
   applyGrooveFeel(notes, VocalGrooveFeel::Syncopated);
@@ -421,8 +420,8 @@ TEST_F(ApplyGrooveFeelTest, PositiveShiftDoesNotAffectPreviousNote) {
   // Note B at 480 with beat_pos=0 will be shifted to ~540 (+60).
   // Note A should be placed so it doesn't overlap with the shifted position.
   auto notes = createNotes({
-      {300, 200, 60},   // Note A: ends at 500, before shifted Note B (540)
-      {480, 240, 62},   // Note B: beat_pos=0, will shift to ~540
+      {300, 200, 60},  // Note A: ends at 500, before shifted Note B (540)
+      {480, 240, 62},  // Note B: beat_pos=0, will shift to ~540
   });
 
   Tick original_duration_a = notes[0].duration;
@@ -434,8 +433,7 @@ TEST_F(ApplyGrooveFeelTest, PositiveShiftDoesNotAffectPreviousNote) {
       << "Positive shift should not affect previous note duration";
 
   // Note B should be shifted later (beat_pos=0 < TICK_16TH=120)
-  EXPECT_GT(notes[1].start_tick, 480u)
-      << "Note B should be shifted later by OffBeat groove";
+  EXPECT_GT(notes[1].start_tick, 480u) << "Note B should be shifted later by OffBeat groove";
 
   // Verify no overlap
   Tick note_a_end = notes[0].start_tick + notes[0].duration;
@@ -445,9 +443,9 @@ TEST_F(ApplyGrooveFeelTest, PositiveShiftDoesNotAffectPreviousNote) {
 TEST_F(ApplyGrooveFeelTest, SwingGrooveDelaysSecondEighth) {
   // Swing groove delays the second 8th note of each beat pair.
   auto notes = createNotes({
-      {0, 200, 60},     // First 8th
-      {240, 200, 62},   // Second 8th (around TICK_8TH = 240) - should be delayed
-      {480, 200, 64},   // First 8th of next beat
+      {0, 200, 60},    // First 8th
+      {240, 200, 62},  // Second 8th (around TICK_8TH = 240) - should be delayed
+      {480, 200, 64},  // First 8th of next beat
   });
 
   applyGrooveFeel(notes, VocalGrooveFeel::Swing);
@@ -496,9 +494,9 @@ TEST_F(ApplyGrooveFeelTest, SingleNoteHandledCorrectly) {
 TEST_F(ApplyGrooveFeelTest, UnsortedInputSortedCorrectly) {
   // The function should handle unsorted input by sorting first.
   auto notes = createNotes({
-      {960, 240, 64},   // Third chronologically
-      {0, 240, 60},     // First chronologically
-      {480, 240, 62},   // Second chronologically
+      {960, 240, 64},  // Third chronologically
+      {0, 240, 60},    // First chronologically
+      {480, 240, 62},  // Second chronologically
   });
 
   applyGrooveFeel(notes, VocalGrooveFeel::Syncopated);
@@ -524,8 +522,8 @@ TEST_F(ApplyGrooveFeelTest, Bouncy8thShortensFirstEighthDuration) {
   // Bouncy8th makes the first 8th note shorter (85% duration).
   // The condition is duration > TICK_8TH (240), so we need duration > 240.
   auto notes = createNotes({
-      {0, 300, 60},     // First 8th with long duration (>240) - should be shortened
-      {300, 240, 62},   // Second 8th (beat_pos >= 240) - should be delayed
+      {0, 300, 60},    // First 8th with long duration (>240) - should be shortened
+      {300, 240, 62},  // Second 8th (beat_pos >= 240) - should be delayed
   });
 
   applyGrooveFeel(notes, VocalGrooveFeel::Bouncy8th);
@@ -542,8 +540,8 @@ TEST_F(ApplyGrooveFeelTest, Bouncy8thShortensFirstEighthDuration) {
 TEST_F(ApplyGrooveFeelTest, VeryLongNoteProperlyTruncated) {
   // A very long note followed by a shifted note should be truncated appropriately.
   auto notes = createNotes({
-      {0, 960, 60},     // 2-beat note (0-960), extends way past beat 2
-      {480, 240, 62},   // On beat 2 - will shift to ~420
+      {0, 960, 60},    // 2-beat note (0-960), extends way past beat 2
+      {480, 240, 62},  // On beat 2 - will shift to ~420
   });
 
   applyGrooveFeel(notes, VocalGrooveFeel::Syncopated);

@@ -16,18 +16,13 @@
 
 #include "core/basic_types.h"
 #include "core/timing_constants.h"
-#include "track/drums/drum_constants.h"
 #include "instrument/common/performer_types.h"
+#include "track/drums/drum_constants.h"
 
 namespace midisketch {
 
 /// @brief Limb identifier for drum playing.
-enum class Limb : uint8_t {
-  RightHand = 0,
-  LeftHand = 1,
-  RightFoot = 2,
-  LeftFoot = 3
-};
+enum class Limb : uint8_t { RightHand = 0, LeftHand = 1, RightFoot = 2, LeftFoot = 3 };
 
 /// @brief Number of limbs.
 constexpr size_t kLimbCount = 4;
@@ -40,18 +35,18 @@ enum class DrumPlayStyle : uint8_t {
 
 /// @brief Limb flexibility for a drum part.
 enum class LimbFlexibility : uint8_t {
-  Fixed,        ///< Only assigned limb can play (kick = right foot)
-  Either,       ///< Either hand/foot can play (toms, crash)
-  Alternating   ///< Must alternate (double bass, high-speed rolls)
+  Fixed,       ///< Only assigned limb can play (kick = right foot)
+  Either,      ///< Either hand/foot can play (toms, crash)
+  Alternating  ///< Must alternate (double bass, high-speed rolls)
 };
 
 /// @brief Physical constraints for a limb.
 struct LimbPhysics {
-  Tick min_single_interval;   ///< Minimum interval for single strokes (RLRL)
-  Tick min_double_interval;   ///< Minimum interval for double strokes (RRLL)
-  Tick min_triple_interval;   ///< Minimum interval for 3+ consecutive hits
-  float fatigue_rate;         ///< Fatigue accumulation per fast hit
-  float recovery_rate;        ///< Recovery rate per beat of rest
+  Tick min_single_interval;  ///< Minimum interval for single strokes (RLRL)
+  Tick min_double_interval;  ///< Minimum interval for double strokes (RRLL)
+  Tick min_triple_interval;  ///< Minimum interval for 3+ consecutive hits
+  float fatigue_rate;        ///< Fatigue accumulation per fast hit
+  float recovery_rate;       ///< Recovery rate per beat of rest
 
   /// @brief Hand physics for average player.
   static LimbPhysics hand() {
@@ -88,13 +83,10 @@ struct LimbPhysics {
 
   /// @brief Foot physics for advanced player (double bass).
   static LimbPhysics footAdvanced() {
-    return {
-        TICK_32ND + 20,  // 80 ticks
-        TICK_32ND,       // 60 ticks
-        TICK_32ND + 30,  // 90 ticks
-        0.02f,
-        0.015f
-    };
+    return {TICK_32ND + 20,  // 80 ticks
+            TICK_32ND,       // 60 ticks
+            TICK_32ND + 30,  // 90 ticks
+            0.02f, 0.015f};
   }
 };
 
@@ -119,15 +111,15 @@ constexpr Tick kGhostNoteMaxDuration = 40;
 /// @brief Drum technique type.
 enum class DrumTechnique : uint8_t {
   // Stroke types
-  Single,            ///< Single stroke (RLRL)
-  Double,            ///< Double stroke (RRLL)
-  Triple,            ///< Triple stroke (RRR or LLL)
+  Single,  ///< Single stroke (RLRL)
+  Double,  ///< Double stroke (RRLL)
+  Triple,  ///< Triple stroke (RRR or LLL)
 
   // Rudiments
-  Paradiddle,        ///< Paradiddle (RLRR LRLL)
-  Flam,              ///< Flam (grace + main)
-  Drag,              ///< Drag (2 grace + main)
-  Ruff,              ///< Ruff (3 grace + main)
+  Paradiddle,  ///< Paradiddle (RLRR LRLL)
+  Flam,        ///< Flam (grace + main)
+  Drag,        ///< Drag (2 grace + main)
+  Ruff,        ///< Ruff (3 grace + main)
 
   // Rolls
   SingleStrokeRoll,  ///< Fast RLRL
@@ -135,14 +127,14 @@ enum class DrumTechnique : uint8_t {
   BuzzRoll,          ///< Press roll (no interval constraint)
 
   // Accents
-  Accent,            ///< High velocity hit
-  GhostNote,         ///< Low velocity hit
-  RimShot,           ///< Snare head + rim
-  CrossStick,        ///< Side stick
+  Accent,      ///< High velocity hit
+  GhostNote,   ///< Low velocity hit
+  RimShot,     ///< Snare head + rim
+  CrossStick,  ///< Side stick
 
   // Special
-  Choke,             ///< Cymbal grab
-  Normal             ///< Standard hit
+  Choke,  ///< Cymbal grab
+  Normal  ///< Standard hit
 };
 
 /// @brief Drum kit setup configuration.

@@ -8,9 +8,9 @@
 #include <algorithm>
 
 #include "core/chord_utils.h"
-#include "core/rng_util.h"
 #include "core/note_creator.h"
 #include "core/pitch_utils.h"
+#include "core/rng_util.h"
 
 namespace midisketch {
 
@@ -163,8 +163,10 @@ Motif designChorusHook(const StyleMelodyParams& params, std::mt19937& rng) {
   // - hook_repetition=false: random selection for variety
   size_t contour_idx = 0;
   if (!params.hook_repetition) {
-    contour_idx = static_cast<size_t>(rng_util::rollRange(rng, 1,
-        static_cast<int>(kMemorableHookContourCount - 1)));  // Skip Type 0 (reserved for repetition)
+    contour_idx = static_cast<size_t>(
+        rng_util::rollRange(rng, 1,
+                            static_cast<int>(kMemorableHookContourCount -
+                                             1)));  // Skip Type 0 (reserved for repetition)
   }
   const int8_t* selected_contour = kMemorableHookContours[contour_idx];
 
@@ -406,8 +408,8 @@ std::vector<NoteEvent> placeMotifInBridge(const Motif& motif, Tick section_start
 
     // Step 2: Check for collisions and find safe pitch if needed
     uint8_t final_pitch = static_cast<uint8_t>(snapped);
-    auto candidates = getSafePitchCandidates(harmony, final_pitch, note.start_tick, note.duration,
-                                              track, 36, 96);
+    auto candidates =
+        getSafePitchCandidates(harmony, final_pitch, note.start_tick, note.duration, track, 36, 96);
     if (candidates.empty()) {
       continue;  // No safe pitch available
     }
@@ -429,9 +431,9 @@ std::vector<NoteEvent> placeMotifInBridge(const Motif& motif, Tick section_start
 }
 
 std::vector<NoteEvent> placeMotifInFinalChorus(const Motif& motif, Tick section_start,
-                                                Tick section_end, uint8_t base_pitch,
-                                                uint8_t velocity, const IHarmonyContext& harmony,
-                                                TrackRole track) {
+                                               Tick section_end, uint8_t base_pitch,
+                                               uint8_t velocity, const IHarmonyContext& harmony,
+                                               TrackRole track) {
   std::vector<NoteEvent> result;
 
   if (motif.rhythm.empty()) {
@@ -490,15 +492,16 @@ std::vector<NoteEvent> placeMotifInFinalChorus(const Motif& motif, Tick section_
 
       // Check for collisions and find safe pitch if needed
       uint8_t final_pitch = static_cast<uint8_t>(snapped);
-      auto candidates = getSafePitchCandidates(harmony, final_pitch, note_start, duration,
-                                                track, 36, 96);
+      auto candidates =
+          getSafePitchCandidates(harmony, final_pitch, note_start, duration, track, 36, 96);
       if (candidates.empty()) {
         continue;  // No safe pitch available
       }
       final_pitch = candidates[0].pitch;
 
       // Primary note with provenance
-      auto primary_note = createNoteWithoutHarmony(note_start, duration, final_pitch, enhanced_velocity);
+      auto primary_note =
+          createNoteWithoutHarmony(note_start, duration, final_pitch, enhanced_velocity);
 #ifdef MIDISKETCH_NOTE_PROVENANCE
       primary_note.prov_source = static_cast<uint8_t>(NoteSource::Motif);
       primary_note.prov_chord_degree = chord_degree;
@@ -506,18 +509,19 @@ std::vector<NoteEvent> placeMotifInFinalChorus(const Motif& motif, Tick section_
       primary_note.prov_original_pitch = static_cast<uint8_t>(snapped);
       if (final_pitch != static_cast<uint8_t>(snapped)) {
         primary_note.addTransformStep(TransformStepType::CollisionAvoid,
-                                       static_cast<uint8_t>(snapped), final_pitch, 0, 0);
+                                      static_cast<uint8_t>(snapped), final_pitch, 0, 0);
       }
 #endif
       result.push_back(primary_note);
 
       // Octave doubling for climactic impact - only add if within range AND safe
       int octave_pitch = final_pitch + 12;
-      if (octave_pitch <= 108 && harmony.isConsonantWithOtherTracks(static_cast<uint8_t>(octave_pitch), note_start,
-                                                     duration, track)) {
-        auto octave_note = createNoteWithoutHarmony(note_start, duration,
-                                                    static_cast<uint8_t>(octave_pitch),
-                                                    static_cast<uint8_t>(enhanced_velocity * 0.85f));
+      if (octave_pitch <= 108 &&
+          harmony.isConsonantWithOtherTracks(static_cast<uint8_t>(octave_pitch), note_start,
+                                             duration, track)) {
+        auto octave_note =
+            createNoteWithoutHarmony(note_start, duration, static_cast<uint8_t>(octave_pitch),
+                                     static_cast<uint8_t>(enhanced_velocity * 0.85f));
 #ifdef MIDISKETCH_NOTE_PROVENANCE
         octave_note.prov_source = static_cast<uint8_t>(NoteSource::Motif);
         octave_note.prov_chord_degree = chord_degree;

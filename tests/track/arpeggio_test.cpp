@@ -8,6 +8,7 @@
 #include <gtest/gtest.h>
 
 #include <random>
+#include <set>
 
 #include "core/chord_utils.h"
 #include "core/generator.h"
@@ -64,6 +65,36 @@ TEST_F(ArpeggioTest, ArpeggioDisabledWhenNotEnabled) {
   EXPECT_TRUE(song.arpeggio().empty());
 }
 
+TEST_F(ArpeggioTest, RhythmSyncBlueprintDoesNotAutoEnableArpeggio) {
+  params_.blueprint_id = 1;  // RhythmLock
+  params_.mood = Mood::AnimeHighEnergy;
+  params_.bpm = 136;
+  params_.arpeggio_enabled = false;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& arpeggio = gen.getSong().arpeggio();
+  EXPECT_TRUE(arpeggio.empty());
+}
+
+TEST_F(ArpeggioTest, RhythmSyncArpeggioAvoidsDuplicatePitchOnsets) {
+  params_.blueprint_id = 1;  // RhythmLock
+  params_.mood = Mood::AnimeHighEnergy;
+  params_.bpm = 136;
+  params_.arpeggio_enabled = false;
+
+  Generator gen;
+  gen.generate(params_);
+
+  std::set<std::pair<Tick, uint8_t>> seen;
+  for (const auto& note : gen.getSong().arpeggio().notes()) {
+    EXPECT_TRUE(seen.insert({note.start_tick, note.note}).second)
+        << "Duplicate arpeggio pitch/onset at tick " << note.start_tick << " pitch "
+        << static_cast<int>(note.note);
+  }
+}
+
 TEST_F(ArpeggioTest, ArpeggioHasNotes) {
   Generator gen;
   gen.generate(params_);
@@ -105,8 +136,8 @@ TEST_F(ArpeggioTest, SixteenthNoteSpeed) {
       break;
     }
   }
-  EXPECT_TRUE(found_sixteenth)
-      << "Expected stride-2 spacing of " << (expected_duration * 2) << " ticks for 16th notes";
+  EXPECT_TRUE(found_sixteenth) << "Expected stride-2 spacing of " << (expected_duration * 2)
+                               << " ticks for 16th notes";
 }
 
 TEST_F(ArpeggioTest, EighthNoteSpeed) {
@@ -129,8 +160,8 @@ TEST_F(ArpeggioTest, EighthNoteSpeed) {
       break;
     }
   }
-  EXPECT_TRUE(found_eighth)
-      << "Expected stride-2 spacing of " << (expected_duration * 2) << " ticks for 8th notes";
+  EXPECT_TRUE(found_eighth) << "Expected stride-2 spacing of " << (expected_duration * 2)
+                            << " ticks for 8th notes";
 }
 
 TEST_F(ArpeggioTest, PatternUp) {
@@ -279,8 +310,7 @@ TEST_F(ArpeggioTest, BrokenChordAscendsThenDescends) {
   // Use original pitch to avoid collision avoidance interference
   uint8_t pitch_0 = track.notes()[0].prov_original_pitch;
   uint8_t pitch_2 = track.notes()[2].prov_original_pitch;
-  EXPECT_LE(pitch_0, pitch_2)
-      << "BrokenChord should ascend from index 0 to index 2";
+  EXPECT_LE(pitch_0, pitch_2) << "BrokenChord should ascend from index 0 to index 2";
 }
 
 TEST_F(ArpeggioTest, CityPopUsesPinwheelByDefault) {
@@ -306,14 +336,13 @@ TEST_F(ArpeggioTest, IdolPopUsesBrokenChordByDefault) {
 
 TEST_F(ArpeggioTest, UserPatternOverridesMoodDefault) {
   // When user explicitly sets a non-Up pattern, it should override mood default
-  params_.mood = Mood::CityPop;  // Default is Pinwheel
+  params_.mood = Mood::CityPop;                      // Default is Pinwheel
   params_.arpeggio.pattern = ArpeggioPattern::Down;  // User override
   params_.seed = 42;
   Generator gen;
   gen.generate(params_);
   const auto& track = gen.getSong().arpeggio();
-  EXPECT_GT(track.notes().size(), 0u)
-      << "User pattern override should still generate notes";
+  EXPECT_GT(track.notes().size(), 0u) << "User pattern override should still generate notes";
 }
 
 TEST_F(ArpeggioTest, OctaveRange) {
@@ -583,7 +612,8 @@ TEST_F(ArpeggioTest, HarmonicDensitySlowInIntro) {
     }
   }
 
-  ASSERT_FALSE(bar3_notes.empty()) << "Bar 3 should have arpeggio notes (layer schedule activates arpeggio here)";
+  ASSERT_FALSE(bar3_notes.empty())
+      << "Bar 3 should have arpeggio notes (layer schedule activates arpeggio here)";
 
   // Bar 3 should have notes from chord V (G major, degree 4)
   // because Slow density: chord_idx = (3/2) % 4 = 1, Canon[1] = degree 4
@@ -635,7 +665,8 @@ TEST_F(ArpeggioTest, HarmonicDensityNormalInASection) {
     }
   }
 
-  ASSERT_FALSE(bar2_notes.empty()) << "Bar 2 should have arpeggio notes (layer schedule activates here)";
+  ASSERT_FALSE(bar2_notes.empty())
+      << "Bar 2 should have arpeggio notes (layer schedule activates here)";
   ASSERT_FALSE(bar3_notes.empty()) << "Bar 3 should have arpeggio notes";
 
   // Bar 2: chord vi (A minor, degree 5) - pitch classes 9, 0, 4
@@ -697,7 +728,8 @@ TEST_F(ArpeggioTest, ChordTrackArpeggioSyncInSlowDensity) {
     }
   }
 
-  ASSERT_FALSE(arp_bar3.empty()) << "Arpeggio bar 3 should have notes (layer schedule activates here)";
+  ASSERT_FALSE(arp_bar3.empty())
+      << "Arpeggio bar 3 should have notes (layer schedule activates here)";
   ASSERT_FALSE(chord_bar3.empty()) << "Chord track bar 3 should have notes";
 
   // Bar 3 should primarily use IV (F major, degree 3).
@@ -724,8 +756,9 @@ TEST_F(ArpeggioTest, ChordTrackArpeggioSyncInSlowDensity) {
       int root_pc = SCALE[degree % 7];
       is_tone = (pc == (root_pc + 10) % 12) || (pc == (root_pc + 11) % 12);
     }
-    EXPECT_TRUE(is_tone) << "Chord track bar 3 note " << static_cast<int>(note.note) << " (pc=" << pc
-                         << ") should be chord tone of degree " << static_cast<int>(degree);
+    EXPECT_TRUE(is_tone) << "Chord track bar 3 note " << static_cast<int>(note.note)
+                         << " (pc=" << pc << ") should be chord tone of degree "
+                         << static_cast<int>(degree);
   }
 }
 
@@ -932,7 +965,7 @@ TEST_F(ArpeggioTest, SwingShiftsUpbeatNotes) {
   //   Note 2 (on-beat): grid position (exact)
   //   Note 3 (off-beat): grid + 80 (shifted)
   constexpr Tick TRIPLET = TICKS_PER_BEAT / 3;  // 160
-  constexpr Tick EXPECTED_SWING = 80;            // 0.5 * 160
+  constexpr Tick EXPECTED_SWING = 80;           // 0.5 * 160
 
   // Collect spacings between consecutive notes in the first bar
   std::vector<Tick> spacings;
@@ -957,9 +990,9 @@ TEST_F(ArpeggioTest, SwingShiftsUpbeatNotes) {
   }
 
   EXPECT_TRUE(found_long) << "Expected long gap (even→odd = " << (TRIPLET + EXPECTED_SWING)
-                           << ") from swing, but not found";
+                          << ") from swing, but not found";
   EXPECT_TRUE(found_short) << "Expected short gap (odd→even = " << (TRIPLET - EXPECTED_SWING)
-                            << ") from swing, but not found";
+                           << ") from swing, but not found";
 }
 
 TEST_F(ArpeggioTest, NoSwingProducesExactGrid) {
@@ -1082,7 +1115,7 @@ TEST_F(ArpeggioTest, HighDensitySwitchesTo16thNotes) {
 
   // Use a mood that defaults to Sixteenth (so style_has_special_speed = false)
   // Then force Eighth speed via params
-  params_.mood = Mood::StraightPop;  // Default style uses Sixteenth
+  params_.mood = Mood::StraightPop;                // Default style uses Sixteenth
   params_.arpeggio.speed = ArpeggioSpeed::Eighth;  // Force Eighth, but user_set_speed will be true
   params_.structure = StructurePattern::FullPop;
   params_.seed = 42;
@@ -1190,7 +1223,7 @@ TEST_F(ArpeggioTest, DensitySkipsNotesWhenLow) {
   // When density_percent < 80, some notes should be skipped probabilistically
 
   // Find or create low-density scenario
-  params_.mood = Mood::Ballad;  // Tends to have lower density in intro/verse
+  params_.mood = Mood::Ballad;                    // Tends to have lower density in intro/verse
   params_.structure = StructurePattern::BuildUp;  // Has Intro with typically lower density
   params_.seed = 42;
 
@@ -1235,9 +1268,8 @@ TEST_F(ArpeggioTest, DensitySkipsNotesWhenLow) {
     double avg_low = low_density_notes_per_bar / low_count;
     double avg_high = high_density_notes_per_bar / high_count;
 
-    EXPECT_LT(avg_low, avg_high)
-        << "Low density sections should have fewer notes per bar "
-        << "(low=" << avg_low << ", high=" << avg_high << ")";
+    EXPECT_LT(avg_low, avg_high) << "Low density sections should have fewer notes per bar "
+                                 << "(low=" << avg_low << ", high=" << avg_high << ")";
   }
 }
 

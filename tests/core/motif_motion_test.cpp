@@ -148,8 +148,8 @@ TEST_F(MotifMotionGenerationTest, DifferentMotionsProduceDifferentPatterns) {
 TEST_F(MotifMotionGenerationTest, NotesInValidRange) {
   // Test all motion types produce notes in valid MIDI range
   std::vector<MotifMotion> motions = {MotifMotion::Stepwise, MotifMotion::GentleLeap,
-                                       MotifMotion::WideLeap, MotifMotion::NarrowStep,
-                                       MotifMotion::Disjunct};
+                                      MotifMotion::WideLeap, MotifMotion::NarrowStep,
+                                      MotifMotion::Disjunct};
 
   for (auto motion : motions) {
     params_.motif.motion = motion;

@@ -29,7 +29,7 @@ export interface SongConfig {
   drumsEnabled: boolean;
   /** True if drumsEnabled was explicitly set by user */
   drumsEnabledExplicit: boolean;
-  /** Blueprint ID: 0=Traditional, 1=Orangestar, 2=YOASOBI, 3=Ballad, 255=random */
+  /** Blueprint ID: 0=Traditional, 1=RhythmLock, 2=StoryPop, 3=Ballad, 255=random */
   blueprintId: number;
 
   // Arpeggio settings

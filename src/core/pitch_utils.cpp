@@ -265,8 +265,7 @@ bool isDissonantActualInterval(int actual_semitones, int8_t chord_degree) {
   return false;
 }
 
-bool isDissonantSemitoneInterval(int actual_semitones,
-                                  const DissonanceCheckOptions& opts) {
+bool isDissonantSemitoneInterval(int actual_semitones, const DissonanceCheckOptions& opts) {
   // Negative intervals are invalid; treat as non-dissonant.
   if (actual_semitones < 0) {
     return false;
@@ -296,8 +295,7 @@ bool isDissonantSemitoneInterval(int actual_semitones,
 
   // Major 2nd: dissonant only in close range (configurable threshold).
   // Major 9th (14 semitones) is a common chord extension in pop - NOT dissonant.
-  if (opts.check_major_2nd && pc_interval == 2 &&
-      actual_semitones < opts.major_2nd_max_distance) {
+  if (opts.check_major_2nd && pc_interval == 2 && actual_semitones < opts.major_2nd_max_distance) {
     return true;
   }
 

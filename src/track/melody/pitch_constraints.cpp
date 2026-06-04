@@ -10,8 +10,8 @@
 #include <vector>
 
 #include "core/chord_utils.h"
-#include "core/rng_util.h"
 #include "core/pitch_utils.h"
+#include "core/rng_util.h"
 #include "core/timing_constants.h"
 #include "track/melody/melody_utils.h"
 
@@ -29,8 +29,7 @@ bool isStrongBeat(Tick tick) {
 }
 
 int findBestChordTonePreservingDirection(int target_pitch, int prev_pitch, int8_t chord_degree,
-                                          uint8_t vocal_low, uint8_t vocal_high,
-                                          int max_interval) {
+                                         uint8_t vocal_low, uint8_t vocal_high, int max_interval) {
   std::vector<int> chord_tones = getChordTonePitchClasses(chord_degree);
 
   // Determine intended direction
@@ -77,8 +76,7 @@ int findBestChordTonePreservingDirection(int target_pitch, int prev_pitch, int8_
 }
 
 int enforceDownbeatChordTone(int pitch, Tick tick, int8_t chord_degree, int prev_pitch,
-                              uint8_t vocal_low, uint8_t vocal_high,
-                              bool disable_singability) {
+                             uint8_t vocal_low, uint8_t vocal_high, bool disable_singability) {
   if (!isDownbeat(tick)) {
     return pitch;
   }
@@ -101,13 +99,12 @@ int enforceDownbeatChordTone(int pitch, Tick tick, int8_t chord_degree, int prev
   }
 
   // Use direction-preserving adjustment for natural vocals
-  return findBestChordTonePreservingDirection(pitch, prev_pitch, chord_degree,
-                                               vocal_low, vocal_high, 0);
+  return findBestChordTonePreservingDirection(pitch, prev_pitch, chord_degree, vocal_low,
+                                              vocal_high, 0);
 }
 
-int enforceGuideToneOnDownbeat(int pitch, Tick tick, int8_t chord_degree,
-                                uint8_t vocal_low, uint8_t vocal_high,
-                                uint8_t guide_tone_rate, std::mt19937& rng) {
+int enforceGuideToneOnDownbeat(int pitch, Tick tick, int8_t chord_degree, uint8_t vocal_low,
+                               uint8_t vocal_high, uint8_t guide_tone_rate, std::mt19937& rng) {
   if (guide_tone_rate == 0) return pitch;
   if (!isStrongBeat(tick)) return pitch;
 
@@ -142,8 +139,8 @@ int enforceGuideToneOnDownbeat(int pitch, Tick tick, int8_t chord_degree,
   return (best_pitch >= 0) ? best_pitch : pitch;
 }
 
-int enforceAvoidNoteConstraint(int pitch, int8_t chord_degree,
-                                uint8_t vocal_low, uint8_t vocal_high) {
+int enforceAvoidNoteConstraint(int pitch, int8_t chord_degree, uint8_t vocal_low,
+                               uint8_t vocal_high) {
   int bass_root_pc = getBassRootPitchClass(chord_degree);
   std::vector<int> chord_tones = getChordTonePitchClasses(chord_degree);
   int pitch_pc = pitch % 12;
@@ -156,20 +153,20 @@ int enforceAvoidNoteConstraint(int pitch, int8_t chord_degree,
 }
 
 int enforceMaxIntervalConstraint(int new_pitch, int prev_pitch, int8_t chord_degree,
-                                  int max_interval, uint8_t vocal_low, uint8_t vocal_high,
-                                  const TessituraRange* tessitura) {
+                                 int max_interval, uint8_t vocal_low, uint8_t vocal_high,
+                                 const TessituraRange* tessitura) {
   int interval = std::abs(new_pitch - prev_pitch);
   if (interval <= max_interval) {
     return new_pitch;
   }
 
-  return nearestChordToneWithinInterval(new_pitch, prev_pitch, chord_degree,
-                                         max_interval, vocal_low, vocal_high, tessitura);
+  return nearestChordToneWithinInterval(new_pitch, prev_pitch, chord_degree, max_interval,
+                                        vocal_low, vocal_high, tessitura);
 }
 
 int applyLeapPreparationConstraint(int new_pitch, int prev_pitch, Tick prev_duration,
-                                    int8_t chord_degree, uint8_t vocal_low, uint8_t vocal_high,
-                                    const TessituraRange* tessitura) {
+                                   int8_t chord_degree, uint8_t vocal_low, uint8_t vocal_high,
+                                   const TessituraRange* tessitura) {
   // Short note threshold: 8th note (240 ticks)
   constexpr Tick SHORT_NOTE_THRESHOLD = TICK_EIGHTH;
   // Maximum leap after short note: 5 semitones (perfect 4th)
@@ -185,13 +182,13 @@ int applyLeapPreparationConstraint(int new_pitch, int prev_pitch, Tick prev_dura
   }
 
   // Constrain to maximum allowed leap
-  return nearestChordToneWithinInterval(new_pitch, prev_pitch, chord_degree,
-                                         MAX_LEAP_AFTER_SHORT, vocal_low, vocal_high, tessitura);
+  return nearestChordToneWithinInterval(new_pitch, prev_pitch, chord_degree, MAX_LEAP_AFTER_SHORT,
+                                        vocal_low, vocal_high, tessitura);
 }
 
 int encourageLeapAfterLongNote(int new_pitch, int prev_pitch, Tick prev_duration,
-                                int8_t chord_degree, uint8_t vocal_low, uint8_t vocal_high,
-                                std::mt19937& rng) {
+                               int8_t chord_degree, uint8_t vocal_low, uint8_t vocal_high,
+                               std::mt19937& rng) {
   // Long note threshold: 1 beat (quarter note)
   constexpr Tick LONG_NOTE_THRESHOLD = TICKS_PER_BEAT;
   // Preferred minimum leap: major 3rd (4 semitones)

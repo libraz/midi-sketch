@@ -3,11 +3,12 @@
  * @brief Tests for fretted instrument physical modeling.
  */
 
+#include "instrument/fretted/fretted_instrument.h"
+
 #include <gtest/gtest.h>
 
 #include "core/timing_constants.h"
 #include "instrument/fretted/bass_model.h"
-#include "instrument/fretted/fretted_instrument.h"
 #include "instrument/fretted/fretted_note_factory.h"
 #include "instrument/fretted/guitar_model.h"
 
@@ -189,9 +190,9 @@ TEST(HandSpanConstraintsTest, SkillLevels) {
 TEST(HandSpanConstraintsTest, StretchPenalty) {
   auto constraints = HandSpanConstraints::intermediate();  // normal=4, max=5
 
-  EXPECT_EQ(constraints.calculateStretchPenalty(3), 0.0f);  // Under normal
-  EXPECT_EQ(constraints.calculateStretchPenalty(4), 0.0f);  // At normal
-  EXPECT_GT(constraints.calculateStretchPenalty(5), 0.0f);  // Over normal
+  EXPECT_EQ(constraints.calculateStretchPenalty(3), 0.0f);    // Under normal
+  EXPECT_EQ(constraints.calculateStretchPenalty(4), 0.0f);    // At normal
+  EXPECT_GT(constraints.calculateStretchPenalty(5), 0.0f);    // Over normal
   EXPECT_EQ(constraints.calculateStretchPenalty(6), 999.0f);  // Over max
 }
 
@@ -254,9 +255,7 @@ class BassModelTest : public ::testing::Test {
   std::unique_ptr<BassModel> bass_;
 };
 
-TEST_F(BassModelTest, StringCount) {
-  EXPECT_EQ(bass_->getStringCount(), 4);
-}
+TEST_F(BassModelTest, StringCount) { EXPECT_EQ(bass_->getStringCount(), 4); }
 
 TEST_F(BassModelTest, PitchRange) {
   // 4-string bass: E1 (28) to G2+21frets = 28 + 21 = 64 (on high string: 43+21=64)
@@ -367,9 +366,7 @@ class GuitarModelTest : public ::testing::Test {
   std::unique_ptr<GuitarModel> guitar_;
 };
 
-TEST_F(GuitarModelTest, StringCount) {
-  EXPECT_EQ(guitar_->getStringCount(), 6);
-}
+TEST_F(GuitarModelTest, StringCount) { EXPECT_EQ(guitar_->getStringCount(), 6); }
 
 TEST_F(GuitarModelTest, PitchRange) {
   // 6-string guitar: E2 (40) to E4+24frets = 64 + 24 = 88
@@ -466,12 +463,10 @@ TEST(PlayingTechniqueTest, TechniqueToString) {
 TEST(PlayingTechniqueTest, TechniqueTransition) {
   // Slap to tapping needs time
   EXPECT_FALSE(isValidTechniqueTransition(PlayingTechnique::Slap, PlayingTechnique::Tapping, 60));
-  EXPECT_TRUE(
-      isValidTechniqueTransition(PlayingTechnique::Slap, PlayingTechnique::Tapping, 120));
+  EXPECT_TRUE(isValidTechniqueTransition(PlayingTechnique::Slap, PlayingTechnique::Tapping, 120));
 
   // Normal transitions are instant
-  EXPECT_TRUE(
-      isValidTechniqueTransition(PlayingTechnique::Normal, PlayingTechnique::HammerOn, 30));
+  EXPECT_TRUE(isValidTechniqueTransition(PlayingTechnique::Normal, PlayingTechnique::HammerOn, 30));
 }
 
 // ============================================================================
@@ -574,8 +569,8 @@ TEST(ExtendedBassTest, Bass6String) {
   EXPECT_EQ(bass.getStringCount(), 6);
   EXPECT_TRUE(bass.hasLowB());
   EXPECT_TRUE(bass.hasHighC());
-  EXPECT_EQ(bass.getLowestPitch(), 23);  // B0
-  EXPECT_GT(bass.getHighestPitch(), 64); // Higher than 4-string
+  EXPECT_EQ(bass.getLowestPitch(), 23);   // B0
+  EXPECT_GT(bass.getHighestPitch(), 64);  // Higher than 4-string
 }
 
 // ============================================================================
@@ -720,8 +715,8 @@ TEST_F(FrettedNoteFactoryTest, CreatePlayableNote) {
   FrettedNoteFactory factory(*harmony_, *bass_, 120);
 
   // Create a note for E (28) - open E string on bass
-  auto note = factory.create(0, TICK_QUARTER, 28, 100, PlayingTechnique::Normal,
-                              NoteSource::BassPattern);
+  auto note =
+      factory.create(0, TICK_QUARTER, 28, 100, PlayingTechnique::Normal, NoteSource::BassPattern);
 
   ASSERT_TRUE(note.has_value());
   EXPECT_EQ(note->note, 28);
@@ -733,8 +728,8 @@ TEST_F(FrettedNoteFactoryTest, CreateUnplayablePitchGetsTransposed) {
   FrettedNoteFactory factory(*harmony_, *bass_, 120);
 
   // Try to create a note that's below bass range - it will be transposed
-  auto note = factory.create(0, TICK_QUARTER, 20, 100, PlayingTechnique::Normal,
-                              NoteSource::BassPattern);
+  auto note =
+      factory.create(0, TICK_QUARTER, 20, 100, PlayingTechnique::Normal, NoteSource::BassPattern);
 
   // Factory transposes unplayable pitches to playable range
   ASSERT_TRUE(note.has_value());
@@ -791,7 +786,7 @@ TEST_F(FrettedNoteFactoryTest, CreateSafeChecksHarmony) {
 
   // With all pitches safe, should succeed
   auto note = factory.createIfNoDissonance(0, TICK_QUARTER, 33, 100, TrackRole::Bass,
-                                  PlayingTechnique::Normal, NoteSource::BassPattern);
+                                           PlayingTechnique::Normal, NoteSource::BassPattern);
   EXPECT_TRUE(note.has_value());
 
   // Set pitches to unsafe
@@ -799,7 +794,7 @@ TEST_F(FrettedNoteFactoryTest, CreateSafeChecksHarmony) {
 
   // Now should still work because getBestAvailablePitch returns desired pitch in stub
   auto note2 = factory.createIfNoDissonance(0, TICK_QUARTER, 33, 100, TrackRole::Bass,
-                                   PlayingTechnique::Normal, NoteSource::BassPattern);
+                                            PlayingTechnique::Normal, NoteSource::BassPattern);
   EXPECT_TRUE(note2.has_value());
 }
 
@@ -856,8 +851,8 @@ TEST(FrettedNoteFactoryGuitarTest, CreateGuitarNote) {
   FrettedNoteFactory factory(harmony, guitar, 120);
 
   // Create a note for E (40) - open low E string on guitar
-  auto note = factory.create(0, TICK_QUARTER, 40, 100, PlayingTechnique::Normal,
-                              NoteSource::ChordVoicing);
+  auto note =
+      factory.create(0, TICK_QUARTER, 40, 100, PlayingTechnique::Normal, NoteSource::ChordVoicing);
 
   ASSERT_TRUE(note.has_value());
   EXPECT_EQ(note->note, 40);
@@ -871,8 +866,8 @@ TEST(FrettedNoteFactoryGuitarTest, BendTechniqueConstraint) {
   FrettedNoteFactory factory(harmony, guitar, 120);
 
   // Create a note with bend technique on high string (should work)
-  auto note = factory.create(0, TICK_QUARTER, 64, 100, PlayingTechnique::Bend,
-                              NoteSource::ChordVoicing);
+  auto note =
+      factory.create(0, TICK_QUARTER, 64, 100, PlayingTechnique::Bend, NoteSource::ChordVoicing);
 
   // Should succeed (E4 is in range and bendable on high E string)
   EXPECT_TRUE(note.has_value());

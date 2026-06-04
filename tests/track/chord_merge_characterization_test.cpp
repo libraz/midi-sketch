@@ -62,15 +62,12 @@ TEST_F(ChordMergeCharacterizationTest, ChordNotesInValidMidiRange) {
       const auto& chord_notes = sketch_.getSong().chord().notes();
 
       for (const auto& note : chord_notes) {
-        EXPECT_LE(note.note, 127)
-            << "Chord pitch > 127 at tick=" << note.start_tick << " seed=" << seed
-            << " bp=" << (int)blueprint;
-        EXPECT_GT(note.velocity, 0)
-            << "Chord velocity is 0 at tick=" << note.start_tick << " seed=" << seed
-            << " bp=" << (int)blueprint;
-        EXPECT_LE(note.velocity, 127)
-            << "Chord velocity > 127 at tick=" << note.start_tick << " seed=" << seed
-            << " bp=" << (int)blueprint;
+        EXPECT_LE(note.note, 127) << "Chord pitch > 127 at tick=" << note.start_tick
+                                  << " seed=" << seed << " bp=" << (int)blueprint;
+        EXPECT_GT(note.velocity, 0) << "Chord velocity is 0 at tick=" << note.start_tick
+                                    << " seed=" << seed << " bp=" << (int)blueprint;
+        EXPECT_LE(note.velocity, 127) << "Chord velocity > 127 at tick=" << note.start_tick
+                                      << " seed=" << seed << " bp=" << (int)blueprint;
       }
     }
   }
@@ -158,9 +155,8 @@ TEST_F(ChordMergeCharacterizationTest, ChordNotesHavePositiveDuration) {
       const auto& chord_notes = sketch_.getSong().chord().notes();
 
       for (const auto& note : chord_notes) {
-        EXPECT_GT(note.duration, 0u)
-            << "Chord note with zero duration at tick=" << note.start_tick << " seed=" << seed
-            << " bp=" << (int)blueprint;
+        EXPECT_GT(note.duration, 0u) << "Chord note with zero duration at tick=" << note.start_tick
+                                     << " seed=" << seed << " bp=" << (int)blueprint;
       }
     }
   }

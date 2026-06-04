@@ -55,28 +55,33 @@ static constexpr HookRhythmPattern kHookRhythmPatterns[] = {
 
     // Pattern 14: 4-mora pattern (8-8-8-4)
     {{1, 1, 1, 2, 0, 0}, 4, TICK_EIGHTH, "mora-4"},
+
+    // Pattern 15: idol chant, four even 8ths
+    {{1, 1, 1, 1, 0, 0}, 4, TICK_EIGHTH, "idol-chant"},
+
+    // Pattern 16: idol pickup, 8th pulse with a light 16th push
+    {{1, 1, 1, 1, 2, 0}, 5, TICK_SIXTEENTH, "idol-pickup"},
+
+    // Pattern 17: idol answer, repeated short call resolving to a quarter
+    {{1, 1, 2, 2, 0, 0}, 4, TICK_EIGHTH, "idol-answer"},
 };
 
 static constexpr size_t kHookRhythmPatternCount =
     sizeof(kHookRhythmPatterns) / sizeof(kHookRhythmPatterns[0]);
 
-const HookRhythmPattern* getHookRhythmPatterns() {
-  return kHookRhythmPatterns;
-}
+const HookRhythmPattern* getHookRhythmPatterns() { return kHookRhythmPatterns; }
 
-size_t getHookRhythmPatternCount() {
-  return kHookRhythmPatternCount;
-}
+size_t getHookRhythmPatternCount() { return kHookRhythmPatternCount; }
 
 size_t selectHookRhythmPatternIndex(const MelodyTemplate& tmpl, std::mt19937& rng) {
   std::vector<size_t> candidates;
 
   if (tmpl.rhythm_driven) {
-    candidates = {0, 2, 5, 6, 7, 8, 9};
+    candidates = {0, 2, 5, 6, 7, 8, 9, 14, 15, 16};
   } else if (tmpl.long_note_ratio > 0.3f) {
     candidates = {3, 1, 4, 10, 12};
   } else if (tmpl.sixteenth_density > 0.3f) {
-    candidates = {2, 5, 6, 7, 9, 13};
+    candidates = {2, 5, 6, 7, 9, 13, 14, 15};
   } else {
     for (size_t i = 0; i < kHookRhythmPatternCount; ++i) {
       candidates.push_back(i);

@@ -36,7 +36,8 @@ struct BarContext {
 /// Handles track mask filtering, tick calculation, and harmonic rhythm lookup.
 /// Generator-specific chord degree computation stays in the on_bar callback.
 ///
-/// @tparam OnSection  void(const Section&, size_t sec_idx, SectionType next_type, const HarmonicRhythmInfo&)
+/// @tparam OnSection  void(const Section&, size_t sec_idx, SectionType next_type, const
+/// HarmonicRhythmInfo&)
 /// @tparam OnBar      void(const BarContext&)
 /// @param sections    Section list from Song::arrangement()
 /// @param mood        Mood for harmonic rhythm calculation
@@ -62,8 +63,9 @@ void forEachSectionBar(const std::vector<Section>& sections, Mood mood, TrackMas
       Tick bar_start = section.start_tick + bar * TICKS_PER_BAR;
       Tick bar_end = std::min(bar_start + TICKS_PER_BAR, section.endTick());
 
-      BarContext ctx{section, sec_idx, bar, bar_start, bar_end, harmonic,
-                     (bar == section.bars - 1), next_section_type};
+      BarContext ctx{
+          section,          sec_idx, bar, bar_start, bar_end, harmonic, (bar == section.bars - 1),
+          next_section_type};
 
       on_bar(ctx);
     }

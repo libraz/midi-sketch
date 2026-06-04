@@ -39,8 +39,7 @@ struct LockedRhythmMelodicState {
 void applyContourToHints(const OnsetContourInfo& ci, PitchSelectionHints& hints);
 
 /// @brief Build PitchSelectionHints from current melodic state and contour info.
-PitchSelectionHints buildPitchHints(const LockedRhythmMelodicState& state,
-                                    Tick hint_duration,
+PitchSelectionHints buildPitchHints(const LockedRhythmMelodicState& state, Tick hint_duration,
                                     const MelodyDesigner::SectionContext& ctx,
                                     const PhrasePlan* phrase_plan, size_t onset_idx,
                                     const std::vector<OnsetContourInfo>& onset_contours);
@@ -49,10 +48,9 @@ PitchSelectionHints buildPitchHints(const LockedRhythmMelodicState& state,
 uint8_t computeOnsetVelocity(float beat, const MelodyDesigner::SectionContext& ctx);
 
 /// @brief Determine if this onset is a phrase-end note using range-based boundary check.
-bool isPhraseEndOnset(size_t onset_idx, size_t next_active,
-                      const std::vector<float>& onsets,
-                      const std::set<float>& boundary_set,
-                      uint8_t section_beats, bool is_last_note);
+bool isPhraseEndOnset(size_t onset_idx, size_t next_active, const std::vector<float>& onsets,
+                      const std::set<float>& boundary_set, uint8_t section_beats,
+                      bool is_last_note);
 
 /// @brief Post-process notes to ensure phrase-end resolution by merging short tail notes.
 /// Scans for phrase boundaries (gap >= TICK_EIGHTH). If the tail (last 2 beats) lacks

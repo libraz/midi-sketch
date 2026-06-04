@@ -130,7 +130,7 @@ class ChordBoundaryPolicyTest : public ::testing::Test {
 TEST_F(ChordBoundaryPolicyTest, NonePolicy_NoClipping) {
   NoteOptions opts;
   opts.start = 960;
-  opts.duration = 1920;  // Crosses bar boundary
+  opts.duration = 1920;     // Crosses bar boundary
   opts.desired_pitch = 65;  // F4 - non-chord tone in V
   opts.velocity = 100;
   opts.role = TrackRole::Arpeggio;
@@ -218,7 +218,7 @@ TEST_F(ChordBoundaryPolicyTest, PassingTone_ShortOverlapNotClipped) {
   // Note barely crosses boundary (< 240 ticks = passing tone threshold)
   NoteOptions opts;
   opts.start = 1800;
-  opts.duration = 240;  // Ends at 2040, overlap = 120 ticks (< 240 threshold)
+  opts.duration = 240;      // Ends at 2040, overlap = 120 ticks (< 240 threshold)
   opts.desired_pitch = 65;  // F4 - non-chord tone in V
   opts.velocity = 100;
   opts.role = TrackRole::Bass;

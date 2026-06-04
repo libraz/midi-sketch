@@ -25,7 +25,7 @@ enum class ArpeggioPattern : uint8_t {
 /// @brief Arpeggio note speed.
 enum class ArpeggioSpeed : uint8_t {
   Eighth,     ///< 8th notes
-  Sixteenth,  ///< 16th notes (default, YOASOBI-style)
+  Sixteenth,  ///< 16th notes (default, AnimeHighEnergy-style)
   Triplet     ///< Triplet feel
 };
 

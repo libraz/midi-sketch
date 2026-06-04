@@ -167,8 +167,8 @@ struct PitchMonotonyTracker {
       for (uint8_t candidate : chord_tones) {
         if ((candidate % 12) == (current % 12)) continue;  // Skip same pitch class
 
-        bool within_leap = (max_leap == 0) ||
-            std::abs(static_cast<int>(candidate) - static_cast<int>(last_pitch)) <= max_leap;
+        bool within_leap = (max_leap == 0) || std::abs(static_cast<int>(candidate) -
+                                                       static_cast<int>(last_pitch)) <= max_leap;
         if (!within_leap) continue;
 
         all_alternatives.push_back(candidate);

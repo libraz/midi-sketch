@@ -34,9 +34,8 @@ namespace melody {
 std::vector<RhythmNote> generatePhraseRhythm(
     const MelodyTemplate& tmpl, uint8_t phrase_beats, float density_modifier,
     float thirtysecond_ratio, std::mt19937& rng,
-    GenerationParadigm paradigm = GenerationParadigm::Traditional,
-    float syncopation_weight = 0.15f, SectionType section_type = SectionType::Intro,
-    uint16_t bpm = 120,
+    GenerationParadigm paradigm = GenerationParadigm::Traditional, float syncopation_weight = 0.15f,
+    SectionType section_type = SectionType::Intro, uint16_t bpm = 120,
     VocalStylePreset vocal_style = VocalStylePreset::Auto);
 
 /// @brief Generate mora-timed rhythm for Japanese lyrics compatibility.
@@ -50,9 +49,8 @@ std::vector<RhythmNote> generatePhraseRhythm(
 /// @param density_modifier Section-specific density modifier
 /// @param rng Random number generator
 /// @return Vector of rhythm positions for the phrase
-std::vector<RhythmNote> generateMoraTimedRhythm(
-    uint8_t phrase_beats, uint8_t target_note_count,
-    float density_modifier, std::mt19937& rng);
+std::vector<RhythmNote> generateMoraTimedRhythm(uint8_t phrase_beats, uint8_t target_note_count,
+                                                float density_modifier, std::mt19937& rng);
 
 /// @brief Resolve the effective MoraRhythmMode from Auto.
 /// Auto maps based on VocalStylePreset:
@@ -73,15 +71,15 @@ MoraRhythmMode resolveMoraMode(MoraRhythmMode mode, VocalStylePreset style);
 /// - Vocal attitude for tension note allowance
 /// - Same pitch streak for consecutive note penalty
 struct LockedRhythmContext {
-  float phrase_position;              ///< Position within phrase (0.0-1.0)
-  int direction_inertia;              ///< Accumulated direction momentum (-3 to +3)
-  const int8_t* motif_intervals;      ///< GlobalMotif interval signature (nullptr if none)
-  size_t motif_interval_count;        ///< Number of intervals in motif
-  size_t note_index;                  ///< Current note index within phrase
-  uint8_t tessitura_center;           ///< Center of comfortable singing range
+  float phrase_position;                      ///< Position within phrase (0.0-1.0)
+  int direction_inertia;                      ///< Accumulated direction momentum (-3 to +3)
+  const int8_t* motif_intervals;              ///< GlobalMotif interval signature (nullptr if none)
+  size_t motif_interval_count;                ///< Number of intervals in motif
+  size_t note_index;                          ///< Current note index within phrase
+  uint8_t tessitura_center;                   ///< Center of comfortable singing range
   SectionType section_type = SectionType::A;  ///< Section type for direction bias thresholds
   VocalAttitude vocal_attitude = VocalAttitude::Clean;  ///< Vocal attitude for tension allowance
-  int same_pitch_streak = 0;          ///< Consecutive same pitch counter (0 = first note)
+  int same_pitch_streak = 0;  ///< Consecutive same pitch counter (0 = first note)
 };
 
 /// @brief Enhanced pitch selection for locked rhythm with melodic quality improvements.
@@ -98,9 +96,9 @@ struct LockedRhythmContext {
 /// @param ctx Context with phrase position, inertia, and motif info
 /// @param rng Random number generator
 /// @return Selected pitch (MIDI note number)
-uint8_t selectPitchForLockedRhythmEnhanced(
-    uint8_t prev_pitch, int8_t chord_degree, uint8_t vocal_low, uint8_t vocal_high,
-    const LockedRhythmContext& ctx, std::mt19937& rng);
+uint8_t selectPitchForLockedRhythmEnhanced(uint8_t prev_pitch, int8_t chord_degree,
+                                           uint8_t vocal_low, uint8_t vocal_high,
+                                           const LockedRhythmContext& ctx, std::mt19937& rng);
 
 }  // namespace melody
 }  // namespace midisketch

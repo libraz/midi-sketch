@@ -185,9 +185,9 @@ std::vector<NoteEvent> placeMotifInBridge(const Motif& motif, Tick section_start
  * @return Vector of note events including octave doubles
  */
 std::vector<NoteEvent> placeMotifInFinalChorus(const Motif& motif, Tick section_start,
-                                                Tick section_end, uint8_t base_pitch,
-                                                uint8_t velocity, const IHarmonyContext& harmony,
-                                                TrackRole track = TrackRole::Motif);
+                                               Tick section_end, uint8_t base_pitch,
+                                               uint8_t velocity, const IHarmonyContext& harmony,
+                                               TrackRole track = TrackRole::Motif);
 
 }  // namespace midisketch
 

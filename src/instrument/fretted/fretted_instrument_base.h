@@ -61,21 +61,22 @@ class FrettedInstrumentBase : public IFrettedInstrument {
   // =========================================================================
 
   Fingering findBestFingering(uint8_t pitch, const FretboardState& state,
-                               PlayingTechnique technique) const override;
+                              PlayingTechnique technique) const override;
 
-  std::vector<Fingering> findBestFingeringSequence(
-      const std::vector<uint8_t>& pitches, const std::vector<Tick>& durations,
-      const FretboardState& initial_state, PlayingTechnique technique) const override;
+  std::vector<Fingering> findBestFingeringSequence(const std::vector<uint8_t>& pitches,
+                                                   const std::vector<Tick>& durations,
+                                                   const FretboardState& initial_state,
+                                                   PlayingTechnique technique) const override;
 
   // =========================================================================
   // IFrettedInstrument Implementation - Playability
   // =========================================================================
 
   PlayabilityCost calculateTransitionCost(const Fingering& from, const Fingering& to,
-                                           Tick time_between, uint16_t bpm) const override;
+                                          Tick time_between, uint16_t bpm) const override;
 
-  bool isTransitionPossible(const Fingering& from, const Fingering& to,
-                             Tick time_between, uint16_t bpm) const override;
+  bool isTransitionPossible(const Fingering& from, const Fingering& to, Tick time_between,
+                            uint16_t bpm) const override;
 
   // =========================================================================
   // IFrettedInstrument Implementation - State
@@ -95,7 +96,7 @@ class FrettedInstrumentBase : public IFrettedInstrument {
   /// @param technique Playing technique
   /// @return Score (lower is better)
   virtual float scorePosition(const FretPosition& pos, const HandPosition& current_hand,
-                               PlayingTechnique technique) const;
+                              PlayingTechnique technique) const;
 
   /// @brief Determine the best finger to use for a position.
   /// @param pos Position to finger
@@ -103,7 +104,7 @@ class FrettedInstrumentBase : public IFrettedInstrument {
   /// @param barre Current barre state
   /// @return Finger number (1-4) or 0 for open string
   virtual uint8_t determineFinger(const FretPosition& pos, const HandPosition& hand,
-                                   const BarreState& barre) const;
+                                  const BarreState& barre) const;
 
   /// @brief Check if a barre would be beneficial for multiple positions.
   /// @param positions Positions to check

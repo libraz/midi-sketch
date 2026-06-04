@@ -56,6 +56,7 @@ describe('MidiSketch JS API', () => {
         expect(getBlueprintName(6)).toBe('IdolKawaii');
         expect(getBlueprintName(7)).toBe('IdolCoolPop');
         expect(getBlueprintName(8)).toBe('IdolEmo');
+        expect(getBlueprintName(9)).toBe('BehavioralLoop');
       });
 
       it('should return "Unknown" for invalid ID', () => {
@@ -74,6 +75,7 @@ describe('MidiSketch JS API', () => {
         expect(getBlueprintParadigm(6)).toBe(GenerationParadigm.MelodyDriven);
         expect(getBlueprintParadigm(7)).toBe(GenerationParadigm.RhythmSync);
         expect(getBlueprintParadigm(8)).toBe(GenerationParadigm.MelodyDriven);
+        expect(getBlueprintParadigm(9)).toBe(GenerationParadigm.Traditional);
       });
     });
 
@@ -88,6 +90,7 @@ describe('MidiSketch JS API', () => {
         expect(getBlueprintRiffPolicy(6)).toBe(RiffPolicy.Locked);
         expect(getBlueprintRiffPolicy(7)).toBe(RiffPolicy.Locked);
         expect(getBlueprintRiffPolicy(8)).toBe(RiffPolicy.Locked);
+        expect(getBlueprintRiffPolicy(9)).toBe(RiffPolicy.LockedPitch);
       });
     });
 
@@ -102,6 +105,7 @@ describe('MidiSketch JS API', () => {
         expect(getBlueprintWeight(6)).toBe(5); // IdolKawaii: 5%
         expect(getBlueprintWeight(7)).toBe(5); // IdolCoolPop: 5%
         expect(getBlueprintWeight(8)).toBe(4); // IdolEmo: 4%
+        expect(getBlueprintWeight(9)).toBe(0); // BehavioralLoop: explicit selection only
       });
 
       it('weights should sum to 100', () => {
@@ -135,6 +139,14 @@ describe('MidiSketch JS API', () => {
           riffPolicy: RiffPolicy.Locked,
           weight: 14,
         });
+
+        expect(blueprints[9]).toEqual({
+          id: 9,
+          name: 'BehavioralLoop',
+          paradigm: GenerationParadigm.Traditional,
+          riffPolicy: RiffPolicy.LockedPitch,
+          weight: 0,
+        });
       });
     });
 
@@ -152,7 +164,7 @@ describe('MidiSketch JS API', () => {
         try {
           const config = createDefaultConfig(0);
           config.seed = 12345;
-          config.blueprintId = 1; // Orangestar
+          config.blueprintId = 1; // RhythmSync
           sketch.generateFromConfig(config);
 
           const resolvedId = sketch.getResolvedBlueprintId();

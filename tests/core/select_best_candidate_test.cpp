@@ -20,10 +20,9 @@ using namespace midisketch;
 namespace {
 
 // Helper to build a PitchCandidate quickly.
-PitchCandidate makeCandidate(uint8_t pitch, bool chord_tone = false,
-                              bool root_fifth = false, bool scale_tone = true,
-                              int8_t interval_from_desired = 0,
-                              CollisionAvoidStrategy strategy = CollisionAvoidStrategy::None) {
+PitchCandidate makeCandidate(uint8_t pitch, bool chord_tone = false, bool root_fifth = false,
+                             bool scale_tone = true, int8_t interval_from_desired = 0,
+                             CollisionAvoidStrategy strategy = CollisionAvoidStrategy::None) {
   PitchCandidate c;
   c.pitch = pitch;
   c.is_chord_tone = chord_tone;
@@ -59,8 +58,8 @@ TEST(SelectBestCandidateTest, ShortNote_PrefersStepOverLeap) {
   // Short notes (< 240 ticks) prefer small intervals.
   // Candidate A: step (2 semitones up) => high score
   // Candidate B: leap (7 semitones up) => lower score
-  auto step = makeCandidate(62, true, false, true, 0);     // D4 (step from C4=60)
-  auto leap = makeCandidate(67, true, false, true, 0);     // G4 (5th from C4)
+  auto step = makeCandidate(62, true, false, true, 0);  // D4 (step from C4=60)
+  auto leap = makeCandidate(67, true, false, true, 0);  // G4 (5th from C4)
   std::vector<PitchCandidate> cands = {step, leap};
 
   PitchSelectionHints hints;
@@ -76,8 +75,8 @@ TEST(SelectBestCandidateTest, LongNote_PrefersModerateLeapOverSamePitch) {
   // Long notes (>= 480 ticks) discourage same-pitch stagnation.
   // Without root/fifth bonus, leap's melodic advantage (30 vs 15) outweighs.
   // same(not root): 15+20+8+0=43, third: 30+20+8-12=46
-  auto same = makeCandidate(60, true, false, true, 0);     // C4, chord tone but NOT root/5th
-  auto third = makeCandidate(64, true, false, true, 4);    // E4 (major 3rd)
+  auto same = makeCandidate(60, true, false, true, 0);   // C4, chord tone but NOT root/5th
+  auto third = makeCandidate(64, true, false, true, 4);  // E4 (major 3rd)
   std::vector<PitchCandidate> cands = {same, third};
 
   PitchSelectionHints hints;
@@ -131,7 +130,7 @@ TEST(SelectBestCandidateTest, MediumNote_PrefersStepOverLeap) {
 
 TEST(SelectBestCandidateTest, ChordTonePreferredOverNonChordTone) {
   // Both at same interval from prev, but one is chord tone (+20) and other isn't.
-  auto chord = makeCandidate(64, true, false, true, 0);     // E4, chord tone
+  auto chord = makeCandidate(64, true, false, true, 0);        // E4, chord tone
   auto non_chord = makeCandidate(66, false, false, false, 0);  // F#4, non-chord non-scale
   std::vector<PitchCandidate> cands = {chord, non_chord};
 
@@ -147,12 +146,12 @@ TEST(SelectBestCandidateTest, ChordTonePreferredOverNonChordTone) {
 TEST(SelectBestCandidateTest, RootFifthBonusOverOtherChordTone) {
   // Both chord tones, but root/5th gets +5 extra.
   // Make them equidistant from prev_pitch to isolate harmonic scoring.
-  auto root = makeCandidate(60, true, true, true, 0);   // C4 = root
-  auto third = makeCandidate(64, true, false, true, 0); // E4 = 3rd
+  auto root = makeCandidate(60, true, true, true, 0);    // C4 = root
+  auto third = makeCandidate(64, true, false, true, 0);  // E4 = 3rd
   std::vector<PitchCandidate> cands = {root, third};
 
   PitchSelectionHints hints;
-  hints.prev_pitch = 62;   // D4
+  hints.prev_pitch = 62;  // D4
   hints.note_duration = 360;
   hints.tessitura_center = 62;
 
@@ -235,8 +234,8 @@ TEST(SelectBestCandidateTest, PitchCloserToTessituraCenterPreferred) {
 
 TEST(SelectBestCandidateTest, CloserToDesiredPitchPreferred) {
   // Both are chord tones, similar interval from prev. One is closer to desired.
-  auto close = makeCandidate(64, true, false, true, 0);   // interval_from_desired = 0
-  auto far = makeCandidate(67, true, false, true, 3);     // interval_from_desired = 3 => -9 penalty
+  auto close = makeCandidate(64, true, false, true, 0);  // interval_from_desired = 0
+  auto far = makeCandidate(67, true, false, true, 3);    // interval_from_desired = 3 => -9 penalty
   std::vector<PitchCandidate> cands = {close, far};
 
   PitchSelectionHints hints;
@@ -254,8 +253,8 @@ TEST(SelectBestCandidateTest, CloserToDesiredPitchPreferred) {
 
 TEST(SelectBestCandidateTest, PhraseStartPrefersRootFifth) {
   // At phrase start (< 0.15), root/5th gets +5 bonus.
-  auto root = makeCandidate(60, true, true, true, 0);     // C4 = root
-  auto third = makeCandidate(64, true, false, true, 4);   // E4 = 3rd
+  auto root = makeCandidate(60, true, true, true, 0);    // C4 = root
+  auto third = makeCandidate(64, true, false, true, 4);  // E4 = 3rd
   std::vector<PitchCandidate> cands = {root, third};
 
   PitchSelectionHints hints;
@@ -346,8 +345,8 @@ TEST(SelectBestCandidateTest, DurationBoundary_240IsMedium) {
 TEST(SelectBestCandidateTest, DurationBoundary_480IsLong) {
   // At 480 ticks, Long mode. Same-pitch gets 15 (stagnation penalty).
   // Moderate interval (3-4) gets 30. Without root bonus, leap wins.
-  auto same = makeCandidate(60, true, false, true, 0);     // NOT root/fifth
-  auto third = makeCandidate(64, true, false, true, 4);    // E4
+  auto same = makeCandidate(60, true, false, true, 0);   // NOT root/fifth
+  auto third = makeCandidate(64, true, false, true, 4);  // E4
   std::vector<PitchCandidate> cands = {same, third};
 
   PitchSelectionHints hints;
@@ -389,8 +388,8 @@ TEST(SelectBestCandidateTest, ZeroDuration_DefaultsToMedium) {
 TEST(SelectBestCandidateTest, BridgeSectionRelaxesHarmonicConstraint) {
   // Bridge (section_type=4) has harmonic weight 0.7x.
   // A scale tone should score closer to a chord tone in Bridge than in Verse.
-  auto chord = makeCandidate(64, true, false, true, 0);     // E4, chord tone
-  auto scale = makeCandidate(62, false, false, true, 0);     // D4, scale tone only
+  auto chord = makeCandidate(64, true, false, true, 0);   // E4, chord tone
+  auto scale = makeCandidate(62, false, false, true, 0);  // D4, scale tone only
 
   PitchSelectionHints hints_verse;
   hints_verse.prev_pitch = 60;
@@ -419,7 +418,7 @@ TEST(SelectBestCandidateTest, BridgeSectionRelaxesHarmonicConstraint) {
 TEST(SelectBestCandidateTest, ChorusSectionBoostsHarmonicStability) {
   // Chorus (section_type=3) has harmonic weight 1.2x.
   // Chord tone advantage should be amplified.
-  auto chord = makeCandidate(64, true, true, true, 2);   // E4, root/fifth, further from desired
+  auto chord = makeCandidate(64, true, true, true, 2);  // E4, root/fifth, further from desired
   auto non_chord = makeCandidate(63, false, false, true, 1);  // Eb4, scale tone, closer to desired
 
   PitchSelectionHints hints;
@@ -443,7 +442,7 @@ TEST(SelectBestCandidateTest, PreChorusBoostsContourWeight) {
   hints.note_duration = 360;
   hints.tessitura_center = 62;
   hints.contour_direction = 1;  // Ascending
-  hints.section_type = 2;  // B (Pre-chorus)
+  hints.section_type = 2;       // B (Pre-chorus)
 
   uint8_t chosen = selectBestCandidate({up, down}, 62, hints);
   EXPECT_EQ(chosen, 65);  // Ascending strongly preferred in pre-chorus
@@ -470,7 +469,7 @@ TEST(SelectBestCandidateTest, UnknownSectionTypeUsesDefaults) {
 
 TEST(SelectBestCandidateTest, SubPhrase1MidPointAnchorsChordTone) {
   // Sub-phrase 1 (development) at mid-phrase (0.45-0.55) adds +3 for chord tones.
-  auto chord = makeCandidate(64, true, false, true, 2);   // Chord tone, further from desired
+  auto chord = makeCandidate(64, true, false, true, 2);       // Chord tone, further from desired
   auto non_chord = makeCandidate(63, false, false, true, 1);  // Non-chord, closer to desired
 
   PitchSelectionHints hints;

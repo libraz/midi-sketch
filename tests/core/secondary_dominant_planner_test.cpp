@@ -21,7 +21,7 @@ namespace {
 TEST(SecondaryDominantPlannerTest, HarmonyTimelineReflectsSecondaryDominants) {
   GeneratorParams params;
   params.structure = StructurePattern::FullPop;
-  params.mood = Mood::Yoasobi;
+  params.mood = Mood::AnimeHighEnergy;
   params.chord_id = 0;
   params.key = Key::C;
   params.drums_enabled = true;
@@ -57,8 +57,7 @@ TEST(SecondaryDominantPlannerTest, HarmonyTimelineReflectsSecondaryDominants) {
 
   // With FullPop structure and standard chord progression,
   // we should get at least one secondary dominant
-  EXPECT_GT(sec_dom_count, 0)
-      << "Planner should register at least one secondary dominant";
+  EXPECT_GT(sec_dom_count, 0) << "Planner should register at least one secondary dominant";
 }
 
 // Verify that Motif notes generated in RhythmSync mode have zero avoid notes
@@ -66,7 +65,7 @@ TEST(SecondaryDominantPlannerTest, HarmonyTimelineReflectsSecondaryDominants) {
 TEST(SecondaryDominantPlannerTest, MotifHasNoAvoidNotesAtSecondaryDominants) {
   GeneratorParams params;
   params.structure = StructurePattern::FullPop;
-  params.mood = Mood::Yoasobi;
+  params.mood = Mood::AnimeHighEnergy;
   params.chord_id = 0;
   params.key = Key::C;
   params.drums_enabled = true;
@@ -108,7 +107,7 @@ TEST(SecondaryDominantPlannerTest, MotifHasNoAvoidNotesAtSecondaryDominants) {
 TEST(SecondaryDominantPlannerTest, Dom7ChordTonesAtSecondaryDominant) {
   GeneratorParams params;
   params.structure = StructurePattern::FullPop;
-  params.mood = Mood::Yoasobi;
+  params.mood = Mood::AnimeHighEnergy;
   params.chord_id = 0;
   params.key = Key::C;
   params.drums_enabled = true;
@@ -155,9 +154,9 @@ TEST(SecondaryDominantPlannerTest, Dom7ChordTonesAtSecondaryDominant) {
   int root_pc = SCALE[normalized];  // Key=C so current_key=0
   std::vector<int> expected_dom7 = {
       root_pc,
-      (root_pc + 4) % 12,   // major 3rd
-      (root_pc + 7) % 12,   // perfect 5th
-      (root_pc + 10) % 12   // minor 7th
+      (root_pc + 4) % 12,  // major 3rd
+      (root_pc + 7) % 12,  // perfect 5th
+      (root_pc + 10) % 12  // minor 7th
   };
 
   // Get the normal diatonic chord tones for comparison
@@ -179,9 +178,8 @@ TEST(SecondaryDominantPlannerTest, Dom7ChordTonesAtSecondaryDominant) {
     std::sort(sorted_diatonic.begin(), sorted_diatonic.end());
     differs = (sorted_dom7 != sorted_diatonic);
   }
-  EXPECT_TRUE(differs)
-      << "Dom7 chord tones should differ from diatonic triad at degree "
-      << static_cast<int>(degree);
+  EXPECT_TRUE(differs) << "Dom7 chord tones should differ from diatonic triad at degree "
+                       << static_cast<int>(degree);
 
   // Verify Dom7 interval structure: M3 (4 semitones), m3 (3 semitones),
   // m3 (3 semitones) stacked from root

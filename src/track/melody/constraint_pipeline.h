@@ -120,8 +120,8 @@ int findChordToneInDirection(int current_pitch, int8_t chord_degree, int directi
  * @return Final constrained duration
  */
 Tick applyAllDurationConstraints(Tick note_start, Tick note_duration,
-                                  const IHarmonyContext& harmony, Tick phrase_end,
-                                  const GateContext& ctx, uint8_t pitch = 0);
+                                 const IHarmonyContext& harmony, Tick phrase_end,
+                                 const GateContext& ctx, uint8_t pitch = 0);
 
 }  // namespace melody
 }  // namespace midisketch

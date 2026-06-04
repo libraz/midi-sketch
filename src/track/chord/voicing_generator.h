@@ -30,10 +30,10 @@ enum class VoicingType {
 
 /// A voiced chord with absolute MIDI pitches (e.g., C3-E3-G3 for close C major).
 struct VoicedChord {
-  std::array<uint8_t, 5> pitches{};                        ///< MIDI pitches (up to 5 for 9th chords)
-  uint8_t count = 0;                                       ///< Number of notes in this voicing
-  VoicingType type = VoicingType::Close;                   ///< Voicing style used
-  OpenVoicingType open_subtype = OpenVoicingType::Drop2;   ///< Open voicing variant
+  std::array<uint8_t, 5> pitches{};                       ///< MIDI pitches (up to 5 for 9th chords)
+  uint8_t count = 0;                                      ///< Number of notes in this voicing
+  VoicingType type = VoicingType::Close;                  ///< Voicing style used
+  OpenVoicingType open_subtype = OpenVoicingType::Drop2;  ///< Open voicing variant
 };
 
 /// Check if two voiced chords have identical pitches (count and pitch values).
@@ -106,7 +106,7 @@ std::vector<VoicedChord> generateSpreadVoicings(uint8_t root, const Chord& chord
 /// @param bass_pitch_mask Bitmask of bass pitch classes, or 0 if unknown
 /// @return Vector of possible rootless voicings
 std::vector<VoicedChord> generateRootlessVoicings(uint8_t root, const Chord& chord,
-                                                   uint16_t bass_pitch_mask = 0);
+                                                  uint16_t bass_pitch_mask = 0);
 
 /// Generate all possible voicings for a chord.
 /// @param root Root note (MIDI pitch)
@@ -116,8 +116,7 @@ std::vector<VoicedChord> generateRootlessVoicings(uint8_t root, const Chord& cho
 /// @param open_subtype Which open voicing variant to prefer
 /// @return Vector of all possible voicings
 std::vector<VoicedChord> generateVoicings(uint8_t root, const Chord& chord,
-                                          VoicingType preferred_type,
-                                          uint16_t bass_pitch_mask = 0,
+                                          VoicingType preferred_type, uint16_t bass_pitch_mask = 0,
                                           OpenVoicingType open_subtype = OpenVoicingType::Drop2);
 
 /// @}

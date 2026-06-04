@@ -13,9 +13,8 @@
 #include <random>
 #include <vector>
 
-#include "core/rng_util.h"
-
 #include "core/mood_utils.h"
+#include "core/rng_util.h"
 #include "core/section_properties.h"
 #include "core/section_types.h"
 #include "core/types.h"
@@ -88,24 +87,20 @@ inline ChordRhythm selectRhythm(SectionType section, Mood mood, BackingDensity b
   if (paradigm == GenerationParadigm::RhythmSync) {
     float roll = rng_util::rollFloat(rng, 0.0f, 1.0f);
 
-    // RhythmSync: prefer longer notes (Half/Whole). Collisions with Motif are
-    // handled reactively via duration shortening in createNoteWithResult().
+    // RhythmSync: keep chords rhythmically active so the harmony bed matches
+    // the 16th-driven coordinate axis instead of sitting under it as pads.
     if (isHighEnergySection(section)) {
-      // High-energy sections: 60% Half, 30% Quarter, 10% Eighth
-      if (roll < 0.60f) return ChordRhythm::Half;
-      if (roll < 0.90f) return ChordRhythm::Quarter;
-      return ChordRhythm::Eighth;
+      // High-energy sections: 70% Eighth, 30% Quarter
+      if (roll < 0.70f) return ChordRhythm::Eighth;
+      return ChordRhythm::Quarter;
     } else if (isInstrumentalBreak(section) || section == SectionType::Outro) {
-      // Transition sections: 50% Whole, 40% Half, 10% Quarter
-      if (roll < 0.50f) return ChordRhythm::Whole;
-      if (roll < 0.90f) return ChordRhythm::Half;
+      // Transition sections: keep some motion but leave more space
+      if (roll < 0.70f) return ChordRhythm::Eighth;
       return ChordRhythm::Quarter;
     } else {
-      // A/Bridge sections: 40% Whole, 40% Half, 15% Quarter, 5% Eighth
-      if (roll < 0.40f) return ChordRhythm::Whole;
-      if (roll < 0.80f) return ChordRhythm::Half;
-      if (roll < 0.95f) return ChordRhythm::Quarter;
-      return ChordRhythm::Eighth;
+      // A/Bridge sections: quarter pulse with frequent eighth-note push
+      if (roll < 0.80f) return ChordRhythm::Eighth;
+      return ChordRhythm::Quarter;
     }
   }
 

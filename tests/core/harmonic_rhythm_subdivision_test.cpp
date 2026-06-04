@@ -3,10 +3,9 @@
  * @brief Tests for harmonic rhythm subdivision (half-bar chord changes in B sections).
  */
 
-#include "core/harmonic_rhythm.h"
-
 #include <gtest/gtest.h>
 
+#include "core/harmonic_rhythm.h"
 #include "core/types.h"
 
 namespace midisketch {
@@ -69,8 +68,8 @@ TEST(HarmonicRhythmSubdivisionTest, MixBreakHasSubdivisionOne) {
 
 TEST(HarmonicRhythmSubdivisionTest, ExplicitHalfBarSetsSubdivisionTwo) {
   Section section{};
-  section.type = SectionType::A;  // A normally has subdivision=1
-  section.harmonic_rhythm = 0.5f; // Explicit half-bar
+  section.type = SectionType::A;   // A normally has subdivision=1
+  section.harmonic_rhythm = 0.5f;  // Explicit half-bar
 
   auto info = HarmonicRhythmInfo::forSection(section, Mood::StraightPop);
   EXPECT_EQ(info.subdivision, 2);
@@ -78,8 +77,8 @@ TEST(HarmonicRhythmSubdivisionTest, ExplicitHalfBarSetsSubdivisionTwo) {
 
 TEST(HarmonicRhythmSubdivisionTest, ExplicitOneBarKeepsSubdivisionOne) {
   Section section{};
-  section.type = SectionType::B;  // B normally has subdivision=2
-  section.harmonic_rhythm = 1.0f; // Explicit one bar
+  section.type = SectionType::B;   // B normally has subdivision=2
+  section.harmonic_rhythm = 1.0f;  // Explicit one bar
 
   auto info = HarmonicRhythmInfo::forSection(section, Mood::StraightPop);
   EXPECT_EQ(info.subdivision, 1);
@@ -88,7 +87,7 @@ TEST(HarmonicRhythmSubdivisionTest, ExplicitOneBarKeepsSubdivisionOne) {
 TEST(HarmonicRhythmSubdivisionTest, ExplicitTwoBarKeepsSubdivisionOne) {
   Section section{};
   section.type = SectionType::B;
-  section.harmonic_rhythm = 2.0f; // Explicit slow
+  section.harmonic_rhythm = 2.0f;  // Explicit slow
 
   auto info = HarmonicRhythmInfo::forSection(section, Mood::StraightPop);
   EXPECT_EQ(info.subdivision, 1);

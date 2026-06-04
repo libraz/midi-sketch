@@ -87,7 +87,8 @@ std::vector<NoteEvent> createChorusVocalMelody(Tick start, Tick end) {
   Tick current = start;
   size_t idx = 0;
   while (current < end) {
-    melody.push_back(NoteEventTestHelper::create(current, TICK_QUARTER, pitches[idx % pitches.size()], 100));
+    melody.push_back(
+        NoteEventTestHelper::create(current, TICK_QUARTER, pitches[idx % pitches.size()], 100));
     current += TICK_QUARTER;
     idx++;
   }
@@ -278,7 +279,8 @@ TEST(AuxTest, PhraseTailWithMainMelody) {
 
   std::vector<NoteEvent> main_melody;
   main_melody.push_back(NoteEventTestHelper::create(0, TICKS_PER_BEAT * 2, 64, 100));
-  main_melody.push_back(NoteEventTestHelper::create(TICKS_PER_BAR * 2, TICKS_PER_BEAT * 2, 67, 100));
+  main_melody.push_back(
+      NoteEventTestHelper::create(TICKS_PER_BAR * 2, TICKS_PER_BEAT * 2, 67, 100));
   ctx.main_melody = &main_melody;
 
   AuxConfig config;
@@ -676,8 +678,8 @@ TEST(AuxTest, MotifCounterUsesSeparateRegister) {
   std::vector<NoteEvent> high_melody;
   Tick current = 0;
   for (int idx = 0; idx < 16; ++idx) {
-    NoteEvent note = NoteEventTestHelper::create(
-        current, TICKS_PER_BEAT / 2, static_cast<uint8_t>(72 + (idx % 8)), 100);
+    NoteEvent note = NoteEventTestHelper::create(current, TICKS_PER_BEAT / 2,
+                                                 static_cast<uint8_t>(72 + (idx % 8)), 100);
     high_melody.push_back(note);
     current += TICKS_PER_BEAT;
   }
@@ -712,9 +714,8 @@ TEST(AuxTest, MotifCounterRhythmicComplementation) {
   std::vector<NoteEvent> sparse_melody;
   Tick current = 0;
   for (int idx = 0; idx < 4; ++idx) {
-    NoteEvent note = NoteEventTestHelper::create(
-        current, TICKS_PER_BAR - TICK_SIXTEENTH,
-        static_cast<uint8_t>(64 + idx), 100);
+    NoteEvent note = NoteEventTestHelper::create(current, TICKS_PER_BAR - TICK_SIXTEENTH,
+                                                 static_cast<uint8_t>(64 + idx), 100);
     sparse_melody.push_back(note);
     current += TICKS_PER_BAR;
   }
@@ -742,8 +743,7 @@ TEST(AuxTest, MotifCounterRhythmicComplementation) {
       total_duration += note.duration;
     }
     Tick avg_duration = total_duration / notes.size();
-    EXPECT_LE(avg_duration, TICK_HALF)
-        << "Counter should use shorter notes for sparse vocal";
+    EXPECT_LE(avg_duration, TICK_HALF) << "Counter should use shorter notes for sparse vocal";
   }
 }
 
@@ -842,7 +842,8 @@ TEST(AuxIntegrationTest, ChorusHasUnisonAux) {
     auto first_aux = aux[0];
     bool found_nearby_vocal = false;
     for (const auto& vocal_note : vocal) {
-      if (std::abs(static_cast<int>(first_aux.start_tick) - static_cast<int>(vocal_note.start_tick)) < 480) {
+      if (std::abs(static_cast<int>(first_aux.start_tick) -
+                   static_cast<int>(vocal_note.start_tick)) < 480) {
         found_nearby_vocal = true;
         break;
       }

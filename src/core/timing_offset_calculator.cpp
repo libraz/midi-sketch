@@ -79,8 +79,8 @@ int TimingOffsetCalculator::getDrumTimingOffset(uint8_t note_number, Tick tick) 
 
   if (note_number == kBassNote) {
     // Kick: tight on downbeats (beats 0,2), slightly ahead on others
-    base_offset = (beat_in_bar == 0 || beat_in_bar == 2) ? profile_.kick_downbeat
-                                                          : profile_.kick_other;
+    base_offset =
+        (beat_in_bar == 0 || beat_in_bar == 2) ? profile_.kick_downbeat : profile_.kick_other;
     if (is_offbeat) base_offset += profile_.kick_offbeat_push;
   } else if (note_number == kSnareNote) {
     // Snare: maximum layback on beat 4 for tension before downbeat
@@ -98,8 +98,8 @@ int TimingOffsetCalculator::getDrumTimingOffset(uint8_t note_number, Tick tick) 
     // Hi-hat: push ahead for driving feel, stronger on backbeats
     if (is_offbeat) {
       // Stronger push on offbeats (beat 2 and 4 offbeats)
-      base_offset = (beat_in_bar == 1 || beat_in_bar == 3) ? profile_.hh_backbeat_off
-                                                            : profile_.hh_offbeat;
+      base_offset =
+          (beat_in_bar == 1 || beat_in_bar == 3) ? profile_.hh_backbeat_off : profile_.hh_offbeat;
     } else {
       base_offset = profile_.hh_downbeat;
     }
@@ -146,7 +146,7 @@ int TimingOffsetCalculator::getRhythmSyncBeatOffset(Tick tick) const {
   // Beat-strength-aware micro-timing for RhythmSync paradigm.
   // Stronger beats anchor tighter, weaker beats add groove feel.
   // Values are max shifts at humanize_timing=1.0; actual scaling applied in caller.
-  // Negative bias (-60%/+40%) for Orangestar's forward-leaning feel.
+  // Negative bias (-60%/+40%) for RhythmSync's forward-leaning feel.
   Tick pos_in_bar = positionInBar(tick);
   Tick beat_pos = pos_in_bar % TICKS_PER_BEAT;
   int beat_idx = static_cast<int>(beatInBar(tick));
@@ -155,18 +155,18 @@ int TimingOffsetCalculator::getRhythmSyncBeatOffset(Tick tick) const {
   if (beat_pos == 0) {
     // On-beat positions
     if (beat_idx == 0 || beat_idx == 2) {
-      max_shift = 8;    // Strong beats: tight anchor
+      max_shift = 8;  // Strong beats: tight anchor
     } else {
-      max_shift = 15;   // Weak beats: moderate groove
+      max_shift = 15;  // Weak beats: moderate groove
     }
   } else if (beat_pos == TICKS_PER_BEAT / 2) {
     // Offbeat (8th note) positions
-    max_shift = 20;     // Maximum groove feel
+    max_shift = 20;  // Maximum groove feel
   } else if (beat_pos == TICKS_PER_BEAT / 4 || beat_pos == 3 * TICKS_PER_BEAT / 4) {
     // 16th note positions
-    max_shift = 10;     // Tight for clarity
+    max_shift = 10;  // Tight for clarity
   } else {
-    max_shift = 12;     // Other positions: moderate
+    max_shift = 12;  // Other positions: moderate
   }
 
   // Apply forward-lean bias: -60% / +40% (negative = ahead of grid)
@@ -178,9 +178,9 @@ int TimingOffsetCalculator::getRhythmSyncBeatOffset(Tick tick) const {
 }
 
 int TimingOffsetCalculator::getVocalTimingOffset(const NoteEvent& note, size_t note_idx,
-                                                  const std::vector<NoteEvent>& vocal_notes,
-                                                  const std::vector<Section>& sections,
-                                                  uint8_t tessitura_center) const {
+                                                 const std::vector<NoteEvent>& vocal_notes,
+                                                 const std::vector<Section>& sections,
+                                                 uint8_t tessitura_center) const {
   // Base phrase position timing
   PhrasePosition pos = getPhrasePosition(note.start_tick, sections);
   int offset = getBaseVocalTimingOffset(pos, timing_mult_);
@@ -195,8 +195,8 @@ int TimingOffsetCalculator::getVocalTimingOffset(const NoteEvent& note, size_t n
 
   // Leap landing delay: large intervals require stabilization
   if (note_idx > 0) {
-    int interval = std::abs(static_cast<int>(note.note) -
-                            static_cast<int>(vocal_notes[note_idx - 1].note));
+    int interval =
+        std::abs(static_cast<int>(note.note) - static_cast<int>(vocal_notes[note_idx - 1].note));
     int leap_delay =
         static_cast<int>(DriveMapping::getLeapLandingDelay(interval) * physics_.timing_scale);
     offset += leap_delay;
@@ -224,7 +224,7 @@ int TimingOffsetCalculator::getVocalTimingOffset(const NoteEvent& note, size_t n
 }
 
 void TimingOffsetCalculator::applyVocalOffsets(MidiTrack& vocal_track,
-                                                const std::vector<Section>& sections) const {
+                                               const std::vector<Section>& sections) const {
   if (vocal_track.empty() || sections.empty()) {
     // Fallback: apply uniform offset (also scaled by humanize_timing)
     int vocal_offset = static_cast<int>(4 * timing_mult_ * humanize_timing_);
@@ -276,7 +276,7 @@ void TimingOffsetCalculator::applyUniformOffset(MidiTrack& track, int offset) {
 }
 
 PhrasePosition TimingOffsetCalculator::getPhrasePosition(Tick tick,
-                                                          const std::vector<Section>& sections) {
+                                                         const std::vector<Section>& sections) {
   for (const auto& section : sections) {
     Tick section_end = section.endTick();
     if (tick >= section.start_tick && tick < section_end) {
@@ -329,7 +329,7 @@ uint8_t TimingOffsetCalculator::calculateTessituraCenter(const std::vector<NoteE
 }
 
 bool TimingOffsetCalculator::isPostBreath(size_t note_idx,
-                                           const std::vector<NoteEvent>& vocal_notes) const {
+                                          const std::vector<NoteEvent>& vocal_notes) const {
   // Only applies if vocal style requires breath
   if (!physics_.requires_breath) {
     return false;

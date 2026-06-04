@@ -669,9 +669,9 @@ TEST_F(HarmonyIntegrationTest, BassSyncWithDominantPreparation) {
       // or consonant interval (0, 2, 3, 4, 5, 7, 8, 9, 10 semitones)
       // Note: 2 (major 2nd/9th) and 10 (minor 7th) are acceptable in pop 7th/9th chords
       int interval = (bass_pc - chord_root_pc + 12) % 12;
-      bool is_consonant = (interval == 0 || interval == 2 || interval == 3 || interval == 4 ||
-                           interval == 5 || interval == 7 || interval == 8 || interval == 9 ||
-                           interval == 10);
+      bool is_consonant =
+          (interval == 0 || interval == 2 || interval == 3 || interval == 4 || interval == 5 ||
+           interval == 7 || interval == 8 || interval == 9 || interval == 10);
       EXPECT_TRUE(is_consonant) << "Bass and chord should be consonant at pre-chorus dominant. "
                                 << "Bass pitch class: " << bass_pc
                                 << ", Chord root pitch class: " << chord_root_pc
@@ -950,8 +950,8 @@ TEST_F(HarmonyIntegrationTest, ChorusHookRepetitionAvoidsClashes) {
     }
 
     EXPECT_LE(clash_count, kMaxClashesPerSeed)
-        << "Too many major 7th clashes in chorus for seed=" << params_.seed
-        << " (found " << clash_count << ", limit " << kMaxClashesPerSeed << ")";
+        << "Too many major 7th clashes in chorus for seed=" << params_.seed << " (found "
+        << clash_count << ", limit " << kMaxClashesPerSeed << ")";
   }
 }
 
@@ -1006,7 +1006,8 @@ TEST_F(HarmonyIntegrationTest, TritoneDetectedAsDissonant) {
   }
 
   // Should have very few or no tritone clashes
-  // Allow up to 10 (originally 5, but syncopation and secondary dominant changes can introduce variation)
+  // Allow up to 10 (originally 5, but syncopation and secondary dominant changes can introduce
+  // variation)
   EXPECT_LE(tritone_count, 10) << "Tritone clashes between vocal and chord/bass should be minimal: "
                                << tritone_count;
 }
@@ -1472,9 +1473,9 @@ TEST_F(HarmonyIntegrationTest, BassBeforeChordFixesMajor7thClash) {
   // The issue was Chord(E4=64) vs Bass(F3=53), creating major 7th intervals.
   // Root cause: Chord generated before Bass, so buildBassPitchMask() returned 0.
   params_.seed = 383565489;
-  params_.mood = static_cast<Mood>(14);        // style 14
-  params_.blueprint_id = 1;                    // RhythmLock blueprint
-  params_.chord_id = 2;                        // Chord progression 2
+  params_.mood = static_cast<Mood>(14);  // style 14
+  params_.blueprint_id = 1;              // RhythmLock blueprint
+  params_.chord_id = 2;                  // Chord progression 2
   params_.structure = StructurePattern::StandardPop;
   params_.drums_enabled = true;
 
@@ -1499,7 +1500,8 @@ TEST_F(HarmonyIntegrationTest, BassBeforeChordFixesMajor7thClash) {
 
       if (overlap) {
         // Check for major 7th (11 semitones) interval
-        int interval = std::abs(static_cast<int>(chord_note.note) - static_cast<int>(bass_note.note));
+        int interval =
+            std::abs(static_cast<int>(chord_note.note) - static_cast<int>(bass_note.note));
         if (interval == 11 || interval == 1 || interval == 13) {  // M7, m2, m9
           major_7th_clashes++;
         }
@@ -1545,7 +1547,8 @@ TEST_F(HarmonyIntegrationTest, BassBeforeChordWorksAcrossMultipleSeeds) {
 
         if (overlap) {
           total_note_pairs++;
-          int interval = std::abs(static_cast<int>(chord_note.note) - static_cast<int>(bass_note.note));
+          int interval =
+              std::abs(static_cast<int>(chord_note.note) - static_cast<int>(bass_note.note));
           if (interval == 11 || interval == 1 || interval == 13) {
             total_clashes++;
           }

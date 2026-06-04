@@ -11,11 +11,11 @@
 #include <vector>
 
 #include "core/chord.h"
-#include "core/rng_util.h"
 #include "core/harmonic_rhythm.h"
 #include "core/i_harmony_context.h"
 #include "core/note_creator.h"
 #include "core/production_blueprint.h"
+#include "core/rng_util.h"
 #include "core/section_iteration_helper.h"
 #include "core/song.h"
 #include "core/swing_quantize.h"
@@ -40,13 +40,22 @@ ArpeggioStyle getArpeggioStyleForMood(Mood mood) {
       break;
 
     case Mood::IdolPop:
-    case Mood::Yoasobi:
-      // IdolPop/YOASOBI: Fast 16ths, slightly higher for sparkle
+      // IdolPop: Fast 16ths, slightly higher for sparkle
       style.speed = ArpeggioSpeed::Sixteenth;
       style.octave_offset = 0;    // Stay at C5
       style.swing_amount = 0.2f;  // Slight swing
       style.gm_program = 81;      // Saw Lead
       style.gate = 0.7f;
+      style.pattern = ArpeggioPattern::BrokenChord;
+      break;
+
+    case Mood::AnimeHighEnergy:
+      // AnimeHighEnergy reference: straight 16th-grid piano motion with long gates.
+      style.speed = ArpeggioSpeed::Sixteenth;
+      style.octave_offset = 0;
+      style.swing_amount = 0.0f;
+      style.gm_program = 0;  // Acoustic Grand Piano
+      style.gate = 0.98f;
       style.pattern = ArpeggioPattern::BrokenChord;
       break;
 
@@ -182,9 +191,8 @@ std::vector<uint8_t> arrangeByPattern(const std::vector<uint8_t>& notes, Arpeggi
       // Pattern: root, 5th, 3rd, 5th (indices 0, 2, 1, 2)
       std::vector<uint8_t> pattern;
       size_t num = result.size();
-      std::array<size_t, 4> indices = {
-          0, std::min<size_t>(2, num - 1), std::min<size_t>(1, num - 1),
-          std::min<size_t>(2, num - 1)};
+      std::array<size_t, 4> indices = {0, std::min<size_t>(2, num - 1),
+                                       std::min<size_t>(1, num - 1), std::min<size_t>(2, num - 1)};
       for (size_t idx : indices) {
         pattern.push_back(result[idx]);
       }
@@ -212,9 +220,8 @@ std::vector<uint8_t> arrangeByPattern(const std::vector<uint8_t>& notes, Arpeggi
       // Classic Alberti bass: low, high, mid, high (indices 0, 2, 1, 2)
       std::vector<uint8_t> pattern;
       size_t num = result.size();
-      std::array<size_t, 4> indices = {
-          0, std::min<size_t>(2, num - 1), std::min<size_t>(1, num - 1),
-          std::min<size_t>(2, num - 1)};
+      std::array<size_t, 4> indices = {0, std::min<size_t>(2, num - 1),
+                                       std::min<size_t>(1, num - 1), std::min<size_t>(2, num - 1)};
       for (size_t idx : indices) {
         pattern.push_back(result[idx]);
       }
@@ -261,13 +268,13 @@ namespace {
 
 /// @brief Parameters for arpeggio section generation.
 struct ArpeggioSectionParams {
-  ArpeggioSpeed speed;          ///< Note speed for this section
-  ArpeggioPattern pattern;      ///< Effective pattern (user override or mood default)
-  float gate;                   ///< Gate ratio
-  uint8_t octave_range;         ///< Octave range for chord notes
-  int base_octave;              ///< Base octave for arpeggio
-  uint8_t effective_density;    ///< Effective density after modifiers
-  float swing_amount;           ///< Swing amount from style
+  ArpeggioSpeed speed;        ///< Note speed for this section
+  ArpeggioPattern pattern;    ///< Effective pattern (user override or mood default)
+  float gate;                 ///< Gate ratio
+  uint8_t octave_range;       ///< Octave range for chord notes
+  int base_octave;            ///< Base octave for arpeggio
+  uint8_t effective_density;  ///< Effective density after modifiers
+  float swing_amount;         ///< Swing amount from style
 };
 
 /// @brief Calculate effective arpeggio parameters for a section.
@@ -277,9 +284,9 @@ struct ArpeggioSectionParams {
 /// @param params General generator params
 /// @return Section-specific arpeggio parameters
 ArpeggioSectionParams calculateArpeggioSectionParams(const Section& section,
-                                                       const ArpeggioParams& arp,
-                                                       const ArpeggioStyle& style,
-                                                       const GeneratorParams& params) {
+                                                     const ArpeggioParams& arp,
+                                                     const ArpeggioStyle& style,
+                                                     const GeneratorParams& params) {
   ArpeggioSectionParams result;
 
   // Start with style defaults
@@ -313,6 +320,12 @@ ArpeggioSectionParams calculateArpeggioSectionParams(const Section& section,
 
   // Apply section density
   result.effective_density = section.getModifiedDensity(section.density_percent);
+
+  if (params.paradigm == GenerationParadigm::RhythmSync) {
+    result.speed = ArpeggioSpeed::Sixteenth;
+    result.swing_amount = 0.0f;
+    result.gate = std::max(result.gate, 0.95f);
+  }
 
   // Promote to 16th if density > 90% and speed is 8th
   bool user_set_speed = (arp.speed != ArpeggioSpeed::Sixteenth);
@@ -423,7 +436,8 @@ void ArpeggioGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackCon
           pattern_index = 0;
 
           if (bc.harmonic.subdivision == 2) {
-            int second_half_idx = getChordIndexForSubdividedBar(bc.bar_index, 1, progression.length);
+            int second_half_idx =
+                getChordIndexForSubdividedBar(bc.bar_index, 1, progression.length);
             int8_t second_half_degree = progression.at(second_half_idx);
             uint8_t second_half_root = degreeToRoot(second_half_degree, Key::C);
             while (second_half_root < sec_params.base_octave) second_half_root += 12;
@@ -456,14 +470,12 @@ void ArpeggioGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackCon
         float arp_swing_amount = sec_params.swing_amount;
 
         // Phrase tail rest: determine gate modifier and cutoff for tail bars
-        bool in_phrase_tail = bc.section.phrase_tail_rest &&
-            isPhraseTail(bc.bar_index, bc.section.bars);
-        bool is_final_bar = in_phrase_tail &&
-            isLastBar(bc.bar_index, bc.section.bars);
+        bool in_phrase_tail =
+            bc.section.phrase_tail_rest && isPhraseTail(bc.bar_index, bc.section.bars);
+        bool is_final_bar = in_phrase_tail && isLastBar(bc.bar_index, bc.section.bars);
         // Last bar: stop generating at beat 4 (skip last beat)
-        Tick tail_cutoff = is_final_bar
-            ? (bc.bar_start + TICKS_PER_BEAT * 3)
-            : (bc.bar_start + TICKS_PER_BAR);
+        Tick tail_cutoff =
+            is_final_bar ? (bc.bar_start + TICKS_PER_BEAT * 3) : (bc.bar_start + TICKS_PER_BAR);
         // Gate shortening: 50% for last bar, 75% for penultimate
         float tail_gate_mult = is_final_bar ? 0.5f : (in_phrase_tail ? 0.75f : 1.0f);
 
@@ -502,13 +514,79 @@ void ArpeggioGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackCon
             opts.role = TrackRole::Arpeggio;
             opts.preference = PitchPreference::PreferChordTones;
             opts.range_low = 48;
-            opts.range_high = (vocal_at_onset > 0)
-                ? std::min(108, static_cast<int>(vocal_at_onset))
-                : 108;
+            opts.range_high =
+                (vocal_at_onset > 0) ? std::min(108, static_cast<int>(vocal_at_onset)) : 108;
             opts.source = NoteSource::Arpeggio;
             opts.chord_boundary = ChordBoundaryPolicy::ClipAtBoundary;
 
-            createNoteAndAdd(track, *harmony, opts);
+            auto add_arp_note = [&](NoteOptions note_opts) {
+              note_opts.register_to_harmony = false;
+              auto result = createNoteWithResult(*harmony, note_opts);
+              if (!result.note || result.note->note < 48) {
+                return;
+              }
+              const auto duplicate = std::any_of(
+                  track.notes().begin(), track.notes().end(), [&](const NoteEvent& existing) {
+                    return existing.start_tick == result.note->start_tick &&
+                           existing.note == result.note->note;
+                  });
+              if (duplicate) {
+                return;
+              }
+              harmony->registerNote(result.note->start_tick, result.note->duration,
+                                    result.note->note, TrackRole::Arpeggio);
+              track.addNote(*result.note);
+            };
+
+            add_arp_note(opts);
+
+            if (params.paradigm == GenerationParadigm::RhythmSync && note >= 60) {
+              if (pattern_index % 2 == 0 && note + 12 <= opts.range_high) {
+                NoteOptions shimmer_opts = opts;
+                shimmer_opts.desired_pitch = static_cast<uint8_t>(note + 12);
+                shimmer_opts.velocity =
+                    static_cast<uint8_t>(std::max(30, static_cast<int>(velocity) - 22));
+                shimmer_opts.preference = PitchPreference::NoCollisionCheck;
+                add_arp_note(shimmer_opts);
+              }
+              if (pattern_index % 6 == 3 && note + 12 <= opts.range_high) {
+                NoteOptions shimmer_opts = opts;
+                shimmer_opts.desired_pitch = static_cast<uint8_t>(note + 12);
+                shimmer_opts.velocity =
+                    static_cast<uint8_t>(std::max(28, static_cast<int>(velocity) - 26));
+                shimmer_opts.preference = PitchPreference::NoCollisionCheck;
+                add_arp_note(shimmer_opts);
+              }
+              uint8_t layer_pitch = static_cast<uint8_t>(note - 12);
+              if (layer_pitch >= 48 &&
+                  harmony->isConsonantWithOtherTracks(layer_pitch, opts.start, opts.duration,
+                                                      TrackRole::Arpeggio)) {
+                NoteOptions layer_opts = opts;
+                layer_opts.desired_pitch = layer_pitch;
+                layer_opts.velocity =
+                    static_cast<uint8_t>(std::max(35, static_cast<int>(velocity) - 14));
+                layer_opts.preference = PitchPreference::NoCollisionCheck;
+                layer_opts.range_low = 48;
+                layer_opts.range_high = opts.range_high;
+                add_arp_note(layer_opts);
+              }
+
+              if (note >= 72 && pattern_index % 2 == 0) {
+                uint8_t sub_pitch = static_cast<uint8_t>(note - 24);
+                if (sub_pitch >= 48 &&
+                    harmony->isConsonantWithOtherTracks(sub_pitch, opts.start, opts.duration,
+                                                        TrackRole::Arpeggio)) {
+                  NoteOptions sub_layer_opts = opts;
+                  sub_layer_opts.desired_pitch = sub_pitch;
+                  sub_layer_opts.velocity =
+                      static_cast<uint8_t>(std::max(32, static_cast<int>(velocity) - 24));
+                  sub_layer_opts.preference = PitchPreference::NoCollisionCheck;
+                  sub_layer_opts.range_low = 48;
+                  sub_layer_opts.range_high = opts.range_high;
+                  add_arp_note(sub_layer_opts);
+                }
+              }
+            }
           }
 
           pos += section_note_duration;

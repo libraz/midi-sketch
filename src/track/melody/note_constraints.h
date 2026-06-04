@@ -53,9 +53,8 @@ struct ConsecutiveSameNoteTracker {
 /// @param vocal_high Maximum allowed pitch
 /// @param max_interval Maximum interval from current pitch (0 = no limit)
 /// @return New pitch (different chord tone), or current if none found
-int findNearestDifferentChordTone(int current_pitch, int8_t chord_degree,
-                                   uint8_t vocal_low, uint8_t vocal_high,
-                                   int max_interval = 0);
+int findNearestDifferentChordTone(int current_pitch, int8_t chord_degree, uint8_t vocal_low,
+                                  uint8_t vocal_high, int max_interval = 0);
 
 /// @brief Check if pitch is a chord tone.
 /// @param pitch_pc Pitch class (0-11)
@@ -78,9 +77,8 @@ bool isChordTone(int pitch_pc, int8_t chord_degree);
 /// @param rng Random number generator
 /// @return true if pitch was modified
 bool applyConsecutiveSameNoteConstraint(int& pitch, ConsecutiveSameNoteTracker& tracker,
-                                         int prev_pitch, int8_t chord_degree,
-                                         uint8_t vocal_low, uint8_t vocal_high,
-                                         int max_interval, std::mt19937& rng);
+                                        int prev_pitch, int8_t chord_degree, uint8_t vocal_low,
+                                        uint8_t vocal_high, int max_interval, std::mt19937& rng);
 
 }  // namespace melody
 }  // namespace midisketch

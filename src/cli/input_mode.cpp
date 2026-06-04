@@ -82,11 +82,10 @@ int runInputMode(const ParsedArgs& args) {
     }
 
     const auto& midi2 = reader2.getParsedMidi();
-    const char* format_name = (detected_format == midisketch::DetectedMidiFormat::SMF2_ktmidi)
-                                  ? "SMF2 (ktmidi container)"
-                              : (detected_format == midisketch::DetectedMidiFormat::SMF2_Clip)
-                                  ? "SMF2 (Clip)"
-                                  : "SMF2 (Container)";
+    const char* format_name =
+        (detected_format == midisketch::DetectedMidiFormat::SMF2_ktmidi) ? "SMF2 (ktmidi container)"
+        : (detected_format == midisketch::DetectedMidiFormat::SMF2_Clip) ? "SMF2 (Clip)"
+                                                                         : "SMF2 (Container)";
 
     std::cout << "MIDI Info:\n";
     std::cout << "  Format: " << format_name << "\n";

@@ -187,8 +187,7 @@ void applyBlueprintOverlay(std::vector<Section>& sections, const ProductionBluep
  * @param total_sections Total number of sections in the song
  * @return Vector of LayerEvent sorted by bar_offset
  */
-std::vector<LayerEvent> generateDefaultLayerEvents(const Section& section,
-                                                   size_t section_index,
+std::vector<LayerEvent> generateDefaultLayerEvents(const Section& section, size_t section_index,
                                                    size_t total_sections);
 
 /**

@@ -12,6 +12,8 @@
 
 #include "core/chord_utils.h"
 #include "core/i_harmony_context.h"
+#include "core/midi_track.h"
+#include "core/note_source.h"
 #include "core/note_timeline_utils.h"
 #include "core/pitch_bend_curves.h"
 #include "core/pitch_utils.h"
@@ -19,14 +21,11 @@
 #include "core/structure.h"
 #include "core/timing_constants.h"
 #include "core/velocity.h"
-#include "core/midi_track.h"
-#include "core/note_source.h"
 
 namespace midisketch {
 
-void enforceVocalPitchConstraints(std::vector<NoteEvent>& all_notes,
-                                   const GeneratorParams& params,
-                                   IHarmonyContext& harmony) {
+void enforceVocalPitchConstraints(std::vector<NoteEvent>& all_notes, const GeneratorParams& params,
+                                  IHarmonyContext& harmony) {
   // FINAL INTERVAL ENFORCEMENT: Ensure no consecutive notes exceed kMaxMelodicInterval
   for (size_t i = 1; i < all_notes.size(); ++i) {
     int prev_pitch = all_notes[i - 1].note;
@@ -42,8 +41,8 @@ void enforceVocalPitchConstraints(std::vector<NoteEvent>& all_notes,
                                          params.vocal_low, params.vocal_high, nullptr);
       // Re-verify collision safety after interval fix
       if (!harmony.isConsonantWithOtherTracks(static_cast<uint8_t>(fixed_pitch),
-                                               all_notes[i].start_tick, all_notes[i].duration,
-                                               TrackRole::Vocal)) {
+                                              all_notes[i].start_tick, all_notes[i].duration,
+                                              TrackRole::Vocal)) {
         fixed_pitch = curr_pitch;  // Keep original if fix introduces collision
       }
       all_notes[i].note = static_cast<uint8_t>(fixed_pitch);
@@ -51,7 +50,7 @@ void enforceVocalPitchConstraints(std::vector<NoteEvent>& all_notes,
       if (old_pitch != all_notes[i].note) {
         all_notes[i].prov_original_pitch = old_pitch;
         all_notes[i].addTransformStep(TransformStepType::IntervalFix, old_pitch, all_notes[i].note,
-                                       0, 0);
+                                      0, 0);
       }
 #endif
     }
@@ -64,11 +63,11 @@ void enforceVocalPitchConstraints(std::vector<NoteEvent>& all_notes,
 #ifdef MIDISKETCH_NOTE_PROVENANCE
       uint8_t old_pitch = note.note;
 #endif
-      uint8_t snapped_clamped = static_cast<uint8_t>(std::clamp(snapped, static_cast<int>(params.vocal_low),
-                                                   static_cast<int>(params.vocal_high)));
+      uint8_t snapped_clamped = static_cast<uint8_t>(std::clamp(
+          snapped, static_cast<int>(params.vocal_low), static_cast<int>(params.vocal_high)));
       // Re-verify collision safety after scale snap
       if (!harmony.isConsonantWithOtherTracks(snapped_clamped, note.start_tick, note.duration,
-                                               TrackRole::Vocal)) {
+                                              TrackRole::Vocal)) {
         continue;  // Keep original pitch if snap introduces collision
       }
       note.note = snapped_clamped;
@@ -83,7 +82,7 @@ void enforceVocalPitchConstraints(std::vector<NoteEvent>& all_notes,
 }
 
 void breakConsecutiveSamePitch(std::vector<NoteEvent>& all_notes, const IHarmonyContext& harmony,
-                                uint8_t vocal_low, uint8_t vocal_high, int max_consecutive) {
+                               uint8_t vocal_low, uint8_t vocal_high, int max_consecutive) {
   if (all_notes.size() < static_cast<size_t>(max_consecutive + 1)) return;
 
   // Sort by time first
@@ -138,16 +137,19 @@ void breakConsecutiveSamePitch(std::vector<NoteEvent>& all_notes, const IHarmony
           int best_dist = 100;
           for (int interval : {3, -3, 4, -4, 5, -5, 7, -7}) {
             int candidate = static_cast<int>(streak_pitch) + interval;
-            if (candidate < static_cast<int>(vocal_low) || candidate > static_cast<int>(vocal_high)) continue;
+            if (candidate < static_cast<int>(vocal_low) || candidate > static_cast<int>(vocal_high))
+              continue;
 
             // Check if it's a chord tone or at least in scale
             int pc = candidate % 12;
-            bool is_chord_tone = std::find(chord_tones.begin(), chord_tones.end(), pc) != chord_tones.end();
+            bool is_chord_tone =
+                std::find(chord_tones.begin(), chord_tones.end(), pc) != chord_tones.end();
             bool is_scale = isScaleTone(pc);
 
             if (is_chord_tone) {
               // Verify no harsh collision
-              if (harmony.isConsonantWithOtherTracks(static_cast<uint8_t>(candidate), tick, duration, TrackRole::Vocal)) {
+              if (harmony.isConsonantWithOtherTracks(static_cast<uint8_t>(candidate), tick,
+                                                     duration, TrackRole::Vocal)) {
                 int dist = std::abs(interval);
                 if (dist < best_dist) {
                   best_dist = dist;
@@ -156,7 +158,8 @@ void breakConsecutiveSamePitch(std::vector<NoteEvent>& all_notes, const IHarmony
               }
             } else if (is_scale && best_alt < 0) {
               // Fallback to scale tone if no safe chord tone found
-              if (harmony.isConsonantWithOtherTracks(static_cast<uint8_t>(candidate), tick, duration, TrackRole::Vocal)) {
+              if (harmony.isConsonantWithOtherTracks(static_cast<uint8_t>(candidate), tick,
+                                                     duration, TrackRole::Vocal)) {
                 best_alt = candidate;
               }
             }
@@ -187,8 +190,8 @@ void breakConsecutiveSamePitch(std::vector<NoteEvent>& all_notes, const IHarmony
 }
 
 void applyVocalPitchBendExpressions(MidiTrack& track, const std::vector<NoteEvent>& all_notes,
-                                     const GeneratorParams& params, std::mt19937& rng,
-                                     const std::vector<Section>* sections) {
+                                    const GeneratorParams& params, std::mt19937& rng,
+                                    const std::vector<Section>* sections) {
   VocalPhysicsParams physics = getVocalPhysicsParams(params.vocal_style);
 
   // Skip pitch bend entirely if scale is 0 (UltraVocaloid)
@@ -227,7 +230,8 @@ void applyVocalPitchBendExpressions(MidiTrack& track, const std::vector<NoteEven
     fall_prob *= physics.pitch_bend_scale;
 
     // Apply attack bend (scoop-up) at phrase starts
-    if (is_phrase_start && note.duration >= TICK_EIGHTH && rng_util::rollProbability(rng, scoop_prob)) {
+    if (is_phrase_start && note.duration >= TICK_EIGHTH &&
+        rng_util::rollProbability(rng, scoop_prob)) {
       int base_depth = (params.vocal_attitude == VocalAttitude::Raw) ? -40 : -25;
       int depth = static_cast<int>(base_depth * physics.pitch_bend_scale);
       if (depth != 0) {

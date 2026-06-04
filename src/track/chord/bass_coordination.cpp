@@ -75,9 +75,9 @@ VoicedChord removeClashingPitch(const VoicedChord& v, uint16_t bass_pitch_mask) 
 }
 
 // NOTE: clashesWithPitchClasses() and filterVoicingsForContext() have been removed.
-// Chord voicing collision avoidance is now handled by IHarmonyContext::isConsonantWithOtherTracks(),
-// which checks ALL registered tracks at tick-level granularity.
-// See wouldClashWithRegisteredTracks() in chord.cpp.
+// Chord voicing collision avoidance is now handled by
+// IHarmonyContext::isConsonantWithOtherTracks(), which checks ALL registered tracks at tick-level
+// granularity. See wouldClashWithRegisteredTracks() in chord.cpp.
 
 }  // namespace chord_voicing
 }  // namespace midisketch

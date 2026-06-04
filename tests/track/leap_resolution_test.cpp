@@ -6,11 +6,11 @@
  * dependent probabilities instead of a single hardcoded value.
  */
 
+#include "track/melody/leap_resolution.h"
+
 #include <gtest/gtest.h>
 
 #include <random>
-
-#include "track/melody/leap_resolution.h"
 
 using namespace midisketch;
 using namespace midisketch::melody;
@@ -33,9 +33,8 @@ float measureReversalRate(int8_t section_type, float phrase_pos, int trials = 20
     int prev_interval = 5;   // Previous leap was ascending 5 semitones
     int new_pitch = 69;      // Continuing upward (A4)
 
-    int result = applyLeapReversalRule(new_pitch, current_pitch, prev_interval,
-                                        kCMajChordTones, 48, 84,
-                                        false, rng, section_type, phrase_pos);
+    int result = applyLeapReversalRule(new_pitch, current_pitch, prev_interval, kCMajChordTones, 48,
+                                       84, false, rng, section_type, phrase_pos);
 
     if (result != new_pitch) {
       reversal_count++;
@@ -99,9 +98,8 @@ TEST(LeapResolutionTest, PreferStepwiseOverridesSectionType) {
     int prev_interval = 5;
     int new_pitch = 69;
 
-    int result = applyLeapReversalRule(new_pitch, current_pitch, prev_interval,
-                                        kCMajChordTones, 48, 84,
-                                        true, rng, 3, 0.5f);  // Chorus, mid-phrase
+    int result = applyLeapReversalRule(new_pitch, current_pitch, prev_interval, kCMajChordTones, 48,
+                                       84, true, rng, 3, 0.5f);  // Chorus, mid-phrase
 
     if (result != new_pitch) {
       reversal_count++;
@@ -115,8 +113,7 @@ TEST(LeapResolutionTest, PreferStepwiseOverridesSectionType) {
 TEST(LeapResolutionTest, SmallIntervalSkipsReversal) {
   // Intervals < kLeapReversalThreshold (4) should not trigger reversal
   std::mt19937 rng(42);
-  int result = applyLeapReversalRule(65, 64, 3, kCMajChordTones, 48, 84,
-                                      false, rng, 1, 0.5f);
+  int result = applyLeapReversalRule(65, 64, 3, kCMajChordTones, 48, 84, false, rng, 1, 0.5f);
   EXPECT_EQ(result, 65);  // No reversal for small intervals
 }
 

@@ -461,9 +461,8 @@ std::string intervalToNameInternal(uint8_t semitones) {
   if (semitones == 12) return "octave";
   // Compound intervals (13-23): use 9th/10th/11th/etc. naming
   constexpr const char* COMPOUND_NAMES[12] = {
-      "octave",      "minor 9th",    "major 9th",  "minor 10th",
-      "major 10th",  "perfect 11th", "aug 11th",   "perfect 12th",
-      "minor 13th",  "major 13th",   "minor 14th", "major 14th"};
+      "octave",   "minor 9th",    "major 9th",  "minor 10th", "major 10th", "perfect 11th",
+      "aug 11th", "perfect 12th", "minor 13th", "major 13th", "minor 14th", "major 14th"};
   if (semitones <= 23) {
     return COMPOUND_NAMES[semitones - 12];
   }
@@ -502,9 +501,8 @@ DissonanceNoteInfo createNoteInfo(const TimedNote& note) {
 }
 
 // Detect simultaneous clashes between notes from different tracks
-void detectSimultaneousClashes(const std::vector<TimedNote>& all_notes,
-                                const DetectionContext& ctx,
-                                DissonanceReport& report) {
+void detectSimultaneousClashes(const std::vector<TimedNote>& all_notes, const DetectionContext& ctx,
+                               DissonanceReport& report) {
   std::set<std::tuple<Tick, uint8_t, uint8_t>> reported_clashes;
 
   for (size_t i = 0; i < all_notes.size(); ++i) {
@@ -560,7 +558,8 @@ void detectSimultaneousClashes(const std::vector<TimedNote>& all_notes,
 
         BeatStrength beat_strength = getBeatStrength(overlap_start);
         SectionPosition section_pos = getSectionPosition(overlap_start, ctx.song);
-        DissonanceSeverity severity = adjustSeverityForContext(base_severity, beat_strength, section_pos);
+        DissonanceSeverity severity =
+            adjustSeverityForContext(base_severity, beat_strength, section_pos);
 
         reported_clashes.insert(clash_key);
 
@@ -585,8 +584,8 @@ void detectSimultaneousClashes(const std::vector<TimedNote>& all_notes,
 }
 
 // Check close interval with chord notes
-std::tuple<bool, uint8_t, uint8_t> checkCloseIntervalWithChord(
-    const NoteEvent& melodic_note, const Song& song) {
+std::tuple<bool, uint8_t, uint8_t> checkCloseIntervalWithChord(const NoteEvent& melodic_note,
+                                                               const Song& song) {
   Tick note_start = melodic_note.start_tick;
   Tick note_end = note_start + melodic_note.duration;
 
@@ -596,10 +595,12 @@ std::tuple<bool, uint8_t, uint8_t> checkCloseIntervalWithChord(
 
     if (note_start >= chord_end || chord_start >= note_end) continue;
 
-    int interval = std::abs(static_cast<int>(melodic_note.note) - static_cast<int>(chord_note.note));
+    int interval =
+        std::abs(static_cast<int>(melodic_note.note) - static_cast<int>(chord_note.note));
     int interval_class = interval % 12;
 
-    if (interval_class == 1 || interval_class == 2 || interval_class == 10 || interval_class == 11) {
+    if (interval_class == 1 || interval_class == 2 || interval_class == 10 ||
+        interval_class == 11) {
       if (interval <= 14) {
         return {true, static_cast<uint8_t>(interval_class), chord_note.note};
       }
@@ -610,7 +611,7 @@ std::tuple<bool, uint8_t, uint8_t> checkCloseIntervalWithChord(
 
 // Detect non-chord tones in a single track
 void detectNonChordTonesInTrack(const MidiTrack& track, TrackRole role, bool is_bass,
-                                 const DetectionContext& ctx, DissonanceReport& report) {
+                                const DetectionContext& ctx, DissonanceReport& report) {
   for (const auto& note : track.notes()) {
     uint32_t bar = tickToBar(note.start_tick);
     int8_t degree = ctx.chord_lookup.getChordDegreeAt(note.start_tick);
@@ -624,14 +625,24 @@ void detectNonChordTonesInTrack(const MidiTrack& track, TrackRole role, bool is_
 
     if (is_bass) {
       switch (beat_strength) {
-        case BeatStrength::Strong: severity = DissonanceSeverity::High; break;
-        case BeatStrength::Medium: severity = DissonanceSeverity::Medium; break;
-        default: severity = DissonanceSeverity::Low; break;
+        case BeatStrength::Strong:
+          severity = DissonanceSeverity::High;
+          break;
+        case BeatStrength::Medium:
+          severity = DissonanceSeverity::Medium;
+          break;
+        default:
+          severity = DissonanceSeverity::Low;
+          break;
       }
     } else {
       switch (beat_strength) {
-        case BeatStrength::Strong: severity = DissonanceSeverity::Medium; break;
-        default: severity = DissonanceSeverity::Low; break;
+        case BeatStrength::Strong:
+          severity = DissonanceSeverity::Medium;
+          break;
+        default:
+          severity = DissonanceSeverity::Low;
+          break;
       }
     }
 
@@ -696,8 +707,8 @@ std::vector<ChordChange> buildChordTimeline(const DetectionContext& ctx) {
   if (arrangement.sections().empty()) return timeline;
 
   // Walk chord changes using IChordLookup (tick-accurate, handles mid-bar splits)
-  Tick song_end = arrangement.sections().back().start_tick +
-                  arrangement.sections().back().bars * TICKS_PER_BAR;
+  Tick song_end =
+      arrangement.sections().back().start_tick + arrangement.sections().back().bars * TICKS_PER_BAR;
 
   Tick tick = 0;
   while (tick < song_end) {
@@ -714,8 +725,8 @@ std::vector<ChordChange> buildChordTimeline(const DetectionContext& ctx) {
 
 // Detect sustained notes over chord changes in a single track
 void detectSustainedInTrack(const MidiTrack& track, TrackRole role,
-                             const std::vector<ChordChange>& chord_timeline,
-                             const DetectionContext& ctx, DissonanceReport& report) {
+                            const std::vector<ChordChange>& chord_timeline,
+                            const DetectionContext& ctx, DissonanceReport& report) {
   for (const auto& note : track.notes()) {
     Tick note_start = note.start_tick;
     Tick note_end = note.start_tick + note.duration;
@@ -788,7 +799,7 @@ void detectSustainedOverChordChange(const DetectionContext& ctx, DissonanceRepor
 
 // Detect non-diatonic notes in a single track
 void detectNonDiatonicInTrack(const MidiTrack& track, TrackRole role, Key key,
-                               const DetectionContext& ctx, DissonanceReport& report) {
+                              const DetectionContext& ctx, DissonanceReport& report) {
   for (const auto& note : track.notes()) {
     int pitch_class = getPitchClass(note.note);
 
@@ -824,9 +835,15 @@ void detectNonDiatonicInTrack(const MidiTrack& track, TrackRole role, Key key,
     BeatStrength beat_strength = getBeatStrength(note.start_tick);
     DissonanceSeverity severity;
     switch (beat_strength) {
-      case BeatStrength::Strong: severity = DissonanceSeverity::High; break;
-      case BeatStrength::Medium: severity = DissonanceSeverity::Medium; break;
-      default: severity = DissonanceSeverity::Medium; break;
+      case BeatStrength::Strong:
+        severity = DissonanceSeverity::High;
+        break;
+      case BeatStrength::Medium:
+        severity = DissonanceSeverity::Medium;
+        break;
+      default:
+        severity = DissonanceSeverity::Medium;
+        break;
     }
 
     uint32_t bar = tickToBar(note.start_tick);

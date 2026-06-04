@@ -9,8 +9,8 @@
 #include <random>
 
 #include "core/chord.h"
-#include "core/rng_util.h"
 #include "core/production_blueprint.h"
+#include "core/rng_util.h"
 
 namespace midisketch {
 
@@ -35,15 +35,15 @@ constexpr uint16_t MOOD_BPM[24] = {
     145,  // IdolPop
     130,  // Anthem
     // Synth-oriented moods
-    148,  // Yoasobi - fast anime-style
+    130,  // AnimeHighEnergy - reference pop track reference tempo
     118,  // Synthwave - moderate retro
     145,  // FutureBass - fast EDM
     110,  // CityPop - moderate groove
     // Genre expansion moods
-    92,   // RnBNeoSoul - slow groove (85-100 range)
-    95,   // LatinPop - moderate dembow rhythm
-    70,   // Trap - half-time feel (140 BPM double-time = 70 half-time)
-    80,   // Lofi - slow, relaxed
+    92,  // RnBNeoSoul - slow groove (85-100 range)
+    95,  // LatinPop - moderate dembow rhythm
+    70,  // Trap - half-time feel (140 BPM double-time = 70 half-time)
+    80,  // Lofi - slow, relaxed
 };
 
 // Mood note density values
@@ -65,7 +65,7 @@ constexpr float MOOD_DENSITY[24] = {
     0.80f,  // IdolPop
     0.70f,  // Anthem
     // Synth-oriented moods
-    0.75f,  // Yoasobi - high density melody
+    0.75f,  // AnimeHighEnergy - high density melody
     0.55f,  // Synthwave - moderate
     0.70f,  // FutureBass - high density
     0.60f,  // CityPop - moderate groove
@@ -87,11 +87,30 @@ const char* STRUCTURE_NAMES[18] = {
 
 // Mood names
 const char* MOOD_NAMES[24] = {
-    "straight_pop",  "bright_upbeat", "energetic_dance", "light_rock",  "mid_pop",
-    "emotional_pop", "sentimental",   "chill",           "ballad",      "dark_pop",
-    "dramatic",      "nostalgic",     "modern_pop",      "electro_pop", "idol_pop",
-    "anthem",        "yoasobi",       "synthwave",       "future_bass", "city_pop",
-    "rnb_neosoul",   "latin_pop",     "trap",            "lofi",
+    "straight_pop",
+    "bright_upbeat",
+    "energetic_dance",
+    "light_rock",
+    "mid_pop",
+    "emotional_pop",
+    "sentimental",
+    "chill",
+    "ballad",
+    "dark_pop",
+    "dramatic",
+    "nostalgic",
+    "modern_pop",
+    "electro_pop",
+    "idol_pop",
+    "anthem",
+    "anime_high_energy",
+    "synthwave",
+    "future_bass",
+    "city_pop",
+    "rnb_neosoul",
+    "latin_pop",
+    "trap",
+    "lofi",
 };
 
 // Style preset definitions (17 presets)
@@ -470,7 +489,7 @@ const FormWeight STYLE_FORMS_WEIGHTED[17][8] = {
      {StructurePattern::ImmediateVocalFull, 10},
      {StructurePattern::DoubleVerse, 10},
      {StructurePattern::AChorusB, 0}},
-    // 14: Anime Opening - build-up + immediate vocal (YOASOBI style)
+    // 14: Anime Opening - build-up + immediate vocal (AnimeHighEnergy style)
     {{StructurePattern::BuildUp, 30},
      {StructurePattern::DriveUpbeat, 18},
      {StructurePattern::FullPop, 12},
@@ -606,7 +625,7 @@ const VocalStylePresetData VOCAL_STYLE_PRESET_DATA[] = {
      1.0f, 1.0f, 0.9f, 1.0f,                   // chorus=90% (avoid 8th note saturation)
      0.0f, 0.0f, 0.0f, 0.0f,                   // no 32nd notes
      1.0f, false, false, false, 5, 0.2f,       // all same-note OK, no special flags
-     0.0f},                                     // syllabic_sub: disabled
+     0.0f},                                    // syllabic_sub: disabled
 
     // -------------------------------------------------------------------------
     // Standard (1) - General purpose pop melody
@@ -615,26 +634,26 @@ const VocalStylePresetData VOCAL_STYLE_PRESET_DATA[] = {
      1.0f, 1.0f, 0.85f, 1.0f,                      // chorus=85% (room for long notes)
      0.0f, 0.0f, 0.0f, 0.0f,                       // no 32nd notes
      1.0f, false, false, false, 5, 0.2f,           // standard settings
-     0.0f},                                         // syllabic_sub: disabled
+     0.0f},                                        // syllabic_sub: disabled
 
     // -------------------------------------------------------------------------
-    // Vocaloid (2) - YOASOBI style: energetic, wide leaps, singable
+    // Vocaloid (2) - AnimeHighEnergy style: energetic, wide leaps, singable
     // -------------------------------------------------------------------------
     {VocalStylePreset::Vocaloid, 12, 0.35f, true,  // leap=octave, high synco, bar cross OK
      0.8f, 0.9f, 1.0f, 0.85f,                      // verse sparse, chorus=100% (singable pace)
      0.0f, 0.0f, 0.0f, 0.0f,                       // no 32nd notes (still singable)
      1.0f, true, false, false, 5, 0.2f,            // disable vowel limits
-     0.15f},                                        // syllabic_sub: moderate
+     0.15f},                                       // syllabic_sub: moderate
 
     // -------------------------------------------------------------------------
-    // UltraVocaloid (3) - Miku Disappearance style: ballad verse + barrage chorus
+    // UltraVocaloid (3) - ultra-dense machine vocal style: ballad verse + barrage chorus
     // Extreme contrast between sparse intro and machine-gun chorus
     // -------------------------------------------------------------------------
     {VocalStylePreset::UltraVocaloid, 14, 0.4f, true,  // leap=9th(!), high synco, bar cross OK
      0.3f, 0.5f, 1.4f, 0.35f,                          // verse=ballad(30%), chorus=140%
      0.0f, 0.0f, 1.0f, 0.0f,                           // 32nd: verse=0%, chorus=100% (contrast!)
      0.1f, true, false, false, 5, 0.2f,                // same-note=10% only, disable vowel
-     0.25f},                                            // syllabic_sub: high
+     0.25f},                                           // syllabic_sub: high
 
     // -------------------------------------------------------------------------
     // Idol (4) - Love Live/Idolmaster style: catchy, unison-friendly
@@ -643,7 +662,7 @@ const VocalStylePresetData VOCAL_STYLE_PRESET_DATA[] = {
      1.05f, 1.0f, 1.10f, 1.0f,                 // verse+5%, chorus+10% (chorus_long_tones BPM-gated)
      0.0f, 0.0f, 0.0f, 0.0f,                   // no 32nd notes
      1.0f, false, true, true, 5, 0.2f,         // hook repeat + long tones in chorus
-     0.20f},                                    // syllabic_sub: moderate-high
+     0.20f},                                   // syllabic_sub: moderate-high
 
     // -------------------------------------------------------------------------
     // Ballad (5) - Slow emotional ballad: small leaps, sustained notes
@@ -652,7 +671,7 @@ const VocalStylePresetData VOCAL_STYLE_PRESET_DATA[] = {
      1.0f, 1.0f, 0.55f, 1.0f,                    // chorus=55% (long tones, breathing room)
      0.0f, 0.0f, 0.0f, 0.0f,                     // no 32nd notes
      1.0f, false, false, true, 5, 0.2f,          // long tones in chorus
-     0.05f},                                      // syllabic_sub: minimal
+     0.05f},                                     // syllabic_sub: minimal
 
     // -------------------------------------------------------------------------
     // Rock (6) - Rock style: powerful, driving, wide chorus register
@@ -661,7 +680,7 @@ const VocalStylePresetData VOCAL_STYLE_PRESET_DATA[] = {
      1.0f, 1.0f, 0.75f, 1.0f,                 // chorus=75% (power needs sustain)
      0.0f, 0.0f, 0.0f, 0.0f,                  // no 32nd notes
      1.0f, false, true, true, 7, 0.2f,        // hook + long tones, chorus +7 semitones
-     0.05f},                                   // syllabic_sub: minimal
+     0.05f},                                  // syllabic_sub: minimal
 
     // -------------------------------------------------------------------------
     // CityPop (7) - 80s Japanese city pop: groovy, jazzy tensions
@@ -670,25 +689,25 @@ const VocalStylePresetData VOCAL_STYLE_PRESET_DATA[] = {
      1.0f, 1.0f, 0.75f, 1.0f,                    // chorus=75% (relaxed groove)
      0.0f, 0.0f, 0.0f, 0.0f,                     // no 32nd notes
      1.0f, false, false, false, 5, 0.4f,         // tension=0.4 (jazzy chords)
-     0.0f},                                       // syllabic_sub: disabled
+     0.0f},                                      // syllabic_sub: disabled
 
     // -------------------------------------------------------------------------
     // Anime (8) - Anime OP/ED style: dramatic, wide leaps, building energy
     // -------------------------------------------------------------------------
     {VocalStylePreset::Anime, 10, 0.25f, true,  // leap=minor 7th, medium synco
-     1.0f, 1.0f, 1.10f, 1.0f,                    // chorus=110% (dense anime OP feel)
+     1.0f, 1.0f, 1.10f, 1.0f,                   // chorus=110% (dense anime OP feel)
      0.0f, 0.0f, 0.0f, 0.0f,                    // no 32nd notes
      1.0f, false, true, true, 5, 0.2f,          // hook repeat + long tones
-     0.10f},                                     // syllabic_sub: light
+     0.10f},                                    // syllabic_sub: light
 
     // -------------------------------------------------------------------------
     // BrightKira (9) - Bright sparkly idol style: energetic, high register
     // -------------------------------------------------------------------------
     {VocalStylePreset::BrightKira, 10, 0.15f, false,  // leap=minor 7th, low synco
-     1.0f, 1.0f, 1.10f, 1.0f,                          // chorus=110% (bright, dense at high BPM)
+     1.0f, 1.0f, 1.10f, 1.0f,                         // chorus=110% (bright, dense at high BPM)
      0.0f, 0.0f, 0.0f, 0.0f,                          // no 32nd notes
      1.0f, false, true, true, 7, 0.2f,                // hook + long, chorus +7 semitones
-     0.10f},                                            // syllabic_sub: light
+     0.10f},                                          // syllabic_sub: light
 
     // -------------------------------------------------------------------------
     // CoolSynth (10) - Cool synthetic style: mechanical, flowing phrases
@@ -697,16 +716,16 @@ const VocalStylePresetData VOCAL_STYLE_PRESET_DATA[] = {
      1.0f, 1.0f, 0.75f, 1.0f,                      // chorus=75% (cool and relaxed)
      0.0f, 0.0f, 0.0f, 0.0f,                       // no 32nd notes
      1.0f, false, true, false, 5, 0.2f,            // hook repeat, no long tones
-     0.0f},                                         // syllabic_sub: disabled
+     0.0f},                                        // syllabic_sub: disabled
 
     // -------------------------------------------------------------------------
     // CuteAffected (11) - Cute affected style: slightly wider leaps
     // -------------------------------------------------------------------------
     {VocalStylePreset::CuteAffected, 8, 0.15f, false,  // leap=minor 6th, low synco
-     1.0f, 1.0f, 1.05f, 1.0f,                           // chorus=105% (slightly denser)
+     1.0f, 1.0f, 1.05f, 1.0f,                          // chorus=105% (slightly denser)
      0.0f, 0.0f, 0.0f, 0.0f,                           // no 32nd notes
      1.0f, false, true, true, 5, 0.2f,                 // hook repeat + long tones
-     0.10f},                                             // syllabic_sub: light
+     0.10f},                                           // syllabic_sub: light
 
     // -------------------------------------------------------------------------
     // PowerfulShout (12) - Powerful shout style: big leaps, power sustain
@@ -715,7 +734,7 @@ const VocalStylePresetData VOCAL_STYLE_PRESET_DATA[] = {
      1.0f, 1.0f, 0.75f, 1.0f,                           // chorus=75% (power needs sustain)
      0.0f, 0.0f, 0.0f, 0.0f,                            // no 32nd notes
      1.0f, false, true, true, 5, 0.2f,                  // hook repeat + long tones
-     0.0f},                                              // syllabic_sub: disabled
+     0.0f},                                             // syllabic_sub: disabled
 
     // -------------------------------------------------------------------------
     // KPop (13) - K-POP style: syncopated hooks, rap-like repetition, offbeat
@@ -724,7 +743,7 @@ const VocalStylePresetData VOCAL_STYLE_PRESET_DATA[] = {
      1.0f, 1.0f, 1.0f, 1.0f,                  // chorus=100% (dense hook-driven)
      0.0f, 0.0f, 0.0f, 0.0f,                  // no 32nd notes
      1.0f, true, true, false, 5, 0.2f,        // disable vowel, hook repeat, no long tones
-     0.10f},                                   // syllabic_sub: light
+     0.10f},                                  // syllabic_sub: light
 };
 
 }  // namespace
@@ -799,15 +818,15 @@ constexpr DrumStyle MOOD_DRUM_STYLES[24] = {
     DrumStyle::FourOnFloor,  // 13: ElectroPop
     DrumStyle::Upbeat,       // 14: IdolPop
     DrumStyle::Upbeat,       // 15: Anthem
-    DrumStyle::Synth,        // 16: Yoasobi
+    DrumStyle::Synth,        // 16: AnimeHighEnergy
     DrumStyle::Synth,        // 17: Synthwave
     DrumStyle::Synth,        // 18: FutureBass
     DrumStyle::Standard,     // 19: CityPop (groove feel, not synth)
     // Genre expansion moods
-    DrumStyle::Standard,     // 20: RnBNeoSoul (standard with heavy swing)
-    DrumStyle::Latin,        // 21: LatinPop (dembow rhythm)
-    DrumStyle::Trap,         // 22: Trap (half-time snare, hi-hat rolls)
-    DrumStyle::Sparse,       // 23: Lofi (sparse, laid-back)
+    DrumStyle::Standard,  // 20: RnBNeoSoul (standard with heavy swing)
+    DrumStyle::Latin,     // 21: LatinPop (dembow rhythm)
+    DrumStyle::Trap,      // 22: Trap (half-time snare, hi-hat rolls)
+    DrumStyle::Sparse,    // 23: Lofi (sparse, laid-back)
 };
 
 // ============================================================================
@@ -839,7 +858,7 @@ constexpr DrumGrooveFeel MOOD_DRUM_GROOVES[24] = {
     DrumGrooveFeel::Straight,  // 13: ElectroPop
     DrumGrooveFeel::Straight,  // 14: IdolPop
     DrumGrooveFeel::Straight,  // 15: Anthem
-    DrumGrooveFeel::Straight,  // 16: Yoasobi (tight electronic)
+    DrumGrooveFeel::Straight,  // 16: AnimeHighEnergy (tight electronic)
     DrumGrooveFeel::Straight,  // 17: Synthwave (tight electronic)
     DrumGrooveFeel::Straight,  // 18: FutureBass (tight electronic)
     DrumGrooveFeel::Swing,     // 19: CityPop (80s groove essential)
@@ -878,7 +897,7 @@ DrumGrooveFeel getMoodDrumGrooveFeel(Mood mood) {
 // Genre categories:
 // - Standard:   Default pop patterns
 // - Ballad:     Slow, sustained (Ballad, Sentimental, Chill)
-// - Rock:       Aggressive, power-driven (LightRock, Anthem, Yoasobi)
+// - Rock:       Aggressive, power-driven (LightRock, Anthem, AnimeHighEnergy)
 // - Dance:      High-energy (EnergeticDance, IdolPop, FutureBass)
 // - Electronic: Sidechain, modern (ElectroPop, Synthwave)
 // - Jazz:       Walking bass, groove (CityPop, ModernPop)
@@ -901,15 +920,15 @@ constexpr BassGenre MOOD_BASS_GENRES[24] = {
     BassGenre::Electronic,  // 13: ElectroPop
     BassGenre::Idol,        // 14: IdolPop
     BassGenre::Rock,        // 15: Anthem
-    BassGenre::Rock,        // 16: Yoasobi
+    BassGenre::Rock,        // 16: AnimeHighEnergy
     BassGenre::Electronic,  // 17: Synthwave
     BassGenre::Dance,       // 18: FutureBass
     BassGenre::Jazz,        // 19: CityPop
     // Genre expansion moods
-    BassGenre::RnB,         // 20: RnBNeoSoul (groove with chromatic approach)
-    BassGenre::Latin,       // 21: LatinPop (tresillo 3+3+2 pattern)
-    BassGenre::Trap808,     // 22: Trap (long sustained 808 sub-bass)
-    BassGenre::Lofi,        // 23: Lofi (simple patterns, pedal tone preference)
+    BassGenre::RnB,      // 20: RnBNeoSoul (groove with chromatic approach)
+    BassGenre::Latin,    // 21: LatinPop (tresillo 3+3+2 pattern)
+    BassGenre::Trap808,  // 22: Trap (long sustained 808 sub-bass)
+    BassGenre::Lofi,     // 23: Lofi (simple patterns, pedal tone preference)
 };
 
 // ============================================================================
@@ -1001,20 +1020,20 @@ constexpr BassGenrePatterns BASS_GENRE_PATTERNS[static_cast<int>(BassGenre::COUN
         {BP::WholeNote, BP::RootFifth, BP::RootFifth},    // Intro
         {BP::RootFifth, BP::Syncopated, BP::OctaveJump},  // A
         {BP::Syncopated, BP::Driving, BP::OctaveJump},    // B
-        {BP::Driving, BP::OctaveJump, BP::SlapPop},    // Chorus
+        {BP::Driving, BP::OctaveJump, BP::SlapPop},       // Chorus
         {BP::RootFifth, BP::Syncopated, BP::Syncopated},  // Bridge
         {BP::RootFifth, BP::WholeNote, BP::WholeNote},    // Outro
         {BP::Aggressive, BP::OctaveJump, BP::Driving},    // Mix
     }},
     // RnB (R&B/Neo-Soul - groove with chromatic approach, rootless voicing preference)
     {{
-        {BP::PedalTone, BP::WholeNote, BP::RootFifth},   // Intro (tonic pedal)
-        {BP::Groove, BP::Walking, BP::Syncopated},       // A (smooth groove)
-        {BP::Groove, BP::Syncopated, BP::Walking},       // B (building groove)
-        {BP::Groove, BP::Driving, BP::Syncopated},       // Chorus (full groove)
-        {BP::PedalTone, BP::Groove, BP::RootFifth},      // Bridge (dominant pedal)
-        {BP::PedalTone, BP::WholeNote, BP::RootFifth},   // Outro (tonic pedal)
-        {BP::Groove, BP::Driving, BP::Syncopated},       // Mix
+        {BP::PedalTone, BP::WholeNote, BP::RootFifth},  // Intro (tonic pedal)
+        {BP::Groove, BP::Walking, BP::Syncopated},      // A (smooth groove)
+        {BP::Groove, BP::Syncopated, BP::Walking},      // B (building groove)
+        {BP::Groove, BP::Driving, BP::Syncopated},      // Chorus (full groove)
+        {BP::PedalTone, BP::Groove, BP::RootFifth},     // Bridge (dominant pedal)
+        {BP::PedalTone, BP::WholeNote, BP::RootFifth},  // Outro (tonic pedal)
+        {BP::Groove, BP::Driving, BP::Syncopated},      // Mix
     }},
     // Latin (Latin Pop - tresillo 3+3+2 pattern)
     {{
@@ -1028,23 +1047,23 @@ constexpr BassGenrePatterns BASS_GENRE_PATTERNS[static_cast<int>(BassGenre::COUN
     }},
     // Trap808 (Trap - long sustained 808 sub-bass)
     {{
-        {BP::PedalTone, BP::SubBass808, BP::WholeNote},  // Intro (sustained 808)
-        {BP::SubBass808, BP::WholeNote, BP::RootFifth},  // A (long 808 notes)
-        {BP::SubBass808, BP::Syncopated, BP::WholeNote}, // B (808 with glide)
-        {BP::SubBass808, BP::Syncopated, BP::RootFifth}, // Chorus (808 drive)
-        {BP::PedalTone, BP::SubBass808, BP::WholeNote},  // Bridge (808 pedal)
-        {BP::PedalTone, BP::SubBass808, BP::WholeNote},  // Outro (808 fadeout)
-        {BP::SubBass808, BP::Aggressive, BP::Driving},   // Mix (808 energy)
+        {BP::PedalTone, BP::SubBass808, BP::WholeNote},   // Intro (sustained 808)
+        {BP::SubBass808, BP::WholeNote, BP::RootFifth},   // A (long 808 notes)
+        {BP::SubBass808, BP::Syncopated, BP::WholeNote},  // B (808 with glide)
+        {BP::SubBass808, BP::Syncopated, BP::RootFifth},  // Chorus (808 drive)
+        {BP::PedalTone, BP::SubBass808, BP::WholeNote},   // Bridge (808 pedal)
+        {BP::PedalTone, BP::SubBass808, BP::WholeNote},   // Outro (808 fadeout)
+        {BP::SubBass808, BP::Aggressive, BP::Driving},    // Mix (808 energy)
     }},
     // Lofi (Lo-fi - simple patterns, pedal tone preference, low velocity)
     {{
-        {BP::PedalTone, BP::WholeNote, BP::RootFifth},   // Intro (tonic pedal)
-        {BP::RootFifth, BP::WholeNote, BP::Walking},     // A (simple walking)
-        {BP::RootFifth, BP::Groove, BP::WholeNote},      // B (subtle groove)
-        {BP::Groove, BP::RootFifth, BP::Walking},        // Chorus (relaxed groove)
-        {BP::PedalTone, BP::WholeNote, BP::RootFifth},   // Bridge (pedal tone)
-        {BP::PedalTone, BP::WholeNote, BP::RootFifth},   // Outro (tonic pedal)
-        {BP::Groove, BP::RootFifth, BP::Walking},        // Mix
+        {BP::PedalTone, BP::WholeNote, BP::RootFifth},  // Intro (tonic pedal)
+        {BP::RootFifth, BP::WholeNote, BP::Walking},    // A (simple walking)
+        {BP::RootFifth, BP::Groove, BP::WholeNote},     // B (subtle groove)
+        {BP::Groove, BP::RootFifth, BP::Walking},       // Chorus (relaxed groove)
+        {BP::PedalTone, BP::WholeNote, BP::RootFifth},  // Bridge (pedal tone)
+        {BP::PedalTone, BP::WholeNote, BP::RootFifth},  // Outro (tonic pedal)
+        {BP::Groove, BP::RootFifth, BP::Walking},       // Mix
     }},
 };
 
@@ -1119,7 +1138,7 @@ constexpr MoodProgramSet MOOD_PROGRAMS[24] = {
     {1, 5, 33, 81, 81, 89, 0xFF},
     // 15: Anthem - Strings for epic feel
     {0, 48, 33, 81, 81, 49, 29},
-    // 16: Yoasobi - Piano chord + synth anime style (Ayase piano riff)
+    // 16: AnimeHighEnergy - Piano chord + synth anime style (anime-pop piano riff)
     {81, 0, 38, 81, 81, 89, 27},
     // 17: Synthwave - Synth lead, EP, synth bass
     {81, 4, 38, 81, 81, 89, 0xFF},
@@ -1189,7 +1208,8 @@ StructurePattern selectRandomForm(uint8_t style_id, uint32_t seed) {
 
   // Use seed to generate a random value
   std::mt19937 rng(seed);
-  uint32_t roll = static_cast<uint32_t>(rng_util::rollRange(rng, 0, static_cast<int>(total_weight - 1)));
+  uint32_t roll =
+      static_cast<uint32_t>(rng_util::rollRange(rng, 0, static_cast<int>(total_weight - 1)));
 
   // Select form based on weighted random roll
   uint32_t cumulative = 0;
@@ -1224,7 +1244,8 @@ VocalStylePreset selectRandomVocalStyle(uint8_t style_id, uint32_t seed) {
 
   // Use seed to generate a random value
   std::mt19937 rng(seed);
-  uint32_t roll = static_cast<uint32_t>(rng_util::rollRange(rng, 0, static_cast<int>(total_weight - 1)));
+  uint32_t roll =
+      static_cast<uint32_t>(rng_util::rollRange(rng, 0, static_cast<int>(total_weight - 1)));
 
   // Select style based on weighted random roll
   uint32_t cumulative = 0;
@@ -1539,26 +1560,24 @@ std::optional<uint8_t> findChordProgressionByName(const std::string& name) {
   // For now, this is a basic implementation; extend as needed
   // Common chord progression names
   static const std::pair<const char*, uint8_t> CHORD_NAMES[] = {
-      {"canonical", 0},  // I-V-vi-IV
-      {"pop", 0},
-      {"fifties", 1},      // I-vi-IV-V
-      {"doo_wop", 1},
-      {"jazz", 2},         // ii-V-I-vi
-      {"royal_road", 3},   // IV-V-iii-vi ("oudou" / royal road progression)
-      {"strong_wish", 4},  // I-IV-V-I
-      {"four_chord", 5},   // vi-IV-I-V
-      {"emotional", 6},    // I-iii-vi-IV
-      {"jpop", 7},         // IV-iii-vi-V
-      {"tsubasa", 8},      // I-V-vi-iii-IV
-      {"dramatic", 9},     // vi-V-IV-V
-      {"minor", 10},       // i-VII-VI-V
-      {"sad", 11},         // vi-IV-V-I
-      {"anthem", 12},      // I-IV-vi-V
-      {"ballad", 13},      // I-V/VII-vi-IV
-      {"pachelbel", 14},   // I-V-vi-iii-IV-I-IV-V
-      {"blues", 15},       // I-I-I-I-IV-IV-I-I-V-IV-I-V
-      {"vamp", 16},        // i-VII (2 chord)
-      {"hypnotic", 17},    // vi-V (2 chord)
+      {"canonical", 0},                    // I-V-vi-IV
+      {"pop", 0},         {"fifties", 1},  // I-vi-IV-V
+      {"doo_wop", 1},     {"jazz", 2},     // ii-V-I-vi
+      {"royal_road", 3},                   // IV-V-iii-vi ("oudou" / royal road progression)
+      {"strong_wish", 4},                  // I-IV-V-I
+      {"four_chord", 5},                   // vi-IV-I-V
+      {"emotional", 6},                    // I-iii-vi-IV
+      {"jpop", 7},                         // IV-iii-vi-V
+      {"tsubasa", 8},                      // I-V-vi-iii-IV
+      {"dramatic", 9},                     // vi-V-IV-V
+      {"minor", 10},                       // i-VII-VI-V
+      {"sad", 11},                         // vi-IV-V-I
+      {"anthem", 12},                      // I-IV-vi-V
+      {"ballad", 13},                      // I-V/VII-vi-IV
+      {"pachelbel", 14},                   // I-V-vi-iii-IV-I-IV-V
+      {"blues", 15},                       // I-I-I-I-IV-IV-I-I-V-IV-I-V
+      {"vamp", 16},                        // i-VII (2 chord)
+      {"hypnotic", 17},                    // vi-V (2 chord)
   };
 
   for (const auto& [chord_name, id] : CHORD_NAMES) {

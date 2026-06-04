@@ -67,8 +67,12 @@ class MelodicAnalyzer(BaseAnalyzer):
                 gap_after = next_start - note.end
 
                 if gap_before >= isolation_threshold and gap_after >= isolation_threshold:
+                    severity = Severity.WARNING
+                    if (self.profile is not None and self.profile.name == "RhythmLock"
+                            and channel in (3, 5)):
+                        severity = Severity.INFO
                     self.add_issue(
-                        severity=Severity.WARNING,
+                        severity=severity,
                         category=Category.MELODIC,
                         subcategory="isolated_note",
                         message=(f"Isolated {note_name(note.pitch)} "
@@ -110,6 +114,9 @@ class MelodicAnalyzer(BaseAnalyzer):
                     if consecutive_count >= warn_threshold:
                         severity = (Severity.ERROR if consecutive_count >= error_threshold
                                     else Severity.WARNING)
+                        if (self.profile is not None and self.profile.name == "RhythmLock"
+                                and channel in (3, 5)):
+                            severity = Severity.INFO
                         self.add_issue(
                             severity=severity,
                             category=Category.MELODIC,
@@ -127,6 +134,9 @@ class MelodicAnalyzer(BaseAnalyzer):
             if consecutive_count >= warn_threshold:
                 severity = (Severity.ERROR if consecutive_count >= error_threshold
                             else Severity.WARNING)
+                if (self.profile is not None and self.profile.name == "RhythmLock"
+                        and channel in (3, 5)):
+                    severity = Severity.INFO
                 self.add_issue(
                     severity=severity,
                     category=Category.MELODIC,
@@ -166,7 +176,7 @@ class MelodicAnalyzer(BaseAnalyzer):
                     )
 
     def _analyze_melodic_leaps(self):
-        """Detect awkward melodic leaps. YOASOBI-aware: resolved/consonant leaps are tolerated."""
+        """Detect awkward melodic leaps. AnimeHighEnergy-aware: resolved/consonant leaps are tolerated."""
         melodic_channels = [0, 3, 5]
         base_threshold = 14  # Raised from 12 for modern J-pop
 
@@ -210,7 +220,7 @@ class MelodicAnalyzer(BaseAnalyzer):
                 is_consonant = interval_class in CONSONANT_LEAPS
                 is_pattern = seen_intervals.count(interval) >= 1
 
-                # YOASOBI-aware severity
+                # AnimeHighEnergy-aware severity
                 if is_resolved and interval <= 24:
                     continue  # Resolved leaps <=2 octaves: OK
                 elif is_resolved:

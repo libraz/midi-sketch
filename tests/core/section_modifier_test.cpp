@@ -3,9 +3,9 @@
  * @brief Tests for SectionModifier system (Ochisabi, Climactic, Transitional).
  */
 
-#include "core/section_types.h"
-
 #include <gtest/gtest.h>
+
+#include "core/section_types.h"
 
 namespace midisketch {
 namespace {
@@ -294,8 +294,8 @@ TEST(SectionModifierTest, OchisabiFullEffect) {
   section.modifier_intensity = 100;
 
   // All aspects should reflect Ochisabi
-  EXPECT_EQ(section.getModifiedVelocity(80), 56);      // -30%
-  EXPECT_EQ(section.getModifiedDensity(100), 60);      // -40%
+  EXPECT_EQ(section.getModifiedVelocity(80), 56);  // -30%
+  EXPECT_EQ(section.getModifiedDensity(100), 60);  // -40%
   EXPECT_EQ(section.getEffectiveDrumRole(), DrumRole::FXOnly);
   EXPECT_EQ(section.getEffectiveBackingDensity(), BackingDensity::Thin);
 }
@@ -312,8 +312,8 @@ TEST(SectionModifierTest, ClimacticFullEffect) {
   section.modifier_intensity = 100;
 
   // All aspects should reflect Climactic
-  EXPECT_EQ(section.getModifiedVelocity(90), 103);     // +15% (90 * 1.15)
-  EXPECT_EQ(section.getModifiedDensity(100), 100);     // +25% clamped to 100
+  EXPECT_EQ(section.getModifiedVelocity(90), 103);  // +15% (90 * 1.15)
+  EXPECT_EQ(section.getModifiedDensity(100), 100);  // +25% clamped to 100
   EXPECT_EQ(section.getEffectiveDrumRole(), DrumRole::Full);
   EXPECT_EQ(section.getEffectiveBackingDensity(), BackingDensity::Thick);
 }

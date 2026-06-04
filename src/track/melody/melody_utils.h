@@ -21,9 +21,9 @@ namespace melody {
 
 /// @brief State for tracking leap resolution across notes.
 struct LeapResolutionState {
-  bool pending = false;        ///< Leap resolution in progress
-  int8_t direction = 0;        ///< Resolution direction (-1=down, +1=up)
-  uint8_t steps_remaining = 0; ///< Number of stepwise notes remaining
+  bool pending = false;         ///< Leap resolution in progress
+  int8_t direction = 0;         ///< Resolution direction (-1=down, +1=up)
+  uint8_t steps_remaining = 0;  ///< Number of stepwise notes remaining
 
   /// @brief Reset state after a new leap is detected.
   void startResolution(int leap_direction) {
@@ -114,8 +114,8 @@ bool isAvoidNoteWithRoot(int pitch_pc, int root_pc);
 /// @param vocal_low Minimum pitch
 /// @param vocal_high Maximum pitch
 /// @return Adjusted pitch (nearest safe chord tone)
-int getNearestSafeChordTone(int current_pitch, int8_t chord_degree, int root_pc,
-                            uint8_t vocal_low, uint8_t vocal_high);
+int getNearestSafeChordTone(int current_pitch, int8_t chord_degree, int root_pc, uint8_t vocal_low,
+                            uint8_t vocal_high);
 
 /// @brief Get anchor tone pitch for Chorus/B sections.
 /// @param chord_degree Chord degree
@@ -150,7 +150,7 @@ void applySequentialTransposition(std::vector<NoteEvent>& notes, uint8_t phrase_
 /// @param max_phrase_bars Maximum bars before forced breath
 /// @param breath_ticks Duration of breath gap to insert (default: TICK_EIGHTH = 240)
 void enforceMaxPhraseDuration(std::vector<NoteEvent>& notes, uint8_t max_phrase_bars,
-                               Tick breath_ticks = 240);
+                              Tick breath_ticks = 240);
 
 }  // namespace melody
 }  // namespace midisketch

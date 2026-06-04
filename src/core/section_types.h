@@ -54,7 +54,8 @@ inline constexpr TrackMask operator&(TrackMask a, TrackMask b) {
 
 /// @brief Bitwise NOT operator for TrackMask.
 inline constexpr TrackMask operator~(TrackMask a) {
-  return static_cast<TrackMask>(~static_cast<uint16_t>(a) & 0x1FF);  // NOLINT(hicpp-signed-bitwise) mask to 9 track bits
+  return static_cast<TrackMask>(~static_cast<uint16_t>(a) &
+                                0x1FF);  // NOLINT(hicpp-signed-bitwise) mask to 9 track bits
 }
 
 /// @brief Check if a track is enabled in the mask.
@@ -95,11 +96,12 @@ inline constexpr TrackMask trackRoleToMask(TrackRole role) {
 /// @brief A scheduling event that adds or removes tracks at a specific bar
 /// within a section. Used for staggered instrument entrances and exits.
 struct LayerEvent {
-  uint8_t bar_offset;           ///< Bar within section (0-based)
-  TrackMask tracks_add_mask;    ///< Tracks to activate at this bar
-  TrackMask tracks_remove_mask; ///< Tracks to deactivate at this bar
+  uint8_t bar_offset;            ///< Bar within section (0-based)
+  TrackMask tracks_add_mask;     ///< Tracks to activate at this bar
+  TrackMask tracks_remove_mask;  ///< Tracks to deactivate at this bar
 
-  LayerEvent() : bar_offset(0), tracks_add_mask(TrackMask::None), tracks_remove_mask(TrackMask::None) {}
+  LayerEvent()
+      : bar_offset(0), tracks_add_mask(TrackMask::None), tracks_remove_mask(TrackMask::None) {}
 
   LayerEvent(uint8_t offset, TrackMask add, TrackMask remove)
       : bar_offset(offset), tracks_add_mask(add), tracks_remove_mask(remove) {}
@@ -128,8 +130,7 @@ inline TrackMask computeActiveTracksAtBar(const std::vector<LayerEvent>& events,
 /// @param bar_offset Target bar (0-based within section)
 /// @param track Track mask to check (single track bit)
 /// @return true if the track is active at the given bar
-inline bool isTrackActiveAtBar(const std::vector<LayerEvent>& events,
-                               uint8_t bar_offset,
+inline bool isTrackActiveAtBar(const std::vector<LayerEvent>& events, uint8_t bar_offset,
                                TrackMask track) {
   return hasTrack(computeActiveTracksAtBar(events, bar_offset), track);
 }
@@ -141,11 +142,11 @@ inline bool isTrackActiveAtBar(const std::vector<LayerEvent>& events,
 /// @brief Exit pattern controlling how tracks end within a section.
 /// Provides musical endings instead of abrupt cutoffs.
 enum class ExitPattern : uint8_t {
-  None = 0,   ///< No special exit (current behavior)
-  Sustain,    ///< Last notes are extended to fill the section
-  Fadeout,    ///< Velocity gradually decreases in last 2 bars
-  FinalHit,   ///< Strong accent on the last beat
-  CutOff,     ///< All notes end 1 beat before section boundary (dramatic silence)
+  None = 0,  ///< No special exit (current behavior)
+  Sustain,   ///< Last notes are extended to fill the section
+  Fadeout,   ///< Velocity gradually decreases in last 2 bars
+  FinalHit,  ///< Strong accent on the last beat
+  CutOff,    ///< All notes end 1 beat before section boundary (dramatic silence)
 };
 
 // ============================================================================
@@ -180,8 +181,8 @@ enum class EntryPattern : uint8_t {
 /// @brief Generation paradigm controlling overall generation approach.
 enum class GenerationParadigm : uint8_t {
   Traditional,   ///< Existing behavior (backward compatible)
-  RhythmSync,    ///< Rhythm-synced (Orangestar style): vocal onsets sync to drum grid
-  MelodyDriven,  ///< Melody-driven (YOASOBI style): drums follow melody
+  RhythmSync,    ///< Rhythm-synced (RhythmSync style): vocal onsets sync to drum grid
+  MelodyDriven,  ///< Melody-driven (AnimeHighEnergy style): drums follow melody
 };
 
 // ============================================================================
@@ -194,7 +195,7 @@ enum class RiffPolicy : uint8_t {
   LockedContour = 1,  ///< Pitch contour fixed, expression variable (recommended)
   LockedPitch = 2,    ///< Pitch completely fixed, velocity variable
   LockedAll = 3,      ///< Completely fixed (monotonous, not recommended)
-  Evolving = 4,       ///< Gradual evolution with variations (YOASOBI style)
+  Evolving = 4,       ///< Gradual evolution with variations (AnimeHighEnergy style)
   // Backward compatibility alias
   Locked = LockedContour,  ///< Alias for LockedContour
 };
@@ -229,7 +230,7 @@ struct DrumGrid {
 /// Used to synchronize bass notes with kick drum hits for tighter groove.
 /// Bass notes can optionally align to kick positions for a locked-in feel.
 struct KickPatternCache {
-  static constexpr size_t MAX_KICKS = 512;  ///< Max kicks per song (~2 min at 16 per bar)
+  static constexpr size_t MAX_KICKS = 512;   ///< Max kicks per song (~2 min at 16 per bar)
   std::array<Tick, MAX_KICKS> kick_ticks{};  ///< Tick positions of kicks
   size_t kick_count = 0;                     ///< Number of kicks in array
   float kicks_per_bar = 4.0f;                ///< Average kicks per bar
@@ -309,10 +310,10 @@ enum class PeakLevel : uint8_t {
 // ============================================================================
 
 /// @brief Drum track role controlling pattern generation.
-/// Addresses Orangestar Intro issue where "Drums" was assumed to mean Kick/Snare.
+/// Addresses RhythmSync Intro issue where "Drums" was assumed to mean Kick/Snare.
 enum class DrumRole : uint8_t {
   Full = 0,     ///< Full drums (Kick/Snare/HH)
-  Ambient = 1,  ///< Atmospheric (HH/Ride center, Kick suppressed) - Orangestar Intro
+  Ambient = 1,  ///< Atmospheric (HH/Ride center, Kick suppressed) - RhythmSync Intro
   Minimal = 2,  ///< Minimal (HH only) - Ballad
   FXOnly = 3,   ///< FX/Fill only (hide beat feel)
 };
@@ -328,10 +329,10 @@ enum class DrumRole : uint8_t {
 /// - Climactic: Maximum intensity for final climax
 /// - Transitional: Preparation for next section
 enum class SectionModifier : uint8_t {
-  None = 0,        ///< Standard section (no modification)
-  Ochisabi = 1,    ///< "Ochi-sabi" (quiet/fallen chorus): -30% velocity, drums FX only, thin backing
-  Climactic = 2,   ///< Climax: +15% velocity, maximum density
-  Transitional = 3 ///< Transition: -10% velocity, preparing for next section
+  None = 0,       ///< Standard section (no modification)
+  Ochisabi = 1,   ///< "Ochi-sabi" (quiet/fallen chorus): -30% velocity, drums FX only, thin backing
+  Climactic = 2,  ///< Climax: +15% velocity, maximum density
+  Transitional = 3  ///< Transition: -10% velocity, preparing for next section
 };
 
 // ============================================================================
@@ -349,7 +350,7 @@ enum class SectionType {
   Outro,      ///< Ending section
   Chant,      ///< Chant section (e.g., Gachikoi) - 6-12 bars
   MixBreak,   ///< MIX section (e.g., Tiger) - 4-8 bars
-  Drop        ///< EDM drop section: all melodic instruments cut, kick + sub-bass only, then re-entry
+  Drop  ///< EDM drop section: all melodic instruments cut, kick + sub-bass only, then re-entry
 };
 
 // ============================================================================
@@ -359,8 +360,8 @@ enum class SectionType {
 /// @brief Transitional/atmospheric sections with sparse arrangement.
 /// Intro, Interlude, Outro, Chant are low-energy framing sections.
 inline bool isTransitionalSection(SectionType t) {
-  return t == SectionType::Intro || t == SectionType::Interlude ||
-         t == SectionType::Outro || t == SectionType::Chant;
+  return t == SectionType::Intro || t == SectionType::Interlude || t == SectionType::Outro ||
+         t == SectionType::Chant;
 }
 
 /// @brief Bookend sections (song start/end).
@@ -375,8 +376,8 @@ inline bool isInstrumentalBreak(SectionType t) {
 
 /// @brief High-energy sections with active patterns.
 inline bool isHighEnergySection(SectionType t) {
-  return t == SectionType::Chorus || t == SectionType::B ||
-         t == SectionType::MixBreak || t == SectionType::Drop;
+  return t == SectionType::Chorus || t == SectionType::B || t == SectionType::MixBreak ||
+         t == SectionType::Drop;
 }
 
 /// @brief Extended chord types for harmonic variety.
@@ -411,10 +412,10 @@ enum class BackingDensity : uint8_t {
 ///
 /// Defines how each modifier affects generation parameters.
 struct ModifierProperties {
-  float velocity_adjust;   ///< Velocity multiplier adjustment (-0.30 to +0.15)
-  float density_adjust;    ///< Density multiplier adjustment (-0.40 to +0.25)
+  float velocity_adjust;         ///< Velocity multiplier adjustment (-0.30 to +0.15)
+  float density_adjust;          ///< Density multiplier adjustment (-0.40 to +0.25)
   DrumRole suggested_drum_role;  ///< Recommended drum role for modifier
-  BackingDensity backing;  ///< Recommended backing density
+  BackingDensity backing;        ///< Recommended backing density
 };
 
 /// @brief Get properties for a section modifier.
@@ -565,7 +566,8 @@ struct Section {
     }
     ModifierProperties props = getModifierProperties(modifier);
     float intensity_factor = static_cast<float>(modifier_intensity) / 100.0f;
-    float adjusted = static_cast<float>(base_vel) * (1.0f + props.velocity_adjust * intensity_factor);
+    float adjusted =
+        static_cast<float>(base_vel) * (1.0f + props.velocity_adjust * intensity_factor);
     return static_cast<uint8_t>(std::clamp(adjusted, 40.0f, 127.0f));
   }
 
@@ -578,7 +580,8 @@ struct Section {
     }
     ModifierProperties props = getModifierProperties(modifier);
     float intensity_factor = static_cast<float>(modifier_intensity) / 100.0f;
-    float adjusted = static_cast<float>(base_density) * (1.0f + props.density_adjust * intensity_factor);
+    float adjusted =
+        static_cast<float>(base_density) * (1.0f + props.density_adjust * intensity_factor);
     return static_cast<uint8_t>(std::clamp(adjusted, 20.0f, 100.0f));
   }
 

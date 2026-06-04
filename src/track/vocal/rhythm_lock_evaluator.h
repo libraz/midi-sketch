@@ -42,8 +42,7 @@ int barHeadSkipCap(size_t i, const std::vector<float>& onsets, int max_skip);
 /// Considers section type, phrase/section boundaries, bar alignment, and cooldown.
 /// This replaces the pre-computed skip_indices approach, enabling pitch-aware decisions.
 LongNoteDesire evaluateLongNoteDesire(size_t i, const std::vector<float>& onsets,
-                                      const Section& section,
-                                      const std::set<float>& boundary_set,
+                                      const Section& section, const std::set<float>& boundary_set,
                                       int onsets_since_long, uint16_t bpm = 120,
                                       const std::set<float>& phrase_start_beats = {});
 
@@ -52,14 +51,12 @@ LongNoteDesire evaluateLongNoteDesire(size_t i, const std::vector<float>& onsets
 /// Checks both chord boundary safety AND inter-track collision safety.
 /// Brief passing dissonance from base_duration notes is acceptable, but
 /// note extension must not create sustained dissonance with other tracks.
-int computeSafeSkipCount(uint8_t pitch, Tick tick, const std::vector<float>& onsets,
-                         size_t i, int max_desired, const Section& section,
-                         const IHarmonyContext& harmony);
+int computeSafeSkipCount(uint8_t pitch, Tick tick, const std::vector<float>& onsets, size_t i,
+                         int max_desired, const Section& section, const IHarmonyContext& harmony);
 
 /// @brief Build phrase boundary beat positions from PhrasePlan or rhythm detection.
 std::set<float> buildPhraseBoundarySet(const PhrasePlan* phrase_plan,
-                                       const CachedRhythmPattern& rhythm,
-                                       const Section& section);
+                                       const CachedRhythmPattern& rhythm, const Section& section);
 
 /// @brief Build phrase start beat positions for long-note anchoring.
 std::set<float> buildPhraseStartBeats(const PhrasePlan* phrase_plan, const Section& section);

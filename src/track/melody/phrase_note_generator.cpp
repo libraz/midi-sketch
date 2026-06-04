@@ -9,10 +9,10 @@
 #include <cmath>
 
 #include "core/chord_utils.h"
-#include "core/rng_util.h"
 #include "core/i_harmony_context.h"
 #include "core/note_creator.h"
 #include "core/pitch_utils.h"
+#include "core/rng_util.h"
 #include "core/timing_constants.h"
 #include "core/velocity.h"
 #include "core/velocity_helper.h"
@@ -26,7 +26,8 @@ namespace midisketch {
 namespace melody {
 
 int selectInitialPhrasePitch(int prev_pitch, int8_t chord_degree, SectionType section_type,
-                              const TessituraRange& tessitura, uint8_t vocal_low, uint8_t vocal_high) {
+                             const TessituraRange& tessitura, uint8_t vocal_low,
+                             uint8_t vocal_high) {
   if (prev_pitch < 0) {
     // No previous pitch - select based on section type
     if (section_type == SectionType::Chorus || section_type == SectionType::B) {
@@ -59,8 +60,8 @@ int selectInitialPhrasePitch(int prev_pitch, int8_t chord_degree, SectionType se
 }
 
 int applyMotifFragment(int current_pitch, size_t note_index,
-                       const std::vector<int8_t>& motif_intervals,
-                       int8_t chord_degree, uint8_t vocal_low, uint8_t vocal_high) {
+                       const std::vector<int8_t>& motif_intervals, int8_t chord_degree,
+                       uint8_t vocal_low, uint8_t vocal_high) {
   // Motif fragments apply to notes 1 through N (not the first note)
   if (note_index == 0 || note_index > motif_intervals.size()) {
     return -1;  // Not applicable
@@ -76,19 +77,17 @@ int applyMotifFragment(int current_pitch, size_t note_index,
 }
 
 int applyAllPitchConstraints(int pitch, const NoteGenerationContext& ctx,
-                              const PhraseNoteParams& params,
-                              LeapResolutionState& leap_state,
-                              const std::vector<int>& chord_tones,
-                              std::mt19937& rng) {
+                             const PhraseNoteParams& params, LeapResolutionState& leap_state,
+                             const std::vector<int>& chord_tones, std::mt19937& rng) {
   int new_pitch = pitch;
 
   // 1. Maximum interval constraint
   int max_interval = getEffectiveMaxInterval(params.section_type, params.max_leap_semitones);
   int interval = std::abs(new_pitch - ctx.current_pitch);
   if (interval > max_interval) {
-    new_pitch = nearestChordToneWithinInterval(new_pitch, ctx.current_pitch, ctx.chord_degree,
-                                                max_interval, params.vocal_low, params.vocal_high,
-                                                params.tessitura);
+    new_pitch =
+        nearestChordToneWithinInterval(new_pitch, ctx.current_pitch, ctx.chord_degree, max_interval,
+                                       params.vocal_low, params.vocal_high, params.tessitura);
   }
 
   // 2. Multi-note leap resolution tracking
@@ -99,9 +98,9 @@ int applyAllPitchConstraints(int pitch, const NoteGenerationContext& ctx,
     float step_probability = params.prefer_stepwise ? 1.0f : 0.80f;
 
     if (rng_util::rollProbability(rng, step_probability)) {
-      int best_step = findStepwiseResolutionPitch(ctx.current_pitch, chord_tones,
-                                                   leap_state.direction,
-                                                   params.vocal_low, params.vocal_high);
+      int best_step =
+          findStepwiseResolutionPitch(ctx.current_pitch, chord_tones, leap_state.direction,
+                                      params.vocal_low, params.vocal_high);
       if (best_step >= 0) {
         new_pitch = best_step;
         actual_interval = new_pitch - ctx.current_pitch;
@@ -117,49 +116,49 @@ int applyAllPitchConstraints(int pitch, const NoteGenerationContext& ctx,
   // 3. Leap preparation constraint (limit leaps after short notes)
   if (ctx.note_index > 0) {
     new_pitch = applyLeapPreparationConstraint(new_pitch, ctx.current_pitch, ctx.prev_duration,
-                                                ctx.chord_degree, params.vocal_low,
-                                                params.vocal_high, params.tessitura);
+                                               ctx.chord_degree, params.vocal_low,
+                                               params.vocal_high, params.tessitura);
   }
 
   // 4. Leap encouragement after long notes
   if (ctx.note_index > 0) {
-    new_pitch = encourageLeapAfterLongNote(new_pitch, ctx.current_pitch, ctx.prev_duration,
-                                            ctx.chord_degree, params.vocal_low,
-                                            params.vocal_high, rng);
+    new_pitch =
+        encourageLeapAfterLongNote(new_pitch, ctx.current_pitch, ctx.prev_duration,
+                                   ctx.chord_degree, params.vocal_low, params.vocal_high, rng);
   }
 
   // 5. Avoid note constraint
-  new_pitch = enforceAvoidNoteConstraint(new_pitch, ctx.chord_degree,
-                                          params.vocal_low, params.vocal_high);
+  new_pitch =
+      enforceAvoidNoteConstraint(new_pitch, ctx.chord_degree, params.vocal_low, params.vocal_high);
 
   // 6. Downbeat chord-tone constraint
   new_pitch = enforceDownbeatChordTone(new_pitch, ctx.note_start, ctx.chord_degree,
-                                        ctx.current_pitch, params.vocal_low, params.vocal_high,
-                                        params.disable_vowel_constraints);
+                                       ctx.current_pitch, params.vocal_low, params.vocal_high,
+                                       params.disable_vowel_constraints);
 
   // 6b. Guide tone priority: on strong beats, bias toward 3rd/7th
   if (params.guide_tone_rate > 0 && params.vocal_attitude != VocalAttitude::Raw) {
-    new_pitch = enforceGuideToneOnDownbeat(new_pitch, ctx.note_start, ctx.chord_degree,
-                                            params.vocal_low, params.vocal_high,
-                                            params.guide_tone_rate, rng);
+    new_pitch =
+        enforceGuideToneOnDownbeat(new_pitch, ctx.note_start, ctx.chord_degree, params.vocal_low,
+                                   params.vocal_high, params.guide_tone_rate, rng);
   }
 
   // 7. Leap-after-reversal rule
   if (ctx.note_index > 0 && ctx.prev_note_pitch >= 0) {
-    new_pitch = applyLeapReversalRule(new_pitch, ctx.current_pitch, ctx.prev_interval,
-                                       chord_tones, params.vocal_low, params.vocal_high,
-                                       params.prefer_stepwise, rng,
-                                       static_cast<int8_t>(params.section_type),
-                                       ctx.phrase_pos);
+    new_pitch =
+        applyLeapReversalRule(new_pitch, ctx.current_pitch, ctx.prev_interval, chord_tones,
+                              params.vocal_low, params.vocal_high, params.prefer_stepwise, rng,
+                              static_cast<int8_t>(params.section_type), ctx.phrase_pos);
   }
 
   // 8. Final interval enforcement (re-check after all adjustments)
-  int effective_max_interval = getEffectiveMaxInterval(params.section_type, params.max_leap_semitones);
+  int effective_max_interval =
+      getEffectiveMaxInterval(params.section_type, params.max_leap_semitones);
   int final_interval = std::abs(new_pitch - ctx.current_pitch);
   if (final_interval > effective_max_interval) {
     new_pitch = nearestChordToneWithinInterval(new_pitch, ctx.current_pitch, ctx.chord_degree,
-                                                effective_max_interval, params.vocal_low,
-                                                params.vocal_high, params.tessitura);
+                                               effective_max_interval, params.vocal_low,
+                                               params.vocal_high, params.tessitura);
   }
 
   return new_pitch;
@@ -192,14 +191,14 @@ uint8_t calculateNoteVelocity(bool strong, bool is_phrase_end, size_t note_index
   }
 
   // Apply phrase-internal velocity curve for natural crescendo/decrescendo
-  float phrase_curve = getPhraseNoteVelocityCurve(
-      static_cast<int>(note_index), static_cast<int>(total_notes), contour);
+  float phrase_curve = getPhraseNoteVelocityCurve(static_cast<int>(note_index),
+                                                  static_cast<int>(total_notes), contour);
   return vel::clamp(static_cast<int>(velocity * phrase_curve));
 }
 
 int applyPhraseEndResolution(int pitch, int8_t chord_degree, SectionType section_type,
-                              float phrase_end_resolution, uint8_t vocal_low, uint8_t vocal_high,
-                              std::mt19937& rng) {
+                             float phrase_end_resolution, uint8_t vocal_low, uint8_t vocal_high,
+                             std::mt19937& rng) {
   if (phrase_end_resolution <= 0.0f) {
     return pitch;
   }
@@ -232,8 +231,7 @@ int applyPhraseEndResolution(int pitch, int8_t chord_degree, SectionType section
     int root_pitch = octave * 12 + root_pc;
     if (root_pitch < static_cast<int>(vocal_low)) root_pitch += 12;
     if (root_pitch > static_cast<int>(vocal_high)) root_pitch -= 12;
-    if (root_pitch >= static_cast<int>(vocal_low) &&
-        root_pitch <= static_cast<int>(vocal_high)) {
+    if (root_pitch >= static_cast<int>(vocal_low) && root_pitch <= static_cast<int>(vocal_high)) {
       new_pitch = root_pitch;
     }
   }
@@ -250,7 +248,7 @@ int applyFinalPitchSafety(int pitch, Tick note_start, Tick note_duration, int ke
 
   // Apply pitch safety check to avoid collisions with other tracks
   auto candidates = getSafePitchCandidates(harmony, static_cast<uint8_t>(safe_pitch), note_start,
-                                            note_duration, TrackRole::Vocal, vocal_low, vocal_high);
+                                           note_duration, TrackRole::Vocal, vocal_low, vocal_high);
   if (candidates.empty()) {
     return -1;  // No safe pitch available
   }

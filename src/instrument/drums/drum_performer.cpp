@@ -32,9 +32,8 @@ float DrumPerformer::calculateCost(uint8_t pitch, Tick start, Tick /*duration*/,
   const auto& physics = getPhysicsFor(limb);
 
   // 1. Stroke interval check
-  Tick since_last = (start > state.last_hit_tick[limb_idx])
-                        ? (start - state.last_hit_tick[limb_idx])
-                        : 0;
+  Tick since_last =
+      (start > state.last_hit_tick[limb_idx]) ? (start - state.last_hit_tick[limb_idx]) : 0;
 
   if (since_last < physics.min_double_interval) {
     // Faster than double stroke - physically impossible
@@ -155,9 +154,8 @@ void DrumPerformer::updateState(PerformerState& base_state, uint8_t pitch, Tick 
   const auto& physics = getPhysicsFor(limb);
 
   // Calculate time since last hit for this limb
-  Tick since_last = (start > state.last_hit_tick[limb_idx])
-                        ? (start - state.last_hit_tick[limb_idx])
-                        : 0;
+  Tick since_last =
+      (start > state.last_hit_tick[limb_idx]) ? (start - state.last_hit_tick[limb_idx]) : 0;
 
   // Update fatigue
   if (since_last < physics.min_single_interval * 2) {
@@ -170,8 +168,7 @@ void DrumPerformer::updateState(PerformerState& base_state, uint8_t pitch, Tick 
   for (size_t i = 0; i < kLimbCount; ++i) {
     if (i != limb_idx) {
       Tick since_other = (start > state.last_hit_tick[i]) ? (start - state.last_hit_tick[i]) : 0;
-      float recovery =
-          physics.recovery_rate * (static_cast<float>(since_other) / TICK_QUARTER);
+      float recovery = physics.recovery_rate * (static_cast<float>(since_other) / TICK_QUARTER);
       state.limb_fatigue[i] = std::max(0.0f, state.limb_fatigue[i] - recovery);
     }
   }
@@ -216,9 +213,9 @@ bool DrumPerformer::canSimultaneousHit(const std::vector<uint8_t>& notes) const 
     } else if (is_either) {
       // Try to find alternate limb
       bool is_foot = isFootInstrument(note);
-      std::array<Limb, 2> candidates =
-          is_foot ? std::array<Limb, 2>{Limb::RightFoot, Limb::LeftFoot}
-                  : std::array<Limb, 2>{Limb::RightHand, Limb::LeftHand};
+      std::array<Limb, 2> candidates = is_foot
+                                           ? std::array<Limb, 2>{Limb::RightFoot, Limb::LeftFoot}
+                                           : std::array<Limb, 2>{Limb::RightHand, Limb::LeftHand};
 
       bool found = false;
       for (Limb alt : candidates) {

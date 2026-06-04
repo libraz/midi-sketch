@@ -5,9 +5,8 @@
  * Extracted from melody_designer.cpp for modularity.
  */
 
-#include "track/vocal/melody_designer.h"
-
 #include "core/motif_transform.h"
+#include "track/vocal/melody_designer.h"
 
 namespace midisketch {
 
@@ -22,16 +21,13 @@ void MelodyDesigner::prepareMotifVariants(const GlobalMotif& source) {
   motif_variants_[SectionType::Chorus] = source;
 
   // A section: diminished rhythm (slightly faster feel for verses)
-  motif_variants_[SectionType::A] =
-      transformGlobalMotif(source, GlobalMotifTransform::Diminish);
+  motif_variants_[SectionType::A] = transformGlobalMotif(source, GlobalMotifTransform::Diminish);
 
   // B section: sequenced up (building tension toward chorus)
-  motif_variants_[SectionType::B] =
-      transformGlobalMotif(source, GlobalMotifTransform::Sequence, 2);
+  motif_variants_[SectionType::B] = transformGlobalMotif(source, GlobalMotifTransform::Sequence, 2);
 
   // Bridge: inverted contour (maximum contrast)
-  motif_variants_[SectionType::Bridge] =
-      transformGlobalMotif(source, GlobalMotifTransform::Invert);
+  motif_variants_[SectionType::Bridge] = transformGlobalMotif(source, GlobalMotifTransform::Invert);
 
   // Outro: fragmented (winding down, partial recall)
   motif_variants_[SectionType::Outro] =
@@ -44,8 +40,7 @@ void MelodyDesigner::prepareMotifVariants(const GlobalMotif& source) {
       transformGlobalMotif(source, GlobalMotifTransform::Retrograde);
 
   // Chant/MixBreak: augmented rhythm (emphasized, slower feel)
-  motif_variants_[SectionType::Chant] =
-      transformGlobalMotif(source, GlobalMotifTransform::Augment);
+  motif_variants_[SectionType::Chant] = transformGlobalMotif(source, GlobalMotifTransform::Augment);
   motif_variants_[SectionType::MixBreak] =
       transformGlobalMotif(source, GlobalMotifTransform::Augment);
 }

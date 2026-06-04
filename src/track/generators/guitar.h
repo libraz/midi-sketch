@@ -14,13 +14,13 @@ namespace midisketch {
 
 /// @brief Guitar playing style determined by mood program.
 enum class GuitarStyle : uint8_t {
-  Fingerpick,   ///< Nylon guitar (GM 25): arpeggiated chord tones
-  Strum,        ///< Clean guitar (GM 27): rhythmic strumming
-  PowerChord,   ///< Overdriven guitar (GM 29): root+5th downstrokes
-  PedalTone,      ///< 16th note root pedal with octave variation
-  RhythmChord,    ///< 16th note root+5th power chord pattern
-  TremoloPick,    ///< 32nd note tremolo picking / scale run
-  SweepArpeggio   ///< 32nd note sweep arpeggio across chord tones
+  Fingerpick,    ///< Nylon guitar (GM 25): arpeggiated chord tones
+  Strum,         ///< Clean guitar (GM 27): rhythmic strumming
+  PowerChord,    ///< Overdriven guitar (GM 29): root+5th downstrokes
+  PedalTone,     ///< 16th note root pedal with octave variation
+  RhythmChord,   ///< 16th note root+5th power chord pattern
+  TremoloPick,   ///< 32nd note tremolo picking / scale run
+  SweepArpeggio  ///< 32nd note sweep arpeggio across chord tones
 };
 
 /// @brief Electric guitar track generator implementing ITrackBase interface.

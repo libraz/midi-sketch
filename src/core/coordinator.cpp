@@ -10,9 +10,9 @@
 
 #include "core/chord.h"
 #include "core/chord_utils.h"
-#include "core/pitch_utils.h"
 #include "core/harmony_coordinator.h"
 #include "core/midi_track.h"
+#include "core/pitch_utils.h"
 #include "core/preset_data.h"
 #include "core/secondary_dominant_planner.h"
 #include "core/song.h"
@@ -23,16 +23,15 @@
 #include "track/generators/bass.h"
 #include "track/generators/chord.h"
 #include "track/generators/drums.h"
-#include "track/generators/motif.h"
 #include "track/generators/guitar.h"
+#include "track/generators/motif.h"
 #include "track/generators/se.h"
 #include "track/generators/vocal.h"
 #include "track/vocal/vocal_analysis.h"
 
 namespace midisketch {
 
-Coordinator::Coordinator()
-    : harmony_(std::make_unique<HarmonyCoordinator>()), rng_(42) {}
+Coordinator::Coordinator() : harmony_(std::make_unique<HarmonyCoordinator>()), rng_(42) {}
 
 Coordinator::~Coordinator() = default;
 
@@ -47,8 +46,7 @@ void Coordinator::initialize(const GeneratorParams& params) {
   // Resolve seed
   uint32_t seed = params.seed;
   if (seed == 0) {
-    seed = static_cast<uint32_t>(
-        std::chrono::steady_clock::now().time_since_epoch().count());
+    seed = static_cast<uint32_t>(std::chrono::steady_clock::now().time_since_epoch().count());
   }
   rng_.seed(seed);
 
@@ -82,8 +80,8 @@ void Coordinator::initialize(const GeneratorParams& params) {
     uint32_t sec_dom_seed = params.seed ^ kSecDomSalt;
     if (sec_dom_seed == 0) sec_dom_seed = kSecDomSalt;
     std::mt19937 sec_dom_rng(sec_dom_seed);
-    planAndRegisterSecondaryDominants(arrangement_, progression, params.mood,
-                                      sec_dom_rng, *harmony_);
+    planAndRegisterSecondaryDominants(arrangement_, progression, params.mood, sec_dom_rng,
+                                      *harmony_);
   }
 
   // Set track priorities in harmony coordinator
@@ -105,10 +103,8 @@ void Coordinator::initialize(const GeneratorParams& params) {
   }
 }
 
-void Coordinator::initialize(const GeneratorParams& params,
-                             const Arrangement& arrangement,
-                             std::mt19937& rng,
-                             IHarmonyCoordinator* harmony) {
+void Coordinator::initialize(const GeneratorParams& params, const Arrangement& arrangement,
+                             std::mt19937& rng, IHarmonyCoordinator* harmony) {
   params_ = params;
   warnings_.clear();
 
@@ -156,8 +152,8 @@ void Coordinator::initialize(const GeneratorParams& params,
     uint32_t sec_dom_seed = params.seed ^ kSecDomSalt;
     if (sec_dom_seed == 0) sec_dom_seed = kSecDomSalt;
     std::mt19937 sec_dom_rng(sec_dom_seed);
-    planAndRegisterSecondaryDominants(arrangement_, progression, params.mood,
-                                      sec_dom_rng, *harmony);
+    planAndRegisterSecondaryDominants(arrangement_, progression, params.mood, sec_dom_rng,
+                                      *harmony);
   }
 
   // Set track priorities in external harmony coordinator
@@ -203,8 +199,10 @@ ValidationResult Coordinator::validateParams() const {
   }
 
   // Validate blueprint
-  if (params_.blueprint_id != 255 && params_.blueprint_id > 8) {
-    result.addError("Invalid blueprint ID (must be 0-8 or 255 for random)");
+  const uint8_t blueprint_count = getProductionBlueprintCount();
+  if (params_.blueprint_id != 255 && params_.blueprint_id >= blueprint_count) {
+    result.addError("Invalid blueprint ID (must be 0-" +
+                    std::to_string(static_cast<int>(blueprint_count - 1)) + " or 255 for random)");
   }
 
   return result;
@@ -228,23 +226,23 @@ std::vector<TrackRole> Coordinator::getGenerationOrder() const {
   switch (paradigm_) {
     case GenerationParadigm::RhythmSync:
       // Motif first as coordinate axis
-      order = {TrackRole::Motif, TrackRole::Vocal, TrackRole::Aux,
-               TrackRole::Bass, TrackRole::Chord, TrackRole::Guitar,
+      order = {TrackRole::Motif,    TrackRole::Vocal, TrackRole::Aux,
+               TrackRole::Bass,     TrackRole::Chord, TrackRole::Guitar,
                TrackRole::Arpeggio, TrackRole::Drums, TrackRole::SE};
       break;
 
     case GenerationParadigm::MelodyDriven:
       // Vocal first, Motif before Bass to enable Bass/Motif collision avoidance
-      order = {TrackRole::Vocal, TrackRole::Aux, TrackRole::Motif,
-               TrackRole::Bass, TrackRole::Chord, TrackRole::Guitar,
+      order = {TrackRole::Vocal,    TrackRole::Aux,   TrackRole::Motif,
+               TrackRole::Bass,     TrackRole::Chord, TrackRole::Guitar,
                TrackRole::Arpeggio, TrackRole::Drums, TrackRole::SE};
       break;
 
     case GenerationParadigm::Traditional:
     default:
       // Vocal first, standard order
-      order = {TrackRole::Vocal, TrackRole::Aux, TrackRole::Motif,
-               TrackRole::Bass, TrackRole::Chord, TrackRole::Guitar,
+      order = {TrackRole::Vocal,    TrackRole::Aux,   TrackRole::Motif,
+               TrackRole::Bass,     TrackRole::Chord, TrackRole::Guitar,
                TrackRole::Arpeggio, TrackRole::Drums, TrackRole::SE};
       break;
   }
@@ -280,8 +278,7 @@ void Coordinator::generateAllTracks(Song& song) {
   IHarmonyCoordinator& harmony = getActiveHarmony();
 
   // Set up RhythmSync motif context for register separation
-  if (paradigm_ == GenerationParadigm::RhythmSync &&
-      !params_.rhythm_sync_motif_ctx.has_value()) {
+  if (paradigm_ == GenerationParadigm::RhythmSync && !params_.rhythm_sync_motif_ctx.has_value()) {
     MotifContext mctx;
     mctx.vocal_low = params_.vocal_low;
     mctx.vocal_high = params_.vocal_high;
@@ -308,8 +305,7 @@ void Coordinator::generateAllTracks(Song& song) {
   }
 
   // RhythmSync vocal-first: preserve existing Motif (coordinate axis for Vocal sync)
-  if (params_.skip_vocal && paradigm_ == GenerationParadigm::RhythmSync &&
-      !song.motif().empty()) {
+  if (params_.skip_vocal && paradigm_ == GenerationParadigm::RhythmSync && !song.motif().empty()) {
     harmony.registerTrack(song.motif(), TrackRole::Motif);
     if (harmony_coord) {
       harmony_coord->markTrackGenerated(TrackRole::Motif);
@@ -437,7 +433,7 @@ void Coordinator::regenerateTrack(TrackRole role, Song& song) {
 // ============================================================================
 
 void Coordinator::applyMotifAcrossSections(const std::vector<NoteEvent>& pattern,
-                                            MidiTrack& track) {
+                                           MidiTrack& track) {
   auto* harmony_coord = dynamic_cast<HarmonyCoordinator*>(harmony_.get());
   if (harmony_coord) {
     harmony_coord->applyMotifToSections(pattern, arrangement_.sections(), track);
@@ -445,8 +441,7 @@ void Coordinator::applyMotifAcrossSections(const std::vector<NoteEvent>& pattern
 }
 
 void Coordinator::applyHookToSections(const std::vector<NoteEvent>& hook,
-                                       const std::vector<SectionType>& targets,
-                                       MidiTrack& track) {
+                                      const std::vector<SectionType>& targets, MidiTrack& track) {
   // Filter sections by type
   std::vector<Section> target_sections;
   for (const auto& section : arrangement_.sections()) {
@@ -483,8 +478,8 @@ void Coordinator::initializeBlueprint() {
   // Validate mood compatibility
   uint8_t mood_idx = static_cast<uint8_t>(params_.mood);
   if (!isMoodCompatible(blueprint_id_, mood_idx)) {
-    warnings_.push_back("Mood " + std::to_string(mood_idx) +
-                        " may not be optimal for blueprint " + blueprint_->name);
+    warnings_.push_back("Mood " + std::to_string(mood_idx) + " may not be optimal for blueprint " +
+                        blueprint_->name);
   }
 }
 
@@ -537,9 +532,9 @@ void Coordinator::buildArrangement() {
 
   // Priority: target_duration > explicit form > Blueprint section_flow > StructurePattern
   if (params_.target_duration_seconds > 0) {
-    sections = buildStructureForDuration(params_.target_duration_seconds, bpm_,
-                                          params_.call_enabled, params_.intro_chant,
-                                          params_.mix_pattern, params_.structure);
+    sections =
+        buildStructureForDuration(params_.target_duration_seconds, bpm_, params_.call_enabled,
+                                  params_.intro_chant, params_.mix_pattern, params_.structure);
   } else if (params_.form_explicit) {
     sections = buildStructure(params_.structure);
   } else if (blueprint_ && blueprint_->section_flow && blueprint_->section_count > 0) {
@@ -584,8 +579,7 @@ void Coordinator::registerGuideChord(IHarmonyCoordinator& harmony) {
   uint8_t vocal_low = params_.vocal_low;
   if (vocal_low == 0) vocal_low = 60;  // Default C4
 
-  int guide_base_raw = std::max(static_cast<int>(BASS_HIGH) + 1,
-                                 static_cast<int>(vocal_low) - 7);
+  int guide_base_raw = std::max(static_cast<int>(BASS_HIGH) + 1, static_cast<int>(vocal_low) - 7);
   // Clamp to ensure guide tones + 1 octave fit within CHORD_HIGH
   int guide_base = std::min(guide_base_raw, static_cast<int>(CHORD_HIGH) - 12);
 
@@ -607,8 +601,8 @@ void Coordinator::registerGuideChord(IHarmonyCoordinator& harmony) {
       if (root_pitch > CHORD_HIGH) root_pitch -= 12;
       if (root_pitch < BASS_HIGH + 1) root_pitch += 12;
 
-      harmony.registerPhantomNote(bar_start, kGuideDuration,
-                                   static_cast<uint8_t>(root_pitch), TrackRole::Chord);
+      harmony.registerPhantomNote(bar_start, kGuideDuration, static_cast<uint8_t>(root_pitch),
+                                  TrackRole::Chord);
 
       // Guide tones (3rd + 7th)
       auto guide_pcs = getGuideTonePitchClasses(degree);
@@ -620,8 +614,8 @@ void Coordinator::registerGuideChord(IHarmonyCoordinator& harmony) {
         // Final clamp
         if (guide_pitch < 0 || guide_pitch > 127) continue;
 
-        harmony.registerPhantomNote(bar_start, kGuideDuration,
-                                     static_cast<uint8_t>(guide_pitch), TrackRole::Chord);
+        harmony.registerPhantomNote(bar_start, kGuideDuration, static_cast<uint8_t>(guide_pitch),
+                                    TrackRole::Chord);
       }
     }
   }
@@ -647,8 +641,7 @@ bool Coordinator::shouldSkipTrack(TrackRole role, const Song& song) const {
   if (role == TrackRole::Motif) {
     // RhythmSync vocal-first: Motif was preserved, skip regeneration
     // (only when Motif already exists; BGM-only mode needs fresh generation)
-    if (params_.skip_vocal &&
-        paradigm_ == GenerationParadigm::RhythmSync &&
+    if (params_.skip_vocal && paradigm_ == GenerationParadigm::RhythmSync &&
         !song.motif().empty()) {
       return true;
     }
@@ -675,8 +668,7 @@ bool Coordinator::shouldSkipTrack(TrackRole role, const Song& song) const {
   }
 
   // Aux: skip for SynthDriven style
-  if (role == TrackRole::Aux &&
-      params_.composition_style == CompositionStyle::SynthDriven) {
+  if (role == TrackRole::Aux && params_.composition_style == CompositionStyle::SynthDriven) {
     return true;
   }
 
@@ -693,7 +685,6 @@ const ITrackBase* Coordinator::getTrackGenerator(TrackRole role) const {
   return (it != track_generators_.end()) ? it->second.get() : nullptr;
 }
 
-
 // ============================================================================
 // Voice Limit Post-Process
 // ============================================================================
@@ -703,11 +694,11 @@ namespace {
 /// @brief Priority order for voice limiting (highest to lowest).
 /// Tracks not in this list (Drums, SE) are excluded from voice limiting.
 constexpr TrackRole kVoiceLimitPriority[] = {
-    TrackRole::Vocal, TrackRole::Bass,    TrackRole::Chord,
-    TrackRole::Aux,   TrackRole::Motif,   TrackRole::Arpeggio,
-    TrackRole::Guitar,
+    TrackRole::Vocal, TrackRole::Bass,     TrackRole::Chord,  TrackRole::Aux,
+    TrackRole::Motif, TrackRole::Arpeggio, TrackRole::Guitar,
 };
-constexpr size_t kVoiceLimitTrackCount = sizeof(kVoiceLimitPriority) / sizeof(kVoiceLimitPriority[0]);
+constexpr size_t kVoiceLimitTrackCount =
+    sizeof(kVoiceLimitPriority) / sizeof(kVoiceLimitPriority[0]);
 
 /// @brief Collect all pitch classes of notes starting within a bar at a given beat.
 ///
@@ -719,9 +710,8 @@ constexpr size_t kVoiceLimitTrackCount = sizeof(kVoiceLimitPriority) / sizeof(kV
 /// @param bar_end End tick of the bar
 /// @param beat_tick Absolute tick of the beat
 /// @return Sorted vector of unique pitch classes (0-11)
-std::vector<int> getPitchClassesOnBeat(const std::vector<NoteEvent>& notes,
-                                        Tick bar_start, Tick bar_end,
-                                        Tick beat_tick) {
+std::vector<int> getPitchClassesOnBeat(const std::vector<NoteEvent>& notes, Tick bar_start,
+                                       Tick bar_end, Tick beat_tick) {
   std::vector<int> result;
   Tick beat_end = beat_tick + TICKS_PER_BEAT;
   // Clamp beat window to bar boundaries
@@ -759,8 +749,7 @@ std::vector<int> getPitchClassesOnBeat(const std::vector<NoteEvent>& notes,
 /// @param prev_bar_start Start tick of the previous bar
 /// @param curr_bar_start Start tick of the current bar
 /// @return true if the track has different pitch classes on any strong beat
-bool isTrackMoving(const std::vector<NoteEvent>& notes, Tick prev_bar_start,
-                   Tick curr_bar_start) {
+bool isTrackMoving(const std::vector<NoteEvent>& notes, Tick prev_bar_start, Tick curr_bar_start) {
   Tick prev_bar_end = prev_bar_start + TICKS_PER_BAR;
   Tick curr_bar_end = curr_bar_start + TICKS_PER_BAR;
 
@@ -786,12 +775,11 @@ bool isTrackMoving(const std::vector<NoteEvent>& notes, Tick prev_bar_start,
 /// @param bar_start Start tick of the bar
 /// @param bar_end End tick of the bar
 void removeNotesInBar(std::vector<NoteEvent>& notes, Tick bar_start, Tick bar_end) {
-  notes.erase(
-      std::remove_if(notes.begin(), notes.end(),
-                     [bar_start, bar_end](const NoteEvent& note) {
-                       return note.start_tick >= bar_start && note.start_tick < bar_end;
-                     }),
-      notes.end());
+  notes.erase(std::remove_if(notes.begin(), notes.end(),
+                             [bar_start, bar_end](const NoteEvent& note) {
+                               return note.start_tick >= bar_start && note.start_tick < bar_end;
+                             }),
+              notes.end());
 }
 
 /// @brief Copy notes from one bar to another (shift by TICKS_PER_BAR).
@@ -800,9 +788,8 @@ void removeNotesInBar(std::vector<NoteEvent>& notes, Tick bar_start, Tick bar_en
 /// @param src_bar_start Source bar start tick
 /// @param src_bar_end Source bar end tick
 /// @param offset Tick offset to apply (dst_start - src_start)
-void copyNotesFromBar(std::vector<NoteEvent>& notes,
-                      const std::vector<NoteEvent>& all_notes, Tick src_bar_start,
-                      Tick src_bar_end, Tick offset) {
+void copyNotesFromBar(std::vector<NoteEvent>& notes, const std::vector<NoteEvent>& all_notes,
+                      Tick src_bar_start, Tick src_bar_end, Tick offset) {
   for (const auto& note : all_notes) {
     if (note.start_tick >= src_bar_start && note.start_tick < src_bar_end) {
       NoteEvent copied = note;
@@ -843,8 +830,7 @@ bool isConsonantWithSongTracks(const Song& song, uint8_t pitch, Tick start, Tick
       if (note.start_tick >= end) continue;
       if (note_end <= start) continue;
 
-      int actual_semitones =
-          std::abs(static_cast<int>(pitch) - static_cast<int>(note.note));
+      int actual_semitones = std::abs(static_cast<int>(pitch) - static_cast<int>(note.note));
       if (actual_semitones >= kMaxClashSeparation) continue;
 
       if (isDissonantActualInterval(actual_semitones, chord_degree)) {
@@ -871,9 +857,8 @@ bool isConsonantWithSongTracks(const Song& song, uint8_t pitch, Tick start, Tick
 /// @param range_low Minimum allowed pitch (0 = no constraint)
 /// @param range_high Maximum allowed pitch (127 = no constraint)
 /// @return Consonant chord tone pitch within range
-uint8_t findConsonantChordTone(IHarmonyCoordinator& harmony, const Song& song,
-                               uint8_t snapped, uint8_t original, Tick start,
-                               Tick duration, TrackRole role,
+uint8_t findConsonantChordTone(IHarmonyCoordinator& harmony, const Song& song, uint8_t snapped,
+                               uint8_t original, Tick start, Tick duration, TrackRole role,
                                uint8_t range_low = 0, uint8_t range_high = 127) {
   int8_t chord_degree = harmony.getChordDegreeAt(start);
   auto chord_tones = harmony.getChordTonesAt(start);
@@ -905,9 +890,8 @@ uint8_t findConsonantChordTone(IHarmonyCoordinator& harmony, const Song& song,
   }
 
   // No consonant chord tone found; keep snapped pitch (clamped to range)
-  return static_cast<uint8_t>(std::clamp(static_cast<int>(snapped),
-                                          static_cast<int>(range_low),
-                                          static_cast<int>(range_high)));
+  return static_cast<uint8_t>(std::clamp(static_cast<int>(snapped), static_cast<int>(range_low),
+                                         static_cast<int>(range_high)));
 }
 
 }  // namespace
@@ -973,8 +957,7 @@ void Coordinator::applyVoiceLimit(Song& song, const std::vector<Section>& sectio
         removeNotesInBar(notes, curr_bar_start, curr_bar_end);
 
         // Copy previous bar's notes shifted by TICKS_PER_BAR
-        copyNotesFromBar(notes, prev_bar_notes, prev_bar_start, prev_bar_end,
-                         TICKS_PER_BAR);
+        copyNotesFromBar(notes, prev_bar_notes, prev_bar_start, prev_bar_end, TICKS_PER_BAR);
 
         frozen_bars.push_back({role, curr_bar_start, curr_bar_end});
       }
@@ -1018,11 +1001,10 @@ void Coordinator::applyVoiceLimit(Song& song, const std::vector<Section>& sectio
           uint8_t candidate = static_cast<uint8_t>(std::clamp(snapped, 0, 127));
 
           int8_t chord_degree = harmony.getChordDegreeAt(note.start_tick);
-          if (!isConsonantWithSongTracks(song, candidate, note.start_tick,
-                                        note.duration, fb.role, chord_degree)) {
-            candidate = findConsonantChordTone(harmony, song, candidate, note.note,
-                                              note.start_tick, note.duration, fb.role,
-                                              range_low, range_high);
+          if (!isConsonantWithSongTracks(song, candidate, note.start_tick, note.duration, fb.role,
+                                         chord_degree)) {
+            candidate = findConsonantChordTone(harmony, song, candidate, note.note, note.start_tick,
+                                               note.duration, fb.role, range_low, range_high);
           }
 
           note.note = candidate;

@@ -295,7 +295,8 @@ TEST_F(MotifTest, ExtractMotifFromChorusBasic) {
   current += TICKS_PER_BEAT;
   chorus_notes.push_back(NoteEventTestHelper::create(current, TICKS_PER_BEAT, 67, 100));  // G4 (+7)
   current += TICKS_PER_BEAT;
-  chorus_notes.push_back(NoteEventTestHelper::create(current, TICKS_PER_BEAT, 72, 100));  // C5 (+12)
+  chorus_notes.push_back(
+      NoteEventTestHelper::create(current, TICKS_PER_BEAT, 72, 100));  // C5 (+12)
 
   Motif motif = extractMotifFromChorus(chorus_notes);
 
@@ -327,9 +328,11 @@ TEST_F(MotifTest, ExtractMotifFromChorusMaxNotes) {
 TEST_F(MotifTest, ExtractMotifFromChorusFindsClimax) {
   std::vector<NoteEvent> chorus_notes;
   // Create melody where highest note is in the middle
-  chorus_notes.push_back(NoteEventTestHelper::create(0, TICKS_PER_BEAT, 60, 100));                   // C4
-  chorus_notes.push_back(NoteEventTestHelper::create(TICKS_PER_BEAT, TICKS_PER_BEAT, 72, 100));      // C5 (highest)
-  chorus_notes.push_back(NoteEventTestHelper::create(TICKS_PER_BEAT * 2, TICKS_PER_BEAT, 64, 100));  // E4
+  chorus_notes.push_back(NoteEventTestHelper::create(0, TICKS_PER_BEAT, 60, 100));  // C4
+  chorus_notes.push_back(
+      NoteEventTestHelper::create(TICKS_PER_BEAT, TICKS_PER_BEAT, 72, 100));  // C5 (highest)
+  chorus_notes.push_back(
+      NoteEventTestHelper::create(TICKS_PER_BEAT * 2, TICKS_PER_BEAT, 64, 100));  // E4
 
   Motif motif = extractMotifFromChorus(chorus_notes);
 
@@ -838,7 +841,7 @@ TEST_F(MotifTest, PlaceMotifInBridgeProducesNotes) {
 
   // Use stub harmony context
   test::StubHarmonyContext harmony;
-  harmony.setChordDegree(0);       // C major chord
+  harmony.setChordDegree(0);  // C major chord
   harmony.setAllPitchesSafe(true);
 
   auto bridge_notes = placeMotifInBridge(motif, section_start, section_end, base_pitch, velocity,
@@ -868,11 +871,11 @@ TEST_F(MotifTest, PlaceMotifInFinalChorusProducesOctaveDoubling) {
 
   // Use stub harmony context
   test::StubHarmonyContext harmony;
-  harmony.setChordDegree(0);       // C major chord
+  harmony.setChordDegree(0);  // C major chord
   harmony.setAllPitchesSafe(true);
 
-  auto final_notes = placeMotifInFinalChorus(motif, section_start, section_end, base_pitch, velocity,
-                                              harmony, TrackRole::Motif);
+  auto final_notes = placeMotifInFinalChorus(motif, section_start, section_end, base_pitch,
+                                             velocity, harmony, TrackRole::Motif);
 
   EXPECT_FALSE(final_notes.empty()) << "FinalChorus should contain notes";
 
@@ -911,13 +914,13 @@ TEST_F(MotifTest, PlaceMotifInBridgeUsesVariation) {
 
   // Use stub harmony context
   test::StubHarmonyContext harmony;
-  harmony.setChordDegree(0);       // C major chord
+  harmony.setChordDegree(0);  // C major chord
   harmony.setAllPitchesSafe(true);
 
-  auto bridge1 = placeMotifInBridge(original, section_start, section_end, 60, 80, rng1,
-                                    harmony, TrackRole::Motif);
-  auto bridge2 = placeMotifInBridge(original, section_start, section_end, 60, 80, rng2,
-                                    harmony, TrackRole::Motif);
+  auto bridge1 = placeMotifInBridge(original, section_start, section_end, 60, 80, rng1, harmony,
+                                    TrackRole::Motif);
+  auto bridge2 = placeMotifInBridge(original, section_start, section_end, 60, 80, rng2, harmony,
+                                    TrackRole::Motif);
 
   // Different seeds may produce different variations (Inverted vs Fragmented)
   // At minimum, both should produce valid notes

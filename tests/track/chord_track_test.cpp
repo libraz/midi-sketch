@@ -3,8 +3,6 @@
  * @brief Tests for chord track generation.
  */
 
-#include "track/generators/chord.h"
-
 #include <gtest/gtest.h>
 
 #include <set>
@@ -18,6 +16,7 @@
 #include "test_support/test_constants.h"
 #include "track/chord/voice_leading.h"
 #include "track/chord/voicing_generator.h"
+#include "track/generators/chord.h"
 
 namespace midisketch {
 namespace {
@@ -602,8 +601,8 @@ TEST_F(ChordTrackTest, ChordMotifMajor2ndClashAvoidance_Seed2802138756) {
 
   // After the fix, there should be zero or very few major 2nd clashes
   // (some may still occur in desperate fallback cases, but significantly reduced)
-  EXPECT_LE(major_2nd_clashes, 5)
-      << "Too many chord-motif major 2nd clashes. Expected <= 5, got " << major_2nd_clashes;
+  EXPECT_LE(major_2nd_clashes, 5) << "Too many chord-motif major 2nd clashes. Expected <= 5, got "
+                                  << major_2nd_clashes;
 }
 
 TEST_F(ChordTrackTest, ChordMotifClashAvoidance_RhythmSyncParadigm) {
@@ -637,8 +636,8 @@ TEST_F(ChordTrackTest, ChordMotifClashAvoidance_RhythmSyncParadigm) {
   }
 
   // Minor 2nd clashes should be very rare
-  EXPECT_LE(minor_2nd_clashes, 3)
-      << "Too many chord-motif minor 2nd clashes. Expected <= 3, got " << minor_2nd_clashes;
+  EXPECT_LE(minor_2nd_clashes, 3) << "Too many chord-motif minor 2nd clashes. Expected <= 3, got "
+                                  << minor_2nd_clashes;
 }
 
 TEST_F(ChordTrackTest, ChordVoicingConsidersFullBarMotifNotes) {
@@ -665,8 +664,7 @@ TEST_F(ChordTrackTest, ChordVoicingConsidersFullBarMotifNotes) {
     for (const auto& motif_note : motif_track.notes()) {
       // Only count motif notes that START after chord note begins
       // (these would be missed by point-in-time lookup)
-      if (motif_note.start_tick > chord_note.start_tick &&
-          motif_note.start_tick < chord_end) {
+      if (motif_note.start_tick > chord_note.start_tick && motif_note.start_tick < chord_end) {
         if (hasMajor2ndClash(chord_note.note, motif_note.note) ||
             hasMinor2ndClash(chord_note.note, motif_note.note)) {
           ++long_chord_clashes;
@@ -730,8 +728,7 @@ TEST_F(ChordTrackTest, SusChordSplitsBarIntoTwoHalves) {
 
   // With sus probability at 1.0, we should find at least one split bar
   // (sus chords are only valid in certain contexts, so not every bar will be sus)
-  EXPECT_GT(split_bars_found, 0)
-      << "Expected at least one bar split for sus resolution";
+  EXPECT_GT(split_bars_found, 0) << "Expected at least one bar split for sus resolution";
 }
 
 TEST_F(ChordTrackTest, SusChordFirstHalfHasSus4Interval) {
@@ -819,23 +816,25 @@ TEST_F(ChordTrackTest, VoicingRepetitionPenalty_SelectVoicingPenalizesIdenticalA
 
   // Create a simple C major chord
   Chord chord = getChordNotes(0);  // I chord (C major)
-  uint8_t root = 60;  // C4
+  uint8_t root = 60;               // C4
 
   std::mt19937 rng(42);
 
   // Get a baseline voicing with no history
-  VoicedChord first = chord_voicing::selectVoicing(root, chord, {}, false,
-      VoicingType::Close, 0, rng);
+  VoicedChord first =
+      chord_voicing::selectVoicing(root, chord, {}, false, VoicingType::Close, 0, rng);
   ASSERT_GT(first.count, 0u) << "First voicing should have notes";
 
   // Now request with the same previous voicing but consecutive_same_count = 0
   // (should not penalize)
-  VoicedChord no_penalty = chord_voicing::selectVoicing(root, chord, first, true,
-      VoicingType::Close, 0, rng, OpenVoicingType::Drop2, Mood::StraightPop, 0);
+  VoicedChord no_penalty =
+      chord_voicing::selectVoicing(root, chord, first, true, VoicingType::Close, 0, rng,
+                                   OpenVoicingType::Drop2, Mood::StraightPop, 0);
 
   // Request with consecutive_same_count = 5 (strong penalty)
-  VoicedChord with_penalty = chord_voicing::selectVoicing(root, chord, first, true,
-      VoicingType::Close, 0, rng, OpenVoicingType::Drop2, Mood::StraightPop, 5);
+  VoicedChord with_penalty =
+      chord_voicing::selectVoicing(root, chord, first, true, VoicingType::Close, 0, rng,
+                                   OpenVoicingType::Drop2, Mood::StraightPop, 5);
 
   // The penalty should encourage a different voicing when count >= 3
   // We cannot guarantee a different result (depends on candidate pool),
@@ -861,12 +860,14 @@ TEST_F(ChordTrackTest, VoicingRepetitionPenalty_NoPenaltyBelow3) {
   prev.type = VoicingType::Close;
 
   // count=0 (no penalty)
-  VoicedChord result_0 = chord_voicing::selectVoicing(root, chord, prev, true,
-      VoicingType::Close, 0, rng1, OpenVoicingType::Drop2, Mood::StraightPop, 0);
+  VoicedChord result_0 =
+      chord_voicing::selectVoicing(root, chord, prev, true, VoicingType::Close, 0, rng1,
+                                   OpenVoicingType::Drop2, Mood::StraightPop, 0);
 
   // count=2 (still no penalty, threshold is 3)
-  VoicedChord result_2 = chord_voicing::selectVoicing(root, chord, prev, true,
-      VoicingType::Close, 0, rng2, OpenVoicingType::Drop2, Mood::StraightPop, 2);
+  VoicedChord result_2 =
+      chord_voicing::selectVoicing(root, chord, prev, true, VoicingType::Close, 0, rng2,
+                                   OpenVoicingType::Drop2, Mood::StraightPop, 2);
 
   // Both should produce the same result since neither triggers penalty
   // (same RNG seed, same parameters)
@@ -896,8 +897,9 @@ TEST_F(ChordTrackTest, VoicingRepetitionPenalty_GraduatedPenalty) {
   // With a high enough consecutive count, the penalty should be large enough
   // to force selection of a different voicing
   std::mt19937 rng(42);
-  VoicedChord result_high = chord_voicing::selectVoicing(root, chord, prev, true,
-      VoicingType::Close, 0, rng, OpenVoicingType::Drop2, Mood::StraightPop, 10);
+  VoicedChord result_high =
+      chord_voicing::selectVoicing(root, chord, prev, true, VoicingType::Close, 0, rng,
+                                   OpenVoicingType::Drop2, Mood::StraightPop, 10);
 
   // Verify the result is a valid voicing (even with high penalty)
   EXPECT_GT(result_high.count, 0u) << "Should produce a valid voicing even with high penalty";
@@ -954,9 +956,8 @@ TEST_F(ChordTrackTest, VoicingRepetitionPenalty_IntegrationMultipleSeeds) {
     // - Anticipation notes: duplicate chord at beat 4& before a bar boundary
     // - Rhythmic subdivision: same voicing at multiple beat positions within a bar
     // 12 consecutive is a reasonable upper bound accounting for these factors.
-    EXPECT_LE(max_consecutive, 12)
-        << "Seed " << seeds[seed_idx] << " has " << max_consecutive
-        << " consecutive identical chord voicings (expected <= 12)";
+    EXPECT_LE(max_consecutive, 12) << "Seed " << seeds[seed_idx] << " has " << max_consecutive
+                                   << " consecutive identical chord voicings (expected <= 12)";
   }
 }
 
@@ -971,8 +972,8 @@ TEST_F(ChordTrackTest, VoicingRepetitionPenalty_DefaultParameterBackcompat) {
   std::mt19937 rng(42);
 
   // Call without the new parameter (uses default = 0)
-  VoicedChord result = chord_voicing::selectVoicing(root, chord, {}, false,
-      VoicingType::Close, 0, rng);
+  VoicedChord result =
+      chord_voicing::selectVoicing(root, chord, {}, false, VoicingType::Close, 0, rng);
   EXPECT_GT(result.count, 0u) << "Default parameter should produce valid voicing";
 }
 

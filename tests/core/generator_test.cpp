@@ -628,8 +628,8 @@ TEST(CollisionDetectorTest, ChordRegistrationBeforeMotif) {
 
       // Check if notes overlap in time
       if (motif_start < chord_end && chord_start < motif_end) {
-        int interval = std::abs(static_cast<int>(motif_note.note) -
-                                static_cast<int>(chord_note.note));
+        int interval =
+            std::abs(static_cast<int>(motif_note.note) - static_cast<int>(chord_note.note));
         // Minor 2nd (1) or Major 2nd (2) in close range is dissonant
         if (interval == 1 || interval == 2) {
           clash_count++;
@@ -672,8 +672,8 @@ TEST(GeneratorTest, Blueprint8MotifChordNoClash) {
 
       // Check if notes overlap in time
       if (motif_start < chord_end && chord_start < motif_end) {
-        int interval = std::abs(static_cast<int>(motif_note.note) -
-                                static_cast<int>(chord_note.note));
+        int interval =
+            std::abs(static_cast<int>(motif_note.note) - static_cast<int>(chord_note.note));
         if (interval == 1 || interval == 2) {
           clash_count++;
         }

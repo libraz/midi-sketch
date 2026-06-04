@@ -96,8 +96,8 @@ class FrettedNoteFactory {
   /// @param source Generation phase
   /// @return NoteEvent if safe and playable, nullopt otherwise
   std::optional<NoteEvent> createIfNoDissonance(Tick start, Tick duration, uint8_t pitch,
-                                      uint8_t velocity, TrackRole track,
-                                      PlayingTechnique technique, NoteSource source);
+                                                uint8_t velocity, TrackRole track,
+                                                PlayingTechnique technique, NoteSource source);
 
   // =========================================================================
   // Pitch Resolution
@@ -114,8 +114,7 @@ class FrettedNoteFactory {
   /// @param duration Duration (for harmony lookup)
   /// @param max_cost Maximum acceptable playability cost
   /// @return Playable pitch, or desired if no better alternative
-  uint8_t findPlayablePitch(uint8_t desired, Tick start, Tick duration,
-                            float max_cost = 0.5f);
+  uint8_t findPlayablePitch(uint8_t desired, Tick start, Tick duration, float max_cost = 0.5f);
 
   /// @brief Ensure a pitch is playable, returning an alternative if not.
   ///
@@ -141,8 +140,8 @@ class FrettedNoteFactory {
   /// @param technique Default playing technique
   /// @return Sequence of fingerings
   std::vector<Fingering> planSequence(const std::vector<uint8_t>& pitches,
-                                       const std::vector<Tick>& durations,
-                                       PlayingTechnique technique);
+                                      const std::vector<Tick>& durations,
+                                      PlayingTechnique technique);
 
   // =========================================================================
   // State Management

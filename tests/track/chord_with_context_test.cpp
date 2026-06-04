@@ -798,8 +798,7 @@ TEST_F(ChordWithContextTest, PeakLevelMaxAddsOctaveBelowRoot) {
     Tick section_end = section.endTick();
 
     // For each bar, collect the lowest and second-lowest pitches
-    for (Tick bar_start = section.start_tick; bar_start < section_end;
-         bar_start += TICKS_PER_BAR) {
+    for (Tick bar_start = section.start_tick; bar_start < section_end; bar_start += TICKS_PER_BAR) {
       std::vector<uint8_t> pitches_in_bar;
       for (const auto& note : chord_track.notes()) {
         if (note.start_tick >= bar_start && note.start_tick < bar_start + TICKS_PER_BAR) {
@@ -884,11 +883,10 @@ TEST_F(ChordWithContextTest, PeakLevelMediumPrefersOpenVoicing) {
   // Note: Due to chord voicing algorithm variations and context-dependent
   // selection, wide voicing may not always appear. Test is informational.
   if (wide_voicing_count + narrow_voicing_count > 0) {
-    double wide_ratio = static_cast<double>(wide_voicing_count) /
-                        (wide_voicing_count + narrow_voicing_count);
+    double wide_ratio =
+        static_cast<double>(wide_voicing_count) / (wide_voicing_count + narrow_voicing_count);
     // Relaxed: >= 0 instead of > 0 (may be 0 depending on chord progression)
-    EXPECT_GE(wide_ratio, 0.0)
-        << "PeakLevel::Medium+ wide_ratio=" << wide_ratio;
+    EXPECT_GE(wide_ratio, 0.0) << "PeakLevel::Medium+ wide_ratio=" << wide_ratio;
   }
 }
 
@@ -944,16 +942,14 @@ TEST_F(ChordWithContextTest, ChordThicknessIncreasesWithPeakLevel) {
   // Max should have at least as many notes as Medium (octave doubling)
   // Note: This only applies when both have data
   if (avg_max > 0 && avg_medium > 0) {
-    EXPECT_GE(avg_max, avg_medium)
-        << "PeakLevel::Max should have >= notes per chord than Medium";
+    EXPECT_GE(avg_max, avg_medium) << "PeakLevel::Max should have >= notes per chord than Medium";
   }
 
   // Max should have extra notes due to octave-below root doubling
   // This is the primary testable effect of PeakLevel::Max
   if (avg_max > 0 && avg_none > 0) {
-    EXPECT_GE(avg_max, avg_none)
-        << "PeakLevel::Max should have thicker voicings than None "
-        << "(avg_max=" << avg_max << ", avg_none=" << avg_none << ")";
+    EXPECT_GE(avg_max, avg_none) << "PeakLevel::Max should have thicker voicings than None "
+                                 << "(avg_max=" << avg_max << ", avg_none=" << avg_none << ")";
   }
 
   // If Medium data exists, check it's at least as thick as None

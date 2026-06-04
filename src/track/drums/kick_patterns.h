@@ -34,8 +34,8 @@ struct KickPattern {
 /// @param sections All sections in song
 /// @param sec_idx Index of current section
 /// @return true if in pre-chorus lift zone
-bool isInPreChorusLift(const Section& section, uint8_t bar,
-                       const std::vector<Section>& sections, size_t sec_idx);
+bool isInPreChorusLift(const Section& section, uint8_t bar, const std::vector<Section>& sections,
+                       size_t sec_idx);
 
 /// @brief Convert Euclidean bitmask (16-step) to KickPattern.
 /// @param pattern Euclidean rhythm pattern

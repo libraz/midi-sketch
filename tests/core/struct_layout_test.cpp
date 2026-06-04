@@ -61,8 +61,8 @@ TEST(StructLayoutTest, PianoRollDataSize) {
 // ============================================================================
 
 #include "core/config_converter.h"
-#include "core/preset_data.h"
 #include "core/motif_types.h"
+#include "core/preset_data.h"
 
 namespace midisketch {
 
@@ -216,7 +216,7 @@ TEST(SongConfigJsonTest, RoundtripDefaultConfig) {
   EXPECT_EQ(restored.chord_extension.enable_7th, original.chord_extension.enable_7th);
   EXPECT_EQ(restored.chord_extension.enable_9th, original.chord_extension.enable_9th);
   EXPECT_FLOAT_EQ(restored.chord_extension.sus_probability,
-                   original.chord_extension.sus_probability);
+                  original.chord_extension.sus_probability);
   // Nested: motif_chord
   EXPECT_EQ(restored.motif_chord.fixed_progression, original.motif_chord.fixed_progression);
   EXPECT_EQ(restored.motif_chord.max_chord_count, original.motif_chord.max_chord_count);
@@ -364,7 +364,8 @@ TEST(JsonApiTest, RegenerateVocalFromJson) {
 
   // First generate vocal
   const char* config_json = R"({"style_preset_id":0,"seed":42,"bpm":120})";
-  MidiSketchError result = midisketch_generate_vocal_from_json(handle, config_json, strlen(config_json));
+  MidiSketchError result =
+      midisketch_generate_vocal_from_json(handle, config_json, strlen(config_json));
   EXPECT_EQ(result, MIDISKETCH_OK);
 
   // Regenerate vocal with new config
@@ -385,7 +386,8 @@ TEST(JsonApiTest, GenerateAccompanimentFromJson) {
 
   // First generate vocal
   const char* config_json = R"({"style_preset_id":0,"seed":42,"bpm":120})";
-  MidiSketchError result = midisketch_generate_vocal_from_json(handle, config_json, strlen(config_json));
+  MidiSketchError result =
+      midisketch_generate_vocal_from_json(handle, config_json, strlen(config_json));
   EXPECT_EQ(result, MIDISKETCH_OK);
 
   // Generate accompaniment with config
@@ -402,7 +404,8 @@ TEST(JsonApiTest, RegenerateAccompanimentFromJson) {
 
   // Generate with vocal first
   const char* config_json = R"({"style_preset_id":0,"seed":42,"bpm":120})";
-  MidiSketchError result = midisketch_generate_with_vocal_from_json(handle, config_json, strlen(config_json));
+  MidiSketchError result =
+      midisketch_generate_with_vocal_from_json(handle, config_json, strlen(config_json));
   EXPECT_EQ(result, MIDISKETCH_OK);
 
   // Regenerate accompaniment

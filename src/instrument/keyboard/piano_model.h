@@ -11,9 +11,9 @@
 #ifndef MIDISKETCH_INSTRUMENT_KEYBOARD_PIANO_MODEL_H
 #define MIDISKETCH_INSTRUMENT_KEYBOARD_PIANO_MODEL_H
 
-#include "instrument/keyboard/keyboard_instrument.h"
-
 #include <cstdint>
+
+#include "instrument/keyboard/keyboard_instrument.h"
 
 namespace midisketch {
 
@@ -64,21 +64,20 @@ class PianoModel : public IKeyboardInstrument {
   // =========================================================================
 
   bool isTransitionFeasible(const std::vector<uint8_t>& from_pitches,
-                            const std::vector<uint8_t>& to_pitches,
-                            uint32_t available_ticks, uint16_t bpm) const override;
+                            const std::vector<uint8_t>& to_pitches, uint32_t available_ticks,
+                            uint16_t bpm) const override;
 
-  KeyboardPlayabilityCost calculateTransitionCost(
-      const std::vector<uint8_t>& from_pitches,
-      const std::vector<uint8_t>& to_pitches,
-      uint32_t available_ticks, uint16_t bpm) const override;
+  KeyboardPlayabilityCost calculateTransitionCost(const std::vector<uint8_t>& from_pitches,
+                                                  const std::vector<uint8_t>& to_pitches,
+                                                  uint32_t available_ticks,
+                                                  uint16_t bpm) const override;
 
   // =========================================================================
   // IKeyboardInstrument Implementation - Voicing Suggestion
   // =========================================================================
 
-  std::vector<uint8_t> suggestPlayableVoicing(
-      const std::vector<uint8_t>& desired_pitches,
-      uint8_t root_pitch_class) const override;
+  std::vector<uint8_t> suggestPlayableVoicing(const std::vector<uint8_t>& desired_pitches,
+                                              uint8_t root_pitch_class) const override;
 
   // =========================================================================
   // IKeyboardInstrument Implementation - State
@@ -102,8 +101,8 @@ class PianoModel : public IKeyboardInstrument {
   static uint8_t calculateCenter(const std::vector<uint8_t>& pitches);
 
   // Calculate hand movement cost between two hand center positions
-  float calculateHandMovementCost(uint8_t from_center, uint8_t to_center,
-                                  uint32_t available_ticks, uint16_t bpm) const;
+  float calculateHandMovementCost(uint8_t from_center, uint8_t to_center, uint32_t available_ticks,
+                                  uint16_t bpm) const;
 
   // Find optimal split point between hands for a sorted set of pitches
   uint8_t findSplitPoint(const std::vector<uint8_t>& sorted_pitches) const;

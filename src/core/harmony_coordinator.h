@@ -45,7 +45,7 @@ class HarmonyCoordinator : public IHarmonyCoordinator {
   void registerTrack(const MidiTrack& track, TrackRole role) override;
 
   bool isConsonantWithOtherTracks(uint8_t pitch, Tick start, Tick duration, TrackRole exclude,
-                   bool is_weak_beat = false) const override;
+                                  bool is_weak_beat = false) const override;
 
   CollisionInfo getCollisionInfo(uint8_t pitch, Tick start, Tick duration,
                                  TrackRole exclude) const override;
@@ -63,7 +63,7 @@ class HarmonyCoordinator : public IHarmonyCoordinator {
   std::vector<int> getPitchClassesFromTrackAt(Tick tick, TrackRole role) const override;
 
   std::vector<int> getPitchClassesFromTrackInRange(Tick start, Tick end,
-                                                    TrackRole role) const override;
+                                                   TrackRole role) const override;
 
   void registerSecondaryDominant(Tick start, Tick end, int8_t degree) override;
 
@@ -76,11 +76,9 @@ class HarmonyCoordinator : public IHarmonyCoordinator {
   Tick getMaxSafeEnd(Tick note_start, uint8_t pitch, TrackRole exclude,
                      Tick desired_end) const override;
 
-  std::vector<int> getSoundingPitchClasses(Tick start, Tick end,
-                                             TrackRole exclude) const override;
+  std::vector<int> getSoundingPitchClasses(Tick start, Tick end, TrackRole exclude) const override;
 
-  std::vector<uint8_t> getSoundingPitches(Tick start, Tick end,
-                                            TrackRole exclude) const override;
+  std::vector<uint8_t> getSoundingPitches(Tick start, Tick end, TrackRole exclude) const override;
 
   uint8_t getHighestPitchForTrackInRange(Tick start, Tick end, TrackRole role) const override;
   uint8_t getLowestPitchForTrackInRange(Tick start, Tick end, TrackRole role) const override;
@@ -105,8 +103,7 @@ class HarmonyCoordinator : public IHarmonyCoordinator {
   // --- Cross-track Coordination ---
 
   void applyMotifToSections(const std::vector<NoteEvent>& motif_pattern,
-                             const std::vector<Section>& targets,
-                             MidiTrack& track) override;
+                            const std::vector<Section>& targets, MidiTrack& track) override;
 
  private:
   // Base harmony context (composition)

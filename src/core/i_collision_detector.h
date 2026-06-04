@@ -43,8 +43,8 @@ class ICollisionDetector : public IChordLookup {
    * @param is_weak_beat If true, allow major 2nd as passing tone (default: false)
    * @return true if pitch doesn't clash with other tracks
    */
-  virtual bool isConsonantWithOtherTracks(uint8_t pitch, Tick start, Tick duration, TrackRole exclude,
-                           bool is_weak_beat = false) const = 0;
+  virtual bool isConsonantWithOtherTracks(uint8_t pitch, Tick start, Tick duration,
+                                          TrackRole exclude, bool is_weak_beat = false) const = 0;
 
   /**
    * @brief Get detailed collision information for a pitch.
@@ -123,7 +123,7 @@ class ICollisionDetector : public IChordLookup {
    * @return Vector of pitch classes (may be empty if no notes in range)
    */
   virtual std::vector<int> getPitchClassesFromTrackInRange(Tick start, Tick end,
-                                                            TrackRole role) const = 0;
+                                                           TrackRole role) const = 0;
 
   /**
    * @brief Get pitch classes currently sounding from all tracks except one.
@@ -138,7 +138,7 @@ class ICollisionDetector : public IChordLookup {
    * @return Vector of unique pitch classes (may be empty if no notes in range)
    */
   virtual std::vector<int> getSoundingPitchClasses(Tick start, Tick end,
-                                                     TrackRole exclude) const = 0;
+                                                   TrackRole exclude) const = 0;
 
   /**
    * @brief Get actual pitches currently sounding from all tracks except one.
@@ -153,7 +153,7 @@ class ICollisionDetector : public IChordLookup {
    * @return Vector of unique MIDI pitches (may be empty if no notes in range)
    */
   virtual std::vector<uint8_t> getSoundingPitches(Tick start, Tick end,
-                                                    TrackRole exclude) const = 0;
+                                                  TrackRole exclude) const = 0;
 
   // =========================================================================
   // Track range queries

@@ -56,20 +56,20 @@ constexpr uint8_t ATTITUDE_RAW = 1 << 2;         ///< Allow Raw attitude
 enum class VocalStylePreset : uint8_t {
   Auto = 0,       ///< Use StylePreset defaults
   Standard,       ///< General purpose pop
-  Vocaloid,       ///< YOASOBI/Vocaloid-P style (singable)
-  UltraVocaloid,  ///< Hatsune Miku no Shoushitsu (not singable)
+  Vocaloid,       ///< synthetic high-energy vocal style (singable)
+  UltraVocaloid,  ///< ultra-dense machine vocal (not singable)
   Idol,           ///< Love Live/Idolmaster style
   Ballad,         ///< Slow ballad
   Rock,           ///< Rock style
   CityPop,        ///< City pop style
   Anime,          ///< Anime song style
   // Extended styles (9-12)
-  BrightKira,    ///< Bright sparkly style
-  CoolSynth,     ///< Cool synthetic style
-  CuteAffected,  ///< Cute affected style
+  BrightKira,     ///< Bright sparkly style
+  CoolSynth,      ///< Cool synthetic style
+  CuteAffected,   ///< Cute affected style
   PowerfulShout,  ///< Powerful shout style
   // Extended styles (13+)
-  KPop            ///< K-POP style (syncopation, hooks, rap-like passages)
+  KPop  ///< K-POP style (syncopation, hooks, rap-like passages)
 };
 
 /// Weight for random style selection.
@@ -92,9 +92,9 @@ enum class MelodicComplexity : uint8_t {
 enum class MelodyTemplateId : uint8_t {
   Auto = 0,          ///< Auto-select based on style and section
   PlateauTalk = 1,   ///< NewJeans/Billie: high plateau, talk-sing
-  RunUpTarget = 2,   ///< YOASOBI/Ado: run up to target note
+  RunUpTarget = 2,   ///< AnimeHighEnergy/dramatic pop: run up to target note
   DownResolve = 3,   ///< B-melody: descending resolution
-  HookRepeat = 4,    ///< TikTok/K-POP: short repeating hook
+  HookRepeat = 4,    ///< short-form/K-POP: short repeating hook
   SparseAnchor = 5,  ///< HIGEDAN: sparse anchor notes
   CallResponse = 6,  ///< Duet: call and response
   JumpAccent = 7     ///< Emotional: jump accent
@@ -195,11 +195,11 @@ struct AuxConfig {
 
 /// @brief Hook intensity for controlling catchiness at key positions.
 enum class HookIntensity : uint8_t {
-  Off = 0,      ///< No hook emphasis
-  Light = 1,    ///< Light emphasis (chorus start only)
-  Normal = 2,   ///< Normal emphasis (chorus start + middle)
-  Strong = 3,   ///< Strong emphasis (all hook points)
-  Maximum = 4   ///< Behavioral Loop: maximum repetition, simple patterns only
+  Off = 0,     ///< No hook emphasis
+  Light = 1,   ///< Light emphasis (chorus start only)
+  Normal = 2,  ///< Normal emphasis (chorus start + middle)
+  Strong = 3,  ///< Strong emphasis (all hook points)
+  Maximum = 4  ///< Behavioral Loop: maximum repetition, simple patterns only
 };
 
 /// @brief Hook technique applied at hook points.
@@ -285,33 +285,33 @@ enum class PhraseRole : uint8_t {
 /// These are the "DNA" of catchy melodies - minimal patterns that
 /// create memorable hooks when expanded to actual pitches.
 enum class HookSkeleton : uint8_t {
-  Repeat,       ///< Same pitch repetition: X X X
-  Ascending,    ///< Rising scale: X X+1 X+2
-  AscendDrop,   ///< Rise then fall: X X+2 X+4 X+3
-  LeapReturn,   ///< Jump and resolve: X X+5 X+2
-  RhythmRepeat,     ///< Rhythmic emphasis with rests: X - X - X
-  PeakDrop,         ///< Peak then descend: X X+3 X+5 X+2 X
-  Pendulum,         ///< Swing between high and low: X X+3 X-1 X+2 X
-  DescentResolve,   ///< Descend to resolution: X X-1 X-2 X-1
-  CallResponse,     ///< Call and response: X X+2 X X+3
-  Syncopated,       ///< Off-beat accent: X _ X+1 X _ (with rests)
-  ChromaticSlide,   ///< Half-step slide: X X X+1 X+1
+  Repeat,          ///< Same pitch repetition: X X X
+  Ascending,       ///< Rising scale: X X+1 X+2
+  AscendDrop,      ///< Rise then fall: X X+2 X+4 X+3
+  LeapReturn,      ///< Jump and resolve: X X+5 X+2
+  RhythmRepeat,    ///< Rhythmic emphasis with rests: X - X - X
+  PeakDrop,        ///< Peak then descend: X X+3 X+5 X+2 X
+  Pendulum,        ///< Swing between high and low: X X+3 X-1 X+2 X
+  DescentResolve,  ///< Descend to resolution: X X-1 X-2 X-1
+  CallResponse,    ///< Call and response: X X+2 X X+3
+  Syncopated,      ///< Off-beat accent: X _ X+1 X _ (with rests)
+  ChromaticSlide,  ///< Half-step slide: X X X+1 X+1
   // Extended patterns for catchiness enhancement
-  DoubleAscend,     ///< Two-step rise: X X+1 X X+2 X
-  Staircase,        ///< Staircase pattern: X X+2 X+1 X+3 X+2
-  TripleHit,        ///< Same note emphasis: X X X Y
-  WideArch,         ///< Wide arch: X X+4 X+7 X+4 X
-  NarrowPendulum,   ///< Narrow swing: X X+1 X-1 X
-  QuestionMark,     ///< Ascending question: X X+2 X+4 X+5
+  DoubleAscend,    ///< Two-step rise: X X+1 X X+2 X
+  Staircase,       ///< Staircase pattern: X X+2 X+1 X+3 X+2
+  TripleHit,       ///< Same note emphasis: X X X Y
+  WideArch,        ///< Wide arch: X X+4 X+7 X+4 X
+  NarrowPendulum,  ///< Narrow swing: X X+1 X-1 X
+  QuestionMark,    ///< Ascending question: X X+2 X+4 X+5
   // Phase 3: New patterns for addictiveness improvement
-  StepwiseDescent,  ///< Gradual descending steps: X X-1 X-2 X-3 (melancholic resolution)
-  OctaveLeap,       ///< Jump up octave then resolve: X X+7 X+4 (dramatic impact)
-  SuspendResolve,   ///< Suspended tension then release: X X+1 X+1 X (sus4-like)
-  SymmetricArch,    ///< Mirror/arch pattern: X X+2 X+4 X+2 X
-  AnticipationBuild,///< Rapid buildup before climax: X X X+2 X+4
-  EchoPhrasing,     ///< Echo with variation: X _ X-1 X (-128=rest)
-  StutterRepeat,    ///< Rhythmic stutter: X X _ X X (modern/edgy)
-  Ostinato          ///< 6-note same-pitch repetition: X X X X X X (Ice Cream-level catchiness)
+  StepwiseDescent,    ///< Gradual descending steps: X X-1 X-2 X-3 (melancholic resolution)
+  OctaveLeap,         ///< Jump up octave then resolve: X X+7 X+4 (dramatic impact)
+  SuspendResolve,     ///< Suspended tension then release: X X+1 X+1 X (sus4-like)
+  SymmetricArch,      ///< Mirror/arch pattern: X X+2 X+4 X+2 X
+  AnticipationBuild,  ///< Rapid buildup before climax: X X X+2 X+4
+  EchoPhrasing,       ///< Echo with variation: X _ X-1 X (-128=rest)
+  StutterRepeat,      ///< Rhythmic stutter: X X _ X X (modern/edgy)
+  Ostinato            ///< 6-note same-pitch repetition: X X X X X X (Ice Cream-level catchiness)
 };
 
 /// @brief Betrayal patterns for hook variation.
@@ -435,13 +435,12 @@ struct StyleMelodyParams {
 
   /// @name Syllabic subdivision (同音分割)
   /// @{
-  float syllabic_sub_ratio = 0.0f;    ///< Base probability (0.0-0.5)
-  float verse_sub_ratio = 0.0f;       ///< Verse override (0=use base)
-  float prechorus_sub_ratio = 0.0f;   ///< Pre-chorus override
-  float chorus_sub_ratio = 0.0f;      ///< Chorus override
-  float bridge_sub_ratio = 0.0f;      ///< Bridge override
+  float syllabic_sub_ratio = 0.0f;   ///< Base probability (0.0-0.5)
+  float verse_sub_ratio = 0.0f;      ///< Verse override (0=use base)
+  float prechorus_sub_ratio = 0.0f;  ///< Pre-chorus override
+  float chorus_sub_ratio = 0.0f;     ///< Chorus override
+  float bridge_sub_ratio = 0.0f;     ///< Bridge override
   /// @}
-
 
   void writeTo(json::Writer& w) const;
   void readFrom(const json::Parser& p);

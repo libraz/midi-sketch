@@ -34,13 +34,11 @@ void TrackBase::removeArrangementHoleNotes(MidiTrack& track, const FullTrackCont
   if (sections.empty()) return;
 
   // Determine which hole types affect this track role
-  bool affected_by_chorus_hole =
-      (role == TrackRole::Motif || role == TrackRole::Arpeggio ||
-       role == TrackRole::Aux || role == TrackRole::Guitar);
+  bool affected_by_chorus_hole = (role == TrackRole::Motif || role == TrackRole::Arpeggio ||
+                                  role == TrackRole::Aux || role == TrackRole::Guitar);
   bool affected_by_bridge_hole =
-      (role == TrackRole::Motif || role == TrackRole::Arpeggio ||
-       role == TrackRole::Aux || role == TrackRole::Guitar ||
-       role == TrackRole::Chord || role == TrackRole::Bass);
+      (role == TrackRole::Motif || role == TrackRole::Arpeggio || role == TrackRole::Aux ||
+       role == TrackRole::Guitar || role == TrackRole::Chord || role == TrackRole::Bass);
 
   if (!affected_by_chorus_hole && !affected_by_bridge_hole) return;
 
@@ -54,8 +52,8 @@ void TrackBase::removeArrangementHoleNotes(MidiTrack& track, const FullTrackCont
 
   for (const auto& section : sections) {
     // Chorus final 2 beats: mute background tracks (PeakLevel::Max only)
-    if (affected_by_chorus_hole &&
-        section.type == SectionType::Chorus && section.peak_level == PeakLevel::Max) {
+    if (affected_by_chorus_hole && section.type == SectionType::Chorus &&
+        section.peak_level == PeakLevel::Max) {
       Tick hole_start = section.endTick() - kTwoBeats;
       if (hole_start >= section.start_tick) {
         holes.push_back({hole_start, section.endTick()});
@@ -76,15 +74,15 @@ void TrackBase::removeArrangementHoleNotes(MidiTrack& track, const FullTrackCont
   // Remove notes that overlap with any hole range
   auto& notes = track.notes();
   notes.erase(std::remove_if(notes.begin(), notes.end(),
-                              [&holes](const NoteEvent& n) {
-                                Tick note_end = n.start_tick + n.duration;
-                                for (const auto& hole : holes) {
-                                  if (n.start_tick < hole.end && note_end > hole.start) {
-                                    return true;
-                                  }
-                                }
-                                return false;
-                              }),
+                             [&holes](const NoteEvent& n) {
+                               Tick note_end = n.start_tick + n.duration;
+                               for (const auto& hole : holes) {
+                                 if (n.start_tick < hole.end && note_end > hole.start) {
+                                   return true;
+                                 }
+                               }
+                               return false;
+                             }),
               notes.end());
 }
 

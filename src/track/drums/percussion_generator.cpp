@@ -47,7 +47,7 @@ PercMoodCategory getPercMoodCategory(Mood mood) {
     case Mood::ElectroPop:
     case Mood::FutureBass:
     case Mood::Anthem:
-    case Mood::Yoasobi:
+    case Mood::AnimeHighEnergy:
     case Mood::LatinPop:
       return PercMoodCategory::Energetic;
     case Mood::IdolPop:
@@ -64,8 +64,7 @@ PercMoodCategory getPercMoodCategory(Mood mood) {
   }
 }
 
-PercussionConfig getPercussionConfig(Mood mood, SectionType section,
-                                     PercussionPolicy policy) {
+PercussionConfig getPercussionConfig(Mood mood, SectionType section, PercussionPolicy policy) {
   // Policy::None → all off
   if (policy == PercussionPolicy::None) {
     return {false, false, false, false};
@@ -73,8 +72,7 @@ PercussionConfig getPercussionConfig(Mood mood, SectionType section,
 
   // Policy::Minimal → handclap only in Chorus/MixBreak/Drop
   if (policy == PercussionPolicy::Minimal) {
-    bool is_peak_section = (section == SectionType::Chorus ||
-                            section == SectionType::MixBreak ||
+    bool is_peak_section = (section == SectionType::Chorus || section == SectionType::MixBreak ||
                             section == SectionType::Drop);
     return {false, false, is_peak_section, false};
   }
@@ -95,9 +93,9 @@ PercussionConfig getPercussionConfig(Mood mood, SectionType section,
   return {act.tambourine, act.shaker, act.handclap, shaker_16th};
 }
 
-void generateAuxPercussionForBar(MidiTrack& track, Tick bar_start,
-                                  const PercussionConfig& config, DrumRole drum_role,
-                                  float density_mult, std::mt19937& rng, uint16_t bpm) {
+void generateAuxPercussionForBar(MidiTrack& track, Tick bar_start, const PercussionConfig& config,
+                                 DrumRole drum_role, float density_mult, std::mt19937& rng,
+                                 uint16_t bpm) {
   if (drum_role == DrumRole::Minimal || drum_role == DrumRole::FXOnly) {
     return;
   }
@@ -124,7 +122,8 @@ void generateAuxPercussionForBar(MidiTrack& track, Tick bar_start,
       for (int beat = 0; beat < 4; ++beat) {
         for (int sub = 0; sub < 4; ++sub) {
           Tick sub_tick = bar_start + beat * TICKS_PER_BEAT + sub * SIXTEENTH;
-          float raw_vel = 80.0f * SHAKER_16TH_VEL[sub] * density_mult * rng_util::rollFloat(rng, 0.90f, 1.10f);
+          float raw_vel =
+              80.0f * SHAKER_16TH_VEL[sub] * density_mult * rng_util::rollFloat(rng, 0.90f, 1.10f);
           uint8_t shk_vel = static_cast<uint8_t>(std::clamp(raw_vel, 25.0f, 85.0f));
           addDrumNote(track, sub_tick, SIXTEENTH, SHAKER, shk_vel);
         }
@@ -135,7 +134,8 @@ void generateAuxPercussionForBar(MidiTrack& track, Tick bar_start,
       for (int beat = 0; beat < 4; ++beat) {
         for (int sub = 0; sub < 2; ++sub) {
           Tick sub_tick = bar_start + beat * TICKS_PER_BEAT + sub * TICK_EIGHTH;
-          float raw_vel = 80.0f * SHAKER_8TH_VEL[sub] * density_mult * rng_util::rollFloat(rng, 0.90f, 1.10f);
+          float raw_vel =
+              80.0f * SHAKER_8TH_VEL[sub] * density_mult * rng_util::rollFloat(rng, 0.90f, 1.10f);
           uint8_t shk_vel = static_cast<uint8_t>(std::clamp(raw_vel, 25.0f, 85.0f));
           addDrumNote(track, sub_tick, TICK_EIGHTH, SHAKER, shk_vel);
         }

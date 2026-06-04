@@ -354,8 +354,7 @@ struct DissonanceCheckOptions {
  * @param opts Options controlling context-dependent rules
  * @return true if the interval is considered dissonant
  */
-bool isDissonantSemitoneInterval(int actual_semitones,
-                                  const DissonanceCheckOptions& opts = {});
+bool isDissonantSemitoneInterval(int actual_semitones, const DissonanceCheckOptions& opts = {});
 
 /**
  * @brief Check if two MIDI pitches form a dissonant interval.
@@ -369,7 +368,7 @@ bool isDissonantSemitoneInterval(int actual_semitones,
  * @return true if the pitch pair is dissonant
  */
 inline bool isDissonantPitchPair(uint8_t pitch1, uint8_t pitch2,
-                                  const DissonanceCheckOptions& opts = {}) {
+                                 const DissonanceCheckOptions& opts = {}) {
   int actual_semitones = std::abs(static_cast<int>(pitch1) - static_cast<int>(pitch2));
   return isDissonantSemitoneInterval(actual_semitones, opts);
 }

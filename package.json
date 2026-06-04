@@ -22,7 +22,7 @@
     "postinstall": "simple-git-hooks",
     "prepare": "simple-git-hooks",
     "build": "yarn build:wasm && yarn build:js",
-    "build:wasm": "emcmake cmake -B build-wasm -DBUILD_WASM=ON && cmake --build build-wasm",
+    "build:wasm": "cmake -E remove -f build-wasm/CMakeCache.txt && cmake -E remove_directory build-wasm/CMakeFiles && emcmake cmake -B build-wasm -DBUILD_WASM=ON && cmake --build build-wasm",
     "build:js": "node scripts/build-js.mjs",
     "clean": "rm -rf dist",
     "lint": "biome check js/ tests/wasm/",

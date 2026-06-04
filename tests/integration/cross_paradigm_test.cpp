@@ -43,8 +43,8 @@ struct TrackValidationResult {
 TrackValidationResult validateSong(const Song& song, const GeneratorParams& /*params*/) {
   // Check pitched tracks have notes within valid MIDI range (0-127)
   const std::vector<std::pair<TrackRole, const MidiTrack*>> pitched_tracks = {
-      {TrackRole::Vocal, &song.vocal()},    {TrackRole::Chord, &song.chord()},
-      {TrackRole::Bass, &song.bass()},      {TrackRole::Motif, &song.motif()},
+      {TrackRole::Vocal, &song.vocal()},       {TrackRole::Chord, &song.chord()},
+      {TrackRole::Bass, &song.bass()},         {TrackRole::Motif, &song.motif()},
       {TrackRole::Arpeggio, &song.arpeggio()}, {TrackRole::Aux, &song.aux()},
       {TrackRole::Guitar, &song.guitar()},
   };
@@ -73,7 +73,7 @@ TrackValidationResult validateSong(const Song& song, const GeneratorParams& /*pa
 }
 
 // =============================================================================
-// 1. Blueprint Parameterized Tests (blueprints 0-8)
+// 1. Blueprint Parameterized Tests
 // =============================================================================
 
 class BlueprintValidityTest : public ::testing::TestWithParam<uint8_t> {
@@ -107,25 +107,21 @@ TEST_P(BlueprintValidityTest, ProducesValidOutput) {
     const Song& song = gen.getSong();
 
     // Vocal should have notes (all blueprints produce vocal)
-    EXPECT_FALSE(song.vocal().empty())
-        << "Blueprint " << static_cast<int>(blueprint_id) << " seed " << seed
-        << " produced empty vocal";
+    EXPECT_FALSE(song.vocal().empty()) << "Blueprint " << static_cast<int>(blueprint_id) << " seed "
+                                       << seed << " produced empty vocal";
 
     // Bass should have notes
-    EXPECT_FALSE(song.bass().empty())
-        << "Blueprint " << static_cast<int>(blueprint_id) << " seed " << seed
-        << " produced empty bass";
+    EXPECT_FALSE(song.bass().empty()) << "Blueprint " << static_cast<int>(blueprint_id) << " seed "
+                                      << seed << " produced empty bass";
 
     // Chord should have notes
-    EXPECT_FALSE(song.chord().empty())
-        << "Blueprint " << static_cast<int>(blueprint_id) << " seed " << seed
-        << " produced empty chord";
+    EXPECT_FALSE(song.chord().empty()) << "Blueprint " << static_cast<int>(blueprint_id) << " seed "
+                                       << seed << " produced empty chord";
 
     // Validate MIDI note ranges
     auto result = validateSong(song, params_);
-    EXPECT_TRUE(result.valid)
-        << "Blueprint " << static_cast<int>(blueprint_id) << " seed " << seed << ": "
-        << result.error;
+    EXPECT_TRUE(result.valid) << "Blueprint " << static_cast<int>(blueprint_id) << " seed " << seed
+                              << ": " << result.error;
 
     // Pitched tracks should be within physical model ranges
     for (const auto& note : song.bass().notes()) {
@@ -138,8 +134,7 @@ TEST_P(BlueprintValidityTest, ProducesValidOutput) {
 }
 
 INSTANTIATE_TEST_SUITE_P(AllBlueprints, BlueprintValidityTest,
-                         ::testing::Range(static_cast<uint8_t>(0),
-                                          static_cast<uint8_t>(9)),
+                         ::testing::Range(static_cast<uint8_t>(0), static_cast<uint8_t>(9)),
                          [](const ::testing::TestParamInfo<uint8_t>& info) {
                            return "Blueprint" + std::to_string(info.param);
                          });
@@ -209,8 +204,7 @@ TEST_P(StylePresetValidityTest, ProducesValidOutput) {
 
   // Validate MIDI correctness
   auto result = validateSong(song, gen.getParams());
-  EXPECT_TRUE(result.valid)
-      << "Style " << static_cast<int>(style_id) << ": " << result.error;
+  EXPECT_TRUE(result.valid) << "Style " << static_cast<int>(style_id) << ": " << result.error;
 
   // Vocal notes should be within configured range (with some tolerance for modulation)
   if (!song.vocal().empty()) {
@@ -272,8 +266,8 @@ TEST_P(ChordProgressionValidityTest, ProducesValidOutput) {
 
   // Validate MIDI correctness
   auto result = validateSong(song, params_);
-  EXPECT_TRUE(result.valid)
-      << "Chord progression " << static_cast<int>(chord_id) << ": " << result.error;
+  EXPECT_TRUE(result.valid) << "Chord progression " << static_cast<int>(chord_id) << ": "
+                            << result.error;
 
   // Bass should use chord tones from the progression (at least some)
   // This is a sanity check that the chord progression is actually being used
@@ -545,8 +539,7 @@ TEST_F(ErrorHandlingTest, AllTracksDisabled_StillGenerates) {
 // 6. Cross-paradigm consistency: each paradigm produces valid output
 // =============================================================================
 
-class ParadigmConsistencyTest
-    : public ::testing::TestWithParam<GenerationParadigm> {
+class ParadigmConsistencyTest : public ::testing::TestWithParam<GenerationParadigm> {
  protected:
   void SetUp() override {
     params_.structure = StructurePattern::StandardPop;
@@ -594,8 +587,7 @@ TEST_P(ParadigmConsistencyTest, ProducesValidOutput) {
 
   // Validate all notes
   auto result = validateSong(song, params_);
-  EXPECT_TRUE(result.valid)
-      << "Paradigm " << static_cast<int>(paradigm) << ": " << result.error;
+  EXPECT_TRUE(result.valid) << "Paradigm " << static_cast<int>(paradigm) << ": " << result.error;
 }
 
 INSTANTIATE_TEST_SUITE_P(AllParadigms, ParadigmConsistencyTest,
@@ -619,8 +611,7 @@ INSTANTIATE_TEST_SUITE_P(AllParadigms, ParadigmConsistencyTest,
 // 7. Full pipeline smoke test: representative configurations
 // =============================================================================
 
-class FullPipelineSmokeTest
-    : public ::testing::TestWithParam<std::tuple<uint8_t, uint8_t>> {
+class FullPipelineSmokeTest : public ::testing::TestWithParam<std::tuple<uint8_t, uint8_t>> {
   // tuple<blueprint_id, mood_index>
  protected:
   void SetUp() override {
@@ -647,23 +638,20 @@ TEST_P(FullPipelineSmokeTest, BlueprintMoodCombination_ProducesValidOutput) {
   gen.generate(params_);
 
   auto result = validateSong(gen.getSong(), params_);
-  EXPECT_TRUE(result.valid)
-      << "Blueprint " << static_cast<int>(blueprint_id) << " + Mood "
-      << static_cast<int>(mood_idx) << ": " << result.error;
+  EXPECT_TRUE(result.valid) << "Blueprint " << static_cast<int>(blueprint_id) << " + Mood "
+                            << static_cast<int>(mood_idx) << ": " << result.error;
 }
 
 // Test a representative matrix of blueprint x mood combinations
 // (full cross-product would be 9 x 24 = 216 tests, so pick representative moods)
 INSTANTIATE_TEST_SUITE_P(
     BlueprintMoodMatrix, FullPipelineSmokeTest,
-    ::testing::Combine(
-        ::testing::Range(static_cast<uint8_t>(0), static_cast<uint8_t>(9)),
-        ::testing::Values(
-            static_cast<uint8_t>(Mood::StraightPop),
-            static_cast<uint8_t>(Mood::Ballad),
-            static_cast<uint8_t>(Mood::IdolPop),
-            static_cast<uint8_t>(Mood::Yoasobi),
-            static_cast<uint8_t>(Mood::Trap))),
+    ::testing::Combine(::testing::Range(static_cast<uint8_t>(0), static_cast<uint8_t>(9)),
+                       ::testing::Values(static_cast<uint8_t>(Mood::StraightPop),
+                                         static_cast<uint8_t>(Mood::Ballad),
+                                         static_cast<uint8_t>(Mood::IdolPop),
+                                         static_cast<uint8_t>(Mood::AnimeHighEnergy),
+                                         static_cast<uint8_t>(Mood::Trap))),
     [](const ::testing::TestParamInfo<std::tuple<uint8_t, uint8_t>>& info) {
       return "BP" + std::to_string(std::get<0>(info.param)) + "_Mood" +
              std::to_string(std::get<1>(info.param));

@@ -34,10 +34,8 @@ class IHarmonyContext;
 /// @param rng RNG for probabilistic in-bar decisions
 /// @param harmony Harmony context to register secondary dominants into
 void planAndRegisterSecondaryDominants(const Arrangement& arrangement,
-                                       const ChordProgression& progression,
-                                       Mood mood,
-                                       std::mt19937& rng,
-                                       IHarmonyContext& harmony);
+                                       const ChordProgression& progression, Mood mood,
+                                       std::mt19937& rng, IHarmonyContext& harmony);
 
 }  // namespace midisketch
 

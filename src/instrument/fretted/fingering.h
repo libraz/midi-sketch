@@ -17,9 +17,9 @@ namespace midisketch {
 
 /// @brief Hand position on the fretboard.
 struct HandPosition {
-  uint8_t base_fret;   ///< Position of the index finger (1st position = fret 1)
-  uint8_t span_low;    ///< Lowest reachable fret from this position
-  uint8_t span_high;   ///< Highest reachable fret from this position
+  uint8_t base_fret;  ///< Position of the index finger (1st position = fret 1)
+  uint8_t span_low;   ///< Lowest reachable fret from this position
+  uint8_t span_high;  ///< Highest reachable fret from this position
 
   /// @brief Default constructor (1st position).
   HandPosition() : base_fret(1), span_low(0), span_high(4) {}
@@ -45,8 +45,8 @@ struct HandPosition {
 
 /// @brief Hand span constraints based on skill level.
 struct HandSpanConstraints {
-  uint8_t normal_span;             ///< Comfortable fret span (e.g., 3 for beginner)
-  uint8_t max_span;                ///< Maximum achievable span (e.g., 5 for advanced)
+  uint8_t normal_span;               ///< Comfortable fret span (e.g., 3 for beginner)
+  uint8_t max_span;                  ///< Maximum achievable span (e.g., 5 for advanced)
   uint8_t stretch_penalty_per_fret;  ///< Cost penalty per fret beyond normal span
 
   /// @brief Default (intermediate player).
@@ -76,9 +76,9 @@ struct HandSpanConstraints {
 /// - Open strings become unavailable (covered by barre)
 /// - Remaining 3 fingers (middle, ring, pinky) can press frets above the barre
 struct BarreState {
-  uint8_t fret;           ///< Barre fret position (0 = no barre)
-  uint8_t lowest_string;  ///< Lowest string covered by barre (0 = all from lowest)
-  uint8_t highest_string; ///< Highest string covered by barre
+  uint8_t fret;            ///< Barre fret position (0 = no barre)
+  uint8_t lowest_string;   ///< Lowest string covered by barre (0 = all from lowest)
+  uint8_t highest_string;  ///< Highest string covered by barre
 
   /// @brief Default constructor (no barre).
   BarreState() : fret(0), lowest_string(0), highest_string(0) {}
@@ -96,9 +96,7 @@ struct BarreState {
   }
 
   /// @brief Get the number of strings covered by the barre.
-  uint8_t getStringCount() const {
-    return isActive() ? (highest_string - lowest_string + 1) : 0;
-  }
+  uint8_t getStringCount() const { return isActive() ? (highest_string - lowest_string + 1) : 0; }
 };
 
 /// @brief Finger allocation during a barre chord.
@@ -110,10 +108,10 @@ struct BarreState {
 /// - Pinky finger: barre+3 frets, one string only
 /// - Each finger can only press one additional position beyond the barre
 struct BarreFingerAllocation {
-  uint8_t barre_fret;          ///< Barre position
-  int8_t middle_finger_string; ///< String pressed by middle finger (-1 = unused)
-  int8_t ring_finger_string;   ///< String pressed by ring finger (-1 = unused)
-  int8_t pinky_finger_string;  ///< String pressed by pinky finger (-1 = unused)
+  uint8_t barre_fret;           ///< Barre position
+  int8_t middle_finger_string;  ///< String pressed by middle finger (-1 = unused)
+  int8_t ring_finger_string;    ///< String pressed by ring finger (-1 = unused)
+  int8_t pinky_finger_string;   ///< String pressed by pinky finger (-1 = unused)
 
   static constexpr int8_t kUnused = -1;
 
@@ -146,16 +144,13 @@ struct BarreFingerAllocation {
 
     // Each finger can only press one string at their designated offset
     if (fret == barre_fret + 1) {
-      return middle_finger_string == kUnused ||
-             middle_finger_string == static_cast<int8_t>(string);
+      return middle_finger_string == kUnused || middle_finger_string == static_cast<int8_t>(string);
     }
     if (fret == barre_fret + 2) {
-      return ring_finger_string == kUnused ||
-             ring_finger_string == static_cast<int8_t>(string);
+      return ring_finger_string == kUnused || ring_finger_string == static_cast<int8_t>(string);
     }
     if (fret == barre_fret + 3) {
-      return pinky_finger_string == kUnused ||
-             pinky_finger_string == static_cast<int8_t>(string);
+      return pinky_finger_string == kUnused || pinky_finger_string == static_cast<int8_t>(string);
     }
 
     return false;  // Beyond reach during barre
@@ -210,9 +205,7 @@ struct Fingering {
 
   /// @brief Default constructor.
   Fingering()
-      : playability_cost(0.0f),
-        requires_position_shift(false),
-        requires_barre_change(false) {}
+      : playability_cost(0.0f), requires_position_shift(false), requires_barre_change(false) {}
 
   /// @brief Check if this is a valid fingering (has at least one assignment).
   bool isValid() const { return !assignments.empty(); }
@@ -256,7 +249,7 @@ struct Fingering {
 /// @param hand Current hand position
 /// @return true if the position can be played
 inline bool canPlayAtPosition(const FretPosition& pos, const BarreState& barre,
-                               const HandPosition& hand) {
+                              const HandPosition& hand) {
   if (barre.isActive()) {
     // During barre: cannot play below barre fret (except if not covered string)
     if (barre.coversString(pos.string)) {
@@ -283,7 +276,7 @@ inline bool canPlayAtPosition(const FretPosition& pos, const BarreState& barre,
 /// @param barre_fret Proposed barre fret
 /// @return true if all positions can be played with this barre
 inline bool isChordPlayableWithBarre(const std::vector<FretPosition>& positions,
-                                      uint8_t barre_fret) {
+                                     uint8_t barre_fret) {
   BarreFingerAllocation alloc(barre_fret);
 
   for (const auto& pos : positions) {

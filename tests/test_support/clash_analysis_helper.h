@@ -80,8 +80,7 @@ inline std::vector<ClashInfo> findClashes(const MidiTrack& track_a, const std::s
       if (!overlap) continue;
 
       // Calculate actual interval
-      int actual_interval =
-          std::abs(static_cast<int>(note_a.note) - static_cast<int>(note_b.note));
+      int actual_interval = std::abs(static_cast<int>(note_a.note) - static_cast<int>(note_b.note));
 
       // Skip wide separations (perceptually not clashing)
       if (actual_interval >= kMaxClashSeparation) continue;
@@ -90,8 +89,8 @@ inline std::vector<ClashInfo> findClashes(const MidiTrack& track_a, const std::s
       Tick overlap_start = std::max(start_a, start_b);
       Tick overlap_end = std::min(end_a, end_b);
       Tick overlap_duration = overlap_end - overlap_start;
-      if (isToleratedPassingTone(actual_interval, overlap_duration,
-                                 note_a.note, note_b.note, overlap_start)) {
+      if (isToleratedPassingTone(actual_interval, overlap_duration, note_a.note, note_b.note,
+                                 overlap_start)) {
         continue;
       }
 
@@ -115,7 +114,7 @@ inline std::vector<ClashInfo> findClashes(const MidiTrack& track_a, const std::s
  * @return Vector of all ClashInfo found across all track pairs
  */
 inline std::vector<ClashInfo> analyzeAllTrackPairs(const Song& song,
-                                                    const IHarmonyContext& harmony) {
+                                                   const IHarmonyContext& harmony) {
   std::vector<ClashInfo> all_clashes;
 
   // Get all melodic tracks (skip drums and SE)

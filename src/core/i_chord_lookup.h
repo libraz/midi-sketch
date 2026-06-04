@@ -99,8 +99,8 @@ class IChordLookup {
    * @param range_high Maximum allowed pitch
    * @return Nearest chord tone within range, or original pitch if none found
    */
-  virtual int snapToNearestChordToneInRange(int pitch, Tick tick,
-                                             int range_low, int range_high) const {
+  virtual int snapToNearestChordToneInRange(int pitch, Tick tick, int range_low,
+                                            int range_high) const {
     return findNearestChordToneInRange(pitch, getChordDegreeAt(tick), range_low, range_high);
   }
 
@@ -133,8 +133,8 @@ class IChordLookup {
     // Classify pitch safety in the next chord
     auto next_chord_tones = getChordTonesAt(boundary);
     int pc = pitch % 12;
-    bool is_chord_tone = std::find(next_chord_tones.begin(), next_chord_tones.end(), pc)
-                         != next_chord_tones.end();
+    bool is_chord_tone =
+        std::find(next_chord_tones.begin(), next_chord_tones.end(), pc) != next_chord_tones.end();
 
     if (is_chord_tone) {
       info.safety = CrossBoundarySafety::ChordTone;

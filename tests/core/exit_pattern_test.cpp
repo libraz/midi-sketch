@@ -17,8 +17,7 @@ namespace midisketch {
 namespace {
 
 // Helper to create a section with specific exit pattern
-Section makeSection(SectionType type, uint8_t bars, Tick start_tick,
-                    ExitPattern exit_pattern) {
+Section makeSection(SectionType type, uint8_t bars, Tick start_tick, ExitPattern exit_pattern) {
   Section section;
   section.type = type;
   section.name = "Test";
@@ -30,8 +29,8 @@ Section makeSection(SectionType type, uint8_t bars, Tick start_tick,
 }
 
 // Helper to populate a track with evenly spaced notes across a section
-void fillTrackWithNotes(MidiTrack& track, Tick section_start, uint8_t bars,
-                        uint8_t velocity = 100, Tick note_spacing = TICKS_PER_BEAT) {
+void fillTrackWithNotes(MidiTrack& track, Tick section_start, uint8_t bars, uint8_t velocity = 100,
+                        Tick note_spacing = TICKS_PER_BEAT) {
   Tick section_end = section_start + bars * TICKS_PER_BAR;
   for (Tick tick = section_start; tick < section_end; tick += note_spacing) {
     track.addNote(NoteEventBuilder::create(tick, TICKS_PER_BEAT / 2, 60, velocity));
@@ -79,15 +78,13 @@ TEST(ExitPatternTest, FadeoutDecreasesVelocityInLastTwoBars) {
   for (const auto& note : track.notes()) {
     if (note.start_tick < fade_start) {
       // Notes before fade zone should be unchanged
-      EXPECT_EQ(note.velocity, 100)
-          << "Note at tick " << note.start_tick << " should be unchanged";
+      EXPECT_EQ(note.velocity, 100) << "Note at tick " << note.start_tick << " should be unchanged";
     } else if (note.start_tick > fade_start && note.start_tick < section_end) {
       // Notes after the fade start (not exactly at the boundary) should be reduced.
       // The note exactly at fade_start has progress=0 so multiplier=1.0.
       EXPECT_LT(note.velocity, 100)
           << "Note at tick " << note.start_tick << " should have reduced velocity";
-      EXPECT_GE(note.velocity, 1)
-          << "Note at tick " << note.start_tick << " should not be zero";
+      EXPECT_GE(note.velocity, 1) << "Note at tick " << note.start_tick << " should not be zero";
     }
   }
 }
@@ -130,8 +127,7 @@ TEST(ExitPatternTest, FinalHitBoostsLastBeatVelocity) {
   for (const auto& note : track.notes()) {
     if (note.start_tick >= last_beat_start) {
       // Notes on last beat should be boosted to at least 120
-      EXPECT_GE(note.velocity, 120)
-          << "Note at tick " << note.start_tick << " should be boosted";
+      EXPECT_GE(note.velocity, 120) << "Note at tick " << note.start_tick << " should be boosted";
     }
   }
 }
@@ -164,8 +160,7 @@ TEST(ExitPatternTest, FinalHitDoesNotAffectEarlierNotes) {
 
   for (const auto& note : track.notes()) {
     if (note.start_tick < last_beat_start) {
-      EXPECT_EQ(note.velocity, 80)
-          << "Note at tick " << note.start_tick << " should be unchanged";
+      EXPECT_EQ(note.velocity, 80) << "Note at tick " << note.start_tick << " should be unchanged";
     }
   }
 }
@@ -203,7 +198,7 @@ TEST(ExitPatternTest, CutOffTruncatesNotesExtendingPastCutoff) {
 
   // Add a note that extends past the cutoff point
   Tick note_start = cutoff - TICKS_PER_BEAT;  // 1 beat before cutoff
-  Tick long_duration = TICKS_PER_BEAT * 3;     // Extends well past cutoff
+  Tick long_duration = TICKS_PER_BEAT * 3;    // Extends well past cutoff
   track.addNote(NoteEventBuilder::create(note_start, long_duration, 60, 80));
 
   PostProcessor::applyExitPattern(track, section);
@@ -294,8 +289,7 @@ TEST(ExitPatternTest, ApplyAllExitPatternsProcessesMultipleSections) {
   // Two sections: one with Fadeout, one with None
   std::vector<Section> sections;
   sections.push_back(makeSection(SectionType::A, 4, 0, ExitPattern::None));
-  sections.push_back(
-      makeSection(SectionType::Outro, 4, 4 * TICKS_PER_BAR, ExitPattern::Fadeout));
+  sections.push_back(makeSection(SectionType::Outro, 4, 4 * TICKS_PER_BAR, ExitPattern::Fadeout));
 
   // Fill both tracks across both sections
   fillTrackWithNotes(track1, 0, 8, 100);

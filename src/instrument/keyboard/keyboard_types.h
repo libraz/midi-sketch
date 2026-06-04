@@ -16,10 +16,7 @@
 namespace midisketch {
 
 /// @brief Which hand plays a note.
-enum class Hand : uint8_t {
-  Left,
-  Right
-};
+enum class Hand : uint8_t { Left, Right };
 
 /// @brief Keyboard-specific playing techniques.
 enum class KeyboardTechnique : uint8_t {
@@ -37,22 +34,29 @@ enum class KeyboardTechnique : uint8_t {
 /// @return String representation
 inline const char* keyboardTechniqueToString(KeyboardTechnique technique) {
   switch (technique) {
-    case KeyboardTechnique::Normal: return "normal";
-    case KeyboardTechnique::Staccato: return "staccato";
-    case KeyboardTechnique::Legato: return "legato";
-    case KeyboardTechnique::Arpeggio: return "arpeggio";
-    case KeyboardTechnique::OctaveDoubling: return "octave_doubling";
-    case KeyboardTechnique::Tremolo: return "tremolo";
-    case KeyboardTechnique::GraceNote: return "grace_note";
+    case KeyboardTechnique::Normal:
+      return "normal";
+    case KeyboardTechnique::Staccato:
+      return "staccato";
+    case KeyboardTechnique::Legato:
+      return "legato";
+    case KeyboardTechnique::Arpeggio:
+      return "arpeggio";
+    case KeyboardTechnique::OctaveDoubling:
+      return "octave_doubling";
+    case KeyboardTechnique::Tremolo:
+      return "tremolo";
+    case KeyboardTechnique::GraceNote:
+      return "grace_note";
   }
   return "unknown";
 }
 
 /// @brief Sustain pedal state.
 enum class PedalState : uint8_t {
-  Off,   ///< Pedal not pressed
-  On,    ///< Pedal fully pressed
-  Half   ///< Half-pedal technique (partial damper lift)
+  Off,  ///< Pedal not pressed
+  On,   ///< Pedal fully pressed
+  Half  ///< Half-pedal technique (partial damper lift)
 };
 
 /// @brief Physical key position on the keyboard.
@@ -61,8 +65,8 @@ enum class PedalState : uint8_t {
 /// keyboard position maps directly to MIDI pitch. The hand assignment
 /// determines which hand is responsible for the note.
 struct KeyPosition {
-  uint8_t pitch = 0;         ///< MIDI note number (acts as linear position)
-  Hand hand = Hand::Right;   ///< Which hand plays this key
+  uint8_t pitch = 0;        ///< MIDI note number (acts as linear position)
+  Hand hand = Hand::Right;  ///< Which hand plays this key
 };
 
 /// @brief Per-hand span constraints based on skill level.
@@ -124,10 +128,10 @@ struct KeyboardHandPhysics {
 /// Tracks the most recent position and voicing size for a single hand,
 /// used to calculate transition costs between successive voicings.
 struct HandState {
-  uint8_t last_center = 0;   ///< Center pitch of last voicing played
-  uint8_t last_low = 0;      ///< Lowest note played
-  uint8_t last_high = 0;     ///< Highest note played
-  uint8_t note_count = 0;    ///< Number of notes last played
+  uint8_t last_center = 0;  ///< Center pitch of last voicing played
+  uint8_t last_low = 0;     ///< Lowest note played
+  uint8_t last_high = 0;    ///< Highest note played
+  uint8_t note_count = 0;   ///< Number of notes last played
 
   /// @brief Reset hand state to initial values.
   void reset() {
@@ -152,11 +156,11 @@ struct HandState {
 /// Maintains the current physical state of the performer, including
 /// hand positions, split point between hands, and pedal state.
 struct KeyboardState {
-  HandState left;                        ///< Left hand state
-  HandState right;                       ///< Right hand state
-  uint8_t last_split_key = 60;           ///< C4 default split between hands
-  uint8_t last_voicing_span = 0;         ///< Span of previous voicing in semitones
-  PedalState pedal = PedalState::Off;    ///< Current sustain pedal state
+  HandState left;                      ///< Left hand state
+  HandState right;                     ///< Right hand state
+  uint8_t last_split_key = 60;         ///< C4 default split between hands
+  uint8_t last_voicing_span = 0;       ///< Span of previous voicing in semitones
+  PedalState pedal = PedalState::Off;  ///< Current sustain pedal state
 
   /// @brief Reset all keyboard state to initial values.
   void reset() {
@@ -174,10 +178,10 @@ struct KeyboardState {
 /// the two hands based on a split point. Each hand must be able to reach
 /// all its assigned notes within its span constraints.
 struct VoicingHandAssignment {
-  std::vector<uint8_t> left_hand;    ///< Pitches assigned to left hand
-  std::vector<uint8_t> right_hand;   ///< Pitches assigned to right hand
-  uint8_t split_point = 60;          ///< Pitch boundary between hands
-  bool is_playable = false;          ///< Whether both hands can reach their notes
+  std::vector<uint8_t> left_hand;   ///< Pitches assigned to left hand
+  std::vector<uint8_t> right_hand;  ///< Pitches assigned to right hand
+  uint8_t split_point = 60;         ///< Pitch boundary between hands
+  bool is_playable = false;         ///< Whether both hands can reach their notes
 };
 
 /// @brief Playability cost for a voicing transition.
@@ -186,10 +190,10 @@ struct VoicingHandAssignment {
 /// into per-hand costs. The total cost combines both hands and can
 /// be used to rank voicing alternatives.
 struct KeyboardPlayabilityCost {
-  float left_hand_cost = 0.0f;    ///< Movement cost for left hand
-  float right_hand_cost = 0.0f;   ///< Movement cost for right hand
-  float total_cost = 0.0f;        ///< Combined cost (left + right + modifiers)
-  bool is_feasible = true;        ///< Hard constraint: can the transition be made in time?
+  float left_hand_cost = 0.0f;   ///< Movement cost for left hand
+  float right_hand_cost = 0.0f;  ///< Movement cost for right hand
+  float total_cost = 0.0f;       ///< Combined cost (left + right + modifiers)
+  bool is_feasible = true;       ///< Hard constraint: can the transition be made in time?
 
   /// @brief Add another cost to this one.
   KeyboardPlayabilityCost& operator+=(const KeyboardPlayabilityCost& other) {

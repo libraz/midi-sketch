@@ -39,18 +39,16 @@ void updateMelodicState(LockedRhythmMelodicState& state, uint8_t new_pitch);
 
 /// @brief Select pitch for a single onset, handling streak-forced movement and randomness.
 uint8_t selectPitchForOnset(const std::vector<PitchCandidate>& candidates,
-                            const LockedRhythmMelodicState& state,
-                            Tick hint_duration,
+                            const LockedRhythmMelodicState& state, Tick hint_duration,
                             const MelodyDesigner::SectionContext& ctx,
                             const PhrasePlan* phrase_plan, size_t onset_idx,
-                            const std::vector<OnsetContourInfo>& onset_contours,
-                            std::mt19937& rng);
+                            const std::vector<OnsetContourInfo>& onset_contours, std::mt19937& rng);
 
 /// @brief Compute final note duration based on position (last/phrase-end/normal).
-Tick computeNoteDuration(bool is_last_note, bool is_phrase_end, Tick tick,
-                         Tick section_end, Tick next_onset, Tick available_span,
-                         Tick breath_duration, Tick phrase_end_min,
-                         float gate_ratio, uint8_t safe_pitch, uint8_t prev_pitch);
+Tick computeNoteDuration(bool is_last_note, bool is_phrase_end, Tick tick, Tick section_end,
+                         Tick next_onset, Tick available_span, Tick breath_duration,
+                         Tick phrase_end_min, float gate_ratio, uint8_t safe_pitch,
+                         uint8_t prev_pitch);
 
 /**
  * @brief Generate a single pitch sequence candidate for locked rhythm evaluation.

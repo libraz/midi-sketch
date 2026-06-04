@@ -232,9 +232,9 @@ void SEGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContext& 
 }
 
 void SEGenerator::generateWithCalls(MidiTrack& track, Song& song, bool call_enabled,
-                                     bool call_notes_enabled, IntroChant intro_chant,
-                                     MixPattern mix_pattern, CallDensity call_density,
-                                     std::mt19937& rng) {
+                                    bool call_notes_enabled, IntroChant intro_chant,
+                                    MixPattern mix_pattern, CallDensity call_density,
+                                    std::mt19937& rng) {
   // Build FullTrackContext and delegate
   FullTrackContext ctx;
   ctx.song = &song;

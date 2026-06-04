@@ -9,11 +9,11 @@
 #include <cmath>
 
 #include "core/emotion_curve.h"
-#include "core/velocity_helper.h"
 #include "core/melody_types.h"
 #include "core/midi_track.h"
 #include "core/section_properties.h"
 #include "core/velocity_constants.h"
+#include "core/velocity_helper.h"
 
 namespace midisketch {
 
@@ -40,7 +40,7 @@ constexpr float kMoodVelocityAdjustment[24] = {
     1.0f,   // 13: ElectroPop
     1.1f,   // 14: IdolPop
     1.0f,   // 15: Anthem
-    1.1f,   // 16: Yoasobi
+    1.1f,   // 16: AnimeHighEnergy
     0.95f,  // 17: Synthwave
     1.1f,   // 18: FutureBass
     0.95f,  // 19: CityPop
@@ -82,9 +82,7 @@ uint8_t calculateVelocity(SectionType section, uint8_t beat, Mood mood) {
   return vel::clamp(velocity, 0, 127);
 }
 
-int getSectionEnergy(SectionType section) {
-  return getSectionProperties(section).energy_level;
-}
+int getSectionEnergy(SectionType section) { return getSectionProperties(section).energy_level; }
 
 // ============================================================================
 // SectionEnergy and PeakLevel Functions
@@ -166,7 +164,7 @@ uint8_t calculateEffectiveVelocity(const Section& section, uint8_t beat, Mood mo
 }
 
 uint8_t calculateEmotionAwareVelocity(const Section& section, uint8_t beat, Mood mood,
-                                       const SectionEmotion* emotion) {
+                                      const SectionEmotion* emotion) {
   // Get base velocity from section and mood
   uint8_t base_velocity = calculateEffectiveVelocity(section, beat, mood);
 
@@ -199,10 +197,9 @@ float getBarVelocityMultiplier(int bar_in_section, int total_bars, SectionType s
   phrase_progress = std::min(phrase_progress + 0.125f, 1.0f);
 
   // Cosine interpolation for smooth curve
-  float phrase_curve =
-      velocity::kPhraseMinMultiplier +
-      (velocity::kPhraseMaxMultiplier - velocity::kPhraseMinMultiplier) *
-          (1.0f - std::cos(phrase_progress * velocity::kPi)) / 2.0f;
+  float phrase_curve = velocity::kPhraseMinMultiplier +
+                       (velocity::kPhraseMaxMultiplier - velocity::kPhraseMinMultiplier) *
+                           (1.0f - std::cos(phrase_progress * velocity::kPi)) / 2.0f;
 
   // Section-level crescendo for Chorus (gradual build across entire section)
   float section_curve = 1.0f;
@@ -275,8 +272,8 @@ void applyTransitionDynamics(MidiTrack& track, Tick section_start, Tick section_
           // Phase 1: Suppression
           float progress = static_cast<float>(note.start_tick - section_start) /
                            static_cast<float>(midpoint - section_start);
-          multiplier =
-              velocity::kTransitionSuppressionStart + velocity::kTransitionSuppressionRange * progress;
+          multiplier = velocity::kTransitionSuppressionStart +
+                       velocity::kTransitionSuppressionRange * progress;
         } else {
           // Phase 2: Crescendo
           float progress = static_cast<float>(note.start_tick - midpoint) /
@@ -496,15 +493,14 @@ void applyMelodyContourVelocity(MidiTrack& track, const std::vector<Section>& se
         // Phrase-high note boost (Task 5-4: climax-aware)
         if (note.note == highest_pitch) {
           // Determine bar position for this specific note
-          int note_bar_in_section =
-              static_cast<int>(tickToBar(note.start_tick - section_start));
+          int note_bar_in_section = static_cast<int>(tickToBar(note.start_tick - section_start));
           bool note_in_climax = false;
 
           if (section.bars >= 6) {
             int climax_start = static_cast<int>(section.bars * 0.5f);
             int climax_end = static_cast<int>(section.bars * 0.75f);
-            note_in_climax = (note_bar_in_section >= climax_start &&
-                              note_bar_in_section <= climax_end);
+            note_in_climax =
+                (note_bar_in_section >= climax_start && note_bar_in_section <= climax_end);
           }
 
           // Apply climax-dependent boost
@@ -613,9 +609,9 @@ uint8_t calculateVelocityCeiling(uint8_t base_velocity, float tension) {
   // - High tension (0.7-1.0): ceiling can exceed base by up to 20%
   float ceiling_multiplier = velocity::calculateTieredMultiplier(
       tension, velocity::kTensionLowThreshold, velocity::kTensionHighThreshold,
-      velocity::kTensionLowCeilingMin,  // 0.8 at tension=0
-      1.0f,                              // 1.0 at low_threshold and mid range
-      1.0f,                              // 1.0 at high_threshold
+      velocity::kTensionLowCeilingMin,                // 0.8 at tension=0
+      1.0f,                                           // 1.0 at low_threshold and mid range
+      1.0f,                                           // 1.0 at high_threshold
       1.0f + velocity::kTensionHighCeilingMaxBonus);  // 1.2 at tension=1
 
   int ceiling = static_cast<int>(base_velocity * ceiling_multiplier);
@@ -629,9 +625,9 @@ uint8_t calculateEnergyAdjustedVelocity(uint8_t section_velocity, float energy) 
   // - High energy (0.7-1.0): boost velocity by up to 15%
   float energy_multiplier = velocity::calculateTieredMultiplier(
       energy, velocity::kEnergyLowThreshold, velocity::kEnergyHighThreshold,
-      velocity::kEnergyLowVelocityMin,     // 0.75 at energy=0
-      velocity::kEnergyMediumVelocityMin,  // 0.90 at low_threshold
-      1.0f,                                 // 1.0 at high_threshold
+      velocity::kEnergyLowVelocityMin,                // 0.75 at energy=0
+      velocity::kEnergyMediumVelocityMin,             // 0.90 at low_threshold
+      1.0f,                                           // 1.0 at high_threshold
       1.0f + velocity::kEnergyHighVelocityMaxBonus);  // 1.15 at energy=1
 
   int adjusted = static_cast<int>(section_velocity * energy_multiplier);
@@ -645,9 +641,9 @@ float calculateEnergyDensityMultiplier(float base_density, float energy) {
   // - High energy: increase density for fuller arrangements (100-130%)
   float density_factor = velocity::calculateTieredMultiplier(
       energy, velocity::kEnergyLowThreshold, velocity::kEnergyHighThreshold,
-      velocity::kEnergyLowDensityMin,     // 0.5 at energy=0
-      velocity::kEnergyMediumDensityMin,  // 0.8 at low_threshold
-      1.0f,                                // 1.0 at high_threshold
+      velocity::kEnergyLowDensityMin,                // 0.5 at energy=0
+      velocity::kEnergyMediumDensityMin,             // 0.8 at low_threshold
+      1.0f,                                          // 1.0 at high_threshold
       1.0f + velocity::kEnergyHighDensityMaxBonus);  // 1.3 at energy=1
 
   return std::clamp(base_density * density_factor, 0.5f, 1.5f);
@@ -734,8 +730,8 @@ void applyPhraseEndDecay(MidiTrack& track, const std::vector<Section>& sections,
         if (note.start_tick >= decay_start && note.start_tick < phrase_end &&
             note.start_tick >= section_start && note.start_tick < section_end) {
           // Calculate decay factor based on position within the last beat
-          float position_in_decay =
-              static_cast<float>(note.start_tick - decay_start) / static_cast<float>(TICKS_PER_BEAT);
+          float position_in_decay = static_cast<float>(note.start_tick - decay_start) /
+                                    static_cast<float>(TICKS_PER_BEAT);
 
           // Linear interpolation from 1.0 to phrase end decay
           float decay_factor = 1.0f - (1.0f - velocity::kPhraseEndDecay) * position_in_decay;
@@ -763,8 +759,8 @@ void applyBeatMicroDynamics(MidiTrack& track) {
 
   for (auto& note : notes) {
     // Calculate beat position within bar
-    float beat_position = static_cast<float>(positionInBar(note.start_tick)) /
-                          static_cast<float>(TICKS_PER_BEAT);
+    float beat_position =
+        static_cast<float>(positionInBar(note.start_tick)) / static_cast<float>(TICKS_PER_BEAT);
 
     // Get micro-curve multiplier
     float multiplier = getBeatMicroCurve(beat_position);
@@ -839,13 +835,13 @@ float getSyncopationWeight(VocalGrooveFeel feel, SectionType section, uint8_t dr
 // ============================================================================
 
 float getContextualSyncopationWeight(float base_weight, float phrase_progress, int beat_in_bar,
-                                      SectionType section) {
+                                     SectionType section) {
   // Start with base weight
   float adjusted = base_weight;
 
   // Phrase position boost: more syncopation in latter half of phrase
-  // Creates natural momentum building toward phrase climax ("tame→burst" / build-up→release pattern)
-  // Progress 0.5-1.0 maps to multiplier 1.0-1.5 (increased for catchier feel)
+  // Creates natural momentum building toward phrase climax ("tame→burst" / build-up→release
+  // pattern) Progress 0.5-1.0 maps to multiplier 1.0-1.5 (increased for catchier feel)
   if (phrase_progress > velocity::kSyncoPhraseProgressThreshold) {
     float progress_factor = (phrase_progress - velocity::kSyncoPhraseProgressThreshold) * 2.0f;
     float phrase_boost = 1.0f + progress_factor * velocity::kSyncoPhraseBoostMax;
@@ -886,13 +882,13 @@ float getPhraseNoteVelocityCurve(int note_index, int total_notes, ContourType co
   // Peak contour: climax earlier (60%) for natural arch shape
   // Other contours: climax later (75%) for building energy
   float climax_position = (contour == ContourType::Peak) ? velocity::kClimaxPositionPeak
-                                                          : velocity::kClimaxPositionOther;
+                                                         : velocity::kClimaxPositionOther;
 
   float multiplier;
   if (progress <= climax_position) {
     // Pre-climax: crescendo
     // Use cosine interpolation for smooth curve
-    float t = progress / climax_position;  // 0.0 to 1.0
+    float t = progress / climax_position;                            // 0.0 to 1.0
     float cos_factor = (1.0f - std::cos(t * velocity::kPi)) * 0.5f;  // Smooth S-curve
     multiplier = velocity::kPhraseNotePreClimaxMin +
                  (velocity::kPhraseNoteClimaxMax - velocity::kPhraseNotePreClimaxMin) * cos_factor;

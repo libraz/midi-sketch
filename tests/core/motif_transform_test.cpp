@@ -3,9 +3,10 @@
  * @brief Tests for GlobalMotif transformation functions.
  */
 
+#include "core/motif_transform.h"
+
 #include <gtest/gtest.h>
 
-#include "core/motif_transform.h"
 #include "core/section_types.h"
 
 namespace midisketch {
@@ -195,9 +196,8 @@ TEST(MotifTransformTest, SequenceShiftsIntervals) {
   }
   // Intervals shifted by degree_shift
   for (uint8_t idx = 0; idx < result.interval_count; ++idx) {
-    int16_t expected = std::clamp(
-        static_cast<int16_t>(original[idx] + shift),
-        static_cast<int16_t>(-12), static_cast<int16_t>(12));
+    int16_t expected = std::clamp(static_cast<int16_t>(original[idx] + shift),
+                                  static_cast<int16_t>(-12), static_cast<int16_t>(12));
     EXPECT_EQ(result.interval_signature[idx], static_cast<int8_t>(expected));
   }
 }
@@ -212,9 +212,9 @@ TEST(MotifTransformTest, SequenceClampsToRange) {
 
   GlobalMotif result = sequenceMotif(source, 5);
 
-  EXPECT_EQ(result.interval_signature[0], 12);   // Clamped to max
-  EXPECT_EQ(result.interval_signature[1], -5);    // -10 + 5 = -5
-  EXPECT_EQ(result.interval_signature[2], 5);     // 0 + 5 = 5
+  EXPECT_EQ(result.interval_signature[0], 12);  // Clamped to max
+  EXPECT_EQ(result.interval_signature[1], -5);  // -10 + 5 = -5
+  EXPECT_EQ(result.interval_signature[2], 5);   // 0 + 5 = 5
 }
 
 TEST(MotifTransformTest, SequenceZeroShiftIsIdentity) {

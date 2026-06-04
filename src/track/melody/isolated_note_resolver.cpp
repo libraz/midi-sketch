@@ -21,8 +21,8 @@ bool isIsolatedNote(int prev_pitch, int curr_pitch, int next_pitch) {
   return interval_before >= kIsolationThreshold && interval_after >= kIsolationThreshold;
 }
 
-int findConnectingPitch(int prev_pitch, int next_pitch, int8_t chord_degree,
-                        uint8_t vocal_low, uint8_t vocal_high) {
+int findConnectingPitch(int prev_pitch, int next_pitch, int8_t chord_degree, uint8_t vocal_low,
+                        uint8_t vocal_high) {
   // Aim for midpoint between neighbors
   int midpoint = (prev_pitch + next_pitch) / 2;
   // Snap to nearest chord tone
@@ -63,13 +63,13 @@ void resolveIsolatedNotes(std::vector<NoteEvent>& notes, const IHarmonyContext& 
 
     // Find a better connecting pitch
     int8_t chord_degree = harmony.getChordDegreeAt(notes[i].start_tick);
-    int fixed_pitch = findConnectingPitch(prev_pitch, next_pitch, chord_degree,
-                                           vocal_low, vocal_high);
+    int fixed_pitch =
+        findConnectingPitch(prev_pitch, next_pitch, chord_degree, vocal_low, vocal_high);
 
     // Apply fix only if it improves connectivity and doesn't introduce collision
     if (doesFixImproveConnectivity(prev_pitch, curr_pitch, next_pitch, fixed_pitch) &&
         harmony.isConsonantWithOtherTracks(static_cast<uint8_t>(fixed_pitch), notes[i].start_tick,
-                                            notes[i].duration, TrackRole::Vocal)) {
+                                           notes[i].duration, TrackRole::Vocal)) {
 #ifdef MIDISKETCH_NOTE_PROVENANCE
       uint8_t old_pitch = notes[i].note;
 #endif
@@ -77,8 +77,7 @@ void resolveIsolatedNotes(std::vector<NoteEvent>& notes, const IHarmonyContext& 
 #ifdef MIDISKETCH_NOTE_PROVENANCE
       if (old_pitch != notes[i].note) {
         notes[i].prov_original_pitch = old_pitch;
-        notes[i].addTransformStep(TransformStepType::ChordToneSnap, old_pitch,
-                                  notes[i].note, 0, 0);
+        notes[i].addTransformStep(TransformStepType::ChordToneSnap, old_pitch, notes[i].note, 0, 0);
       }
 #endif
     }

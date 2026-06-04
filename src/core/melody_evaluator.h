@@ -35,13 +35,13 @@ struct EvaluatorConfig {
 ///
 /// Contains individual scores for each quality dimension.
 struct MelodyScore {
-  float singability;                   ///< Average interval score (0.0-1.0)
-  float chord_tone_ratio;              ///< Strong beat chord tone ratio (0.0-1.0)
-  float contour_shape;                 ///< Familiar contour detection (0.0-1.0)
-  float surprise_element;              ///< Large leap detection (0.0-1.0)
-  float aaab_pattern;                  ///< AAAB repetition score (0.0-1.0)
-  float rhythm_interval_correlation;   ///< Rhythm-interval correlation score (0.0-1.0)
-  float catchiness;                    ///< Hook memorability score (0.0-1.0)
+  float singability;                  ///< Average interval score (0.0-1.0)
+  float chord_tone_ratio;             ///< Strong beat chord tone ratio (0.0-1.0)
+  float contour_shape;                ///< Familiar contour detection (0.0-1.0)
+  float surprise_element;             ///< Large leap detection (0.0-1.0)
+  float aaab_pattern;                 ///< AAAB repetition score (0.0-1.0)
+  float rhythm_interval_correlation;  ///< Rhythm-interval correlation score (0.0-1.0)
+  float catchiness;                   ///< Hook memorability score (0.0-1.0)
 
   /// Calculate total weighted score.
   float total(const EvaluatorConfig& config) const {
@@ -160,8 +160,7 @@ class MelodyEvaluator {
   /// @param threshold Interval threshold for isolation (default: 7 = Perfect 5th)
   /// @returns Penalty 0.0-0.3
   static float calcIsolatedNotePenalty(const std::vector<NoteEvent>& notes,
-                                       int prev_section_last_pitch = -1,
-                                       int threshold = 7);
+                                       int prev_section_last_pitch = -1, int threshold = 7);
 
   /// @brief Calculate penalty for monotonous melody (no variation).
   /// @param notes Vector of note events

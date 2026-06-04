@@ -19,19 +19,19 @@ namespace drums {
 
 /// @brief Percussion element activation flags per section.
 struct PercussionConfig {
-  bool tambourine;     ///< GM 54 - backbeat on 2 & 4 in energetic sections
-  bool shaker;         ///< GM 82 - rhythmic shaker pattern
-  bool handclap;       ///< GM 39 - layered with snare on 2 & 4
-  bool shaker_16th;    ///< Use 16th note grid for shaker (vs 8th note default)
+  bool tambourine;   ///< GM 54 - backbeat on 2 & 4 in energetic sections
+  bool shaker;       ///< GM 82 - rhythmic shaker pattern
+  bool handclap;     ///< GM 39 - layered with snare on 2 & 4
+  bool shaker_16th;  ///< Use 16th note grid for shaker (vs 8th note default)
 };
 
 /// @brief Mood category for percussion activation.
 enum class PercMoodCategory : uint8_t {
-  Calm = 0,      ///< Ballad, Sentimental, Chill
-  Standard = 1,  ///< Most moods (Pop, Nostalgic, etc.)
-  Energetic = 2, ///< EnergeticDance, ElectroPop, FutureBass, Anthem, Yoasobi
-  Idol = 3,      ///< IdolPop, BrightUpbeat, MidPop
-  RockDark = 4   ///< LightRock, DarkPop, Dramatic
+  Calm = 0,       ///< Ballad, Sentimental, Chill
+  Standard = 1,   ///< Most moods (Pop, Nostalgic, etc.)
+  Energetic = 2,  ///< EnergeticDance, ElectroPop, FutureBass, Anthem, AnimeHighEnergy
+  Idol = 3,       ///< IdolPop, BrightUpbeat, MidPop
+  RockDark = 4    ///< LightRock, DarkPop, Dramatic
 };
 
 /// @brief Get percussion mood category from mood.
@@ -53,9 +53,9 @@ PercussionConfig getPercussionConfig(Mood mood, SectionType section,
 /// @param density_mult Density multiplier for velocity
 /// @param rng Random number generator
 /// @param bpm Tempo in BPM (shaker switches to 8th notes at high tempos)
-void generateAuxPercussionForBar(MidiTrack& track, Tick bar_start,
-                                  const PercussionConfig& config, DrumRole drum_role,
-                                  float density_mult, std::mt19937& rng, uint16_t bpm = 0);
+void generateAuxPercussionForBar(MidiTrack& track, Tick bar_start, const PercussionConfig& config,
+                                 DrumRole drum_role, float density_mult, std::mt19937& rng,
+                                 uint16_t bpm = 0);
 
 }  // namespace drums
 }  // namespace midisketch

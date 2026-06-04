@@ -63,9 +63,8 @@ Tick applyGateRatio(Tick duration, const GateContext& ctx, Tick min_duration) {
   return std::max(gated, min_duration);
 }
 
-Tick clampToChordBoundary(Tick note_start, Tick note_duration,
-                          const IHarmonyContext& harmony, uint8_t pitch,
-                          Tick /*gap_ticks*/, Tick min_duration) {
+Tick clampToChordBoundary(Tick note_start, Tick note_duration, const IHarmonyContext& harmony,
+                          uint8_t pitch, Tick /*gap_ticks*/, Tick min_duration) {
   if (pitch == 0) {
     return note_duration;
   }
@@ -121,7 +120,7 @@ Tick clampToPhraseBoundary(Tick note_start, Tick note_duration, Tick phrase_end,
 }
 
 int findChordToneInDirection(int current_pitch, int8_t chord_degree, int direction,
-                              uint8_t vocal_low, uint8_t vocal_high, int max_interval) {
+                             uint8_t vocal_low, uint8_t vocal_high, int max_interval) {
   std::vector<int> chord_tones = getChordTonePitchClasses(chord_degree);
 
   if (chord_tones.empty()) {
@@ -159,8 +158,8 @@ int findChordToneInDirection(int current_pitch, int8_t chord_degree, int directi
 }
 
 Tick applyAllDurationConstraints(Tick note_start, Tick note_duration,
-                                  const IHarmonyContext& harmony, Tick phrase_end,
-                                  const GateContext& ctx, uint8_t pitch) {
+                                 const IHarmonyContext& harmony, Tick phrase_end,
+                                 const GateContext& ctx, uint8_t pitch) {
   // Apply gate ratio first
   Tick duration = applyGateRatio(note_duration, ctx);
 

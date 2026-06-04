@@ -14,9 +14,9 @@ import { getApi } from './internal';
 export const GenerationParadigm = {
   /** Existing behavior */
   Traditional: 0,
-  /** Orangestar style (rhythm-synced) */
+  /** Rhythm-synced lead style */
   RhythmSync: 1,
-  /** YOASOBI style (melody-driven) */
+  /** Melody-driven story pop style */
   MelodyDriven: 2,
 } as const;
 
@@ -46,7 +46,7 @@ export type RiffPolicyType = (typeof RiffPolicy)[keyof typeof RiffPolicy];
  * Blueprint information
  */
 export interface BlueprintInfo {
-  /** Blueprint ID (0-3) */
+  /** Blueprint ID (0-9) */
   id: number;
   /** Blueprint name */
   name: string;
@@ -71,7 +71,7 @@ export function getBlueprintCount(): number {
 
 /**
  * Get blueprint name by ID
- * @param id Blueprint ID (0-3)
+ * @param id Blueprint ID (0-9)
  */
 export function getBlueprintName(id: number): string {
   return getApi().blueprintName(id);
@@ -79,7 +79,7 @@ export function getBlueprintName(id: number): string {
 
 /**
  * Get blueprint paradigm by ID
- * @param id Blueprint ID (0-3)
+ * @param id Blueprint ID (0-9)
  */
 export function getBlueprintParadigm(id: number): GenerationParadigmType {
   return getApi().blueprintParadigm(id) as GenerationParadigmType;
@@ -87,7 +87,7 @@ export function getBlueprintParadigm(id: number): GenerationParadigmType {
 
 /**
  * Get blueprint riff policy by ID
- * @param id Blueprint ID (0-3)
+ * @param id Blueprint ID (0-9)
  */
 export function getBlueprintRiffPolicy(id: number): RiffPolicyType {
   return getApi().blueprintRiffPolicy(id) as RiffPolicyType;
@@ -95,7 +95,7 @@ export function getBlueprintRiffPolicy(id: number): RiffPolicyType {
 
 /**
  * Get blueprint weight by ID
- * @param id Blueprint ID (0-3)
+ * @param id Blueprint ID (0-9)
  */
 export function getBlueprintWeight(id: number): number {
   return getApi().blueprintWeight(id);

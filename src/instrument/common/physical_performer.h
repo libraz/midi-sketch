@@ -63,9 +63,8 @@ class IPhysicalPerformer {
   /// @param range_low Lowest acceptable pitch
   /// @param range_high Highest acceptable pitch
   /// @return Vector of alternative pitches, sorted by preference
-  virtual std::vector<uint8_t> suggestAlternatives(uint8_t desired_pitch, Tick start,
-                                                   Tick duration, uint8_t range_low,
-                                                   uint8_t range_high) const = 0;
+  virtual std::vector<uint8_t> suggestAlternatives(uint8_t desired_pitch, Tick start, Tick duration,
+                                                   uint8_t range_low, uint8_t range_high) const = 0;
 
   /// @brief Update performer state after performing a note.
   /// @param state State to update (modified in place)

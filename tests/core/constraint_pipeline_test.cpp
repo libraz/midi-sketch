@@ -6,13 +6,14 @@
  * clampToPhraseBoundary, findChordToneInDirection, applyAllDurationConstraints.
  */
 
+#include "track/melody/constraint_pipeline.h"
+
 #include <gtest/gtest.h>
 
 #include "core/arrangement.h"
 #include "core/chord.h"
 #include "core/harmony_context.h"
 #include "core/timing_constants.h"
-#include "track/melody/constraint_pipeline.h"
 
 using namespace midisketch;
 using namespace midisketch::melody;
@@ -100,7 +101,7 @@ TEST(ConstraintPipelineTest, GateRatio_PhraseEndTakesPriority) {
 TEST(ConstraintPipelineTest, ApplyGateRatio_ShortensNote) {
   GateContext ctx;
   ctx.note_duration = TICK_EIGHTH;
-  ctx.interval_from_prev = 7;  // Leap => 0.95f
+  ctx.interval_from_prev = 7;                       // Leap => 0.95f
   Tick result = applyGateRatio(TICK_QUARTER, ctx);  // 480 * 0.95 = 456
   EXPECT_EQ(result, 456u);
 }

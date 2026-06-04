@@ -19,20 +19,24 @@ namespace midisketch {
 void applyContourToHints(const OnsetContourInfo& ci, PitchSelectionHints& hints) {
   hints.phrase_position = ci.phrase_position;
   switch (ci.contour) {
-    case ContourType::Ascending:  hints.contour_direction = 1;  break;
-    case ContourType::Descending: hints.contour_direction = -1; break;
+    case ContourType::Ascending:
+      hints.contour_direction = 1;
+      break;
+    case ContourType::Descending:
+      hints.contour_direction = -1;
+      break;
     case ContourType::Peak:
       hints.contour_direction = (ci.phrase_position < 0.6f) ? 1 : -1;
       break;
     case ContourType::Valley:
       hints.contour_direction = (ci.phrase_position < 0.4f) ? -1 : 1;
       break;
-    default: break;  // Plateau: keep direction_inertia based value
+    default:
+      break;  // Plateau: keep direction_inertia based value
   }
 }
 
-PitchSelectionHints buildPitchHints(const LockedRhythmMelodicState& state,
-                                    Tick hint_duration,
+PitchSelectionHints buildPitchHints(const LockedRhythmMelodicState& state, Tick hint_duration,
                                     const MelodyDesigner::SectionContext& ctx,
                                     const PhrasePlan* phrase_plan, size_t onset_idx,
                                     const std::vector<OnsetContourInfo>& onset_contours) {
@@ -41,8 +45,10 @@ PitchSelectionHints buildPitchHints(const LockedRhythmMelodicState& state,
   hints.note_duration = hint_duration;
   hints.tessitura_center = ctx.tessitura.center;
   hints.same_pitch_streak = static_cast<int8_t>(state.same_pitch_streak);
-  if (state.direction_inertia > 0) hints.contour_direction = 1;
-  else if (state.direction_inertia < 0) hints.contour_direction = -1;
+  if (state.direction_inertia > 0)
+    hints.contour_direction = 1;
+  else if (state.direction_inertia < 0)
+    hints.contour_direction = -1;
   // Apply phrase contour from PhrasePlan
   if (phrase_plan != nullptr && onset_idx < onset_contours.size()) {
     applyContourToHints(onset_contours[onset_idx], hints);
@@ -55,10 +61,8 @@ uint8_t computeOnsetVelocity(float beat, const MelodyDesigner::SectionContext& c
   bool accent_applied = false;
   if (ctx.paradigm == GenerationParadigm::RhythmSync) {
     const auto& motif_params = ctx.motif_params;
-    if (motif_params != nullptr &&
-        motif_params->rhythm_template != MotifRhythmTemplate::None) {
-      const auto& tmpl_config =
-          motif_detail::getTemplateConfig(motif_params->rhythm_template);
+    if (motif_params != nullptr && motif_params->rhythm_template != MotifRhythmTemplate::None) {
+      const auto& tmpl_config = motif_detail::getTemplateConfig(motif_params->rhythm_template);
       float beat_in_bar = std::fmod(beat, 4.0f);
       float best_dist = 100.0f;
       int best_idx = -1;
@@ -81,22 +85,20 @@ uint8_t computeOnsetVelocity(float beat, const MelodyDesigner::SectionContext& c
     float beat_in_bar = std::fmod(beat, 4.0f);
     if (beat_in_bar < 0.1f || std::abs(beat_in_bar - 2.0f) < 0.1f) {
       velocity = 95;  // Strong beats
-    } else if (std::abs(beat_in_bar - 1.0f) < 0.1f ||
-               std::abs(beat_in_bar - 3.0f) < 0.1f) {
+    } else if (std::abs(beat_in_bar - 1.0f) < 0.1f || std::abs(beat_in_bar - 3.0f) < 0.1f) {
       velocity = 85;  // Medium beats
     }
   }
   return velocity;
 }
 
-bool isPhraseEndOnset(size_t onset_idx, size_t next_active,
-                      const std::vector<float>& onsets,
-                      const std::set<float>& boundary_set,
-                      uint8_t section_beats, bool is_last_note) {
+bool isPhraseEndOnset(size_t onset_idx, size_t next_active, const std::vector<float>& onsets,
+                      const std::set<float>& boundary_set, uint8_t section_beats,
+                      bool is_last_note) {
   if (is_last_note) return false;
   float current_beat = onsets[onset_idx];
-  float look_ahead = (next_active < onsets.size()) ? onsets[next_active]
-                                                    : static_cast<float>(section_beats);
+  float look_ahead =
+      (next_active < onsets.size()) ? onsets[next_active] : static_cast<float>(section_beats);
   constexpr float kEps = 0.01f;
   for (float boundary : boundary_set) {
     if (boundary > current_beat + kEps && boundary <= look_ahead + kEps) {
@@ -113,8 +115,8 @@ void postProcessPhraseEndResolution(std::vector<NoteEvent>& notes, float gate_ra
     if (gap < TICK_EIGHTH) continue;
 
     Tick phrase_end_tick = notes[ni - 1].start_tick + notes[ni - 1].duration;
-    Tick tail_start = (phrase_end_tick > TICKS_PER_BEAT * 2)
-        ? (phrase_end_tick - TICKS_PER_BEAT * 2) : 0;
+    Tick tail_start =
+        (phrase_end_tick > TICKS_PER_BEAT * 2) ? (phrase_end_tick - TICKS_PER_BEAT * 2) : 0;
 
     size_t tail_begin = ni;
     for (size_t k = ni; k > 0; --k) {
@@ -143,8 +145,8 @@ void postProcessPhraseEndResolution(std::vector<NoteEvent>& notes, float gate_ra
         } else {
           extend_to = notes[ni].start_tick - TICK_SIXTEENTH;
         }
-        Tick new_dur = (extend_to > notes[start].start_tick)
-            ? (extend_to - notes[start].start_tick) : notes[start].duration;
+        Tick new_dur = (extend_to > notes[start].start_tick) ? (extend_to - notes[start].start_tick)
+                                                             : notes[start].duration;
         if (new_dur >= TICKS_PER_BEAT) {
           notes[start].duration = new_dur;
           for (size_t rm = start + 1; rm <= end_idx; ++rm) {

@@ -104,8 +104,8 @@ std::vector<NoteEvent> subdivideSyllabic(const std::vector<NoteEvent>& notes, fl
         sub_note.duration = split_dur;
       }
       int vel_delta = vel_dist(rng);
-      sub_note.velocity = static_cast<uint8_t>(
-          std::clamp(static_cast<int>(note.velocity) + vel_delta, 1, 127));
+      sub_note.velocity =
+          static_cast<uint8_t>(std::clamp(static_cast<int>(note.velocity) + vel_delta, 1, 127));
 #ifdef MIDISKETCH_NOTE_PROVENANCE
       sub_note.prov_source = static_cast<uint8_t>(NoteSource::SyllabicSub);
 #endif
@@ -341,8 +341,8 @@ TEST(SyllabicSubdivideE2E, SubdividedNotesSurviveMerge) {
   // After subdivision, mergeSamePitchNotes must NOT undo the split.
   std::mt19937 rng(42);
   std::vector<NoteEvent> notes = {
-      makeNote(0, TICK_QUARTER * 2, 72, 80),           // Half note — will be subdivided
-      makeNote(TICK_QUARTER * 2, TICK_QUARTER, 74, 80), // Trigger note
+      makeNote(0, TICK_QUARTER * 2, 72, 80),             // Half note — will be subdivided
+      makeNote(TICK_QUARTER * 2, TICK_QUARTER, 74, 80),  // Trigger note
   };
 
   auto subdivided = subdivideSyllabic(notes, 1.0f, 120, 120.0f, rng);

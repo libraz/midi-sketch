@@ -76,7 +76,7 @@ class IFrettedInstrument {
   /// @param technique Desired playing technique
   /// @return Optimal fingering solution (empty if not playable)
   virtual Fingering findBestFingering(uint8_t pitch, const FretboardState& state,
-                                       PlayingTechnique technique) const = 0;
+                                      PlayingTechnique technique) const = 0;
 
   /// @brief Find optimal fingering for a sequence of pitches.
   /// @param pitches Sequence of MIDI pitches
@@ -84,9 +84,10 @@ class IFrettedInstrument {
   /// @param initial_state Starting fretboard state
   /// @param technique Default playing technique
   /// @return Sequence of fingering solutions
-  virtual std::vector<Fingering> findBestFingeringSequence(
-      const std::vector<uint8_t>& pitches, const std::vector<Tick>& durations,
-      const FretboardState& initial_state, PlayingTechnique technique) const = 0;
+  virtual std::vector<Fingering> findBestFingeringSequence(const std::vector<uint8_t>& pitches,
+                                                           const std::vector<Tick>& durations,
+                                                           const FretboardState& initial_state,
+                                                           PlayingTechnique technique) const = 0;
 
   // =========================================================================
   // Playability Cost
@@ -98,9 +99,8 @@ class IFrettedInstrument {
   /// @param time_between Time between the notes (ticks)
   /// @param bpm Current tempo
   /// @return Playability cost
-  virtual PlayabilityCost calculateTransitionCost(const Fingering& from,
-                                                   const Fingering& to, Tick time_between,
-                                                   uint16_t bpm) const = 0;
+  virtual PlayabilityCost calculateTransitionCost(const Fingering& from, const Fingering& to,
+                                                  Tick time_between, uint16_t bpm) const = 0;
 
   /// @brief Check if a transition is physically possible.
   /// @param from Source fingering
@@ -108,8 +108,8 @@ class IFrettedInstrument {
   /// @param time_between Time between notes (ticks)
   /// @param bpm Current tempo
   /// @return true if the transition can be performed
-  virtual bool isTransitionPossible(const Fingering& from, const Fingering& to,
-                                     Tick time_between, uint16_t bpm) const = 0;
+  virtual bool isTransitionPossible(const Fingering& from, const Fingering& to, Tick time_between,
+                                    uint16_t bpm) const = 0;
 
   // =========================================================================
   // Technique Support
@@ -123,8 +123,7 @@ class IFrettedInstrument {
   /// @brief Get constraints for a specific technique.
   /// @param technique Technique to query
   /// @return Technique constraints
-  virtual TechniqueConstraints getTechniqueConstraints(
-      PlayingTechnique technique) const = 0;
+  virtual TechniqueConstraints getTechniqueConstraints(PlayingTechnique technique) const = 0;
 
   // =========================================================================
   // State Management

@@ -81,7 +81,7 @@ GlobalMotif extractGlobalMotif(const std::vector<NoteEvent>& notes) {
 }
 
 float evaluateWithGlobalMotif(const std::vector<NoteEvent>& candidate,
-                                  const GlobalMotif& global_motif) {
+                              const GlobalMotif& global_motif) {
   if (!global_motif.isValid() || candidate.size() < 2) {
     return 0.0f;
   }
@@ -139,8 +139,7 @@ float evaluateWithGlobalMotif(const std::vector<NoteEvent>& candidate,
     }
     // Normalize: each matching direction contributes proportionally
     if (compare_count > 0) {
-      bonus +=
-          (static_cast<float>(direction_matches) / static_cast<float>(compare_count)) * 0.05f;
+      bonus += (static_cast<float>(direction_matches) / static_cast<float>(compare_count)) * 0.05f;
     }
   }
 

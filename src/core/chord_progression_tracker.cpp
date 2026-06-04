@@ -123,7 +123,7 @@ std::vector<int> ChordProgressionTracker::getChordTonesAt(Tick tick) const {
 }
 
 ChordBoundaryInfo ChordProgressionTracker::analyzeChordBoundary(uint8_t pitch, Tick start,
-                                                                 Tick duration) const {
+                                                                Tick duration) const {
   ChordBoundaryInfo info;
   Tick note_end = start + duration;
   Tick boundary = getNextChordChangeTick(start);

@@ -9,8 +9,8 @@
 #include <cmath>
 
 #include "core/chord_utils.h"
-#include "core/rng_util.h"
 #include "core/pitch_utils.h"
+#include "core/rng_util.h"
 #include "core/velocity.h"
 #include "track/vocal/vocal_helpers.h"
 
@@ -18,11 +18,10 @@ namespace midisketch {
 namespace melody {
 
 std::vector<RhythmNote> generatePhraseRhythm(const MelodyTemplate& tmpl, uint8_t phrase_beats,
-                                              float density_modifier, float thirtysecond_ratio,
-                                              std::mt19937& rng, GenerationParadigm paradigm,
-                                              float syncopation_weight,
-                                              SectionType section_type, uint16_t bpm,
-                                              VocalStylePreset vocal_style) {
+                                             float density_modifier, float thirtysecond_ratio,
+                                             std::mt19937& rng, GenerationParadigm paradigm,
+                                             float syncopation_weight, SectionType section_type,
+                                             uint16_t bpm, VocalStylePreset vocal_style) {
   std::vector<RhythmNote> rhythm;
 
   float current_beat = 0.0f;
@@ -42,8 +41,8 @@ std::vector<RhythmNote> generatePhraseRhythm(const MelodyTemplate& tmpl, uint8_t
   float bpm_attenuation;
   float long_note_boost;
   if (high_energy_fast) {
-    bpm_attenuation = 1.0f;   // No suppression for idol rapid-fire
-    long_note_boost = 0.7f;   // Reduce long notes to keep density up
+    bpm_attenuation = 1.0f;  // No suppression for idol rapid-fire
+    long_note_boost = 0.7f;  // Reduce long notes to keep density up
   } else if (thirtysecond_ratio >= 0.8f) {
     bpm_attenuation = 1.0f;
     long_note_boost = 1.0f;
@@ -69,17 +68,17 @@ std::vector<RhythmNote> generatePhraseRhythm(const MelodyTemplate& tmpl, uint8_t
   if (thirtysecond_ratio >= 0.8f) {
     max_consecutive_short = 32;  // UltraVocaloid: no limit
   } else if (high_energy_fast) {
-    max_consecutive_short = 4;   // Idol fast: more consecutive 8ths allowed
+    max_consecutive_short = 4;  // Idol fast: more consecutive 8ths allowed
   } else if (bpm >= 150) {
-    max_consecutive_short = 2;   // Fast tempo: max 2 consecutive short notes
+    max_consecutive_short = 2;  // Fast tempo: max 2 consecutive short notes
   } else {
-    max_consecutive_short = 3;   // Standard
+    max_consecutive_short = 3;  // Standard
   }
 
   // Track previous note duration for "tame→burst" (build-up→release) pattern
   // After a long note (>=half note), boost density to create energy release
   float prev_note_eighths = 0.0f;
-  constexpr float kLongNoteThreshold = 4.0f;       // Half note (4 eighths)
+  constexpr float kLongNoteThreshold = 4.0f;         // Half note (4 eighths)
   constexpr float kPostLongNoteDensityBoost = 1.3f;  // 30% density increase
 
   // UltraVocaloid: Random start pattern for natural variation
@@ -115,8 +114,8 @@ std::vector<RhythmNote> generatePhraseRhythm(const MelodyTemplate& tmpl, uint8_t
       // Phrase progress: 0.0 at start, 1.0 at end
       float phrase_progress = current_beat / end_beat;
       int beat_in_bar = static_cast<int>(current_beat) % 4;
-      float contextual_weight =
-          getContextualSyncopationWeight(syncopation_weight, phrase_progress, beat_in_bar, section_type);
+      float contextual_weight = getContextualSyncopationWeight(syncopation_weight, phrase_progress,
+                                                               beat_in_bar, section_type);
 
       if (rng_util::rollProbability(rng, contextual_weight)) {
         // Skip this strong beat, advance to the off-beat (8th note = 0.5 beats)
@@ -180,8 +179,8 @@ std::vector<RhythmNote> generatePhraseRhythm(const MelodyTemplate& tmpl, uint8_t
       // High-energy idol: heavily favor 8th notes for rapid-fire feel
       // Standard: base 30% chance for 8th notes, plus density bonus
       float eighth_prob = high_energy_fast
-          ? 0.45f + effective_sixteenth_density * 0.2f
-          : (0.30f + effective_sixteenth_density * 0.3f) * bpm_attenuation;
+                              ? 0.45f + effective_sixteenth_density * 0.2f
+                              : (0.30f + effective_sixteenth_density * 0.3f) * bpm_attenuation;
       float half_prob = tmpl.long_note_ratio * (high_energy_fast ? 0.3f : 0.8f) * long_note_boost;
       float roll = rng_util::rollFloat(rng, 0.0f, 1.0f);
       if (roll < eighth_prob) {
@@ -200,15 +199,20 @@ std::vector<RhythmNote> generatePhraseRhythm(const MelodyTemplate& tmpl, uint8_t
         local_density_boost = kPostLongNoteDensityBoost;
       }
 
-      if (thirtysecond_ratio > 0.0f && rng_util::rollProbability(rng, thirtysecond_ratio * local_density_boost)) {
+      if (thirtysecond_ratio > 0.0f &&
+          rng_util::rollProbability(rng, thirtysecond_ratio * local_density_boost)) {
         eighths = 0.25f;  // 32nd note (0.25 eighth = 60 ticks)
-      } else if (rng_util::rollProbability(rng, high_energy_fast
-          ? (0.50f + effective_sixteenth_density) * local_density_boost
-          : (0.35f + effective_sixteenth_density) * local_density_boost * bpm_attenuation)) {
+      } else if (rng_util::rollProbability(
+                     rng, high_energy_fast
+                              ? (0.50f + effective_sixteenth_density) * local_density_boost
+                              : (0.35f + effective_sixteenth_density) * local_density_boost *
+                                    bpm_attenuation)) {
         // High-energy idol: 50% base 8th note probability (no attenuation)
         // Standard: 35% base + density bonus, attenuated at fast tempos
         eighths = 1.0f;  // 8th note
-      } else if (rng_util::rollProbability(rng, tmpl.long_note_ratio * (high_energy_fast ? 0.3f : 0.5f) * long_note_boost / local_density_boost)) {
+      } else if (rng_util::rollProbability(rng, tmpl.long_note_ratio *
+                                                    (high_energy_fast ? 0.3f : 0.5f) *
+                                                    long_note_boost / local_density_boost)) {
         eighths = 4.0f;  // Half note
       } else {
         eighths = 2.0f;  // Quarter note
@@ -347,9 +351,9 @@ static int getMaxInertia(SectionType type) {
   }
 }
 
-uint8_t selectPitchForLockedRhythmEnhanced(
-    uint8_t prev_pitch, int8_t chord_degree, uint8_t vocal_low, uint8_t vocal_high,
-    const LockedRhythmContext& ctx, std::mt19937& rng) {
+uint8_t selectPitchForLockedRhythmEnhanced(uint8_t prev_pitch, int8_t chord_degree,
+                                           uint8_t vocal_low, uint8_t vocal_high,
+                                           const LockedRhythmContext& ctx, std::mt19937& rng) {
   // Build candidate pitch classes based on VocalAttitude
   std::vector<int> candidate_pcs;
 
@@ -405,7 +409,7 @@ uint8_t selectPitchForLockedRhythmEnhanced(
   auto [ascending_end, descending_start] = getDirectionBiasThresholds(ctx.section_type);
   int direction_bias = 0;  // -1 = prefer down, 0 = neutral, +1 = prefer up
   if (ctx.phrase_position < ascending_end) {
-    direction_bias = 1;   // Ascending bias at start
+    direction_bias = 1;  // Ascending bias at start
   } else if (ctx.phrase_position > descending_start) {
     direction_bias = -1;  // Descending bias at end (resolution)
   }
@@ -421,7 +425,7 @@ uint8_t selectPitchForLockedRhythmEnhanced(
   if (clamped_inertia > 1) {
     direction_bias = std::max(direction_bias, 1);  // Strong upward momentum
   } else if (clamped_inertia < -1) {
-    direction_bias = std::min(direction_bias, -1); // Strong downward momentum
+    direction_bias = std::min(direction_bias, -1);  // Strong downward momentum
   }
 
   // =========================================================================
@@ -477,16 +481,16 @@ uint8_t selectPitchForLockedRhythmEnhanced(
       if (dist_to_motif == 0) {
         score += 0.3f;  // Exact match with motif target
       } else if (dist_to_motif <= 2) {
-        score += 0.15f; // Close to motif target
+        score += 0.15f;  // Close to motif target
       }
     }
 
     // 4.4: Tessitura center preference (comfortable singing range)
     int dist_to_center = std::abs(static_cast<int>(pitch) - static_cast<int>(ctx.tessitura_center));
     if (dist_to_center <= 6) {
-      score += 0.1f;   // Bonus for staying near tessitura center
+      score += 0.1f;  // Bonus for staying near tessitura center
     } else if (dist_to_center > 12) {
-      score -= 0.1f;   // Penalty for straying far from center
+      score -= 0.1f;  // Penalty for straying far from center
     }
 
     // 4.5: Progressive penalty for consecutive same-pitch notes
@@ -528,7 +532,8 @@ uint8_t selectPitchForLockedRhythmEnhanced(
   } else if (scored_candidates.size() > 3) {
     // Random from remaining top candidates
     size_t max_idx = std::min(static_cast<size_t>(6), scored_candidates.size());
-    size_t rand_idx = static_cast<size_t>(rng_util::rollRange(rng, 3, static_cast<int>(max_idx - 1)));
+    size_t rand_idx =
+        static_cast<size_t>(rng_util::rollRange(rng, 3, static_cast<int>(max_idx - 1)));
     return scored_candidates[rand_idx].first;
   }
 
@@ -552,9 +557,8 @@ MoraRhythmMode resolveMoraMode(MoraRhythmMode mode, VocalStylePreset style) {
   }
 }
 
-std::vector<RhythmNote> generateMoraTimedRhythm(
-    uint8_t phrase_beats, uint8_t target_note_count,
-    float density_modifier, std::mt19937& rng) {
+std::vector<RhythmNote> generateMoraTimedRhythm(uint8_t phrase_beats, uint8_t target_note_count,
+                                                float density_modifier, std::mt19937& rng) {
   std::vector<RhythmNote> rhythm;
 
   if (phrase_beats == 0 || target_note_count == 0) {
@@ -564,8 +568,8 @@ std::vector<RhythmNote> generateMoraTimedRhythm(
   float end_beat = static_cast<float>(phrase_beats);
 
   // Apply density modifier to target count
-  int target = static_cast<int>(std::round(
-      static_cast<float>(target_note_count) * density_modifier));
+  int target =
+      static_cast<int>(std::round(static_cast<float>(target_note_count) * density_modifier));
   target = std::max(target, 2);  // At least 2 notes
 
   // Generate word groups (2-5 morae each)
@@ -661,13 +665,11 @@ std::vector<RhythmNote> generateMoraTimedRhythm(
   // Melisma avoidance: no 3+ consecutive very short notes (< 16th note = 0.5 eighths)
   // If found, merge into one 8th note
   for (size_t idx = 0; idx + 2 < rhythm.size(); ++idx) {
-    if (rhythm[idx].eighths < 0.5f &&
-        rhythm[idx + 1].eighths < 0.5f &&
+    if (rhythm[idx].eighths < 0.5f && rhythm[idx + 1].eighths < 0.5f &&
         rhythm[idx + 2].eighths < 0.5f) {
       // Merge three into one
-      float merged_duration = rhythm[idx].eighths +
-                              rhythm[idx + 1].eighths +
-                              rhythm[idx + 2].eighths;
+      float merged_duration =
+          rhythm[idx].eighths + rhythm[idx + 1].eighths + rhythm[idx + 2].eighths;
       rhythm[idx].eighths = std::max(merged_duration, 1.0f);  // At least 8th note
       rhythm.erase(rhythm.begin() + static_cast<long>(idx + 1),
                    rhythm.begin() + static_cast<long>(idx + 3));

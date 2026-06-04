@@ -16,10 +16,8 @@
 namespace midisketch {
 
 void planAndRegisterSecondaryDominants(const Arrangement& arrangement,
-                                       const ChordProgression& progression,
-                                       Mood mood,
-                                       std::mt19937& rng,
-                                       IHarmonyContext& harmony) {
+                                       const ChordProgression& progression, Mood mood,
+                                       std::mt19937& rng, IHarmonyContext& harmony) {
   const auto& sections = arrangement.sections();
 
   // Pop-appropriate SD frequency control parameters.
@@ -38,9 +36,9 @@ void planAndRegisterSecondaryDominants(const Arrangement& arrangement,
 
     // --- Section boundary: Chorus preceded by ii/IV/vi (deterministic) ---
     if (sec_idx > 0 && section.type == SectionType::Chorus) {
-      bool is_good_target = (prev_section_last_degree == 1 ||   // ii
-                             prev_section_last_degree == 3 ||   // IV
-                             prev_section_last_degree == 5);    // vi
+      bool is_good_target = (prev_section_last_degree == 1 ||  // ii
+                             prev_section_last_degree == 3 ||  // IV
+                             prev_section_last_degree == 5);   // vi
 
       if (is_good_target) {
         Tick prev_section_end = section.start_tick;
@@ -48,10 +46,18 @@ void planAndRegisterSecondaryDominants(const Arrangement& arrangement,
 
         int8_t sec_dom_degree;
         switch (prev_section_last_degree) {
-          case 1:  sec_dom_degree = 5; break;  // V/ii = vi
-          case 3:  sec_dom_degree = 0; break;  // V/IV = I
-          case 5:  sec_dom_degree = 2; break;  // V/vi = iii
-          default: sec_dom_degree = 4; break;
+          case 1:
+            sec_dom_degree = 5;
+            break;  // V/ii = vi
+          case 3:
+            sec_dom_degree = 0;
+            break;  // V/IV = I
+          case 5:
+            sec_dom_degree = 2;
+            break;  // V/vi = iii
+          default:
+            sec_dom_degree = 4;
+            break;
         }
 
         harmony.registerSecondaryDominant(insert_start, prev_section_end, sec_dom_degree);
@@ -104,8 +110,7 @@ void planAndRegisterSecondaryDominants(const Arrangement& arrangement,
           bool cooled_down = (abs_bar - last_sd_bar) >= kSDCooldownBars;
 
           if (random_check && within_limit && cooled_down) {
-            harmony.registerSecondaryDominant(bar_start + TICK_HALF,
-                                              bar_start + TICKS_PER_BAR,
+            harmony.registerSecondaryDominant(bar_start + TICK_HALF, bar_start + TICKS_PER_BAR,
                                               sec_dom.dominant_degree);
             section_sd_count++;
             last_sd_bar = abs_bar;

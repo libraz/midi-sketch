@@ -22,11 +22,9 @@ namespace {
 
 // Helper to check if a track role produces harmonic (pitched) content
 bool isHarmonicTrack(TrackRole role) {
-  return role == TrackRole::Bass || role == TrackRole::Chord ||
-         role == TrackRole::Vocal || role == TrackRole::Motif ||
-         role == TrackRole::Aux || role == TrackRole::Guitar;
+  return role == TrackRole::Bass || role == TrackRole::Chord || role == TrackRole::Vocal ||
+         role == TrackRole::Motif || role == TrackRole::Aux || role == TrackRole::Guitar;
 }
-
 
 }  // namespace
 
@@ -59,7 +57,7 @@ void TrackCollisionDetector::registerTrack(const MidiTrack& track, TrackRole rol
 // duplicates because they early-return on first dissonance, so the cost of
 // re-checking a note is negligible compared to the cost of deduplication.
 void TrackCollisionDetector::collectNoteIndices(Tick start, Tick end,
-                                                 std::vector<size_t>& out) const {
+                                                std::vector<size_t>& out) const {
   if (beat_index_.empty()) return;
   Tick first_beat = tickToBeat(start);
   Tick last_beat = (end > 0) ? tickToBeat(end - 1) : first_beat;
@@ -73,10 +71,9 @@ void TrackCollisionDetector::collectNoteIndices(Tick start, Tick end,
   }
 }
 
-bool TrackCollisionDetector::isConsonantWithOtherTracks(uint8_t pitch, Tick start, Tick duration,
-                                         TrackRole exclude,
-                                         const ChordProgressionTracker* chord_tracker,
-                                         bool is_weak_beat) const {
+bool TrackCollisionDetector::isConsonantWithOtherTracks(
+    uint8_t pitch, Tick start, Tick duration, TrackRole exclude,
+    const ChordProgressionTracker* chord_tracker, bool is_weak_beat) const {
   Tick end = start + duration;
 
   // Get chord context for smarter dissonance detection
@@ -118,8 +115,7 @@ bool TrackCollisionDetector::isConsonantWithOtherTracks(uint8_t pitch, Tick star
       // Brief overlaps allow stepwise dissonances for contrapuntal movement.
       {
         Tick overlap_duration = std::min(end, note.end) - std::max(start, note.start);
-        if (isToleratedPassingTone(actual_semitones, overlap_duration,
-                                   pitch, note.pitch, start)) {
+        if (isToleratedPassingTone(actual_semitones, overlap_duration, pitch, note.pitch, start)) {
           continue;
         }
       }
@@ -142,9 +138,9 @@ bool TrackCollisionDetector::isConsonantWithOtherTracks(uint8_t pitch, Tick star
   return true;
 }
 
-CollisionInfo TrackCollisionDetector::getCollisionInfo(uint8_t pitch, Tick start, Tick duration,
-                                                        TrackRole exclude,
-                                                        const ChordProgressionTracker* chord_tracker) const {
+CollisionInfo TrackCollisionDetector::getCollisionInfo(
+    uint8_t pitch, Tick start, Tick duration, TrackRole exclude,
+    const ChordProgressionTracker* chord_tracker) const {
   CollisionInfo info;
   Tick end = start + duration;
 
@@ -171,8 +167,7 @@ CollisionInfo TrackCollisionDetector::getCollisionInfo(uint8_t pitch, Tick start
       // Duration-aware passing tone tolerance (consistent with isConsonantWithOtherTracks)
       {
         Tick overlap_duration = std::min(end, note.end) - std::max(start, note.start);
-        if (isToleratedPassingTone(actual_semitones, overlap_duration,
-                                   pitch, note.pitch, start)) {
+        if (isToleratedPassingTone(actual_semitones, overlap_duration, pitch, note.pitch, start)) {
           continue;
         }
       }
@@ -266,7 +261,7 @@ std::vector<int> TrackCollisionDetector::getPitchClassesFromTrackAt(Tick tick,
 }
 
 std::vector<int> TrackCollisionDetector::getPitchClassesFromTrackInRange(Tick start, Tick end,
-                                                                          TrackRole role) const {
+                                                                         TrackRole role) const {
   std::vector<int> pitch_classes;
   pitch_classes.reserve(8);
 
@@ -297,7 +292,7 @@ std::vector<int> TrackCollisionDetector::getPitchClassesFromTrackInRange(Tick st
 }
 
 std::vector<int> TrackCollisionDetector::getSoundingPitchClasses(Tick start, Tick end,
-                                                                   TrackRole exclude) const {
+                                                                 TrackRole exclude) const {
   std::vector<int> pitch_classes;
   pitch_classes.reserve(16);
 
@@ -329,7 +324,7 @@ std::vector<int> TrackCollisionDetector::getSoundingPitchClasses(Tick start, Tic
 }
 
 std::vector<uint8_t> TrackCollisionDetector::getSoundingPitches(Tick start, Tick end,
-                                                                  TrackRole exclude) const {
+                                                                TrackRole exclude) const {
   std::vector<uint8_t> pitches;
   pitches.reserve(16);
 
@@ -360,7 +355,7 @@ std::vector<uint8_t> TrackCollisionDetector::getSoundingPitches(Tick start, Tick
 }
 
 uint8_t TrackCollisionDetector::getHighestPitchForTrackInRange(Tick start, Tick end,
-                                                                TrackRole role) const {
+                                                               TrackRole role) const {
   uint8_t highest = 0;
 
   std::vector<size_t> indices;
@@ -380,7 +375,7 @@ uint8_t TrackCollisionDetector::getHighestPitchForTrackInRange(Tick start, Tick 
 }
 
 uint8_t TrackCollisionDetector::getLowestPitchForTrackInRange(Tick start, Tick end,
-                                                                TrackRole role) const {
+                                                              TrackRole role) const {
   uint8_t lowest = 0;
 
   std::vector<size_t> indices;
@@ -412,7 +407,7 @@ void TrackCollisionDetector::clearNotesForTrack(TrackRole track) {
 }
 
 void TrackCollisionDetector::registerPhantomNote(Tick start, Tick duration, uint8_t pitch,
-                                                  TrackRole track) {
+                                                 TrackRole track) {
   size_t idx = notes_.size();
   Tick end = start + duration;
   notes_.push_back({start, end, pitch, track, /*is_phantom=*/true});
@@ -554,23 +549,23 @@ std::string TrackCollisionDetector::dumpNotesAt(Tick tick, Tick range_ticks) con
         int interval = std::abs(static_cast<int>(a->pitch) - static_cast<int>(b->pitch));
         int pitch_class_interval = interval % 12;
 
-        bool is_clash = (pitch_class_interval == 1 || pitch_class_interval == 11 ||
-                         pitch_class_interval == 2);
+        bool is_clash =
+            (pitch_class_interval == 1 || pitch_class_interval == 11 || pitch_class_interval == 2);
 
         if (is_clash) {
           // Duration-aware passing tone tolerance
           Tick overlap_duration = std::min(a->end, b->end) - std::max(a->start, b->start);
           Tick overlap_start = std::max(a->start, b->start);
-          if (isToleratedPassingTone(interval, overlap_duration,
-                                     a->pitch, b->pitch, overlap_start)) {
+          if (isToleratedPassingTone(interval, overlap_duration, a->pitch, b->pitch,
+                                     overlap_start)) {
             continue;
           }
 
           found_clash = true;
-          const char* interval_name =
-              (pitch_class_interval == 1) ? "minor 2nd" :
-              (pitch_class_interval == 11) ? "major 7th" :
-              (pitch_class_interval == 2) ? "major 2nd" : "?";
+          const char* interval_name = (pitch_class_interval == 1)    ? "minor 2nd"
+                                      : (pitch_class_interval == 11) ? "major 7th"
+                                      : (pitch_class_interval == 2)  ? "major 2nd"
+                                                                     : "?";
 
           result += "  CLASH: " + std::string(trackRoleToString(a->track));
           result += "(" + pitchToNoteName(a->pitch) + ")";
@@ -632,15 +627,14 @@ CollisionSnapshot TrackCollisionDetector::getCollisionSnapshot(Tick tick, Tick r
       int interval = std::abs(static_cast<int>(a.pitch) - static_cast<int>(b.pitch));
       int pitch_class_interval = interval % 12;
 
-      bool is_clash = (pitch_class_interval == 1 || pitch_class_interval == 11 ||
-                       pitch_class_interval == 2);
+      bool is_clash =
+          (pitch_class_interval == 1 || pitch_class_interval == 11 || pitch_class_interval == 2);
 
       if (is_clash) {
         // Duration-aware passing tone tolerance (consistent with isConsonantWithOtherTracks)
         Tick overlap_duration = std::min(a.end, b.end) - std::max(a.start, b.start);
         Tick overlap_start = std::max(a.start, b.start);
-        if (isToleratedPassingTone(interval, overlap_duration,
-                                   a.pitch, b.pitch, overlap_start)) {
+        if (isToleratedPassingTone(interval, overlap_duration, a.pitch, b.pitch, overlap_start)) {
           continue;
         }
         ClashDetail detail;

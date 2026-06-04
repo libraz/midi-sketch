@@ -112,9 +112,7 @@ TEST_F(GenreMoodTest, LofiMoodExists) {
 }
 
 // Test mood count updated to 24
-TEST_F(GenreMoodTest, MoodCountIs24) {
-  EXPECT_EQ(MOOD_COUNT, 24);
-}
+TEST_F(GenreMoodTest, MoodCountIs24) { EXPECT_EQ(MOOD_COUNT, 24); }
 
 // Test all new moods have valid names
 TEST_F(GenreMoodTest, NewMoodsHaveValidNames) {
@@ -222,7 +220,8 @@ TEST_F(BassPedalToneLinkageTest, RnBUsesPedalToneInIntro) {
   const BassGenrePatterns& patterns = getBassGenrePatterns(BassGenre::RnB);
 
   // Intro section should prefer PedalTone
-  EXPECT_EQ(patterns.sections[static_cast<int>(BassSection::Intro)].primary, BassPatternId::PedalTone);
+  EXPECT_EQ(patterns.sections[static_cast<int>(BassSection::Intro)].primary,
+            BassPatternId::PedalTone);
 }
 
 // Test Lofi genre uses pedal tone in intro/outro/bridge
@@ -230,9 +229,12 @@ TEST_F(BassPedalToneLinkageTest, LofiUsesPedalTone) {
   const BassGenrePatterns& patterns = getBassGenrePatterns(BassGenre::Lofi);
 
   // Intro and Outro should prefer PedalTone
-  EXPECT_EQ(patterns.sections[static_cast<int>(BassSection::Intro)].primary, BassPatternId::PedalTone);
-  EXPECT_EQ(patterns.sections[static_cast<int>(BassSection::Outro)].primary, BassPatternId::PedalTone);
-  EXPECT_EQ(patterns.sections[static_cast<int>(BassSection::Bridge)].primary, BassPatternId::PedalTone);
+  EXPECT_EQ(patterns.sections[static_cast<int>(BassSection::Intro)].primary,
+            BassPatternId::PedalTone);
+  EXPECT_EQ(patterns.sections[static_cast<int>(BassSection::Outro)].primary,
+            BassPatternId::PedalTone);
+  EXPECT_EQ(patterns.sections[static_cast<int>(BassSection::Bridge)].primary,
+            BassPatternId::PedalTone);
 }
 
 // Test Trap genre uses SubBass808
@@ -241,7 +243,8 @@ TEST_F(BassPedalToneLinkageTest, TrapUsesSubBass808) {
 
   // All main sections should prefer SubBass808
   EXPECT_EQ(patterns.sections[static_cast<int>(BassSection::A)].primary, BassPatternId::SubBass808);
-  EXPECT_EQ(patterns.sections[static_cast<int>(BassSection::Chorus)].primary, BassPatternId::SubBass808);
+  EXPECT_EQ(patterns.sections[static_cast<int>(BassSection::Chorus)].primary,
+            BassPatternId::SubBass808);
 }
 
 // Test Latin genre uses Tresillo
@@ -251,7 +254,8 @@ TEST_F(BassPedalToneLinkageTest, LatinUsesTresillo) {
   // A, B, Chorus sections should prefer Tresillo
   EXPECT_EQ(patterns.sections[static_cast<int>(BassSection::A)].primary, BassPatternId::Tresillo);
   EXPECT_EQ(patterns.sections[static_cast<int>(BassSection::B)].primary, BassPatternId::Tresillo);
-  EXPECT_EQ(patterns.sections[static_cast<int>(BassSection::Chorus)].primary, BassPatternId::Tresillo);
+  EXPECT_EQ(patterns.sections[static_cast<int>(BassSection::Chorus)].primary,
+            BassPatternId::Tresillo);
 }
 
 // ============================================================================

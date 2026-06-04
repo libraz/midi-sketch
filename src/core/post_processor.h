@@ -55,8 +55,8 @@ class PostProcessor {
   // @param sections Song sections for section-type lookup
   // @param rng Random number generator
   static void applySectionAwareVelocityHumanization(std::vector<MidiTrack*>& tracks,
-                                                     const std::vector<Section>& sections,
-                                                     std::mt19937& rng);
+                                                    const std::vector<Section>& sections,
+                                                    std::mt19937& rng);
 
   // Applies per-instrument micro-timing offsets for groove feel.
   // HH pushed slightly ahead (+8 ticks), Snare slightly behind (-8 ticks),
@@ -77,13 +77,12 @@ class PostProcessor {
   // @param drum_style Drum style for timing profile selection
   // @param humanize_timing Global humanization scaling (0.0-1.0, scales all timing offsets)
   // @param paradigm Generation paradigm (RhythmSync adds beat-strength vocal offsets)
-  static void applyMicroTimingOffsets(MidiTrack& vocal, MidiTrack& bass, MidiTrack& drum_track,
-                                       const std::vector<Section>* sections = nullptr,
-                                       uint8_t drive_feel = 50,
-                                       VocalStylePreset vocal_style = VocalStylePreset::Standard,
-                                       DrumStyle drum_style = DrumStyle::Standard,
-                                       float humanize_timing = 1.0f,
-                                       GenerationParadigm paradigm = GenerationParadigm::Traditional);
+  static void applyMicroTimingOffsets(
+      MidiTrack& vocal, MidiTrack& bass, MidiTrack& drum_track,
+      const std::vector<Section>* sections = nullptr, uint8_t drive_feel = 50,
+      VocalStylePreset vocal_style = VocalStylePreset::Standard,
+      DrumStyle drum_style = DrumStyle::Standard, float humanize_timing = 1.0f,
+      GenerationParadigm paradigm = GenerationParadigm::Traditional);
 
   // Fixes vocal overlaps that may be introduced by humanization.
   // Singers can only sing one note at a time.
@@ -114,7 +113,6 @@ class PostProcessor {
                                ICollisionDetector* harmony = nullptr,
                                TrackRole track_role = TrackRole::Vocal);
 
-
   // ============================================================================
   // Section Transition Effects (Phase 2)
   // ============================================================================
@@ -129,10 +127,9 @@ class PostProcessor {
   /// @param sections Song sections for B->Chorus detection (uses section.drop_style)
   /// @param drum_track Drum track (not truncated - fill remains, crash added for DrumHit)
   /// @param default_style Default drop style if section.drop_style is None (default: Subtle)
-  static void applyChorusDrop(std::vector<MidiTrack*>& tracks,
-                               const std::vector<Section>& sections,
-                               MidiTrack* drum_track,
-                               ChorusDropStyle default_style = ChorusDropStyle::Subtle);
+  static void applyChorusDrop(std::vector<MidiTrack*>& tracks, const std::vector<Section>& sections,
+                              MidiTrack* drum_track,
+                              ChorusDropStyle default_style = ChorusDropStyle::Subtle);
 
   /// @brief Apply velocity decrescendo to outro section.
   ///
@@ -143,7 +140,7 @@ class PostProcessor {
   /// @param tracks Vector of track pointers to process
   /// @param sections Song sections for Outro detection
   static void applyRitDecrescendo(std::vector<MidiTrack*>& tracks,
-                                   const std::vector<Section>& sections);
+                                  const std::vector<Section>& sections);
 
   /// @brief Enhanced FinalHit for stronger ending impact.
   ///
@@ -159,9 +156,9 @@ class PostProcessor {
   /// @param section The section with FinalHit exit pattern
   /// @param harmony Harmony context for comprehensive clash detection (optional)
   static void applyEnhancedFinalHit(MidiTrack* bass_track, MidiTrack* drum_track,
-                                     MidiTrack* chord_track, const MidiTrack* vocal_track,
-                                     const Section& section,
-                                     const ICollisionDetector* harmony = nullptr);
+                                    MidiTrack* chord_track, const MidiTrack* vocal_track,
+                                    const Section& section,
+                                    const ICollisionDetector* harmony = nullptr);
 
   // ============================================================================
   // Motif-Vocal Clash Resolution
@@ -177,7 +174,19 @@ class PostProcessor {
   /// @param vocal Vocal track (read-only reference)
   /// @param harmony Harmony context for chord tone lookup
   static void fixMotifVocalClashes(MidiTrack& motif, const MidiTrack& vocal,
-                                    const ICollisionDetector& harmony);
+                                   const ICollisionDetector& harmony);
+
+  /// @brief Break excessive repeated motif pitches after RhythmSync generation.
+  ///
+  /// Keeps the motif rhythm intact while replacing every note beyond the
+  /// allowed same-pitch streak with a nearby safe chord tone.
+  ///
+  /// @param motif Motif track to adjust (in-place)
+  /// @param vocal Vocal track (read-only reference for clash avoidance)
+  /// @param harmony Harmony context for chord tone lookup
+  /// @param max_consecutive Maximum allowed same pitch streak
+  static void fixMotifRepeatedPitches(MidiTrack& motif, const MidiTrack& vocal,
+                                      const ICollisionDetector& harmony, int max_consecutive = 5);
 
   /// @brief Fix track-vocal clashes that may occur after post-processing.
   ///
@@ -194,6 +203,17 @@ class PostProcessor {
   /// @param role TrackRole of the track being adjusted (Bass skips close major 2nd)
   static void fixTrackVocalClashes(MidiTrack& track, const MidiTrack& vocal, TrackRole role);
 
+  /// @brief Fix support-track clashes against a protected reference track.
+  ///
+  /// Removes non-essential support notes that form close dissonances with the
+  /// reference track after humanization and duration edits.
+  ///
+  /// @param track Support track to adjust (in-place)
+  /// @param reference Reference track (read-only)
+  /// @param role TrackRole of the support track
+  static void fixTrackReferenceClashes(MidiTrack& track, const MidiTrack& reference,
+                                       TrackRole role);
+
   /// @brief Fix inter-track clashes between non-vocal tracks after humanization.
   ///
   /// Removes dissonant notes (minor 2nd) from chord track that clash with bass
@@ -203,8 +223,7 @@ class PostProcessor {
   /// @param chord Chord track to adjust (in-place)
   /// @param bass Bass track (read-only reference)
   /// @param motif Motif track (read-only reference)
-  static void fixInterTrackClashes(MidiTrack& chord, const MidiTrack& bass,
-                                   const MidiTrack& motif);
+  static void fixInterTrackClashes(MidiTrack& chord, const MidiTrack& bass, const MidiTrack& motif);
 
   /// @brief Synchronize bass note onsets with kick drum hits for tighter groove.
   ///
@@ -239,7 +258,6 @@ class PostProcessor {
   static void applyExpressionCurves(MidiTrack& vocal, MidiTrack& chord, MidiTrack& aux,
                                     const std::vector<Section>& sections);
 
-
   /// @brief Remove notes that create large melodic leaps (> max_semitones).
   ///
   /// After all post-processing (clash removal, arrangement holes, etc.)
@@ -267,10 +285,8 @@ class PostProcessor {
   static void applyExitFadeout(std::vector<NoteEvent>& notes, Tick section_end,
                                uint8_t section_bars);
   static void applyExitFinalHit(std::vector<NoteEvent>& notes, Tick section_end);
-  static void applyExitCutOff(std::vector<NoteEvent>& notes, Tick section_start,
-                              Tick section_end);
-  static void applyExitSustain(std::vector<NoteEvent>& notes, Tick section_start,
-                               Tick section_end,
+  static void applyExitCutOff(std::vector<NoteEvent>& notes, Tick section_start, Tick section_end);
+  static void applyExitSustain(std::vector<NoteEvent>& notes, Tick section_start, Tick section_end,
                                const IChordLookup* chord_lookup = nullptr,
                                const ICollisionDetector* harmony = nullptr,
                                TrackRole track_role = TrackRole::Vocal);

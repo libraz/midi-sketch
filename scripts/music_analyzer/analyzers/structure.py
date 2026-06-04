@@ -28,6 +28,7 @@ class StructureAnalyzer(BaseAnalyzer):
         self._analyze_section_density()
         self._analyze_chorus_density_inversion()
         self._analyze_drums_energy_inversion()
+        self._analyze_section_pause_balance()
         return self.issues
 
     # -----------------------------------------------------------------
@@ -276,63 +277,68 @@ class StructureAnalyzer(BaseAnalyzer):
         if not chorus_densities:
             return
 
-        avg_chorus = sum(chorus_densities) / len(chorus_densities)
+        sorted_chorus = sorted(chorus_densities)
+        primary_chorus_count = max(1, len(sorted_chorus) // 3)
+        primary_chorus_densities = sorted_chorus[-primary_chorus_count:]
+        primary_chorus = sum(primary_chorus_densities) / len(primary_chorus_densities)
         avg_a = (sum(a_densities) / len(a_densities)) if a_densities else 0.0
         avg_b = (sum(b_densities) / len(b_densities)) if b_densities else 0.0
 
-        # Check WARNING: chorus thinner than A-section (threshold 0.9)
-        if avg_a > 0 and avg_chorus < avg_a * 0.9:
+        # Check WARNING: chorus thinner than A-section. RhythmLock A sections
+        # often carry dense sixteenth backing cells, so the threshold stays
+        # permissive unless the primary chorus is clearly under-built.
+        if avg_a > 0 and primary_chorus < avg_a * 0.80:
             self.add_issue(
                 severity=Severity.WARNING, category=Category.STRUCTURE,
                 subcategory="chorus_density_inversion",
-                message=(f"Chorus thinner than A-section "
-                         f"(chorus: {avg_chorus:.1f} notes/bar, "
+                message=(f"Primary chorus thinner than A-section "
+                         f"(chorus: {primary_chorus:.1f} notes/bar, "
                          f"A: {avg_a:.1f} notes/bar)"),
                 tick=0, track="",
                 details={
-                    "chorus_density": round(avg_chorus, 2),
+                    "chorus_density": round(primary_chorus, 2),
                     "a_density": round(avg_a, 2),
-                    "ratio": round(avg_chorus / avg_a, 3) if avg_a > 0 else 0,
+                    "ratio": round(primary_chorus / avg_a, 3) if avg_a > 0 else 0,
                     "comparison": "chorus_vs_a",
                 },
             )
 
-        # Check WARNING: chorus thinner than B-section (tighter threshold 0.85)
-        if avg_b > 0 and avg_chorus < avg_b * 0.85:
+        # Check WARNING: chorus thinner than B-section.
+        if avg_b > 0 and primary_chorus < avg_b * 0.80:
             self.add_issue(
                 severity=Severity.WARNING, category=Category.STRUCTURE,
                 subcategory="chorus_density_inversion",
-                message=(f"Chorus thinner than B-section "
-                         f"(chorus: {avg_chorus:.1f} notes/bar, "
+                message=(f"Primary chorus thinner than B-section "
+                         f"(chorus: {primary_chorus:.1f} notes/bar, "
                          f"B: {avg_b:.1f} notes/bar)"),
                 tick=0, track="",
                 details={
-                    "chorus_density": round(avg_chorus, 2),
+                    "chorus_density": round(primary_chorus, 2),
                     "b_density": round(avg_b, 2),
-                    "ratio": round(avg_chorus / avg_b, 3) if avg_b > 0 else 0,
+                    "ratio": round(primary_chorus / avg_b, 3) if avg_b > 0 else 0,
                     "comparison": "chorus_vs_b",
                 },
             )
 
         # Check INFO: mild inversion vs max(A, B) with 0.95 threshold
         max_ab = max(avg_a, avg_b)
-        if max_ab > 0 and avg_chorus < max_ab * 0.95:
+        if max_ab > 0 and primary_chorus < max_ab * 0.95:
             # Only emit INFO if no WARNING was already raised for this pair
-            already_warned_a = (avg_a > 0 and avg_chorus < avg_a * 0.9)
-            already_warned_b = (avg_b > 0 and avg_chorus < avg_b * 0.85)
+            already_warned_a = (avg_a > 0 and primary_chorus < avg_a * 0.80)
+            already_warned_b = (avg_b > 0 and primary_chorus < avg_b * 0.80)
             if not already_warned_a and not already_warned_b:
                 compared_section = "A" if avg_a >= avg_b else "B"
                 self.add_issue(
                     severity=Severity.INFO, category=Category.STRUCTURE,
                     subcategory="chorus_density_inversion",
-                    message=(f"Chorus slightly thinner than {compared_section}-section "
-                             f"(chorus: {avg_chorus:.1f} notes/bar, "
+                    message=(f"Primary chorus slightly thinner than {compared_section}-section "
+                             f"(chorus: {primary_chorus:.1f} notes/bar, "
                              f"{compared_section}: {max_ab:.1f} notes/bar)"),
                     tick=0, track="",
                     details={
-                        "chorus_density": round(avg_chorus, 2),
+                        "chorus_density": round(primary_chorus, 2),
                         "max_ab_density": round(max_ab, 2),
-                        "ratio": round(avg_chorus / max_ab, 3),
+                        "ratio": round(primary_chorus / max_ab, 3),
                         "comparison": f"chorus_vs_{compared_section.lower()}",
                     },
                 )
@@ -409,3 +415,80 @@ class StructureAnalyzer(BaseAnalyzer):
                         "ratio": round(ratio, 2),
                     },
                 )
+
+    def _analyze_section_pause_balance(self):
+        """Detect overlong or repeated full-arrangement pauses before sections.
+
+        A deliberate "tame" can be useful, but frequent or bar-length silence
+        often makes the form feel broken. This check uses note activity only
+        and ignores velocity/humanization.
+        """
+        explicit_sections = self.metadata.get('sections', [])
+        if len(explicit_sections) < 2:
+            return
+
+        musical_notes = [
+            n for n in self.notes
+            if n.channel not in (9, 15)
+        ]
+        if not musical_notes:
+            return
+
+        long_pauses = []
+        for idx in range(1, len(explicit_sections)):
+            section = explicit_sections[idx]
+            start_tick = section.get('start_ticks', 0)
+            if start_tick <= 0:
+                continue
+
+            prior_notes = [n for n in musical_notes if n.end <= start_tick]
+            next_notes = [n for n in musical_notes if n.start >= start_tick]
+            if not prior_notes or not next_notes:
+                continue
+
+            last_end = max(n.end for n in prior_notes)
+            next_start = min(n.start for n in next_notes)
+            pause = max(0, next_start - last_end)
+            if pause < TICKS_PER_BEAT * 2:
+                continue
+
+            section_type = section.get('type', '').upper()
+            severity = Severity.WARNING if pause >= TICKS_PER_BAR else Severity.INFO
+            self.add_issue(
+                severity=severity,
+                category=Category.STRUCTURE,
+                subcategory="section_pause_balance",
+                message=(
+                    f"Long full-arrangement pause before "
+                    f"{section.get('name', section_type)} "
+                    f"({pause / TICKS_PER_BEAT:.1f} beats)"
+                ),
+                tick=max(0, last_end),
+                track="",
+                details={
+                    "section_name": section.get('name', section_type),
+                    "section_type": section_type,
+                    "pause_ticks": pause,
+                    "pause_beats": round(pause / TICKS_PER_BEAT, 2),
+                },
+            )
+            long_pauses.append(pause)
+
+        if len(long_pauses) >= 3:
+            avg_pause = sum(long_pauses) / len(long_pauses)
+            self.add_issue(
+                severity=Severity.WARNING,
+                category=Category.STRUCTURE,
+                subcategory="section_pause_balance",
+                message=(
+                    f"Repeated long pauses across the form "
+                    f"({len(long_pauses)} pauses, avg "
+                    f"{avg_pause / TICKS_PER_BEAT:.1f} beats)"
+                ),
+                tick=0,
+                track="",
+                details={
+                    "pause_count": len(long_pauses),
+                    "avg_pause_beats": round(avg_pause / TICKS_PER_BEAT, 2),
+                },
+            )

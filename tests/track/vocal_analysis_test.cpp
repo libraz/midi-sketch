@@ -22,15 +22,17 @@ MidiTrack createTestVocalTrack() {
   MidiTrack track;
   // Create a simple 4-bar melody with ascending and descending patterns
   // C4 (60) -> E4 (64) -> G4 (67) -> E4 (64) -> C4 (60)
-  track.addNote(NoteEventBuilder::create(0, TICKS_PER_BEAT, 60, 100));                       // C4
-  track.addNote(NoteEventBuilder::create(TICKS_PER_BEAT, TICKS_PER_BEAT, 64, 100));          // E4
-  track.addNote(NoteEventBuilder::create(TICKS_PER_BEAT * 2, TICKS_PER_BEAT, 67, 100));      // G4
-  track.addNote(NoteEventBuilder::create(TICKS_PER_BEAT * 3, TICKS_PER_BEAT, 64, 100));      // E4
-  track.addNote(NoteEventBuilder::create(TICKS_PER_BEAT * 4, TICKS_PER_BEAT * 2, 60, 100));  // C4 (longer)
+  track.addNote(NoteEventBuilder::create(0, TICKS_PER_BEAT, 60, 100));                   // C4
+  track.addNote(NoteEventBuilder::create(TICKS_PER_BEAT, TICKS_PER_BEAT, 64, 100));      // E4
+  track.addNote(NoteEventBuilder::create(TICKS_PER_BEAT * 2, TICKS_PER_BEAT, 67, 100));  // G4
+  track.addNote(NoteEventBuilder::create(TICKS_PER_BEAT * 3, TICKS_PER_BEAT, 64, 100));  // E4
+  track.addNote(
+      NoteEventBuilder::create(TICKS_PER_BEAT * 4, TICKS_PER_BEAT * 2, 60, 100));  // C4 (longer)
 
   // Gap (rest) then another phrase
-  track.addNote(NoteEventBuilder::create(TICKS_PER_BAR * 2, TICKS_PER_BEAT, 65, 100));                   // F4
-  track.addNote(NoteEventBuilder::create(TICKS_PER_BAR * 2 + TICKS_PER_BEAT, TICKS_PER_BEAT, 67, 100));  // G4
+  track.addNote(NoteEventBuilder::create(TICKS_PER_BAR * 2, TICKS_PER_BEAT, 65, 100));  // F4
+  track.addNote(
+      NoteEventBuilder::create(TICKS_PER_BAR * 2 + TICKS_PER_BEAT, TICKS_PER_BEAT, 67, 100));  // G4
 
   return track;
 }
@@ -47,7 +49,8 @@ MidiTrack createDenseTrack() {
   MidiTrack track;
   // Rapid sixteenth notes covering most of the bar
   for (int i = 0; i < 16; ++i) {
-    track.addNote(NoteEventBuilder::create(i * (TICKS_PER_BEAT / 4), TICKS_PER_BEAT / 4, 60 + (i % 5), 100));
+    track.addNote(
+        NoteEventBuilder::create(i * (TICKS_PER_BEAT / 4), TICKS_PER_BEAT / 4, 60 + (i % 5), 100));
   }
   return track;
 }
@@ -294,8 +297,9 @@ TEST(VocalAnalysisTest, MotionTypeDeterminism) {
 TEST(VocalAnalysisTest, OverlappingNotesHandled) {
   MidiTrack track;
   // Overlapping notes (like in a legato phrase)
-  track.addNote(NoteEventBuilder::create(0, TICKS_PER_BEAT * 2, 60, 100));               // C4 for 2 beats
-  track.addNote(NoteEventBuilder::create(TICKS_PER_BEAT, TICKS_PER_BEAT * 2, 64, 100));  // E4 overlaps
+  track.addNote(NoteEventBuilder::create(0, TICKS_PER_BEAT * 2, 60, 100));  // C4 for 2 beats
+  track.addNote(
+      NoteEventBuilder::create(TICKS_PER_BEAT, TICKS_PER_BEAT * 2, 64, 100));  // E4 overlaps
 
   VocalAnalysis va = analyzeVocal(track);
 
@@ -319,7 +323,8 @@ TEST(VocalAnalysisTest, RapidNotesAnalysis) {
   MidiTrack track;
   // Very rapid notes (32nd notes)
   for (int i = 0; i < 32; ++i) {
-    track.addNote(NoteEventBuilder::create(i * (TICKS_PER_BEAT / 8), TICKS_PER_BEAT / 8, 60 + (i % 12), 100));
+    track.addNote(
+        NoteEventBuilder::create(i * (TICKS_PER_BEAT / 8), TICKS_PER_BEAT / 8, 60 + (i % 12), 100));
   }
 
   VocalAnalysis va = analyzeVocal(track);

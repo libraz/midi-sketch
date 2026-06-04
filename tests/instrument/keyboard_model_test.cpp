@@ -9,7 +9,6 @@
 #include <vector>
 
 #include "core/midi_track.h"
-#include "core/midi_track.h"
 #include "core/production_blueprint.h"
 #include "instrument/keyboard/keyboard_instrument.h"
 #include "instrument/keyboard/keyboard_note_factory.h"
@@ -26,8 +25,8 @@ namespace {
 
 TEST(PianoModelTest, PitchRange) {
   PianoModel piano(InstrumentSkillLevel::Intermediate);
-  EXPECT_EQ(piano.getLowestPitch(), 21);   // A0
-  EXPECT_EQ(piano.getHighestPitch(), 108); // C8
+  EXPECT_EQ(piano.getLowestPitch(), 21);    // A0
+  EXPECT_EQ(piano.getHighestPitch(), 108);  // C8
 }
 
 TEST(PianoModelTest, PitchPlayabilityMiddleOfRange) {
@@ -330,8 +329,7 @@ TEST(PianoModelTest, TransitionCostSameVoicingIsZero) {
 TEST(PianoModelTest, TransitionCostDecomposesIntoHands) {
   PianoModel piano(InstrumentSkillLevel::Intermediate);
   // Two-hand voicing with movement in both hands
-  auto cost = piano.calculateTransitionCost(
-      {48, 52, 60, 64}, {52, 55, 64, 67}, 480, 120);
+  auto cost = piano.calculateTransitionCost({48, 52, 60, 64}, {52, 55, 64, 67}, 480, 120);
   // Total cost should be sum of hand costs
   EXPECT_FLOAT_EQ(cost.total_cost, cost.left_hand_cost + cost.right_hand_cost);
 }
@@ -560,11 +558,10 @@ TEST(PianoModelTest, SkillLevelMonotonicity) {
 
   // Normal span increases with skill
   EXPECT_LT(beginner.getSpanConstraints().normal_span,
-             intermediate.getSpanConstraints().normal_span);
+            intermediate.getSpanConstraints().normal_span);
   EXPECT_LT(intermediate.getSpanConstraints().normal_span,
-             advanced.getSpanConstraints().normal_span);
-  EXPECT_LT(advanced.getSpanConstraints().normal_span,
-             virtuoso.getSpanConstraints().normal_span);
+            advanced.getSpanConstraints().normal_span);
+  EXPECT_LT(advanced.getSpanConstraints().normal_span, virtuoso.getSpanConstraints().normal_span);
 
   // Shift time decreases with skill (faster repositioning)
   EXPECT_GT(beginner.getHandPhysics().position_shift_time,
@@ -935,8 +932,8 @@ TEST_F(KeyboardNoteFactoryTest, EnsurePlayableUpdatesPianoState) {
 TEST_F(KeyboardNoteFactoryTest, SequentialVoicingsTrackTransitions) {
   // Play sequence of voicings
   factory_->ensurePlayableVoicing({60, 64, 67}, 0, 0, 480);    // C major
-  factory_->ensurePlayableVoicing({65, 69, 72}, 0, 480, 480);   // F major
-  factory_->ensurePlayableVoicing({67, 71, 74}, 0, 960, 480);   // G major
+  factory_->ensurePlayableVoicing({65, 69, 72}, 0, 480, 480);  // F major
+  factory_->ensurePlayableVoicing({67, 71, 74}, 0, 960, 480);  // G major
 
   // State should reflect the last played voicing
   auto state = piano_->getState();

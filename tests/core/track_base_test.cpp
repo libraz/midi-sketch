@@ -3,10 +3,11 @@
  * @brief Unit tests for TrackBase utilities (trackRoleToMask, shouldSkipSection).
  */
 
+#include "core/track_base.h"
+
 #include <gtest/gtest.h>
 
 #include "core/section_types.h"
-#include "core/track_base.h"
 
 namespace midisketch {
 namespace {

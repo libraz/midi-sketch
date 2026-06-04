@@ -92,10 +92,10 @@ TEST(PhraseTailIterationTest, BarContextExposesPhraseTailRest) {
       sections, Mood::StraightPop, TrackMask::Guitar,
       [](const Section&, size_t, SectionType, const HarmonicRhythmInfo&) {},
       [&](const BarContext& bc) {
-        tail_flags.push_back(
-            bc.section.phrase_tail_rest && isPhraseTail(bc.bar_index, bc.section.bars));
-        last_flags.push_back(
-            bc.section.phrase_tail_rest && isLastBar(bc.bar_index, bc.section.bars));
+        tail_flags.push_back(bc.section.phrase_tail_rest &&
+                             isPhraseTail(bc.bar_index, bc.section.bars));
+        last_flags.push_back(bc.section.phrase_tail_rest &&
+                             isLastBar(bc.bar_index, bc.section.bars));
       });
 
   ASSERT_EQ(tail_flags.size(), 8u);
@@ -144,7 +144,7 @@ class PhraseTailRestGuitarTest : public ::testing::Test {
  protected:
   /// @brief Count notes per bar in a track within a tick range.
   std::map<int, int> countNotesPerBar(const MidiTrack& track, Tick section_start,
-                                       uint8_t section_bars) {
+                                      uint8_t section_bars) {
     std::map<int, int> bar_counts;
     for (int bar = 0; bar < section_bars; ++bar) {
       bar_counts[bar] = 0;
@@ -209,8 +209,8 @@ TEST_F(PhraseTailRestGuitarTest, DefaultHasConsistentDensity) {
   }
   // At least 75% of bars should have notes
   EXPECT_GE(bars_with_notes, static_cast<int>(target_section->bars * 3 / 4))
-      << "Without phrase_tail_rest, most bars should have notes ("
-      << bars_with_notes << "/" << static_cast<int>(target_section->bars) << ")";
+      << "Without phrase_tail_rest, most bars should have notes (" << bars_with_notes << "/"
+      << static_cast<int>(target_section->bars) << ")";
 }
 
 // ============================================================================
@@ -232,8 +232,8 @@ TEST(PhraseTailHelperTest, IsPhraseTailWith6Bars) {
 }
 
 TEST(PhraseTailHelperTest, IsLastBarEdgeCases) {
-  EXPECT_TRUE(isLastBar(0, 1));   // Single bar section
-  EXPECT_TRUE(isLastBar(1, 2));   // Two bar section
-  EXPECT_TRUE(isLastBar(15, 16)); // 16-bar section
+  EXPECT_TRUE(isLastBar(0, 1));    // Single bar section
+  EXPECT_TRUE(isLastBar(1, 2));    // Two bar section
+  EXPECT_TRUE(isLastBar(15, 16));  // 16-bar section
   EXPECT_FALSE(isLastBar(14, 16));
 }

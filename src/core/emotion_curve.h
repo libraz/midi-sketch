@@ -40,11 +40,11 @@ struct SectionEmotion {
  * @brief Hints for handling section transitions.
  */
 struct TransitionHint {
-  bool crescendo;           ///< Should crescendo into next section
-  bool use_fill;            ///< Should add drum fill at boundary
-  int8_t approach_pitch;    ///< Pitch approach direction (-1=down, 0=any, +1=up)
-  float velocity_ramp;      ///< Velocity change rate (>1 = increase, <1 = decrease)
-  bool use_leading_tone;    ///< Insert leading tone before next section
+  bool crescendo;         ///< Should crescendo into next section
+  bool use_fill;          ///< Should add drum fill at boundary
+  int8_t approach_pitch;  ///< Pitch approach direction (-1=down, 0=any, +1=up)
+  float velocity_ramp;    ///< Velocity change rate (>1 = increase, <1 = decrease)
+  bool use_leading_tone;  ///< Insert leading tone before next section
 };
 
 /**

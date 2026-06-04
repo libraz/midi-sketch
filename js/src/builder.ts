@@ -622,7 +622,7 @@ export class SongConfigBuilder {
    * Setting a blueprint may automatically change:
    * - drumsEnabled (if blueprint requires drums: ID 1,5,6,7)
    * - hookIntensity (BehavioralLoop forces Maximum)
-   * - BPM clamping for RhythmSync paradigm
+   * - BPM warning or auto-adjustment for RhythmSync paradigm
    *
    * Blueprint drums_required: IDs 1 (RhythmLock), 5 (IdolHyper), 6 (IdolKawaii), 7 (IdolCoolPop)
    * BehavioralLoop (ID 9): Forces HookIntensity=Maximum, RiffPolicy=LockedPitch

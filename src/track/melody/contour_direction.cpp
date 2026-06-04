@@ -96,8 +96,7 @@ PitchChoice selectPitchChoice(const MelodyTemplate& tmpl, float phrase_pos, bool
   return rng_util::rollProbability(rng, upward_bias) ? PitchChoice::StepUp : PitchChoice::StepDown;
 }
 
-PitchChoice applyDirectionInertia(PitchChoice choice, int inertia,
-                                  std::mt19937& rng) {
+PitchChoice applyDirectionInertia(PitchChoice choice, int inertia, std::mt19937& rng) {
   // Same pitch or target step - don't modify
   if (choice == PitchChoice::Same || choice == PitchChoice::TargetStep) {
     return choice;

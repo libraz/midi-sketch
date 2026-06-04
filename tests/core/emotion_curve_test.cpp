@@ -89,8 +89,7 @@ TEST(EmotionCurveTest, ChorusHasHighestEnergy) {
     }
   }
 
-  EXPECT_GT(chorus_energy, max_non_chorus_energy)
-      << "Chorus should have highest energy";
+  EXPECT_GT(chorus_energy, max_non_chorus_energy) << "Chorus should have highest energy";
 }
 
 TEST(EmotionCurveTest, BBeforeChorusHasHighTension) {
@@ -101,11 +100,9 @@ TEST(EmotionCurveTest, BBeforeChorusHasHighTension) {
 
   // Find B sections before Chorus
   for (size_t i = 0; i + 1 < sections.size(); ++i) {
-    if (sections[i].type == SectionType::B &&
-        sections[i + 1].type == SectionType::Chorus) {
+    if (sections[i].type == SectionType::B && sections[i + 1].type == SectionType::Chorus) {
       const auto& b_emotion = curve.getEmotion(i);
-      EXPECT_GT(b_emotion.tension, 0.6f)
-          << "B section before Chorus should have high tension";
+      EXPECT_GT(b_emotion.tension, 0.6f) << "B section before Chorus should have high tension";
       EXPECT_GT(b_emotion.resolution_need, 0.5f)
           << "B section before Chorus should have high resolution need";
     }
@@ -122,8 +119,7 @@ TEST(EmotionCurveTest, IntroHasLowEnergy) {
   for (size_t i = 0; i < sections.size(); ++i) {
     if (sections[i].type == SectionType::Intro) {
       const auto& emotion = curve.getEmotion(i);
-      EXPECT_LT(emotion.energy, 0.5f)
-          << "Intro should have low energy";
+      EXPECT_LT(emotion.energy, 0.5f) << "Intro should have low energy";
     }
   }
 }
@@ -138,8 +134,7 @@ TEST(EmotionCurveTest, OutroHasLowTension) {
   for (size_t i = 0; i < sections.size(); ++i) {
     if (sections[i].type == SectionType::Outro) {
       const auto& emotion = curve.getEmotion(i);
-      EXPECT_LT(emotion.tension, 0.3f)
-          << "Outro should have low tension";
+      EXPECT_LT(emotion.tension, 0.3f) << "Outro should have low tension";
       EXPECT_LT(emotion.resolution_need, 0.3f)
           << "Outro should have low resolution need (resolved)";
     }
@@ -196,15 +191,11 @@ TEST(EmotionCurveTest, TransitionHintCrescendoBeforeChorus) {
 
   // Find B -> Chorus transition
   for (size_t i = 0; i + 1 < sections.size(); ++i) {
-    if (sections[i].type == SectionType::B &&
-        sections[i + 1].type == SectionType::Chorus) {
+    if (sections[i].type == SectionType::B && sections[i + 1].type == SectionType::Chorus) {
       auto hint = curve.getTransitionHint(i);
-      EXPECT_TRUE(hint.crescendo)
-          << "Should crescendo from B to Chorus";
-      EXPECT_TRUE(hint.use_fill)
-          << "Should use fill before Chorus";
-      EXPECT_TRUE(hint.use_leading_tone)
-          << "Should use leading tone from B to Chorus";
+      EXPECT_TRUE(hint.crescendo) << "Should crescendo from B to Chorus";
+      EXPECT_TRUE(hint.use_fill) << "Should use fill before Chorus";
+      EXPECT_TRUE(hint.use_leading_tone) << "Should use leading tone from B to Chorus";
     }
   }
 }
@@ -304,8 +295,7 @@ TEST_F(EmotionCurveIntegrationTest, TransitionHintAffectsVelocity) {
 
   // Find B -> Chorus transition
   for (size_t i = 0; i + 1 < sections.size(); ++i) {
-    if (sections[i].type == SectionType::B &&
-        sections[i + 1].type == SectionType::Chorus) {
+    if (sections[i].type == SectionType::B && sections[i + 1].type == SectionType::Chorus) {
       auto hint = generator_.getEmotionCurve().getTransitionHint(i);
 
       // B -> Chorus should have crescendo
@@ -326,13 +316,12 @@ TEST_F(EmotionCurveIntegrationTest, VelocityIncreasesInTransitionZone) {
 
   // Find B section that precedes Chorus
   for (size_t i = 0; i + 1 < sections.size(); ++i) {
-    if (sections[i].type == SectionType::B &&
-        sections[i + 1].type == SectionType::Chorus) {
+    if (sections[i].type == SectionType::B && sections[i + 1].type == SectionType::Chorus) {
       const auto& b_section = sections[i];
 
       // Define transition zone: last 2 beats of B section
       Tick section_end = b_section.endTick();
-      Tick transition_start = section_end - 480 * 2;  // Last 2 beats
+      Tick transition_start = section_end - 480 * 2;      // Last 2 beats
       Tick early_zone_end = b_section.start_tick + 1920;  // First bar
 
       // Collect velocities from early B section and transition zone

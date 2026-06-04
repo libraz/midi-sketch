@@ -169,8 +169,7 @@ TEST_F(StaggeredEntryGeneratorTest, StaggeredEntryDoesNotAffectDrums) {
       }
 
       if (params_.drums_enabled) {
-        EXPECT_TRUE(has_early_drums)
-            << "Drums should have notes in the first bar of intro";
+        EXPECT_TRUE(has_early_drums) << "Drums should have notes in the first bar of intro";
       }
       break;
     }

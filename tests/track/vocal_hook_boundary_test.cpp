@@ -51,13 +51,10 @@ TEST(VocalHookBoundaryTest, HookDoesNotBleedPastPhraseEnd) {
 
     EXPECT_GT(result.notes.size(), 0u) << "seed=" << seed;
     for (const auto& note : result.notes) {
-      EXPECT_LT(note.start_tick, phrase_end)
-          << "seed=" << seed
-          << " note starts at " << note.start_tick
-          << " but phrase_end=" << phrase_end;
+      EXPECT_LT(note.start_tick, phrase_end) << "seed=" << seed << " note starts at "
+                                             << note.start_tick << " but phrase_end=" << phrase_end;
       EXPECT_LE(note.start_tick + note.duration, phrase_end)
-          << "seed=" << seed
-          << " note end=" << (note.start_tick + note.duration)
+          << "seed=" << seed << " note end=" << (note.start_tick + note.duration)
           << " exceeds phrase_end=" << phrase_end;
     }
   }
@@ -80,8 +77,7 @@ TEST(VocalHookBoundaryTest, HookFirstNoteOnPhraseStart) {
     ASSERT_GT(result.notes.size(), 0u) << "seed=" << seed;
     // First note should be at hook_start
     EXPECT_EQ(result.notes.front().start_tick, hook_start)
-        << "seed=" << seed
-        << " first note at " << result.notes.front().start_tick
+        << "seed=" << seed << " first note at " << result.notes.front().start_tick
         << " expected at " << hook_start;
   }
 }
@@ -92,8 +88,8 @@ TEST(VocalHookBoundaryTest, HookBoundaryWithOffsetStart) {
   std::mt19937 rng(42);
   const MelodyTemplate& tmpl = getTemplate(MelodyTemplateId::HookRepeat);
 
-  Tick hook_start = 4 * TICKS_PER_BAR;   // Start at bar 4
-  Tick phrase_end = 6 * TICKS_PER_BAR;    // End at bar 6
+  Tick hook_start = 4 * TICKS_PER_BAR;  // Start at bar 4
+  Tick phrase_end = 6 * TICKS_PER_BAR;  // End at bar 6
   auto ctx = createChorusContext(0, 8);
   HarmonyContext harmony;
 

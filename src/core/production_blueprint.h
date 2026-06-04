@@ -60,7 +60,7 @@ struct BlueprintConstraints {
   InstrumentSkillLevel bass_skill = InstrumentSkillLevel::Intermediate;    ///< Bass skill level
   InstrumentSkillLevel guitar_skill = InstrumentSkillLevel::Intermediate;  ///< Guitar skill level
   InstrumentSkillLevel keys_skill = InstrumentSkillLevel::Intermediate;    ///< Keyboard skill level
-  InstrumentModelMode instrument_mode = InstrumentModelMode::Off;          ///< Physical constraint mode
+  InstrumentModelMode instrument_mode = InstrumentModelMode::Off;  ///< Physical constraint mode
 
   // Technique enablement (only applies when instrument_mode includes Techniques)
   bool enable_slap = false;       ///< Enable slap/pop technique for bass
@@ -196,11 +196,11 @@ struct SectionSlot {
 struct AuxProfile {
   uint8_t program_override = 0xFF;  ///< MIDI program override (0xFF = use Mood default)
   AuxFunction intro_function = AuxFunction::MelodicHook;    ///< Function for Intro sections
-  AuxFunction verse_function = AuxFunction::MotifCounter;    ///< Function for A/B/Bridge sections
-  AuxFunction chorus_function = AuxFunction::EmotionalPad;   ///< Function for Chorus sections
-  float velocity_scale = 1.0f;   ///< Velocity multiplier (applied to section velocity)
-  float density_scale = 1.0f;    ///< Density multiplier (applied to section density)
-  int8_t range_ceiling = -2;     ///< Offset from vocal tessitura high (-2 = 2 semitones below)
+  AuxFunction verse_function = AuxFunction::MotifCounter;   ///< Function for A/B/Bridge sections
+  AuxFunction chorus_function = AuxFunction::EmotionalPad;  ///< Function for Chorus sections
+  float velocity_scale = 1.0f;  ///< Velocity multiplier (applied to section velocity)
+  float density_scale = 1.0f;   ///< Density multiplier (applied to section density)
+  int8_t range_ceiling = -2;    ///< Offset from vocal tessitura high (-2 = 2 semitones below)
 };
 
 /// @brief Production blueprint defining how a song is generated.
@@ -212,7 +212,7 @@ struct AuxProfile {
 /// - Drum-vocal synchronization
 /// - Intro arrangement
 struct ProductionBlueprint {
-  const char* name;  ///< Blueprint name (e.g., "Traditional", "Orangestar")
+  const char* name;  ///< Blueprint name (e.g., "Traditional", "RhythmSync")
   uint8_t weight;    ///< Random selection weight (0 = disabled)
 
   GenerationParadigm paradigm;  ///< Generation approach
@@ -264,7 +264,7 @@ struct ProductionBlueprint {
 
 /**
  * @brief Get a production blueprint by ID.
- * @param id Blueprint ID (0 = Traditional, 1 = Orangestar, etc.)
+ * @param id Blueprint ID (0 = Traditional, 1 = RhythmSync, etc.)
  * @return Reference to the blueprint
  */
 const ProductionBlueprint& getProductionBlueprint(uint8_t id);

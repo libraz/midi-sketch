@@ -5,12 +5,12 @@
 #include <vector>
 
 #include "core/chord.h"
-#include "core/rng_util.h"
 #include "core/harmonic_rhythm.h"
 #include "core/i_harmony_context.h"
 #include "core/note_creator.h"
 #include "core/preset_data.h"
 #include "core/production_blueprint.h"
+#include "core/rng_util.h"
 #include "core/section_iteration_helper.h"
 #include "core/song.h"
 #include "core/timing_constants.h"
@@ -52,7 +52,7 @@ GuitarStyle guitarStyleFromProgram(uint8_t program) {
 
 /// Build chord pitches in guitar range from root and chord intervals.
 static std::vector<uint8_t> buildGuitarChordPitches(uint8_t root, const Chord& chord,
-                                                     GuitarStyle style) {
+                                                    GuitarStyle style) {
   std::vector<uint8_t> pitches;
 
   if (style == GuitarStyle::PowerChord) {
@@ -94,33 +94,33 @@ static std::vector<uint8_t> buildGuitarChordPitches(uint8_t root, const Chord& c
 // Velocity calculation
 // ============================================================================
 
-static uint8_t calculateGuitarVelocity(uint8_t base, SectionType section,
-                                        GuitarStyle style, int beat_pos) {
+static uint8_t calculateGuitarVelocity(uint8_t base, SectionType section, GuitarStyle style,
+                                       int beat_pos) {
   float section_mult = getSectionVelocityMultiplier(section);
 
   // Style-specific base adjustment
   float style_mult = 1.0f;
   switch (style) {
     case GuitarStyle::Fingerpick:
-      style_mult = 0.75f;   // Softer for fingerpicking
+      style_mult = 0.75f;  // Softer for fingerpicking
       break;
     case GuitarStyle::Strum:
       style_mult = 0.85f;
       break;
     case GuitarStyle::PowerChord:
-      style_mult = 1.0f;    // Full energy for power chords
+      style_mult = 1.0f;  // Full energy for power chords
       break;
     case GuitarStyle::PedalTone:
-      style_mult = 0.70f;   // Subdued pedal tone
+      style_mult = 0.70f;  // Subdued pedal tone
       break;
     case GuitarStyle::RhythmChord:
-      style_mult = 0.90f;   // Near full energy rhythm chord
+      style_mult = 0.90f;  // Near full energy rhythm chord
       break;
     case GuitarStyle::TremoloPick:
-      style_mult = 0.65f;   // Moderate tremolo
+      style_mult = 0.65f;  // Moderate tremolo
       break;
     case GuitarStyle::SweepArpeggio:
-      style_mult = 0.70f;   // Sweep energy
+      style_mult = 0.70f;  // Sweep energy
       break;
   }
 
@@ -145,10 +145,10 @@ static uint8_t calculateGuitarVelocity(uint8_t base, SectionType section,
 /// @param onset_start Start tick of the note onset window
 /// @param onset_end End tick of the note onset window
 /// @return Effective maximum pitch for guitar at this onset
-static uint8_t getEffectiveHighForVocal(const IHarmonyContext& harmony,
-                                         Tick onset_start, Tick onset_end) {
-  uint8_t vocal_at_onset = harmony.getHighestPitchForTrackInRange(
-      onset_start, onset_end, TrackRole::Vocal);
+static uint8_t getEffectiveHighForVocal(const IHarmonyContext& harmony, Tick onset_start,
+                                        Tick onset_end) {
+  uint8_t vocal_at_onset =
+      harmony.getHighestPitchForTrackInRange(onset_start, onset_end, TrackRole::Vocal);
   if (vocal_at_onset > 0) {
     return static_cast<uint8_t>(
         std::min(static_cast<int>(kGuitarHigh), static_cast<int>(vocal_at_onset)));
@@ -162,10 +162,9 @@ static uint8_t getEffectiveHighForVocal(const IHarmonyContext& harmony,
 
 /// Fingerpick pattern: individual chord tones in arpeggiated pattern.
 /// Pattern: R-5-3-H-3-5-R-5 across 8th notes.
-static void generateFingerpickBar(MidiTrack& track, IHarmonyContext& harmony,
-                                   Tick bar_start, Tick bar_end,
-                                   const std::vector<uint8_t>& pitches,
-                                   SectionType section, uint8_t base_vel) {
+static void generateFingerpickBar(MidiTrack& track, IHarmonyContext& harmony, Tick bar_start,
+                                  Tick bar_end, const std::vector<uint8_t>& pitches,
+                                  SectionType section, uint8_t base_vel) {
   if (pitches.empty()) return;
 
   // 8 eighth notes per bar
@@ -213,11 +212,9 @@ static void generateFingerpickBar(MidiTrack& track, IHarmonyContext& harmony,
 
 /// Strum pattern: chordal strums on rhythmic grid.
 /// Pattern: D-x-DU-D-x-DU (D=downstrum, U=upstrum, x=rest)
-static void generateStrumBar(MidiTrack& track, IHarmonyContext& harmony,
-                              Tick bar_start, Tick bar_end,
-                              const std::vector<uint8_t>& pitches,
-                              SectionType section, uint8_t base_vel,
-                              std::mt19937& rng) {
+static void generateStrumBar(MidiTrack& track, IHarmonyContext& harmony, Tick bar_start,
+                             Tick bar_end, const std::vector<uint8_t>& pitches, SectionType section,
+                             uint8_t base_vel, std::mt19937& rng) {
   if (pitches.empty()) return;
 
   // Strum rhythm: 8th note grid, hits on beats 1, 2.5, 3, 4.5
@@ -267,10 +264,9 @@ static void generateStrumBar(MidiTrack& track, IHarmonyContext& harmony,
 }
 
 /// Power chord pattern: root+5th on half-note downstrokes.
-static void generatePowerChordBar(MidiTrack& track, IHarmonyContext& harmony,
-                                    Tick bar_start, Tick bar_end,
-                                    const std::vector<uint8_t>& pitches,
-                                    SectionType section, uint8_t base_vel) {
+static void generatePowerChordBar(MidiTrack& track, IHarmonyContext& harmony, Tick bar_start,
+                                  Tick bar_end, const std::vector<uint8_t>& pitches,
+                                  SectionType section, uint8_t base_vel) {
   if (pitches.empty()) return;
 
   // 2 half-note hits per bar
@@ -312,16 +308,15 @@ static void generatePowerChordBar(MidiTrack& track, IHarmonyContext& harmony,
 /// Pattern per bar (4 beats x 4 sixteenths):
 ///   Lo Lo Lo Hi | Lo Lo Hi Lo | Lo Lo Lo Hi | Lo Hi Lo Lo
 /// Lo = root, Hi = root+12. Occasional 5th/octave decoration.
-static void generatePedalToneBar(MidiTrack& track, IHarmonyContext& harmony,
-                                  Tick bar_start, Tick bar_end, uint8_t root_pitch,
-                                  SectionType section, uint8_t base_vel,
-                                  std::mt19937& rng) {
+static void generatePedalToneBar(MidiTrack& track, IHarmonyContext& harmony, Tick bar_start,
+                                 Tick bar_end, uint8_t root_pitch, SectionType section,
+                                 uint8_t base_vel, std::mt19937& rng) {
   // 16 sixteenth notes per bar
   static constexpr int kNotesPerBar = 16;
   // Octave pattern: 0=Lo, 1=Hi
   //   beat1: L L L H  beat2: L L H L  beat3: L L L H  beat4: L H L L
-  static constexpr int kOctavePattern[kNotesPerBar] = {
-      0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 0, 0};
+  static constexpr int kOctavePattern[kNotesPerBar] = {0, 0, 0, 1, 0, 0, 1, 0,
+                                                       0, 0, 0, 1, 0, 1, 0, 0};
 
   Tick note_dur = static_cast<Tick>(TICK_SIXTEENTH * 0.55f);
 
@@ -353,7 +348,7 @@ static void generatePedalToneBar(MidiTrack& track, IHarmonyContext& harmony,
     // Occasional decoration on non-accent positions: 5th (+7) or extra octave
     bool is_accent = (pos_idx % 4 == 0);
     if (!is_accent && rng_util::rollRange(rng, 0, 14) == 0) {  // ~7% chance
-      pitch = base_root + 7;  // perfect 5th
+      pitch = base_root + 7;                                   // perfect 5th
     }
 
     // Clamp to guitar range
@@ -381,10 +376,9 @@ static void generatePedalToneBar(MidiTrack& track, IHarmonyContext& harmony,
 
 /// RhythmChord pattern: 16th note root+5th power chord with skip variation.
 /// ~25% skip on weak 16th positions (positions where beat_pos % 4 != 0).
-static void generateRhythmChordBar(MidiTrack& track, IHarmonyContext& harmony,
-                                     Tick bar_start, Tick bar_end, uint8_t root_pitch,
-                                     SectionType section, uint8_t base_vel,
-                                     std::mt19937& rng) {
+static void generateRhythmChordBar(MidiTrack& track, IHarmonyContext& harmony, Tick bar_start,
+                                   Tick bar_end, uint8_t root_pitch, SectionType section,
+                                   uint8_t base_vel, std::mt19937& rng) {
   static constexpr int kNotesPerBar = 16;
   Tick note_dur = static_cast<Tick>(TICK_SIXTEENTH * 0.70f);
 
@@ -436,10 +430,9 @@ static void generateRhythmChordBar(MidiTrack& track, IHarmonyContext& harmony,
 /// TremoloPick pattern: 32nd note tremolo picking with diatonic scale runs.
 /// 32 notes per bar (60 tick intervals), ascending 4 + descending 4 wave pattern.
 /// Gate: 55% (33 ticks). Beat-head accent (every 8 notes).
-static void generateTremoloPickBar(MidiTrack& track, IHarmonyContext& harmony,
-                                    Tick bar_start, Tick bar_end, uint8_t root_pitch,
-                                    SectionType section, uint8_t base_vel,
-                                    std::mt19937& /*rng*/) {
+static void generateTremoloPickBar(MidiTrack& track, IHarmonyContext& harmony, Tick bar_start,
+                                   Tick bar_end, uint8_t root_pitch, SectionType section,
+                                   uint8_t base_vel, std::mt19937& /*rng*/) {
   static constexpr int kNotesPerBar = 32;
   Tick note_dur = static_cast<Tick>(TICK_32ND * 0.55f);  // 33 ticks
 
@@ -462,9 +455,9 @@ static void generateTremoloPickBar(MidiTrack& track, IHarmonyContext& harmony,
     bool ascending = (group % 2 == 0);
     int interval = ascending ? kScaleUp[within] : kScaleDown[within];
 
-    uint8_t pitch = static_cast<uint8_t>(
-        std::clamp(static_cast<int>(base_root) + interval,
-                   static_cast<int>(kGuitarLow), static_cast<int>(kGuitarHigh)));
+    uint8_t pitch = static_cast<uint8_t>(std::clamp(static_cast<int>(base_root) + interval,
+                                                    static_cast<int>(kGuitarLow),
+                                                    static_cast<int>(kGuitarHigh)));
 
     // Velocity: beat-head accent (every 8 notes), others -10
     int beat_pos = pos_idx / 8;
@@ -495,10 +488,9 @@ static void generateTremoloPickBar(MidiTrack& track, IHarmonyContext& harmony,
 /// SweepArpeggio pattern: 32nd note sweep arpeggios across chord tones.
 /// Up-sweep (8 notes) then down-sweep (8 notes), repeated for 4 beats.
 /// Gate: 70% (42 ticks). Accent on sweep starts.
-static void generateSweepArpeggioBar(MidiTrack& track, IHarmonyContext& harmony,
-                                       Tick bar_start, Tick bar_end,
-                                       const std::vector<uint8_t>& pitches,
-                                       SectionType section, uint8_t base_vel) {
+static void generateSweepArpeggioBar(MidiTrack& track, IHarmonyContext& harmony, Tick bar_start,
+                                     Tick bar_end, const std::vector<uint8_t>& pitches,
+                                     SectionType section, uint8_t base_vel) {
   if (pitches.empty()) return;
 
   static constexpr int kNotesPerBar = 32;
@@ -516,8 +508,7 @@ static void generateSweepArpeggioBar(MidiTrack& track, IHarmonyContext& harmony,
   }
   std::sort(sweep_pitches.begin(), sweep_pitches.end());
   // Remove duplicates
-  sweep_pitches.erase(std::unique(sweep_pitches.begin(), sweep_pitches.end()),
-                       sweep_pitches.end());
+  sweep_pitches.erase(std::unique(sweep_pitches.begin(), sweep_pitches.end()), sweep_pitches.end());
 
   if (sweep_pitches.empty()) return;
 
@@ -594,14 +585,14 @@ void GuitarGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackConte
   uint8_t base_vel = 80;
 
   // guitar_below_vocal: section-wide pitch ceiling from blueprint constraints
-  bool guitar_below_vocal = (params.blueprint_ref != nullptr &&
-                              params.blueprint_ref->constraints.guitar_below_vocal);
+  bool guitar_below_vocal =
+      (params.blueprint_ref != nullptr && params.blueprint_ref->constraints.guitar_below_vocal);
   uint8_t section_guitar_high = kGuitarHigh;  // Updated per section
 
   // Helper to generate one half-bar with the appropriate style.
   // PedalTone and RhythmChord take root pitch directly; others use chord pitches.
-  auto generateHalf = [&](Tick start, Tick end, const std::vector<uint8_t>& pitches,
-                          uint8_t root, SectionType sec_type, GuitarStyle cur_style) {
+  auto generateHalf = [&](Tick start, Tick end, const std::vector<uint8_t>& pitches, uint8_t root,
+                          SectionType sec_type, GuitarStyle cur_style) {
     switch (cur_style) {
       case GuitarStyle::Fingerpick:
         generateFingerpickBar(track, *ctx.harmony, start, end, pitches, sec_type, base_vel);
@@ -635,8 +626,7 @@ void GuitarGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackConte
           uint8_t vocal_low = ctx.harmony->getLowestPitchForTrackInRange(
               sec.start_tick, sec.endTick(), TrackRole::Vocal);
           if (vocal_low > 0 && vocal_low > kGuitarLow + 2) {
-            section_guitar_high = std::min(kGuitarHigh,
-                static_cast<uint8_t>(vocal_low - 2));
+            section_guitar_high = std::min(kGuitarHigh, static_cast<uint8_t>(vocal_low - 2));
           } else {
             section_guitar_high = kGuitarHigh;  // No vocal or too low
           }
@@ -647,8 +637,8 @@ void GuitarGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackConte
       [&](const BarContext& bc) {
         // Resolve style: section hint overrides base style
         GuitarStyle style = (bc.section.guitar_style_hint > 0)
-            ? static_cast<GuitarStyle>(bc.section.guitar_style_hint - 1)
-            : base_style;
+                                ? static_cast<GuitarStyle>(bc.section.guitar_style_hint - 1)
+                                : base_style;
 
         int abs_bar = static_cast<int>(tickToBar(bc.bar_start));
         bool slow_harmonic = (bc.harmonic.density == HarmonicDensity::Slow);
@@ -668,10 +658,9 @@ void GuitarGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackConte
 
         // Apply guitar_below_vocal section-wide ceiling
         if (guitar_below_vocal && section_guitar_high < kGuitarHigh) {
-          pitches.erase(
-              std::remove_if(pitches.begin(), pitches.end(),
-                             [&](uint8_t p) { return p > section_guitar_high; }),
-              pitches.end());
+          pitches.erase(std::remove_if(pitches.begin(), pitches.end(),
+                                       [&](uint8_t p) { return p > section_guitar_high; }),
+                        pitches.end());
         }
 
         // Phrase tail rest: reduce density in tail bars, silence last bar's second half
@@ -685,8 +674,8 @@ void GuitarGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackConte
           generateHalf(bc.bar_start, half_bar, pitches, root, bc.section.type, style);
 
           int next_idx = bc.harmonic.subdivision == 2
-              ? getChordIndexForSubdividedBar(abs_bar, 1, progression.length)
-              : getChordIndexForBar(abs_bar + 1, slow_harmonic, progression.length);
+                             ? getChordIndexForSubdividedBar(abs_bar, 1, progression.length)
+                             : getChordIndexForBar(abs_bar + 1, slow_harmonic, progression.length);
           int8_t deg2 = progression.at(next_idx);
           uint8_t root2 = degreeToRoot(deg2, Key::C);
           Chord chord2 = getChordNotes(deg2);
@@ -695,14 +684,13 @@ void GuitarGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackConte
           return;
         }
 
-        bool should_split = shouldSplitPhraseEnd(
-            bc.bar_index, bc.section.bars, progression.length, bc.harmonic,
-            bc.section.type, params.mood);
+        bool should_split = shouldSplitPhraseEnd(bc.bar_index, bc.section.bars, progression.length,
+                                                 bc.harmonic, bc.section.type, params.mood);
         bool split = should_split || bc.harmonic.subdivision == 2;
 
         // Generate first half (or full bar)
-        generateHalf(bc.bar_start, split ? half_bar : bc.bar_end, pitches, root,
-                     bc.section.type, style);
+        generateHalf(bc.bar_start, split ? half_bar : bc.bar_end, pitches, root, bc.section.type,
+                     style);
 
         // Generate second half with next chord if split
         if (split) {

@@ -33,10 +33,10 @@ constexpr ChordProgression PROGRESSIONS[22] = {
     {{0, 3, 10, 0, -1, -1, -1, -1}, 4},  // 12: Rock2 - I - IV - bVII - I
     {{0, 4, 5, 2, -1, -1, -1, -1}, 4},   // 13: Extended4 - I - V - vi - iii
     {{5, 0, 4, 3, -1, -1, -1, -1}, 4},   // 14: Minor3 - vi - I - V - IV
-    {{5, 3, 4, 0, -1, -1, -1, -1}, 4},   // 15: Komuro - vi - IV - V - I
-    {{5, 2, 3, 0, -1, -1, -1, -1}, 4},   // 16: YOASOBI1 - vi - iii - IV - I
+    {{5, 3, 4, 0, -1, -1, -1, -1}, 4},   // 15: MinorPop - vi - IV - V - I
+    {{5, 2, 3, 0, -1, -1, -1, -1}, 4},   // 16: AnimeHighEnergy1 - vi - iii - IV - I
     {{1, 4, 0, 5, -1, -1, -1, -1}, 4},   // 17: JazzPop - ii - V - I - vi
-    {{5, 1, 4, 0, -1, -1, -1, -1}, 4},   // 18: YOASOBI2 - vi - ii - V - I
+    {{5, 1, 4, 0, -1, -1, -1, -1}, 4},   // 18: AnimeHighEnergy2 - vi - ii - V - I
     {{0, 5, 1, 4, -1, -1, -1, -1}, 4},   // 19: CityPop - I - vi - ii - V
     // 5-chord progressions (length = 5)
     {{0, 4, 5, 2, 3, -1, -1, -1}, 5},  // 20: Extended5 - I - V - vi - iii - IV
@@ -45,9 +45,28 @@ constexpr ChordProgression PROGRESSIONS[22] = {
 
 // Chord progression names
 const char* PROGRESSION_NAMES[22] = {
-    "Canon",    "Pop1",    "Axis",     "Pop2",    "Classic",   "Pop3",       "Oudou",  "Minor1",
-    "Minor2",   "Pop4",    "Pop5",     "Rock1",   "Rock2",     "Extended4",  "Minor3", "Komuro",
-    "YOASOBI1", "JazzPop", "YOASOBI2", "CityPop", "Extended5", "Emotional5",
+    "Canon",
+    "Pop1",
+    "Axis",
+    "Pop2",
+    "Classic",
+    "Pop3",
+    "Oudou",
+    "Minor1",
+    "Minor2",
+    "Pop4",
+    "Pop5",
+    "Rock1",
+    "Rock2",
+    "Extended4",
+    "Minor3",
+    "MinorPop",
+    "AnimeHighEnergy1",
+    "JazzPop",
+    "AnimeHighEnergy2",
+    "CityPop",
+    "Extended5",
+    "Emotional5",
 };
 
 // Chord progression display strings (Roman numeral notation)
@@ -67,10 +86,10 @@ const char* PROGRESSION_ROMAN[22] = {
     "I - IV - bVII - I",      // Rock2
     "I - V - vi - iii",       // Extended4
     "vi - I - V - IV",        // Minor3
-    "vi - IV - V - I",        // Komuro
-    "vi - iii - IV - I",      // YOASOBI1
+    "vi - IV - V - I",        // MinorPop
+    "vi - iii - IV - I",      // AnimeHighEnergy1
     "ii - V - I - vi",        // JazzPop
-    "vi - ii - V - I",        // YOASOBI2
+    "vi - ii - V - I",        // AnimeHighEnergy2
     "I - vi - ii - V",        // CityPop
     "I - V - vi - iii - IV",  // Extended5
     "vi - IV - I - V - ii",   // Emotional5
@@ -93,10 +112,10 @@ const char* PROGRESSION_CHORDS[22] = {
     "C - F - Bb - C",       // Rock2
     "C - G - Am - Em",      // Extended4
     "Am - C - G - F",       // Minor3
-    "Am - F - G - C",       // Komuro
-    "Am - Em - F - C",      // YOASOBI1
+    "Am - F - G - C",       // MinorPop
+    "Am - Em - F - C",      // AnimeHighEnergy1
     "Dm - G - C - Am",      // JazzPop
-    "Am - Dm - G - C",      // YOASOBI2
+    "Am - Dm - G - C",      // AnimeHighEnergy2
     "C - Am - Dm - G",      // CityPop
     "C - G - Am - Em - F",  // Extended5
     "Am - F - C - G - Dm",  // Emotional5
@@ -121,10 +140,10 @@ constexpr ChordProgressionMeta PROGRESSION_META[22] = {
     {12, "Rock2", FunctionalProfile::TensionBuild, 0b00010000, "bVII,rock"},
     {13, "Extended4", FunctionalProfile::Stable, 0b00000011, "iii_usage,extended"},
     {14, "Minor3", FunctionalProfile::Loop, 0b00001010, "minor_feel,dance"},
-    {15, "Komuro", FunctionalProfile::TensionBuild, 0b00001011, "minor_start,90s"},
-    {16, "YOASOBI1", FunctionalProfile::Loop, 0b00001010, "anime,minor_start"},
+    {15, "MinorPop", FunctionalProfile::TensionBuild, 0b00001011, "minor_start,90s"},
+    {16, "AnimeHighEnergy1", FunctionalProfile::Loop, 0b00001010, "anime,minor_start"},
     {17, "JazzPop", FunctionalProfile::CadenceStrong, 0b00000011, "ii_V_I,jazz"},
-    {18, "YOASOBI2", FunctionalProfile::CadenceStrong, 0b00001010, "turnaround,anime"},
+    {18, "AnimeHighEnergy2", FunctionalProfile::CadenceStrong, 0b00001010, "turnaround,anime"},
     {19, "CityPop", FunctionalProfile::Stable, 0b00000011, "city_pop,groove"},
     {20, "Extended5", FunctionalProfile::Loop, 0b00000111, "5ch_loop,extended"},
     {21, "Emotional5", FunctionalProfile::TensionBuild, 0b00001010, "5ch_loop,emotional"},
@@ -394,9 +413,9 @@ int8_t getSecondaryDominantDegree(int8_t target_degree) {
       return 1;
     case 5:  // V/vi = III (E7 in C)
       return 2;
-    case 6:  // V/vii = #IV (F#dim is rare, typically avoid)
+    case 6:       // V/vii = #IV (F#dim is rare, typically avoid)
       return -1;  // Not commonly used
-    case 0:  // V/I = V (already normal dominant)
+    case 0:       // V/I = V (already normal dominant)
       return 4;
     default:
       return -1;
@@ -404,7 +423,7 @@ int8_t getSecondaryDominantDegree(int8_t target_degree) {
 }
 
 SecondaryDominantInfo checkSecondaryDominant(int8_t current_degree, int8_t next_degree,
-                                              float tension_level) {
+                                             float tension_level) {
   SecondaryDominantInfo info = {false, 0, ChordExtension::None, 0};
 
   // Don't insert if tension is too low (must be > 0.5)
@@ -414,10 +433,10 @@ SecondaryDominantInfo checkSecondaryDominant(int8_t current_degree, int8_t next_
 
   // Check for good secondary dominant targets
   // Best targets: ii (1), vi (5), IV (3), V (4)
-  bool is_good_target = (next_degree == 1 ||   // ii - very common
-                         next_degree == 5 ||   // vi - common in J-POP
-                         next_degree == 3 ||   // IV - common
-                         next_degree == 4);    // V - common
+  bool is_good_target = (next_degree == 1 ||  // ii - very common
+                         next_degree == 5 ||  // vi - common in J-POP
+                         next_degree == 3 ||  // IV - common
+                         next_degree == 4);   // V - common
 
   if (!is_good_target) {
     return info;
@@ -454,8 +473,8 @@ int getTritoneSubRoot(int original_root_semitone) {
   return (original_root_semitone + 6) % 12;
 }
 
-TritoneSubInfo checkTritoneSubstitution(int8_t degree, bool is_dominant,
-                                         float probability, float roll) {
+TritoneSubInfo checkTritoneSubstitution(int8_t degree, bool is_dominant, float probability,
+                                        float roll) {
   TritoneSubInfo info{false, 0, {}};
 
   // Only apply to dominant-function chords (V = degree 4)
@@ -490,9 +509,8 @@ TritoneSubInfo checkTritoneSubstitution(int8_t degree, bool is_dominant,
 // Section-Based Reharmonization
 // ============================================================================
 
-ReharmonizationResult reharmonizeForSection(int8_t degree, SectionType section_type,
-                                             bool is_minor, bool is_dominant,
-                                             bool enable_7th) {
+ReharmonizationResult reharmonizeForSection(int8_t degree, SectionType section_type, bool is_minor,
+                                            bool is_dominant, bool enable_7th) {
   ReharmonizationResult result{degree, ChordExtension::None, false};
 
   switch (section_type) {
@@ -533,7 +551,7 @@ ReharmonizationResult reharmonizeForSection(int8_t degree, SectionType section_t
 }
 
 PassingChordInfo checkPassingDiminished(int8_t /*current_degree*/, int8_t next_degree,
-                                         SectionType section_type) {
+                                        SectionType section_type) {
   PassingChordInfo info{false, 0, {}};
 
   // Only insert passing diminished chords in B (pre-chorus) sections
@@ -561,8 +579,8 @@ PassingChordInfo checkPassingDiminished(int8_t /*current_degree*/, int8_t next_d
 // Slash Chord Support
 // ============================================================================
 
-SlashChordInfo checkSlashChord(int8_t current_degree, int8_t next_degree,
-                               SectionType section_type, float probability_roll) {
+SlashChordInfo checkSlashChord(int8_t current_degree, int8_t next_degree, SectionType section_type,
+                               float probability_roll) {
   SlashChordInfo info{false, 0};
 
   // Determine section-based probability threshold.

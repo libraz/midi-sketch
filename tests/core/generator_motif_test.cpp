@@ -293,8 +293,8 @@ TEST(GeneratorTest, MotifVelocityFixed) {
     }
 
     EXPECT_TRUE(consistent) << "Expected all velocities to be within expected range of "
-                            << static_cast<int>(main_vel) << " (±15 and 85% variants). Found: "
-                            << vel_str;
+                            << static_cast<int>(main_vel)
+                            << " (±15 and 85% variants). Found: " << vel_str;
   }
 }
 
@@ -639,8 +639,8 @@ TEST(MotifOverrideE2ETest, MotifMotionStepwiseVsWideLeap) {
   // Note: Monotony tracking may reduce large leaps to chord tones, narrowing the gap
   // The test verifies both modes still function, not strict inequality
   EXPECT_GE(wideleap_avg, stepwise_avg * 0.95f)
-      << "WideLeap (avg=" << wideleap_avg << ") should not be significantly smaller than Stepwise (avg="
-      << stepwise_avg << ")";
+      << "WideLeap (avg=" << wideleap_avg
+      << ") should not be significantly smaller than Stepwise (avg=" << stepwise_avg << ")";
 }
 
 TEST(MotifOverrideE2ETest, MotifRhythmDensitySparseVsDriving) {

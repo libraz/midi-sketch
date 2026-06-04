@@ -29,9 +29,9 @@ constexpr MelodyTemplate kPlateauTalk = {
     0.5f,  // target_attraction_strength: moderate (preserve plateau feel)
 
     // Rhythm
-    true,               // rhythm_driven
-    0.4f,               // sixteenth_density: 40%
-    RhythmGrid::Binary, // rhythm_grid: standard 8th/16th
+    true,                // rhythm_driven
+    0.4f,                // sixteenth_density: 40%
+    RhythmGrid::Binary,  // rhythm_grid: standard 8th/16th
 
     // Vocal constraints
     true,  // vowel_constraint
@@ -54,7 +54,7 @@ constexpr MelodyTemplate kPlateauTalk = {
     true  // allow_talk_sing
 };
 
-// Template 2: RunUpTarget (YOASOBI/Ado style)
+// Template 2: RunUpTarget (AnimeHighEnergy/dramatic pop style)
 // Run up to target note with high energy
 constexpr MelodyTemplate kRunUpTarget = {
     "RunUpTarget",
@@ -69,9 +69,9 @@ constexpr MelodyTemplate kRunUpTarget = {
     0.8f,  // target_attraction_strength: strong attraction
 
     // Rhythm
-    true,               // rhythm_driven
-    0.6f,               // sixteenth_density: 60%
-    RhythmGrid::Binary, // rhythm_grid: standard 8th/16th
+    true,                // rhythm_driven
+    0.6f,                // sixteenth_density: 60%
+    RhythmGrid::Binary,  // rhythm_grid: standard 8th/16th
 
     // Vocal constraints
     true,  // vowel_constraint
@@ -90,7 +90,7 @@ constexpr MelodyTemplate kRunUpTarget = {
     // Modern pop features
     4,     // hook_note_count
     2,     // hook_repeat_count
-    3,     // betrayal_threshold: YOASOBI style = early variation
+    3,     // betrayal_threshold: AnimeHighEnergy style = early variation
     false  // allow_talk_sing: not talk-sing
 };
 
@@ -109,9 +109,9 @@ constexpr MelodyTemplate kDownResolve = {
     0.7f,  // target_attraction_strength
 
     // Rhythm
-    false,               // rhythm_driven: melody-driven
-    0.2f,                // sixteenth_density: low
-    RhythmGrid::Ternary, // rhythm_grid: triplet for flowing pre-chorus feel
+    false,                // rhythm_driven: melody-driven
+    0.2f,                 // sixteenth_density: low
+    RhythmGrid::Ternary,  // rhythm_grid: triplet for flowing pre-chorus feel
 
     // Vocal constraints
     true,  // vowel_constraint
@@ -134,20 +134,19 @@ constexpr MelodyTemplate kDownResolve = {
     false  // allow_talk_sing
 };
 
-// Template 4: HookRepeat (TikTok/K-POP)
+// Template 4: HookRepeat (Idol/K-POP)
 // Short repeating hook for maximum catchiness
 // Target pitch creates a "destination" even for short hooks.
-// Tuned for Ice Cream-style maximum addictiveness:
-// - Very narrow range (tessitura_range=2) for same-note repetition
-// - High plateau ratio (0.65) to encourage pitch repetition
-// - max_step=1 to only allow half-step movement when not repeating
-// - Increased hook_repeat_count (5) and delayed betrayal (4)
+// Tuned toward idol-pop style idol hooks:
+// - Compact but not flat range, so 3-note motifs can move
+// - Strong repetition with small step/skip motion
+// - Low long-note ratio to preserve danceable 8th-note phrasing
 constexpr MelodyTemplate kHookRepeat = {
     "HookRepeat",
     // Pitch constraints
-    2,      // tessitura_range: extremely narrow for Ice Cream-style (was 3)
-    0.65f,  // plateau_ratio: high same-pitch probability (was 0.5f)
-    1,      // max_step: half-step only when moving (was 2)
+    4,      // tessitura_range: compact, but wide enough for idol motifs
+    0.55f,  // plateau_ratio: repeated pitches without flattening the hook
+    2,      // max_step: stepwise motion, including whole-step movement
 
     // Target pitch (mandatory for melodic direction)
     true,  // has_target_pitch: ENABLED - hook resolves to target
@@ -155,18 +154,18 @@ constexpr MelodyTemplate kHookRepeat = {
     0.7f,  // target_attraction_strength: strong (hook clarity)
 
     // Rhythm
-    true,               // rhythm_driven
-    0.5f,               // sixteenth_density
-    RhythmGrid::Binary, // rhythm_grid: standard 8th/16th
+    true,                // rhythm_driven
+    0.5f,                // sixteenth_density
+    RhythmGrid::Binary,  // rhythm_grid: standard 8th/16th
 
     // Vocal constraints
     false,  // vowel_constraint: less strict for hooks
     true,   // leap_as_event
 
     // Phrase characteristics
-    0.8f,  // phrase_end_resolution
-    0.2f,  // long_note_ratio
-    0.1f,  // tension_allowance: low
+    0.8f,   // phrase_end_resolution
+    0.12f,  // long_note_ratio: keep idol hooks rhythmically active
+    0.1f,   // tension_allowance: low
 
     // Human body constraints
     4,     // max_phrase_beats: very short
@@ -174,7 +173,7 @@ constexpr MelodyTemplate kHookRepeat = {
     1,     // post_high_rest_beats
 
     // Modern pop features
-    2,    // hook_note_count: minimum for hook
+    3,    // hook_note_count: chantable 3-note idol motif
     5,    // hook_repeat_count: increased repetition (was 4)
     4,    // betrayal_threshold: delay variation for pattern establishment (was 3)
     true  // allow_talk_sing
@@ -195,9 +194,9 @@ constexpr MelodyTemplate kSparseAnchor = {
     0.5f,  // target_attraction_strength: moderate
 
     // Rhythm
-    false,              // rhythm_driven: melody-driven
-    0.1f,               // sixteenth_density: very low
-    RhythmGrid::Binary, // rhythm_grid: standard (sparse long notes)
+    false,               // rhythm_driven: melody-driven
+    0.1f,                // sixteenth_density: very low
+    RhythmGrid::Binary,  // rhythm_grid: standard (sparse long notes)
 
     // Vocal constraints
     true,  // vowel_constraint
@@ -235,9 +234,9 @@ constexpr MelodyTemplate kCallResponse = {
     0.6f,  // target_attraction_strength
 
     // Rhythm
-    true,               // rhythm_driven
-    0.3f,               // sixteenth_density
-    RhythmGrid::Binary, // rhythm_grid: standard 8th/16th
+    true,                // rhythm_driven
+    0.3f,                // sixteenth_density
+    RhythmGrid::Binary,  // rhythm_grid: standard 8th/16th
 
     // Vocal constraints
     true,  // vowel_constraint
@@ -275,9 +274,9 @@ constexpr MelodyTemplate kJumpAccent = {
     0.9f,  // target_attraction_strength: very strong
 
     // Rhythm
-    false,              // rhythm_driven: melody-driven
-    0.15f,              // sixteenth_density: low
-    RhythmGrid::Hybrid, // rhythm_grid: mixed for dramatic effect
+    false,               // rhythm_driven: melody-driven
+    0.15f,               // sixteenth_density: low
+    RhythmGrid::Hybrid,  // rhythm_grid: mixed for dramatic effect
 
     // Vocal constraints
     true,  // vowel_constraint
@@ -343,6 +342,10 @@ constexpr StyleSectionTemplate kStyleSectionOverrides[] = {
     {SectionType::A, VocalStylePreset::CoolSynth, MelodyTemplateId::PlateauTalk},
     // Ballad: sparse anchor notes
     {SectionType::A, VocalStylePreset::Ballad, MelodyTemplateId::SparseAnchor},
+    // Idol/BrightKira/CuteAffected: short call-response verse phrases keep group energy.
+    {SectionType::A, VocalStylePreset::Idol, MelodyTemplateId::CallResponse},
+    {SectionType::A, VocalStylePreset::BrightKira, MelodyTemplateId::CallResponse},
+    {SectionType::A, VocalStylePreset::CuteAffected, MelodyTemplateId::CallResponse},
 
     // -------------------------------------------------------------------------
     // Chorus overrides
@@ -366,6 +369,10 @@ constexpr StyleSectionTemplate kStyleSectionOverrides[] = {
     {SectionType::Bridge, VocalStylePreset::PowerfulShout, MelodyTemplateId::CallResponse},
     // Rock: call-and-response for live energy
     {SectionType::Bridge, VocalStylePreset::Rock, MelodyTemplateId::CallResponse},
+    // Idol styles: live-call phrases and group responses are part of the idiom.
+    {SectionType::Bridge, VocalStylePreset::Idol, MelodyTemplateId::CallResponse},
+    {SectionType::Bridge, VocalStylePreset::BrightKira, MelodyTemplateId::CallResponse},
+    {SectionType::Bridge, VocalStylePreset::CuteAffected, MelodyTemplateId::CallResponse},
 };
 
 constexpr size_t kStyleSectionOverrideCount =

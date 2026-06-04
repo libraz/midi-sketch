@@ -63,9 +63,11 @@ TEST_F(ChorusDropTest, TruncatesMelodicTracksInLastBeat) {
   MidiTrack chord_track;
   Tick drop_zone_start = 8 * TICKS_PER_BAR - TICKS_PER_BEAT;  // Last beat of B section
   // Note starting before drop zone, extending into it
-  chord_track.addNote(NoteEventBuilder::create(drop_zone_start - TICKS_PER_BEAT, TICKS_PER_BEAT * 2, 60, 80));
+  chord_track.addNote(
+      NoteEventBuilder::create(drop_zone_start - TICKS_PER_BEAT, TICKS_PER_BEAT * 2, 60, 80));
   // Note starting in drop zone
-  chord_track.addNote(NoteEventBuilder::create(drop_zone_start + TICKS_PER_BEAT / 2, TICKS_PER_BEAT / 2, 64, 80));
+  chord_track.addNote(
+      NoteEventBuilder::create(drop_zone_start + TICKS_PER_BEAT / 2, TICKS_PER_BEAT / 2, 64, 80));
 
   MidiTrack drum_track;
   // Not processed by applyChorusDrop directly
@@ -102,10 +104,12 @@ TEST_F(ChorusDropTest, PreservesVocalTrack) {
 
   MidiTrack melodic_track;
   Tick drop_zone_start = 8 * TICKS_PER_BAR - TICKS_PER_BEAT;
-  melodic_track.addNote(NoteEventBuilder::create(drop_zone_start - TICKS_PER_BEAT, TICKS_PER_BEAT * 2, 60, 80));
+  melodic_track.addNote(
+      NoteEventBuilder::create(drop_zone_start - TICKS_PER_BEAT, TICKS_PER_BEAT * 2, 60, 80));
 
   MidiTrack vocal_track;
-  vocal_track.addNote(NoteEventBuilder::create(drop_zone_start - TICKS_PER_BEAT, TICKS_PER_BEAT * 2, 72, 100));
+  vocal_track.addNote(
+      NoteEventBuilder::create(drop_zone_start - TICKS_PER_BEAT, TICKS_PER_BEAT * 2, 72, 100));
 
   // Only pass melodic track, not vocal
   std::vector<MidiTrack*> tracks = {&melodic_track};
@@ -135,11 +139,14 @@ TEST_F(ChorusDropTest, DrumTrackRemainsUnaffected) {
   Tick drop_zone_start = 8 * TICKS_PER_BAR - TICKS_PER_BEAT;
   // Add drum notes in the drop zone
   drum_track.addNote(NoteEventBuilder::create(drop_zone_start, TICKS_PER_BEAT / 4, KICK, 100));
-  drum_track.addNote(NoteEventBuilder::create(drop_zone_start + TICKS_PER_BEAT / 4, TICKS_PER_BEAT / 4, SNARE, 90));
-  drum_track.addNote(NoteEventBuilder::create(drop_zone_start + TICKS_PER_BEAT / 2, TICKS_PER_BEAT / 4, SNARE, 95));
+  drum_track.addNote(NoteEventBuilder::create(drop_zone_start + TICKS_PER_BEAT / 4,
+                                              TICKS_PER_BEAT / 4, SNARE, 90));
+  drum_track.addNote(NoteEventBuilder::create(drop_zone_start + TICKS_PER_BEAT / 2,
+                                              TICKS_PER_BEAT / 4, SNARE, 95));
 
   MidiTrack chord_track;
-  chord_track.addNote(NoteEventBuilder::create(drop_zone_start - TICKS_PER_BEAT, TICKS_PER_BEAT * 2, 60, 80));
+  chord_track.addNote(
+      NoteEventBuilder::create(drop_zone_start - TICKS_PER_BEAT, TICKS_PER_BEAT * 2, 60, 80));
 
   size_t original_drum_count = drum_track.notes().size();
   std::vector<MidiTrack*> tracks = {&chord_track};
@@ -177,8 +184,10 @@ TEST_F(ChorusDropTest, OnlyAffectsBToChorusTransition) {
 
   MidiTrack chord_track;
   Tick b_last_beat = 16 * TICKS_PER_BAR - TICKS_PER_BEAT;
-  chord_track.addNote(NoteEventBuilder::create(b_last_beat - TICKS_PER_BEAT, TICKS_PER_BEAT * 2, 60, 80));
-  chord_track.addNote(NoteEventBuilder::create(b_last_beat + TICKS_PER_BEAT / 2, TICKS_PER_BEAT / 2, 64, 80));
+  chord_track.addNote(
+      NoteEventBuilder::create(b_last_beat - TICKS_PER_BEAT, TICKS_PER_BEAT * 2, 60, 80));
+  chord_track.addNote(
+      NoteEventBuilder::create(b_last_beat + TICKS_PER_BEAT / 2, TICKS_PER_BEAT / 2, 64, 80));
 
   size_t original_count = chord_track.notes().size();
   Tick original_duration = chord_track.notes()[0].duration;
@@ -222,8 +231,10 @@ TEST_F(RitDecrescendoTest, VelocityDecrescendo) {
   Tick original_duration = TICKS_PER_BEAT;
 
   track.addNote(NoteEventBuilder::create(rit_zone_start, original_duration, 60, original_velocity));
-  track.addNote(NoteEventBuilder::create(rit_zone_start + 2 * TICKS_PER_BAR, original_duration, 64, original_velocity));
-  track.addNote(NoteEventBuilder::create(8 * TICKS_PER_BAR - TICKS_PER_BAR, original_duration, 67, original_velocity));
+  track.addNote(NoteEventBuilder::create(rit_zone_start + 2 * TICKS_PER_BAR, original_duration, 64,
+                                         original_velocity));
+  track.addNote(NoteEventBuilder::create(8 * TICKS_PER_BAR - TICKS_PER_BAR, original_duration, 67,
+                                         original_velocity));
 
   std::vector<MidiTrack*> tracks = {&track};
   PostProcessor::applyRitDecrescendo(tracks, sections_);
@@ -233,23 +244,18 @@ TEST_F(RitDecrescendoTest, VelocityDecrescendo) {
 
   // Duration should be unchanged
   for (const auto& note : notes) {
-    EXPECT_EQ(note.duration, original_duration)
-        << "Duration should not be modified by decrescendo";
+    EXPECT_EQ(note.duration, original_duration) << "Duration should not be modified by decrescendo";
   }
 
   // First note: minimal reduction
-  EXPECT_LE(notes[0].velocity, original_velocity)
-      << "Velocity should not increase";
+  EXPECT_LE(notes[0].velocity, original_velocity) << "Velocity should not increase";
 
   // Middle note: more reduction
-  EXPECT_LT(notes[1].velocity, notes[0].velocity)
-      << "Middle note velocity should be lower";
+  EXPECT_LT(notes[1].velocity, notes[0].velocity) << "Middle note velocity should be lower";
 
   // Last note: most reduction (but still audible, minimum ~30)
-  EXPECT_LT(notes[2].velocity, notes[1].velocity)
-      << "Last note velocity should be lowest";
-  EXPECT_GE(notes[2].velocity, 30u)
-      << "Velocity should not go below minimum threshold";
+  EXPECT_LT(notes[2].velocity, notes[1].velocity) << "Last note velocity should be lowest";
+  EXPECT_GE(notes[2].velocity, 30u) << "Velocity should not go below minimum threshold";
 }
 
 TEST_F(RitDecrescendoTest, OnlyAffectsOutroSection) {
@@ -263,8 +269,10 @@ TEST_F(RitDecrescendoTest, OnlyAffectsOutroSection) {
   MidiTrack track;
   Tick original_duration = TICKS_PER_BEAT;
   uint8_t original_velocity = 100;
-  track.addNote(NoteEventBuilder::create(4 * TICKS_PER_BAR, original_duration, 60, original_velocity));
-  track.addNote(NoteEventBuilder::create(6 * TICKS_PER_BAR, original_duration, 64, original_velocity));
+  track.addNote(
+      NoteEventBuilder::create(4 * TICKS_PER_BAR, original_duration, 60, original_velocity));
+  track.addNote(
+      NoteEventBuilder::create(6 * TICKS_PER_BAR, original_duration, 64, original_velocity));
 
   std::vector<MidiTrack*> tracks = {&track};
   PostProcessor::applyRitDecrescendo(tracks, non_outro_sections);
@@ -313,13 +321,11 @@ TEST_F(EnhancedFinalHitTest, AddsKickAndCrashOnFinalBeat) {
     if (note.start_tick >= final_beat_start) {
       if (note.note == KICK) {
         has_kick = true;
-        EXPECT_GE(note.velocity, 110u)
-            << "Kick on final beat should have velocity 110+";
+        EXPECT_GE(note.velocity, 110u) << "Kick on final beat should have velocity 110+";
       }
       if (note.note == CRASH) {
         has_crash = true;
-        EXPECT_GE(note.velocity, 110u)
-            << "Crash on final beat should have velocity 110+";
+        EXPECT_GE(note.velocity, 110u) << "Crash on final beat should have velocity 110+";
       }
     }
   }
@@ -350,8 +356,7 @@ TEST_F(EnhancedFinalHitTest, ChordTrackSustainsFinalChord) {
       Tick note_end = note.start_tick + note.duration;
       EXPECT_EQ(note_end, section_end)
           << "Chord notes on final beat should be sustained to section end";
-      EXPECT_GE(note.velocity, 110u)
-          << "Chord notes on final beat should have velocity 110+";
+      EXPECT_GE(note.velocity, 110u) << "Chord notes on final beat should have velocity 110+";
     }
   }
 }
@@ -369,8 +374,7 @@ TEST_F(EnhancedFinalHitTest, BoostsBassVelocity) {
 
   for (const auto& note : bass_track.notes()) {
     if (note.start_tick >= final_beat_start) {
-      EXPECT_GE(note.velocity, 110u)
-          << "Bass note on final beat should have velocity 110+";
+      EXPECT_GE(note.velocity, 110u) << "Bass note on final beat should have velocity 110+";
     }
   }
 }
@@ -408,12 +412,9 @@ TEST_F(EnhancedFinalHitTest, AddsMissingKickOnFinalBeat) {
 
   bool has_kick_on_final = false;
   for (const auto& note : drum_track.notes()) {
-    if (note.note == KICK &&
-        note.start_tick >= final_beat_start &&
-        note.start_tick < section_end) {
+    if (note.note == KICK && note.start_tick >= final_beat_start && note.start_tick < section_end) {
       has_kick_on_final = true;
-      EXPECT_GE(note.velocity, 110u)
-          << "Added kick should have velocity 110+";
+      EXPECT_GE(note.velocity, 110u) << "Added kick should have velocity 110+";
       break;
     }
   }
@@ -455,8 +456,7 @@ TEST_F(SustainPatternTest, ExtendsSingleNoteToSectionEnd) {
   // All notes should extend to section end
   for (const auto& note : track.notes()) {
     Tick note_end = note.start_tick + note.duration;
-    EXPECT_EQ(note_end, section_end)
-        << "Single chord notes should extend to section end";
+    EXPECT_EQ(note_end, section_end) << "Single chord notes should extend to section end";
   }
 }
 
@@ -469,15 +469,15 @@ TEST_F(SustainPatternTest, PreventsSustainOverlapWithMultipleChords) {
   Tick half_bar = TICKS_PER_BAR / 2;
 
   // First chord (G) at beat 1 of last bar
-  track.addNote(NoteEventBuilder::create(last_bar_start, half_bar, 67, 80));              // G
-  track.addNote(NoteEventBuilder::create(last_bar_start, half_bar, 71, 80));              // B
-  track.addNote(NoteEventBuilder::create(last_bar_start, half_bar, 74, 80));              // D
+  track.addNote(NoteEventBuilder::create(last_bar_start, half_bar, 67, 80));  // G
+  track.addNote(NoteEventBuilder::create(last_bar_start, half_bar, 71, 80));  // B
+  track.addNote(NoteEventBuilder::create(last_bar_start, half_bar, 74, 80));  // D
 
   // Second chord (Am) at beat 3 of last bar
   Tick second_chord_start = last_bar_start + half_bar;
-  track.addNote(NoteEventBuilder::create(second_chord_start, half_bar, 69, 80));          // A
-  track.addNote(NoteEventBuilder::create(second_chord_start, half_bar, 72, 80));          // C
-  track.addNote(NoteEventBuilder::create(second_chord_start, half_bar, 76, 80));          // E
+  track.addNote(NoteEventBuilder::create(second_chord_start, half_bar, 69, 80));  // A
+  track.addNote(NoteEventBuilder::create(second_chord_start, half_bar, 72, 80));  // C
+  track.addNote(NoteEventBuilder::create(second_chord_start, half_bar, 76, 80));  // E
 
   std::vector<MidiTrack*> tracks = {&track};
   std::vector<Section> sections = {section_};
@@ -489,12 +489,10 @@ TEST_F(SustainPatternTest, PreventsSustainOverlapWithMultipleChords) {
     Tick note_end = note.start_tick + note.duration;
     if (note.start_tick == last_bar_start) {
       // First chord should NOT extend past second chord start
-      EXPECT_LE(note_end, second_chord_start)
-          << "First chord should not overlap with second chord";
+      EXPECT_LE(note_end, second_chord_start) << "First chord should not overlap with second chord";
     } else if (note.start_tick == second_chord_start) {
       // Second chord should extend to section end
-      EXPECT_EQ(note_end, section_end)
-          << "Second chord should extend to section end";
+      EXPECT_EQ(note_end, section_end) << "Second chord should extend to section end";
     }
   }
 }
@@ -524,8 +522,7 @@ TEST_F(SustainPatternTest, HandlesNotesAlreadyExtendedBeyondNextNote) {
       EXPECT_EQ(note_end, second_note_start)
           << "First note should be truncated to second note's start";
     } else if (note.start_tick == second_note_start) {
-      EXPECT_EQ(note_end, section_end)
-          << "Second note should extend to section end";
+      EXPECT_EQ(note_end, section_end) << "Second note should extend to section end";
     }
   }
 }
@@ -538,7 +535,8 @@ TEST_F(SustainPatternTest, HandlesNotesOutsideLastBar) {
   Tick original_duration = TICKS_PER_BEAT;
 
   // Note before last bar (should be unchanged)
-  track.addNote(NoteEventBuilder::create(last_bar_start - TICKS_PER_BAR, original_duration, 60, 80));
+  track.addNote(
+      NoteEventBuilder::create(last_bar_start - TICKS_PER_BAR, original_duration, 60, 80));
 
   // Note in last bar (should be extended)
   track.addNote(NoteEventBuilder::create(last_bar_start, original_duration, 64, 80));
@@ -550,13 +548,11 @@ TEST_F(SustainPatternTest, HandlesNotesOutsideLastBar) {
   for (const auto& note : track.notes()) {
     if (note.start_tick < last_bar_start) {
       // Note before last bar should be unchanged
-      EXPECT_EQ(note.duration, original_duration)
-          << "Notes before last bar should not be modified";
+      EXPECT_EQ(note.duration, original_duration) << "Notes before last bar should not be modified";
     } else {
       // Note in last bar should be extended to section end
       Tick note_end = note.start_tick + note.duration;
-      EXPECT_EQ(note_end, section_end)
-          << "Notes in last bar should extend to section end";
+      EXPECT_EQ(note_end, section_end) << "Notes in last bar should extend to section end";
     }
   }
 }
@@ -621,7 +617,8 @@ TEST(PostProcessorIntegrationTest, ChorusDropAndRitDecrescendoDoNotInterfere) {
   }
 
   EXPECT_TRUE(found_truncated_b) << "B section note should be truncated by chorus drop";
-  EXPECT_TRUE(found_decrescendo_outro) << "Outro note should have reduced velocity from decrescendo";
+  EXPECT_TRUE(found_decrescendo_outro)
+      << "Outro note should have reduced velocity from decrescendo";
 }
 
 // ============================================================================
@@ -681,8 +678,7 @@ TEST_F(EnhancedFinalHitTest, BassPitchUsesCollisionCheckWhenHarmonyProvided) {
 
   MidiTrack bass_track;  // Empty - no existing bass note on final beat
 
-  PostProcessor::applyEnhancedFinalHit(&bass_track, nullptr, nullptr, nullptr, section_,
-                                        &harmony);
+  PostProcessor::applyEnhancedFinalHit(&bass_track, nullptr, nullptr, nullptr, section_, &harmony);
 
   // Bass note should still be added (collision check is best-effort)
   EXPECT_FALSE(bass_track.notes().empty())
@@ -709,14 +705,12 @@ TEST_F(EnhancedFinalHitTest, BassPitchUnchangedWhenSafe) {
 
   MidiTrack bass_track;  // Empty - forces adding a new note
 
-  PostProcessor::applyEnhancedFinalHit(&bass_track, nullptr, nullptr, nullptr, section_,
-                                        &harmony);
+  PostProcessor::applyEnhancedFinalHit(&bass_track, nullptr, nullptr, nullptr, section_, &harmony);
 
   Tick final_beat_start = 4 * TICKS_PER_BAR - TICKS_PER_BEAT;
   for (const auto& note : bass_track.notes()) {
     if (note.start_tick == final_beat_start) {
-      EXPECT_EQ(note.note, 36u)
-          << "Bass note should remain C2 (36) when pitch is safe";
+      EXPECT_EQ(note.note, 36u) << "Bass note should remain C2 (36) when pitch is safe";
     }
   }
 }
@@ -726,14 +720,12 @@ TEST_F(EnhancedFinalHitTest, BassPitchFallsBackToDefaultWithoutHarmony) {
 
   MidiTrack bass_track;  // Empty
 
-  PostProcessor::applyEnhancedFinalHit(&bass_track, nullptr, nullptr, nullptr, section_,
-                                        nullptr);
+  PostProcessor::applyEnhancedFinalHit(&bass_track, nullptr, nullptr, nullptr, section_, nullptr);
 
   Tick final_beat_start = 4 * TICKS_PER_BAR - TICKS_PER_BEAT;
   for (const auto& note : bass_track.notes()) {
     if (note.start_tick == final_beat_start) {
-      EXPECT_EQ(note.note, 36u)
-          << "Bass note should be C2 (36) when no harmony context";
+      EXPECT_EQ(note.note, 36u) << "Bass note should be C2 (36) when no harmony context";
     }
   }
 }
@@ -749,8 +741,7 @@ TEST_F(EnhancedFinalHitTest, BassPitchProvenanceTracksOriginalWhenCollisionResol
 
   MidiTrack bass_track;
 
-  PostProcessor::applyEnhancedFinalHit(&bass_track, nullptr, nullptr, nullptr, section_,
-                                        &harmony);
+  PostProcessor::applyEnhancedFinalHit(&bass_track, nullptr, nullptr, nullptr, section_, &harmony);
 
   Tick final_beat_start = 4 * TICKS_PER_BAR - TICKS_PER_BEAT;
   for (const auto& note : bass_track.notes()) {
@@ -790,8 +781,7 @@ TEST_F(ChorusDropTest, DrumHitCrashHasPostProcessProvenance) {
           << "Added crash should have PostProcess provenance";
       EXPECT_EQ(note.prov_lookup_tick, chorus_start)
           << "prov_lookup_tick should match chorus start";
-      EXPECT_EQ(note.prov_original_pitch, CRASH)
-          << "prov_original_pitch should be CRASH";
+      EXPECT_EQ(note.prov_original_pitch, CRASH) << "prov_original_pitch should be CRASH";
       EXPECT_EQ(note.prov_chord_degree, -1)
           << "prov_chord_degree should be -1 for PostProcessor notes";
     }
@@ -1207,8 +1197,7 @@ TEST(PostProcessorTest, FixMotifVocalClashesIgnoresMajor9th) {
   PostProcessor::fixMotifVocalClashes(motif, vocal, harmony);
 
   // Major 9th is a tension, not a close-voicing clash - should not change
-  EXPECT_EQ(motif.notes()[0].note, 74)
-      << "Major 9th (wide interval) should not be modified";
+  EXPECT_EQ(motif.notes()[0].note, 74) << "Major 9th (wide interval) should not be modified";
 }
 
 TEST(PostProcessorTest, FixMotifVocalClashesIgnoresConsonant) {
@@ -1223,15 +1212,14 @@ TEST(PostProcessorTest, FixMotifVocalClashesIgnoresConsonant) {
   PostProcessor::fixMotifVocalClashes(motif, vocal, harmony);
 
   // No change expected for consonant interval
-  EXPECT_EQ(motif.notes()[0].note, 60)
-      << "Consonant interval should not be modified";
+  EXPECT_EQ(motif.notes()[0].note, 60) << "Consonant interval should not be modified";
 }
 
 TEST(PostProcessorTest, FixMotifVocalClashesHandlesNoOverlap) {
   // Motif and vocal don't overlap in time - no change expected
   MidiTrack motif, vocal;
-  motif.addNote(NoteEventBuilder::create(0, 480, 60, 80));      // C4 at tick 0-480
-  vocal.addNote(NoteEventBuilder::create(960, 480, 61, 80));    // C#4 at tick 960-1440 (no overlap)
+  motif.addNote(NoteEventBuilder::create(0, 480, 60, 80));    // C4 at tick 0-480
+  vocal.addNote(NoteEventBuilder::create(960, 480, 61, 80));  // C#4 at tick 960-1440 (no overlap)
 
   test::StubHarmonyContext harmony;
   harmony.setChordDegree(0);
@@ -1239,8 +1227,7 @@ TEST(PostProcessorTest, FixMotifVocalClashesHandlesNoOverlap) {
   PostProcessor::fixMotifVocalClashes(motif, vocal, harmony);
 
   // No change expected - notes don't overlap
-  EXPECT_EQ(motif.notes()[0].note, 60)
-      << "Non-overlapping notes should not be modified";
+  EXPECT_EQ(motif.notes()[0].note, 60) << "Non-overlapping notes should not be modified";
 }
 
 TEST(PostProcessorTest, FixMotifVocalClashesUpdatesProvenance) {
@@ -1258,10 +1245,8 @@ TEST(PostProcessorTest, FixMotifVocalClashesUpdatesProvenance) {
   const auto& note = motif.notes()[0];
   EXPECT_EQ(note.prov_source, static_cast<uint8_t>(NoteSource::CollisionAvoid))
       << "Provenance source should be CollisionAvoid";
-  EXPECT_EQ(note.prov_original_pitch, 48)
-      << "Original pitch should be preserved in provenance";
-  EXPECT_EQ(note.prov_chord_degree, 0)
-      << "Chord degree should be recorded";
+  EXPECT_EQ(note.prov_original_pitch, 48) << "Original pitch should be preserved in provenance";
+  EXPECT_EQ(note.prov_chord_degree, 0) << "Chord degree should be recorded";
 }
 
 // Core fix test: Motif is already a chord tone but clashes with vocal
@@ -1292,12 +1277,11 @@ TEST(PostProcessorTest, FixMotifVocalClashesWhenMotifIsChordTone) {
       << "Result should be chord tone (G=7, B=11, D=2), got pc=" << pc;
 
   // Check no dissonance with C4 (60)
-  bool is_dissonant = (interval_class == 1) ||             // minor 2nd
-                      (interval_class == 11) ||            // major 7th
+  bool is_dissonant = (interval_class == 1) ||                 // minor 2nd
+                      (interval_class == 11) ||                // major 7th
                       (interval_class == 2 && interval < 12);  // major 2nd close
-  EXPECT_FALSE(is_dissonant)
-      << "Result pitch " << static_cast<int>(result)
-      << " should not clash with vocal C4 (60), interval=" << interval;
+  EXPECT_FALSE(is_dissonant) << "Result pitch " << static_cast<int>(result)
+                             << " should not clash with vocal C4 (60), interval=" << interval;
 }
 
 // Test: When nearest chord tone would also clash, find alternative octave
@@ -1326,10 +1310,9 @@ TEST(PostProcessorTest, FixMotifVocalClashesAvoidsNearestWhenItClashes) {
   // Check no dissonance with C4
   int interval = std::abs(static_cast<int>(result) - 60);
   int interval_class = interval % 12;
-  bool is_dissonant = (interval_class == 1) || (interval_class == 11) ||
-                      (interval_class == 2 && interval < 12);
-  EXPECT_FALSE(is_dissonant)
-      << "Result should not create dissonance with vocal";
+  bool is_dissonant =
+      (interval_class == 1) || (interval_class == 11) || (interval_class == 2 && interval < 12);
+  EXPECT_FALSE(is_dissonant) << "Result should not create dissonance with vocal";
 }
 
 // Test: Octave displacement to avoid clash
@@ -1357,10 +1340,9 @@ TEST(PostProcessorTest, FixMotifVocalClashesUsesOctaveDisplacement) {
   // Should not create dissonance with vocal (unison is OK)
   int interval = std::abs(static_cast<int>(result) - 72);
   int interval_class = interval % 12;
-  bool is_dissonant = (interval_class == 1) || (interval_class == 11) ||
-                      (interval_class == 2 && interval < 12);
-  EXPECT_FALSE(is_dissonant)
-      << "Result should not create dissonance with vocal C5";
+  bool is_dissonant =
+      (interval_class == 1) || (interval_class == 11) || (interval_class == 2 && interval < 12);
+  EXPECT_FALSE(is_dissonant) << "Result should not create dissonance with vocal C5";
 }
 
 // Test: Multiple motif notes with different clashes in same track
@@ -1393,8 +1375,7 @@ TEST(PostProcessorTest, FixMotifVocalClashesHandlesMultipleNotes) {
       << "Second motif note should not clash with E4";
 
   // Third note should remain G4 (unison is ok)
-  EXPECT_EQ(motif.notes()[2].note, 67)
-      << "Third note (G4 unison) should not change";
+  EXPECT_EQ(motif.notes()[2].note, 67) << "Third note (G4 unison) should not change";
 }
 
 // Regression test: IdolHyper seed 88888 scenario
@@ -1410,7 +1391,8 @@ TEST(PostProcessorTest, RegressionIdolHyperSeed88888) {
 
   // Simulate the overlapping notes at tick 30720
   motif.addNote(NoteEventBuilder::create(30720, 240, 59, 80));  // B3 - chord tone of G major
-  vocal.addNote(NoteEventBuilder::create(30715, 480, 60, 80));  // C4 - sustained, overlaps with motif
+  vocal.addNote(
+      NoteEventBuilder::create(30715, 480, 60, 80));  // C4 - sustained, overlaps with motif
 
   test::StubHarmonyContext harmony;
   harmony.setChordDegree(4);  // G major (V chord): G-B-D
@@ -1427,15 +1409,14 @@ TEST(PostProcessorTest, RegressionIdolHyperSeed88888) {
   // Verify: result should NOT clash with C4 (60)
   int interval = std::abs(static_cast<int>(result) - 60);
   int interval_class = interval % 12;
-  bool is_dissonant = (interval_class == 1) ||              // minor 2nd
-                      (interval_class == 11) ||             // major 7th
+  bool is_dissonant = (interval_class == 1) ||                 // minor 2nd
+                      (interval_class == 11) ||                // major 7th
                       (interval_class == 2 && interval < 12);  // major 2nd close
-  EXPECT_FALSE(is_dissonant)
-      << "B3 (59) should be moved to avoid clash with C4 (60), result=" << static_cast<int>(result);
+  EXPECT_FALSE(is_dissonant) << "B3 (59) should be moved to avoid clash with C4 (60), result="
+                             << static_cast<int>(result);
 
   // Verify: specifically should NOT remain B3 (59) which was the bug
-  EXPECT_NE(result, 59)
-      << "Should not remain B3 (59) which creates minor 2nd with C4 (60)";
+  EXPECT_NE(result, 59) << "Should not remain B3 (59) which creates minor 2nd with C4 (60)";
 }
 
 // ============================================================================
@@ -1451,20 +1432,18 @@ TEST(PostProcessorTest, FixTrackVocalClashesRemovesMinor2ndForChord) {
   PostProcessor::fixTrackVocalClashes(chord, vocal, TrackRole::Chord);
 
   // Chord note should be removed (minor 2nd is dissonant)
-  EXPECT_EQ(chord.notes().size(), 0u)
-      << "Chord note clashing by minor 2nd should be removed";
+  EXPECT_EQ(chord.notes().size(), 0u) << "Chord note clashing by minor 2nd should be removed";
 }
 
 TEST(PostProcessorTest, FixTrackVocalClashesRemovesMajor7thForAux) {
   // Aux note B4 (71) clashes with Vocal C4 (60) - major 7th
   MidiTrack aux, vocal;
-  aux.addNote(NoteEventBuilder::create(0, 480, 71, 80));  // B4
+  aux.addNote(NoteEventBuilder::create(0, 480, 71, 80));    // B4
   vocal.addNote(NoteEventBuilder::create(0, 480, 60, 80));  // C4
 
   PostProcessor::fixTrackVocalClashes(aux, vocal, TrackRole::Aux);
 
-  EXPECT_EQ(aux.notes().size(), 0u)
-      << "Aux note clashing by major 7th should be removed";
+  EXPECT_EQ(aux.notes().size(), 0u) << "Aux note clashing by major 7th should be removed";
 }
 
 TEST(PostProcessorTest, FixTrackVocalClashesRemovesCloseMajor2ndForChord) {
@@ -1475,8 +1454,7 @@ TEST(PostProcessorTest, FixTrackVocalClashesRemovesCloseMajor2ndForChord) {
 
   PostProcessor::fixTrackVocalClashes(chord, vocal, TrackRole::Chord);
 
-  EXPECT_EQ(chord.notes().size(), 0u)
-      << "Chord note clashing by close major 2nd should be removed";
+  EXPECT_EQ(chord.notes().size(), 0u) << "Chord note clashing by close major 2nd should be removed";
 }
 
 TEST(PostProcessorTest, FixTrackVocalClashesSkipsCloseMajor2ndForBass) {
@@ -1485,27 +1463,25 @@ TEST(PostProcessorTest, FixTrackVocalClashesSkipsCloseMajor2ndForBass) {
   // makes this interval acceptable. (interval = 22, interval_class = 2, but
   // include_close_major_2nd is false for Bass)
   MidiTrack bass, vocal;
-  bass.addNote(NoteEventBuilder::create(0, 480, 62, 80));  // D4
+  bass.addNote(NoteEventBuilder::create(0, 480, 62, 80));   // D4
   vocal.addNote(NoteEventBuilder::create(0, 480, 60, 80));  // C4
 
   PostProcessor::fixTrackVocalClashes(bass, vocal, TrackRole::Bass);
 
   // Bass should keep the note (close M2 skipped for Bass)
-  EXPECT_EQ(bass.notes().size(), 1u)
-      << "Bass note should NOT be removed for close major 2nd";
+  EXPECT_EQ(bass.notes().size(), 1u) << "Bass note should NOT be removed for close major 2nd";
 }
 
 TEST(PostProcessorTest, FixTrackVocalClashesRemovesMinor2ndForBass) {
   // Bass note B3 (59) with Vocal C4 (60) - minor 2nd (always dissonant)
   MidiTrack bass, vocal;
-  bass.addNote(NoteEventBuilder::create(0, 480, 59, 80));  // B3
+  bass.addNote(NoteEventBuilder::create(0, 480, 59, 80));   // B3
   vocal.addNote(NoteEventBuilder::create(0, 480, 60, 80));  // C4
 
   PostProcessor::fixTrackVocalClashes(bass, vocal, TrackRole::Bass);
 
   // Minor 2nd is always removed even for Bass
-  EXPECT_EQ(bass.notes().size(), 0u)
-      << "Bass note clashing by minor 2nd should still be removed";
+  EXPECT_EQ(bass.notes().size(), 0u) << "Bass note clashing by minor 2nd should still be removed";
 }
 
 TEST(PostProcessorTest, FixTrackVocalClashesRemovesMinor2ndForGuitar) {
@@ -1516,8 +1492,7 @@ TEST(PostProcessorTest, FixTrackVocalClashesRemovesMinor2ndForGuitar) {
 
   PostProcessor::fixTrackVocalClashes(guitar, vocal, TrackRole::Guitar);
 
-  EXPECT_EQ(guitar.notes().size(), 0u)
-      << "Guitar note clashing by minor 2nd should be removed";
+  EXPECT_EQ(guitar.notes().size(), 0u) << "Guitar note clashing by minor 2nd should be removed";
 }
 
 TEST(PostProcessorTest, FixTrackVocalClashesPreservesConsonantInterval) {
@@ -1528,8 +1503,7 @@ TEST(PostProcessorTest, FixTrackVocalClashesPreservesConsonantInterval) {
 
   PostProcessor::fixTrackVocalClashes(chord, vocal, TrackRole::Chord);
 
-  EXPECT_EQ(chord.notes().size(), 1u)
-      << "Consonant interval (perfect 5th) should not be removed";
+  EXPECT_EQ(chord.notes().size(), 1u) << "Consonant interval (perfect 5th) should not be removed";
 }
 
 // ============================================================================
@@ -1584,26 +1558,23 @@ TEST(PostProcessorTest, FixInterTrackClashesPreservesConsonantNotes) {
 
   PostProcessor::fixInterTrackClashes(chord, bass, motif);
 
-  EXPECT_EQ(chord.notes().size(), 1u)
-      << "Consonant chord note should be preserved";
+  EXPECT_EQ(chord.notes().size(), 1u) << "Consonant chord note should be preserved";
 }
 
 TEST(PostProcessorTest, FixInterTrackClashesHandlesMultipleNotes) {
   // Multiple chord notes, some clashing, some not
   MidiTrack chord, bass, motif;
-  chord.addNote(NoteEventBuilder::create(0, 480, 60, 80));     // C4 - clashes with B3
-  chord.addNote(NoteEventBuilder::create(0, 480, 64, 80));     // E4 - no clash
-  chord.addNote(NoteEventBuilder::create(480, 480, 67, 80));   // G4 - clashes with Ab4
-  bass.addNote(NoteEventBuilder::create(0, 480, 59, 80));      // B3 - minor 2nd with C4
-  motif.addNote(NoteEventBuilder::create(480, 480, 68, 80));   // Ab4 - minor 2nd with G4
+  chord.addNote(NoteEventBuilder::create(0, 480, 60, 80));    // C4 - clashes with B3
+  chord.addNote(NoteEventBuilder::create(0, 480, 64, 80));    // E4 - no clash
+  chord.addNote(NoteEventBuilder::create(480, 480, 67, 80));  // G4 - clashes with Ab4
+  bass.addNote(NoteEventBuilder::create(0, 480, 59, 80));     // B3 - minor 2nd with C4
+  motif.addNote(NoteEventBuilder::create(480, 480, 68, 80));  // Ab4 - minor 2nd with G4
 
   PostProcessor::fixInterTrackClashes(chord, bass, motif);
 
   // C4 and G4 should be removed, E4 should remain
-  EXPECT_EQ(chord.notes().size(), 1u)
-      << "Only consonant note should remain after clash removal";
-  EXPECT_EQ(chord.notes()[0].note, 64)
-      << "E4 (consonant) should be the remaining note";
+  EXPECT_EQ(chord.notes().size(), 1u) << "Only consonant note should remain after clash removal";
+  EXPECT_EQ(chord.notes()[0].note, 64) << "E4 (consonant) should be the remaining note";
 }
 
 // ============================================================================
@@ -1637,7 +1608,8 @@ TEST_F(PerSectionDropStyleTest, UsesSectionDropStyleWhenSet) {
 
   MidiTrack chord_track;
   Tick drop_zone_start = 8 * TICKS_PER_BAR - TICKS_PER_BEAT;
-  chord_track.addNote(NoteEventBuilder::create(drop_zone_start + TICKS_PER_BEAT / 2, TICKS_PER_BEAT / 2, 60, 80));
+  chord_track.addNote(
+      NoteEventBuilder::create(drop_zone_start + TICKS_PER_BEAT / 2, TICKS_PER_BEAT / 2, 60, 80));
 
   MidiTrack drum_track;
   drum_track.addNote(NoteEventBuilder::create(drop_zone_start, TICKS_PER_BEAT / 4, KICK, 100));
@@ -1654,8 +1626,7 @@ TEST_F(PerSectionDropStyleTest, UsesSectionDropStyleWhenSet) {
       drum_in_drop_zone = true;
     }
   }
-  EXPECT_FALSE(drum_in_drop_zone)
-      << "Dramatic drop_style should truncate drum track in drop zone";
+  EXPECT_FALSE(drum_in_drop_zone) << "Dramatic drop_style should truncate drum track in drop zone";
 }
 
 TEST_F(PerSectionDropStyleTest, FallsBackToDefaultForBSectionWithNone) {
@@ -1665,7 +1636,8 @@ TEST_F(PerSectionDropStyleTest, FallsBackToDefaultForBSectionWithNone) {
 
   MidiTrack chord_track;
   Tick drop_zone_start = 8 * TICKS_PER_BAR - TICKS_PER_BEAT;
-  chord_track.addNote(NoteEventBuilder::create(drop_zone_start + TICKS_PER_BEAT / 2, TICKS_PER_BEAT / 2, 60, 80));
+  chord_track.addNote(
+      NoteEventBuilder::create(drop_zone_start + TICKS_PER_BEAT / 2, TICKS_PER_BEAT / 2, 60, 80));
 
   MidiTrack drum_track;
   drum_track.addNote(NoteEventBuilder::create(drop_zone_start, TICKS_PER_BEAT / 4, KICK, 100));
@@ -1687,8 +1659,7 @@ TEST_F(PerSectionDropStyleTest, FallsBackToDefaultForBSectionWithNone) {
       chord_in_drop_zone = true;
     }
   }
-  EXPECT_FALSE(chord_in_drop_zone)
-      << "Chord track should be truncated in drop zone";
+  EXPECT_FALSE(chord_in_drop_zone) << "Chord track should be truncated in drop zone";
 }
 
 TEST_F(PerSectionDropStyleTest, DrumHitAddsCrashAtChorusEntry) {
@@ -1708,12 +1679,10 @@ TEST_F(PerSectionDropStyleTest, DrumHitAddsCrashAtChorusEntry) {
   for (const auto& note : drum_track.notes()) {
     if (note.start_tick == chorus_start && note.note == CRASH) {
       has_crash = true;
-      EXPECT_GE(note.velocity, 100u)
-          << "Crash at chorus entry should have strong velocity";
+      EXPECT_GE(note.velocity, 100u) << "Crash at chorus entry should have strong velocity";
     }
   }
-  EXPECT_TRUE(has_crash)
-      << "DrumHit style should add crash cymbal at chorus entry";
+  EXPECT_TRUE(has_crash) << "DrumHit style should add crash cymbal at chorus entry";
 }
 
 TEST_F(PerSectionDropStyleTest, NoneDropStyleSkipsSection) {
@@ -1728,7 +1697,8 @@ TEST_F(PerSectionDropStyleTest, NoneDropStyleSkipsSection) {
 
   MidiTrack chord_track;
   Tick section_end = 4 * TICKS_PER_BAR;
-  chord_track.addNote(NoteEventBuilder::create(section_end - TICKS_PER_BEAT, TICKS_PER_BEAT, 60, 80));
+  chord_track.addNote(
+      NoteEventBuilder::create(section_end - TICKS_PER_BEAT, TICKS_PER_BEAT, 60, 80));
   Tick orig_duration = chord_track.notes()[0].duration;
 
   std::vector<MidiTrack*> tracks = {&chord_track};
@@ -1752,7 +1722,8 @@ TEST_F(PerSectionDropStyleTest, ExplicitDropStyleOnInterludeIsApplied) {
 
   MidiTrack chord_track;
   Tick drop_zone = 4 * TICKS_PER_BAR - TICKS_PER_BEAT;
-  chord_track.addNote(NoteEventBuilder::create(drop_zone + TICKS_PER_BEAT / 2, TICKS_PER_BEAT / 2, 60, 80));
+  chord_track.addNote(
+      NoteEventBuilder::create(drop_zone + TICKS_PER_BEAT / 2, TICKS_PER_BEAT / 2, 60, 80));
 
   std::vector<MidiTrack*> tracks = {&chord_track};
   PostProcessor::applyChorusDrop(tracks, sections, nullptr, ChorusDropStyle::Subtle);
@@ -1819,12 +1790,10 @@ TEST_F(PerSectionDropStyleTest, MultipleSectionsWithDifferentDropStyles) {
   }
 
   // B1 has Subtle: drum notes should remain
-  EXPECT_GT(drums_in_drop1, 0)
-      << "Subtle drop_style should NOT truncate drum track";
+  EXPECT_GT(drums_in_drop1, 0) << "Subtle drop_style should NOT truncate drum track";
 
   // B2 has Dramatic: drum notes should be removed
-  EXPECT_EQ(drums_in_drop2, 0)
-      << "Dramatic drop_style should truncate drum track";
+  EXPECT_EQ(drums_in_drop2, 0) << "Dramatic drop_style should truncate drum track";
 }
 
 // ============================================================================
@@ -1851,14 +1820,11 @@ TEST(DrumTimingProfileTest, StandardProfileMatchesOriginalHardcoded) {
 
   for (const auto& note : drums.notes()) {
     if (note.note == HH) {
-      EXPECT_EQ(note.start_tick, start + 8)
-          << "Standard profile: HH downbeat should be +8";
+      EXPECT_EQ(note.start_tick, start + 8) << "Standard profile: HH downbeat should be +8";
     } else if (note.note == SD) {
-      EXPECT_EQ(note.start_tick, start - 4)
-          << "Standard profile: snare on beat 0 should be -4";
+      EXPECT_EQ(note.start_tick, start - 4) << "Standard profile: snare on beat 0 should be -4";
     } else if (note.note == BD) {
-      EXPECT_EQ(note.start_tick, start - 1)
-          << "Standard profile: kick on downbeat should be -1";
+      EXPECT_EQ(note.start_tick, start - 1) << "Standard profile: kick on downbeat should be -1";
     }
   }
 }
@@ -1892,7 +1858,8 @@ TEST(DrumTimingProfileTest, SparseProducesSmallerOffsetsThanStandard) {
   // Compare absolute offsets: Sparse should be smaller
   for (size_t idx = 0; idx < drums_std.notes().size(); ++idx) {
     int std_offset = static_cast<int>(drums_std.notes()[idx].start_tick) - static_cast<int>(beat1);
-    int sparse_offset = static_cast<int>(drums_sparse.notes()[idx].start_tick) - static_cast<int>(beat1);
+    int sparse_offset =
+        static_cast<int>(drums_sparse.notes()[idx].start_tick) - static_cast<int>(beat1);
     EXPECT_LE(std::abs(sparse_offset), std::abs(std_offset))
         << "Sparse offset for note " << static_cast<int>(drums_sparse.notes()[idx].note)
         << " should be <= Standard offset in magnitude";
@@ -1911,8 +1878,7 @@ TEST(DrumTimingProfileTest, SynthProducesNearZeroKickOffsets) {
                                          VocalStylePreset::Standard, DrumStyle::Synth);
 
   int kick_offset = static_cast<int>(drums.notes()[0].start_tick) - static_cast<int>(downbeat);
-  EXPECT_EQ(kick_offset, 0)
-      << "Synth profile: kick on downbeat should have zero offset";
+  EXPECT_EQ(kick_offset, 0) << "Synth profile: kick on downbeat should have zero offset";
 }
 
 TEST(DrumTimingProfileTest, UpbeatProducesLargerHiHatPush) {
@@ -1937,8 +1903,7 @@ TEST(DrumTimingProfileTest, UpbeatProducesLargerHiHatPush) {
   int std_offset = static_cast<int>(drums_std.notes()[0].start_tick) - static_cast<int>(offbeat);
   int up_offset = static_cast<int>(drums_up.notes()[0].start_tick) - static_cast<int>(offbeat);
 
-  EXPECT_GT(up_offset, std_offset)
-      << "Upbeat profile should have larger hi-hat push than Standard";
+  EXPECT_GT(up_offset, std_offset) << "Upbeat profile should have larger hi-hat push than Standard";
 }
 
 TEST(DrumTimingProfileTest, AllProfilesReturnValidProfiles) {
@@ -1970,10 +1935,8 @@ TEST(DrumTimingProfileTest, AllProfilesReturnValidProfiles) {
     // Verify tick values are reasonable (within +/-50 of original)
     for (const auto& note : drums.notes()) {
       int offset = static_cast<int>(note.start_tick) - static_cast<int>(start);
-      EXPECT_GE(offset, -50)
-          << "Offset too negative for style " << static_cast<int>(style);
-      EXPECT_LE(offset, 50)
-          << "Offset too positive for style " << static_cast<int>(style);
+      EXPECT_GE(offset, -50) << "Offset too negative for style " << static_cast<int>(style);
+      EXPECT_LE(offset, 50) << "Offset too positive for style " << static_cast<int>(style);
     }
   }
 }
@@ -2021,8 +1984,7 @@ TEST_F(BassKickSyncTest, SnapsNearbyBassNoteToKick) {
   PostProcessor::synchronizeBassKick(bass_, drums_, DrumStyle::Standard);
 
   // Standard tolerance is 48, so 20 ticks should snap
-  EXPECT_EQ(bass_.notes()[0].start_tick, 480u)
-      << "Bass note within tolerance should snap to kick";
+  EXPECT_EQ(bass_.notes()[0].start_tick, 480u) << "Bass note within tolerance should snap to kick";
 }
 
 TEST_F(BassKickSyncTest, DoesNotSnapBeyondTolerance) {
@@ -2033,8 +1995,7 @@ TEST_F(BassKickSyncTest, DoesNotSnapBeyondTolerance) {
   PostProcessor::synchronizeBassKick(bass_, drums_, DrumStyle::Standard);
 
   // 100 ticks exceeds Standard tolerance of 48
-  EXPECT_EQ(bass_.notes()[0].start_tick, 580u)
-      << "Bass note beyond tolerance should not be moved";
+  EXPECT_EQ(bass_.notes()[0].start_tick, 580u) << "Bass note beyond tolerance should not be moved";
 }
 
 TEST_F(BassKickSyncTest, AlreadyAlignedNotMoved) {
@@ -2044,8 +2005,7 @@ TEST_F(BassKickSyncTest, AlreadyAlignedNotMoved) {
 
   PostProcessor::synchronizeBassKick(bass_, drums_, DrumStyle::Standard);
 
-  EXPECT_EQ(bass_.notes()[0].start_tick, 960u)
-      << "Already-aligned bass note should stay put";
+  EXPECT_EQ(bass_.notes()[0].start_tick, 960u) << "Already-aligned bass note should stay put";
 }
 
 TEST_F(BassKickSyncTest, SnapsToNearestKick) {
@@ -2056,8 +2016,7 @@ TEST_F(BassKickSyncTest, SnapsToNearestKick) {
 
   PostProcessor::synchronizeBassKick(bass_, drums_, DrumStyle::Standard);
 
-  EXPECT_EQ(bass_.notes()[0].start_tick, 960u)
-      << "Bass note should snap to the nearest kick";
+  EXPECT_EQ(bass_.notes()[0].start_tick, 960u) << "Bass note should snap to the nearest kick";
 }
 
 TEST_F(BassKickSyncTest, IgnoresNonKickDrumNotes) {
@@ -2076,8 +2035,7 @@ TEST_F(BassKickSyncTest, EmptyDrumsDoesNothing) {
 
   PostProcessor::synchronizeBassKick(bass_, drums_, DrumStyle::Standard);
 
-  EXPECT_EQ(bass_.notes()[0].start_tick, 500u)
-      << "Empty drums should leave bass unchanged";
+  EXPECT_EQ(bass_.notes()[0].start_tick, 500u) << "Empty drums should leave bass unchanged";
 }
 
 TEST_F(BassKickSyncTest, SparseStyleHasLooseTolerance) {
@@ -2126,8 +2084,7 @@ TEST_F(BassKickSyncTest, MultipleBassNotesProcessedIndependently) {
 
   PostProcessor::synchronizeBassKick(bass_, drums_, DrumStyle::Standard);
 
-  EXPECT_EQ(bass_.notes()[0].start_tick, 480u)
-      << "First bass note should snap to nearby kick";
+  EXPECT_EQ(bass_.notes()[0].start_tick, 480u) << "First bass note should snap to nearby kick";
   EXPECT_EQ(bass_.notes()[1].start_tick, 1200u)
       << "Second bass note should stay (too far from any kick)";
 }
@@ -2187,7 +2144,7 @@ TEST_F(ArrangementHolesTest, ChorusMaxPeakMutesBackgroundFinalTwoBeats) {
   chorus.peak_level = PeakLevel::Max;
   song_.setArrangement(Arrangement({chorus}));
 
-  Tick section_end = chorus.endTick();  // 8 * 1920 = 15360
+  Tick section_end = chorus.endTick();                 // 8 * 1920 = 15360
   Tick hole_start = section_end - TICKS_PER_BEAT * 2;  // last 2 beats
 
   // Notes in the hole zone
@@ -2395,8 +2352,8 @@ TEST_F(SmoothLargeLeapsTest, UnsortedNotesGetSorted) {
 
 TEST_F(SmoothLargeLeapsTest, CustomMaxSemitones) {
   // With max_semitones=6, even a 7st leap should be removed
-  track_.addNote(NoteEventBuilder::create(0, 480, 60, 80));     // C4
-  track_.addNote(NoteEventBuilder::create(480, 480, 67, 80));   // G4 (7st)
+  track_.addNote(NoteEventBuilder::create(0, 480, 60, 80));    // C4
+  track_.addNote(NoteEventBuilder::create(480, 480, 67, 80));  // G4 (7st)
   PostProcessor::smoothLargeLeaps(track_, 6);
   EXPECT_EQ(track_.notes().size(), 1u);
 }
@@ -2437,9 +2394,9 @@ TEST_F(SmoothLargeLeapsTest, SectionBoundaryLeapRegression) {
   for (size_t idx = 1; idx < track_.notes().size(); ++idx) {
     int leap = std::abs(static_cast<int>(track_.notes()[idx].note) -
                         static_cast<int>(track_.notes()[idx - 1].note));
-    EXPECT_LE(leap, 12) << "Large leap at index " << idx
-                         << ": " << static_cast<int>(track_.notes()[idx - 1].note)
-                         << " -> " << static_cast<int>(track_.notes()[idx].note);
+    EXPECT_LE(leap, 12) << "Large leap at index " << idx << ": "
+                        << static_cast<int>(track_.notes()[idx - 1].note) << " -> "
+                        << static_cast<int>(track_.notes()[idx].note);
   }
 }
 

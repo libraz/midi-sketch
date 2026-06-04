@@ -3,6 +3,8 @@
  * @brief Tests for Motif track generation and dissonance avoidance.
  */
 
+#include "track/generators/motif.h"
+
 #include <gtest/gtest.h>
 
 #include <algorithm>
@@ -17,7 +19,6 @@
 #include "core/pitch_utils.h"
 #include "core/timing_constants.h"
 #include "core/types.h"
-#include "track/generators/motif.h"
 
 namespace midisketch {
 namespace {
@@ -38,6 +39,45 @@ class MotifDissonanceTest : public ::testing::Test {
 
   GeneratorParams params_;
 };
+
+std::vector<const NoteEvent*> collectMotifNotesInSection(const MidiTrack& track,
+                                                         const Section& section, size_t max_count) {
+  std::vector<const NoteEvent*> notes;
+  for (const auto& note : track.notes()) {
+    if (note.start_tick >= section.start_tick && note.start_tick < section.endTick()) {
+      notes.push_back(&note);
+    }
+  }
+  std::sort(notes.begin(), notes.end(), [](const NoteEvent* a, const NoteEvent* b) {
+    if (a->start_tick != b->start_tick) return a->start_tick < b->start_tick;
+    return a->note < b->note;
+  });
+  if (max_count > 0 && notes.size() > max_count) {
+    notes.resize(max_count);
+  }
+  return notes;
+}
+
+const Section* findFirstMotifSection(const Song& song, SectionType type) {
+  for (const auto& section : song.arrangement().sections()) {
+    if (section.type == type) {
+      return &section;
+    }
+  }
+  return nullptr;
+}
+
+double averageMotifPitch(const std::vector<const NoteEvent*>& notes) {
+  if (notes.empty()) {
+    return 0.0;
+  }
+
+  int sum = 0;
+  for (const auto* note : notes) {
+    sum += note->note;
+  }
+  return static_cast<double>(sum) / notes.size();
+}
 
 // =============================================================================
 // Tritone Avoidance Test
@@ -98,6 +138,73 @@ TEST_F(MotifDissonanceTest, AvoidsTritoneWithBassInBGMMode) {
   // Before fix: 12 clashes, After fix: 0
   EXPECT_EQ(tritone_clashes, 0) << "Motif should avoid tritone clashes with Bass. "
                                 << "Found " << tritone_clashes << " tritone clashes";
+}
+
+TEST_F(MotifDissonanceTest, RhythmLockRhythmSyncMotifStaysBelowLead) {
+  params_.blueprint_id = 1;  // RhythmLock
+  params_.mood = Mood::AnimeHighEnergy;
+  params_.bpm = 136;
+  params_.humanize = false;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const Section* chorus = findFirstMotifSection(gen.getSong(), SectionType::Chorus);
+  ASSERT_NE(chorus, nullptr);
+  auto motif_notes = collectMotifNotesInSection(gen.getSong().motif(), *chorus, 0);
+  ASSERT_GE(motif_notes.size(), 8u);
+
+  int checked = 0;
+  int overtakes = 0;
+  for (const auto* motif_note : motif_notes) {
+    Tick motif_end = motif_note->start_tick + motif_note->duration;
+    for (const auto& vocal_note : gen.getSong().vocal().notes()) {
+      Tick vocal_end = vocal_note.start_tick + vocal_note.duration;
+      if (motif_note->start_tick >= vocal_end || motif_end <= vocal_note.start_tick) {
+        continue;
+      }
+      ++checked;
+      if (static_cast<int>(motif_note->note) >= static_cast<int>(vocal_note.note) - 2) {
+        ++overtakes;
+      }
+      break;
+    }
+  }
+
+  ASSERT_GT(checked, 8);
+  EXPECT_LT(overtakes, checked / 5)
+      << "Coordinate motif should support the vocal hook without overtaking it.";
+}
+
+TEST_F(MotifDissonanceTest, RhythmLockRhythmSyncMotifFollowsSectionRegisterArc) {
+  params_.blueprint_id = 1;  // RhythmLock
+  params_.mood = Mood::AnimeHighEnergy;
+  params_.bpm = 136;
+  params_.humanize = false;
+  params_.target_duration_seconds = 212;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& song = gen.getSong();
+  const Section* verse = findFirstMotifSection(song, SectionType::A);
+  const Section* prechorus = findFirstMotifSection(song, SectionType::B);
+  const Section* chorus = findFirstMotifSection(song, SectionType::Chorus);
+  ASSERT_NE(verse, nullptr);
+  ASSERT_NE(prechorus, nullptr);
+  ASSERT_NE(chorus, nullptr);
+
+  auto verse_notes = collectMotifNotesInSection(song.motif(), *verse, 0);
+  auto prechorus_notes = collectMotifNotesInSection(song.motif(), *prechorus, 0);
+  auto chorus_notes = collectMotifNotesInSection(song.motif(), *chorus, 0);
+  ASSERT_FALSE(verse_notes.empty());
+  ASSERT_FALSE(prechorus_notes.empty());
+  ASSERT_FALSE(chorus_notes.empty());
+
+  EXPECT_GT(averageMotifPitch(prechorus_notes), averageMotifPitch(verse_notes) + 1.0)
+      << "Coordinate motif should start low and rise toward the prechorus.";
+  EXPECT_GT(averageMotifPitch(chorus_notes), averageMotifPitch(verse_notes) + 2.0)
+      << "Coordinate motif should place the chorus hook in a higher register.";
 }
 
 // Test tritone avoidance across multiple seeds
@@ -462,9 +569,8 @@ TEST_F(MotifMelodicContinuityTest, NoFullBarSilence) {
   }
 
   // At most 1 seed should have excessive silence (some randomness allowed)
-  EXPECT_LE(seeds_with_excessive_silence, 1)
-      << "Found " << seeds_with_excessive_silence
-      << " seeds with excessive bar silence in motif track";
+  EXPECT_LE(seeds_with_excessive_silence, 1) << "Found " << seeds_with_excessive_silence
+                                             << " seeds with excessive bar silence in motif track";
 }
 
 // Test that not all notes are the same pitch class (melodic variety in RhythmSync mode)
@@ -541,8 +647,8 @@ TEST_F(MotifMelodicContinuityTest, MaxConsecutiveSilence) {
     // Median gap should be reasonable (under 1 bar)
     // This tests that the typical spacing is good, even if outliers exist
     EXPECT_LE(median_gap, MAX_MEDIAN_GAP)
-        << "Seed " << seed << ": Median gap is " << median_gap
-        << " ticks, which exceeds 1 bar (" << MAX_MEDIAN_GAP << " ticks)";
+        << "Seed " << seed << ": Median gap is " << median_gap << " ticks, which exceeds 1 bar ("
+        << MAX_MEDIAN_GAP << " ticks)";
   }
 }
 
@@ -597,8 +703,8 @@ TEST_F(MotifMelodicContinuityTest, PreferStepwiseAffectsMotifIntervals) {
     double sum = 0.0;
     int count = 0;
     for (size_t i = 1; i < notes.size(); ++i) {
-      int interval = std::abs(static_cast<int>(notes[i].note) -
-                              static_cast<int>(notes[i - 1].note));
+      int interval =
+          std::abs(static_cast<int>(notes[i].note) - static_cast<int>(notes[i - 1].note));
       sum += interval;
       count++;
     }
@@ -622,7 +728,8 @@ TEST_F(MotifMelodicContinuityTest, PreferStepwiseAffectsMotifIntervals) {
 
   // Both should generate motifs
   EXPECT_GT(gen_ballad.getSong().motif().notes().size(), 0u) << "Ballad should generate motif";
-  EXPECT_GT(gen_traditional.getSong().motif().notes().size(), 0u) << "Traditional should generate motif";
+  EXPECT_GT(gen_traditional.getSong().motif().notes().size(), 0u)
+      << "Traditional should generate motif";
 
   // With prefer_stepwise=true and smaller max_leap, Ballad should have smaller average intervals
   // Allow tolerance since randomness and other factors affect results
@@ -707,7 +814,7 @@ class MotifRhythmLockTest : public ::testing::Test {
  protected:
   void SetUp() override {
     params_.structure = StructurePattern::StandardPop;
-    params_.mood = Mood::Yoasobi;  // Common for RhythmSync
+    params_.mood = Mood::AnimeHighEnergy;  // Common for RhythmSync
     params_.chord_id = 0;
     params_.key = Key::C;
     params_.drums_enabled = true;
@@ -773,8 +880,7 @@ TEST_F(MotifRhythmLockTest, PreservesPatternPitchesAcrossSections) {
     }
 
     // Most common gap should appear multiple times (pattern repetition)
-    EXPECT_GE(max_count, 2)
-        << "RhythmLock pattern should have repeating rhythmic intervals";
+    EXPECT_GE(max_count, 2) << "RhythmLock pattern should have repeating rhythmic intervals";
   }
 }
 
@@ -823,8 +929,8 @@ TEST_F(MotifRhythmLockTest, MotifNotesAreRegisteredForCollisionCheck) {
   }
 
   // Should have very few (ideally zero) clashes since Chord avoids Motif
-  EXPECT_LE(clashes, 5)
-      << "RhythmLock mode should have minimal Motif-Chord clashes. Found " << clashes;
+  EXPECT_LE(clashes, 5) << "RhythmLock mode should have minimal Motif-Chord clashes. Found "
+                        << clashes;
 }
 
 // ============================================================================
@@ -865,8 +971,7 @@ TEST_F(MotifRhythmLockTest, PreservesMelodicContourInRiff) {
     std::vector<uint8_t> pitches_in_section;
 
     for (const auto& note : motif_notes) {
-      if (note.start_tick >= section->start_tick &&
-          note.start_tick < section->endTick()) {
+      if (note.start_tick >= section->start_tick && note.start_tick < section->endTick()) {
         pitches_in_section.push_back(note.note);
       }
     }
@@ -875,11 +980,14 @@ TEST_F(MotifRhythmLockTest, PreservesMelodicContourInRiff) {
 
     // Convert to contour: +1 for up, -1 for down, 0 for same
     for (size_t i = 1; i < pitches_in_section.size(); ++i) {
-      int diff = static_cast<int>(pitches_in_section[i]) -
-                 static_cast<int>(pitches_in_section[i - 1]);
-      if (diff > 0) contour.push_back(1);
-      else if (diff < 0) contour.push_back(-1);
-      else contour.push_back(0);
+      int diff =
+          static_cast<int>(pitches_in_section[i]) - static_cast<int>(pitches_in_section[i - 1]);
+      if (diff > 0)
+        contour.push_back(1);
+      else if (diff < 0)
+        contour.push_back(-1);
+      else
+        contour.push_back(0);
     }
     return contour;
   };
@@ -924,8 +1032,7 @@ TEST_F(MotifRhythmLockTest, SectionShiftsUseModerateIntervals) {
     for (const auto& section : sections) {
       if (section.type != type) continue;
       for (const auto& note : motif_notes) {
-        if (note.start_tick >= section.start_tick &&
-            note.start_tick < section.endTick()) {
+        if (note.start_tick >= section.start_tick && note.start_tick < section.endTick()) {
           sum += note.note;
           count++;
         }
@@ -961,7 +1068,7 @@ TEST_F(MotifRhythmLockTest, PitchesStayWithinRangeAfterShifts) {
   // Motif range low can extend to 55 (G3) when vocal-aware range is active,
   // to prevent concentration at C4/D4/E4.
   constexpr uint8_t MOTIF_RANGE_LOW_MIN = 55;  // G3 (vocal-aware lower guard)
-  constexpr uint8_t MOTIF_HIGH = 108;           // C8 (from pitch_utils.h)
+  constexpr uint8_t MOTIF_HIGH = 108;          // C8 (from pitch_utils.h)
 
   std::vector<uint32_t> test_seeds = {12345, 42, 99999, 54321, 11111};
 
@@ -983,10 +1090,9 @@ TEST_F(MotifRhythmLockTest, PitchesStayWithinRangeAfterShifts) {
     }
 
     // All notes should be within range (clamping should handle edge cases)
-    EXPECT_EQ(out_of_range, 0)
-        << "Seed " << seed << ": Found " << out_of_range
-        << " motif notes outside valid range [" << (int)MOTIF_RANGE_LOW_MIN
-        << ", " << (int)MOTIF_HIGH << "]";
+    EXPECT_EQ(out_of_range, 0) << "Seed " << seed << ": Found " << out_of_range
+                               << " motif notes outside valid range [" << (int)MOTIF_RANGE_LOW_MIN
+                               << ", " << (int)MOTIF_HIGH << "]";
   }
 }
 
@@ -1006,8 +1112,7 @@ TEST_F(MotifRhythmLockTest, RhythmPatternIsConsistent) {
   auto extractBarOnsets = [&](const Section* section) -> std::vector<Tick> {
     std::vector<Tick> onsets;
     for (const auto& note : motif_notes) {
-      if (note.start_tick >= section->start_tick &&
-          note.start_tick < section->endTick()) {
+      if (note.start_tick >= section->start_tick && note.start_tick < section->endTick()) {
         // Get position within bar
         Tick within_bar = (note.start_tick - section->start_tick) % TICKS_PER_BAR;
         onsets.push_back(within_bar);
@@ -1088,8 +1193,8 @@ TEST_F(MotifRhythmLockTest, MultipleSeeedsProduceValidRiffs) {
     }
     std::sort(gaps.begin(), gaps.end());
 
-    bool regular_rhythm = gaps.empty() ||
-        gaps[gaps.size() / 2] <= TICKS_PER_BAR * 2;  // Median gap <= 2 bars
+    bool regular_rhythm =
+        gaps.empty() || gaps[gaps.size() / 2] <= TICKS_PER_BAR * 2;  // Median gap <= 2 bars
 
     if (has_notes && limited_pitches && regular_rhythm) {
       valid_riffs++;
@@ -1120,9 +1225,8 @@ TEST_F(MotifRhythmLockTest, AllNotesDiatonic) {
       }
     }
 
-    EXPECT_EQ(non_diatonic, 0)
-        << "Seed " << seed << ": Found " << non_diatonic
-        << " non-diatonic motif notes out of " << motif_notes.size();
+    EXPECT_EQ(non_diatonic, 0) << "Seed " << seed << ": Found " << non_diatonic
+                               << " non-diatonic motif notes out of " << motif_notes.size();
   }
 }
 
@@ -1154,9 +1258,8 @@ TEST_F(MotifRhythmLockTest, NoAvoidNotesAgainstChord) {
       }
     }
 
-    EXPECT_EQ(avoid_count, 0)
-        << "Seed " << seed << ": Found " << avoid_count
-        << " avoid notes in motif out of " << motif_notes.size();
+    EXPECT_EQ(avoid_count, 0) << "Seed " << seed << ": Found " << avoid_count
+                              << " avoid notes in motif out of " << motif_notes.size();
   }
 }
 
@@ -1221,14 +1324,9 @@ TEST_F(MotifLockedCacheTest, SameSectionTypeHasConsistentNotes) {
 
     std::vector<RelativeNote> section_notes;
     for (const auto& note : motif_notes) {
-      if (note.start_tick >= section.start_tick &&
-          note.start_tick < section.endTick()) {
-        section_notes.push_back({
-          note.start_tick - section.start_tick,
-          note.duration,
-          note.note,
-          note.velocity
-        });
+      if (note.start_tick >= section.start_tick && note.start_tick < section.endTick()) {
+        section_notes.push_back(
+            {note.start_tick - section.start_tick, note.duration, note.note, note.velocity});
       }
     }
     if (!section_notes.empty()) {
@@ -1252,12 +1350,10 @@ TEST_F(MotifLockedCacheTest, SameSectionTypeHasConsistentNotes) {
       // Blueprint-specific aux profiles may alter harmony context registrations,
       // which affects collision avoidance rejection patterns for motif replay.
       // SD frequency changes also alter the harmony context, widening the gap.
-      int count_diff = std::abs(static_cast<int>(first.size()) -
-                                static_cast<int>(other.size()));
+      int count_diff = std::abs(static_cast<int>(first.size()) - static_cast<int>(other.size()));
       int max_count = static_cast<int>(std::max(first.size(), other.size()));
       EXPECT_LE(count_diff, std::max(3, max_count / 2))
-          << "Section type " << static_cast<int>(sec_type)
-          << " instance " << idx
+          << "Section type " << static_cast<int>(sec_type) << " instance " << idx
           << " note count diverges too much from first instance"
           << " (first=" << first.size() << ", other=" << other.size() << ")";
 
@@ -1272,26 +1368,24 @@ TEST_F(MotifLockedCacheTest, SameSectionTypeHasConsistentNotes) {
         }
         // Pitch may differ due to collision avoidance (PreserveContour),
         // but should be within an octave
-        int pitch_diff = std::abs(
-            static_cast<int>(first[nidx].pitch) -
-            static_cast<int>(other[nidx].pitch));
-        EXPECT_LE(pitch_diff, 12)
-            << "Section type " << static_cast<int>(sec_type)
-            << " note " << nidx << " pitch differs by more than an octave"
-            << " (first=" << static_cast<int>(first[nidx].pitch)
-            << ", other=" << static_cast<int>(other[nidx].pitch) << ")";
+        int pitch_diff =
+            std::abs(static_cast<int>(first[nidx].pitch) - static_cast<int>(other[nidx].pitch));
+        EXPECT_LE(pitch_diff, 12) << "Section type " << static_cast<int>(sec_type) << " note "
+                                  << nidx << " pitch differs by more than an octave"
+                                  << " (first=" << static_cast<int>(first[nidx].pitch)
+                                  << ", other=" << static_cast<int>(other[nidx].pitch) << ")";
       }
       // With Ostinato motion and phrase_tail_rest, timing may diverge
       // significantly between instances. Warn but don't fail - the note
       // count and pitch similarity checks above are the primary assertions.
-      float mismatch_ratio = min_count > 0
-          ? static_cast<float>(timing_mismatches) / min_count : 0.0f;
+      float mismatch_ratio =
+          min_count > 0 ? static_cast<float>(timing_mismatches) / min_count : 0.0f;
       if (mismatch_ratio > 0.35f) {
         // Log for debugging but don't fail - motif_motion_hint can cause
         // fundamentally different patterns in same-type sections
         std::cout << "  [INFO] Section type " << static_cast<int>(sec_type)
-            << " timing mismatch ratio: " << mismatch_ratio
-            << " (" << timing_mismatches << "/" << min_count << ")\n";
+                  << " timing mismatch ratio: " << mismatch_ratio << " (" << timing_mismatches
+                  << "/" << min_count << ")\n";
       }
     }
   }
@@ -1331,8 +1425,7 @@ TEST_F(MotifLockedCacheTest, MultiSeedProducesSimilarRepeatSections) {
       auto countNotesInSection = [&motif_notes](const Section* sec) {
         int count = 0;
         for (const auto& note : motif_notes) {
-          if (note.start_tick >= sec->start_tick &&
-              note.start_tick < sec->endTick()) {
+          if (note.start_tick >= sec->start_tick && note.start_tick < sec->endTick()) {
             count++;
           }
         }
@@ -1362,13 +1455,11 @@ TEST_F(MotifLockedCacheTest, MultiSeedProducesSimilarRepeatSections) {
   // With IdolKawaii flow, chorus sections 2 and 3 both have motif enabled.
   // We should find testable pairs in at least some seeds.
   if (testable_count > 0) {
-    double consistency_rate =
-        static_cast<double>(consistent_count) / testable_count;
+    double consistency_rate = static_cast<double>(consistent_count) / testable_count;
     EXPECT_GE(consistency_rate, 0.35)
         << "Locked mode note caching should produce consistent repeat sections "
         << "in at least 35% of testable cases"
-        << " (consistent=" << consistent_count
-        << ", testable=" << testable_count << ")";
+        << " (consistent=" << consistent_count << ", testable=" << testable_count << ")";
   }
 }
 
@@ -1400,8 +1491,7 @@ TEST_F(MotifStraightSixteenthTest, Generates16NotesPerBar) {
   auto pattern = generateMotifPattern(params_, rng);
 
   // StraightSixteenth template has 16 notes per bar
-  EXPECT_EQ(pattern.size(), 16u)
-      << "StraightSixteenth template should produce 16 notes per bar";
+  EXPECT_EQ(pattern.size(), 16u) << "StraightSixteenth template should produce 16 notes per bar";
 }
 
 TEST_F(MotifStraightSixteenthTest, NotesSpanFullBar) {
@@ -1438,8 +1528,8 @@ TEST_F(MotifStraightSixteenthTest, AccentWeightsApplied) {
   uint8_t offbeat_vel = pattern[1].velocity;
 
   EXPECT_GT(beat_head_vel, offbeat_vel)
-      << "Beat head velocity (" << (int)beat_head_vel
-      << ") should be higher than offbeat (" << (int)offbeat_vel << ")";
+      << "Beat head velocity (" << (int)beat_head_vel << ") should be higher than offbeat ("
+      << (int)offbeat_vel << ")";
 }
 
 TEST_F(MotifStraightSixteenthTest, IntegrationWithFullGenerator) {
@@ -1465,6 +1555,58 @@ TEST_F(MotifStraightSixteenthTest, IntegrationWithFullGenerator) {
     EXPECT_GE(notes_per_bar, 8.0)
         << "StraightSixteenth should produce dense note output (at least 8 notes/bar)";
   }
+}
+
+TEST(MotifChordPulseStabsTest, GeneratesShortEighthGridPulses) {
+  GeneratorParams params;
+  params.composition_style = CompositionStyle::BackgroundMotif;
+  params.motif.rhythm_template = MotifRhythmTemplate::ChordPulseStabs;
+  params.motif.length = MotifLength::Bars1;
+
+  std::mt19937 rng(42);
+  auto pattern = generateMotifPattern(params, rng);
+
+  ASSERT_EQ(pattern.size(), 8u);
+  for (size_t idx = 0; idx < pattern.size(); ++idx) {
+    EXPECT_EQ(pattern[idx].start_tick, static_cast<Tick>(idx) * TICK_EIGHTH);
+    EXPECT_EQ(pattern[idx].duration, TICK_SIXTEENTH)
+        << "ChordPulseStabs should sound as short chord-tone pulses, not legato 8ths.";
+  }
+}
+
+TEST(MotifChordPulseStabsTest, RhythmSyncLeadDoesNotForceStraightSixteenth) {
+  int straight_sixteenth = 0;
+  int chord_pulse = 0;
+  int other = 0;
+
+  for (int i = 0; i < 40; ++i) {
+    Generator gen;
+    GeneratorParams params;
+    params.blueprint_id = 1;  // RhythmLock
+    params.mood = Mood::AnimeHighEnergy;
+    params.bpm = 158;
+    params.seed = 9000 + i * 13;
+    params.humanize = false;
+
+    gen.generate(params);
+    switch (gen.getParams().motif.rhythm_template) {
+      case MotifRhythmTemplate::StraightSixteenth:
+        ++straight_sixteenth;
+        break;
+      case MotifRhythmTemplate::ChordPulseStabs:
+        ++chord_pulse;
+        break;
+      default:
+        ++other;
+        break;
+    }
+  }
+
+  EXPECT_GT(chord_pulse, 0)
+      << "chord-pulse style short chord pulses should be available for RhythmSync lead settings.";
+  EXPECT_GT(other, 0) << "RhythmSync lead settings should retain gallop/push/mixed motif variants.";
+  EXPECT_LT(straight_sixteenth, 40)
+      << "RhythmSync lead settings must not force every motif to straight 16ths.";
 }
 
 // ============================================================================
@@ -1508,8 +1650,7 @@ TEST_F(MotifOstinatoTest, ProducesLimitedPitchClasses) {
   // So pitch classes should be very limited (1-2 pitch classes: C and G)
   EXPECT_LE(pitch_classes.size(), 3u)
       << "Ostinato should use at most 3 pitch classes (root, 5th, octave root)";
-  EXPECT_GE(pitch_classes.size(), 1u)
-      << "Ostinato should use at least 1 pitch class";
+  EXPECT_GE(pitch_classes.size(), 1u) << "Ostinato should use at least 1 pitch class";
 }
 
 TEST_F(MotifOstinatoTest, AlternatesBetweenRootAndFifth) {
@@ -1526,8 +1667,8 @@ TEST_F(MotifOstinatoTest, AlternatesBetweenRootAndFifth) {
   // Check that even-indexed notes are all the same (root)
   for (size_t idx = 0; idx < pattern.size(); idx += 2) {
     EXPECT_EQ(pattern[idx].note, root_pitch)
-        << "Even-indexed note " << idx << " should be root pitch ("
-        << (int)root_pitch << "), got " << (int)pattern[idx].note;
+        << "Even-indexed note " << idx << " should be root pitch (" << (int)root_pitch << "), got "
+        << (int)pattern[idx].note;
   }
 
   // Check that odd-indexed notes are different from root (5th or octave)
@@ -1540,8 +1681,7 @@ TEST_F(MotifOstinatoTest, AlternatesBetweenRootAndFifth) {
 
   // At least some odd-indexed notes should differ from root
   // (5th = G should be common since degree 4 maps to it)
-  EXPECT_GE(non_root_odd, 1)
-      << "Odd-indexed notes should include 5th/octave variations";
+  EXPECT_GE(non_root_odd, 1) << "Odd-indexed notes should include 5th/octave variations";
 }
 
 TEST_F(MotifOstinatoTest, IntegrationFullGenerator) {
@@ -1618,10 +1758,8 @@ TEST_F(MotifMotionHintTest, MotifMotionHintOverride) {
 
   // Ostinato should have fewer pitch classes at the pattern level
   // (root + 5th = 2 PCs, vs Stepwise uses scale degrees = typically 4+)
-  EXPECT_LE(ostinato_pcs.size(), 3u)
-      << "Ostinato pattern should use at most 3 pitch classes";
-  EXPECT_GE(stepwise_pcs.size(), 2u)
-      << "Stepwise pattern should use at least 2 pitch classes";
+  EXPECT_LE(ostinato_pcs.size(), 3u) << "Ostinato pattern should use at most 3 pitch classes";
+  EXPECT_GE(stepwise_pcs.size(), 2u) << "Stepwise pattern should use at least 2 pitch classes";
 }
 
 }  // namespace

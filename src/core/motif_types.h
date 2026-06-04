@@ -10,9 +10,9 @@
 #include <map>
 #include <vector>
 
-#include "core/basic_types.h"    // For NoteEvent, HihatDensity, Tick, PhraseBoundary
-#include "core/json_helpers.h"   // For json::Writer, json::Parser
-#include "core/melody_types.h"   // For VocalProminence, VocalRhythmBias
+#include "core/basic_types.h"   // For NoteEvent, HihatDensity, Tick, PhraseBoundary
+#include "core/json_helpers.h"  // For json::Writer, json::Parser
+#include "core/melody_types.h"  // For VocalProminence, VocalRhythmBias
 
 namespace midisketch {
 
@@ -34,27 +34,28 @@ enum class MotifRhythmDensity : uint8_t {
 /// Each template defines a fixed rhythmic pattern (onset positions + accent weights)
 /// that repeats across all sections for riff consistency.
 enum class MotifRhythmTemplate : uint8_t {
-  None = 0,        ///< No template (use legacy generation)
-  EighthDrive,     ///< 8 notes: straight 8ths [0,.5,1,1.5,2,2.5,3,3.5]
-  GallopDrive,     ///< 12 notes: galloping 16ths [0,.25,.5,1,1.25,1.5,2,2.25,2.5,3,3.25,3.5]
-  MixedGrooveA,    ///< 6 notes: call-and-response [0,.5,1,2,2.5,3]
-  MixedGrooveB,    ///< 6 notes: front-loaded [0,.5,1,1.5,2,3]
-  MixedGrooveC,    ///< 6 notes: syncopated push [0,1,1.5,2,3,3.5]
-  PushGroove,      ///< 7 notes: anticipation [0,.5,1,1.5,2,2.5,3.5]
-  EighthPickup,    ///< 8 notes: 16th pickup [0,.5,1,1.5,2,2.5,3,3.75]
+  None = 0,           ///< No template (use legacy generation)
+  EighthDrive,        ///< 8 notes: straight 8ths [0,.5,1,1.5,2,2.5,3,3.5]
+  GallopDrive,        ///< 12 notes: galloping 16ths [0,.25,.5,1,1.25,1.5,2,2.25,2.5,3,3.25,3.5]
+  MixedGrooveA,       ///< 6 notes: call-and-response [0,.5,1,2,2.5,3]
+  MixedGrooveB,       ///< 6 notes: front-loaded [0,.5,1,1.5,2,3]
+  MixedGrooveC,       ///< 6 notes: syncopated push [0,1,1.5,2,3,3.5]
+  PushGroove,         ///< 7 notes: anticipation [0,.5,1,1.5,2,2.5,3.5]
+  EighthPickup,       ///< 8 notes: 16th pickup [0,.5,1,1.5,2,2.5,3,3.75]
   HalfNoteSparse,     ///< 4 notes: 2-bar half-note rhythm [0,2,4,6]
   StraightSixteenth,  ///< 16 notes: straight 16ths [0,.25,.5,.75,1,...,3.75]
+  ChordPulseStabs,    ///< 8 notes: short chord-tone stabs on 8th-note positions
   Count               ///< Sentinel for iteration
 };
 
 /// @brief Motif melodic motion.
 enum class MotifMotion : uint8_t {
-  Stepwise,   ///< Scale steps only (2nd intervals)
-  GentleLeap, ///< Up to 3rd intervals
-  WideLeap,   ///< Up to 5th intervals (more dramatic)
-  NarrowStep, ///< Tight scale-degree motion (±1 degree, jazzy/tense feel)
-  Disjunct,   ///< Irregular leaps (experimental, avant-garde)
-  Ostinato    ///< All notes same pitch class (root), with root/5th variation
+  Stepwise,    ///< Scale steps only (2nd intervals)
+  GentleLeap,  ///< Up to 3rd intervals
+  WideLeap,    ///< Up to 5th intervals (more dramatic)
+  NarrowStep,  ///< Tight scale-degree motion (±1 degree, jazzy/tense feel)
+  Disjunct,    ///< Irregular leaps (experimental, avant-garde)
+  Ostinato     ///< All notes same pitch class (root), with root/5th variation
 };
 
 /// @brief Motif repetition scope.
@@ -84,12 +85,12 @@ struct MotifParams {
   float melodic_freedom = 0.4f;
 
   // Vocal coordination parameters (MelodyLead mode)
-  bool response_mode = true;           ///< Increase activity during vocal rests
-  float response_probability = 0.6f;   ///< Probability of playing during vocal rests
-  bool contrary_motion = true;         ///< Apply contrary motion to vocal direction
+  bool response_mode = true;              ///< Increase activity during vocal rests
+  float response_probability = 0.6f;      ///< Probability of playing during vocal rests
+  bool contrary_motion = true;            ///< Apply contrary motion to vocal direction
   float contrary_motion_strength = 0.5f;  ///< Strength of contrary motion adjustment
-  bool dynamic_register = true;        ///< Dynamically adjust register to avoid vocal
-  int8_t register_offset = 0;          ///< Additional register offset in semitones
+  bool dynamic_register = true;           ///< Dynamically adjust register to avoid vocal
+  int8_t register_offset = 0;             ///< Additional register offset in semitones
 
   void writeTo(json::Writer& w) const {
     w.write("length", static_cast<int>(length))
@@ -119,8 +120,7 @@ struct MotifParams {
     repeat_scope = static_cast<MotifRepeatScope>(p.getInt("repeat_scope", 0));
     octave_layering_chorus = p.getBool("octave_layering_chorus", true);
     velocity_fixed = p.getBool("velocity_fixed", true);
-    rhythm_template =
-        static_cast<MotifRhythmTemplate>(p.getInt("rhythm_template", 0));
+    rhythm_template = static_cast<MotifRhythmTemplate>(p.getInt("rhythm_template", 0));
     melodic_freedom = p.getFloat("melodic_freedom", 0.4f);
     response_mode = p.getBool("response_mode", true);
     response_probability = p.getFloat("response_probability", 0.6f);
@@ -170,8 +170,7 @@ struct MotifDrumParams {
   HihatDensity hihat_density = HihatDensity::Eighth;
 
   void writeTo(json::Writer& w) const {
-    w.write("hihat_drive", hihat_drive)
-        .write("hihat_density", static_cast<int>(hihat_density));
+    w.write("hihat_drive", hihat_drive).write("hihat_density", static_cast<int>(hihat_density));
   }
 
   void readFrom(const json::Parser& p) {

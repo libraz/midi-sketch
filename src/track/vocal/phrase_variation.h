@@ -30,18 +30,18 @@ namespace midisketch {
 /// - SlurMerge: destroys intentional articulation
 /// - RepeatNoteSimplify: destroys rhythm motifs
 enum class PhraseVariation : uint8_t {
-  Exact,              ///< No change - use original phrase
-  LastNoteShift,      ///< Shift last note by scale degree (common ending variation)
-  LastNoteLong,       ///< Extend last note duration (dramatic ending)
-  TailSwap,           ///< [Deprecated] Swap last two notes
-  SlightRush,         ///< [Deprecated] Earlier timing on weak beats
-  MicroRhythmChange,  ///< [Deprecated] Subtle timing variation
-  BreathRestInsert,   ///< Short rest before phrase end (breathing room)
-  SlurMerge,          ///< [Deprecated] Merge short notes into longer
-  RepeatNoteSimplify, ///< [Deprecated] Reduce repeated notes
-  DynamicAccent,      ///< Boost last note velocity +20 (cap 127)
-  LateOnset,          ///< Insert 16th note rest at phrase start (tame effect)
-  EchoRepeat          ///< Echo last note at half duration and -20 velocity
+  Exact,               ///< No change - use original phrase
+  LastNoteShift,       ///< Shift last note by scale degree (common ending variation)
+  LastNoteLong,        ///< Extend last note duration (dramatic ending)
+  TailSwap,            ///< [Deprecated] Swap last two notes
+  SlightRush,          ///< [Deprecated] Earlier timing on weak beats
+  MicroRhythmChange,   ///< [Deprecated] Subtle timing variation
+  BreathRestInsert,    ///< Short rest before phrase end (breathing room)
+  SlurMerge,           ///< [Deprecated] Merge short notes into longer
+  RepeatNoteSimplify,  ///< [Deprecated] Reduce repeated notes
+  DynamicAccent,       ///< Boost last note velocity +20 (cap 127)
+  LateOnset,           ///< Insert 16th note rest at phrase start (tame effect)
+  EchoRepeat           ///< Echo last note at half duration and -20 velocity
 };
 
 /// Maximum number of variation types (excluding Exact).

@@ -125,7 +125,7 @@ uint16_t DrumPatternFactory::getKickPattern(SectionType section, DrumStyle style
       return EuclideanRhythm::generate(3, 16);  // E(3,16)
 
     case DrumStyle::Synth:
-      // Synth/YOASOBI: syncopated
+      // Synth/AnimeHighEnergy: syncopated
       if (section == SectionType::Chorus) {
         return EuclideanRhythm::generate(5, 16, 1);  // E(5,16) rotated
       }
@@ -235,7 +235,7 @@ constexpr GrooveTemplate MOOD_GROOVE_TEMPLATES[24] = {
     GrooveTemplate::Funk,       // 13: ElectroPop
     GrooveTemplate::Standard,   // 14: IdolPop
     GrooveTemplate::Standard,   // 15: Anthem
-    GrooveTemplate::Breakbeat,  // 16: Yoasobi (energetic)
+    GrooveTemplate::Breakbeat,  // 16: AnimeHighEnergy (energetic)
     GrooveTemplate::Funk,       // 17: Synthwave (driving)
     GrooveTemplate::Trap,       // 18: FutureBass (modern EDM)
     GrooveTemplate::Shuffle,    // 19: CityPop (groove essential)

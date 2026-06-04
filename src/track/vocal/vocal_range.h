@@ -20,11 +20,11 @@ class MidiTrack;
 // Motif Collision Avoidance Constants
 constexpr uint8_t kMotifHighRegisterThreshold = 72;  // C5 - motif considered "high" if above this
 constexpr uint8_t kMotifLowRegisterThreshold = 60;   // C4 - motif considered "low" if below this
-constexpr uint8_t kVocalAvoidHighLimit = 72;          // Limit vocal high when motif is high
-constexpr uint8_t kVocalAvoidLowLimit = 65;           // Limit vocal low when motif is low
-constexpr uint8_t kMinVocalOctaveRange = 12;          // Minimum 1 octave range required
-constexpr uint8_t kVocalRangeFloor = 48;              // C3 - absolute minimum for vocal
-constexpr uint8_t kVocalRangeCeiling = 96;            // C7 - absolute maximum for vocal
+constexpr uint8_t kVocalAvoidHighLimit = 72;         // Limit vocal high when motif is high
+constexpr uint8_t kVocalAvoidLowLimit = 65;          // Limit vocal low when motif is low
+constexpr uint8_t kMinVocalOctaveRange = 12;         // Minimum 1 octave range required
+constexpr uint8_t kVocalRangeFloor = 48;             // C3 - absolute minimum for vocal
+constexpr uint8_t kVocalRangeCeiling = 96;           // C7 - absolute maximum for vocal
 
 /// @brief Result of vocal range calculation.
 struct VocalRangeResult {
@@ -39,7 +39,7 @@ struct VocalRangeResult {
 /// @param motif_track Optional motif track for range separation
 /// @return Calculated vocal range
 VocalRangeResult calculateEffectiveVocalRange(const GeneratorParams& params, const Song& song,
-                                               const MidiTrack* motif_track);
+                                              const MidiTrack* motif_track);
 
 }  // namespace midisketch
 

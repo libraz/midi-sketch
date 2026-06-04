@@ -194,7 +194,7 @@ describe('SongConfigBuilder', () => {
       expect(result?.warnings.some((w) => w.includes('drums'))).toBe(true);
     });
 
-    it('should detect BPM clamping for RhythmSync blueprints', () => {
+    it('should warn but preserve explicit BPM for RhythmSync blueprints', () => {
       const builder = new SongConfigBuilder(0);
       builder.setBlueprint(1); // RhythmLock (RhythmSync paradigm)
 
@@ -203,11 +203,11 @@ describe('SongConfigBuilder', () => {
 
       const result = builder.getLastChangeResult();
       expect(result).not.toBeNull();
-      // BPM should be clamped to 175
-      expect(result?.changes.some((c) => c.field === 'bpm' && c.newValue === 175)).toBe(true);
+      expect(result?.changes.some((c) => c.field === 'bpm' && c.newValue === 200)).toBe(true);
+      expect(result?.warnings.some((w) => w.includes('BPM 160-175'))).toBe(true);
 
       const config = builder.build();
-      expect(config.bpm).toBe(175);
+      expect(config.bpm).toBe(200);
     });
   });
 

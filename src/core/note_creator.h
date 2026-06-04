@@ -28,50 +28,49 @@ class MidiTrack;
 /// PitchPreference to control how pitch resolution behaves.
 struct NoteOptions {
   // Required parameters
-  Tick start = 0;                               ///< Start tick
-  Tick duration = 0;                            ///< Duration in ticks
-  uint8_t desired_pitch = 60;                   ///< Desired MIDI pitch
-  uint8_t velocity = 100;                       ///< MIDI velocity
-  TrackRole role = TrackRole::Vocal;            ///< Track role
+  Tick start = 0;                     ///< Start tick
+  Tick duration = 0;                  ///< Duration in ticks
+  uint8_t desired_pitch = 60;         ///< Desired MIDI pitch
+  uint8_t velocity = 100;             ///< MIDI velocity
+  TrackRole role = TrackRole::Vocal;  ///< Track role
 
   // Pitch selection strategy
   PitchPreference preference = PitchPreference::Default;
 
   // Pitch range constraints
-  uint8_t range_low = 0;                        ///< Minimum allowed pitch
-  uint8_t range_high = 127;                     ///< Maximum allowed pitch
+  uint8_t range_low = 0;     ///< Minimum allowed pitch
+  uint8_t range_high = 127;  ///< Maximum allowed pitch
 
   // Optional flags
-  bool record_provenance = true;                ///< Record source/chord info
-  bool register_to_harmony = true;              ///< Register with HarmonyContext
+  bool record_provenance = true;    ///< Record source/chord info
+  bool register_to_harmony = true;  ///< Register with HarmonyContext
 
   // Provenance
-  NoteSource source = NoteSource::Unknown;      ///< Generation phase
-  uint8_t original_pitch = 0;                   ///< Pre-adjustment pitch (0=use desired_pitch)
+  NoteSource source = NoteSource::Unknown;  ///< Generation phase
+  uint8_t original_pitch = 0;               ///< Pre-adjustment pitch (0=use desired_pitch)
 
   // Chord boundary handling
   ChordBoundaryPolicy chord_boundary = ChordBoundaryPolicy::None;
 
   // Additional context (track-specific)
-  int8_t contour_direction = 0;                 ///< -1:descending, 0:none, +1:ascending (Motif)
+  int8_t contour_direction = 0;  ///< -1:descending, 0:none, +1:ascending (Motif)
 
   // Monotony avoidance (optional)
-  uint8_t prev_pitch = 0;                       ///< Previous note's pitch (0=ignore)
-  int consecutive_same_count = 0;               ///< How many consecutive same-pitch notes (for penalty)
+  uint8_t prev_pitch = 0;          ///< Previous note's pitch (0=ignore)
+  int consecutive_same_count = 0;  ///< How many consecutive same-pitch notes (for penalty)
 };
 
 /// @brief Result of createNote() with detailed information.
 struct CreateNoteResult {
-  std::optional<NoteEvent> note;                ///< Created note (nullopt if skipped)
-  uint8_t final_pitch = 0;                      ///< Actual pitch used
-  CollisionAvoidStrategy strategy_used;         ///< How collision was resolved
-  bool was_adjusted = false;                    ///< True if pitch was changed
-  bool was_registered = false;                  ///< True if registered to harmony
-  Tick original_duration = 0;                   ///< Duration before chord boundary clip
-  bool was_chord_clipped = false;               ///< True if duration was clipped at chord boundary
+  std::optional<NoteEvent> note;         ///< Created note (nullopt if skipped)
+  uint8_t final_pitch = 0;               ///< Actual pitch used
+  CollisionAvoidStrategy strategy_used;  ///< How collision was resolved
+  bool was_adjusted = false;             ///< True if pitch was changed
+  bool was_registered = false;           ///< True if registered to harmony
+  Tick original_duration = 0;            ///< Duration before chord boundary clip
+  bool was_chord_clipped = false;        ///< True if duration was clipped at chord boundary
 
-  CreateNoteResult()
-      : strategy_used(CollisionAvoidStrategy::None) {}
+  CreateNoteResult() : strategy_used(CollisionAvoidStrategy::None) {}
 };
 
 // ============================================================================
@@ -104,7 +103,7 @@ std::optional<NoteEvent> createNote(IHarmonyContext& harmony, const NoteOptions&
  * @return Created note, or nullopt if skipped
  */
 std::optional<NoteEvent> createNoteAndAdd(MidiTrack& track, IHarmonyContext& harmony,
-                                           const NoteOptions& opts);
+                                          const NoteOptions& opts);
 
 /**
  * @brief Create a note with detailed result information.
@@ -146,8 +145,8 @@ NoteEvent createNoteWithoutHarmony(Tick start, Tick duration, uint8_t pitch, uin
  * @param velocity MIDI velocity
  * @return Created note
  */
-NoteEvent createNoteWithoutHarmonyAndAdd(MidiTrack& track, Tick start, Tick duration,
-                                          uint8_t pitch, uint8_t velocity);
+NoteEvent createNoteWithoutHarmonyAndAdd(MidiTrack& track, Tick start, Tick duration, uint8_t pitch,
+                                         uint8_t velocity);
 
 // ============================================================================
 // Candidate-based API (for advanced usage)
@@ -171,17 +170,10 @@ NoteEvent createNoteWithoutHarmonyAndAdd(MidiTrack& track, Tick start, Tick dura
  * @return Vector of PitchCandidate sorted by preference
  */
 std::vector<PitchCandidate> getSafePitchCandidates(
-    const ICollisionDetector& harmony,
-    uint8_t desired_pitch,
-    Tick start,
-    Tick duration,
-    TrackRole role,
-    uint8_t range_low,
-    uint8_t range_high,
-    PitchPreference preference = PitchPreference::Default,
-    size_t max_candidates = 5,
-    uint8_t prev_pitch = 0,
-    int consecutive_same_count = 0);
+    const ICollisionDetector& harmony, uint8_t desired_pitch, Tick start, Tick duration,
+    TrackRole role, uint8_t range_low, uint8_t range_high,
+    PitchPreference preference = PitchPreference::Default, size_t max_candidates = 5,
+    uint8_t prev_pitch = 0, int consecutive_same_count = 0);
 
 // ============================================================================
 // Musical candidate selection (for melody generation)
@@ -192,14 +184,14 @@ std::vector<PitchCandidate> getSafePitchCandidates(
 /// All candidates from getSafePitchCandidates are already collision-safe and
 /// boundary-annotated. This struct controls purely musical selection criteria.
 struct PitchSelectionHints {
-  int8_t prev_pitch = -1;          ///< Previous pitch (-1 = none)
-  int8_t contour_direction = 0;    ///< -1:descending, 0:any, +1:ascending
-  Tick note_duration = 0;          ///< Note duration (rhythm-interval coupling)
-  float phrase_position = -1.0f;   ///< Position in phrase 0.0-1.0 (-1 = unknown)
-  uint8_t tessitura_center = 67;   ///< Tessitura center (default G4)
-  int8_t section_type = -1;        ///< SectionType as int (-1 = unknown)
-  int8_t sub_phrase_index = -1;    ///< Sub-phrase position 0-3 (-1 = unknown)
-  int8_t same_pitch_streak = 0;    ///< Consecutive same pitch count (0=first note)
+  int8_t prev_pitch = -1;         ///< Previous pitch (-1 = none)
+  int8_t contour_direction = 0;   ///< -1:descending, 0:any, +1:ascending
+  Tick note_duration = 0;         ///< Note duration (rhythm-interval coupling)
+  float phrase_position = -1.0f;  ///< Position in phrase 0.0-1.0 (-1 = unknown)
+  uint8_t tessitura_center = 67;  ///< Tessitura center (default G4)
+  int8_t section_type = -1;       ///< SectionType as int (-1 = unknown)
+  int8_t sub_phrase_index = -1;   ///< Sub-phrase position 0-3 (-1 = unknown)
+  int8_t same_pitch_streak = 0;   ///< Consecutive same pitch count (0=first note)
 };
 
 /**
@@ -216,9 +208,8 @@ struct PitchSelectionHints {
  * @param hints Musical context hints for selection
  * @return Best candidate pitch based on hints, or fallback if none available
  */
-uint8_t selectBestCandidate(const std::vector<PitchCandidate>& candidates,
-                             uint8_t fallback_pitch,
-                             const PitchSelectionHints& hints = {});
+uint8_t selectBestCandidate(const std::vector<PitchCandidate>& candidates, uint8_t fallback_pitch,
+                            const PitchSelectionHints& hints = {});
 
 /**
  * @brief Annotate pitch candidates with cross-boundary safety information.
@@ -232,8 +223,7 @@ uint8_t selectBestCandidate(const std::vector<PitchCandidate>& candidates,
  * @param duration Note duration in ticks
  */
 void annotateBoundarySafety(std::vector<PitchCandidate>& candidates,
-                            const ICollisionDetector& harmony,
-                            Tick start, Tick duration);
+                            const ICollisionDetector& harmony, Tick start, Tick duration);
 
 }  // namespace midisketch
 

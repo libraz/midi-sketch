@@ -12,8 +12,8 @@
 #include "core/json_helpers.h"
 #include "core/note_source.h"
 #include "core/pitch_utils.h"
-#include "core/timing_constants.h"
 #include "core/preset_data.h"
+#include "core/timing_constants.h"
 #include "midi/track_config.h"
 #include "track/generators/arpeggio.h"
 #include "version_info.h"
@@ -66,8 +66,8 @@ MidiSketch::~MidiSketch() {}
 
 void MidiSketch::rebuildMidiLegacy() {
   const auto& params = generator_.getParams();
-  midi_writer_.build(generator_.getSong(), params.key, params.mood,
-                     generateMetadata(params), midi_format_, params.blueprint_id);
+  midi_writer_.build(generator_.getSong(), params.key, params.mood, generateMetadata(params),
+                     midi_format_, params.blueprint_id);
 }
 
 void MidiSketch::rebuildMidiWithConfig(const SongConfig& config) {
@@ -217,8 +217,8 @@ std::string MidiSketch::getEventsJson() const {
             int8_t colliding_track = step.param2 & 0x0F;
             int8_t strategy_value = (step.param2 >> 4) & 0x0F;
             w.write("colliding_track", trackRoleToString(static_cast<TrackRole>(colliding_track)))
-                .write("strategy",
-                       collisionAvoidStrategyToString(static_cast<CollisionAvoidStrategy>(strategy_value)));
+                .write("strategy", collisionAvoidStrategyToString(
+                                       static_cast<CollisionAvoidStrategy>(strategy_value)));
           } else {
             w.write("param2", static_cast<int>(step.param2));
           }
@@ -364,7 +364,10 @@ std::string MidiSketch::getEventsJson() const {
         bool next_sd = harmony.isSecondaryDominantAt(next);
         if (next_deg != degree || next_sd) break;
         Tick after = harmony.getNextChordEntryTick(next);
-        if (after == 0 || after <= next) { next = total_ticks; break; }
+        if (after == 0 || after <= next) {
+          next = total_ticks;
+          break;
+        }
         next = after;
       }
     }

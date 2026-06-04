@@ -38,10 +38,10 @@ enum class Mood : uint8_t {
   IdolPop,
   Anthem,
   /// Synth-oriented moods
-  Yoasobi,     ///< Anime-style pop (148 BPM, high density)
-  Synthwave,   ///< Retro synth (118 BPM, medium density)
-  FutureBass,  ///< Future bass (145 BPM, high density)
-  CityPop,     ///< City pop (110 BPM, medium density)
+  AnimeHighEnergy,  ///< Anime-style pop (148 BPM, high density)
+  Synthwave,        ///< Retro synth (118 BPM, medium density)
+  FutureBass,       ///< Future bass (145 BPM, high density)
+  CityPop,          ///< City pop (110 BPM, medium density)
   /// Genre expansion moods
   RnBNeoSoul,  ///< R&B/Neo-Soul (85-100 BPM, heavy swing, extended chords)
   LatinPop,    ///< Latin Pop (95 BPM, dembow rhythm, tresillo bass)
@@ -52,7 +52,7 @@ enum class Mood : uint8_t {
 /// @brief Composition style determines overall musical approach.
 enum class CompositionStyle : uint8_t {
   MelodyLead = 0,   ///< Traditional: melody is foreground
-  BackgroundMotif,  ///< Henceforth-style: motif is foreground
+  BackgroundMotif,  ///< chord-pulse style: motif is foreground
   SynthDriven       ///< Synth/arpeggio as foreground, vocals subdued
 };
 
@@ -74,7 +74,7 @@ enum class ArpeggioPattern : uint8_t {
 /// @brief Arpeggio note speed.
 enum class ArpeggioSpeed : uint8_t {
   Eighth,     ///< 8th notes
-  Sixteenth,  ///< 16th notes (default, YOASOBI-style)
+  Sixteenth,  ///< 16th notes (default, AnimeHighEnergy-style)
   Triplet     ///< Triplet feel
 };
 
@@ -126,13 +126,13 @@ struct ArpeggioStyle {
 
 /// @brief Chord extension configuration.
 struct ChordExtensionParams {
-  bool enable_sus = false;            ///< Enable sus2/sus4 substitutions
-  bool enable_7th = false;            ///< Enable 7th chord extensions
-  bool enable_9th = false;            ///< Enable 9th chord extensions
-  bool tritone_sub = false;           ///< Enable tritone substitution (V7 -> bII7)
-  float sus_probability = 0.2f;       ///< Probability of sus chord (0.0-1.0)
-  float seventh_probability = 0.15f;  ///< Probability of 7th extension (0.0-1.0)
-  float ninth_probability = 0.25f;    ///< Probability of 9th extension (0.0-1.0)
+  bool enable_sus = false;               ///< Enable sus2/sus4 substitutions
+  bool enable_7th = false;               ///< Enable 7th chord extensions
+  bool enable_9th = false;               ///< Enable 9th chord extensions
+  bool tritone_sub = false;              ///< Enable tritone substitution (V7 -> bII7)
+  float sus_probability = 0.2f;          ///< Probability of sus chord (0.0-1.0)
+  float seventh_probability = 0.15f;     ///< Probability of 7th extension (0.0-1.0)
+  float ninth_probability = 0.25f;       ///< Probability of 9th extension (0.0-1.0)
   float tritone_sub_probability = 0.5f;  ///< Probability of tritone sub (0.0-1.0)
 
   void writeTo(json::Writer& w) const {
@@ -222,17 +222,18 @@ struct SongConfig {
   bool drums_enabled = true;
   bool drums_enabled_explicit = false;  ///< True if user explicitly set drums_enabled
   bool arpeggio_enabled = false;
-  bool guitar_enabled = true;    ///< Enable guitar track
-  bool skip_vocal = false;  ///< Skip vocal generation (for BGM-first workflow)
-  uint8_t vocal_low = 60;   ///< C4
-  uint8_t vocal_high = 79;  ///< G5
+  bool guitar_enabled = true;  ///< Enable guitar track
+  bool skip_vocal = false;     ///< Skip vocal generation (for BGM-first workflow)
+  uint8_t vocal_low = 60;      ///< C4
+  uint8_t vocal_high = 79;     ///< G5
 
   /// Arpeggio settings
   ArpeggioParams arpeggio;  ///< Pattern, speed, octave range, gate
 
   /// Chord extensions
   ChordExtensionParams chord_extension;
-  bool chord_ext_prob_explicit = false;  ///< True if user explicitly set chord extension probabilities
+  bool chord_ext_prob_explicit =
+      false;  ///< True if user explicitly set chord extension probabilities
 
   /// Composition style
   CompositionStyle composition_style = CompositionStyle::MelodyLead;
@@ -278,20 +279,20 @@ struct SongConfig {
   EnergyCurve energy_curve = EnergyCurve::GradualBuild;
 
   /// Melody parameter overrides (0/0xFF = use preset default)
-  uint8_t melody_max_leap = 0;           ///< 0=preset default, 1-12=override
-  uint8_t melody_syncopation_prob = 0xFF; ///< 0xFF=preset default, 0-100=override
-  uint8_t melody_phrase_length = 0;       ///< 0=preset default, 1-8 bars
-  uint8_t melody_long_note_ratio = 0xFF;  ///< 0xFF=preset default, 0-100=override
-  int8_t melody_chorus_register_shift = INT8_MIN; ///< INT8_MIN=preset default, -12 to +12
-  uint8_t melody_hook_repetition = 0;     ///< 0=preset, 1=off, 2=on
-  uint8_t melody_use_leading_tone = 0;    ///< 0=preset, 1=off, 2=on
+  uint8_t melody_max_leap = 0;                     ///< 0=preset default, 1-12=override
+  uint8_t melody_syncopation_prob = 0xFF;          ///< 0xFF=preset default, 0-100=override
+  uint8_t melody_phrase_length = 0;                ///< 0=preset default, 1-8 bars
+  uint8_t melody_long_note_ratio = 0xFF;           ///< 0xFF=preset default, 0-100=override
+  int8_t melody_chorus_register_shift = INT8_MIN;  ///< INT8_MIN=preset default, -12 to +12
+  uint8_t melody_hook_repetition = 0;              ///< 0=preset, 1=off, 2=on
+  uint8_t melody_use_leading_tone = 0;             ///< 0=preset, 1=off, 2=on
 
   /// Motif parameter overrides (0=auto/preset, 0xFF=preset for enum fields)
-  uint8_t motif_length = 0;          ///< 0=auto, 1/2/4 beats
-  uint8_t motif_note_count = 0;      ///< 0=auto, 3-8
-  uint8_t motif_motion = 0xFF;       ///< 0xFF=preset, 0-4=override (0=Stepwise..4=Disjunct)
-  uint8_t motif_register_high = 0;   ///< 0=auto, 1=low, 2=high
-  uint8_t motif_rhythm_density = 0xFF; ///< 0xFF=preset, 0-2=override (0=Sparse..2=Driving)
+  uint8_t motif_length = 0;             ///< 0=auto, 1/2/4 beats
+  uint8_t motif_note_count = 0;         ///< 0=auto, 3-8
+  uint8_t motif_motion = 0xFF;          ///< 0xFF=preset, 0-4=override (0=Stepwise..4=Disjunct)
+  uint8_t motif_register_high = 0;      ///< 0=auto, 1=low, 2=high
+  uint8_t motif_rhythm_density = 0xFF;  ///< 0xFF=preset, 0-2=override (0=Sparse..2=Driving)
 
   /// === Behavioral Loop (addictive generation) ===
   bool addictive_mode = false;  ///< Enable Behavioral Loop mode (fixed riff, maximum hook)
@@ -399,8 +400,8 @@ inline std::pair<uint16_t, std::optional<std::string>> clampRhythmSyncBpm(
     clamped = kRhythmSyncBpmMax;
   }
   if (clamped != bpm) {
-    return {clamped, "BPM adjusted from " + std::to_string(bpm) + " to " +
-                         std::to_string(clamped) + " for RhythmSync paradigm (optimal: 160-175)"};
+    return {clamped, "BPM adjusted from " + std::to_string(bpm) + " to " + std::to_string(clamped) +
+                         " for RhythmSync paradigm (optimal: 160-175)"};
   }
   return {clamped, std::nullopt};
 }
@@ -420,10 +421,10 @@ struct GeneratorParams {
   /// These are set by Generator from the resolved blueprint
   GenerationParadigm paradigm = GenerationParadigm::Traditional;  ///< Generation approach
   RiffPolicy riff_policy = RiffPolicy::Free;                      ///< Riff management policy
-  bool drums_sync_vocal = false;  ///< Sync drum kicks/snares to vocal onsets
-  bool drums_enabled = true;      ///< Enable drums track
+  bool drums_sync_vocal = false;        ///< Sync drum kicks/snares to vocal onsets
+  bool drums_enabled = true;            ///< Enable drums track
   bool drums_enabled_explicit = false;  ///< True if user explicitly set drums_enabled
-  bool skip_vocal = false;        ///< Skip vocal track generation (for BGM-first workflow)
+  bool skip_vocal = false;              ///< Skip vocal track generation (for BGM-first workflow)
   /// Note: Modulation is controlled via params_.modulation_timing (set from SongConfig)
   uint8_t vocal_low = 60;                ///< Vocal range lower bound (MIDI note)
   uint8_t vocal_high = 79;               ///< Vocal range upper bound (MIDI note)
@@ -456,7 +457,7 @@ struct GeneratorParams {
   ArpeggioParams arpeggio;        ///< Arpeggio configuration
 
   /// Guitar track
-  bool guitar_enabled = true;   ///< Enable guitar track
+  bool guitar_enabled = true;  ///< Enable guitar track
 
   /// Humanization options
   bool humanize = false;           ///< Enable timing/velocity humanization
@@ -488,8 +489,8 @@ struct GeneratorParams {
   bool addictive_mode = false;  ///< Enable Behavioral Loop mode (fixed riff, maximum hook)
 
   /// Explicit parameter flags (true = user explicitly set the value)
-  bool bpm_explicit = false;  ///< True if BPM was explicitly set (skip RhythmSync clamp)
-  bool motif_length_explicit = false;          ///< True if motif length was explicitly set
+  bool bpm_explicit = false;           ///< True if BPM was explicitly set (skip RhythmSync clamp)
+  bool motif_length_explicit = false;  ///< True if motif length was explicitly set
   bool motif_note_count_explicit = false;      ///< True if motif note_count was explicitly set
   bool motif_rhythm_density_explicit = false;  ///< True if motif rhythm_density was explicitly set
   bool melody_max_leap_override = false;
@@ -676,7 +677,8 @@ struct VocalConfig {
   HookIntensity hook_intensity = HookIntensity::Normal;
   VocalGrooveFeel vocal_groove = VocalGrooveFeel::Straight;
   CompositionStyle composition_style = CompositionStyle::MelodyLead;
-  bool keep_motif = false;  ///< RhythmSync: keep existing Motif as coordinate axis (default: regenerate both)
+  bool keep_motif =
+      false;  ///< RhythmSync: keep existing Motif as coordinate axis (default: regenerate both)
 
   template <typename Self, typename V>
   static void visitFields(Self&& self, V&& v) {
@@ -718,7 +720,8 @@ struct AccompanimentConfig {
   /// Guitar
   bool guitar_enabled = true;
 
-  uint8_t arpeggio_pattern = 0;       ///< 0=Up, 1=Down, 2=UpDown, 3=Random, 4=Pinwheel, 5=PedalRoot, 6=Alberti, 7=BrokenChord
+  uint8_t arpeggio_pattern =
+      0;  ///< 0=Up, 1=Down, 2=UpDown, 3=Random, 4=Pinwheel, 5=PedalRoot, 6=Alberti, 7=BrokenChord
   uint8_t arpeggio_speed = 1;         ///< 0=Eighth, 1=Sixteenth, 2=Triplet
   uint8_t arpeggio_octave_range = 2;  ///< 1-3 octaves
   uint8_t arpeggio_gate = 80;         ///< Gate length (0-100)
@@ -728,10 +731,10 @@ struct AccompanimentConfig {
   bool chord_ext_sus = false;
   bool chord_ext_7th = false;
   bool chord_ext_9th = false;
-  bool chord_ext_tritone_sub = false;  ///< Enable tritone substitution (V7 -> bII7)
-  uint8_t chord_ext_sus_prob = 20;     ///< Sus probability (0-100)
-  uint8_t chord_ext_7th_prob = 30;     ///< 7th probability (0-100)
-  uint8_t chord_ext_9th_prob = 25;     ///< 9th probability (0-100)
+  bool chord_ext_tritone_sub = false;       ///< Enable tritone substitution (V7 -> bII7)
+  uint8_t chord_ext_sus_prob = 20;          ///< Sus probability (0-100)
+  uint8_t chord_ext_7th_prob = 30;          ///< 7th probability (0-100)
+  uint8_t chord_ext_9th_prob = 25;          ///< 9th probability (0-100)
   uint8_t chord_ext_tritone_sub_prob = 50;  ///< Tritone sub probability (0-100)
 
   /// Humanization

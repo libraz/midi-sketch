@@ -3,13 +3,14 @@
  * @brief Tests for velocity helper utilities and rng_util wrappers.
  */
 
+#include "core/velocity_helper.h"
+
 #include <gtest/gtest.h>
 
 #include <random>
 #include <vector>
 
 #include "core/rng_util.h"
-#include "core/velocity_helper.h"
 
 using namespace midisketch;
 
@@ -47,9 +48,7 @@ TEST(VelocityHelperTest, ClampFloat_BelowMin) {
   EXPECT_EQ(vel::clamp(-10.0f), 1);
 }
 
-TEST(VelocityHelperTest, ClampFloat_AboveMax) {
-  EXPECT_EQ(vel::clamp(200.0f), 127);
-}
+TEST(VelocityHelperTest, ClampFloat_AboveMax) { EXPECT_EQ(vel::clamp(200.0f), 127); }
 
 // ============================================================================
 // vel::clamp(int, min, max) Tests
@@ -93,13 +92,9 @@ TEST(VelocityHelperTest, Scale_ClampsToMax) {
 // vel::withDelta() Tests
 // ============================================================================
 
-TEST(VelocityHelperTest, WithDelta_Positive) {
-  EXPECT_EQ(vel::withDelta(80, 10), 90);
-}
+TEST(VelocityHelperTest, WithDelta_Positive) { EXPECT_EQ(vel::withDelta(80, 10), 90); }
 
-TEST(VelocityHelperTest, WithDelta_Negative) {
-  EXPECT_EQ(vel::withDelta(80, -10), 70);
-}
+TEST(VelocityHelperTest, WithDelta_Negative) { EXPECT_EQ(vel::withDelta(80, -10), 70); }
 
 TEST(VelocityHelperTest, WithDelta_ClampsToMin) {
   EXPECT_EQ(vel::withDelta(5, -10), 1);  // 5 - 10 = -5, clamped to 1

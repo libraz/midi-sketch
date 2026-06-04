@@ -236,7 +236,9 @@ Examples:
     if args.generate:
         bp_value = args.blueprint
     else:
-        bp_value = metadata.get('blueprint', args.blueprint_single)
+        bp_value = metadata.get('blueprint')
+        if bp_value is None:
+            bp_value = args.blueprint_single
     analyzer = MusicAnalyzer(notes, blueprint=bp_value, metadata=metadata)
 
     result = analyzer.analyze_all()

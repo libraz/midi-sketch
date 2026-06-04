@@ -172,10 +172,10 @@ std::vector<uint8_t> getChordProgressionsByStyle(uint8_t style_mask);
  * @brief Information about a potential secondary dominant.
  */
 struct SecondaryDominantInfo {
-  bool should_insert;       ///< Whether to insert a secondary dominant
-  int8_t dominant_degree;   ///< Scale degree of the dominant (V of the target)
-  ChordExtension extension; ///< Chord extension (typically Dom7)
-  int8_t target_degree;     ///< The degree being targeted
+  bool should_insert;        ///< Whether to insert a secondary dominant
+  int8_t dominant_degree;    ///< Scale degree of the dominant (V of the target)
+  ChordExtension extension;  ///< Chord extension (typically Dom7)
+  int8_t target_degree;      ///< The degree being targeted
 };
 
 /**
@@ -193,7 +193,7 @@ struct SecondaryDominantInfo {
  * @return SecondaryDominantInfo with insertion recommendation
  */
 SecondaryDominantInfo checkSecondaryDominant(int8_t current_degree, int8_t next_degree,
-                                              float tension_level);
+                                             float tension_level);
 
 /**
  * @brief Get the scale degree for V/x (secondary dominant to x).
@@ -215,9 +215,9 @@ int8_t getSecondaryDominantDegree(int8_t target_degree);
 
 /// @brief Result of tritone substitution check.
 struct TritoneSubInfo {
-  bool should_substitute;   ///< Whether to apply tritone substitution
-  int8_t sub_root_semitone; ///< Root pitch class of the substituted chord (semitones from C)
-  Chord chord;              ///< The substituted chord (dominant 7th quality)
+  bool should_substitute;    ///< Whether to apply tritone substitution
+  int8_t sub_root_semitone;  ///< Root pitch class of the substituted chord (semitones from C)
+  Chord chord;               ///< The substituted chord (dominant 7th quality)
 };
 
 /**
@@ -236,8 +236,8 @@ struct TritoneSubInfo {
  * @param roll Random value (0.0-1.0) to compare against probability
  * @return TritoneSubInfo with substitution recommendation and chord data
  */
-TritoneSubInfo checkTritoneSubstitution(int8_t degree, bool is_dominant,
-                                         float probability, float roll);
+TritoneSubInfo checkTritoneSubstitution(int8_t degree, bool is_dominant, float probability,
+                                        float roll);
 
 /**
  * @brief Get the tritone substitution root in semitones from C.
@@ -257,9 +257,9 @@ int getTritoneSubRoot(int original_root_semitone);
 
 /// @brief Reharmonization result containing modified degree and optional extension.
 struct ReharmonizationResult {
-  int8_t degree;                                   ///< Possibly substituted scale degree
-  ChordExtension extension;                        ///< Extension to apply (may override)
-  bool extension_overridden;                       ///< True if extension was set by reharmonization
+  int8_t degree;              ///< Possibly substituted scale degree
+  ChordExtension extension;   ///< Extension to apply (may override)
+  bool extension_overridden;  ///< True if extension was set by reharmonization
 };
 
 /// @brief Passing chord info for B section diminished insertion.
@@ -283,9 +283,8 @@ struct PassingChordInfo {
  * @param is_dominant Whether the chord has dominant function (degree 4 = V)
  * @return ReharmonizationResult with possibly modified degree and extension
  */
-ReharmonizationResult reharmonizeForSection(int8_t degree, SectionType section_type,
-                                             bool is_minor, bool is_dominant,
-                                             bool enable_7th = true);
+ReharmonizationResult reharmonizeForSection(int8_t degree, SectionType section_type, bool is_minor,
+                                            bool is_dominant, bool enable_7th = true);
 
 /**
  * @brief Check if a passing diminished chord should be inserted in B sections.
@@ -300,7 +299,7 @@ ReharmonizationResult reharmonizeForSection(int8_t degree, SectionType section_t
  * @return PassingChordInfo with insertion recommendation and chord data
  */
 PassingChordInfo checkPassingDiminished(int8_t current_degree, int8_t next_degree,
-                                         SectionType section_type);
+                                        SectionType section_type);
 
 // ============================================================================
 // Slash Chord Support
@@ -312,9 +311,9 @@ PassingChordInfo checkPassingDiminished(int8_t current_degree, int8_t next_degre
 /// bass plays a different note (the 3rd of C in this case). This enables
 /// smoother stepwise bass voice leading between chords.
 struct SlashChordInfo {
-  bool has_override;              ///< True if a bass note override is active
-  int8_t bass_note_semitone;      ///< Bass note as pitch class (0-11, semitones from C)
-                                  ///< Only valid when has_override is true
+  bool has_override;          ///< True if a bass note override is active
+  int8_t bass_note_semitone;  ///< Bass note as pitch class (0-11, semitones from C)
+                              ///< Only valid when has_override is true
 };
 
 /**
@@ -334,8 +333,8 @@ struct SlashChordInfo {
  * @param probability_roll Random value 0.0-1.0 for probability check
  * @return SlashChordInfo with bass note override if applicable
  */
-SlashChordInfo checkSlashChord(int8_t current_degree, int8_t next_degree,
-                               SectionType section_type, float probability_roll);
+SlashChordInfo checkSlashChord(int8_t current_degree, int8_t next_degree, SectionType section_type,
+                               float probability_roll);
 
 /**
  * @brief Get the semitone (pitch class) for a scale degree.

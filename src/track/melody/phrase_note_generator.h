@@ -31,18 +31,18 @@ namespace melody {
 /// @brief Context for generating a single note in a phrase.
 struct NoteGenerationContext {
   // Rhythm information
-  float beat;           ///< Beat position within phrase
-  float eighths;        ///< Duration in eighths
-  bool strong;          ///< Whether this is a strong beat
+  float beat;     ///< Beat position within phrase
+  float eighths;  ///< Duration in eighths
+  bool strong;    ///< Whether this is a strong beat
 
   // Position information
-  size_t note_index;    ///< Index of this note in the phrase
-  size_t total_notes;   ///< Total notes in the phrase
-  float phrase_pos;     ///< Position within phrase (0.0-1.0)
+  size_t note_index;   ///< Index of this note in the phrase
+  size_t total_notes;  ///< Total notes in the phrase
+  float phrase_pos;    ///< Position within phrase (0.0-1.0)
 
   // Pitch state
-  int current_pitch;    ///< Current pitch before this note
-  int target_pitch;     ///< Target pitch for approach (-1 if none)
+  int current_pitch;  ///< Current pitch before this note
+  int target_pitch;   ///< Target pitch for approach (-1 if none)
 
   // Chord context
   int8_t chord_degree;  ///< Chord degree at this note's position
@@ -82,11 +82,11 @@ struct PhraseNoteParams {
 
 /// @brief Result of generating a single note.
 struct NoteGenerationResult {
-  int pitch;              ///< Final pitch for the note
-  Tick duration;          ///< Duration in ticks
-  uint8_t velocity;       ///< Velocity (0-127)
-  bool should_skip;       ///< If true, don't add this note
-  int direction_change;   ///< Change to direction inertia
+  int pitch;             ///< Final pitch for the note
+  Tick duration;         ///< Duration in ticks
+  uint8_t velocity;      ///< Velocity (0-127)
+  bool should_skip;      ///< If true, don't add this note
+  int direction_change;  ///< Change to direction inertia
 };
 
 /// @brief Select initial pitch for a phrase.
@@ -102,7 +102,8 @@ struct NoteGenerationResult {
 /// @param vocal_high Maximum allowed pitch
 /// @return Initial pitch for the phrase
 int selectInitialPhrasePitch(int prev_pitch, int8_t chord_degree, SectionType section_type,
-                              const TessituraRange& tessitura, uint8_t vocal_low, uint8_t vocal_high);
+                             const TessituraRange& tessitura, uint8_t vocal_low,
+                             uint8_t vocal_high);
 
 /// @brief Apply motif fragment to determine pitch.
 ///
@@ -117,8 +118,8 @@ int selectInitialPhrasePitch(int prev_pitch, int8_t chord_degree, SectionType se
 /// @param vocal_high Maximum allowed pitch
 /// @return Target pitch from motif, or -1 if not applicable
 int applyMotifFragment(int current_pitch, size_t note_index,
-                       const std::vector<int8_t>& motif_intervals,
-                       int8_t chord_degree, uint8_t vocal_low, uint8_t vocal_high);
+                       const std::vector<int8_t>& motif_intervals, int8_t chord_degree,
+                       uint8_t vocal_low, uint8_t vocal_high);
 
 /// @brief Apply all pitch constraints to a candidate pitch.
 ///
@@ -140,10 +141,8 @@ int applyMotifFragment(int current_pitch, size_t note_index,
 /// @param rng Random number generator
 /// @return Constrained pitch
 int applyAllPitchConstraints(int pitch, const NoteGenerationContext& ctx,
-                              const PhraseNoteParams& params,
-                              LeapResolutionState& leap_state,
-                              const std::vector<int>& chord_tones,
-                              std::mt19937& rng);
+                             const PhraseNoteParams& params, LeapResolutionState& leap_state,
+                             const std::vector<int>& chord_tones, std::mt19937& rng);
 
 /// @brief Calculate note duration from rhythm information.
 ///
@@ -179,8 +178,8 @@ uint8_t calculateNoteVelocity(bool strong, bool is_phrase_end, size_t note_index
 /// @param rng Random number generator
 /// @return Resolved pitch
 int applyPhraseEndResolution(int pitch, int8_t chord_degree, SectionType section_type,
-                              float phrase_end_resolution, uint8_t vocal_low, uint8_t vocal_high,
-                              std::mt19937& rng);
+                             float phrase_end_resolution, uint8_t vocal_low, uint8_t vocal_high,
+                             std::mt19937& rng);
 
 /// @brief Apply final pitch safety checks.
 ///

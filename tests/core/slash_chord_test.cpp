@@ -3,9 +3,9 @@
  * @brief Tests for slash chord bass note override functionality.
  */
 
-#include "core/chord.h"
-
 #include <gtest/gtest.h>
+
+#include "core/chord.h"
 
 namespace midisketch {
 namespace {
@@ -185,7 +185,7 @@ TEST(SlashChordTest, ChordVoicingUnchanged) {
   ASSERT_TRUE(info.has_override);
 
   // The chord track uses getChordNotes(degree), which should be unaffected
-  auto chord_before = getChordNotes(0);  // I chord
+  auto chord_before = getChordNotes(0);     // I chord
   EXPECT_EQ(chord_before.intervals[0], 0);  // Root
   EXPECT_EQ(chord_before.intervals[1], 4);  // Major 3rd
   EXPECT_EQ(chord_before.intervals[2], 7);  // Perfect 5th

@@ -98,8 +98,8 @@ TEST_F(EnforceMaxPhraseDurationTest, LongPhraseGetsBreathInserted) {
   std::vector<NoteEvent> notes;
   constexpr int kNotesCount = 20;  // 20 quarter notes = 5 bars
   for (int idx = 0; idx < kNotesCount; ++idx) {
-    notes.push_back(NoteEventTestHelper::create(
-        static_cast<Tick>(idx * 480), 480, 60 + (idx % 7), 80));
+    notes.push_back(
+        NoteEventTestHelper::create(static_cast<Tick>(idx * 480), 480, 60 + (idx % 7), 80));
   }
 
   enforceMaxPhraseDuration(notes, 4);
@@ -112,8 +112,7 @@ TEST_F(EnforceMaxPhraseDurationTest, LongPhraseGetsBreathInserted) {
       break;
     }
   }
-  EXPECT_TRUE(any_shortened)
-      << "At least one note should be shortened for breath gap";
+  EXPECT_TRUE(any_shortened) << "At least one note should be shortened for breath gap";
 
   // Shortened notes should not be below TICK_SIXTEENTH (120)
   for (size_t idx = 0; idx < notes.size(); ++idx) {
@@ -169,8 +168,8 @@ TEST_F(EnforceMaxPhraseDurationTest, SmallGapDoesNotResetPhrase) {
   constexpr int kNotesCount = 24;  // 24 notes with small gaps = 6+ bars
   for (int idx = 0; idx < kNotesCount; ++idx) {
     // Each note is 440 ticks with 40-tick gap (< TICK_QUARTER = 480)
-    notes.push_back(NoteEventTestHelper::create(
-        static_cast<Tick>(idx * 480), 440, 60 + (idx % 7), 80));
+    notes.push_back(
+        NoteEventTestHelper::create(static_cast<Tick>(idx * 480), 440, 60 + (idx % 7), 80));
   }
 
   enforceMaxPhraseDuration(notes, 4);
@@ -184,8 +183,7 @@ TEST_F(EnforceMaxPhraseDurationTest, SmallGapDoesNotResetPhrase) {
       break;
     }
   }
-  EXPECT_TRUE(any_shortened)
-      << "Small gaps should not reset phrase; breath should be inserted";
+  EXPECT_TRUE(any_shortened) << "Small gaps should not reset phrase; breath should be inserted";
 }
 
 TEST_F(EnforceMaxPhraseDurationTest, BreathTicksParameter) {
@@ -194,8 +192,8 @@ TEST_F(EnforceMaxPhraseDurationTest, BreathTicksParameter) {
   std::vector<NoteEvent> notes;
   constexpr int kNotesCount = 20;
   for (int idx = 0; idx < kNotesCount; ++idx) {
-    notes.push_back(NoteEventTestHelper::create(
-        static_cast<Tick>(idx * 480), 480, 60 + (idx % 7), 80));
+    notes.push_back(
+        NoteEventTestHelper::create(static_cast<Tick>(idx * 480), 480, 60 + (idx % 7), 80));
   }
 
   // Use custom breath_ticks = 120 (sixteenth note)
@@ -281,8 +279,7 @@ TEST_F(EnforceMaxPhraseDurationTest, MaxPhraseBars1InsertsBreathEveryBar) {
       break;
     }
   }
-  EXPECT_TRUE(bar1_breath)
-      << "Breath should be inserted within first bar boundary";
+  EXPECT_TRUE(bar1_breath) << "Breath should be inserted within first bar boundary";
 }
 
 TEST_F(EnforceMaxPhraseDurationTest, BalladStyleMaxBars4) {
@@ -290,8 +287,8 @@ TEST_F(EnforceMaxPhraseDurationTest, BalladStyleMaxBars4) {
   // Create 5-bar phrase to verify breath gets inserted
   std::vector<NoteEvent> notes;
   for (int idx = 0; idx < 20; ++idx) {
-    notes.push_back(NoteEventTestHelper::create(
-        static_cast<Tick>(idx * 480), 480, 60 + (idx % 7), 80));
+    notes.push_back(
+        NoteEventTestHelper::create(static_cast<Tick>(idx * 480), 480, 60 + (idx % 7), 80));
   }
 
   // Ballad: max_phrase_bars=4
@@ -304,8 +301,7 @@ TEST_F(EnforceMaxPhraseDurationTest, BalladStyleMaxBars4) {
       shortened_count++;
     }
   }
-  EXPECT_GE(shortened_count, 1)
-      << "At least one breath gap should be inserted for 5-bar phrase";
+  EXPECT_GE(shortened_count, 1) << "At least one breath gap should be inserted for 5-bar phrase";
 }
 
 TEST_F(EnforceMaxPhraseDurationTest, PhraseResetAfterBreathInsertion) {
@@ -314,8 +310,8 @@ TEST_F(EnforceMaxPhraseDurationTest, PhraseResetAfterBreathInsertion) {
   std::vector<NoteEvent> notes;
   // Create 10 bars of continuous notes (40 quarter notes)
   for (int idx = 0; idx < 40; ++idx) {
-    notes.push_back(NoteEventTestHelper::create(
-        static_cast<Tick>(idx * 480), 480, 60 + (idx % 7), 80));
+    notes.push_back(
+        NoteEventTestHelper::create(static_cast<Tick>(idx * 480), 480, 60 + (idx % 7), 80));
   }
 
   enforceMaxPhraseDuration(notes, 4);
@@ -327,8 +323,7 @@ TEST_F(EnforceMaxPhraseDurationTest, PhraseResetAfterBreathInsertion) {
       shortened_count++;
     }
   }
-  EXPECT_GE(shortened_count, 2)
-      << "Multiple breath gaps should be inserted for 10-bar phrase";
+  EXPECT_GE(shortened_count, 2) << "Multiple breath gaps should be inserted for 10-bar phrase";
 }
 
 TEST_F(EnforceMaxPhraseDurationTest, NoteShorterThanBreathTicksSetToMinimum) {
@@ -400,8 +395,7 @@ TEST_F(EnforceMaxPhraseDurationTest, TightRhythmSyncPatternRemovesNotes) {
   for (size_t idx = 0; idx < notes.size(); ++idx) {
     EXPECT_GE(notes[idx].duration, static_cast<Tick>(TICK_SIXTEENTH))
         << "Note " << idx << " should not go below kMinNoteDuration";
-    EXPECT_GT(notes[idx].duration, 0u)
-        << "Note " << idx << " should have positive duration";
+    EXPECT_GT(notes[idx].duration, 0u) << "Note " << idx << " should have positive duration";
   }
 
   // Verify that breath gaps of at least 240 ticks exist at phrase boundaries
@@ -410,9 +404,7 @@ TEST_F(EnforceMaxPhraseDurationTest, TightRhythmSyncPatternRemovesNotes) {
   Tick phrase_start = notes[0].start_tick;
   for (size_t idx = 1; idx < notes.size(); ++idx) {
     Tick prev_end = notes[idx - 1].start_tick + notes[idx - 1].duration;
-    Tick gap = (notes[idx].start_tick > prev_end)
-                   ? (notes[idx].start_tick - prev_end)
-                   : 0;
+    Tick gap = (notes[idx].start_tick > prev_end) ? (notes[idx].start_tick - prev_end) : 0;
     if (gap >= 240) {
       // Breath gap found; verify the gap is at least breath_ticks wide
       EXPECT_GE(gap, 240u) << "Breath gap before note " << idx << " is too small";
@@ -436,8 +428,8 @@ TEST_F(EnforceMaxPhraseDurationTest, NoteRemovalCreatesCorrectGap) {
   std::vector<NoteEvent> notes;
   constexpr int kNoteCount = 80;  // 80 * 120 = 9600 ticks > 4 bars (7680)
   for (int idx = 0; idx < kNoteCount; ++idx) {
-    notes.push_back(NoteEventTestHelper::create(
-        static_cast<Tick>(idx * 120), 120, 60 + (idx % 5), 80));
+    notes.push_back(
+        NoteEventTestHelper::create(static_cast<Tick>(idx * 120), 120, 60 + (idx % 5), 80));
   }
 
   enforceMaxPhraseDuration(notes, 4, kBreathTicks);
@@ -449,9 +441,7 @@ TEST_F(EnforceMaxPhraseDurationTest, NoteRemovalCreatesCorrectGap) {
   // At each gap >= kBreathTicks, verify it is sufficient
   for (size_t idx = 1; idx < notes.size(); ++idx) {
     Tick prev_end = notes[idx - 1].start_tick + notes[idx - 1].duration;
-    Tick gap = (notes[idx].start_tick > prev_end)
-                   ? (notes[idx].start_tick - prev_end)
-                   : 0;
+    Tick gap = (notes[idx].start_tick > prev_end) ? (notes[idx].start_tick - prev_end) : 0;
     if (gap >= kBreathTicks) {
       EXPECT_GE(gap, kBreathTicks)
           << "Gap before note " << idx << " should be at least breath_ticks";

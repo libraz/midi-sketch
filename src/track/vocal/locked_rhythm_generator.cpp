@@ -42,8 +42,7 @@ float computeGateRatio(SectionType section_type) {
 
 Tick computePhraseEndMinDuration(SectionType section_type, uint16_t bpm) {
   constexpr float kMinPhraseEndSeconds = 0.5f;
-  Tick bpm_phrase_end_min = static_cast<Tick>(
-      kMinPhraseEndSeconds * bpm * TICKS_PER_BEAT / 60.0f);
+  Tick bpm_phrase_end_min = static_cast<Tick>(kMinPhraseEndSeconds * bpm * TICKS_PER_BEAT / 60.0f);
 
   switch (section_type) {
     case SectionType::Chorus:
@@ -74,8 +73,7 @@ void updateMelodicState(LockedRhythmMelodicState& state, uint8_t new_pitch) {
 }
 
 uint8_t selectPitchForOnset(const std::vector<PitchCandidate>& candidates,
-                            const LockedRhythmMelodicState& state,
-                            Tick hint_duration,
+                            const LockedRhythmMelodicState& state, Tick hint_duration,
                             const MelodyDesigner::SectionContext& ctx,
                             const PhrasePlan* phrase_plan, size_t onset_idx,
                             const std::vector<OnsetContourInfo>& onset_contours,
@@ -92,27 +90,27 @@ uint8_t selectPitchForOnset(const std::vector<PitchCandidate>& candidates,
       return rng_util::selectRandom(rng, different_pitches);
     }
     // All candidates are same pitch - fall through to best candidate selection
-    PitchSelectionHints hints = buildPitchHints(state, hint_duration, ctx, phrase_plan,
-                                                 onset_idx, onset_contours);
+    PitchSelectionHints hints =
+        buildPitchHints(state, hint_duration, ctx, phrase_plan, onset_idx, onset_contours);
     return selectBestCandidate(candidates, state.prev_pitch, hints);
   }
 
-  PitchSelectionHints hints = buildPitchHints(state, hint_duration, ctx, phrase_plan,
-                                               onset_idx, onset_contours);
+  PitchSelectionHints hints =
+      buildPitchHints(state, hint_duration, ctx, phrase_plan, onset_idx, onset_contours);
 
   // Add randomness: 70% best candidate, 30% random from top 3
   if (candidates.size() >= 3 && rng_util::rollProbability(rng, 0.3f)) {
-    size_t rand_idx = rng_util::rollRange(rng, 0,
-        static_cast<int>(std::min(static_cast<size_t>(2), candidates.size() - 1)));
+    size_t rand_idx = rng_util::rollRange(
+        rng, 0, static_cast<int>(std::min(static_cast<size_t>(2), candidates.size() - 1)));
     return candidates[rand_idx].pitch;
   }
   return selectBestCandidate(candidates, state.prev_pitch, hints);
 }
 
-Tick computeNoteDuration(bool is_last_note, bool is_phrase_end, Tick tick,
-                         Tick section_end, Tick next_onset, Tick available_span,
-                         Tick breath_duration, Tick phrase_end_min,
-                         float gate_ratio, uint8_t safe_pitch, uint8_t prev_pitch) {
+Tick computeNoteDuration(bool is_last_note, bool is_phrase_end, Tick tick, Tick section_end,
+                         Tick next_onset, Tick available_span, Tick breath_duration,
+                         Tick phrase_end_min, float gate_ratio, uint8_t safe_pitch,
+                         uint8_t prev_pitch) {
   Tick duration;
   if (is_last_note) {
     duration = section_end - tick;
@@ -182,8 +180,7 @@ std::vector<NoteEvent> generateLockedRhythmCandidate(
   // are already handled by buildRunBasedOnsetMap() in this mode.
   bool run_based_active =
       (phrase_plan != nullptr && !phrase_plan->phrases.empty() &&
-       ctx.paradigm == GenerationParadigm::RhythmSync &&
-       ctx.motif_params != nullptr &&
+       ctx.paradigm == GenerationParadigm::RhythmSync && ctx.motif_params != nullptr &&
        ctx.motif_params->rhythm_template != MotifRhythmTemplate::None &&
        ctx.vocal_style != VocalStylePreset::UltraVocaloid);
 
@@ -207,9 +204,10 @@ std::vector<NoteEvent> generateLockedRhythmCandidate(
 
     // Compute base available_span (to next onset)
     size_t next_idx = i + 1;
-    Tick immediate_next = (next_idx < onsets.size())
-        ? section.start_tick + static_cast<Tick>(onsets[next_idx] * TICKS_PER_BEAT)
-        : section_end;
+    Tick immediate_next =
+        (next_idx < onsets.size())
+            ? section.start_tick + static_cast<Tick>(onsets[next_idx] * TICKS_PER_BEAT)
+            : section_end;
     Tick base_span = (immediate_next > tick) ? (immediate_next - tick) : TICK_SIXTEENTH;
 
     Tick base_duration = static_cast<Tick>(base_span * gate_ratio);
@@ -223,7 +221,7 @@ std::vector<NoteEvent> generateLockedRhythmCandidate(
     LongNoteDesire desire{0, 0.0f};
     if (!onset_pre_thinned) {
       desire = evaluateLongNoteDesire(i, onsets, section, boundary_set, state.onsets_since_long,
-                                       ctx.bpm, phrase_start_beats);
+                                      ctx.bpm, phrase_start_beats);
     }
 
     // For likely-long notes, compute extended duration for pitch selection
@@ -231,11 +229,11 @@ std::vector<NoteEvent> generateLockedRhythmCandidate(
     Tick candidate_duration = base_duration;
     bool using_extended_candidates = false;
     if (desire.max_skip > 0 && desire.probability >= 0.3f) {
-      size_t ext_active = std::min(i + 1 + static_cast<size_t>(desire.max_skip),
-                                   onsets.size());
-      Tick ext_onset = (ext_active < onsets.size())
-          ? section.start_tick + static_cast<Tick>(onsets[ext_active] * TICKS_PER_BEAT)
-          : section_end;
+      size_t ext_active = std::min(i + 1 + static_cast<size_t>(desire.max_skip), onsets.size());
+      Tick ext_onset =
+          (ext_active < onsets.size())
+              ? section.start_tick + static_cast<Tick>(onsets[ext_active] * TICKS_PER_BEAT)
+              : section_end;
       if (ext_onset > tick) {
         candidate_duration = ext_onset - tick;
         using_extended_candidates = true;
@@ -249,14 +247,14 @@ std::vector<NoteEvent> generateLockedRhythmCandidate(
     // When using extended candidates, fetch with the longer duration so the
     // selected pitch is safe across the full extension.
     auto candidates = getSafePitchCandidates(harmony, state.prev_pitch, tick, candidate_duration,
-                                              TrackRole::Vocal, ctx.vocal_low, ctx.vocal_high,
-                                              PitchPreference::Default, 10);
+                                             TrackRole::Vocal, ctx.vocal_low, ctx.vocal_high,
+                                             PitchPreference::Default, 10);
 
     // Fallback: if extended search yields no candidates, try with base duration
     if (candidates.empty() && using_extended_candidates) {
-      candidates = getSafePitchCandidates(harmony, state.prev_pitch, tick, base_duration,
-                                          TrackRole::Vocal, ctx.vocal_low, ctx.vocal_high,
-                                          PitchPreference::Default, 10);
+      candidates =
+          getSafePitchCandidates(harmony, state.prev_pitch, tick, base_duration, TrackRole::Vocal,
+                                 ctx.vocal_low, ctx.vocal_high, PitchPreference::Default, 10);
       desire.max_skip = 0;
       using_extended_candidates = false;
     }
@@ -278,14 +276,14 @@ std::vector<NoteEvent> generateLockedRhythmCandidate(
 
     // Select pitch
     Tick hint_duration = using_extended_candidates ? candidate_duration : base_duration;
-    uint8_t safe_pitch = selectPitchForOnset(candidates, state, hint_duration, ctx, phrase_plan,
-                                              i, onset_contours, rng);
+    uint8_t safe_pitch = selectPitchForOnset(candidates, state, hint_duration, ctx, phrase_plan, i,
+                                             onset_contours, rng);
 
     // Compute actual skips with the chosen pitch
     int actual_skips = 0;
     if (desire.max_skip > 0 && rng_util::rollProbability(rng, desire.probability)) {
-      actual_skips = computeSafeSkipCount(
-          safe_pitch, tick, onsets, i, desire.max_skip, section, harmony);
+      actual_skips =
+          computeSafeSkipCount(safe_pitch, tick, onsets, i, desire.max_skip, section, harmony);
     }
 
     // Compute actual next_onset and available_span based on skips
@@ -293,8 +291,7 @@ std::vector<NoteEvent> generateLockedRhythmCandidate(
     Tick next_onset;
     bool is_last_note;
     if (next_active < onsets.size()) {
-      next_onset = section.start_tick +
-                   static_cast<Tick>(onsets[next_active] * TICKS_PER_BEAT);
+      next_onset = section.start_tick + static_cast<Tick>(onsets[next_active] * TICKS_PER_BEAT);
       is_last_note = false;
     } else {
       next_onset = section_end;
@@ -303,17 +300,17 @@ std::vector<NoteEvent> generateLockedRhythmCandidate(
     Tick available_span = (next_onset > tick) ? (next_onset - tick) : TICK_SIXTEENTH;
 
     // Determine phrase-end and compute final duration
-    bool is_phrase_end = isPhraseEndOnset(i, next_active, onsets, boundary_set,
-                                          section_beats, is_last_note);
+    bool is_phrase_end =
+        isPhraseEndOnset(i, next_active, onsets, boundary_set, section_beats, is_last_note);
 
     // Note: Track collision clip (getMaxSafeEnd) is intentionally omitted for
     // the final duration. In RhythmSync, the Motif plays dense 8th-note patterns
     // and brief passing dissonance with a sustained vocal note is musically normal.
     // Extension safety is handled by computeSafeSkipCount() which checks both
     // chord boundary AND inter-track collision before allowing note extension.
-    Tick duration = computeNoteDuration(is_last_note, is_phrase_end, tick, section_end,
-                                        next_onset, available_span, breath_duration,
-                                        phrase_end_min, gate_ratio, safe_pitch, state.prev_pitch);
+    Tick duration = computeNoteDuration(is_last_note, is_phrase_end, tick, section_end, next_onset,
+                                        available_span, breath_duration, phrase_end_min, gate_ratio,
+                                        safe_pitch, state.prev_pitch);
 
     // Update melodic state (direction inertia, same-pitch streak)
     updateMelodicState(state, safe_pitch);
@@ -345,7 +342,6 @@ std::vector<NoteEvent> generateLockedRhythmWithEvaluation(
     const CachedRhythmPattern& rhythm, const Section& section, MelodyDesigner& designer,
     const IHarmonyContext& harmony, const MelodyDesigner::SectionContext& ctx, std::mt19937& rng,
     const PhrasePlan* phrase_plan) {
-
   constexpr int kCandidateCount = 20;  // 1/5 of normal mode (100) for performance
 
   // Generate multiple candidates
@@ -353,8 +349,8 @@ std::vector<NoteEvent> generateLockedRhythmWithEvaluation(
   candidates.reserve(static_cast<size_t>(kCandidateCount));
 
   for (int i = 0; i < kCandidateCount; ++i) {
-    std::vector<NoteEvent> melody = generateLockedRhythmCandidate(
-        rhythm, section, designer, harmony, ctx, rng, phrase_plan);
+    std::vector<NoteEvent> melody =
+        generateLockedRhythmCandidate(rhythm, section, designer, harmony, ctx, rng, phrase_plan);
 
     if (melody.empty()) {
       continue;
@@ -367,15 +363,13 @@ std::vector<NoteEvent> generateLockedRhythmWithEvaluation(
 
     // Culling evaluation: penalty-based
     Tick phrase_duration = section.endTick() - section.start_tick;
-    float culling_score = MelodyEvaluator::evaluateForCulling(
-        melody, harmony, phrase_duration, ctx.vocal_style);
+    float culling_score =
+        MelodyEvaluator::evaluateForCulling(melody, harmony, phrase_duration, ctx.vocal_style);
 
     // GlobalMotif bonus if available
     float motif_bonus = 0.0f;
-    if (designer.getCachedGlobalMotif().has_value() &&
-        designer.getCachedGlobalMotif()->isValid()) {
-      motif_bonus = melody::evaluateWithGlobalMotif(
-          melody, *designer.getCachedGlobalMotif());
+    if (designer.getCachedGlobalMotif().has_value() && designer.getCachedGlobalMotif()->isValid()) {
+      motif_bonus = melody::evaluateWithGlobalMotif(melody, *designer.getCachedGlobalMotif());
     }
 
     // Combined score: 35% style, 40% culling, 25% motif

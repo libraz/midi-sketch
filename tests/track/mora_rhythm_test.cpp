@@ -3,8 +3,6 @@
  * @brief Tests for mora-timed rhythm generation and mode resolution.
  */
 
-#include "track/melody/rhythm_generator.h"
-
 #include <gtest/gtest.h>
 
 #include <algorithm>
@@ -14,6 +12,7 @@
 #include <set>
 
 #include "core/melody_types.h"
+#include "track/melody/rhythm_generator.h"
 
 namespace midisketch {
 namespace melody {
@@ -141,8 +140,7 @@ TEST(MoraTimedRhythmTest, AllDurationsPositive) {
   auto result = generateMoraTimedRhythm(4, 8, 1.0f, rng);
 
   for (size_t idx = 0; idx < result.size(); ++idx) {
-    EXPECT_GT(result[idx].eighths, 0.0f)
-        << "Note at index " << idx << " has non-positive duration";
+    EXPECT_GT(result[idx].eighths, 0.0f) << "Note at index " << idx << " has non-positive duration";
   }
 }
 

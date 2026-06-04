@@ -59,7 +59,9 @@ TEST(MelodyTemplatesTest, GetTemplateDownResolve) {
 TEST(MelodyTemplatesTest, GetTemplateHookRepeat) {
   const MelodyTemplate& t = getTemplate(MelodyTemplateId::HookRepeat);
   EXPECT_STREQ(t.name, "HookRepeat");
-  EXPECT_EQ(t.tessitura_range, 2);    // Extremely narrow for Ice Cream-style (was 3)
+  EXPECT_EQ(t.tessitura_range, 4);    // Compact idol hook range
+  EXPECT_EQ(t.max_step, 2);           // Stepwise whole-tone motion allowed
+  EXPECT_EQ(t.hook_note_count, 3);    // Chantable idol motif size
   EXPECT_EQ(t.max_phrase_beats, 4);   // Very short
   EXPECT_EQ(t.hook_repeat_count, 5);  // Increased repetition for addictiveness (was 4)
 }
@@ -111,6 +113,11 @@ TEST(MelodyTemplatesTest, DefaultTemplateForVerseStandard) {
 TEST(MelodyTemplatesTest, DefaultTemplateForVerseVocaloid) {
   MelodyTemplateId id = getDefaultTemplateForStyle(VocalStylePreset::Vocaloid, SectionType::A);
   EXPECT_EQ(id, MelodyTemplateId::RunUpTarget);
+}
+
+TEST(MelodyTemplatesTest, DefaultTemplateForVerseIdolUsesCallResponse) {
+  MelodyTemplateId id = getDefaultTemplateForStyle(VocalStylePreset::Idol, SectionType::A);
+  EXPECT_EQ(id, MelodyTemplateId::CallResponse);
 }
 
 TEST(MelodyTemplatesTest, DefaultTemplateForPreChorus) {
@@ -217,7 +224,8 @@ TEST(MelodyTemplatesTest, AuxConfigsForCallResponse) {
 
 TEST(MelodyTemplatesTest, CallResponseForBridgePowerfulShout) {
   // PowerfulShout style should use CallResponse for Bridge sections
-  MelodyTemplateId id = getDefaultTemplateForStyle(VocalStylePreset::PowerfulShout, SectionType::Bridge);
+  MelodyTemplateId id =
+      getDefaultTemplateForStyle(VocalStylePreset::PowerfulShout, SectionType::Bridge);
   EXPECT_EQ(id, MelodyTemplateId::CallResponse);
 }
 
@@ -227,9 +235,15 @@ TEST(MelodyTemplatesTest, CallResponseForBridgeRock) {
   EXPECT_EQ(id, MelodyTemplateId::CallResponse);
 }
 
+TEST(MelodyTemplatesTest, CallResponseForBridgeIdol) {
+  MelodyTemplateId id = getDefaultTemplateForStyle(VocalStylePreset::Idol, SectionType::Bridge);
+  EXPECT_EQ(id, MelodyTemplateId::CallResponse);
+}
+
 TEST(MelodyTemplatesTest, CallResponseForMixBreak) {
   // MixBreak sections should default to CallResponse regardless of style
-  MelodyTemplateId id = getDefaultTemplateForStyle(VocalStylePreset::Standard, SectionType::MixBreak);
+  MelodyTemplateId id =
+      getDefaultTemplateForStyle(VocalStylePreset::Standard, SectionType::MixBreak);
   EXPECT_EQ(id, MelodyTemplateId::CallResponse);
 }
 

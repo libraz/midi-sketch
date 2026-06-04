@@ -6,11 +6,12 @@
  * secondary dominant registration, and getNextChordChangeTick same-degree handling.
  */
 
+#include "core/chord_progression_tracker.h"
+
 #include <gtest/gtest.h>
 
 #include "core/arrangement.h"
 #include "core/chord.h"
-#include "core/chord_progression_tracker.h"
 
 using namespace midisketch;
 
@@ -273,7 +274,7 @@ TEST_F(ChordProgressionTrackerTest, SecondaryDominant_InvalidRange) {
 TEST_F(ChordProgressionTrackerTest, SecondaryDominant_EmptyTracker) {
   ChordProgressionTracker empty;
   empty.registerSecondaryDominant(0, 960, 2);  // Should not crash
-  EXPECT_EQ(empty.getChordDegreeAt(0), 0);  // Fallback
+  EXPECT_EQ(empty.getChordDegreeAt(0), 0);     // Fallback
 }
 
 // ============================================================================

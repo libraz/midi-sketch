@@ -7,11 +7,10 @@
  * applyMicroTimingOffsets.
  */
 
-#include "core/post_processor.h"
-
 #include <algorithm>
 
 #include "core/note_timeline_utils.h"
+#include "core/post_processor.h"
 #include "core/timing_constants.h"
 #include "core/timing_offset_calculator.h"
 #include "core/velocity_helper.h"
@@ -81,8 +80,9 @@ SectionType PostProcessor::getSectionTypeAtTick(Tick tick, const std::vector<Sec
   return SectionType::A;  // Default fallback
 }
 
-void PostProcessor::applySectionAwareVelocityHumanization(
-    std::vector<MidiTrack*>& tracks, const std::vector<Section>& sections, std::mt19937& rng) {
+void PostProcessor::applySectionAwareVelocityHumanization(std::vector<MidiTrack*>& tracks,
+                                                          const std::vector<Section>& sections,
+                                                          std::mt19937& rng) {
   for (MidiTrack* track : tracks) {
     auto& notes = track->notes();
     for (auto& note : notes) {
@@ -133,13 +133,11 @@ void PostProcessor::applySectionAwareVelocityHumanization(
 // See src/core/timing_offset_calculator.h for the refactored implementation.
 
 void PostProcessor::applyMicroTimingOffsets(MidiTrack& /*vocal*/, MidiTrack& bass,
-                                             MidiTrack& drum_track,
-                                             const std::vector<Section>* /*sections*/,
-                                             uint8_t drive_feel,
-                                             VocalStylePreset vocal_style,
-                                             DrumStyle drum_style,
-                                             float humanize_timing,
-                                             GenerationParadigm paradigm) {
+                                            MidiTrack& drum_track,
+                                            const std::vector<Section>* /*sections*/,
+                                            uint8_t drive_feel, VocalStylePreset vocal_style,
+                                            DrumStyle drum_style, float humanize_timing,
+                                            GenerationParadigm paradigm) {
   // Use TimingOffsetCalculator for clearer code structure and traceability.
   // The calculator encapsulates all timing logic previously in inline lambdas.
   // humanize_timing scales all timing offsets (0.0 = no timing variation, 1.0 = full variation)

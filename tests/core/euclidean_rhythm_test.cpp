@@ -134,8 +134,8 @@ TEST(EuclideanRhythmTest, CommonPatternsBackbeat) {
 // ============================================================================
 
 TEST(DrumPatternFactoryTest, CreatePatternReturnsValidPattern) {
-  auto pattern =
-      DrumPatternFactory::createPattern(SectionType::Chorus, DrumStyle::Standard, BackingDensity::Normal, 120);
+  auto pattern = DrumPatternFactory::createPattern(SectionType::Chorus, DrumStyle::Standard,
+                                                   BackingDensity::Normal, 120);
 
   // Pattern should have some hits
   EXPECT_NE(pattern.kick, 0);
@@ -144,8 +144,8 @@ TEST(DrumPatternFactoryTest, CreatePatternReturnsValidPattern) {
 }
 
 TEST(DrumPatternFactoryTest, SparseStyleHasNoSnare) {
-  auto pattern =
-      DrumPatternFactory::createPattern(SectionType::A, DrumStyle::Sparse, BackingDensity::Thin, 80);
+  auto pattern = DrumPatternFactory::createPattern(SectionType::A, DrumStyle::Sparse,
+                                                   BackingDensity::Thin, 80);
 
   // Sparse/ballad style should have no snare
   EXPECT_EQ(pattern.snare, 0);
@@ -164,8 +164,8 @@ TEST(DrumPatternFactoryTest, FourOnFloorKick) {
 }
 
 TEST(DrumPatternFactoryTest, ThinDensityHasQuarterNoteHiHat) {
-  auto pattern =
-      DrumPatternFactory::createPattern(SectionType::A, DrumStyle::Standard, BackingDensity::Thin, 120);
+  auto pattern = DrumPatternFactory::createPattern(SectionType::A, DrumStyle::Standard,
+                                                   BackingDensity::Thin, 120);
 
   // Thin density should have quarter note hi-hat (4 hits)
   int count = 0;
@@ -176,8 +176,8 @@ TEST(DrumPatternFactoryTest, ThinDensityHasQuarterNoteHiHat) {
 }
 
 TEST(DrumPatternFactoryTest, ThickDensityHasDenserHiHat) {
-  auto pattern =
-      DrumPatternFactory::createPattern(SectionType::Chorus, DrumStyle::Standard, BackingDensity::Thick, 120);
+  auto pattern = DrumPatternFactory::createPattern(SectionType::Chorus, DrumStyle::Standard,
+                                                   BackingDensity::Thick, 120);
 
   // Thick density should have denser hi-hat (12 or 16 hits)
   int count = 0;
@@ -189,8 +189,8 @@ TEST(DrumPatternFactoryTest, ThickDensityHasDenserHiHat) {
 
 TEST(DrumPatternFactoryTest, HighBpmLimitsSixteenthNotes) {
   // At 160 BPM, 16th notes should be limited
-  auto pattern =
-      DrumPatternFactory::createPattern(SectionType::Chorus, DrumStyle::Standard, BackingDensity::Thick, 160);
+  auto pattern = DrumPatternFactory::createPattern(SectionType::Chorus, DrumStyle::Standard,
+                                                   BackingDensity::Thick, 160);
 
   // Should fall back to 8th notes (8 hits) instead of 16th
   int count = 0;
@@ -201,8 +201,8 @@ TEST(DrumPatternFactoryTest, HighBpmLimitsSixteenthNotes) {
 }
 
 TEST(DrumPatternFactoryTest, IntroHasMinimalKick) {
-  auto pattern =
-      DrumPatternFactory::createPattern(SectionType::Intro, DrumStyle::Standard, BackingDensity::Normal, 120);
+  auto pattern = DrumPatternFactory::createPattern(SectionType::Intro, DrumStyle::Standard,
+                                                   BackingDensity::Normal, 120);
 
   // Intro should have sparse kick (2 hits)
   int count = 0;
@@ -213,16 +213,16 @@ TEST(DrumPatternFactoryTest, IntroHasMinimalKick) {
 }
 
 TEST(DrumPatternFactoryTest, ChorusHasOpenHiHat) {
-  auto pattern =
-      DrumPatternFactory::createPattern(SectionType::Chorus, DrumStyle::Standard, BackingDensity::Normal, 120);
+  auto pattern = DrumPatternFactory::createPattern(SectionType::Chorus, DrumStyle::Standard,
+                                                   BackingDensity::Normal, 120);
 
   // Chorus should have open hi-hat accents
   EXPECT_NE(pattern.open_hh, 0);
 }
 
 TEST(DrumPatternFactoryTest, IntroHasNoOpenHiHat) {
-  auto pattern =
-      DrumPatternFactory::createPattern(SectionType::Intro, DrumStyle::Standard, BackingDensity::Normal, 120);
+  auto pattern = DrumPatternFactory::createPattern(SectionType::Intro, DrumStyle::Standard,
+                                                   BackingDensity::Normal, 120);
 
   // Intro should not have open hi-hat
   EXPECT_EQ(pattern.open_hh, 0);
@@ -247,8 +247,8 @@ TEST(GrooveTemplateTest, GetGroovePatternReturnsValidPattern) {
 
 TEST(GrooveTemplateTest, AllTemplatesHaveValidPatterns) {
   const GrooveTemplate templates[] = {
-      GrooveTemplate::Standard,  GrooveTemplate::Funk,    GrooveTemplate::Shuffle,
-      GrooveTemplate::Bossa,     GrooveTemplate::Trap,    GrooveTemplate::HalfTime,
+      GrooveTemplate::Standard,  GrooveTemplate::Funk, GrooveTemplate::Shuffle,
+      GrooveTemplate::Bossa,     GrooveTemplate::Trap, GrooveTemplate::HalfTime,
       GrooveTemplate::Breakbeat,
   };
 

@@ -13,10 +13,9 @@
 #include <random>
 #include <vector>
 
-#include "core/rng_util.h"
-
 #include "core/melody_types.h"
 #include "core/pitch_utils.h"
+#include "core/rng_util.h"
 #include "core/types.h"
 
 namespace midisketch {
@@ -158,11 +157,11 @@ inline SkeletonPattern getSkeletonPattern(HookSkeleton skeleton) {
 
 /// @brief Weight map for hook skeleton selection.
 struct SkeletonWeights {
-  float repeat;           ///< Weight for Repeat skeleton
-  float ascending;        ///< Weight for Ascending skeleton
-  float ascend_drop;      ///< Weight for AscendDrop skeleton
-  float leap_return;      ///< Weight for LeapReturn skeleton
-  float rhythm_repeat;    ///< Weight for RhythmRepeat skeleton
+  float repeat;                  ///< Weight for Repeat skeleton
+  float ascending;               ///< Weight for Ascending skeleton
+  float ascend_drop;             ///< Weight for AscendDrop skeleton
+  float leap_return;             ///< Weight for LeapReturn skeleton
+  float rhythm_repeat;           ///< Weight for RhythmRepeat skeleton
   float peak_drop = 0.0f;        ///< Weight for PeakDrop skeleton
   float pendulum = 0.0f;         ///< Weight for Pendulum skeleton
   float descent_resolve = 0.0f;  ///< Weight for DescentResolve skeleton
@@ -170,21 +169,21 @@ struct SkeletonWeights {
   float syncopated = 0.0f;       ///< Weight for Syncopated skeleton
   float chromatic_slide = 0.0f;  ///< Weight for ChromaticSlide skeleton
   // Extended patterns
-  float double_ascend = 0.0f;     ///< Weight for DoubleAscend skeleton
-  float staircase = 0.0f;         ///< Weight for Staircase skeleton
-  float triple_hit = 0.0f;        ///< Weight for TripleHit skeleton
-  float wide_arch = 0.0f;         ///< Weight for WideArch skeleton
-  float narrow_pendulum = 0.0f;   ///< Weight for NarrowPendulum skeleton
-  float question_mark = 0.0f;     ///< Weight for QuestionMark skeleton
+  float double_ascend = 0.0f;    ///< Weight for DoubleAscend skeleton
+  float staircase = 0.0f;        ///< Weight for Staircase skeleton
+  float triple_hit = 0.0f;       ///< Weight for TripleHit skeleton
+  float wide_arch = 0.0f;        ///< Weight for WideArch skeleton
+  float narrow_pendulum = 0.0f;  ///< Weight for NarrowPendulum skeleton
+  float question_mark = 0.0f;    ///< Weight for QuestionMark skeleton
   // Phase 3: New patterns for addictiveness
-  float stepwise_descent = 0.0f;   ///< Weight for StepwiseDescent skeleton
-  float octave_leap = 0.0f;        ///< Weight for OctaveLeap skeleton
-  float suspend_resolve = 0.0f;    ///< Weight for SuspendResolve skeleton
-  float symmetric_arch = 0.0f;     ///< Weight for SymmetricArch skeleton
-  float anticipation_build = 0.0f; ///< Weight for AnticipationBuild skeleton
-  float echo_phrasing = 0.0f;      ///< Weight for EchoPhrasing skeleton
-  float stutter_repeat = 0.0f;     ///< Weight for StutterRepeat skeleton
-  float ostinato = 0.0f;           ///< Weight for Ostinato skeleton (6-note same-pitch)
+  float stepwise_descent = 0.0f;    ///< Weight for StepwiseDescent skeleton
+  float octave_leap = 0.0f;         ///< Weight for OctaveLeap skeleton
+  float suspend_resolve = 0.0f;     ///< Weight for SuspendResolve skeleton
+  float symmetric_arch = 0.0f;      ///< Weight for SymmetricArch skeleton
+  float anticipation_build = 0.0f;  ///< Weight for AnticipationBuild skeleton
+  float echo_phrasing = 0.0f;       ///< Weight for EchoPhrasing skeleton
+  float stutter_repeat = 0.0f;      ///< Weight for StutterRepeat skeleton
+  float ostinato = 0.0f;            ///< Weight for Ostinato skeleton (6-note same-pitch)
 };
 
 /// @brief Default weights for Chorus sections (memorability focused).
@@ -340,10 +339,10 @@ inline SkeletonWeights applyHookIntensityToWeights(const SkeletonWeights& base,
       result.stepwise_descent *= 1.5f;  // Strong emotional impact
       result.octave_leap *= 1.4f;       // Dramatic
       result.suspend_resolve *= 1.3f;
-      result.symmetric_arch *= 1.4f;    // Satisfying balance
+      result.symmetric_arch *= 1.4f;  // Satisfying balance
       result.anticipation_build *= 1.2f;
-      result.stutter_repeat *= 1.6f;    // Very catchy
-      result.ostinato *= 2.0f;          // Strong boost for addictiveness
+      result.stutter_repeat *= 1.6f;  // Very catchy
+      result.ostinato *= 2.0f;        // Strong boost for addictiveness
       break;
 
     case HookIntensity::Maximum:
@@ -397,7 +396,7 @@ inline SkeletonWeights applyHookIntensityToWeights(const SkeletonWeights& base,
 /// @param total_bars Total bars in section
 /// @returns Adjusted HookIntensity (potentially boosted for first half)
 inline HookIntensity getPositionAwareIntensity(HookIntensity base, uint8_t bar_in_section,
-                                                uint8_t total_bars) {
+                                               uint8_t total_bars) {
   // Only apply gradient for sections with 8+ bars
   // First half (bars 0-3): boost intensity by one level
   // Second half (bars 4+): use base intensity

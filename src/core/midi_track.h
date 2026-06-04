@@ -74,7 +74,8 @@ class MidiTrack {
   const std::vector<PitchBendEvent>& pitchBendEvents() const { return pitch_bend_events_; }
   std::vector<PitchBendEvent>& pitchBendEvents() { return pitch_bend_events_; }
   bool empty() const {
-    return notes_.empty() && textEvents_.empty() && cc_events_.empty() && pitch_bend_events_.empty();
+    return notes_.empty() && textEvents_.empty() && cc_events_.empty() &&
+           pitch_bend_events_.empty();
   }
   size_t noteCount() const { return notes_.size(); }
   Tick lastTick() const;

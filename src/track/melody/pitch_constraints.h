@@ -39,8 +39,8 @@ bool isStrongBeat(Tick tick);
 /// @param disable_singability If true, use simple nearest chord tone
 /// @return Adjusted pitch (chord tone if on downbeat)
 int enforceDownbeatChordTone(int pitch, Tick tick, int8_t chord_degree, int prev_pitch,
-                              uint8_t vocal_low, uint8_t vocal_high,
-                              bool disable_singability = false);
+                             uint8_t vocal_low, uint8_t vocal_high,
+                             bool disable_singability = false);
 
 /// @brief Find best chord tone preserving melodic direction.
 ///
@@ -55,8 +55,8 @@ int enforceDownbeatChordTone(int pitch, Tick tick, int8_t chord_degree, int prev
 /// @param max_interval Maximum interval allowed (0 = no limit)
 /// @return Best chord tone preserving direction intent
 int findBestChordTonePreservingDirection(int target_pitch, int prev_pitch, int8_t chord_degree,
-                                          uint8_t vocal_low, uint8_t vocal_high,
-                                          int max_interval = 0);
+                                         uint8_t vocal_low, uint8_t vocal_high,
+                                         int max_interval = 0);
 
 /// @brief Bias downbeat pitch toward guide tones (3rd/7th) with given probability.
 ///
@@ -64,7 +64,8 @@ int findBestChordTonePreservingDirection(int target_pitch, int prev_pitch, int8_
 /// snaps the pitch to the nearest guide tone instead of any chord tone.
 /// If no guide tone is in range, falls back to the original pitch.
 ///
-/// @param pitch Current pitch candidate (should already be a chord tone from enforceDownbeatChordTone)
+/// @param pitch Current pitch candidate (should already be a chord tone from
+/// enforceDownbeatChordTone)
 /// @param tick Tick position for strong beat check
 /// @param chord_degree Current chord degree
 /// @param vocal_low Minimum allowed pitch
@@ -72,9 +73,8 @@ int findBestChordTonePreservingDirection(int target_pitch, int prev_pitch, int8_
 /// @param guide_tone_rate Probability percentage (0-100)
 /// @param rng Random number generator
 /// @return Adjusted pitch (guide tone if selected)
-int enforceGuideToneOnDownbeat(int pitch, Tick tick, int8_t chord_degree,
-                                uint8_t vocal_low, uint8_t vocal_high,
-                                uint8_t guide_tone_rate, std::mt19937& rng);
+int enforceGuideToneOnDownbeat(int pitch, Tick tick, int8_t chord_degree, uint8_t vocal_low,
+                               uint8_t vocal_high, uint8_t guide_tone_rate, std::mt19937& rng);
 
 /// @brief Enforce avoid note constraint against chord tones.
 ///
@@ -86,8 +86,8 @@ int enforceGuideToneOnDownbeat(int pitch, Tick tick, int8_t chord_degree,
 /// @param vocal_low Minimum allowed pitch
 /// @param vocal_high Maximum allowed pitch
 /// @return Adjusted pitch (safe from avoid intervals)
-int enforceAvoidNoteConstraint(int pitch, int8_t chord_degree,
-                                uint8_t vocal_low, uint8_t vocal_high);
+int enforceAvoidNoteConstraint(int pitch, int8_t chord_degree, uint8_t vocal_low,
+                               uint8_t vocal_high);
 
 /// @brief Enforce maximum interval constraint between consecutive notes.
 ///
@@ -103,8 +103,8 @@ int enforceAvoidNoteConstraint(int pitch, int8_t chord_degree,
 /// @param tessitura Optional tessitura range for preference
 /// @return Adjusted pitch within interval constraint
 int enforceMaxIntervalConstraint(int new_pitch, int prev_pitch, int8_t chord_degree,
-                                  int max_interval, uint8_t vocal_low, uint8_t vocal_high,
-                                  const TessituraRange* tessitura = nullptr);
+                                 int max_interval, uint8_t vocal_low, uint8_t vocal_high,
+                                 const TessituraRange* tessitura = nullptr);
 
 /// @brief Apply leap preparation constraint.
 ///
@@ -121,8 +121,8 @@ int enforceMaxIntervalConstraint(int new_pitch, int prev_pitch, int8_t chord_deg
 /// @param tessitura Optional tessitura range
 /// @return Adjusted pitch respecting leap preparation
 int applyLeapPreparationConstraint(int new_pitch, int prev_pitch, Tick prev_duration,
-                                    int8_t chord_degree, uint8_t vocal_low, uint8_t vocal_high,
-                                    const TessituraRange* tessitura = nullptr);
+                                   int8_t chord_degree, uint8_t vocal_low, uint8_t vocal_high,
+                                   const TessituraRange* tessitura = nullptr);
 
 /// @brief Encourage leap after long notes.
 ///
@@ -138,8 +138,8 @@ int applyLeapPreparationConstraint(int new_pitch, int prev_pitch, Tick prev_dura
 /// @param rng Random number generator
 /// @return Possibly adjusted pitch with encouraged leap
 int encourageLeapAfterLongNote(int new_pitch, int prev_pitch, Tick prev_duration,
-                                int8_t chord_degree, uint8_t vocal_low, uint8_t vocal_high,
-                                std::mt19937& rng);
+                               int8_t chord_degree, uint8_t vocal_low, uint8_t vocal_high,
+                               std::mt19937& rng);
 
 }  // namespace melody
 }  // namespace midisketch

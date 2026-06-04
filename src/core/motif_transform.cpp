@@ -118,11 +118,9 @@ GlobalMotif sequenceMotif(const GlobalMotif& source, int8_t degree_shift) {
   // This creates a melodic sequence: same contour pattern with
   // wider or narrower intervals, preserving rhythm and contour type.
   for (uint8_t idx = 0; idx < result.interval_count && idx < 8; ++idx) {
-    int16_t shifted =
-        static_cast<int16_t>(result.interval_signature[idx]) + degree_shift;
+    int16_t shifted = static_cast<int16_t>(result.interval_signature[idx]) + degree_shift;
     result.interval_signature[idx] = static_cast<int8_t>(
-        std::clamp(shifted, static_cast<int16_t>(-12),
-                   static_cast<int16_t>(12)));
+        std::clamp(shifted, static_cast<int16_t>(-12), static_cast<int16_t>(12)));
   }
 
   return result;
@@ -174,14 +172,10 @@ float calculateMotifSimilarity(const GlobalMotif& a, const GlobalMotif& b) {
     score += 0.3f;
   } else {
     // Partial credit for related contours
-    if ((a.contour_type == ContourType::Ascending &&
-         b.contour_type == ContourType::Peak) ||
-        (a.contour_type == ContourType::Peak &&
-         b.contour_type == ContourType::Ascending) ||
-        (a.contour_type == ContourType::Descending &&
-         b.contour_type == ContourType::Valley) ||
-        (a.contour_type == ContourType::Valley &&
-         b.contour_type == ContourType::Descending)) {
+    if ((a.contour_type == ContourType::Ascending && b.contour_type == ContourType::Peak) ||
+        (a.contour_type == ContourType::Peak && b.contour_type == ContourType::Ascending) ||
+        (a.contour_type == ContourType::Descending && b.contour_type == ContourType::Valley) ||
+        (a.contour_type == ContourType::Valley && b.contour_type == ContourType::Descending)) {
       score += 0.15f;
     }
   }

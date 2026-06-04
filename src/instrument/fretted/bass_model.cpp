@@ -185,8 +185,7 @@ std::vector<uint8_t> BassModel::getPopStrings() const {
 }
 
 float BassModel::getMaxBend(const FretPosition& pos) const {
-  return static_cast<float>(
-      BendConstraint::getMaxBend(pos.string, pos.fret, true /* is_bass */));
+  return static_cast<float>(BendConstraint::getMaxBend(pos.string, pos.fret, true /* is_bass */));
 }
 
 bool BassModel::hasLowB() const {
@@ -194,12 +193,10 @@ bool BassModel::hasLowB() const {
          instrument_type_ == FrettedInstrumentType::Bass6String;
 }
 
-bool BassModel::hasHighC() const {
-  return instrument_type_ == FrettedInstrumentType::Bass6String;
-}
+bool BassModel::hasHighC() const { return instrument_type_ == FrettedInstrumentType::Bass6String; }
 
 float BassModel::scorePosition(const FretPosition& pos, const HandPosition& current_hand,
-                                PlayingTechnique technique) const {
+                               PlayingTechnique technique) const {
   // Start with base scoring
   float score = FrettedInstrumentBase::scorePosition(pos, current_hand, technique);
 

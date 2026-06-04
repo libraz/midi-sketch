@@ -15,10 +15,9 @@
 namespace midisketch {
 namespace melody {
 
-int applyPitchChoice(PitchChoice choice, int current_pitch, int target_pitch,
-                     int8_t chord_degree, int key_offset, uint8_t vocal_low,
-                     uint8_t vocal_high, VocalAttitude attitude, bool disable_singability,
-                     float note_eighths, float tension_usage) {
+int applyPitchChoice(PitchChoice choice, int current_pitch, int target_pitch, int8_t chord_degree,
+                     int key_offset, uint8_t vocal_low, uint8_t vocal_high, VocalAttitude attitude,
+                     bool disable_singability, float note_eighths, float tension_usage) {
   // VocalAttitude affects candidate pitch selection:
   //   Clean: chord tones only (1, 3, 5)
   //   Expressive: chord tones + tensions (7, 9)
@@ -55,14 +54,14 @@ int applyPitchChoice(PitchChoice choice, int current_pitch, int target_pitch,
       // tension_usage=0.0 → Expressive behaves like Clean (chord tones only)
       // tension_usage=1.0 → always add tensions (previous behavior)
       {
-        float tension_threshold = 1.0f - tension_usage;  // High usage = low threshold
+        float tension_threshold = 1.0f - tension_usage;                // High usage = low threshold
         float note_length_norm = std::min(note_eighths / 4.0f, 1.0f);  // Normalize to 0-1
         bool add_tensions = (note_length_norm >= tension_threshold);
         if (add_tensions) {
           int root_pc = chord_tones.empty() ? 0 : chord_tones[0];
-          int seventh = (root_pc + 11) % 12;   // Major 7th (11 semitones from root)
-          int ninth = (root_pc + 2) % 12;      // 9th = 2nd (2 semitones)
-          int eleventh = (root_pc + 5) % 12;   // 11th = 4th (5 semitones, sus4-like)
+          int seventh = (root_pc + 11) % 12;  // Major 7th (11 semitones from root)
+          int ninth = (root_pc + 2) % 12;     // 9th = 2nd (2 semitones)
+          int eleventh = (root_pc + 5) % 12;  // 11th = 4th (5 semitones, sus4-like)
           candidate_pcs.push_back(seventh);
           candidate_pcs.push_back(ninth);
           candidate_pcs.push_back(eleventh);
@@ -313,9 +312,8 @@ int applyPitchChoice(PitchChoice choice, int current_pitch, int target_pitch,
   return new_pitch;
 }
 
-int calculateTargetPitch(int tessitura_center, int tessitura_range,
-                         uint8_t vocal_low, uint8_t vocal_high, Tick section_start,
-                         const IHarmonyContext& harmony) {
+int calculateTargetPitch(int tessitura_center, int tessitura_range, uint8_t vocal_low,
+                         uint8_t vocal_high, Tick section_start, const IHarmonyContext& harmony) {
   // Target is typically a chord tone in the upper part of tessitura
   std::vector<int> chord_tones = harmony.getChordTonesAt(section_start);
 

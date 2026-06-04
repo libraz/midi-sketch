@@ -57,15 +57,16 @@ class StubHarmonyContext : public IHarmonyCoordinator {
     ++registered_track_count_;
   }
 
-  bool isConsonantWithOtherTracks(uint8_t /*pitch*/, Tick /*start*/, Tick /*duration*/, TrackRole /*exclude*/,
-                   bool /*is_weak_beat*/ = false) const override {
+  bool isConsonantWithOtherTracks(uint8_t /*pitch*/, Tick /*start*/, Tick /*duration*/,
+                                  TrackRole /*exclude*/,
+                                  bool /*is_weak_beat*/ = false) const override {
     return all_pitches_safe_;
   }
 
   Tick getNextChordChangeTick(Tick /*after*/) const override { return next_chord_change_; }
 
   ChordBoundaryInfo analyzeChordBoundary(uint8_t /*pitch*/, Tick /*start*/,
-                                          Tick /*duration*/) const override {
+                                         Tick /*duration*/) const override {
     return chord_boundary_info_;
   }
 
@@ -77,7 +78,7 @@ class StubHarmonyContext : public IHarmonyCoordinator {
   void clearNotesForTrack(TrackRole /*track*/) override { ++clear_track_count_; }
 
   void registerPhantomNote(Tick /*start*/, Tick /*duration*/, uint8_t /*pitch*/,
-                            TrackRole /*track*/) override {
+                           TrackRole /*track*/) override {
     ++phantom_note_count_;
   }
 
@@ -93,7 +94,7 @@ class StubHarmonyContext : public IHarmonyCoordinator {
   }
 
   std::vector<int> getPitchClassesFromTrackInRange(Tick /*start*/, Tick /*end*/,
-                                                    TrackRole /*role*/) const override {
+                                                   TrackRole /*role*/) const override {
     return {};
   }
 
@@ -122,22 +123,22 @@ class StubHarmonyContext : public IHarmonyCoordinator {
   }
 
   std::vector<int> getSoundingPitchClasses(Tick /*start*/, Tick /*end*/,
-                                             TrackRole /*exclude*/) const override {
+                                           TrackRole /*exclude*/) const override {
     return sounding_pitch_classes_;  // Return configured or empty
   }
 
   std::vector<uint8_t> getSoundingPitches(Tick /*start*/, Tick /*end*/,
-                                            TrackRole /*exclude*/) const override {
+                                          TrackRole /*exclude*/) const override {
     return sounding_pitches_;  // Return configured or empty
   }
 
   uint8_t getHighestPitchForTrackInRange(Tick /*start*/, Tick /*end*/,
-                                          TrackRole /*role*/) const override {
+                                         TrackRole /*role*/) const override {
     return highest_pitch_for_track_;  // Return configured or 0
   }
 
   uint8_t getLowestPitchForTrackInRange(Tick /*start*/, Tick /*end*/,
-                                          TrackRole /*role*/) const override {
+                                        TrackRole /*role*/) const override {
     return lowest_pitch_for_track_;  // Return configured or 0
   }
 
@@ -169,8 +170,8 @@ class StubHarmonyContext : public IHarmonyCoordinator {
   }
 
   void applyMotifToSections(const std::vector<NoteEvent>& /*motif_pattern*/,
-                             const std::vector<Section>& /*targets*/,
-                             MidiTrack& /*track*/) override {
+                            const std::vector<Section>& /*targets*/,
+                            MidiTrack& /*track*/) override {
     // No-op for stub
   }
 

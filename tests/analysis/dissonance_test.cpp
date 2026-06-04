@@ -58,10 +58,9 @@ TEST(DissonanceTest, AnalyzeGeneratedSong) {
 
   // Basic sanity checks - total_issues includes all category counts.
   // Phase 3 added non_diatonic_notes from modal interchange/tritone substitution.
-  EXPECT_EQ(report.summary.total_issues, report.summary.simultaneous_clashes +
-                                             report.summary.non_chord_tones +
-                                             report.summary.sustained_over_chord_change +
-                                             report.summary.non_diatonic_notes);
+  EXPECT_EQ(report.summary.total_issues,
+            report.summary.simultaneous_clashes + report.summary.non_chord_tones +
+                report.summary.sustained_over_chord_change + report.summary.non_diatonic_notes);
   EXPECT_EQ(
       report.summary.total_issues,
       report.summary.high_severity + report.summary.medium_severity + report.summary.low_severity);
@@ -666,7 +665,7 @@ TEST(DissonanceIntegrationTest, BassChordPhraseEndSyncNoMediumIssues) {
 // This test now verifies analysis runs without crashes, not zero HIGH severity.
 TEST(DissonanceIntegrationTest, AnalysisRunsMultiSeed) {
   std::vector<Mood> test_moods = {Mood::StraightPop, Mood::Ballad,  Mood::EnergeticDance,
-                                  Mood::IdolPop,     Mood::CityPop, Mood::Yoasobi,
+                                  Mood::IdolPop,     Mood::CityPop, Mood::AnimeHighEnergy,
                                   Mood::FutureBass};
 
   std::vector<StructurePattern> test_structures = {

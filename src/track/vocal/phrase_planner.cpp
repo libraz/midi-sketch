@@ -19,15 +19,9 @@ namespace midisketch {
 // Public API
 // ============================================================================
 
-PhrasePlan PhrasePlanner::buildPlan(
-    SectionType section_type,
-    Tick section_start,
-    Tick section_end,
-    uint8_t section_bars,
-    Mood mood,
-    VocalStylePreset vocal_style,
-    const CachedRhythmPattern* rhythm_pattern,
-    uint16_t bpm) {
+PhrasePlan PhrasePlanner::buildPlan(SectionType section_type, Tick section_start, Tick section_end,
+                                    uint8_t section_bars, Mood mood, VocalStylePreset vocal_style,
+                                    const CachedRhythmPattern* rhythm_pattern, uint16_t bpm) {
   PhrasePlan plan;
   plan.section_type = section_type;
   plan.section_start = section_start;
@@ -123,8 +117,7 @@ void PhrasePlanner::determinePhraseStructure(PhrasePlan& plan) {
 // Step 2: Assign phrase timing
 // ============================================================================
 
-void PhrasePlanner::assignPhraseTiming(PhrasePlan& plan, Mood mood,
-                                       VocalStylePreset vocal_style,
+void PhrasePlanner::assignPhraseTiming(PhrasePlan& plan, Mood mood, VocalStylePreset vocal_style,
                                        uint16_t bpm) {
   if (plan.phrases.empty()) return;
 
@@ -132,8 +125,8 @@ void PhrasePlanner::assignPhraseTiming(PhrasePlan& plan, Mood mood,
   assert((plan.section_start % TICKS_PER_BAR) == 0);
   assert((plan.section_end % TICKS_PER_BAR) == 0);
 
-  Tick breath = melody::getBreathDuration(
-      plan.section_type, mood, 0.5f, 60, nullptr, vocal_style, bpm);
+  Tick breath =
+      melody::getBreathDuration(plan.section_type, mood, 0.5f, 60, nullptr, vocal_style, bpm);
 
   uint8_t phrase_count = static_cast<uint8_t>(plan.phrases.size());
 
@@ -181,8 +174,8 @@ void PhrasePlanner::assignPhraseTiming(PhrasePlan& plan, Mood mood,
 
     // Beat count
     Tick phrase_duration = phrase.end_tick - phrase.start_tick;
-    phrase.beats = static_cast<uint8_t>(
-        std::max(static_cast<Tick>(1), phrase_duration / TICKS_PER_BEAT));
+    phrase.beats =
+        static_cast<uint8_t>(std::max(static_cast<Tick>(1), phrase_duration / TICKS_PER_BEAT));
 
     cumulative = phrase.end_tick;
   }
@@ -197,8 +190,7 @@ void PhrasePlanner::assignPhraseTiming(PhrasePlan& plan, Mood mood,
 // Step 3: Reconcile with rhythm lock
 // ============================================================================
 
-void PhrasePlanner::reconcileWithRhythmLock(PhrasePlan& plan,
-                                            const CachedRhythmPattern& rhythm) {
+void PhrasePlanner::reconcileWithRhythmLock(PhrasePlan& plan, const CachedRhythmPattern& rhythm) {
   if (rhythm.onset_beats.empty() || plan.phrases.size() <= 1) {
     return;
   }
@@ -217,8 +209,8 @@ void PhrasePlanner::reconcileWithRhythmLock(PhrasePlan& plan,
     }
     float gap = rhythm.onset_beats[idx] - prev_end;
     if (gap >= kMinGapBeats) {
-      Tick gap_tick = plan.section_start +
-                      static_cast<Tick>(rhythm.onset_beats[idx] * TICKS_PER_BEAT);
+      Tick gap_tick =
+          plan.section_start + static_cast<Tick>(rhythm.onset_beats[idx] * TICKS_PER_BEAT);
       gap_ticks.push_back(gap_tick);
     }
   }
@@ -232,8 +224,7 @@ void PhrasePlanner::reconcileWithRhythmLock(PhrasePlan& plan,
     Tick best_distance = kSearchRadius + 1;
     bool found_gap = false;
     for (Tick gap_tick : gap_ticks) {
-      Tick distance = (gap_tick > boundary) ? (gap_tick - boundary)
-                                            : (boundary - gap_tick);
+      Tick distance = (gap_tick > boundary) ? (gap_tick - boundary) : (boundary - gap_tick);
       if (distance <= kSearchRadius && distance < best_distance) {
         best_gap = gap_tick;
         best_distance = distance;
@@ -330,8 +321,7 @@ void PhrasePlanner::assignArcAndContour(PhrasePlan& plan) {
 
     // Arc stage: distribute phrases across 4 stages (0-3)
     // Formula: (phrase_index * 4) / phrase_count, clamped to 0-3
-    uint8_t stage = static_cast<uint8_t>(
-        std::min(static_cast<int>(idx * 4 / phrase_count), 3));
+    uint8_t stage = static_cast<uint8_t>(std::min(static_cast<int>(idx * 4 / phrase_count), 3));
     phrase.arc_stage = stage;
 
     // Contour from lookup table
@@ -339,8 +329,7 @@ void PhrasePlanner::assignArcAndContour(PhrasePlan& plan) {
 
     // Hook positions: Chorus phrase 0 and phrase 2 (if count > 3)
     phrase.is_hook_position = false;
-    if (plan.section_type == SectionType::Chorus ||
-        plan.section_type == SectionType::Drop) {
+    if (plan.section_type == SectionType::Chorus || plan.section_type == SectionType::Drop) {
       if (idx == 0) {
         phrase.is_hook_position = true;
       } else if (idx == 2 && phrase_count > 3) {
@@ -366,9 +355,9 @@ uint8_t getBaseMoraCount(SectionType section_type) {
       return 11;  // Pre-chorus: 8-14, base 11
     case SectionType::Chorus:
     case SectionType::Drop:
-      return 9;   // Chorus: 6-12, base 9
+      return 9;  // Chorus: 6-12, base 9
     case SectionType::Bridge:
-      return 8;   // Bridge: 6-10, base 8
+      return 8;  // Bridge: 6-10, base 8
     default:
       return 10;
   }
@@ -378,11 +367,16 @@ uint8_t getBaseMoraCount(SectionType section_type) {
 /// Presentation=1.0, Development=1.15, Climax=1.0, Resolution=0.85
 float getArcStageDensityModifier(uint8_t arc_stage) {
   switch (arc_stage) {
-    case 0: return 1.0f;   // Presentation
-    case 1: return 1.15f;  // Development
-    case 2: return 1.0f;   // Climax
-    case 3: return 0.85f;  // Resolution
-    default: return 1.0f;
+    case 0:
+      return 1.0f;  // Presentation
+    case 1:
+      return 1.15f;  // Development
+    case 2:
+      return 1.0f;  // Climax
+    case 3:
+      return 0.85f;  // Resolution
+    default:
+      return 1.0f;
   }
 }
 
@@ -398,8 +392,7 @@ void PhrasePlanner::assignMoraHints(PhrasePlan& plan) {
 
     // Calculate target note count
     float target = static_cast<float>(base_mora) * arc_modifier;
-    phrase.target_note_count = static_cast<uint8_t>(
-        std::max(1.0f, std::round(target)));
+    phrase.target_note_count = static_cast<uint8_t>(std::max(1.0f, std::round(target)));
   }
 }
 
@@ -419,14 +412,12 @@ void PhrasePlanner::detectHoldBurstPoints(PhrasePlan& plan) {
     // Recalculate target note count with reduced modifier
     uint8_t base_mora = getBaseMoraCount(plan.section_type);
     float target = static_cast<float>(base_mora) * last_phrase.density_modifier;
-    last_phrase.target_note_count = static_cast<uint8_t>(
-        std::max(1.0f, std::round(target)));
+    last_phrase.target_note_count = static_cast<uint8_t>(std::max(1.0f, std::round(target)));
   }
 
   // Chorus: If arc_stage transitions to Climax (stage 2),
   // mark that phrase as hold-burst entry with increased density
-  if (plan.section_type == SectionType::Chorus ||
-      plan.section_type == SectionType::Drop) {
+  if (plan.section_type == SectionType::Chorus || plan.section_type == SectionType::Drop) {
     for (auto& phrase : plan.phrases) {
       if (phrase.arc_stage == 2) {
         phrase.is_hold_burst_entry = true;
@@ -434,8 +425,7 @@ void PhrasePlanner::detectHoldBurstPoints(PhrasePlan& plan) {
         // Recalculate target note count
         uint8_t base_mora = getBaseMoraCount(plan.section_type);
         float target = static_cast<float>(base_mora) * phrase.density_modifier;
-        phrase.target_note_count = static_cast<uint8_t>(
-            std::max(1.0f, std::round(target)));
+        phrase.target_note_count = static_cast<uint8_t>(std::max(1.0f, std::round(target)));
       }
     }
   }

@@ -48,8 +48,7 @@ class DrumPerformer : public IPhysicalPerformer {
   std::vector<uint8_t> suggestAlternatives(uint8_t desired_pitch, Tick start, Tick duration,
                                            uint8_t range_low, uint8_t range_high) const override;
 
-  void updateState(PerformerState& state, uint8_t pitch, Tick start,
-                   Tick duration) const override;
+  void updateState(PerformerState& state, uint8_t pitch, Tick start, Tick duration) const override;
 
   std::unique_ptr<PerformerState> createInitialState() const override;
 

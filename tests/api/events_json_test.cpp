@@ -16,7 +16,7 @@ namespace {
 GeneratorParams makeRhythmSyncParams(uint32_t seed = 42) {
   GeneratorParams params;
   params.structure = StructurePattern::FullPop;
-  params.mood = Mood::Yoasobi;
+  params.mood = Mood::AnimeHighEnergy;
   params.chord_id = 0;
   params.key = Key::C;
   params.drums_enabled = true;
@@ -31,7 +31,7 @@ GeneratorParams makeRhythmSyncParams(uint32_t seed = 42) {
 GeneratorParams makeTraditionalParams(uint32_t seed = 42) {
   GeneratorParams params;
   params.structure = StructurePattern::FullPop;
-  params.mood = Mood::Yoasobi;
+  params.mood = Mood::AnimeHighEnergy;
   params.chord_id = 0;
   params.key = Key::C;
   params.drums_enabled = true;
@@ -97,8 +97,8 @@ TEST(EventsJsonTest, ChordTimelineCoversFullSong) {
   size_t val_end = json.find_first_of(",}", val_start);
   ASSERT_NE(val_end, std::string::npos);
   std::string first_tick_str = json.substr(val_start, val_end - val_start);
-  EXPECT_EQ(first_tick_str, "0")
-      << "First chord entry should start at tick 0, got: " << first_tick_str;
+  EXPECT_EQ(first_tick_str, "0") << "First chord entry should start at tick 0, got: "
+                                 << first_tick_str;
 
   // The total ticks from duration_ticks field
   size_t dur_pos = json.find("\"duration_ticks\":");
@@ -129,8 +129,8 @@ TEST(EventsJsonTest, ChordTimelineCoversFullSong) {
   std::string last_end_tick_str = json.substr(end_val_start, end_val_end - end_val_start);
 
   EXPECT_EQ(last_end_tick_str, total_ticks_str)
-      << "Last chord endTick (" << last_end_tick_str
-      << ") should equal duration_ticks (" << total_ticks_str << ")";
+      << "Last chord endTick (" << last_end_tick_str << ") should equal duration_ticks ("
+      << total_ticks_str << ")";
 }
 
 TEST(EventsJsonTest, SecondaryDominantFlagInTimeline) {
@@ -151,9 +151,8 @@ TEST(EventsJsonTest, SecondaryDominantFlagInTimeline) {
   size_t pos = json.find("\"isSecondaryDominant\":true", chords_pos);
   bool found_sec_dom = (pos != std::string::npos && pos < chords_end);
 
-  EXPECT_TRUE(found_sec_dom)
-      << "RhythmSync blueprint (seed=12345) should have at least one "
-         "secondary dominant in chord timeline";
+  EXPECT_TRUE(found_sec_dom) << "RhythmSync blueprint (seed=12345) should have at least one "
+                                "secondary dominant in chord timeline";
 }
 
 TEST(EventsJsonTest, ChordTimelineHasMultipleEntries) {
@@ -175,8 +174,7 @@ TEST(EventsJsonTest, ChordTimelineHasMultipleEntries) {
   }
 
   // FullPop structure with chord progression should have multiple chord changes
-  EXPECT_GT(degree_count, 1)
-      << "Chord timeline should have multiple entries for FullPop structure";
+  EXPECT_GT(degree_count, 1) << "Chord timeline should have multiple entries for FullPop structure";
 }
 
 }  // namespace

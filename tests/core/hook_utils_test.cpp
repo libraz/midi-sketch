@@ -85,7 +85,8 @@ TEST(HookUtilsTest, DefaultSkeletonWeightsHasOstinato) {
 // ============================================================================
 
 TEST(HookUtilsTest, ApplyHookIntensityMaximumBoostsOstinato) {
-  SkeletonWeights result = applyHookIntensityToWeights(kChorusSkeletonWeights, HookIntensity::Maximum);
+  SkeletonWeights result =
+      applyHookIntensityToWeights(kChorusSkeletonWeights, HookIntensity::Maximum);
 
   // Maximum intensity should heavily boost ostinato
   float base_ostinato = kChorusSkeletonWeights.ostinato;
@@ -98,17 +99,16 @@ TEST(HookUtilsTest, ApplyHookIntensityOffSuppressesOstinato) {
 
   // Off intensity should suppress ostinato
   float base_ostinato = kChorusSkeletonWeights.ostinato;
-  EXPECT_LT(result.ostinato, base_ostinato)
-      << "Off intensity should suppress ostinato";
+  EXPECT_LT(result.ostinato, base_ostinato) << "Off intensity should suppress ostinato";
 }
 
 TEST(HookUtilsTest, ApplyHookIntensityNormalBoostsOstinato) {
-  SkeletonWeights result = applyHookIntensityToWeights(kChorusSkeletonWeights, HookIntensity::Normal);
+  SkeletonWeights result =
+      applyHookIntensityToWeights(kChorusSkeletonWeights, HookIntensity::Normal);
 
   // Normal intensity should moderately boost ostinato
   float base_ostinato = kChorusSkeletonWeights.ostinato;
-  EXPECT_GT(result.ostinato, base_ostinato)
-      << "Normal intensity should boost ostinato";
+  EXPECT_GT(result.ostinato, base_ostinato) << "Normal intensity should boost ostinato";
 }
 
 // ============================================================================
@@ -129,8 +129,7 @@ TEST(HookUtilsTest, SelectHookSkeletonCanReturnOstinato) {
     }
   }
 
-  EXPECT_TRUE(found_ostinato)
-      << "Ostinato should be selectable with Maximum intensity in Chorus";
+  EXPECT_TRUE(found_ostinato) << "Ostinato should be selectable with Maximum intensity in Chorus";
 }
 
 TEST(HookUtilsTest, SelectHookSkeletonReturnsValidPattern) {
@@ -164,9 +163,9 @@ TEST(HookUtilsTest, ScaleDegreesToSemitones) {
 
 TEST(HookUtilsTest, ScaleDegreesToSemitonesNegative) {
   // Negative degrees should mirror positive
-  EXPECT_EQ(scaleDegreesToSemitones(-1), -2);   // Down major 2nd
-  EXPECT_EQ(scaleDegreesToSemitones(-2), -4);   // Down major 3rd
-  EXPECT_EQ(scaleDegreesToSemitones(-3), -5);   // Down perfect 4th
+  EXPECT_EQ(scaleDegreesToSemitones(-1), -2);  // Down major 2nd
+  EXPECT_EQ(scaleDegreesToSemitones(-2), -4);  // Down major 3rd
+  EXPECT_EQ(scaleDegreesToSemitones(-3), -5);  // Down perfect 4th
 }
 
 // ============================================================================

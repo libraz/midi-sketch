@@ -3,9 +3,9 @@
  * @brief Tests for secondary dominant detection and generation.
  */
 
-#include "core/chord.h"
-
 #include <gtest/gtest.h>
+
+#include "core/chord.h"
 
 namespace midisketch {
 namespace {

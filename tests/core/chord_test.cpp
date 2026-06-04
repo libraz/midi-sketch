@@ -111,9 +111,9 @@ TEST(ChordTest, ExtendedChordNone) {
   EXPECT_EQ(extended.intervals[2], basic.intervals[2]);
 }
 
-// ===== New YOASOBI-style Progressions =====
+// ===== New AnimeHighEnergy-style Progressions =====
 
-TEST(ChordTest, YOASOBI1Progression) {
+TEST(ChordTest, AnimeHighEnergy1Progression) {
   const auto& prog = getChordProgression(16);
   // vi – iii – IV – I
   EXPECT_EQ(prog.degrees[0], 5);  // vi
@@ -131,7 +131,7 @@ TEST(ChordTest, JazzPopProgression) {
   EXPECT_EQ(prog.degrees[3], 5);  // vi
 }
 
-TEST(ChordTest, YOASOBI2Progression) {
+TEST(ChordTest, AnimeHighEnergy2Progression) {
   const auto& prog = getChordProgression(18);
   // vi – ii – V – I (turnaround)
   EXPECT_EQ(prog.degrees[0], 5);  // vi
@@ -150,9 +150,9 @@ TEST(ChordTest, CityPopProgression) {
 }
 
 TEST(ChordTest, NewProgressionNames) {
-  EXPECT_STREQ(getChordProgressionName(16), "YOASOBI1");
+  EXPECT_STREQ(getChordProgressionName(16), "AnimeHighEnergy1");
   EXPECT_STREQ(getChordProgressionName(17), "JazzPop");
-  EXPECT_STREQ(getChordProgressionName(18), "YOASOBI2");
+  EXPECT_STREQ(getChordProgressionName(18), "AnimeHighEnergy2");
   EXPECT_STREQ(getChordProgressionName(19), "CityPop");
 }
 
@@ -436,11 +436,11 @@ TEST(ChordTest, ExistingChordQualitiesUnaffected) {
 
 TEST(ChordTest, TritoneSubRootCalculation) {
   // G (7 semitones) -> Db (1 semitone): tritone is 6 semitones
-  EXPECT_EQ(getTritoneSubRoot(7), 1);   // G -> Db
+  EXPECT_EQ(getTritoneSubRoot(7), 1);  // G -> Db
   // C (0) -> F# (6)
-  EXPECT_EQ(getTritoneSubRoot(0), 6);   // C -> F#/Gb
+  EXPECT_EQ(getTritoneSubRoot(0), 6);  // C -> F#/Gb
   // D (2) -> Ab (8)
-  EXPECT_EQ(getTritoneSubRoot(2), 8);   // D -> Ab
+  EXPECT_EQ(getTritoneSubRoot(2), 8);  // D -> Ab
   // F (5) -> B (11)
   EXPECT_EQ(getTritoneSubRoot(5), 11);  // F -> B
   // Symmetry: applying tritone sub twice returns to original

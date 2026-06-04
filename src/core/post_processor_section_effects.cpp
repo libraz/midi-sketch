@@ -8,8 +8,6 @@
  * applyRitDecrescendo, applyEnhancedFinalHit.
  */
 
-#include "core/post_processor.h"
-
 #include <algorithm>
 #include <cstdlib>
 
@@ -19,6 +17,7 @@
 #include "core/note_creator.h"
 #include "core/note_source.h"
 #include "core/pitch_utils.h"
+#include "core/post_processor.h"
 #include "core/timing_constants.h"
 #include "core/velocity_helper.h"
 
@@ -30,7 +29,6 @@ namespace midisketch {
 
 void PostProcessor::applyExitFadeout(std::vector<NoteEvent>& notes, Tick section_end,
                                      uint8_t section_bars) {
-
   // Velocity gradually decreases in last 2 bars (1.0 -> 0.4)
   uint8_t fade_bars = std::min(section_bars, static_cast<uint8_t>(2));
   Tick fade_start = section_end - fade_bars * TICKS_PER_BAR;
@@ -42,15 +40,15 @@ void PostProcessor::applyExitFadeout(std::vector<NoteEvent>& notes, Tick section
 
   for (auto& note : notes) {
     if (note.start_tick >= fade_start && note.start_tick < section_end) {
-      float progress = static_cast<float>(note.start_tick - fade_start) /
-                       static_cast<float>(fade_duration);
+      float progress =
+          static_cast<float>(note.start_tick - fade_start) / static_cast<float>(fade_duration);
       float multiplier = kFadeStartMult + (kFadeEndMult - kFadeStartMult) * progress;
       int new_vel = static_cast<int>(note.velocity * multiplier);
       uint8_t clamped_vel = vel::clamp(new_vel);
 #ifdef MIDISKETCH_NOTE_PROVENANCE
       if (clamped_vel != note.velocity) {
-        note.addTransformStep(TransformStepType::PostProcessVelocity, note.velocity, clamped_vel,
-                              0, 0);
+        note.addTransformStep(TransformStepType::PostProcessVelocity, note.velocity, clamped_vel, 0,
+                              0);
       }
 #endif
       note.velocity = clamped_vel;
@@ -65,11 +63,11 @@ void PostProcessor::applyExitFinalHit(std::vector<NoteEvent>& notes, Tick sectio
 
   for (auto& note : notes) {
     if (note.start_tick >= last_beat_start && note.start_tick < section_end) {
-      uint8_t new_vel = std::min(std::max(note.velocity, kFinalHitVelocity), static_cast<uint8_t>(127));
+      uint8_t new_vel =
+          std::min(std::max(note.velocity, kFinalHitVelocity), static_cast<uint8_t>(127));
 #ifdef MIDISKETCH_NOTE_PROVENANCE
       if (new_vel != note.velocity) {
-        note.addTransformStep(TransformStepType::PostProcessVelocity, note.velocity, new_vel,
-                              1, 0);
+        note.addTransformStep(TransformStepType::PostProcessVelocity, note.velocity, new_vel, 1, 0);
       }
 #endif
       note.velocity = new_vel;
@@ -84,14 +82,13 @@ void PostProcessor::applyExitCutOff(std::vector<NoteEvent>& notes, Tick section_
   Tick cutoff_point = section_end - TICKS_PER_BEAT;
 
   // Remove notes starting after cutoff within this section
-  notes.erase(
-      std::remove_if(notes.begin(), notes.end(),
-                     [section_start, section_end, cutoff_point](const NoteEvent& note) {
-                       return note.start_tick >= cutoff_point &&
-                              note.start_tick < section_end &&
-                              note.start_tick >= section_start;
-                     }),
-      notes.end());
+  notes.erase(std::remove_if(notes.begin(), notes.end(),
+                             [section_start, section_end, cutoff_point](const NoteEvent& note) {
+                               return note.start_tick >= cutoff_point &&
+                                      note.start_tick < section_end &&
+                                      note.start_tick >= section_start;
+                             }),
+              notes.end());
 
   // Truncate notes that extend past the cutoff
   for (auto& note : notes) {
@@ -108,10 +105,8 @@ void PostProcessor::applyExitCutOff(std::vector<NoteEvent>& notes, Tick section_
 }
 
 void PostProcessor::applyExitSustain(std::vector<NoteEvent>& notes, Tick section_start,
-                                     Tick section_end,
-                                     const IChordLookup* chord_lookup,
-                                     const ICollisionDetector* harmony,
-                                     TrackRole track_role) {
+                                     Tick section_end, const IChordLookup* chord_lookup,
+                                     const ICollisionDetector* harmony, TrackRole track_role) {
   // Extend duration of notes in the last bar to reach section boundary,
   // but cap each note's extension at the start of the next chord to prevent overlaps
   Tick last_bar_start = section_end - TICKS_PER_BAR;
@@ -129,9 +124,7 @@ void PostProcessor::applyExitSustain(std::vector<NoteEvent>& notes, Tick section
 
   // Sort by start_tick
   std::sort(last_bar_notes.begin(), last_bar_notes.end(),
-            [](const NoteEvent* a, const NoteEvent* b) {
-              return a->start_tick < b->start_tick;
-            });
+            [](const NoteEvent* a, const NoteEvent* b) { return a->start_tick < b->start_tick; });
 
   // Collect unique start_ticks (sorted)
   std::vector<Tick> unique_starts;
@@ -165,9 +158,8 @@ void PostProcessor::applyExitSustain(std::vector<NoteEvent>& notes, Tick section
       }
       // Inter-track collision check: limit extension to avoid dissonance with other tracks
       if (harmony != nullptr) {
-        Tick safe_end = harmony->getMaxSafeEnd(
-            note->start_tick, note->note, track_role,
-            note->start_tick + new_duration);
+        Tick safe_end = harmony->getMaxSafeEnd(note->start_tick, note->note, track_role,
+                                               note->start_tick + new_duration);
         if (safe_end > note->start_tick) {
           new_duration = safe_end - note->start_tick;
         }
@@ -187,8 +179,7 @@ void PostProcessor::applyExitSustain(std::vector<NoteEvent>& notes, Tick section
 // ============================================================================
 
 void PostProcessor::applyExitPattern(MidiTrack& track, const Section& section,
-                                     ICollisionDetector* harmony,
-                                     TrackRole track_role) {
+                                     ICollisionDetector* harmony, TrackRole track_role) {
   if (section.exit_pattern == ExitPattern::None) {
     return;
   }
@@ -242,17 +233,15 @@ void PostProcessor::applyAllExitPatterns(std::vector<MidiTrack*>& tracks,
   }
 }
 
-
 // ============================================================================
 // Chorus Drop Implementation (Phase 2, Task 2-2)
 // ============================================================================
 
 void PostProcessor::applyChorusDrop(std::vector<MidiTrack*>& tracks,
-                                     const std::vector<Section>& sections,
-                                     MidiTrack* drum_track,
-                                     ChorusDropStyle default_style) {
-  constexpr uint8_t CRASH_NOTE = 49;     // Crash cymbal
-  constexpr uint8_t CRASH_VEL = 110;     // Strong crash velocity
+                                    const std::vector<Section>& sections, MidiTrack* drum_track,
+                                    ChorusDropStyle default_style) {
+  constexpr uint8_t CRASH_NOTE = 49;  // Crash cymbal
+  constexpr uint8_t CRASH_VEL = 110;  // Strong crash velocity
 
   // Find B sections followed by Chorus (or MixBreak/Drop sections that can also have drops)
   for (size_t idx = 0; idx + 1 < sections.size(); ++idx) {
@@ -261,8 +250,7 @@ void PostProcessor::applyChorusDrop(std::vector<MidiTrack*>& tracks,
 
     // Only process sections before Chorus that could have a drop
     // (B sections, MixBreak, or any section with explicit drop_style)
-    bool is_pre_chorus = (section.type == SectionType::B ||
-                          section.type == SectionType::MixBreak ||
+    bool is_pre_chorus = (section.type == SectionType::B || section.type == SectionType::MixBreak ||
                           section.type == SectionType::Interlude) &&
                          next_section.type == SectionType::Chorus;
 
@@ -294,13 +282,12 @@ void PostProcessor::applyChorusDrop(std::vector<MidiTrack*>& tracks,
       auto& notes = track->notes();
 
       // Remove notes that start in the drop zone
-      notes.erase(
-          std::remove_if(notes.begin(), notes.end(),
-                         [drop_start_tick, section_end_tick](const NoteEvent& note) {
-                           return note.start_tick >= drop_start_tick &&
-                                  note.start_tick < section_end_tick;
-                         }),
-          notes.end());
+      notes.erase(std::remove_if(notes.begin(), notes.end(),
+                                 [drop_start_tick, section_end_tick](const NoteEvent& note) {
+                                   return note.start_tick >= drop_start_tick &&
+                                          note.start_tick < section_end_tick;
+                                 }),
+                  notes.end());
 
       // Truncate notes that extend into the drop zone
       for (auto& note : notes) {
@@ -319,13 +306,12 @@ void PostProcessor::applyChorusDrop(std::vector<MidiTrack*>& tracks,
       if (drum_track != nullptr && !drum_track->empty()) {
         auto& drum_notes = drum_track->notes();
         // Remove drum notes in drop zone (fill should be added separately)
-        drum_notes.erase(
-            std::remove_if(drum_notes.begin(), drum_notes.end(),
-                           [drop_start_tick, section_end_tick](const NoteEvent& note) {
-                             return note.start_tick >= drop_start_tick &&
-                                    note.start_tick < section_end_tick;
-                           }),
-            drum_notes.end());
+        drum_notes.erase(std::remove_if(drum_notes.begin(), drum_notes.end(),
+                                        [drop_start_tick, section_end_tick](const NoteEvent& note) {
+                                          return note.start_tick >= drop_start_tick &&
+                                                 note.start_tick < section_end_tick;
+                                        }),
+                         drum_notes.end());
       }
     }
 
@@ -365,11 +351,10 @@ void PostProcessor::applyChorusDrop(std::vector<MidiTrack*>& tracks,
 // Ritardando Implementation (Phase 2, Task 2-3)
 // ============================================================================
 
-namespace {
-}  // namespace
+namespace {}  // namespace
 
 void PostProcessor::applyRitDecrescendo(std::vector<MidiTrack*>& tracks,
-                                         const std::vector<Section>& sections) {
+                                        const std::vector<Section>& sections) {
   for (const Section& section : sections) {
     if (section.type != SectionType::Outro) continue;
 
@@ -394,8 +379,8 @@ void PostProcessor::applyRitDecrescendo(std::vector<MidiTrack*>& tracks,
           uint8_t clamped_vel = vel::clamp(new_vel, 30, 127);
 #ifdef MIDISKETCH_NOTE_PROVENANCE
           if (clamped_vel != note.velocity) {
-            note.addTransformStep(TransformStepType::PostProcessVelocity, note.velocity, clamped_vel,
-                                  2, 0);
+            note.addTransformStep(TransformStepType::PostProcessVelocity, note.velocity,
+                                  clamped_vel, 2, 0);
           }
 #endif
           note.velocity = clamped_vel;
@@ -412,7 +397,7 @@ void PostProcessor::applyRitDecrescendo(std::vector<MidiTrack*>& tracks,
 // Helper: Check if extending a chord note would create dissonance with vocal
 // Returns the maximum safe end tick (may be less than desired_end if clash found)
 static Tick getMaxSafeEndTick(const NoteEvent& chord_note, Tick desired_end,
-                               const MidiTrack* vocal_track) {
+                              const MidiTrack* vocal_track) {
   if (vocal_track == nullptr) {
     return desired_end;  // No vocal to clash with
   }
@@ -453,9 +438,9 @@ static Tick getMaxSafeEndTick(const NoteEvent& chord_note, Tick desired_end,
 }
 
 void PostProcessor::applyEnhancedFinalHit(MidiTrack* bass_track, MidiTrack* drum_track,
-                                           MidiTrack* chord_track, const MidiTrack* vocal_track,
-                                           const Section& section,
-                                           const ICollisionDetector* harmony) {
+                                          MidiTrack* chord_track, const MidiTrack* vocal_track,
+                                          const Section& section,
+                                          const ICollisionDetector* harmony) {
   if (section.exit_pattern != ExitPattern::FinalHit) {
     return;
   }
@@ -477,7 +462,8 @@ void PostProcessor::applyEnhancedFinalHit(MidiTrack* bass_track, MidiTrack* drum
       if (note.start_tick >= final_beat_start && note.start_tick < section_end) {
 #ifdef MIDISKETCH_NOTE_PROVENANCE
         if (note.velocity < FINAL_HIT_VEL) {
-          note.addTransformStep(TransformStepType::PostProcessVelocity, note.velocity, FINAL_HIT_VEL, 5, 0);
+          note.addTransformStep(TransformStepType::PostProcessVelocity, note.velocity,
+                                FINAL_HIT_VEL, 5, 0);
         }
 #endif
         note.velocity = std::max(note.velocity, FINAL_HIT_VEL);
@@ -493,11 +479,10 @@ void PostProcessor::applyEnhancedFinalHit(MidiTrack* bass_track, MidiTrack* drum
       // Verify pitch is safe; find alternative if collision detected
       if (harmony != nullptr &&
           !harmony->isConsonantWithOtherTracks(bass_pitch, final_beat_start, TICKS_PER_BEAT,
-                                                TrackRole::Bass)) {
+                                               TrackRole::Bass)) {
         auto candidates = getSafePitchCandidates(*harmony, bass_pitch, final_beat_start,
-                                                  TICKS_PER_BEAT, TrackRole::Bass,
-                                                  BASS_LOW, BASS_HIGH,
-                                                  PitchPreference::PreferRootFifth);
+                                                 TICKS_PER_BEAT, TrackRole::Bass, BASS_LOW,
+                                                 BASS_HIGH, PitchPreference::PreferRootFifth);
         if (!candidates.empty()) {
           bass_pitch = candidates[0].pitch;
         }
@@ -533,7 +518,8 @@ void PostProcessor::applyEnhancedFinalHit(MidiTrack* bass_track, MidiTrack* drum
         if (note.note == BD_NOTE || note.note == SD_NOTE || note.note == CRASH_NOTE) {
 #ifdef MIDISKETCH_NOTE_PROVENANCE
           if (note.velocity < FINAL_HIT_VEL) {
-            note.addTransformStep(TransformStepType::PostProcessVelocity, note.velocity, FINAL_HIT_VEL, 5, 0);
+            note.addTransformStep(TransformStepType::PostProcessVelocity, note.velocity,
+                                  FINAL_HIT_VEL, 5, 0);
           }
 #endif
           note.velocity = std::max(note.velocity, FINAL_HIT_VEL);
@@ -587,7 +573,8 @@ void PostProcessor::applyEnhancedFinalHit(MidiTrack* bass_track, MidiTrack* drum
         Tick safe_end;
         if (harmony != nullptr) {
           // Use comprehensive clash detection against all registered tracks
-          safe_end = harmony->getMaxSafeEnd(note.start_tick, note.note, TrackRole::Chord, section_end);
+          safe_end =
+              harmony->getMaxSafeEnd(note.start_tick, note.note, TrackRole::Chord, section_end);
         } else {
           // Fallback: check against vocal only
           safe_end = getMaxSafeEndTick(note, section_end, vocal_track);
@@ -602,7 +589,8 @@ void PostProcessor::applyEnhancedFinalHit(MidiTrack* bass_track, MidiTrack* drum
         }
 #ifdef MIDISKETCH_NOTE_PROVENANCE
         if (note.velocity < FINAL_HIT_VEL) {
-          note.addTransformStep(TransformStepType::PostProcessVelocity, note.velocity, FINAL_HIT_VEL, 5, 0);
+          note.addTransformStep(TransformStepType::PostProcessVelocity, note.velocity,
+                                FINAL_HIT_VEL, 5, 0);
         }
 #endif
         note.velocity = std::max(note.velocity, FINAL_HIT_VEL);
@@ -616,7 +604,8 @@ void PostProcessor::applyEnhancedFinalHit(MidiTrack* bass_track, MidiTrack* drum
         // Extend to section end, but check for clashes first
         Tick safe_end;
         if (harmony != nullptr) {
-          safe_end = harmony->getMaxSafeEnd(note.start_tick, note.note, TrackRole::Chord, section_end);
+          safe_end =
+              harmony->getMaxSafeEnd(note.start_tick, note.note, TrackRole::Chord, section_end);
         } else {
           safe_end = getMaxSafeEndTick(note, section_end, vocal_track);
         }

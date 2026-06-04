@@ -10,8 +10,8 @@
 #include <random>
 
 #include "core/midi_track.h"
-#include "core/rng_util.h"
 #include "core/note_source.h"
+#include "core/rng_util.h"
 #include "core/section_types.h"
 #include "core/timing_constants.h"
 #include "core/types.h"
@@ -82,8 +82,7 @@ inline void addDrumNote(MidiTrack& track, Tick start, Tick duration, uint8_t not
 /// @param humanize_amount Base humanization amount (default ±2%)
 /// @param humanize_timing Global humanization scaling (0.0-1.0, scales the offset)
 inline void addKickWithHumanize(MidiTrack& track, Tick tick, Tick duration, uint8_t velocity,
-                                std::mt19937& rng,
-                                float humanize_amount = KICK_HUMANIZE_AMOUNT,
+                                std::mt19937& rng, float humanize_amount = KICK_HUMANIZE_AMOUNT,
                                 float humanize_timing = 1.0f) {
   // Scale humanize_amount by humanize_timing for unified control
   float effective_amount = humanize_amount * std::clamp(humanize_timing, 0.0f, 1.0f);
@@ -130,9 +129,7 @@ inline float getDrumRoleSnareProbability(DrumRole role) {
 }
 
 /// @brief Check if hi-hat should be played based on DrumRole.
-inline bool shouldPlayHiHat(DrumRole role) {
-  return role != DrumRole::FXOnly;
-}
+inline bool shouldPlayHiHat(DrumRole role) { return role != DrumRole::FXOnly; }
 
 /// @brief Get preferred hi-hat instrument for DrumRole.
 inline uint8_t getDrumRoleHiHatInstrument(DrumRole role, bool use_ride) {

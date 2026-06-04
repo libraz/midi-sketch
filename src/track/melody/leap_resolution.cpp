@@ -14,7 +14,7 @@ namespace midisketch {
 namespace melody {
 
 int findStepwiseResolutionPitch(int current_pitch, const std::vector<int>& chord_tones,
-                                 int resolution_direction, uint8_t vocal_low, uint8_t vocal_high) {
+                                int resolution_direction, uint8_t vocal_low, uint8_t vocal_high) {
   int best_pitch = -1;
   int best_interval = 127;
 
@@ -44,7 +44,7 @@ int findStepwiseResolutionPitch(int current_pitch, const std::vector<int>& chord
 // SectionType enum: Intro=0, A=1, B=2, Chorus=3, Bridge=4, ...
 static float getReversalProbability(int8_t section_type_int, float phrase_position) {
   // Base probability by section type
-  float base_prob = 0.80f;  // Default
+  float base_prob = 0.80f;        // Default
   float phrase_end_prob = 0.80f;  // Probability at phrase end (>0.8)
 
   // Section-specific probabilities
@@ -78,8 +78,8 @@ static float getReversalProbability(int8_t section_type_int, float phrase_positi
 }
 
 int applyLeapReversalRule(int new_pitch, int current_pitch, int prev_interval,
-                          const std::vector<int>& chord_tones, uint8_t vocal_low, uint8_t vocal_high,
-                          bool prefer_stepwise, std::mt19937& rng,
+                          const std::vector<int>& chord_tones, uint8_t vocal_low,
+                          uint8_t vocal_high, bool prefer_stepwise, std::mt19937& rng,
                           int8_t section_type_int, float phrase_position) {
   // Skip if no significant previous leap
   if (std::abs(prev_interval) < kLeapReversalThreshold) {
@@ -128,8 +128,8 @@ int applyLeapReversalRule(int new_pitch, int current_pitch, int prev_interval,
   // Apply reversal if found a good candidate
   // If prefer_stepwise is set (IdolKawaii), force 100% stepwise motion
   if (best_reversal_pitch >= 0) {
-    float reversal_probability = prefer_stepwise ? 1.0f
-        : getReversalProbability(section_type_int, phrase_position);
+    float reversal_probability =
+        prefer_stepwise ? 1.0f : getReversalProbability(section_type_int, phrase_position);
     if (rng_util::rollProbability(rng, reversal_probability)) {
       return best_reversal_pitch;
     }

@@ -24,8 +24,8 @@ namespace midisketch {
 // Import drum submodule symbols for kick pattern cache
 using drums::BD;
 using drums::EIGHTH;
-using drums::KickPattern;
 using drums::getKickPattern;
+using drums::KickPattern;
 
 // ============================================================================
 // Hi-Hat Swing Factor API
@@ -38,7 +38,7 @@ float getHiHatSwingFactor(Mood mood) {
     case Mood::Lofi:
       return 0.7f;
     case Mood::IdolPop:
-    case Mood::Yoasobi:
+    case Mood::AnimeHighEnergy:
       return 0.3f;
     case Mood::Ballad:
     case Mood::Sentimental:
@@ -57,7 +57,7 @@ float getHiHatSwingFactor(Mood mood) {
 // ============================================================================
 
 float calculateSwingAmount(SectionType section, int bar_in_section, int total_bars,
-                          float swing_override) {
+                           float swing_override) {
   // If a specific swing amount is overridden via ProductionBlueprint, use it
   if (swing_override >= 0.0f) {
     return std::clamp(swing_override, 0.0f, 0.7f);
@@ -106,8 +106,7 @@ float calculateSwingAmount(SectionType section, int bar_in_section, int total_ba
 }
 
 Tick getSwingOffsetContinuous(DrumGrooveFeel groove, Tick subdivision, SectionType section,
-                               int bar_in_section, int total_bars,
-                               float swing_override) {
+                              int bar_in_section, int total_bars, float swing_override) {
   if (groove == DrumGrooveFeel::Straight) {
     return 0;
   }
@@ -184,7 +183,7 @@ TimeFeel getMoodTimeFeel(Mood mood) {
 
     // Pushed feels - driving, energetic
     case Mood::EnergeticDance:
-    case Mood::Yoasobi:
+    case Mood::AnimeHighEnergy:
     case Mood::ElectroPop:
     case Mood::FutureBass:
       return TimeFeel::Pushed;
@@ -228,8 +227,9 @@ void generateDrumsTrackWithVocal(MidiTrack& track, const Song& song, const Gener
                                 drums::createVocalSyncCallback(vocal_analysis, params.bpm));
 }
 
-void generateDrumsTrackMelodyDriven(MidiTrack& track, const Song& song, const GeneratorParams& params,
-                                    std::mt19937& rng, const VocalAnalysis& vocal_analysis) {
+void generateDrumsTrackMelodyDriven(MidiTrack& track, const Song& song,
+                                    const GeneratorParams& params, std::mt19937& rng,
+                                    const VocalAnalysis& vocal_analysis) {
   // Delegate to unified implementation with MelodyDriven callback
   drums::DrumGenerationParams drum_params;
   drum_params.mood = params.mood;
@@ -296,7 +296,8 @@ KickPatternCache computeKickPattern(const std::vector<Section>& sections, Mood m
   // Generate kick positions for each section
   for (const auto& section : sections) {
     // Skip sections with minimal/no drums
-    if (section.getEffectiveDrumRole() == DrumRole::Minimal || section.getEffectiveDrumRole() == DrumRole::FXOnly) {
+    if (section.getEffectiveDrumRole() == DrumRole::Minimal ||
+        section.getEffectiveDrumRole() == DrumRole::FXOnly) {
       continue;
     }
 

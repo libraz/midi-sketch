@@ -196,8 +196,8 @@ TEST_F(BassWithVocalTest, AdaptsToSparseVocal) {
 // --- Different Moods Tests ---
 
 TEST_F(BassWithVocalTest, WorksWithDifferentMoods) {
-  std::vector<Mood> moods = {Mood::ElectroPop, Mood::Ballad,
-                             Mood::CityPop, Mood::LightRock, Mood::Yoasobi};
+  std::vector<Mood> moods = {Mood::ElectroPop, Mood::Ballad, Mood::CityPop, Mood::LightRock,
+                             Mood::AnimeHighEnergy};
 
   for (Mood mood : moods) {
     params_.mood = mood;
@@ -441,9 +441,8 @@ TEST(BassAnticipationRegression, CheckMultiplePointsInBar) {
   Tick half = TICKS_PER_BAR / 2;
   Tick quarter = TICKS_PER_BEAT;
 
-  std::vector<Tick> check_points = {
-      half, half + quarter / 2, half + quarter, half + quarter + quarter / 2
-  };
+  std::vector<Tick> check_points = {half, half + quarter / 2, half + quarter,
+                                    half + quarter + quarter / 2};
 
   for (Tick offset : check_points) {
     EXPECT_GE(offset, TICKS_PER_BAR / 2) << "Check point must be in second half of bar";
@@ -647,8 +646,8 @@ class BassPhysicalModelIntegrationTest : public ::testing::Test {
 
     int max_leap = 0;
     for (size_t idx = 1; idx < notes.size(); ++idx) {
-      int leap = std::abs(static_cast<int>(notes[idx].note) -
-                          static_cast<int>(notes[idx - 1].note));
+      int leap =
+          std::abs(static_cast<int>(notes[idx].note) - static_cast<int>(notes[idx - 1].note));
       max_leap = std::max(max_leap, leap);
     }
     return max_leap;
@@ -660,8 +659,8 @@ class BassPhysicalModelIntegrationTest : public ::testing::Test {
 
     double total_leap = 0.0;
     for (size_t idx = 1; idx < notes.size(); ++idx) {
-      total_leap += std::abs(static_cast<int>(notes[idx].note) -
-                             static_cast<int>(notes[idx - 1].note));
+      total_leap +=
+          std::abs(static_cast<int>(notes[idx].note) - static_cast<int>(notes[idx - 1].note));
     }
     return total_leap / (notes.size() - 1);
   }

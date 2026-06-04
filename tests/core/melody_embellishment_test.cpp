@@ -49,11 +49,11 @@ TEST(EmbellishmentConfigTest, PentatonicModeCanBeSet) {
 
 TEST(IsInPentatonicTest, MajorPentatonicNotesAccepted) {
   // C major pentatonic: C(0), D(2), E(4), G(7), A(9)
-  EXPECT_TRUE(MelodicEmbellisher::isInPentatonic(0, 0));   // C
-  EXPECT_TRUE(MelodicEmbellisher::isInPentatonic(2, 0));   // D
-  EXPECT_TRUE(MelodicEmbellisher::isInPentatonic(4, 0));   // E
-  EXPECT_TRUE(MelodicEmbellisher::isInPentatonic(7, 0));   // G
-  EXPECT_TRUE(MelodicEmbellisher::isInPentatonic(9, 0));   // A
+  EXPECT_TRUE(MelodicEmbellisher::isInPentatonic(0, 0));  // C
+  EXPECT_TRUE(MelodicEmbellisher::isInPentatonic(2, 0));  // D
+  EXPECT_TRUE(MelodicEmbellisher::isInPentatonic(4, 0));  // E
+  EXPECT_TRUE(MelodicEmbellisher::isInPentatonic(7, 0));  // G
+  EXPECT_TRUE(MelodicEmbellisher::isInPentatonic(9, 0));  // A
 }
 
 TEST(IsInPentatonicTest, MinorPentatonicNotesAccepted) {
@@ -128,7 +128,7 @@ TEST(IsInPentatonicModeTest, BluesModeMatchesBluesScale) {
   EXPECT_TRUE(MelodicEmbellisher::isInPentatonicMode(0, 0, PentatonicMode::Blues));
   EXPECT_TRUE(MelodicEmbellisher::isInPentatonicMode(3, 0, PentatonicMode::Blues));
   EXPECT_TRUE(MelodicEmbellisher::isInPentatonicMode(5, 0, PentatonicMode::Blues));
-  EXPECT_TRUE(MelodicEmbellisher::isInPentatonicMode(6, 0, PentatonicMode::Blues));   // Blue note
+  EXPECT_TRUE(MelodicEmbellisher::isInPentatonicMode(6, 0, PentatonicMode::Blues));  // Blue note
   EXPECT_TRUE(MelodicEmbellisher::isInPentatonicMode(7, 0, PentatonicMode::Blues));
   EXPECT_TRUE(MelodicEmbellisher::isInPentatonicMode(10, 0, PentatonicMode::Blues));
 
@@ -155,7 +155,8 @@ TEST(IsInPentatonicModeTest, KeyOffsetWorksForAllModes) {
   EXPECT_TRUE(MelodicEmbellisher::isInPentatonicMode(5, 7, PentatonicMode::Minor));   // F
 
   // G blues (key_offset=7): G(7), Bb(10), C(0), Db(1), D(2), F(5)
-  EXPECT_TRUE(MelodicEmbellisher::isInPentatonicMode(1, 7, PentatonicMode::Blues));   // Db (blue note)
+  EXPECT_TRUE(
+      MelodicEmbellisher::isInPentatonicMode(1, 7, PentatonicMode::Blues));  // Db (blue note)
 }
 
 // ============================================================================
@@ -254,8 +255,7 @@ TEST(ScaleContentTest, BroadenedPentatonicIsUnionOfMajorAndMinor) {
     bool in_minor = MelodicEmbellisher::isInPentatonicMode(pitch_class, 0, PentatonicMode::Minor);
     bool in_broad = MelodicEmbellisher::isInPentatonic(pitch_class, 0);
 
-    EXPECT_EQ(in_broad, in_major || in_minor)
-        << "Mismatch for pitch class " << pitch_class;
+    EXPECT_EQ(in_broad, in_major || in_minor) << "Mismatch for pitch class " << pitch_class;
   }
 }
 

@@ -42,15 +42,11 @@ class PhrasePlanner {
   /// @param vocal_style Vocal style preset for breath duration
   /// @param rhythm_pattern Optional locked rhythm pattern (nullptr for free path)
   /// @return Complete phrase plan for the section
-  static PhrasePlan buildPlan(
-      SectionType section_type,
-      Tick section_start,
-      Tick section_end,
-      uint8_t section_bars,
-      Mood mood,
-      VocalStylePreset vocal_style = VocalStylePreset::Standard,
-      const CachedRhythmPattern* rhythm_pattern = nullptr,
-      uint16_t bpm = 120);
+  static PhrasePlan buildPlan(SectionType section_type, Tick section_start, Tick section_end,
+                              uint8_t section_bars, Mood mood,
+                              VocalStylePreset vocal_style = VocalStylePreset::Standard,
+                              const CachedRhythmPattern* rhythm_pattern = nullptr,
+                              uint16_t bpm = 120);
 
  private:
   /// @brief Step 1: Determine phrase count and antecedent-consequent structure.
@@ -61,15 +57,13 @@ class PhrasePlanner {
   /// @param plan Plan with phrases to assign timing
   /// @param mood Mood for breath duration calculation
   /// @param vocal_style Vocal style for breath duration
-  static void assignPhraseTiming(PhrasePlan& plan, Mood mood,
-                                 VocalStylePreset vocal_style,
+  static void assignPhraseTiming(PhrasePlan& plan, Mood mood, VocalStylePreset vocal_style,
                                  uint16_t bpm = 120);
 
   /// @brief Step 3: Reconcile planned boundaries with locked rhythm pattern.
   /// @param plan Plan with phrases to reconcile
   /// @param rhythm Locked rhythm pattern to match against
-  static void reconcileWithRhythmLock(PhrasePlan& plan,
-                                      const CachedRhythmPattern& rhythm);
+  static void reconcileWithRhythmLock(PhrasePlan& plan, const CachedRhythmPattern& rhythm);
 
   /// @brief Step 4: Assign arc stage and melodic contour to each phrase.
   /// @param plan Plan with phrases to assign arc and contour

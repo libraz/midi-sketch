@@ -106,7 +106,7 @@ struct SectionEmotion;
  * @return Calculated velocity (0-127)
  */
 uint8_t calculateEmotionAwareVelocity(const Section& section, uint8_t beat, Mood mood,
-                                       const SectionEmotion* emotion);
+                                      const SectionEmotion* emotion);
 
 /// @brief Track-relative velocity multipliers for consistent mix balance.
 struct VelocityBalance {
@@ -358,7 +358,7 @@ float getSyncopationWeight(VocalGrooveFeel feel, SectionType section, uint8_t dr
  * @return Adjusted syncopation weight (clamped to 0.40 max)
  */
 float getContextualSyncopationWeight(float base_weight, float phrase_progress, int beat_in_bar,
-                                      SectionType section);
+                                     SectionType section);
 
 // ============================================================================
 // Drive Feel Mapping
@@ -448,7 +448,7 @@ inline int getHighPitchDelay(uint8_t pitch, uint8_t tessitura_center) {
 inline int getLeapLandingDelay(int interval_semitones) {
   if (interval_semitones < 5) return 0;  // Under perfect 4th: ignore
   if (interval_semitones < 7) return 4;  // 5-6 semitones: 4 ticks
-  return 8;                               // 7+ semitones: 8 ticks
+  return 8;                              // 7+ semitones: 8 ticks
 }
 
 /// @brief Post-breath soft start (slight delay after breathing).
@@ -458,9 +458,7 @@ inline int getLeapLandingDelay(int interval_semitones) {
 ///
 /// @param is_post_breath Whether there was a breath before this note
 /// @return Delay in ticks (0-6)
-inline int getPostBreathDelay(bool is_post_breath) {
-  return is_post_breath ? 6 : 0;
-}
+inline int getPostBreathDelay(bool is_post_breath) { return is_post_breath ? 6 : 0; }
 
 }  // namespace DriveMapping
 

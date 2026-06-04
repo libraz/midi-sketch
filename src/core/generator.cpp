@@ -19,6 +19,7 @@
 #include <chrono>
 #include <cmath>
 #include <map>
+#include <vector>
 
 #include "core/chord.h"
 #include "core/chord_utils.h"
@@ -27,14 +28,15 @@
 #include "core/coordinator.h"
 #include "core/harmony_coordinator.h"
 #include "core/modulation_calculator.h"
-#include "core/secondary_dominant_planner.h"
 #include "core/mood_utils.h"
+#include "core/motif_types.h"
 #include "core/note_creator.h"
 #include "core/post_processor.h"
 #include "core/preset_data.h"
 #include "core/production_blueprint.h"
-#include "core/swing_quantize.h"
+#include "core/secondary_dominant_planner.h"
 #include "core/structure.h"
+#include "core/swing_quantize.h"
 #include "core/timing_constants.h"
 #include "core/track_registration_guard.h"
 #include "track/drums.h"
@@ -47,26 +49,45 @@
 #include "track/generators/se.h"
 #include "track/generators/vocal.h"
 #include "track/vocal/vocal_analysis.h"
-#include "core/motif_types.h"
 
 namespace midisketch {
 
 namespace {
 
 // ============================================================================
-// Density Progression Constants (Orangestar style)
+// Density Progression Constants (RhythmSync style)
 // ============================================================================
 constexpr float kDensityProgressionPerOccurrence = 0.15f;  // +15% density per section occurrence
 constexpr int kVelocityBoostPerOccurrence = 3;             // +3 velocity per occurrence
 constexpr int kMaxVelocityBoost = 10;                      // Maximum velocity boost cap
 constexpr int kMaxBaseVelocity = 100;                      // Maximum base velocity
 
-/// Apply density progression to sections for Orangestar style.
+void deduplicatePitchOnsets(MidiTrack& track);
+void removeComfortClashesAgainstReference(MidiTrack& track, const MidiTrack& reference);
+uint8_t clampScalePitchAvoidingChord(int pitch, Tick tick, const IHarmonyContext& harmony,
+                                     uint8_t low, uint8_t high);
+void duckMotifUnderLead(MidiTrack& motif, const MidiTrack& vocal, const IHarmonyContext& harmony);
+void tameStandaloneMotifSections(MidiTrack& motif, const MidiTrack& vocal,
+                                 const std::vector<Section>& sections,
+                                 const IHarmonyContext& harmony);
+void separateMotifFromBass(MidiTrack& motif, const MidiTrack& vocal, const MidiTrack& bass,
+                           const IHarmonyContext& harmony);
+void separateGuitarFromBass(MidiTrack& guitar, const MidiTrack& bass);
+void strengthenRhythmLockBassDrive(MidiTrack& bass, const std::vector<Section>& sections);
+void breakLongPitchRuns(MidiTrack& track, const IHarmonyContext& harmony, uint8_t low, uint8_t high,
+                        int max_run);
+void trimVocalSustainsAtUnsafeChordChanges(MidiTrack& vocal, const IHarmonyContext& harmony);
+void applyRhythmSyncLeadDna(MidiTrack& vocal, MidiTrack& motif,
+                            const std::vector<Section>& sections, const GeneratorParams& params,
+                            const IHarmonyContext& harmony);
+bool isRhythmSyncLeadSetting(const GeneratorParams& params, uint8_t resolved_blueprint_id);
+
+/// Apply density progression to sections for RhythmSync style.
 /// "Peak is a temporal event" - density increases over time.
 void applyDensityProgressionToSections(std::vector<Section>& sections,
                                        GenerationParadigm paradigm) {
   if (paradigm != GenerationParadigm::RhythmSync) {
-    return;  // Only apply for Orangestar style
+    return;  // Only apply for RhythmSync style
   }
 
   // Track occurrence count per section type
@@ -136,8 +157,7 @@ void Generator::initializeBlueprint(uint32_t seed) {
   params_.blueprint_ref = blueprint_;
 
   // Force drums on if blueprint requires it (unless user explicitly disabled)
-  if (blueprint_->drums_required &&
-      !(params_.drums_enabled_explicit && !params_.drums_enabled)) {
+  if (blueprint_->drums_required && !(params_.drums_enabled_explicit && !params_.drums_enabled)) {
     params_.drums_enabled = true;
   }
 
@@ -148,12 +168,29 @@ void Generator::initializeBlueprint(uint32_t seed) {
     params_.hook_intensity = HookIntensity::Maximum;
   }
 
+  if (isRhythmSyncLeadSetting(params_, resolved_blueprint_id_)) {
+    params_.vocal_style = VocalStylePreset::Vocaloid;
+    params_.melody_template = MelodyTemplateId::RunUpTarget;
+    params_.hook_intensity = HookIntensity::Maximum;
+    params_.vocal_groove = VocalGrooveFeel::Driving16th;
+    params_.drive_feel = std::max<uint8_t>(params_.drive_feel, 88);
+    params_.melody_params.max_leap_interval =
+        std::max<uint8_t>(params_.melody_params.max_leap_interval, 12);
+    params_.melody_params.note_density = std::max(params_.melody_params.note_density, 1.25f);
+    params_.melody_params.sixteenth_note_ratio =
+        std::max(params_.melody_params.sixteenth_note_ratio, 0.45f);
+    params_.melody_params.syncopation_prob =
+        std::max(params_.melody_params.syncopation_prob, 0.30f);
+    params_.melody_params.hook_repetition = true;
+    params_.melody_params.disable_vowel_constraints = true;
+  }
+
   // Validate mood compatibility with blueprint
   uint8_t mood_idx = static_cast<uint8_t>(params_.mood);
   if (!isMoodCompatible(resolved_blueprint_id_, mood_idx)) {
     // Log warning but don't block generation
-    warnings_.push_back("Mood " + std::to_string(mood_idx) +
-                        " may not be optimal for blueprint " + blueprint_->name);
+    warnings_.push_back("Mood " + std::to_string(mood_idx) + " may not be optimal for blueprint " +
+                        blueprint_->name);
   }
 }
 
@@ -161,8 +198,12 @@ void Generator::configureRhythmSyncMotif() {
   if (params_.paradigm == GenerationParadigm::RhythmSync) {
     // Select rhythm template based on effective BPM (always apply)
     uint16_t effective_bpm = params_.bpm > 0 ? params_.bpm : getMoodDefaultBpm(params_.mood);
-    params_.motif.rhythm_template =
-        motif_detail::selectRhythmSyncTemplate(effective_bpm, rng_);
+    bool daybreak_drive = (resolved_blueprint_id_ == 1);
+    bool idol_chant_drive = (resolved_blueprint_id_ == 5 || resolved_blueprint_id_ == 7);
+    params_.motif.rhythm_template = motif_detail::selectRhythmSyncTemplate(
+        effective_bpm, rng_,
+        daybreak_drive || isRhythmSyncLeadSetting(params_, resolved_blueprint_id_),
+        idol_chant_drive);
     const auto& tmpl = motif_detail::getTemplateConfig(params_.motif.rhythm_template);
     // Only override values that were not explicitly set by user
     if (!params_.motif_note_count_explicit) {
@@ -265,9 +306,9 @@ std::vector<Section> Generator::buildSongStructure(uint16_t bpm) {
   // Priority: target_duration > explicit form > Blueprint section_flow > StructurePattern
   std::vector<Section> sections;
   if (params_.target_duration_seconds > 0) {
-    sections = buildStructureForDuration(params_.target_duration_seconds, bpm,
-                                         params_.call_enabled, params_.intro_chant,
-                                         params_.mix_pattern, params_.structure);
+    sections =
+        buildStructureForDuration(params_.target_duration_seconds, bpm, params_.call_enabled,
+                                  params_.intro_chant, params_.mix_pattern, params_.structure);
     // Apply blueprint section properties to duration-generated structure.
     // buildStructureForDuration uses StructurePattern and ignores blueprint
     // SectionSlot definitions, so we overlay track_mask, drum_role, energy,
@@ -349,7 +390,7 @@ uint16_t Generator::initializeGenerationState() {
   // Build song structure
   std::vector<Section> sections = buildSongStructure(bpm);
 
-  // Apply density progression for Orangestar style
+  // Apply density progression for RhythmSync style
   applyDensityProgressionToSections(sections, params_.paradigm);
 
   // Apply default layer scheduling for staggered track entrances/exits
@@ -416,9 +457,19 @@ void Generator::applyPostProcessingEffects() {
 
   // Run the post-processing pipeline (staggered entry, velocity shaping,
   // transitions, final adjustments, expression curves, humanization)
-  PostProcessingPipeline::Context pp_ctx{
-      song_, params_, *harmony_context_, rng_, blueprint_, emotion_curve_};
+  PostProcessingPipeline::Context pp_ctx{song_, params_,    *harmony_context_,
+                                         rng_,  blueprint_, emotion_curve_};
   post_pipeline_.run(pp_ctx);
+
+  if (isRhythmSyncLeadSetting(params_, resolved_blueprint_id_)) {
+    applyRhythmSyncLeadDna(song_.vocal(), song_.motif(), song_.arrangement().sections(), params_,
+                           *harmony_context_);
+    breakLongPitchRuns(song_.vocal(), *harmony_context_, params_.vocal_low, params_.vocal_high, 5);
+    harmony_context_->clearNotesForTrack(TrackRole::Vocal);
+    harmony_context_->registerTrack(song_.vocal(), TrackRole::Vocal);
+    harmony_context_->clearNotesForTrack(TrackRole::Motif);
+    harmony_context_->registerTrack(song_.motif(), TrackRole::Motif);
+  }
 
   // FINAL STEP: Fix inter-track clashes that may occur after all post-processing.
   // Must run AFTER humanization (which shifts note timing) and all duration
@@ -428,14 +479,61 @@ void Generator::applyPostProcessingEffects() {
   PostProcessor::fixTrackVocalClashes(song_.bass(), song_.vocal(), TrackRole::Bass);
   PostProcessor::fixTrackVocalClashes(song_.guitar(), song_.vocal(), TrackRole::Guitar);
   PostProcessor::fixMotifVocalClashes(song_.motif(), song_.vocal(), *harmony_context_);
+  if (isRhythmSyncLeadSetting(params_, resolved_blueprint_id_)) {
+    strengthenRhythmLockBassDrive(song_.bass(), song_.arrangement().sections());
+    PostProcessor::fixTrackVocalClashes(song_.bass(), song_.vocal(), TrackRole::Bass);
+    duckMotifUnderLead(song_.motif(), song_.vocal(), *harmony_context_);
+    tameStandaloneMotifSections(song_.motif(), song_.vocal(), song_.arrangement().sections(),
+                                *harmony_context_);
+    separateMotifFromBass(song_.motif(), song_.vocal(), song_.bass(), *harmony_context_);
+    breakLongPitchRuns(song_.motif(), *harmony_context_, 48, 84, 5);
+    harmony_context_->clearNotesForTrack(TrackRole::Bass);
+    harmony_context_->registerTrack(song_.bass(), TrackRole::Bass);
+    harmony_context_->clearNotesForTrack(TrackRole::Motif);
+    harmony_context_->registerTrack(song_.motif(), TrackRole::Motif);
+  }
+  PostProcessor::fixTrackReferenceClashes(song_.aux(), song_.motif(), TrackRole::Aux);
+  PostProcessor::fixTrackReferenceClashes(song_.aux(), song_.chord(), TrackRole::Aux);
   PostProcessor::fixInterTrackClashes(song_.chord(), song_.bass(), song_.motif());
 
   // Final cleanup: fix any remaining vocal overlaps
   PostProcessor::fixVocalOverlaps(song_.vocal());
+  trimVocalSustainsAtUnsafeChordChanges(song_.vocal(), *harmony_context_);
 
   // Smooth large leaps in Aux track caused by note removal in earlier passes
   // (fixTrackVocalClashes, etc.)
   PostProcessor::smoothLargeLeaps(song_.aux());
+
+  auto& arpeggio_notes = song_.arpeggio().notes();
+  arpeggio_notes.erase(std::remove_if(arpeggio_notes.begin(), arpeggio_notes.end(),
+                                      [](const NoteEvent& note) { return note.note < 48; }),
+                       arpeggio_notes.end());
+  deduplicatePitchOnsets(song_.arpeggio());
+  if (params_.paradigm == GenerationParadigm::RhythmSync ||
+      params_.vocal_style == VocalStylePreset::Idol ||
+      params_.vocal_style == VocalStylePreset::BrightKira ||
+      params_.vocal_style == VocalStylePreset::CuteAffected) {
+    PostProcessor::fixTrackReferenceClashes(song_.arpeggio(), song_.vocal(), TrackRole::Arpeggio);
+    PostProcessor::fixTrackReferenceClashes(song_.arpeggio(), song_.motif(), TrackRole::Arpeggio);
+    PostProcessor::fixTrackReferenceClashes(song_.arpeggio(), song_.chord(), TrackRole::Arpeggio);
+    PostProcessor::fixTrackReferenceClashes(song_.arpeggio(), song_.aux(), TrackRole::Arpeggio);
+    removeComfortClashesAgainstReference(song_.arpeggio(), song_.vocal());
+    removeComfortClashesAgainstReference(song_.arpeggio(), song_.motif());
+    removeComfortClashesAgainstReference(song_.arpeggio(), song_.chord());
+    removeComfortClashesAgainstReference(song_.arpeggio(), song_.aux());
+    deduplicatePitchOnsets(song_.arpeggio());
+
+    PostProcessor::fixTrackReferenceClashes(song_.guitar(), song_.vocal(), TrackRole::Guitar);
+    PostProcessor::fixTrackReferenceClashes(song_.guitar(), song_.motif(), TrackRole::Guitar);
+    PostProcessor::fixTrackReferenceClashes(song_.guitar(), song_.chord(), TrackRole::Guitar);
+    PostProcessor::fixTrackReferenceClashes(song_.guitar(), song_.aux(), TrackRole::Guitar);
+    separateGuitarFromBass(song_.guitar(), song_.bass());
+    removeComfortClashesAgainstReference(song_.guitar(), song_.vocal());
+    removeComfortClashesAgainstReference(song_.guitar(), song_.motif());
+    removeComfortClashesAgainstReference(song_.guitar(), song_.chord());
+    removeComfortClashesAgainstReference(song_.guitar(), song_.aux());
+    deduplicatePitchOnsets(song_.guitar());
+  }
 
   // Align chord note durations: ensure all notes at the same onset have
   // identical duration. Post-processing (final hit extension, clash fixes)
@@ -479,8 +577,8 @@ void Generator::generateVocal(const GeneratorParams& params) {
     uint32_t sec_dom_seed = params_.seed ^ kSecDomSalt;
     if (sec_dom_seed == 0) sec_dom_seed = kSecDomSalt;
     std::mt19937 sec_dom_rng(sec_dom_seed);
-    planAndRegisterSecondaryDominants(song_.arrangement(), progression,
-                                      params_.mood, sec_dom_rng, *harmony_context_);
+    planAndRegisterSecondaryDominants(song_.arrangement(), progression, params_.mood, sec_dom_rng,
+                                      *harmony_context_);
   }
 
   // RhythmSync: generate Motif first as coordinate axis
@@ -499,8 +597,7 @@ void Generator::generateVocal(const GeneratorParams& params) {
   ctx.drum_grid = getDrumGrid();
 
   // RhythmSync: pass Motif as coordinate axis for Vocal generation
-  if (params_.paradigm == GenerationParadigm::RhythmSync &&
-      !song_.motif().empty()) {
+  if (params_.paradigm == GenerationParadigm::RhythmSync && !song_.motif().empty()) {
     ctx.motif_track = &song_.motif();
   }
 
@@ -530,8 +627,7 @@ void Generator::regenerateVocal(uint32_t new_seed) {
   ctx.drum_grid = getDrumGrid();
 
   // RhythmSync: pass Motif as coordinate axis for Vocal generation
-  if (params_.paradigm == GenerationParadigm::RhythmSync &&
-      !song_.motif().empty()) {
+  if (params_.paradigm == GenerationParadigm::RhythmSync && !song_.motif().empty()) {
     ctx.motif_track = &song_.motif();
   }
 
@@ -588,8 +684,7 @@ void Generator::regenerateVocal(const VocalConfig& config) {
   ctx.drum_grid = getDrumGrid();
 
   // RhythmSync: pass Motif as coordinate axis for Vocal generation
-  if (params_.paradigm == GenerationParadigm::RhythmSync &&
-      !song_.motif().empty()) {
+  if (params_.paradigm == GenerationParadigm::RhythmSync && !song_.motif().empty()) {
     ctx.motif_track = &song_.motif();
   }
 
@@ -660,12 +755,9 @@ std::vector<Generator::VocalClash> Generator::detectVocalAccompanimentClashes() 
     TrackRole role;
   };
   std::vector<TrackCheck> tracks_to_check = {
-      {&song_.chord(), TrackRole::Chord},
-      {&song_.bass(), TrackRole::Bass},
-      {&song_.motif(), TrackRole::Motif},
-      {&song_.arpeggio(), TrackRole::Arpeggio},
-      {&song_.aux(), TrackRole::Aux},
-      {&song_.guitar(), TrackRole::Guitar},
+      {&song_.chord(), TrackRole::Chord}, {&song_.bass(), TrackRole::Bass},
+      {&song_.motif(), TrackRole::Motif}, {&song_.arpeggio(), TrackRole::Arpeggio},
+      {&song_.aux(), TrackRole::Aux},     {&song_.guitar(), TrackRole::Guitar},
   };
 
   for (size_t i = 0; i < vocal_notes.size(); ++i) {
@@ -693,16 +785,17 @@ std::vector<Generator::VocalClash> Generator::detectVocalAccompanimentClashes() 
         // Check for dissonant interval using unified API:
         // m2/m9 always, M2 within 2 octaves, M7, no tritone check
         int actual_interval = std::abs(static_cast<int>(v_pitch) - static_cast<int>(a_pitch));
-        bool is_dissonant = isDissonantSemitoneInterval(
-            actual_interval, DissonanceCheckOptions::vocalClash());
+        bool is_dissonant =
+            isDissonantSemitoneInterval(actual_interval, DissonanceCheckOptions::vocalClash());
 
         if (is_dissonant) {
           // Find a safe pitch using getSafePitchCandidates
-          auto candidates = getSafePitchCandidates(*harmony_context_, v_pitch, v_start,
-                                                    vocal_note.duration, TrackRole::Vocal,
-                                                    params_.vocal_low, params_.vocal_high);
+          auto candidates =
+              getSafePitchCandidates(*harmony_context_, v_pitch, v_start, vocal_note.duration,
+                                     TrackRole::Vocal, params_.vocal_low, params_.vocal_high);
 
-          // Select best candidate with musical intent (prefer small intervals for melodic continuity)
+          // Select best candidate with musical intent (prefer small intervals for melodic
+          // continuity)
           uint8_t safe_pitch = v_pitch;
           if (!candidates.empty()) {
             PitchSelectionHints hints;
@@ -1008,8 +1101,7 @@ void Generator::planTempoMap() {
   if (!outro) return;
 
   // Skip ritardando for dramatic exit patterns (FinalHit, CutOff)
-  if (outro->exit_pattern == ExitPattern::FinalHit ||
-      outro->exit_pattern == ExitPattern::CutOff) {
+  if (outro->exit_pattern == ExitPattern::FinalHit || outro->exit_pattern == ExitPattern::CutOff) {
     return;
   }
 
@@ -1033,8 +1125,7 @@ void Generator::planTempoMap() {
 
   for (int i = 0; i < step_count; ++i) {
     float progress = static_cast<float>(i + 1) / static_cast<float>(step_count);
-    auto step_bpm =
-        static_cast<uint16_t>(static_cast<float>(bpm) / (1.0f + progress * amount));
+    auto step_bpm = static_cast<uint16_t>(static_cast<float>(bpm) / (1.0f + progress * amount));
     Tick step_tick = rit_start + static_cast<Tick>(i) * (TICKS_PER_BAR / 2);
     tempo_map.push_back({step_tick, step_bpm});
   }
@@ -1143,21 +1234,23 @@ void Generator::rebuildMotifFromPattern() {
         // Check collision safety before placing motif note
         uint8_t safe_pitch = note.note;
         if (!harmony_context_->isConsonantWithOtherTracks(note.note, absolute_tick, note.duration,
-                                                           TrackRole::Motif)) {
+                                                          TrackRole::Motif)) {
           auto candidates = getSafePitchCandidates(*harmony_context_, note.note, absolute_tick,
-                                                    note.duration, TrackRole::Motif, 36, 96);
+                                                   note.duration, TrackRole::Motif, 36, 96);
           if (!candidates.empty()) {
             safe_pitch = candidates[0].pitch;
           }
         }
-        auto motif_note = createNoteWithoutHarmony(absolute_tick, note.duration, safe_pitch, note.velocity);
+        auto motif_note =
+            createNoteWithoutHarmony(absolute_tick, note.duration, safe_pitch, note.velocity);
 #ifdef MIDISKETCH_NOTE_PROVENANCE
         motif_note.prov_source = static_cast<uint8_t>(NoteSource::Motif);
         motif_note.prov_chord_degree = harmony_context_->getChordDegreeAt(absolute_tick);
         motif_note.prov_lookup_tick = absolute_tick;
         motif_note.prov_original_pitch = note.note;
         if (safe_pitch != note.note) {
-          motif_note.addTransformStep(TransformStepType::CollisionAvoid, note.note, safe_pitch, 0, 0);
+          motif_note.addTransformStep(TransformStepType::CollisionAvoid, note.note, safe_pitch, 0,
+                                      0);
         }
 #endif
         song_.motif().addNote(motif_note);
@@ -1166,9 +1259,10 @@ void Generator::rebuildMotifFromPattern() {
           uint8_t octave_pitch = safe_pitch + 12;
           if (octave_pitch <= 108 &&
               harmony_context_->isConsonantWithOtherTracks(octave_pitch, absolute_tick,
-                                                            note.duration, TrackRole::Motif)) {
+                                                           note.duration, TrackRole::Motif)) {
             uint8_t octave_vel = static_cast<uint8_t>(note.velocity * 0.85);
-            auto octave_note = createNoteWithoutHarmony(absolute_tick, note.duration, octave_pitch, octave_vel);
+            auto octave_note =
+                createNoteWithoutHarmony(absolute_tick, note.duration, octave_pitch, octave_vel);
 #ifdef MIDISKETCH_NOTE_PROVENANCE
             octave_note.prov_source = static_cast<uint8_t>(NoteSource::Motif);
             octave_note.prov_chord_degree = harmony_context_->getChordDegreeAt(absolute_tick);
@@ -1197,8 +1291,8 @@ namespace {
 /// @param track_mask Track mask for the current track
 /// @return true if the note should be removed (track inactive at this bar)
 bool shouldRemoveNoteForLayerSchedule(const NoteEvent& note, Tick section_start, Tick section_end,
-                                       const std::vector<LayerEvent>& layer_events,
-                                       TrackMask track_mask) {
+                                      const std::vector<LayerEvent>& layer_events,
+                                      TrackMask track_mask) {
   // Only process notes within this section
   if (note.start_tick < section_start || note.start_tick >= section_end) {
     return false;
@@ -1209,6 +1303,585 @@ bool shouldRemoveNoteForLayerSchedule(const NoteEvent& note, Tick section_start,
 
   // Check if this track is active at this bar
   return !isTrackActiveAtBar(layer_events, bar_offset, track_mask);
+}
+
+void deduplicatePitchOnsets(MidiTrack& track) {
+  auto& notes = track.notes();
+  if (notes.size() < 2) {
+    return;
+  }
+
+  std::sort(notes.begin(), notes.end(), [](const NoteEvent& a, const NoteEvent& b) {
+    if (a.start_tick != b.start_tick) return a.start_tick < b.start_tick;
+    if (a.note != b.note) return a.note < b.note;
+    if (a.velocity != b.velocity) return a.velocity > b.velocity;
+    return a.duration > b.duration;
+  });
+
+  notes.erase(std::unique(notes.begin(), notes.end(),
+                          [](const NoteEvent& a, const NoteEvent& b) {
+                            return a.start_tick == b.start_tick && a.note == b.note;
+                          }),
+              notes.end());
+}
+
+void removeComfortClashesAgainstReference(MidiTrack& track, const MidiTrack& reference) {
+  auto& notes = track.notes();
+  const auto& reference_notes = reference.notes();
+  if (notes.empty() || reference_notes.empty()) {
+    return;
+  }
+
+  std::vector<size_t> remove_indices;
+  for (size_t idx = 0; idx < notes.size(); ++idx) {
+    const auto& note = notes[idx];
+    Tick note_end = note.start_tick + note.duration;
+    for (const auto& ref : reference_notes) {
+      Tick ref_end = ref.start_tick + ref.duration;
+      if (note.start_tick >= ref_end || note_end <= ref.start_tick) {
+        continue;
+      }
+      int interval = std::abs(static_cast<int>(note.note) - static_cast<int>(ref.note));
+      int pc_interval = interval % 12;
+      if (interval < Interval::THREE_OCTAVES &&
+          (pc_interval == 1 || pc_interval == 2 || pc_interval == 11)) {
+        remove_indices.push_back(idx);
+        break;
+      }
+    }
+  }
+
+  for (auto iter = remove_indices.rbegin(); iter != remove_indices.rend(); ++iter) {
+    notes.erase(notes.begin() + static_cast<std::ptrdiff_t>(*iter));
+  }
+}
+
+void duckMotifUnderLead(MidiTrack& motif, const MidiTrack& vocal, const IHarmonyContext& harmony) {
+  auto& motif_notes = motif.notes();
+  const auto& vocal_notes = vocal.notes();
+  if (motif_notes.empty() || vocal_notes.empty()) {
+    return;
+  }
+
+  for (auto& motif_note : motif_notes) {
+    Tick motif_end = motif_note.start_tick + motif_note.duration;
+    const NoteEvent* lead = nullptr;
+    Tick best_overlap = 0;
+    for (const auto& vocal_note : vocal_notes) {
+      Tick vocal_end = vocal_note.start_tick + vocal_note.duration;
+      Tick overlap =
+          std::min(motif_end, vocal_end) - std::max(motif_note.start_tick, vocal_note.start_tick);
+      if (motif_note.start_tick >= vocal_end || motif_end <= vocal_note.start_tick ||
+          overlap <= best_overlap) {
+        continue;
+      }
+      lead = &vocal_note;
+      best_overlap = overlap;
+    }
+    if (lead == nullptr) {
+      continue;
+    }
+
+    int distance_from_lead = static_cast<int>(motif_note.note) - static_cast<int>(lead->note);
+    bool competes_for_lead =
+        distance_from_lead >= -2 ||
+        (distance_from_lead >= -7 && motif_note.velocity + 6 >= lead->velocity);
+    if (!competes_for_lead) {
+      continue;
+    }
+
+    int target_pitch = static_cast<int>(motif_note.note);
+    while (target_pitch > static_cast<int>(lead->note) - 5) {
+      target_pitch -= 12;
+    }
+    uint8_t range_high = static_cast<uint8_t>(std::max(52, static_cast<int>(lead->note) - 5));
+    uint8_t range_low = static_cast<uint8_t>(std::min<int>(48, range_high));
+    motif_note.note = clampScalePitchAvoidingChord(target_pitch, motif_note.start_tick, harmony,
+                                                   range_low, range_high);
+
+    if (static_cast<int>(motif_note.note) > static_cast<int>(lead->note) - 5) {
+      int fallback = static_cast<int>(lead->note) - 7;
+      motif_note.note = clampScalePitchAvoidingChord(fallback, motif_note.start_tick, harmony,
+                                                     range_low, range_high);
+    }
+  }
+}
+
+void tameStandaloneMotifSections(MidiTrack& motif, const MidiTrack& vocal,
+                                 const std::vector<Section>& sections,
+                                 const IHarmonyContext& harmony) {
+  auto& motif_notes = motif.notes();
+  const auto& vocal_notes = vocal.notes();
+  if (motif_notes.empty()) {
+    return;
+  }
+
+  for (const auto& section : sections) {
+    bool has_vocal =
+        std::any_of(vocal_notes.begin(), vocal_notes.end(), [&section](const NoteEvent& note) {
+          return note.start_tick >= section.start_tick && note.start_tick < section.endTick();
+        });
+    if (has_vocal) {
+      continue;
+    }
+
+    bool foreground_risk = section.type == SectionType::Intro ||
+                           section.type == SectionType::Interlude ||
+                           section.type == SectionType::Outro;
+    if (!foreground_risk) {
+      continue;
+    }
+
+    for (auto& note : motif_notes) {
+      if (note.start_tick < section.start_tick || note.start_tick >= section.endTick()) {
+        continue;
+      }
+      int folded_pitch = static_cast<int>(note.note);
+      while (folded_pitch > 67) {
+        folded_pitch -= 12;
+      }
+      while (folded_pitch < 52) {
+        folded_pitch += 12;
+      }
+      note.note = clampScalePitchAvoidingChord(folded_pitch, note.start_tick, harmony, 52, 67);
+    }
+  }
+}
+
+bool bassClashesWithMotifPitch(uint8_t pitch, const NoteEvent& motif_note, const MidiTrack& bass) {
+  Tick motif_end = motif_note.start_tick + motif_note.duration;
+  for (const auto& bass_note : bass.notes()) {
+    Tick bass_end = bass_note.start_tick + bass_note.duration;
+    if (motif_note.start_tick >= bass_end || motif_end <= bass_note.start_tick) {
+      continue;
+    }
+    int interval = std::abs(static_cast<int>(pitch) - static_cast<int>(bass_note.note));
+    int pc_interval = interval % 12;
+    if (interval < Interval::TWO_OCTAVES &&
+        (pc_interval == 1 || pc_interval == 2 || pc_interval == 10 || pc_interval == 11)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool vocalClashesWithMotifPitch(uint8_t pitch, const NoteEvent& motif_note,
+                                const MidiTrack& vocal) {
+  Tick motif_end = motif_note.start_tick + motif_note.duration;
+  for (const auto& vocal_note : vocal.notes()) {
+    Tick vocal_end = vocal_note.start_tick + vocal_note.duration;
+    if (motif_note.start_tick >= vocal_end || motif_end <= vocal_note.start_tick) {
+      continue;
+    }
+    int interval = std::abs(static_cast<int>(pitch) - static_cast<int>(vocal_note.note));
+    int pc_interval = interval % 12;
+    if (interval < Interval::TWO_OCTAVES &&
+        (pc_interval == 1 || pc_interval == 2 || pc_interval == 10 || pc_interval == 11)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+void separateMotifFromBass(MidiTrack& motif, const MidiTrack& vocal, const MidiTrack& bass,
+                           const IHarmonyContext& harmony) {
+  if (motif.empty() || bass.empty()) {
+    return;
+  }
+
+  for (auto& motif_note : motif.notes()) {
+    if (!bassClashesWithMotifPitch(motif_note.note, motif_note, bass)) {
+      continue;
+    }
+
+    Tick motif_end = motif_note.start_tick + motif_note.duration;
+    int ceiling = 67;
+    for (const auto& vocal_note : vocal.notes()) {
+      Tick vocal_end = vocal_note.start_tick + vocal_note.duration;
+      if (motif_note.start_tick >= vocal_end || motif_end <= vocal_note.start_tick) {
+        continue;
+      }
+      ceiling = std::min(ceiling, static_cast<int>(vocal_note.note) - 5);
+    }
+    ceiling = std::clamp(ceiling, 52, 76);
+
+    static constexpr int kOffsets[] = {12, 7, 5, -5, -7, -12};
+    for (int offset : kOffsets) {
+      int target = static_cast<int>(motif_note.note) + offset;
+      if (target < 48 || target > ceiling) {
+        continue;
+      }
+      uint8_t candidate = clampScalePitchAvoidingChord(target, motif_note.start_tick, harmony, 48,
+                                                       static_cast<uint8_t>(ceiling));
+      if (!bassClashesWithMotifPitch(candidate, motif_note, bass) &&
+          !vocalClashesWithMotifPitch(candidate, motif_note, vocal)) {
+        motif_note.note = candidate;
+        break;
+      }
+    }
+  }
+}
+
+void separateGuitarFromBass(MidiTrack& guitar, const MidiTrack& bass) {
+  if (guitar.empty() || bass.empty()) {
+    return;
+  }
+
+  for (auto& guitar_note : guitar.notes()) {
+    if (guitar_note.note >= 52) {
+      continue;
+    }
+    Tick guitar_end = guitar_note.start_tick + guitar_note.duration;
+    for (const auto& bass_note : bass.notes()) {
+      Tick bass_end = bass_note.start_tick + bass_note.duration;
+      if (guitar_note.start_tick >= bass_end || guitar_end <= bass_note.start_tick) {
+        continue;
+      }
+      int interval =
+          std::abs(static_cast<int>(guitar_note.note) - static_cast<int>(bass_note.note));
+      if (interval > 0 && interval < 7 && guitar_note.note <= 115) {
+        guitar_note.note = static_cast<uint8_t>(guitar_note.note + 12);
+        break;
+      }
+    }
+  }
+}
+
+void strengthenRhythmLockBassDrive(MidiTrack& bass, const std::vector<Section>& sections) {
+  auto& notes = bass.notes();
+  if (notes.empty()) {
+    return;
+  }
+
+  std::vector<NoteEvent> additions;
+  for (const auto& section : sections) {
+    if (section.type != SectionType::Chorus || section.bars < 8) {
+      continue;
+    }
+
+    for (auto& note : notes) {
+      if (note.start_tick < section.start_tick || note.start_tick >= section.endTick()) {
+        continue;
+      }
+      if (note.duration <= TICK_EIGHTH + 24) {
+        continue;
+      }
+
+      Tick offbeat = note.start_tick + TICK_EIGHTH;
+      if (offbeat >= section.endTick()) {
+        continue;
+      }
+      bool already_has_offbeat =
+          std::any_of(notes.begin(), notes.end(), [offbeat, &note](const NoteEvent& existing) {
+            return existing.start_tick == offbeat && existing.note == note.note;
+          });
+      if (already_has_offbeat) {
+        continue;
+      }
+
+      note.duration = TICK_EIGHTH - 24;
+      additions.push_back(NoteEventBuilder::create(offbeat, TICK_EIGHTH, note.note, note.velocity));
+    }
+  }
+
+  for (const auto& note : additions) {
+    bass.addNote(note);
+  }
+  std::sort(notes.begin(), notes.end(), [](const NoteEvent& a, const NoteEvent& b) {
+    if (a.start_tick != b.start_tick) return a.start_tick < b.start_tick;
+    return a.note < b.note;
+  });
+}
+
+void breakLongPitchRuns(MidiTrack& track, const IHarmonyContext& harmony, uint8_t low, uint8_t high,
+                        int max_run) {
+  auto& notes = track.notes();
+  if (notes.size() < static_cast<size_t>(max_run + 1)) {
+    return;
+  }
+
+  std::sort(notes.begin(), notes.end(), [](const NoteEvent& a, const NoteEvent& b) {
+    if (a.start_tick != b.start_tick) return a.start_tick < b.start_tick;
+    return a.note < b.note;
+  });
+
+  uint8_t run_pitch = notes.front().note;
+  int run_count = 1;
+  for (size_t idx = 1; idx < notes.size(); ++idx) {
+    if (notes[idx].note == run_pitch) {
+      ++run_count;
+    } else {
+      run_pitch = notes[idx].note;
+      run_count = 1;
+    }
+
+    if (run_count <= max_run) {
+      continue;
+    }
+
+    uint8_t original = notes[idx].note;
+    static constexpr int kOffsets[] = {2, -2, 4, -4, 5, -5, 7, -7, 9, -9};
+    for (int offset : kOffsets) {
+      int target = static_cast<int>(original) + offset;
+      if (target < static_cast<int>(low) || target > static_cast<int>(high)) {
+        continue;
+      }
+      uint8_t candidate =
+          clampScalePitchAvoidingChord(target, notes[idx].start_tick, harmony, low, high);
+      if (candidate != original) {
+        notes[idx].note = candidate;
+        break;
+      }
+    }
+    if (notes[idx].note != original) {
+      run_pitch = notes[idx].note;
+      run_count = 1;
+    }
+  }
+}
+
+void trimVocalSustainsAtUnsafeChordChanges(MidiTrack& vocal, const IHarmonyContext& harmony) {
+  for (auto& note : vocal.notes()) {
+    if (note.duration <= TICK_QUARTER) {
+      continue;
+    }
+
+    Tick note_end = note.start_tick + note.duration;
+    int8_t start_degree = harmony.getChordDegreeAt(note.start_tick);
+    for (Tick tick = note.start_tick + TICK_SIXTEENTH; tick < note_end; tick += TICK_SIXTEENTH) {
+      int8_t degree = harmony.getChordDegreeAt(tick);
+      if (degree == start_degree) {
+        continue;
+      }
+
+      ChordTones tones = getChordTones(degree);
+      int pitch_class = static_cast<int>(note.note % 12);
+      bool is_chord_tone = false;
+      for (uint8_t idx = 0; idx < tones.count; ++idx) {
+        if (tones.pitch_classes[idx] == pitch_class) {
+          is_chord_tone = true;
+          break;
+        }
+      }
+      if (is_chord_tone) {
+        start_degree = degree;
+        continue;
+      }
+
+      constexpr Tick kReleaseGap = 30;
+      constexpr Tick kMinRemaining = TICK_EIGHTH;
+      if (tick > note.start_tick + kMinRemaining + kReleaseGap) {
+        note.duration = tick - note.start_tick - kReleaseGap;
+      }
+      break;
+    }
+  }
+}
+
+bool isRhythmSyncLeadSetting(const GeneratorParams& params, uint8_t resolved_blueprint_id) {
+  // Mood::AnimeHighEnergy currently provides the closest exposed timbre/drum preset.
+  // The RhythmLock blueprint is where the RhythmSync-style lead structure lives.
+  return params.paradigm == GenerationParadigm::RhythmSync && resolved_blueprint_id == 1 &&
+         params.mood == Mood::AnimeHighEnergy;
+}
+
+uint8_t clampScalePitch(int pitch, uint8_t low, uint8_t high) {
+  pitch = std::clamp(pitch, static_cast<int>(low), static_cast<int>(high));
+  pitch = snapToNearestScaleTone(pitch, 0);
+  if (pitch < static_cast<int>(low)) {
+    for (int candidate = low; candidate <= static_cast<int>(high); ++candidate) {
+      if (isScaleTone(candidate % 12, 0)) {
+        return static_cast<uint8_t>(candidate);
+      }
+    }
+  }
+  if (pitch > static_cast<int>(high)) {
+    for (int candidate = high; candidate >= static_cast<int>(low); --candidate) {
+      if (isScaleTone(candidate % 12, 0)) {
+        return static_cast<uint8_t>(candidate);
+      }
+    }
+  }
+  pitch = std::clamp(pitch, static_cast<int>(low), static_cast<int>(high));
+  return static_cast<uint8_t>(pitch);
+}
+
+uint8_t clampScalePitchAvoidingChord(int pitch, Tick tick, const IHarmonyContext& harmony,
+                                     uint8_t low, uint8_t high) {
+  int8_t degree = harmony.getChordDegreeAt(tick);
+  uint8_t chord_root = degreeToRoot(degree, Key::C);
+  Chord chord = getChordNotes(degree);
+  bool is_minor = (chord.intervals[1] == 3);
+
+  uint8_t initial = clampScalePitch(pitch, low, high);
+  if (!isAvoidNoteWithContext(initial, chord_root, is_minor, degree)) {
+    return initial;
+  }
+
+  for (int offset = 1; offset <= 12; ++offset) {
+    for (int direction : {-1, 1}) {
+      int candidate_pitch = pitch + direction * offset;
+      if (candidate_pitch < static_cast<int>(low) || candidate_pitch > static_cast<int>(high)) {
+        continue;
+      }
+      uint8_t candidate = clampScalePitch(candidate_pitch, low, high);
+      if (!isAvoidNoteWithContext(candidate, chord_root, is_minor, degree)) {
+        return candidate;
+      }
+    }
+  }
+
+  return initial;
+}
+
+std::vector<NoteEvent*> collectSectionNotes(MidiTrack& track, const Section& section,
+                                            size_t max_count) {
+  std::vector<NoteEvent*> notes;
+  notes.reserve(max_count == 0 ? 64 : max_count);
+  for (auto& note : track.notes()) {
+    if (note.start_tick >= section.start_tick && note.start_tick < section.endTick()) {
+      notes.push_back(&note);
+    }
+  }
+  std::sort(notes.begin(), notes.end(), [](const NoteEvent* a, const NoteEvent* b) {
+    if (a->start_tick != b->start_tick) return a->start_tick < b->start_tick;
+    return a->note < b->note;
+  });
+  if (max_count > 0 && notes.size() > max_count) {
+    notes.resize(max_count);
+  }
+  return notes;
+}
+
+void shapeSectionRegister(std::vector<NoteEvent*>& notes, int low, int high, uint8_t absolute_low,
+                          uint8_t absolute_high, int start_lift, int end_lift,
+                          uint8_t velocity_boost, const IHarmonyContext* harmony = nullptr) {
+  (void)velocity_boost;
+  if (notes.empty()) {
+    return;
+  }
+
+  low = std::clamp(low, static_cast<int>(absolute_low), static_cast<int>(absolute_high));
+  high = std::clamp(high, low, static_cast<int>(absolute_high));
+  for (size_t idx = 0; idx < notes.size(); ++idx) {
+    NoteEvent& note = *notes[idx];
+    float pos = notes.size() == 1 ? 0.0f : static_cast<float>(idx) / (notes.size() - 1);
+    int lift = static_cast<int>(std::round(start_lift + (end_lift - start_lift) * pos));
+    int register_low =
+        std::clamp(low + lift, static_cast<int>(absolute_low), static_cast<int>(absolute_high));
+    int register_high = std::clamp(high + lift, register_low, static_cast<int>(absolute_high));
+    int target = static_cast<int>(note.note) + lift;
+    note.note = harmony != nullptr
+                    ? clampScalePitchAvoidingChord(target, note.start_tick, *harmony,
+                                                   static_cast<uint8_t>(register_low),
+                                                   static_cast<uint8_t>(register_high))
+                    : clampScalePitch(target, static_cast<uint8_t>(register_low),
+                                      static_cast<uint8_t>(register_high));
+  }
+}
+
+void applyDnaPattern(std::vector<NoteEvent*>& notes, int base_pitch,
+                     const std::vector<int>& intervals, uint8_t low, uint8_t high,
+                     uint8_t velocity_boost, const IHarmonyContext* harmony = nullptr) {
+  (void)velocity_boost;
+  if (notes.empty() || intervals.empty()) {
+    return;
+  }
+
+  for (size_t idx = 0; idx < notes.size(); ++idx) {
+    NoteEvent& note = *notes[idx];
+    int pitch = base_pitch + intervals[idx % intervals.size()];
+    note.note = harmony != nullptr
+                    ? clampScalePitchAvoidingChord(pitch, note.start_tick, *harmony, low, high)
+                    : clampScalePitch(pitch, low, high);
+  }
+}
+
+void applyRhythmSyncLeadDna(MidiTrack& vocal, MidiTrack& motif,
+                            const std::vector<Section>& sections, const GeneratorParams& params,
+                            const IHarmonyContext& harmony) {
+  if (vocal.empty() && motif.empty()) {
+    return;
+  }
+
+  const int vocal_center =
+      (static_cast<int>(params.vocal_low) + static_cast<int>(params.vocal_high)) / 2;
+  static const std::vector<int> kVerseVocal = {0, 0, 2, 0, 4, 2, 0, 2};
+  static const std::vector<int> kPrechorusVocal = {0, 2, 4, 5, 7, 9, 7, 9, 11, 12};
+  static const std::vector<int> kChorusVocal = {0, 0, 2, 5, 9, 9, 7, 5, 4, 7, 9, 12};
+  static const std::vector<int> kFinalChorusVocal = {0, 0, 2, 5, 9, 9, 12, 9, 7, 9, 12, 12};
+  static const std::vector<int> kDefaultVocal = {0, 2, 4, 2, 0, 2};
+
+  std::map<SectionType, int> occurrence_count;
+  for (const auto& section : sections) {
+    int occurrence = ++occurrence_count[section.type];
+    int vocal_shift = -4;
+    uint8_t vocal_boost = 4;
+    const std::vector<int>* vocal_pattern = &kDefaultVocal;
+
+    switch (section.type) {
+      case SectionType::A:
+        vocal_shift = -5;
+        vocal_pattern = &kVerseVocal;
+        break;
+      case SectionType::B:
+        vocal_shift = -1;
+        vocal_boost = 7;
+        vocal_pattern = &kPrechorusVocal;
+        break;
+      case SectionType::Chorus:
+        vocal_shift = 3;
+        vocal_boost = 10;
+        vocal_pattern = &kChorusVocal;
+        if (occurrence >= 2 || section.peak_level == PeakLevel::Max) {
+          vocal_shift += 2;
+          vocal_boost = 12;
+          vocal_pattern = &kFinalChorusVocal;
+        }
+        break;
+      default:
+        break;
+    }
+
+    auto all_vocal_notes = collectSectionNotes(vocal, section, 0);
+    switch (section.type) {
+      case SectionType::A:
+        shapeSectionRegister(all_vocal_notes, vocal_center - 9, vocal_center + 2, params.vocal_low,
+                             params.vocal_high, 0, 0, 1);
+        break;
+      case SectionType::B:
+        shapeSectionRegister(all_vocal_notes, vocal_center - 4, vocal_center + 7, params.vocal_low,
+                             params.vocal_high, 0, 3, 2);
+        break;
+      case SectionType::Chorus:
+        shapeSectionRegister(all_vocal_notes, vocal_center, vocal_center + 10, params.vocal_low,
+                             params.vocal_high, occurrence >= 2 ? 1 : 0, occurrence >= 2 ? 3 : 1,
+                             3);
+        break;
+      default:
+        break;
+    }
+
+    auto vocal_notes = collectSectionNotes(vocal, section, 12);
+    applyDnaPattern(vocal_notes, vocal_center + vocal_shift, *vocal_pattern, params.vocal_low,
+                    params.vocal_high, vocal_boost);
+
+    auto all_motif_notes = collectSectionNotes(motif, section, 0);
+    switch (section.type) {
+      case SectionType::A:
+        shapeSectionRegister(all_motif_notes, 59, 72, 55, 88, 0, 0, 1, &harmony);
+        break;
+      case SectionType::B:
+        shapeSectionRegister(all_motif_notes, 62, 76, 55, 88, 0, 3, 2, &harmony);
+        break;
+      case SectionType::Chorus:
+        shapeSectionRegister(all_motif_notes, 66, 82, 55, 88, occurrence >= 2 ? 1 : 0,
+                             occurrence >= 2 ? 3 : 1, 3, &harmony);
+        break;
+      default:
+        break;
+    }
+  }
 }
 
 }  // namespace
@@ -1222,14 +1895,10 @@ void Generator::applyLayerSchedule() {
     MidiTrack* track;
   };
   TrackMapping track_map[] = {
-      {TrackMask::Vocal, &song_.vocal()},
-      {TrackMask::Chord, &song_.chord()},
-      {TrackMask::Bass, &song_.bass()},
-      {TrackMask::Motif, &song_.motif()},
-      {TrackMask::Arpeggio, &song_.arpeggio()},
-      {TrackMask::Aux, &song_.aux()},
-      {TrackMask::Drums, &song_.drums()},
-      {TrackMask::Guitar, &song_.guitar()},
+      {TrackMask::Vocal, &song_.vocal()},       {TrackMask::Chord, &song_.chord()},
+      {TrackMask::Bass, &song_.bass()},         {TrackMask::Motif, &song_.motif()},
+      {TrackMask::Arpeggio, &song_.arpeggio()}, {TrackMask::Aux, &song_.aux()},
+      {TrackMask::Drums, &song_.drums()},       {TrackMask::Guitar, &song_.guitar()},
   };
 
   for (const auto& section : sections) {
@@ -1252,19 +1921,18 @@ void Generator::applyLayerSchedule() {
       // In RhythmSync paradigm, protect the coordinate axis track (Motif)
       // from layer schedule removal. Motif must remain present for
       // Vocal-Motif rhythm alignment to be audible in the output.
-      if (params_.paradigm == GenerationParadigm::RhythmSync &&
-          mapping.mask == TrackMask::Motif) {
+      if (params_.paradigm == GenerationParadigm::RhythmSync && mapping.mask == TrackMask::Motif) {
         continue;
       }
 
       auto& notes = mapping.track->notes();
 
       notes.erase(std::remove_if(notes.begin(), notes.end(),
-                                  [&](const NoteEvent& note) {
-                                    return shouldRemoveNoteForLayerSchedule(
-                                        note, section_start, section_end, section.layer_events,
-                                        mapping.mask);
-                                  }),
+                                 [&](const NoteEvent& note) {
+                                   return shouldRemoveNoteForLayerSchedule(
+                                       note, section_start, section_end, section.layer_events,
+                                       mapping.mask);
+                                 }),
                   notes.end());
     }
   }

@@ -37,10 +37,10 @@ constexpr StylePresetMapping kStylePresetMappings[] = {
     {Mood::Anthem, CompositionStyle::MelodyLead},          // 11: Live Call & Response
     {Mood::StraightPop,
      CompositionStyle::MelodyLead},  // 12: Background Motif (deprecated, now MelodyLead)
-    {Mood::CityPop, CompositionStyle::MelodyLead},      // 13: City Pop
-    {Mood::Yoasobi, CompositionStyle::MelodyLead},      // 14: Anime Opening
-    {Mood::FutureBass, CompositionStyle::SynthDriven},  // 15: EDM Synth Pop
-    {Mood::Ballad, CompositionStyle::MelodyLead},       // 16: Emotional Ballad
+    {Mood::CityPop, CompositionStyle::MelodyLead},          // 13: City Pop
+    {Mood::AnimeHighEnergy, CompositionStyle::MelodyLead},  // 14: Anime Opening
+    {Mood::FutureBass, CompositionStyle::SynthDriven},      // 15: EDM Synth Pop
+    {Mood::Ballad, CompositionStyle::MelodyLead},           // 16: Emotional Ballad
 };
 
 constexpr size_t kStylePresetCount = sizeof(kStylePresetMappings) / sizeof(kStylePresetMappings[0]);
@@ -219,10 +219,6 @@ GeneratorParams ConfigConverter::convert(const SongConfig& config) {
   params.style_preset_id = config.style_preset_id;
   params.blueprint_id = config.blueprint_id;
 
-  // Use config BPM if specified, otherwise use style preset default
-  params.bpm = (config.bpm != 0) ? config.bpm : preset.tempo_default;
-  params.bpm_explicit = (config.bpm != 0);
-
   // Map style preset to mood and composition style using lookup table
   if (config.style_preset_id < kStylePresetCount) {
     const auto& mapping = kStylePresetMappings[config.style_preset_id];
@@ -239,6 +235,13 @@ GeneratorParams ConfigConverter::convert(const SongConfig& config) {
     params.mood = static_cast<Mood>(config.mood);
   }
 
+  // Use config BPM if specified, otherwise prefer an explicitly selected mood's
+  // reference tempo over the style preset tempo.
+  params.bpm = (config.bpm != 0)
+                   ? config.bpm
+                   : (config.mood_explicit ? getMoodDefaultBpm(params.mood) : preset.tempo_default);
+  params.bpm_explicit = (config.bpm != 0);
+
   // Arpeggio settings
   params.arpeggio_enabled = config.arpeggio_enabled;
   params.arpeggio = config.arpeggio;
@@ -251,7 +254,8 @@ GeneratorParams ConfigConverter::convert(const SongConfig& config) {
 
   // Apply mood-based chord extension probability adjustments.
   // NOTE: enable_* flags are NOT overridden here - they come from the user/preset config.
-  // Mood only adjusts probabilities when extensions are enabled AND user didn't explicitly set them.
+  // Mood only adjusts probabilities when extensions are enabled AND user didn't explicitly set
+  // them.
   if (!config.chord_ext_prob_explicit) {
     if (params.mood == Mood::CityPop) {
       params.chord_extension.seventh_probability = 0.40f;
@@ -362,10 +366,17 @@ GeneratorParams ConfigConverter::convert(const SongConfig& config) {
   // Motif parameter overrides (0xFF or 0 = use preset default)
   if (config.motif_length != 0) {
     switch (config.motif_length) {
-      case 1: params.motif.length = MotifLength::Bars1; break;
-      case 2: params.motif.length = MotifLength::Bars2; break;
-      case 4: params.motif.length = MotifLength::Bars4; break;
-      default: break;  // Invalid value, keep preset default
+      case 1:
+        params.motif.length = MotifLength::Bars1;
+        break;
+      case 2:
+        params.motif.length = MotifLength::Bars2;
+        break;
+      case 4:
+        params.motif.length = MotifLength::Bars4;
+        break;
+      default:
+        break;  // Invalid value, keep preset default
     }
     params.motif_length_explicit = true;
   }
@@ -374,15 +385,14 @@ GeneratorParams ConfigConverter::convert(const SongConfig& config) {
     params.motif_note_count_explicit = true;
   }
   if (config.motif_motion != 0xFF) {
-    params.motif.motion = static_cast<MotifMotion>(
-        std::min(config.motif_motion, uint8_t(4)));
+    params.motif.motion = static_cast<MotifMotion>(std::min(config.motif_motion, uint8_t(4)));
   }
   if (config.motif_register_high != 0) {
     params.motif.register_high = (config.motif_register_high == 2);
   }
   if (config.motif_rhythm_density != 0xFF) {
-    params.motif.rhythm_density = static_cast<MotifRhythmDensity>(
-        std::min(config.motif_rhythm_density, uint8_t(2)));
+    params.motif.rhythm_density =
+        static_cast<MotifRhythmDensity>(std::min(config.motif_rhythm_density, uint8_t(2)));
     params.motif_rhythm_density_explicit = true;
   }
 

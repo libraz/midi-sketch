@@ -5,11 +5,11 @@
 
 #include "instrument/keyboard/piano_model.h"
 
-#include "core/production_blueprint.h"
-
 #include <algorithm>
 #include <cmath>
 #include <numeric>
+
+#include "core/production_blueprint.h"
 
 namespace midisketch {
 
@@ -21,12 +21,12 @@ constexpr uint8_t kPianoHighest = 108;
 constexpr uint8_t kDefaultSplitPoint = 60;  // Middle C
 
 // Hand movement thresholds
-constexpr uint8_t kLargeLeapThreshold = 12;  // Semitones before extra shift time
-constexpr uint8_t kTempoAdjustThreshold = 120;  // BPM above which tempo penalty applies
+constexpr uint8_t kLargeLeapThreshold = 12;         // Semitones before extra shift time
+constexpr uint8_t kTempoAdjustThreshold = 120;      // BPM above which tempo penalty applies
 constexpr uint8_t kMovementCostShiftThreshold = 5;  // Semitones before tempo penalty
-constexpr uint8_t kMinGapForSplit = 3;  // Minimum gap to consider as natural split point
-constexpr float kBaseMovementCost = 1.0f;  // Cost per semitone of hand shift
-constexpr float kLargeLeapPenalty = 2.0f;  // Extra cost per semitone beyond threshold
+constexpr uint8_t kMinGapForSplit = 3;         // Minimum gap to consider as natural split point
+constexpr float kBaseMovementCost = 1.0f;      // Cost per semitone of hand shift
+constexpr float kLargeLeapPenalty = 2.0f;      // Extra cost per semitone beyond threshold
 constexpr float kTempoMovementFactor = 0.05f;  // Tempo-based penalty multiplier
 constexpr float kTimePressurePenalty = 10.0f;  // Penalty when shift time is tight
 
@@ -179,8 +179,7 @@ void PianoModel::resolveHandOverflow(VoicingHandAssignment& assignment) const {
       uint8_t moved = assignment.right_hand.front();
       assignment.right_hand.erase(assignment.right_hand.begin());
       assignment.left_hand.insert(
-          std::lower_bound(assignment.left_hand.begin(), assignment.left_hand.end(), moved),
-          moved);
+          std::lower_bound(assignment.left_hand.begin(), assignment.left_hand.end(), moved), moved);
       right_span = assignment.right_hand.back() - assignment.right_hand.front();
     }
   }
@@ -191,8 +190,7 @@ void PianoModel::resolveHandOverflow(VoicingHandAssignment& assignment) const {
     uint8_t moved = assignment.left_hand.back();
     assignment.left_hand.pop_back();
     assignment.right_hand.insert(
-        std::lower_bound(assignment.right_hand.begin(), assignment.right_hand.end(), moved),
-        moved);
+        std::lower_bound(assignment.right_hand.begin(), assignment.right_hand.end(), moved), moved);
   }
 
   // Check note count limits: right hand
@@ -201,8 +199,7 @@ void PianoModel::resolveHandOverflow(VoicingHandAssignment& assignment) const {
     uint8_t moved = assignment.right_hand.front();
     assignment.right_hand.erase(assignment.right_hand.begin());
     assignment.left_hand.insert(
-        std::lower_bound(assignment.left_hand.begin(), assignment.left_hand.end(), moved),
-        moved);
+        std::lower_bound(assignment.left_hand.begin(), assignment.left_hand.end(), moved), moved);
   }
 }
 
@@ -241,8 +238,7 @@ bool PianoModel::isTransitionFeasible(const std::vector<uint8_t>& from_pitches,
 
     uint8_t from_center = calculateCenter(from_hand);
     uint8_t to_center = calculateCenter(to_hand);
-    uint8_t shift =
-        from_center > to_center ? from_center - to_center : to_center - from_center;
+    uint8_t shift = from_center > to_center ? from_center - to_center : to_center - from_center;
 
     if (shift == 0) return true;
 
@@ -299,8 +295,7 @@ float PianoModel::calculateHandMovementCost(uint8_t from_center, uint8_t to_cent
                                             uint32_t available_ticks, uint16_t bpm) const {
   if (from_center == 0 || to_center == 0) return 0.0f;  // No previous position
 
-  uint8_t shift =
-      from_center > to_center ? from_center - to_center : to_center - from_center;
+  uint8_t shift = from_center > to_center ? from_center - to_center : to_center - from_center;
   if (shift == 0) return 0.0f;
 
   // Base cost proportional to distance
@@ -330,8 +325,8 @@ float PianoModel::calculateHandMovementCost(uint8_t from_center, uint8_t to_cent
 // Voicing Suggestion
 // =============================================================================
 
-std::vector<uint8_t> PianoModel::suggestPlayableVoicing(
-    const std::vector<uint8_t>& desired_pitches, uint8_t root_pitch_class) const {
+std::vector<uint8_t> PianoModel::suggestPlayableVoicing(const std::vector<uint8_t>& desired_pitches,
+                                                        uint8_t root_pitch_class) const {
   if (desired_pitches.empty()) return {};
 
   // Already playable? Return as-is

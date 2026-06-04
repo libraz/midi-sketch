@@ -38,12 +38,12 @@ PhraseVariation selectPhraseVariation(int reuse_count, int occurrence, std::mt19
   // MicroRhythmChange (too random), SlurMerge (articulation loss),
   // RepeatNoteSimplify (rhythm motif destruction).
   constexpr PhraseVariation kSafeVariations[] = {
-      PhraseVariation::LastNoteShift,    // Subtle ending variation
-      PhraseVariation::LastNoteLong,     // Dramatic ending extension
-      PhraseVariation::BreathRestInsert, // Natural breathing room
-      PhraseVariation::DynamicAccent,    // Velocity emphasis on ending
-      PhraseVariation::LateOnset,        // Anticipation rest at start
-      PhraseVariation::EchoRepeat        // Echo effect at ending
+      PhraseVariation::LastNoteShift,     // Subtle ending variation
+      PhraseVariation::LastNoteLong,      // Dramatic ending extension
+      PhraseVariation::BreathRestInsert,  // Natural breathing room
+      PhraseVariation::DynamicAccent,     // Velocity emphasis on ending
+      PhraseVariation::LateOnset,         // Anticipation rest at start
+      PhraseVariation::EchoRepeat         // Echo effect at ending
   };
   constexpr size_t kSafeCount = sizeof(kSafeVariations) / sizeof(kSafeVariations[0]);
   return kSafeVariations[rng() % kSafeCount];
@@ -150,9 +150,8 @@ void applyPhraseVariation(std::vector<NoteEvent>& notes, PhraseVariation variati
         if (echo_vel < 30) echo_vel = 30;
 
         // Create echo note using NoteEventBuilder (same pitch, reduced intensity)
-        NoteEvent echo = NoteEventBuilder::create(echo_start, echo_duration,
-                                                   last.note,
-                                                   static_cast<uint8_t>(echo_vel));
+        NoteEvent echo = NoteEventBuilder::create(echo_start, echo_duration, last.note,
+                                                  static_cast<uint8_t>(echo_vel));
 #ifdef MIDISKETCH_NOTE_PROVENANCE
         echo.prov_source = last.prov_source;
         echo.prov_chord_degree = last.prov_chord_degree;

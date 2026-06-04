@@ -116,7 +116,7 @@ TEST(MidiTrackCCTest, SliceIncludesCCEvents) {
   EXPECT_EQ(sliced.ccEvents().size(), 2u);
   // Ticks should be adjusted relative to fromTick
   EXPECT_EQ(sliced.ccEvents()[0].tick, 0u);    // 480 - 480
-  EXPECT_EQ(sliced.ccEvents()[1].tick, 480u);   // 960 - 480
+  EXPECT_EQ(sliced.ccEvents()[1].tick, 480u);  // 960 - 480
 }
 
 TEST(MidiTrackCCTest, AppendIncludesCCEvents) {
@@ -275,20 +275,17 @@ TEST(ExpressionCurveTest, GeneratedForMelodicTracks) {
 
   // Vocal should have CC events if it has notes
   if (!song.vocal().notes().empty()) {
-    EXPECT_GT(song.vocal().ccEvents().size(), 0u)
-        << "Vocal track should have Expression CC events";
+    EXPECT_GT(song.vocal().ccEvents().size(), 0u) << "Vocal track should have Expression CC events";
   }
 
   // Bass should have CC events if it has notes
   if (!song.bass().notes().empty()) {
-    EXPECT_GT(song.bass().ccEvents().size(), 0u)
-        << "Bass track should have Expression CC events";
+    EXPECT_GT(song.bass().ccEvents().size(), 0u) << "Bass track should have Expression CC events";
   }
 
   // Chord should have CC events if it has notes
   if (!song.chord().notes().empty()) {
-    EXPECT_GT(song.chord().ccEvents().size(), 0u)
-        << "Chord track should have Expression CC events";
+    EXPECT_GT(song.chord().ccEvents().size(), 0u) << "Chord track should have Expression CC events";
   }
 }
 
@@ -311,8 +308,8 @@ TEST(ExpressionCurveTest, AllCCValuesInValidRange) {
       EXPECT_LE(cc_evt.value, 127)
           << track_name << " CC value out of range at tick " << cc_evt.tick;
       EXPECT_TRUE(cc_evt.cc == MidiCC::kExpression || cc_evt.cc == MidiCC::kPan)
-          << track_name << " unexpected CC number " << static_cast<int>(cc_evt.cc)
-          << " at tick " << cc_evt.tick;
+          << track_name << " unexpected CC number " << static_cast<int>(cc_evt.cc) << " at tick "
+          << cc_evt.tick;
     }
   };
 
@@ -335,8 +332,7 @@ TEST(ExpressionCurveTest, DrumsDoNotHaveExpressionCurves) {
   const Song& song = generator.getSong();
 
   // Drums should NOT have CC expression events
-  EXPECT_EQ(song.drums().ccEvents().size(), 0u)
-      << "Drums should not have Expression CC events";
+  EXPECT_EQ(song.drums().ccEvents().size(), 0u) << "Drums should not have Expression CC events";
 }
 
 TEST(ExpressionCurveTest, ExpressionWrittenToMidiOutput) {
@@ -586,8 +582,7 @@ TEST(SustainPedalTest, BalladChordHasSustainPedal) {
 
   EXPECT_GT(sustain_on_count, 0) << "Ballad chord should have sustain pedal ON events";
   EXPECT_GT(sustain_off_count, 0) << "Ballad chord should have sustain pedal OFF events";
-  EXPECT_EQ(sustain_on_count, sustain_off_count)
-      << "Each sustain ON should have a matching OFF";
+  EXPECT_EQ(sustain_on_count, sustain_off_count) << "Each sustain ON should have a matching OFF";
 }
 
 TEST(SustainPedalTest, SentimentalMoodHasSustainPedal) {
@@ -782,8 +777,7 @@ TEST(ExpressionCurvePostProcessorTest, VocalLongNotesGetCrescendoDiminuendo) {
   }
 
   // Ballad at BPM=90 should produce long notes that trigger expression curves
-  EXPECT_GT(vocal_expr.size(), 0u)
-      << "Vocal track should have expression CC events for long notes";
+  EXPECT_GT(vocal_expr.size(), 0u) << "Vocal track should have expression CC events for long notes";
 
   // All expression values should be in reasonable range (80-110)
   for (const auto* evt : vocal_expr) {

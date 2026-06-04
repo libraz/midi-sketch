@@ -32,34 +32,34 @@ namespace drums {
 /// that every beat processor needs. Constructed once per beat in the main
 /// drum generation loop.
 struct BeatContext {
-  Tick beat_tick;              ///< Tick position of the beat
-  uint8_t beat;               ///< Beat number within bar (0-3)
-  uint8_t velocity;           ///< Base velocity for this beat
-  SectionType section_type;   ///< Current section type
-  Mood mood;                  ///< Current mood
-  uint16_t bpm;               ///< Tempo in BPM
-  uint8_t bar;                ///< Current bar number within section
-  uint8_t section_bars;       ///< Total bars in section
-  bool in_prechorus_lift;     ///< Whether in pre-chorus buildup zone
-  std::mt19937& rng;          ///< Random number generator
+  Tick beat_tick;            ///< Tick position of the beat
+  uint8_t beat;              ///< Beat number within bar (0-3)
+  uint8_t velocity;          ///< Base velocity for this beat
+  SectionType section_type;  ///< Current section type
+  Mood mood;                 ///< Current mood
+  uint16_t bpm;              ///< Tempo in BPM
+  uint8_t bar;               ///< Current bar number within section
+  uint8_t section_bars;      ///< Total bars in section
+  bool in_prechorus_lift;    ///< Whether in pre-chorus buildup zone
+  std::mt19937& rng;         ///< Random number generator
 };
 
 /// @brief Kick drum-specific beat parameters.
 struct KickBeatParams {
-  Tick adjusted_beat_tick;     ///< Time-feel adjusted tick position
-  const KickPattern& kick;    ///< Kick pattern flags
-  float kick_prob;             ///< DrumRole-based kick probability
-  float humanize_timing;      ///< Global humanization scaling (0.0-1.0)
+  Tick adjusted_beat_tick;  ///< Time-feel adjusted tick position
+  const KickPattern& kick;  ///< Kick pattern flags
+  float kick_prob;          ///< DrumRole-based kick probability
+  float humanize_timing;    ///< Global humanization scaling (0.0-1.0)
 };
 
 /// @brief Snare drum-specific beat parameters.
 struct SnareBeatParams {
-  DrumStyle style;             ///< Drum style
-  DrumRole role;               ///< Drum role
-  float snare_prob;            ///< DrumRole-based snare probability
-  bool use_groove_snare;       ///< Whether to use groove template snare pattern
+  DrumStyle style;                ///< Drum style
+  DrumRole role;                  ///< Drum role
+  float snare_prob;               ///< DrumRole-based snare probability
+  bool use_groove_snare;          ///< Whether to use groove template snare pattern
   uint16_t groove_snare_pattern;  ///< Groove template snare bitmask
-  bool is_intro_first;         ///< Whether this is first bar of intro
+  bool is_intro_first;            ///< Whether this is first bar of intro
 };
 
 /// @brief Ghost note-specific beat parameters.
@@ -71,13 +71,13 @@ struct GhostBeatParams {
 
 /// @brief Hi-hat-specific beat parameters.
 struct HiHatBeatParams {
-  DrumRole role;               ///< Drum role
-  float density_mult;          ///< Density multiplier
-  bool bar_has_open_hh;        ///< Whether this bar has open hi-hat accent
-  uint8_t open_hh_beat;        ///< Beat for open hi-hat (if applicable)
-  bool peak_open_hh_24;        ///< Whether peak level forces open HH on 2/4
-  float swing_amount;          ///< Current swing amount
-  DrumGrooveFeel groove;       ///< Groove feel
+  DrumRole role;          ///< Drum role
+  float density_mult;     ///< Density multiplier
+  bool bar_has_open_hh;   ///< Whether this bar has open hi-hat accent
+  uint8_t open_hh_beat;   ///< Beat for open hi-hat (if applicable)
+  bool peak_open_hh_24;   ///< Whether peak level forces open HH on 2/4
+  float swing_amount;     ///< Current swing amount
+  DrumGrooveFeel groove;  ///< Groove feel
 };
 
 // ============================================================================

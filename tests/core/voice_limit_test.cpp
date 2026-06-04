@@ -28,20 +28,18 @@ namespace {
 
 /// @brief Tracks subject to voice limiting (same order as coordinator.cpp).
 constexpr TrackRole kLimitedTracks[] = {
-    TrackRole::Vocal, TrackRole::Bass,    TrackRole::Chord,
-    TrackRole::Aux,   TrackRole::Motif,   TrackRole::Arpeggio,
-    TrackRole::Guitar,
+    TrackRole::Vocal, TrackRole::Bass,     TrackRole::Chord,  TrackRole::Aux,
+    TrackRole::Motif, TrackRole::Arpeggio, TrackRole::Guitar,
 };
-constexpr size_t kLimitedTrackCount =
-    sizeof(kLimitedTracks) / sizeof(kLimitedTracks[0]);
+constexpr size_t kLimitedTrackCount = sizeof(kLimitedTracks) / sizeof(kLimitedTracks[0]);
 
 /// @brief Collect sorted note onset offsets within a bar (relative to bar_start).
 ///
 /// Frozen tracks keep the same rhythmic pattern after re-quantization, so
 /// we compare note onset timing (not pitches) to determine if a track is
 /// independently moving vs harmonically adapted.
-std::vector<Tick> getNoteOnsetOffsets(const std::vector<NoteEvent>& notes,
-                                      Tick bar_start, Tick bar_end) {
+std::vector<Tick> getNoteOnsetOffsets(const std::vector<NoteEvent>& notes, Tick bar_start,
+                                      Tick bar_end) {
   std::vector<Tick> result;
   for (const auto& note : notes) {
     if (note.start_tick >= bar_start && note.start_tick < bar_end) {
@@ -57,8 +55,7 @@ std::vector<Tick> getNoteOnsetOffsets(const std::vector<NoteEvent>& notes,
 /// A track is "moving" if its rhythmic pattern (note onset timing) differs
 /// between bars. Pitch changes from chord-tone re-quantization are not
 /// considered independent movement.
-bool isMoving(const std::vector<NoteEvent>& notes, Tick prev_bar_start,
-              Tick curr_bar_start) {
+bool isMoving(const std::vector<NoteEvent>& notes, Tick prev_bar_start, Tick curr_bar_start) {
   Tick prev_bar_end = prev_bar_start + TICKS_PER_BAR;
   Tick curr_bar_end = curr_bar_start + TICKS_PER_BAR;
 
@@ -69,8 +66,7 @@ bool isMoving(const std::vector<NoteEvent>& notes, Tick prev_bar_start,
 }
 
 /// @brief Count how many harmonic tracks are moving at a given bar transition.
-size_t countMovingTracks(const Song& song, Tick prev_bar_start,
-                         Tick curr_bar_start) {
+size_t countMovingTracks(const Song& song, Tick prev_bar_start, Tick curr_bar_start) {
   size_t count = 0;
   for (size_t idx = 0; idx < kLimitedTrackCount; ++idx) {
     const auto& notes = song.track(kLimitedTracks[idx]).notes();
@@ -105,9 +101,8 @@ GeneratorParams makeVoiceLimitParams() {
 ///
 /// Steps: build arrangement from params, modify sections' max_moving_voices,
 /// then generate via generateAllTracks() which calls applyVoiceLimit internally.
-void generateWithVoiceLimit(const GeneratorParams& params,
-                            uint8_t max_moving_voices, Song& out_song,
-                            Coordinator& out_coord) {
+void generateWithVoiceLimit(const GeneratorParams& params, uint8_t max_moving_voices,
+                            Song& out_song, Coordinator& out_coord) {
   // Step 1: Initialize coordinator to get the arrangement (with default
   // max_moving_voices=0)
   out_coord.initialize(params);
@@ -172,9 +167,8 @@ TEST(VoiceLimitTest, MaxMovingVoicesLimitApplied) {
       Tick curr_bar = section_start + bar_idx * TICKS_PER_BAR;
 
       size_t moving = countMovingTracks(song, prev_bar, curr_bar);
-      EXPECT_LE(moving, 2u)
-          << "Section " << sec.name << " bar " << static_cast<int>(bar_idx)
-          << " has " << moving << " moving tracks (limit=2)";
+      EXPECT_LE(moving, 2u) << "Section " << sec.name << " bar " << static_cast<int>(bar_idx)
+                            << " has " << moving << " moving tracks (limit=2)";
     }
   }
 }
@@ -194,25 +188,21 @@ TEST(VoiceLimitTest, MaxMovingVoicesPreservesPriority) {
   generateWithVoiceLimit(params, 2, limited_song, limited_coord);
 
   // Vocal and Bass should be identical between unlimited and limited
-  EXPECT_EQ(unlimited_song.vocal().notes().size(),
-            limited_song.vocal().notes().size())
+  EXPECT_EQ(unlimited_song.vocal().notes().size(), limited_song.vocal().notes().size())
       << "Vocal track should not be modified by voice limiter";
-  EXPECT_EQ(unlimited_song.bass().notes().size(),
-            limited_song.bass().notes().size())
+  EXPECT_EQ(unlimited_song.bass().notes().size(), limited_song.bass().notes().size())
       << "Bass track should not be modified by voice limiter";
 
   // Verify note content is identical
   const auto& vocal_unlimited = unlimited_song.vocal().notes();
   const auto& vocal_limited = limited_song.vocal().notes();
-  for (size_t idx = 0;
-       idx < std::min(vocal_unlimited.size(), vocal_limited.size()); ++idx) {
+  for (size_t idx = 0; idx < std::min(vocal_unlimited.size(), vocal_limited.size()); ++idx) {
     EXPECT_EQ(vocal_unlimited[idx].start_tick, vocal_limited[idx].start_tick);
     EXPECT_EQ(vocal_unlimited[idx].note, vocal_limited[idx].note);
   }
   const auto& bass_unlimited = unlimited_song.bass().notes();
   const auto& bass_limited = limited_song.bass().notes();
-  for (size_t idx = 0;
-       idx < std::min(bass_unlimited.size(), bass_limited.size()); ++idx) {
+  for (size_t idx = 0; idx < std::min(bass_unlimited.size(), bass_limited.size()); ++idx) {
     EXPECT_EQ(bass_unlimited[idx].start_tick, bass_limited[idx].start_tick);
     EXPECT_EQ(bass_unlimited[idx].note, bass_limited[idx].note);
   }
@@ -233,10 +223,8 @@ TEST(VoiceLimitTest, MaxMovingVoicesOnlyAffectsConstrainedSections) {
 
   // All tracks should be identical
   for (size_t idx = 0; idx < kTrackCount; ++idx) {
-    EXPECT_EQ(song_a.tracks()[idx].notes().size(),
-              song_b.tracks()[idx].notes().size())
-        << "Track " << idx
-        << " should be identical when max_moving_voices=0";
+    EXPECT_EQ(song_a.tracks()[idx].notes().size(), song_b.tracks()[idx].notes().size())
+        << "Track " << idx << " should be identical when max_moving_voices=0";
   }
 }
 
@@ -259,9 +247,8 @@ TEST(VoiceLimitTest, MaxMovingVoicesOneFreezesAllButOne) {
       Tick curr_bar = section_start + bar_idx * TICKS_PER_BAR;
 
       size_t moving = countMovingTracks(song, prev_bar, curr_bar);
-      EXPECT_LE(moving, 1u)
-          << "Section " << sec.name << " bar " << static_cast<int>(bar_idx)
-          << " has " << moving << " moving tracks (limit=1)";
+      EXPECT_LE(moving, 1u) << "Section " << sec.name << " bar " << static_cast<int>(bar_idx)
+                            << " has " << moving << " moving tracks (limit=1)";
     }
   }
 }
@@ -293,8 +280,7 @@ TEST(VoiceLimitTest, FrozenNotesAreReQuantizedToChordTones) {
       for (size_t ti = 0; ti < kLimitedTrackCount; ++ti) {
         const auto& notes = song.track(kLimitedTracks[ti]).notes();
         for (const auto& note : notes) {
-          if (note.start_tick < curr_bar_start || note.start_tick >= curr_bar_end)
-            continue;
+          if (note.start_tick < curr_bar_start || note.start_tick >= curr_bar_end) continue;
 
           auto chord_tones = harmony.getChordTonesAt(note.start_tick);
           int pc = note.note % 12;
@@ -316,12 +302,10 @@ TEST(VoiceLimitTest, FrozenNotesAreReQuantizedToChordTones) {
   // re-quantized. The vast majority of notes should land on chord tones.
   // Allow some non-chord-tone notes (passing tones, tensions from non-frozen tracks).
   ASSERT_GT(checked, 0) << "Should have checked at least some notes";
-  double chord_tone_ratio =
-      static_cast<double>(chord_tone_count) / static_cast<double>(checked);
+  double chord_tone_ratio = static_cast<double>(chord_tone_count) / static_cast<double>(checked);
   EXPECT_GE(chord_tone_ratio, 0.60)
       << "At least 60% of notes should be chord tones after re-quantization "
-      << "(got " << chord_tone_count << "/" << checked << " = "
-      << chord_tone_ratio * 100.0 << "%)";
+      << "(got " << chord_tone_count << "/" << checked << " = " << chord_tone_ratio * 100.0 << "%)";
 }
 
 }  // namespace test

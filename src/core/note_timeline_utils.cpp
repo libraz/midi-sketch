@@ -25,7 +25,8 @@ void fixOverlaps(std::vector<NoteEvent>& notes) {
     // Ensure no overlap: end of current note <= start of next note
     if (end_tick > next_start) {
       // Guard against underflow: if same start_tick, use minimum duration
-      Tick max_duration = (next_start > notes[i].start_tick) ? (next_start - notes[i].start_tick) : 1;
+      Tick max_duration =
+          (next_start > notes[i].start_tick) ? (next_start - notes[i].start_tick) : 1;
       notes[i].duration = max_duration;
 
       // If still overlapping (same start_tick case), shift next note

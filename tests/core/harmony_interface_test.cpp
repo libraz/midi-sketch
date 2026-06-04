@@ -240,7 +240,7 @@ TEST_F(HarmonyInterfaceTest, GetCollisionSnapshotRangeCalculation) {
   auto snapshot = stub_->getCollisionSnapshot(3840, 1920);
   EXPECT_EQ(snapshot.tick, 3840u);
   EXPECT_EQ(snapshot.range_start, 3840u - 960u);  // tick - range/2
-  EXPECT_EQ(snapshot.range_end, 3840u + 960u);     // tick + range/2
+  EXPECT_EQ(snapshot.range_end, 3840u + 960u);    // tick + range/2
 }
 
 TEST_F(HarmonyInterfaceTest, GetCollisionSnapshotAtZero) {

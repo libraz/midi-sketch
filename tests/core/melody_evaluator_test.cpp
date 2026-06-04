@@ -389,7 +389,8 @@ TEST(MelodyEvaluatorTest, RhythmIntervalCorrelation_EmptyNotes) {
 }
 
 TEST(MelodyEvaluatorTest, RhythmIntervalCorrelation_SingleNote) {
-  std::vector<NoteEvent> single = {NoteEventTestHelper::create(0, 480, 60, 100)};  // One quarter note
+  std::vector<NoteEvent> single = {
+      NoteEventTestHelper::create(0, 480, 60, 100)};  // One quarter note
   float score = MelodyEvaluator::calcRhythmIntervalCorrelation(single);
   EXPECT_FLOAT_EQ(score, 0.5f) << "Single note should return neutral score";
 }
@@ -657,30 +658,31 @@ TEST(MelodyEvaluatorTest, Catchiness_GraduatedRepeatBonus_FiveNotes) {
   // 5 consecutive same pitches should get maximum 1.0 bonus (Ice Cream style)
   // C-C-C-C-C-D pattern
   std::vector<NoteEvent> notes = {
-      NoteEventTestHelper::create(0, 480, 60, 100),      // C4
-      NoteEventTestHelper::create(480, 480, 60, 100),    // C4 (same)
-      NoteEventTestHelper::create(960, 480, 60, 100),    // C4 (same)
-      NoteEventTestHelper::create(1440, 480, 60, 100),   // C4 (same)
-      NoteEventTestHelper::create(1920, 480, 60, 100),   // C4 (same) - 5 consecutive!
-      NoteEventTestHelper::create(2400, 480, 62, 100),   // D4
+      NoteEventTestHelper::create(0, 480, 60, 100),     // C4
+      NoteEventTestHelper::create(480, 480, 60, 100),   // C4 (same)
+      NoteEventTestHelper::create(960, 480, 60, 100),   // C4 (same)
+      NoteEventTestHelper::create(1440, 480, 60, 100),  // C4 (same)
+      NoteEventTestHelper::create(1920, 480, 60, 100),  // C4 (same) - 5 consecutive!
+      NoteEventTestHelper::create(2400, 480, 62, 100),  // D4
   };
   float score = MelodyEvaluator::calcCatchiness(notes);
   // Should get high catchiness due to maximum repeat bonus
-  EXPECT_GE(score, 0.5f) << "5 consecutive same notes should provide high catchiness (Ice Cream style)";
+  EXPECT_GE(score, 0.5f)
+      << "5 consecutive same notes should provide high catchiness (Ice Cream style)";
 }
 
 TEST(MelodyEvaluatorTest, Catchiness_HighIntervalRepetition) {
   // Same interval (e.g., +2 semitones) appearing 6+ times should add bonus
   // C-D-E-F-G-A-B pattern: all +2 intervals (whole steps)
   std::vector<NoteEvent> notes = {
-      NoteEventTestHelper::create(0, 480, 60, 100),      // C4
-      NoteEventTestHelper::create(480, 480, 62, 100),    // D4 (+2)
-      NoteEventTestHelper::create(960, 480, 64, 100),    // E4 (+2)
-      NoteEventTestHelper::create(1440, 480, 65, 100),   // F4 (+1) - different
-      NoteEventTestHelper::create(1920, 480, 67, 100),   // G4 (+2)
-      NoteEventTestHelper::create(2400, 480, 69, 100),   // A4 (+2)
-      NoteEventTestHelper::create(2880, 480, 71, 100),   // B4 (+2)
-      NoteEventTestHelper::create(3360, 480, 72, 100),   // C5 (+1)
+      NoteEventTestHelper::create(0, 480, 60, 100),     // C4
+      NoteEventTestHelper::create(480, 480, 62, 100),   // D4 (+2)
+      NoteEventTestHelper::create(960, 480, 64, 100),   // E4 (+2)
+      NoteEventTestHelper::create(1440, 480, 65, 100),  // F4 (+1) - different
+      NoteEventTestHelper::create(1920, 480, 67, 100),  // G4 (+2)
+      NoteEventTestHelper::create(2400, 480, 69, 100),  // A4 (+2)
+      NoteEventTestHelper::create(2880, 480, 71, 100),  // B4 (+2)
+      NoteEventTestHelper::create(3360, 480, 72, 100),  // C5 (+1)
   };
   float score = MelodyEvaluator::calcCatchiness(notes);
   // Should get bonus for high interval repetition (5x "+2" intervals)
@@ -691,13 +693,14 @@ TEST(MelodyEvaluatorTest, Catchiness_SixSameIntervals) {
   // Create 6 identical intervals (+0 = same pitch repeated)
   // This tests the high_rep_bonus for 6+ occurrences
   std::vector<NoteEvent> notes = {
-      NoteEventTestHelper::create(0, 480, 60, 100),      // C4
-      NoteEventTestHelper::create(480, 480, 60, 100),    // C4 (interval=0)
-      NoteEventTestHelper::create(960, 480, 60, 100),    // C4 (interval=0)
-      NoteEventTestHelper::create(1440, 480, 60, 100),   // C4 (interval=0)
-      NoteEventTestHelper::create(1920, 480, 60, 100),   // C4 (interval=0)
-      NoteEventTestHelper::create(2400, 480, 60, 100),   // C4 (interval=0)
-      NoteEventTestHelper::create(2880, 480, 60, 100),   // C4 (interval=0) - 6 consecutive 0 intervals!
+      NoteEventTestHelper::create(0, 480, 60, 100),     // C4
+      NoteEventTestHelper::create(480, 480, 60, 100),   // C4 (interval=0)
+      NoteEventTestHelper::create(960, 480, 60, 100),   // C4 (interval=0)
+      NoteEventTestHelper::create(1440, 480, 60, 100),  // C4 (interval=0)
+      NoteEventTestHelper::create(1920, 480, 60, 100),  // C4 (interval=0)
+      NoteEventTestHelper::create(2400, 480, 60, 100),  // C4 (interval=0)
+      NoteEventTestHelper::create(2880, 480, 60,
+                                  100),  // C4 (interval=0) - 6 consecutive 0 intervals!
   };
   float score = MelodyEvaluator::calcCatchiness(notes);
   // Should get maximum high_rep_bonus (0.25) plus repeat bonus (1.0)

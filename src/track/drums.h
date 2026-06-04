@@ -59,8 +59,9 @@ void generateDrumsTrackWithVocal(MidiTrack& track, const Song& song, const Gener
  * @param vocal_analysis Pre-analyzed vocal track data
  * @note Drums use MIDI channel 9 (GM standard).
  */
-void generateDrumsTrackMelodyDriven(MidiTrack& track, const Song& song, const GeneratorParams& params,
-                                    std::mt19937& rng, const VocalAnalysis& vocal_analysis);
+void generateDrumsTrackMelodyDriven(MidiTrack& track, const Song& song,
+                                    const GeneratorParams& params, std::mt19937& rng,
+                                    const VocalAnalysis& vocal_analysis);
 
 // ============================================================================
 // Swing Control API (for testing)
@@ -79,7 +80,7 @@ void generateDrumsTrackMelodyDriven(MidiTrack& track, const Song& song, const Ge
  * @return Swing amount (0.0 = straight, 0.5 = moderate swing, 0.7 = heavy)
  */
 float calculateSwingAmount(SectionType section, int bar_in_section, int total_bars,
-                          float swing_override = -1.0f);
+                           float swing_override = -1.0f);
 
 /**
  * @brief Calculate swing offset with continuous control.
@@ -96,14 +97,13 @@ float calculateSwingAmount(SectionType section, int bar_in_section, int total_ba
  * @return Tick offset to add to off-beat timing (0 for Straight groove)
  */
 Tick getSwingOffsetContinuous(DrumGrooveFeel groove, Tick subdivision, SectionType section,
-                               int bar_in_section, int total_bars,
-                               float swing_override = -1.0f);
+                              int bar_in_section, int total_bars, float swing_override = -1.0f);
 
 /**
  * @brief Get hi-hat swing factor based on mood.
  *
  * Returns a mood-dependent swing factor for 16th note hi-hats.
- * Jazz/CityPop get stronger swing (0.7), IdolPop/Yoasobi get lighter swing (0.3),
+ * Jazz/CityPop get stronger swing (0.7), IdolPop/AnimeHighEnergy get lighter swing (0.3),
  * and most other moods use standard swing (0.5).
  *
  * @param mood Current mood
@@ -130,7 +130,7 @@ Tick applyTimeFeel(Tick base_tick, TimeFeel feel, uint16_t bpm);
  *
  * Maps moods to appropriate time feels:
  * - Ballad, Chill -> LaidBack (relaxed)
- * - EnergeticDance, Yoasobi -> Pushed (driving)
+ * - EnergeticDance, AnimeHighEnergy -> Pushed (driving)
  * - Most others -> OnBeat (standard)
  *
  * @param mood Mood preset

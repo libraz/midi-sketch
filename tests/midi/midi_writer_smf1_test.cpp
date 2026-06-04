@@ -492,8 +492,8 @@ TEST(MidiWriterSmf1Test, MoodProgramChange_CityPop) {
   EXPECT_EQ(findProgramChange(data, 2), 36);
 }
 
-TEST(MidiWriterSmf1Test, MoodProgramChange_Yoasobi) {
-  // Yoasobi: Piano chord + synth (81, 0, 38, 81, 81, 89)
+TEST(MidiWriterSmf1Test, MoodProgramChange_AnimeHighEnergy) {
+  // AnimeHighEnergy: Piano chord + synth (81, 0, 38, 81, 81, 89)
   MidiWriter writer;
   Song song;
   song.setBpm(120);
@@ -502,12 +502,12 @@ TEST(MidiWriterSmf1Test, MoodProgramChange_Yoasobi) {
   song.bass().addNote(NoteEventBuilder::create(0, 480, 48, 90));
   song.motif().addNote(NoteEventBuilder::create(0, 480, 72, 70));
 
-  writer.build(song, Key::C, Mood::Yoasobi, "", MidiFormat::SMF1);
+  writer.build(song, Key::C, Mood::AnimeHighEnergy, "", MidiFormat::SMF1);
   auto data = writer.toBytes();
 
   // Vocal = Saw Lead (81)
   EXPECT_EQ(findProgramChange(data, 0), 81);
-  // Chord = Piano (0) — Ayase piano riff style
+  // Chord = Piano (0) — anime-pop piano riff style
   EXPECT_EQ(findProgramChange(data, 1), 0);
   // Bass = Synth Bass (38)
   EXPECT_EQ(findProgramChange(data, 2), 38);
@@ -545,12 +545,12 @@ TEST(MidiWriterSmf1Test, DifferentMoodsProduceDifferentPrograms) {
 
   MidiWriter writer1, writer2;
   writer1.build(song, Key::C, Mood::StraightPop, "", MidiFormat::SMF1);
-  writer2.build(song, Key::C, Mood::Yoasobi, "", MidiFormat::SMF1);
+  writer2.build(song, Key::C, Mood::AnimeHighEnergy, "", MidiFormat::SMF1);
 
   auto data1 = writer1.toBytes();
   auto data2 = writer2.toBytes();
 
-  // StraightPop vocal = 0 (Piano), Yoasobi vocal = 81 (Saw Lead)
+  // StraightPop vocal = 0 (Piano), AnimeHighEnergy vocal = 81 (Saw Lead)
   EXPECT_EQ(findProgramChange(data1, 0), 0);
   EXPECT_EQ(findProgramChange(data2, 0), 81);
   EXPECT_NE(findProgramChange(data1, 0), findProgramChange(data2, 0));
@@ -634,7 +634,7 @@ TEST(MidiWriterSmf1Test, WritePitchBendEvents) {
 
   // Add a note and pitch bend events to vocal track
   song.vocal().addNote(NoteEventBuilder::create(0, 480, 60, 100));
-  song.vocal().addPitchBend(0, 0);      // Center
+  song.vocal().addPitchBend(0, 0);       // Center
   song.vocal().addPitchBend(120, 4096);  // One semitone up
 
   writer.build(song, Key::C, Mood::StraightPop, "", MidiFormat::SMF1);
@@ -756,7 +756,7 @@ TEST(MidiWriterSmf1Test, PitchBendExtremeValues) {
   song.setBpm(120);
 
   song.vocal().addNote(NoteEventBuilder::create(0, 960, 60, 100));
-  song.vocal().addPitchBend(0, 8191);   // Max positive
+  song.vocal().addPitchBend(0, 8191);     // Max positive
   song.vocal().addPitchBend(480, -8192);  // Max negative
 
   writer.build(song, Key::C, Mood::StraightPop, "", MidiFormat::SMF1);

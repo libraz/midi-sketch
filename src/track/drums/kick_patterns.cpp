@@ -11,8 +11,8 @@
 namespace midisketch {
 namespace drums {
 
-bool isInPreChorusLift(const Section& section, uint8_t bar,
-                       const std::vector<Section>& sections, size_t sec_idx) {
+bool isInPreChorusLift(const Section& section, uint8_t bar, const std::vector<Section>& sections,
+                       size_t sec_idx) {
   if (section.type != SectionType::B) {
     return false;
   }

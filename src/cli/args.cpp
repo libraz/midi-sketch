@@ -123,11 +123,13 @@ void printUsage(const char* program) {
   std::cout << "Options:\n";
   std::cout << "  --seed N          Set random seed (0 = auto-random)\n";
   std::cout << "  --style N         Set style preset ID (0-16)\n";
-  std::cout << "  --blueprint N     Set production blueprint (0-8, 255=random, or name)\n";
+  std::cout << "  --blueprint N     Set production blueprint (0-9, 255=random, or name)\n";
   std::cout << "                    Names: Traditional, RhythmLock, StoryPop, Ballad,\n";
-  std::cout << "                    IdolStandard, IdolHyper, IdolKawaii, IdolCoolPop, IdolEmo\n";
+  std::cout << "                    IdolStandard, IdolHyper, IdolKawaii, IdolCoolPop,\n";
+  std::cout << "                    IdolEmo, BehavioralLoop\n";
   std::cout << "  --mood N          Set mood (0-23 or name like straight_pop, ballad)\n";
-  std::cout << "  --chord N         Set chord progression (0-21 or name like pop, jazz, royal_road)\n";
+  std::cout
+      << "  --chord N         Set chord progression (0-21 or name like pop, jazz, royal_road)\n";
   std::cout << "  --vocal-style N   Set vocal style (0=Auto, 1=Standard, 2=Vocaloid,\n";
   std::cout << "                    3=UltraVocaloid, 4=Idol, 5=Ballad, 6=Rock,\n";
   std::cout << "                    7=CityPop, 8=Anime)\n";

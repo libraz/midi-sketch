@@ -401,17 +401,11 @@ TEST(PitchUtilsTest, MaxIntervalForSection_Intro) {
 // clampPitch / clampBass Tests
 // ============================================================================
 
-TEST(PitchUtilsTest, ClampPitch_WithinRange) {
-  EXPECT_EQ(clampPitch(60, 48, 84), 60);
-}
+TEST(PitchUtilsTest, ClampPitch_WithinRange) { EXPECT_EQ(clampPitch(60, 48, 84), 60); }
 
-TEST(PitchUtilsTest, ClampPitch_BelowRange) {
-  EXPECT_EQ(clampPitch(30, 48, 84), 48);
-}
+TEST(PitchUtilsTest, ClampPitch_BelowRange) { EXPECT_EQ(clampPitch(30, 48, 84), 48); }
 
-TEST(PitchUtilsTest, ClampPitch_AboveRange) {
-  EXPECT_EQ(clampPitch(100, 48, 84), 84);
-}
+TEST(PitchUtilsTest, ClampPitch_AboveRange) { EXPECT_EQ(clampPitch(100, 48, 84), 84); }
 
 TEST(PitchUtilsTest, ClampBass) {
   EXPECT_EQ(clampBass(20), BASS_LOW);   // Below
@@ -432,15 +426,15 @@ TEST(PitchUtilsTest, GetScaleIntervals_Major) {
 
 TEST(PitchUtilsTest, GetScaleIntervals_NaturalMinor) {
   const int* s = getScaleIntervals(ScaleType::NaturalMinor);
-  EXPECT_EQ(s[2], 3);  // Minor 3rd
-  EXPECT_EQ(s[5], 8);  // Minor 6th
-  EXPECT_EQ(s[6], 10); // Minor 7th
+  EXPECT_EQ(s[2], 3);   // Minor 3rd
+  EXPECT_EQ(s[5], 8);   // Minor 6th
+  EXPECT_EQ(s[6], 10);  // Minor 7th
 }
 
 TEST(PitchUtilsTest, GetScaleIntervals_HarmonicMinor) {
   const int* s = getScaleIntervals(ScaleType::HarmonicMinor);
-  EXPECT_EQ(s[2], 3);  // Minor 3rd
-  EXPECT_EQ(s[6], 11); // Major 7th (raised)
+  EXPECT_EQ(s[2], 3);   // Minor 3rd
+  EXPECT_EQ(s[6], 11);  // Major 7th (raised)
 }
 
 TEST(PitchUtilsTest, GetScaleIntervals_Dorian) {
@@ -451,8 +445,8 @@ TEST(PitchUtilsTest, GetScaleIntervals_Dorian) {
 
 TEST(PitchUtilsTest, GetScaleIntervals_Mixolydian) {
   const int* s = getScaleIntervals(ScaleType::Mixolydian);
-  EXPECT_EQ(s[3], 5);  // Perfect 4th
-  EXPECT_EQ(s[6], 10); // Minor 7th (lowered)
+  EXPECT_EQ(s[3], 5);   // Perfect 4th
+  EXPECT_EQ(s[6], 10);  // Minor 7th (lowered)
 }
 
 // ============================================================================
@@ -493,41 +487,33 @@ TEST(PitchUtilsTest, DegreeToPitch_MinorScale) {
 // pitchToNoteName Tests
 // ============================================================================
 
-TEST(PitchUtilsTest, PitchToNoteName_MiddleC) {
-  EXPECT_EQ(pitchToNoteName(60), "C4");
-}
+TEST(PitchUtilsTest, PitchToNoteName_MiddleC) { EXPECT_EQ(pitchToNoteName(60), "C4"); }
 
-TEST(PitchUtilsTest, PitchToNoteName_A4) {
-  EXPECT_EQ(pitchToNoteName(69), "A4");
-}
+TEST(PitchUtilsTest, PitchToNoteName_A4) { EXPECT_EQ(pitchToNoteName(69), "A4"); }
 
-TEST(PitchUtilsTest, PitchToNoteName_Sharp) {
-  EXPECT_EQ(pitchToNoteName(61), "C#4");
-}
+TEST(PitchUtilsTest, PitchToNoteName_Sharp) { EXPECT_EQ(pitchToNoteName(61), "C#4"); }
 
-TEST(PitchUtilsTest, PitchToNoteName_Low) {
-  EXPECT_EQ(pitchToNoteName(36), "C2");
-}
+TEST(PitchUtilsTest, PitchToNoteName_Low) { EXPECT_EQ(pitchToNoteName(36), "C2"); }
 
 // ============================================================================
 // ChordFunction Tests
 // ============================================================================
 
 TEST(PitchUtilsTest, GetChordFunction_Tonic) {
-  EXPECT_EQ(getChordFunction(0), ChordFunction::Tonic);   // I
-  EXPECT_EQ(getChordFunction(2), ChordFunction::Tonic);   // iii
-  EXPECT_EQ(getChordFunction(5), ChordFunction::Tonic);   // vi
+  EXPECT_EQ(getChordFunction(0), ChordFunction::Tonic);  // I
+  EXPECT_EQ(getChordFunction(2), ChordFunction::Tonic);  // iii
+  EXPECT_EQ(getChordFunction(5), ChordFunction::Tonic);  // vi
 }
 
 TEST(PitchUtilsTest, GetChordFunction_Dominant) {
-  EXPECT_EQ(getChordFunction(4), ChordFunction::Dominant); // V
-  EXPECT_EQ(getChordFunction(6), ChordFunction::Dominant); // vii
+  EXPECT_EQ(getChordFunction(4), ChordFunction::Dominant);  // V
+  EXPECT_EQ(getChordFunction(6), ChordFunction::Dominant);  // vii
 }
 
 TEST(PitchUtilsTest, GetChordFunction_Subdominant) {
-  EXPECT_EQ(getChordFunction(1), ChordFunction::Subdominant);  // ii
-  EXPECT_EQ(getChordFunction(3), ChordFunction::Subdominant);  // IV
-  EXPECT_EQ(getChordFunction(10), ChordFunction::Subdominant); // bVII
+  EXPECT_EQ(getChordFunction(1), ChordFunction::Subdominant);   // ii
+  EXPECT_EQ(getChordFunction(3), ChordFunction::Subdominant);   // IV
+  EXPECT_EQ(getChordFunction(10), ChordFunction::Subdominant);  // bVII
 }
 
 // ============================================================================
@@ -619,9 +605,7 @@ TEST(PitchUtilsTest, IsAvoidNoteWithContext_TritoneOnTonic) {
 // transposePitch Tests
 // ============================================================================
 
-TEST(PitchUtilsTest, TransposePitch_NoTranspose) {
-  EXPECT_EQ(transposePitch(60, Key::C), 60);
-}
+TEST(PitchUtilsTest, TransposePitch_NoTranspose) { EXPECT_EQ(transposePitch(60, Key::C), 60); }
 
 TEST(PitchUtilsTest, TransposePitch_UpHalfStep) {
   // Key::Db = 1 semitone
@@ -733,35 +717,35 @@ TEST(UnifiedDissonanceTest, Major7thDissonant) {
 
 TEST(UnifiedDissonanceTest, CompoundMajor7thDissonant) {
   // Compound M7 at various octaves
-  EXPECT_TRUE(isDissonantSemitoneInterval(23));   // M7 + octave
-  EXPECT_TRUE(isDissonantSemitoneInterval(35));   // M7 + 2 octaves
+  EXPECT_TRUE(isDissonantSemitoneInterval(23));  // M7 + octave
+  EXPECT_TRUE(isDissonantSemitoneInterval(35));  // M7 + 2 octaves
 }
 
 TEST(UnifiedDissonanceTest, TritoneDissonantByDefault) {
   // Tritone (6 semitones) is dissonant with default options (chord_degree=-1)
   EXPECT_TRUE(isDissonantSemitoneInterval(6));
-  EXPECT_TRUE(isDissonantSemitoneInterval(18));   // Compound tritone
+  EXPECT_TRUE(isDissonantSemitoneInterval(18));  // Compound tritone
 }
 
 TEST(UnifiedDissonanceTest, ConsonantIntervalsNotDissonant) {
   // All consonant intervals should not be flagged
-  EXPECT_FALSE(isDissonantSemitoneInterval(0));    // Unison
-  EXPECT_FALSE(isDissonantSemitoneInterval(3));    // Minor 3rd
-  EXPECT_FALSE(isDissonantSemitoneInterval(4));    // Major 3rd
-  EXPECT_FALSE(isDissonantSemitoneInterval(5));    // Perfect 4th
-  EXPECT_FALSE(isDissonantSemitoneInterval(7));    // Perfect 5th
-  EXPECT_FALSE(isDissonantSemitoneInterval(8));    // Minor 6th
-  EXPECT_FALSE(isDissonantSemitoneInterval(9));    // Major 6th
-  EXPECT_FALSE(isDissonantSemitoneInterval(10));   // Minor 7th
-  EXPECT_FALSE(isDissonantSemitoneInterval(12));   // Octave
+  EXPECT_FALSE(isDissonantSemitoneInterval(0));   // Unison
+  EXPECT_FALSE(isDissonantSemitoneInterval(3));   // Minor 3rd
+  EXPECT_FALSE(isDissonantSemitoneInterval(4));   // Major 3rd
+  EXPECT_FALSE(isDissonantSemitoneInterval(5));   // Perfect 4th
+  EXPECT_FALSE(isDissonantSemitoneInterval(7));   // Perfect 5th
+  EXPECT_FALSE(isDissonantSemitoneInterval(8));   // Minor 6th
+  EXPECT_FALSE(isDissonantSemitoneInterval(9));   // Major 6th
+  EXPECT_FALSE(isDissonantSemitoneInterval(10));  // Minor 7th
+  EXPECT_FALSE(isDissonantSemitoneInterval(12));  // Octave
 }
 
 TEST(UnifiedDissonanceTest, WideIntervalCutoff) {
   // Intervals >= 36 semitones (3 octaves) are not dissonant
-  EXPECT_FALSE(isDissonantSemitoneInterval(36));   // 3 octaves
-  EXPECT_FALSE(isDissonantSemitoneInterval(37));   // 3 octaves + m2
-  EXPECT_FALSE(isDissonantSemitoneInterval(42));   // 3 octaves + tritone
-  EXPECT_FALSE(isDissonantSemitoneInterval(47));   // 3 octaves + M7
+  EXPECT_FALSE(isDissonantSemitoneInterval(36));  // 3 octaves
+  EXPECT_FALSE(isDissonantSemitoneInterval(37));  // 3 octaves + m2
+  EXPECT_FALSE(isDissonantSemitoneInterval(42));  // 3 octaves + tritone
+  EXPECT_FALSE(isDissonantSemitoneInterval(47));  // 3 octaves + M7
 }
 
 TEST(UnifiedDissonanceTest, NegativeIntervalNotDissonant) {
@@ -777,7 +761,7 @@ TEST(UnifiedDissonanceTest, TritoneAllowedOnDominant) {
   opts.check_tritone = true;
   opts.chord_degree = 4;  // V chord
   EXPECT_FALSE(isDissonantSemitoneInterval(6, opts));
-  EXPECT_FALSE(isDissonantSemitoneInterval(18, opts));   // Compound
+  EXPECT_FALSE(isDissonantSemitoneInterval(18, opts));  // Compound
 }
 
 TEST(UnifiedDissonanceTest, TritoneAllowedOnDiminished) {
@@ -855,22 +839,22 @@ TEST(UnifiedDissonanceTest, WideIntervalCutoffDisabled) {
 TEST(UnifiedDissonanceTest, StandardPreset) {
   auto opts = DissonanceCheckOptions::standard();
   // Same as default
-  EXPECT_TRUE(isDissonantSemitoneInterval(1, opts));    // m2
-  EXPECT_TRUE(isDissonantSemitoneInterval(2, opts));    // M2
-  EXPECT_TRUE(isDissonantSemitoneInterval(6, opts));    // tritone (no context)
-  EXPECT_TRUE(isDissonantSemitoneInterval(11, opts));   // M7
-  EXPECT_TRUE(isDissonantSemitoneInterval(13, opts));   // m9
-  EXPECT_FALSE(isDissonantSemitoneInterval(7, opts));   // P5
+  EXPECT_TRUE(isDissonantSemitoneInterval(1, opts));   // m2
+  EXPECT_TRUE(isDissonantSemitoneInterval(2, opts));   // M2
+  EXPECT_TRUE(isDissonantSemitoneInterval(6, opts));   // tritone (no context)
+  EXPECT_TRUE(isDissonantSemitoneInterval(11, opts));  // M7
+  EXPECT_TRUE(isDissonantSemitoneInterval(13, opts));  // m9
+  EXPECT_FALSE(isDissonantSemitoneInterval(7, opts));  // P5
 }
 
 TEST(UnifiedDissonanceTest, MinimalClashPreset) {
   auto opts = DissonanceCheckOptions::minimalClash();
   // Only m2/m9 and M7 - no tritone, no M2
-  EXPECT_TRUE(isDissonantSemitoneInterval(1, opts));    // m2
-  EXPECT_TRUE(isDissonantSemitoneInterval(13, opts));   // m9
-  EXPECT_TRUE(isDissonantSemitoneInterval(11, opts));   // M7
-  EXPECT_FALSE(isDissonantSemitoneInterval(2, opts));   // M2 skipped
-  EXPECT_FALSE(isDissonantSemitoneInterval(6, opts));   // tritone skipped
+  EXPECT_TRUE(isDissonantSemitoneInterval(1, opts));   // m2
+  EXPECT_TRUE(isDissonantSemitoneInterval(13, opts));  // m9
+  EXPECT_TRUE(isDissonantSemitoneInterval(11, opts));  // M7
+  EXPECT_FALSE(isDissonantSemitoneInterval(2, opts));  // M2 skipped
+  EXPECT_FALSE(isDissonantSemitoneInterval(6, opts));  // tritone skipped
 }
 
 TEST(UnifiedDissonanceTest, CloseVoicingPreset) {
@@ -886,10 +870,10 @@ TEST(UnifiedDissonanceTest, CloseVoicingPreset) {
 TEST(UnifiedDissonanceTest, FullWithTritonePreset) {
   auto opts = DissonanceCheckOptions::fullWithTritone();
   // All intervals including tritone (always dissonant, no chord context)
-  EXPECT_TRUE(isDissonantSemitoneInterval(1, opts));    // m2
-  EXPECT_TRUE(isDissonantSemitoneInterval(2, opts));    // M2
-  EXPECT_TRUE(isDissonantSemitoneInterval(6, opts));    // tritone
-  EXPECT_TRUE(isDissonantSemitoneInterval(11, opts));   // M7
+  EXPECT_TRUE(isDissonantSemitoneInterval(1, opts));   // m2
+  EXPECT_TRUE(isDissonantSemitoneInterval(2, opts));   // M2
+  EXPECT_TRUE(isDissonantSemitoneInterval(6, opts));   // tritone
+  EXPECT_TRUE(isDissonantSemitoneInterval(11, opts));  // M7
 }
 
 TEST(UnifiedDissonanceTest, VocalClashPreset) {
@@ -981,8 +965,8 @@ TEST(PitchToMajorDegreeTest, RoundTripWithDegreeToPitch) {
   for (int deg = -7; deg <= 14; ++deg) {
     int pitch = degreeToPitch(deg, 60, 0);
     int recovered = pitchToMajorDegree(pitch, 60);
-    EXPECT_EQ(recovered, deg) << "Round-trip failed for degree " << deg
-                               << " (pitch=" << pitch << ")";
+    EXPECT_EQ(recovered, deg) << "Round-trip failed for degree " << deg << " (pitch=" << pitch
+                              << ")";
   }
 }
 

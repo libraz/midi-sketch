@@ -3,10 +3,11 @@
  * @brief Tests for DrumPerformer physical model.
  */
 
+#include "instrument/drums/drum_performer.h"
+
 #include <gtest/gtest.h>
 
 #include "core/timing_constants.h"
-#include "instrument/drums/drum_performer.h"
 
 namespace midisketch {
 namespace {
@@ -77,10 +78,10 @@ TEST(DrumSetupTest, CannotSimultaneousHHAndRideInOpenHand) {
     auto hh_flex = setup.flexibility.find(drums::CHH);
     auto ride_flex = setup.flexibility.find(drums::RIDE);
 
-    bool hh_either = (hh_flex != setup.flexibility.end() &&
-                      hh_flex->second == LimbFlexibility::Either);
-    bool ride_either = (ride_flex != setup.flexibility.end() &&
-                        ride_flex->second == LimbFlexibility::Either);
+    bool hh_either =
+        (hh_flex != setup.flexibility.end() && hh_flex->second == LimbFlexibility::Either);
+    bool ride_either =
+        (ride_flex != setup.flexibility.end() && ride_flex->second == LimbFlexibility::Either);
 
     // If neither is flexible, they can't be simultaneous
     EXPECT_TRUE(hh_either || ride_either || !setup.canSimultaneous(drums::CHH, drums::RIDE));
@@ -174,9 +175,7 @@ class DrumPerformerTest : public ::testing::Test {
   std::unique_ptr<DrumPerformer> performer_;
 };
 
-TEST_F(DrumPerformerTest, PerformerType) {
-  EXPECT_EQ(performer_->getType(), PerformerType::Drums);
-}
+TEST_F(DrumPerformerTest, PerformerType) { EXPECT_EQ(performer_->getType(), PerformerType::Drums); }
 
 TEST_F(DrumPerformerTest, PitchRange) {
   EXPECT_EQ(performer_->getMinPitch(), 35);
@@ -190,8 +189,8 @@ TEST_F(DrumPerformerTest, CanPerformValidDrumNote) {
 }
 
 TEST_F(DrumPerformerTest, CannotPerformOutOfRange) {
-  EXPECT_FALSE(performer_->canPerform(20, 0, TICK_SIXTEENTH));  // Below range
-  EXPECT_FALSE(performer_->canPerform(100, 0, TICK_SIXTEENTH)); // Above range
+  EXPECT_FALSE(performer_->canPerform(20, 0, TICK_SIXTEENTH));   // Below range
+  EXPECT_FALSE(performer_->canPerform(100, 0, TICK_SIXTEENTH));  // Above range
 }
 
 TEST_F(DrumPerformerTest, CreateInitialState) {
@@ -329,11 +328,10 @@ TEST_F(DrumPerformerTest, SuggestAlternativesForHH) {
 
 TEST_F(DrumPerformerTest, OptimizeLimbAllocation) {
   // Simple pattern: kick-snare-kick-snare
-  std::vector<std::pair<Tick, uint8_t>> pattern = {
-      {0, drums::BD},
-      {TICK_QUARTER, drums::SD},
-      {TICK_HALF, drums::BD},
-      {TICK_HALF + TICK_QUARTER, drums::SD}};
+  std::vector<std::pair<Tick, uint8_t>> pattern = {{0, drums::BD},
+                                                   {TICK_QUARTER, drums::SD},
+                                                   {TICK_HALF, drums::BD},
+                                                   {TICK_HALF + TICK_QUARTER, drums::SD}};
 
   auto allocation = performer_->optimizeLimbAllocation(pattern);
 

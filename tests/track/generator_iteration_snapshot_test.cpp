@@ -71,8 +71,8 @@ TEST_F(GeneratorIterationSnapshotTest, GuitarTrackBehavior) {
       // Guitar track may or may not have notes depending on blueprint
       // Just verify it doesn't crash and notes (if present) are valid
       for (const auto& note : guitar.notes()) {
-        EXPECT_LE(note.note, 127)
-            << "Guitar pitch > 127 for seed=" << seed << " bp=" << (int)blueprint;
+        EXPECT_LE(note.note, 127) << "Guitar pitch > 127 for seed=" << seed
+                                  << " bp=" << (int)blueprint;
         EXPECT_GT(note.duration, 0u)
             << "Guitar zero duration for seed=" << seed << " bp=" << (int)blueprint;
       }
@@ -136,9 +136,9 @@ TEST_F(GeneratorIterationSnapshotTest, NoZeroDurationNotes) {
 
       auto check_no_zero_duration = [&](const MidiTrack& track, const std::string& name) {
         for (const auto& note : track.notes()) {
-          EXPECT_GT(note.duration, 0u) << name << " note with zero duration at tick="
-                                       << note.start_tick << " seed=" << seed
-                                       << " bp=" << (int)blueprint;
+          EXPECT_GT(note.duration, 0u)
+              << name << " note with zero duration at tick=" << note.start_tick << " seed=" << seed
+              << " bp=" << (int)blueprint;
         }
       };
 

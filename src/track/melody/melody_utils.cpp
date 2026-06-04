@@ -95,8 +95,7 @@ Tick getBreathDuration(SectionType section, Mood mood, float phrase_density,
   // BPM compensation: ensure minimum real-time breath (~150ms).
   // Consistent with phrase_cache.h::getBreathDuration() BPM floor.
   constexpr float kMinBreathSeconds = 0.15f;
-  Tick min_breath_ticks = static_cast<Tick>(
-      kMinBreathSeconds * bpm * TICKS_PER_BEAT / 60.0f);
+  Tick min_breath_ticks = static_cast<Tick>(kMinBreathSeconds * bpm * TICKS_PER_BEAT / 60.0f);
   result = std::max(result, min_breath_ticks);
 
   // Cap breath duration to 1 beat max (reduced from 2 beats/TICK_HALF)
@@ -145,14 +144,15 @@ bool isAvoidNoteWithRoot(int pitch_pc, int root_pc) {
   return interval == 1 || interval == 6;
 }
 
-int getNearestSafeChordTone(int current_pitch, int8_t chord_degree, int root_pc,
-                            uint8_t vocal_low, uint8_t vocal_high) {
+int getNearestSafeChordTone(int current_pitch, int8_t chord_degree, int root_pc, uint8_t vocal_low,
+                            uint8_t vocal_high) {
   std::vector<int> chord_tones = getChordTonePitchClasses(chord_degree);
   if (chord_tones.empty()) {
     return std::clamp(current_pitch, static_cast<int>(vocal_low), static_cast<int>(vocal_high));
   }
 
-  int best_pitch = std::clamp(current_pitch, static_cast<int>(vocal_low), static_cast<int>(vocal_high));
+  int best_pitch =
+      std::clamp(current_pitch, static_cast<int>(vocal_low), static_cast<int>(vocal_high));
   int best_distance = 100;
 
   for (int pc : chord_tones) {
@@ -217,7 +217,7 @@ void applySequentialTransposition(std::vector<NoteEvent>& notes, uint8_t phrase_
 }
 
 void enforceMaxPhraseDuration(std::vector<NoteEvent>& notes, uint8_t max_phrase_bars,
-                               Tick breath_ticks) {
+                              Tick breath_ticks) {
   if (notes.empty() || max_phrase_bars == 0 || max_phrase_bars >= 255) return;
 
   Tick max_phrase_ticks = static_cast<Tick>(max_phrase_bars) * TICKS_PER_BAR;
@@ -247,7 +247,8 @@ void enforceMaxPhraseDuration(std::vector<NoteEvent>& notes, uint8_t max_phrase_
       // Find the best break index: prefer a note starting near a barline
       size_t break_idx = idx;
       Tick best_barline_dist = TICKS_PER_BAR;
-      for (size_t scan = idx; scan > 0 && scan > idx - std::min(idx, static_cast<size_t>(8)); --scan) {
+      for (size_t scan = idx; scan > 0 && scan > idx - std::min(idx, static_cast<size_t>(8));
+           --scan) {
         Tick pos_in_bar = positionInBar(notes[scan].start_tick);
         Tick barline_dist = std::min(pos_in_bar, TICKS_PER_BAR - pos_in_bar);
         if (barline_dist < best_barline_dist) {
@@ -281,8 +282,8 @@ void enforceMaxPhraseDuration(std::vector<NoteEvent>& notes, uint8_t max_phrase_
       while (cur < notes.size()) {  // size_t underflow check
         if (notes[cur].start_tick + kMinNoteDuration <= last_kept_end) {
           // This note can be kept; truncate its duration
-          notes[cur].duration = std::min(notes[cur].duration,
-                                         last_kept_end - notes[cur].start_tick);
+          notes[cur].duration =
+              std::min(notes[cur].duration, last_kept_end - notes[cur].start_tick);
           break;
         }
         // Note starts too late to keep; mark for removal
@@ -298,7 +299,7 @@ void enforceMaxPhraseDuration(std::vector<NoteEvent>& notes, uint8_t max_phrase_
 
   // Remove zero-duration notes
   notes.erase(std::remove_if(notes.begin(), notes.end(),
-                              [](const NoteEvent& evt) { return evt.duration == 0; }),
+                             [](const NoteEvent& evt) { return evt.duration == 0; }),
               notes.end());
 }
 

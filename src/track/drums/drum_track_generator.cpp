@@ -10,9 +10,9 @@
 #include <vector>
 
 #include "core/euclidean_rhythm.h"
-#include "core/rng_util.h"
 #include "core/preset_data.h"
 #include "core/production_blueprint.h"
+#include "core/rng_util.h"
 #include "core/section_properties.h"
 #include "core/timing_constants.h"
 #include "core/velocity.h"
@@ -28,7 +28,7 @@ namespace midisketch {
 
 // Use the public API from drums.h
 float calculateSwingAmount(SectionType section, int bar_in_section, int total_bars,
-                          float swing_override);
+                           float swing_override);
 
 namespace drums {
 
@@ -59,9 +59,7 @@ inline bool isAuxiliaryPercussion(uint8_t note) {
 /// from validation as these are typically performed by a separate player.
 class DrumPlayabilityChecker {
  public:
-  DrumPlayabilityChecker() : performer_() {
-    state_ = performer_.createInitialState();
-  }
+  DrumPlayabilityChecker() : performer_() { state_ = performer_.createInitialState(); }
 
   /// @brief Apply playability check to all notes in a track.
   ///
@@ -108,8 +106,8 @@ class DrumPlayabilityChecker {
             // Skip kick and snare (essential backbeat)
             if (notes[idx].note == BD || notes[idx].note == SD) continue;
 
-            float cost = performer_.calculateCost(
-                notes[idx].note, notes[idx].start_tick, notes[idx].duration, *state_);
+            float cost = performer_.calculateCost(notes[idx].note, notes[idx].start_tick,
+                                                  notes[idx].duration, *state_);
             if (cost > worst_cost) {
               worst_cost = cost;
               worst_idx = idx;
@@ -139,19 +137,15 @@ class DrumPlayabilityChecker {
   }
 
   /// @brief Reset performer state (call at section boundaries).
-  void resetState() {
-    state_ = performer_.createInitialState();
-  }
+  void resetState() { state_ = performer_.createInitialState(); }
 
  private:
   DrumPerformer performer_;
   std::unique_ptr<PerformerState> state_;
 };
 
-DrumSectionContext computeSectionContext(const Section& section,
-                                          const DrumGenerationParams& params,
-                                          DrumStyle style,
-                                          std::mt19937& rng) {
+DrumSectionContext computeSectionContext(const Section& section, const DrumGenerationParams& params,
+                                         DrumStyle style, std::mt19937& rng) {
   DrumSectionContext ctx;
   ctx.style = style;
   ctx.groove = getMoodDrumGrooveFeel(params.mood);
@@ -235,18 +229,16 @@ DrumSectionContext computeSectionContext(const Section& section,
 
   // Ride and hi-hat settings
   ctx.use_ride = shouldUseRideForSection(section.type, ctx.style);
-  ctx.motif_open_hh = ctx.is_background_motif &&
-                      params.motif_drum.hihat_density == HihatDensity::EighthOpen;
+  ctx.motif_open_hh =
+      ctx.is_background_motif && params.motif_drum.hihat_density == HihatDensity::EighthOpen;
   ctx.ohh_bar_interval = getOpenHiHatBarInterval(section.type, ctx.style);
   ctx.use_foot_hh = shouldUseFootHiHat(section.type, section.getEffectiveDrumRole());
 
   return ctx;
 }
 
-void generateDrumsTrackImpl(MidiTrack& track, const Song& song,
-                            const DrumGenerationParams& params,
-                            std::mt19937& rng,
-                            VocalSyncCallback vocal_sync_callback) {
+void generateDrumsTrackImpl(MidiTrack& track, const Song& song, const DrumGenerationParams& params,
+                            std::mt19937& rng, VocalSyncCallback vocal_sync_callback) {
   DrumStyle style = getMoodDrumStyle(params.mood);
   const auto& all_sections = song.arrangement().sections();
 
@@ -270,9 +262,14 @@ void generateDrumsTrackImpl(MidiTrack& track, const Song& song,
     // Replicate density calculation from computeSectionContext()
     float density = 1.0f;  // Chorus base density
     switch (sec.getEffectiveBackingDensity()) {
-      case BackingDensity::Thin:  density *= 0.75f; break;
-      case BackingDensity::Normal: break;
-      case BackingDensity::Thick: density *= 1.15f; break;
+      case BackingDensity::Thin:
+        density *= 0.75f;
+        break;
+      case BackingDensity::Normal:
+        break;
+      case BackingDensity::Thick:
+        density *= 1.15f;
+        break;
     }
     max_chorus_density = std::max(max_chorus_density, density);
   }
@@ -296,7 +293,8 @@ void generateDrumsTrackImpl(MidiTrack& track, const Song& song,
 
     // Add crash cymbal accent at start of Chorus
     if (ctx.add_crash_accent && sec_idx > 0) {
-      uint8_t crash_vel = static_cast<uint8_t>(std::min(127, static_cast<int>(105 * ctx.density_mult)));
+      uint8_t crash_vel =
+          static_cast<uint8_t>(std::min(127, static_cast<int>(105 * ctx.density_mult)));
       addDrumNote(track, section.start_tick, TICKS_PER_BEAT / 2, 49, crash_vel);
     }
 
@@ -321,7 +319,8 @@ void generateDrumsTrackImpl(MidiTrack& track, const Song& song,
 
       // PeakLevel::Max enhancements
       if (section.peak_level == PeakLevel::Max && bar > 0 && bar % 4 == 0) {
-        uint8_t crash_vel = static_cast<uint8_t>(calculateVelocity(section.type, 0, params.mood) * 0.9f);
+        uint8_t crash_vel =
+            static_cast<uint8_t>(calculateVelocity(section.type, 0, params.mood) * 0.9f);
         addDrumNote(track, bar_start, EIGHTH, CRASH, crash_vel);
       }
 
@@ -390,15 +389,14 @@ void generateDrumsTrackImpl(MidiTrack& track, const Song& song,
 
         bool did_buildup = false;
         if (in_prechorus_lift) {
-          did_buildup = generatePreChorusBuildup(track, beat_tick, beat, velocity,
-                                                  bar, section.bars, is_section_last_bar);
+          did_buildup = generatePreChorusBuildup(track, beat_tick, beat, velocity, bar,
+                                                 section.bars, is_section_last_bar);
         }
 
         // Fill handling
         uint8_t fill_start_beat = getFillStartBeat(section.energy);
         bool should_fill = is_section_last_bar && !is_last_section && beat >= fill_start_beat &&
-                           (next_wants_fill || next_section == SectionType::Chorus) &&
-                           !did_buildup;
+                           (next_wants_fill || next_section == SectionType::Chorus) && !did_buildup;
 
         if (should_fill) {
           if (beat == fill_start_beat) {
@@ -409,30 +407,29 @@ void generateDrumsTrackImpl(MidiTrack& track, const Song& song,
         }
 
         // Common beat context (shared across all beat processors)
-        BeatContext beat_ctx{beat_tick, beat, velocity, section.type,
-                             params.mood, params.bpm, bar, section.bars,
-                             in_prechorus_lift, rng};
+        BeatContext beat_ctx{beat_tick,  beat, velocity,     section.type,      params.mood,
+                             params.bpm, bar,  section.bars, in_prechorus_lift, rng};
 
         // Kick drum
         // Check intro_kick_enabled from blueprint
-        bool intro_kick_disabled = (section.type == SectionType::Intro &&
-                                    !blueprint.intro_kick_enabled);
+        bool intro_kick_disabled =
+            (section.type == SectionType::Intro && !blueprint.intro_kick_enabled);
         if (!kicks_added && !intro_kick_disabled) {
           float kick_prob = getDrumRoleKickProbability(section.getEffectiveDrumRole());
           Tick adjusted_beat_tick = applyTimeFeel(beat_tick, time_feel, params.bpm);
           KickBeatParams kick_params{adjusted_beat_tick, kick, kick_prob,
-                                       params.humanize ? params.humanize_timing : 0.0f};
+                                     params.humanize ? params.humanize_timing : 0.0f};
           generateKickForBeat(track, beat_ctx, kick_params);
         }
 
         // Snare drum
         float snare_prob = getDrumRoleSnareProbability(section.getEffectiveDrumRole());
         bool is_intro_first = (section.type == SectionType::Intro && bar == 0);
-        bool use_groove_snare = use_euclidean &&
-                                (groove_template == GrooveTemplate::HalfTime ||
-                                 groove_template == GrooveTemplate::Trap);
-        SnareBeatParams snare_params{ctx.style, section.getEffectiveDrumRole(), snare_prob,
-                                     use_groove_snare, groove_pattern.snare, is_intro_first};
+        bool use_groove_snare = use_euclidean && (groove_template == GrooveTemplate::HalfTime ||
+                                                  groove_template == GrooveTemplate::Trap);
+        SnareBeatParams snare_params{
+            ctx.style,        section.getEffectiveDrumRole(), snare_prob,
+            use_groove_snare, groove_pattern.snare,           is_intro_first};
         generateSnareForBeat(track, beat_ctx, snare_params);
 
         // Ghost notes
@@ -443,10 +440,15 @@ void generateDrumsTrackImpl(MidiTrack& track, const Song& song,
         }
 
         // Hi-hat
-        float swing_amount = calculateSwingAmount(section.type, bar, section.bars, section.swing_amount);
-        HiHatBeatParams hh_params{section.getEffectiveDrumRole(), ctx.density_mult,
-                                   bar_has_open_hh, open_hh_beat, peak_open_hh_24,
-                                   swing_amount, ctx.groove};
+        float swing_amount =
+            calculateSwingAmount(section.type, bar, section.bars, section.swing_amount);
+        HiHatBeatParams hh_params{section.getEffectiveDrumRole(),
+                                  ctx.density_mult,
+                                  bar_has_open_hh,
+                                  open_hh_beat,
+                                  peak_open_hh_24,
+                                  swing_amount,
+                                  ctx.groove};
         generateHiHatForBeat(track, beat_ctx, ctx, hh_params);
       }
 
@@ -460,13 +462,31 @@ void generateDrumsTrackImpl(MidiTrack& track, const Song& song,
 
       // Auxiliary percussion
       if (!ctx.is_background_motif) {
-        PercussionConfig perc_config = getPercussionConfig(params.mood, section.type,
-                                                            blueprint.percussion_policy);
-        generateAuxPercussionForBar(track, bar_start, perc_config,
-                                    section.getEffectiveDrumRole(), ctx.density_mult, rng,
-                                    params.bpm);
+        PercussionConfig perc_config =
+            getPercussionConfig(params.mood, section.type, blueprint.percussion_policy);
+        generateAuxPercussionForBar(track, bar_start, perc_config, section.getEffectiveDrumRole(),
+                                    ctx.density_mult, rng, params.bpm);
       }
     }
+  }
+
+  if (params.paradigm == GenerationParadigm::RhythmSync) {
+    size_t ride_count = 0;
+    size_t shaker_count = 0;
+    auto& notes = track.notes();
+    notes.erase(std::remove_if(notes.begin(), notes.end(),
+                               [&ride_count, &shaker_count](const NoteEvent& note) {
+                                 if (note.note == RIDE) {
+                                   ++ride_count;
+                                   return ride_count % 3 == 0;
+                                 }
+                                 if (note.note == SHAKER) {
+                                   ++shaker_count;
+                                   return shaker_count % 3 == 0;
+                                 }
+                                 return false;
+                               }),
+                notes.end());
   }
 
   // ============================================================================
@@ -482,76 +502,79 @@ void generateDrumsTrackImpl(MidiTrack& track, const Song& song,
 }
 
 VocalSyncCallback createVocalSyncCallback(const VocalAnalysis& vocal_analysis, uint16_t bpm) {
-  return [&vocal_analysis, bpm](MidiTrack& track, Tick bar_start, Tick bar_end,
-                           const Section& section, uint8_t velocity, std::mt19937& rng) -> bool {
-    // Get DrumRole-based kick probability
-    float kick_prob = getDrumRoleKickProbability(section.getEffectiveDrumRole());
-    if (kick_prob <= 0.0f) return false;
+  return
+      [&vocal_analysis, bpm](MidiTrack& track, Tick bar_start, Tick bar_end, const Section& section,
+                             uint8_t velocity, std::mt19937& rng) -> bool {
+        // Get DrumRole-based kick probability
+        float kick_prob = getDrumRoleKickProbability(section.getEffectiveDrumRole());
+        if (kick_prob <= 0.0f) return false;
 
-    // Get vocal onsets in this bar
-    std::vector<Tick> onsets;
-    auto it = vocal_analysis.pitch_at_tick.lower_bound(bar_start);
-    while (it != vocal_analysis.pitch_at_tick.end() && it->first < bar_end) {
-      onsets.push_back(it->first);
-      ++it;
-    }
-
-    if (onsets.empty()) {
-      return false;  // No vocal in this bar, use normal pattern
-    }
-
-    // At high BPM, limit kicks per bar to avoid excessive density.
-    // Keep onsets closest to strong beats (1, 3, 2 priority).
-    constexpr size_t kMaxKicksHighBPM = 3;
-    if (bpm >= HH_16TH_BPM_THRESHOLD && onsets.size() > kMaxKicksHighBPM) {
-      // Score each onset by distance to strong beats (beat 0, 2, 1 priority)
-      auto beatDistance = [bar_start](Tick onset) -> Tick {
-        Tick relative = onset - bar_start;
-        // Distance to nearest of beats 0, 2, 1 (in priority order)
-        Tick beat_positions[] = {0, TICKS_PER_BEAT * 2, TICKS_PER_BEAT};
-        Tick min_dist = TICKS_PER_BAR;
-        for (Tick bp : beat_positions) {
-          Tick dist = (relative >= bp) ? (relative - bp) : (bp - relative);
-          if (dist < min_dist) min_dist = dist;
+        // Get vocal onsets in this bar
+        std::vector<Tick> onsets;
+        auto it = vocal_analysis.pitch_at_tick.lower_bound(bar_start);
+        while (it != vocal_analysis.pitch_at_tick.end() && it->first < bar_end) {
+          onsets.push_back(it->first);
+          ++it;
         }
-        return min_dist;
+
+        if (onsets.empty()) {
+          return false;  // No vocal in this bar, use normal pattern
+        }
+
+        // RhythmSync-style vocal following can otherwise put a kick under nearly
+        // every 16th vocal onset. Keep the pulse closer to a real pop/rock kit:
+        // downbeat, beat 3, and one supporting beat.
+        constexpr size_t kMaxVocalSyncKicks = 3;
+        if ((bpm == 0 || bpm >= 120) && onsets.size() > kMaxVocalSyncKicks) {
+          // Score each onset by distance to strong beats (beat 0, 2, 1 priority)
+          auto beatDistance = [bar_start](Tick onset) -> Tick {
+            Tick relative = onset - bar_start;
+            // Distance to nearest of beats 0, 2, 1 (in priority order)
+            Tick beat_positions[] = {0, TICKS_PER_BEAT * 2, TICKS_PER_BEAT};
+            Tick min_dist = TICKS_PER_BAR;
+            for (Tick bp : beat_positions) {
+              Tick dist = (relative >= bp) ? (relative - bp) : (bp - relative);
+              if (dist < min_dist) min_dist = dist;
+            }
+            return min_dist;
+          };
+
+          // Sort by distance to strong beats (closest first)
+          std::sort(onsets.begin(), onsets.end(),
+                    [&beatDistance](Tick a, Tick b) { return beatDistance(a) < beatDistance(b); });
+          onsets.resize(kMaxVocalSyncKicks);
+          // Re-sort chronologically for playback order
+          std::sort(onsets.begin(), onsets.end());
+        }
+
+        // Add kicks at vocal onset positions
+        for (Tick onset : onsets) {
+          // Quantize to 16th note grid
+          Tick relative = onset - bar_start;
+          Tick quantized = (relative / SIXTEENTH) * SIXTEENTH;
+          Tick kick_tick = bar_start + quantized;
+
+          // Apply DrumRole probability
+          if (kick_prob < 1.0f && !rng_util::rollProbability(rng, kick_prob)) {
+            continue;
+          }
+
+          // Calculate velocity based on position in bar
+          int beat_in_bar = relative / TICKS_PER_BEAT;
+          uint8_t kick_vel = (beat_in_bar == 0 || beat_in_bar == 2)
+                                 ? velocity
+                                 : static_cast<uint8_t>(velocity * 0.85f);
+
+          addDrumNote(track, kick_tick, EIGHTH, BD, static_cast<uint8_t>(kick_vel * kick_prob));
+        }
+
+        return true;
       };
-
-      // Sort by distance to strong beats (closest first)
-      std::sort(onsets.begin(), onsets.end(),
-                [&beatDistance](Tick a, Tick b) { return beatDistance(a) < beatDistance(b); });
-      onsets.resize(kMaxKicksHighBPM);
-      // Re-sort chronologically for playback order
-      std::sort(onsets.begin(), onsets.end());
-    }
-
-    // Add kicks at vocal onset positions
-    for (Tick onset : onsets) {
-      // Quantize to 16th note grid
-      Tick relative = onset - bar_start;
-      Tick quantized = (relative / SIXTEENTH) * SIXTEENTH;
-      Tick kick_tick = bar_start + quantized;
-
-      // Apply DrumRole probability
-      if (kick_prob < 1.0f && !rng_util::rollProbability(rng, kick_prob)) {
-        continue;
-      }
-
-      // Calculate velocity based on position in bar
-      int beat_in_bar = relative / TICKS_PER_BEAT;
-      uint8_t kick_vel =
-          (beat_in_bar == 0 || beat_in_bar == 2) ? velocity : static_cast<uint8_t>(velocity * 0.85f);
-
-      addDrumNote(track, kick_tick, EIGHTH, BD, static_cast<uint8_t>(kick_vel * kick_prob));
-    }
-
-    return true;
-  };
 }
 
 VocalSyncCallback createMelodyDrivenCallback(const VocalAnalysis& vocal_analysis) {
-  return [&vocal_analysis](MidiTrack& track, Tick bar_start, Tick bar_end,
-                           const Section& section, uint8_t velocity, std::mt19937& rng) -> bool {
+  return [&vocal_analysis](MidiTrack& track, Tick bar_start, Tick bar_end, const Section& section,
+                           uint8_t velocity, std::mt19937& rng) -> bool {
     // MelodyDriven: drums adapt to vocal phrase density and boundaries
     // Unlike RhythmSync which locks kicks to onsets, MelodyDriven adjusts
     // kick density and timing based on vocal phrase characteristics
@@ -574,11 +597,11 @@ VocalSyncCallback createMelodyDrivenCallback(const VocalAnalysis& vocal_analysis
     // MelodyDriven kick pattern: standard positions with density-adjusted probability
     // Higher vocal density = higher kick density for support
     const Tick kick_positions[] = {
-        0,                     // Beat 1 (always)
-        TICKS_PER_BEAT * 2,    // Beat 3 (always)
-        TICKS_PER_BEAT,        // Beat 2 (density-dependent)
-        TICKS_PER_BEAT * 3,    // Beat 4 (density-dependent)
-        TICKS_PER_BEAT / 2,    // Beat 1.5 (high density only)
+        0,                                       // Beat 1 (always)
+        TICKS_PER_BEAT * 2,                      // Beat 3 (always)
+        TICKS_PER_BEAT,                          // Beat 2 (density-dependent)
+        TICKS_PER_BEAT * 3,                      // Beat 4 (density-dependent)
+        TICKS_PER_BEAT / 2,                      // Beat 1.5 (high density only)
         TICKS_PER_BEAT * 2 + TICKS_PER_BEAT / 2  // Beat 3.5 (high density only)
     };
 

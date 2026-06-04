@@ -55,8 +55,7 @@ TEST(TicksToSecondsWithTempoMapTest, MultipleTempoChanges) {
 
   // After both changes: 1 bar at 120 + 1 bar at 100 + 1 bar at 80
   double total = ticksToSecondsWithTempoMap(3 * TICKS_PER_BAR, 120.0, map);
-  double expected = ticksToSeconds(TICKS_PER_BAR, 120.0) +
-                    ticksToSeconds(TICKS_PER_BAR, 100.0) +
+  double expected = ticksToSeconds(TICKS_PER_BAR, 120.0) + ticksToSeconds(TICKS_PER_BAR, 100.0) +
                     ticksToSeconds(TICKS_PER_BAR, 80.0);
   EXPECT_NEAR(total, expected, 0.001);
 }
@@ -94,8 +93,7 @@ TEST_F(TempoMapTest, OutroGeneratesTempoEvents) {
       has_outro = true;
 
       // Check exit pattern - FinalHit/CutOff skip ritardando
-      if (s.exit_pattern == ExitPattern::FinalHit ||
-          s.exit_pattern == ExitPattern::CutOff) {
+      if (s.exit_pattern == ExitPattern::FinalHit || s.exit_pattern == ExitPattern::CutOff) {
         has_outro = false;  // This Outro won't get tempo events
       }
       break;
@@ -148,8 +146,7 @@ TEST_F(TempoMapTest, NoOutroProducesEmptyMap) {
 
     bool has_valid_outro = false;
     for (const auto& s : sections) {
-      if (s.type == SectionType::Outro && s.bars >= 2 &&
-          s.exit_pattern != ExitPattern::FinalHit &&
+      if (s.type == SectionType::Outro && s.bars >= 2 && s.exit_pattern != ExitPattern::FinalHit &&
           s.exit_pattern != ExitPattern::CutOff) {
         has_valid_outro = true;
         break;
@@ -239,7 +236,6 @@ TEST_F(TempoMapTest, HighBpmScaling) {
     // High BPM should have smaller relative slowdown
     float high_ratio = static_cast<float>(high_map.back().bpm) / 180.0f;
     float low_ratio = static_cast<float>(low_map.back().bpm) / 100.0f;
-    EXPECT_GT(high_ratio, low_ratio)
-        << "High BPM should have proportionally less slowdown";
+    EXPECT_GT(high_ratio, low_ratio) << "High BPM should have proportionally less slowdown";
   }
 }

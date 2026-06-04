@@ -48,11 +48,10 @@ int runRegenerateMode(const ParsedArgs& args) {
       return 1;
     }
     metadata = midi2.metadata;
-    const char* format_name = (original_format == midisketch::DetectedMidiFormat::SMF2_ktmidi)
-                                  ? "SMF2 (ktmidi container)"
-                              : (original_format == midisketch::DetectedMidiFormat::SMF2_Clip)
-                                  ? "SMF2 (Clip)"
-                                  : "SMF2 (Container)";
+    const char* format_name =
+        (original_format == midisketch::DetectedMidiFormat::SMF2_ktmidi) ? "SMF2 (ktmidi container)"
+        : (original_format == midisketch::DetectedMidiFormat::SMF2_Clip) ? "SMF2 (Clip)"
+                                                                         : "SMF2 (Container)";
     std::cout << "Format: " << format_name << "\n";
   } else if (original_format == midisketch::DetectedMidiFormat::SMF1) {
     midisketch::MidiReader reader;

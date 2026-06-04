@@ -5,8 +5,6 @@
  * Extracted from melody_designer.cpp for modularity.
  */
 
-#include "track/vocal/melody_designer.h"
-
 #include <algorithm>
 #include <cmath>
 
@@ -18,6 +16,7 @@
 #include "core/timing_constants.h"
 #include "core/velocity_helper.h"
 #include "track/melody/melody_utils.h"
+#include "track/vocal/melody_designer.h"
 
 namespace midisketch {
 
@@ -77,7 +76,7 @@ void MelodyDesigner::applyTransitionApproach(std::vector<NoteEvent>& notes,
     // Re-verify collision safety after transition approach pitch modification
     if (static_cast<uint8_t>(new_pitch) != old_pitch &&
         !harmony.isConsonantWithOtherTracks(static_cast<uint8_t>(new_pitch), note.start_tick,
-                                             note.duration, TrackRole::Vocal)) {
+                                            note.duration, TrackRole::Vocal)) {
       new_pitch = old_pitch;  // Keep original if transition introduces collision
     }
     note.note = static_cast<uint8_t>(new_pitch);
@@ -120,14 +119,13 @@ void MelodyDesigner::insertLeadingTone(std::vector<NoteEvent>& notes, const Sect
   // that are non-diatonic. Chord tones are always diatonic and create natural pickup motion.
   int8_t degree = harmony.getChordDegreeAt(leading_tone_start);
   ChordToneHelper helper(degree);
-  int leading_pitch = helper.nearestChordTone(
-      static_cast<uint8_t>(std::clamp(static_cast<int>(ctx.tessitura.center) - 1,
-                                       static_cast<int>(ctx.vocal_low),
-                                       static_cast<int>(ctx.vocal_high))));
+  int leading_pitch = helper.nearestChordTone(static_cast<uint8_t>(
+      std::clamp(static_cast<int>(ctx.tessitura.center) - 1, static_cast<int>(ctx.vocal_low),
+                 static_cast<int>(ctx.vocal_high))));
 
   // Ensure it's within range
-  leading_pitch = std::clamp(leading_pitch, static_cast<int>(ctx.vocal_low),
-                             static_cast<int>(ctx.vocal_high));
+  leading_pitch =
+      std::clamp(leading_pitch, static_cast<int>(ctx.vocal_low), static_cast<int>(ctx.vocal_high));
 
   // Check interval constraint with last note
   int interval = std::abs(leading_pitch - static_cast<int>(last_note.note));
@@ -146,15 +144,15 @@ void MelodyDesigner::insertLeadingTone(std::vector<NoteEvent>& notes, const Sect
     // Check pitch safety before adding leading tone
     Tick leading_duration = TICKS_PER_BEAT / 4;
     if (!harmony.isConsonantWithOtherTracks(static_cast<uint8_t>(leading_pitch), leading_tone_start,
-                             leading_duration, TrackRole::Vocal)) {
+                                            leading_duration, TrackRole::Vocal)) {
       return;  // Skip leading tone if it would cause dissonance
     }
 
     uint8_t velocity = static_cast<uint8_t>(
         std::min(127, static_cast<int>(last_note.velocity) + 10));  // Slightly louder
 
-    NoteEvent leading_note = createNoteWithoutHarmony(leading_tone_start, leading_duration,
-                                                       static_cast<uint8_t>(leading_pitch), velocity);
+    NoteEvent leading_note = createNoteWithoutHarmony(
+        leading_tone_start, leading_duration, static_cast<uint8_t>(leading_pitch), velocity);
 #ifdef MIDISKETCH_NOTE_PROVENANCE
     leading_note.prov_source = static_cast<uint8_t>(NoteSource::MelodyPhrase);
     leading_note.prov_chord_degree = harmony.getChordDegreeAt(leading_tone_start);

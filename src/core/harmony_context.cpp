@@ -37,7 +37,7 @@ std::vector<int> HarmonyContext::getChordTonesAt(Tick tick) const {
 }
 
 ChordBoundaryInfo HarmonyContext::analyzeChordBoundary(uint8_t pitch, Tick start,
-                                                        Tick duration) const {
+                                                       Tick duration) const {
   return chord_tracker_.analyzeChordBoundary(pitch, start, duration);
 }
 
@@ -49,10 +49,10 @@ void HarmonyContext::registerTrack(const MidiTrack& track, TrackRole role) {
   collision_detector_.registerTrack(track, role);
 }
 
-bool HarmonyContext::isConsonantWithOtherTracks(uint8_t pitch, Tick start, Tick duration, TrackRole exclude,
-                                 bool is_weak_beat) const {
-  return collision_detector_.isConsonantWithOtherTracks(pitch, start, duration, exclude, &chord_tracker_,
-                                         is_weak_beat);
+bool HarmonyContext::isConsonantWithOtherTracks(uint8_t pitch, Tick start, Tick duration,
+                                                TrackRole exclude, bool is_weak_beat) const {
+  return collision_detector_.isConsonantWithOtherTracks(pitch, start, duration, exclude,
+                                                        &chord_tracker_, is_weak_beat);
 }
 
 CollisionInfo HarmonyContext::getCollisionInfo(uint8_t pitch, Tick start, Tick duration,
@@ -76,7 +76,7 @@ std::vector<int> HarmonyContext::getPitchClassesFromTrackAt(Tick tick, TrackRole
 }
 
 std::vector<int> HarmonyContext::getPitchClassesFromTrackInRange(Tick start, Tick end,
-                                                                  TrackRole role) const {
+                                                                 TrackRole role) const {
   return collision_detector_.getPitchClassesFromTrackInRange(start, end, role);
 }
 
@@ -102,32 +102,28 @@ Tick HarmonyContext::getMaxSafeEnd(Tick note_start, uint8_t pitch, TrackRole exc
 }
 
 std::vector<int> HarmonyContext::getSoundingPitchClasses(Tick start, Tick end,
-                                                           TrackRole exclude) const {
+                                                         TrackRole exclude) const {
   return collision_detector_.getSoundingPitchClasses(start, end, exclude);
 }
 
 std::vector<uint8_t> HarmonyContext::getSoundingPitches(Tick start, Tick end,
-                                                          TrackRole exclude) const {
+                                                        TrackRole exclude) const {
   return collision_detector_.getSoundingPitches(start, end, exclude);
 }
 
-uint8_t HarmonyContext::getHighestPitchForTrackInRange(Tick start, Tick end,
-                                                        TrackRole role) const {
+uint8_t HarmonyContext::getHighestPitchForTrackInRange(Tick start, Tick end, TrackRole role) const {
   return collision_detector_.getHighestPitchForTrackInRange(start, end, role);
 }
 
-uint8_t HarmonyContext::getLowestPitchForTrackInRange(Tick start, Tick end,
-                                                        TrackRole role) const {
+uint8_t HarmonyContext::getLowestPitchForTrackInRange(Tick start, Tick end, TrackRole role) const {
   return collision_detector_.getLowestPitchForTrackInRange(start, end, role);
 }
 
 void HarmonyContext::registerPhantomNote(Tick start, Tick duration, uint8_t pitch,
-                                          TrackRole track) {
+                                         TrackRole track) {
   collision_detector_.registerPhantomNote(start, duration, pitch, track);
 }
 
-void HarmonyContext::clearPhantomNotes() {
-  collision_detector_.clearPhantomNotes();
-}
+void HarmonyContext::clearPhantomNotes() { collision_detector_.clearPhantomNotes(); }
 
 }  // namespace midisketch

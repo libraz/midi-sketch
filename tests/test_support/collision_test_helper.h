@@ -97,7 +97,7 @@ class CollisionTestHelper {
    * @return Vector of clashes between the specified tracks
    */
   std::vector<ClashDetail> findClashesBetween(TrackRole track_a, TrackRole track_b,
-                                               Tick total_ticks, Tick tick_step = 240) const {
+                                              Tick total_ticks, Tick tick_step = 240) const {
     auto all = findAllClashes(total_ticks, tick_step);
     std::vector<ClashDetail> filtered;
 
@@ -132,8 +132,7 @@ class CollisionTestHelper {
             << "(pitch=" << static_cast<int>(clash.note_a.pitch) << ")"
             << " vs " << trackRoleToString(clash.note_b.track)
             << "(pitch=" << static_cast<int>(clash.note_b.pitch) << ")"
-            << " = " << clash.interval_name
-            << " (" << clash.interval_semitones << " semitones)\n";
+            << " = " << clash.interval_name << " (" << clash.interval_semitones << " semitones)\n";
       }
     }
 
@@ -148,13 +147,12 @@ class CollisionTestHelper {
   static std::string formatClash(const ClashDetail& clash) {
     std::ostringstream oss;
     oss << trackRoleToString(clash.note_a.track)
-        << "(pitch=" << static_cast<int>(clash.note_a.pitch)
-        << ", tick=" << clash.note_a.start << "-" << clash.note_a.end << ")"
+        << "(pitch=" << static_cast<int>(clash.note_a.pitch) << ", tick=" << clash.note_a.start
+        << "-" << clash.note_a.end << ")"
         << " vs " << trackRoleToString(clash.note_b.track)
-        << "(pitch=" << static_cast<int>(clash.note_b.pitch)
-        << ", tick=" << clash.note_b.start << "-" << clash.note_b.end << ")"
-        << " = " << clash.interval_name
-        << " (" << clash.interval_semitones << " semitones)";
+        << "(pitch=" << static_cast<int>(clash.note_b.pitch) << ", tick=" << clash.note_b.start
+        << "-" << clash.note_b.end << ")"
+        << " = " << clash.interval_name << " (" << clash.interval_semitones << " semitones)";
     return oss.str();
   }
 

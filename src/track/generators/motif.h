@@ -69,7 +69,9 @@ struct MotifRhythmTemplateConfig {
 };
 
 /// @brief Select a rhythm template based on BPM.
-MotifRhythmTemplate selectRhythmSyncTemplate(uint16_t bpm, std::mt19937& rng);
+MotifRhythmTemplate selectRhythmSyncTemplate(uint16_t bpm, std::mt19937& rng,
+                                             bool prefer_straight_sixteenth = false,
+                                             bool prefer_idol_chant = false);
 
 /// @brief Get the template config for a given template ID.
 const MotifRhythmTemplateConfig& getTemplateConfig(MotifRhythmTemplate tmpl);

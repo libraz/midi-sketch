@@ -68,20 +68,20 @@ class GuitarModel : public FrettedInstrumentBase {
   /// @param bpm Tempo
   /// @return Recommended picking pattern
   PickingPattern getRecommendedPickingPattern(const std::vector<uint8_t>& pitches,
-                                               const std::vector<Tick>& durations,
-                                               uint16_t bpm) const;
+                                              const std::vector<Tick>& durations,
+                                              uint16_t bpm) const;
 
   /// @brief Find the best fingering for a chord (multiple simultaneous notes).
   /// @param pitches Pitches to play simultaneously
   /// @param state Current fretboard state
   /// @return Optimal fingering for the chord
   Fingering findChordFingering(const std::vector<uint8_t>& pitches,
-                                const FretboardState& state) const;
+                               const FretboardState& state) const;
 
  protected:
   // Override position scoring for guitar-specific preferences
   float scorePosition(const FretPosition& pos, const HandPosition& current_hand,
-                       PlayingTechnique technique) const override;
+                      PlayingTechnique technique) const override;
 
  private:
   /// @brief Initialize guitar-specific technique constraints.

@@ -9,7 +9,7 @@ from collections import Counter
 from typing import List
 
 from ..constants import (TICKS_PER_BEAT, TICKS_PER_BAR, Severity, Category,
-                         VOCAL_STYLE_ULTRA_VOCALOID)
+                         VOCAL_STYLE_VOCALOID, VOCAL_STYLE_ULTRA_VOCALOID)
 from ..helpers import note_name, tick_to_bar
 from ..models import Issue
 from .base import BaseAnalyzer
@@ -55,14 +55,16 @@ class VocalAnalyzer(BaseAnalyzer):
             return
 
         phrase_gap = TICKS_PER_BEAT // 2  # Half-beat gap = breath opportunity
+        info_limit = 20 if vocal_style == VOCAL_STYLE_VOCALOID else 16
+        warning_limit = 32 if vocal_style == VOCAL_STYLE_VOCALOID else 24
         current_start = vocal[0].start
         current_end = vocal[0].end
 
         for idx in range(1, len(vocal)):
             if vocal[idx].start - vocal[idx - 1].end >= phrase_gap:
                 phrase_beats = (current_end - current_start) / TICKS_PER_BEAT
-                if phrase_beats > 16:
-                    sev = Severity.WARNING if phrase_beats > 24 else Severity.INFO
+                if phrase_beats > info_limit:
+                    sev = Severity.WARNING if phrase_beats > warning_limit else Severity.INFO
                     self.add_issue(
                         severity=sev,
                         category=Category.MELODIC,
@@ -77,8 +79,8 @@ class VocalAnalyzer(BaseAnalyzer):
 
         # Check last phrase
         phrase_beats = (current_end - current_start) / TICKS_PER_BEAT
-        if phrase_beats > 16:
-            sev = Severity.WARNING if phrase_beats > 24 else Severity.INFO
+        if phrase_beats > info_limit:
+            sev = Severity.WARNING if phrase_beats > warning_limit else Severity.INFO
             self.add_issue(
                 severity=sev,
                 category=Category.MELODIC,
@@ -183,7 +185,7 @@ class VocalAnalyzer(BaseAnalyzer):
         large_ratio = intervals['large'] / total
         step_ratio = intervals['step'] / total
 
-        # Flag only if extreme (YOASOBI-aware: large leaps OK if balanced)
+        # Flag only if extreme (AnimeHighEnergy-aware: large leaps OK if balanced)
         if large_ratio > 0.4:
             self.add_issue(
                 severity=Severity.INFO,

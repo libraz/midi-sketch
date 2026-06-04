@@ -6,6 +6,7 @@
 #include <gtest/gtest.h>
 
 #include "core/chord.h"
+#include "core/config_converter.h"
 #include "core/generator.h"
 #include "core/preset_data.h"
 #include "core/types.h"
@@ -82,6 +83,19 @@ TEST(StylePresetTest, RecommendedProgressions) {
   // First recommended progression should be valid (0 = Canon)
   EXPECT_GE(preset.recommended_progressions[0], 0);
   EXPECT_LT(preset.recommended_progressions[0], CHORD_COUNT);
+}
+
+TEST(StylePresetTest, AnimeHighEnergyMoodUsesReferenceTempoWhenBpmIsAuto) {
+  EXPECT_EQ(getMoodDefaultBpm(Mood::AnimeHighEnergy), 130);
+
+  SongConfig config = createDefaultSongConfig(0);
+  config.bpm = 0;
+  config.mood = static_cast<uint8_t>(Mood::AnimeHighEnergy);
+  config.mood_explicit = true;
+
+  GeneratorParams params = ConfigConverter::convert(config);
+  EXPECT_EQ(params.bpm, 130);
+  EXPECT_FALSE(params.bpm_explicit);
 }
 
 // ============================================================================
@@ -798,10 +812,9 @@ TEST(KeyTransposeTest, AllTracksTransposed) {
   // since notes are not guaranteed to be in tick order)
   auto getFirstNote = [](const MidiTrack& track) -> uint8_t {
     if (track.notes().empty()) return 0;
-    auto it = std::min_element(track.notes().begin(), track.notes().end(),
-                               [](const NoteEvent& a, const NoteEvent& b) {
-                                 return a.start_tick < b.start_tick;
-                               });
+    auto it = std::min_element(
+        track.notes().begin(), track.notes().end(),
+        [](const NoteEvent& a, const NoteEvent& b) { return a.start_tick < b.start_tick; });
     return it->note;
   };
 
@@ -836,7 +849,8 @@ TEST(KeyTransposeTest, AllTracksTransposed) {
     int transposed_count = 0;
     size_t check_count = std::min(song.bass().notes().size(), allMidiBassPitches.size());
     for (size_t k = 0; k < check_count; ++k) {
-      int diff = static_cast<int>(allMidiBassPitches[k]) - static_cast<int>(song.bass().notes()[k].note);
+      int diff =
+          static_cast<int>(allMidiBassPitches[k]) - static_cast<int>(song.bass().notes()[k].note);
       if (diff == 7) transposed_count++;
     }
     EXPECT_GT(transposed_count, 0) << "At least some bass notes should be transposed by +7";
@@ -1248,9 +1262,9 @@ TEST(NameLookupTest, FindMoodByNameExact) {
   ASSERT_TRUE(mood.has_value());
   EXPECT_EQ(*mood, Mood::Ballad);
 
-  mood = findMoodByName("yoasobi");
+  mood = findMoodByName("anime_high_energy");
   ASSERT_TRUE(mood.has_value());
-  EXPECT_EQ(*mood, Mood::Yoasobi);
+  EXPECT_EQ(*mood, Mood::AnimeHighEnergy);
 }
 
 TEST(NameLookupTest, FindMoodByNameCaseInsensitive) {

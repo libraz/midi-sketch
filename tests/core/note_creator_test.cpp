@@ -3,13 +3,14 @@
  * @brief Tests for unified note creation API (v2 Architecture).
  */
 
+#include "core/note_creator.h"
+
 #include <gtest/gtest.h>
 
 #include "core/arrangement.h"
 #include "core/chord.h"
 #include "core/harmony_context.h"
 #include "core/midi_track.h"
-#include "core/note_creator.h"
 
 using namespace midisketch;
 
@@ -249,15 +250,10 @@ TEST_F(NoteCreatorTest, GetSafePitchCandidates) {
   // Register a note at C4
   harmony_.registerNote(0, 480, 60, TrackRole::Vocal);
 
-  auto candidates = getSafePitchCandidates(
-      harmony_,
-      61,  // desired: C#4 (clashes)
-      0, 480,
-      TrackRole::Bass,
-      36, 72,
-      PitchPreference::Default,
-      5
-  );
+  auto candidates =
+      getSafePitchCandidates(harmony_,
+                             61,  // desired: C#4 (clashes)
+                             0, 480, TrackRole::Bass, 36, 72, PitchPreference::Default, 5);
 
   // Should return some candidates (not C#4)
   EXPECT_FALSE(candidates.empty());
@@ -270,15 +266,10 @@ TEST_F(NoteCreatorTest, GetSafePitchCandidates) {
 }
 
 TEST_F(NoteCreatorTest, PreferRootFifth) {
-  auto candidates = getSafePitchCandidates(
-      harmony_,
-      64,  // desired: E4 (3rd of C chord)
-      0, 480,
-      TrackRole::Bass,
-      36, 72,
-      PitchPreference::PreferRootFifth,
-      10
-  );
+  auto candidates =
+      getSafePitchCandidates(harmony_,
+                             64,  // desired: E4 (3rd of C chord)
+                             0, 480, TrackRole::Bass, 36, 72, PitchPreference::PreferRootFifth, 10);
 
   EXPECT_FALSE(candidates.empty());
 
@@ -288,7 +279,7 @@ TEST_F(NoteCreatorTest, PreferRootFifth) {
   for (const auto& c : candidates) {
     if (c.is_root_or_fifth) {
       int pc = c.pitch % 12;
-      if (pc == 0) found_root = true;  // C
+      if (pc == 0) found_root = true;   // C
       if (pc == 7) found_fifth = true;  // G
     }
   }
@@ -343,15 +334,10 @@ TEST_F(NoteCreatorTest, PreserveContourPreference) {
   // Register a note at C5 (72)
   harmony_.registerNote(0, 480, 72, TrackRole::Bass);
 
-  auto candidates = getSafePitchCandidates(
-      harmony_,
-      73,  // desired: C#5 (clashes)
-      0, 480,
-      TrackRole::Motif,
-      48, 84,
-      PitchPreference::PreserveContour,
-      10
-  );
+  auto candidates = getSafePitchCandidates(harmony_,
+                                           73,  // desired: C#5 (clashes)
+                                           0, 480, TrackRole::Motif, 48, 84,
+                                           PitchPreference::PreserveContour, 10);
 
   EXPECT_FALSE(candidates.empty());
 

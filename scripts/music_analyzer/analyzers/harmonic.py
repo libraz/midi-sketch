@@ -158,11 +158,23 @@ class HarmonicAnalyzer(BaseAnalyzer):
             chord = chords_by_time[tick]
             pitches = tuple(sorted([note.pitch for note in chord]))
             voicing_count = len(pitches)
+            local_pitches = {
+                note.pitch
+                for note in chord_notes
+                if abs(note.start - tick) <= TICKS_PER_BEAT // 2
+            }
+            local_pc_count = len({pitch % 12 for pitch in local_pitches})
+            arpeggiated_context = (
+                self.profile is not None and
+                self.profile.name == "RhythmLock" and
+                (local_pc_count >= 3 or voicing_count == 1)
+            )
 
             # Check for thin voicing (1-2 voices)
             if voicing_count == 1:
                 self.add_issue(
-                    severity=Severity.WARNING,
+                    severity=(Severity.INFO if arpeggiated_context
+                              else Severity.WARNING),
                     category=Category.HARMONIC,
                     subcategory="thin_voicing",
                     message=f"Only 1 voice ({note_name(pitches[0])})",
@@ -291,6 +303,10 @@ class HarmonicAnalyzer(BaseAnalyzer):
         if len(bass_notes) < 2:
             return
 
+        rhythmlock_profile = (
+            self.profile is not None and self.profile.name == "RhythmLock"
+        )
+
         # Consecutive same pitch detection
         consecutive_count = 1
         current_pitch = bass_notes[0].pitch
@@ -301,8 +317,11 @@ class HarmonicAnalyzer(BaseAnalyzer):
                 consecutive_count += 1
             else:
                 if consecutive_count >= 8:
+                    severity = Severity.WARNING
+                    if rhythmlock_profile and consecutive_count < 12:
+                        severity = Severity.INFO
                     self.add_issue(
-                        severity=Severity.WARNING,
+                        severity=severity,
                         category=Category.HARMONIC,
                         subcategory="bass_monotony",
                         message=f"{consecutive_count} consecutive {note_name(current_pitch)}",
@@ -315,8 +334,11 @@ class HarmonicAnalyzer(BaseAnalyzer):
                 start_tick = bass_notes[idx].start
 
         if consecutive_count >= 8:
+            severity = Severity.WARNING
+            if rhythmlock_profile and consecutive_count < 12:
+                severity = Severity.INFO
             self.add_issue(
-                severity=Severity.WARNING,
+                severity=severity,
                 category=Category.HARMONIC,
                 subcategory="bass_monotony",
                 message=f"{consecutive_count} consecutive {note_name(current_pitch)}",

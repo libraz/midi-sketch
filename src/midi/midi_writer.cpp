@@ -176,11 +176,16 @@ void MidiWriter::writeTrack(const MidiTrack& track, const std::string& name, uin
     // Remap types for sorting: 0x80->0, 0xB0->1, 0xE0->2, 0x90->3
     auto type_order = [](uint8_t type) -> int {
       switch (type) {
-        case 0x80: return 0;  // note-off first
-        case 0xB0: return 1;  // then CC
-        case 0xE0: return 2;  // then pitch bend
-        case 0x90: return 3;  // note-on last
-        default: return 4;
+        case 0x80:
+          return 0;  // note-off first
+        case 0xB0:
+          return 1;  // then CC
+        case 0xE0:
+          return 2;  // then pitch bend
+        case 0x90:
+          return 3;  // note-on last
+        default:
+          return 4;
       }
     };
     return type_order(evt_a.type) < type_order(evt_b.type);
@@ -280,8 +285,8 @@ void MidiWriter::writeMarkerTrack(const MidiTrack& track, uint16_t bpm,
   // Build a unified event list: each entry has (tick, type) for ordering
   struct TimedEvent {
     Tick tick;
-    bool is_tempo;       // true = tempo event, false = marker event
-    size_t index;        // index into markers or tempo_map
+    bool is_tempo;  // true = tempo event, false = marker event
+    size_t index;   // index into markers or tempo_map
   };
   std::vector<TimedEvent> events;
   events.reserve(track.textEvents().size() + tempo_map.size());

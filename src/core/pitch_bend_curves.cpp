@@ -110,7 +110,8 @@ std::vector<PitchBendEvent> generateSlide(Tick from_tick, Tick to_tick, int semi
     Tick tick = from_tick + static_cast<Tick>(progress * duration);
 
     // S-curve (ease-in-out): 3t^2 - 2t^3
-    float curve_factor = 1.0f - (3.0f * progress * progress - 2.0f * progress * progress * progress);
+    float curve_factor =
+        1.0f - (3.0f * progress * progress - 2.0f * progress * progress * progress);
     int16_t bend_value = static_cast<int16_t>(start_bend * curve_factor);
 
     events.push_back({tick, bend_value});
@@ -125,7 +126,7 @@ std::vector<PitchBendEvent> generateSlide(Tick from_tick, Tick to_tick, int semi
 }
 
 std::vector<PitchBendEvent> generateVibrato(Tick start_tick, Tick duration, int depth_cents,
-                                             float rate_hz, uint16_t bpm) {
+                                            float rate_hz, uint16_t bpm) {
   std::vector<PitchBendEvent> events;
 
   if (duration == 0 || depth_cents == 0) {

@@ -138,8 +138,8 @@ TEST_F(EmotionCurveVelocityIntegrationTest, LowTensionCapsVelocity) {
 
   // Low tension sections should not exceed ~115 velocity (accounting for processing variance)
   // This tests that calculateVelocityCeiling is being applied
-  EXPECT_LE(max_velocity, 115)
-      << "Intro (low tension) should have capped velocity. Max found: " << static_cast<int>(max_velocity);
+  EXPECT_LE(max_velocity, 115) << "Intro (low tension) should have capped velocity. Max found: "
+                               << static_cast<int>(max_velocity);
 }
 
 TEST_F(EmotionCurveVelocityIntegrationTest, AllSectionsHaveEmotionApplied) {
@@ -199,8 +199,7 @@ TEST_F(EmotionCurveVelocityIntegrationTest, TransitionVelocityRampStillWorks) {
       auto hint = emotion_curve.getTransitionHint(i);
 
       // B -> Chorus should have velocity ramp > 1.0 (crescendo)
-      EXPECT_GT(hint.velocity_ramp, 1.0f)
-          << "B -> Chorus should have crescendo velocity ramp";
+      EXPECT_GT(hint.velocity_ramp, 1.0f) << "B -> Chorus should have crescendo velocity ramp";
 
       // Verify notes in transition zone have been affected
       const auto& b_section = sections[i];
@@ -216,11 +215,10 @@ TEST_F(EmotionCurveVelocityIntegrationTest, TransitionVelocityRampStillWorks) {
 
       // Transition zone should have notes with valid velocities
       if (!transition_velocities.empty()) {
-        uint8_t max_transition = *std::max_element(transition_velocities.begin(),
-                                                    transition_velocities.end());
+        uint8_t max_transition =
+            *std::max_element(transition_velocities.begin(), transition_velocities.end());
         // Transition notes should be reasonably loud (crescendo effect)
-        EXPECT_GE(max_transition, 50)
-            << "Transition zone should have reasonably loud notes";
+        EXPECT_GE(max_transition, 50) << "Transition zone should have reasonably loud notes";
       }
       return;
     }
@@ -239,8 +237,8 @@ TEST_F(EmotionCurveVelocityIntegrationTest, VelocityWithinValidRange) {
 
   auto checkTrackVelocities = [](const MidiTrack& track, const char* name) {
     for (const auto& note : track.notes()) {
-      EXPECT_GE(note.velocity, 1)
-          << name << " track has velocity below MIDI minimum: " << static_cast<int>(note.velocity);
+      EXPECT_GE(note.velocity, 1) << name << " track has velocity below MIDI minimum: "
+                                  << static_cast<int>(note.velocity);
       EXPECT_LE(note.velocity, 127)
           << name << " track has velocity above MIDI maximum: " << static_cast<int>(note.velocity);
     }
@@ -316,8 +314,8 @@ TEST_F(EmotionCurveVelocityIntegrationTest, MultipleStructurePatternsWork) {
         break;
       }
     }
-    EXPECT_TRUE(has_valid_notes)
-        << "Should have valid notes for pattern " << static_cast<int>(pattern);
+    EXPECT_TRUE(has_valid_notes) << "Should have valid notes for pattern "
+                                 << static_cast<int>(pattern);
   }
 }
 
@@ -461,10 +459,8 @@ TEST(ApplyEmotionToVelocityTest, TensionAffectsCeiling) {
   float high_tension = 0.9f;
   uint8_t ceiling_high = calculateVelocityCeiling(127, high_tension);
 
-  EXPECT_LT(ceiling_low, ceiling_high)
-      << "Low tension should have lower velocity ceiling";
-  EXPECT_LT(ceiling_low, 127)
-      << "Low tension ceiling should be below max";
+  EXPECT_LT(ceiling_low, ceiling_high) << "Low tension should have lower velocity ceiling";
+  EXPECT_LT(ceiling_low, 127) << "Low tension ceiling should be below max";
 }
 
 }  // namespace

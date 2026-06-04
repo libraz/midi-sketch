@@ -375,7 +375,7 @@ std::string s_json_config_buffer;
 
 /// Parse JSON config and validate. Returns nullptr on error (sets error codes).
 midisketch::MidiSketch* parseAndValidateConfig(MidiSketchHandle handle, const char* config_json,
-                                                size_t json_length, midisketch::SongConfig& out) {
+                                               size_t json_length, midisketch::SongConfig& out) {
   g_last_config_errors[handle] = MIDISKETCH_CONFIG_OK;
 
   midisketch::json::Parser p(std::string(config_json, json_length));
@@ -393,7 +393,7 @@ midisketch::MidiSketch* parseAndValidateConfig(MidiSketchHandle handle, const ch
 }  // namespace
 
 MidiSketchError midisketch_generate_from_json(MidiSketchHandle handle, const char* config_json,
-                                               size_t json_length) {
+                                              size_t json_length) {
   if (!handle || !config_json) {
     return MIDISKETCH_ERROR_INVALID_PARAM;
   }
@@ -432,7 +432,7 @@ MidiSketchConfigError midisketch_validate_config_json(const char* config_json, s
 }
 
 MidiSketchError midisketch_generate_vocal_from_json(MidiSketchHandle handle,
-                                                     const char* config_json, size_t json_length) {
+                                                    const char* config_json, size_t json_length) {
   if (!handle || !config_json) {
     return MIDISKETCH_ERROR_INVALID_PARAM;
   }
@@ -446,8 +446,8 @@ MidiSketchError midisketch_generate_vocal_from_json(MidiSketchHandle handle,
 }
 
 MidiSketchError midisketch_generate_with_vocal_from_json(MidiSketchHandle handle,
-                                                          const char* config_json,
-                                                          size_t json_length) {
+                                                         const char* config_json,
+                                                         size_t json_length) {
   if (!handle || !config_json) {
     return MIDISKETCH_ERROR_INVALID_PARAM;
   }
@@ -461,8 +461,7 @@ MidiSketchError midisketch_generate_with_vocal_from_json(MidiSketchHandle handle
 }
 
 MidiSketchError midisketch_regenerate_vocal_from_json(MidiSketchHandle handle,
-                                                       const char* config_json,
-                                                       size_t json_length) {
+                                                      const char* config_json, size_t json_length) {
   if (!handle) {
     return MIDISKETCH_ERROR_INVALID_PARAM;
   }
@@ -482,8 +481,8 @@ MidiSketchError midisketch_regenerate_vocal_from_json(MidiSketchHandle handle,
 }
 
 MidiSketchError midisketch_generate_accompaniment_from_json(MidiSketchHandle handle,
-                                                              const char* config_json,
-                                                              size_t json_length) {
+                                                            const char* config_json,
+                                                            size_t json_length) {
   if (!handle || !config_json) {
     return MIDISKETCH_ERROR_INVALID_PARAM;
   }
@@ -497,8 +496,8 @@ MidiSketchError midisketch_generate_accompaniment_from_json(MidiSketchHandle han
 }
 
 MidiSketchError midisketch_regenerate_accompaniment_from_json(MidiSketchHandle handle,
-                                                                const char* config_json,
-                                                                size_t json_length) {
+                                                              const char* config_json,
+                                                              size_t json_length) {
   if (!handle || !config_json) {
     return MIDISKETCH_ERROR_INVALID_PARAM;
   }
@@ -512,7 +511,7 @@ MidiSketchError midisketch_regenerate_accompaniment_from_json(MidiSketchHandle h
 }
 
 MidiSketchError midisketch_set_vocal_notes_from_json(MidiSketchHandle handle, const char* json,
-                                                       size_t json_length) {
+                                                     size_t json_length) {
   if (!handle || !json) {
     return MIDISKETCH_ERROR_INVALID_PARAM;
   }
@@ -547,9 +546,9 @@ MidiSketchError midisketch_set_vocal_notes_from_json(MidiSketchHandle handle, co
       size_t pos = arr_start + 1;
       while (pos < json_str.size()) {
         // Skip whitespace
-        while (pos < json_str.size() && (json_str[pos] == ' ' || json_str[pos] == '\n' ||
-                                         json_str[pos] == '\r' || json_str[pos] == '\t' ||
-                                         json_str[pos] == ',')) {
+        while (pos < json_str.size() &&
+               (json_str[pos] == ' ' || json_str[pos] == '\n' || json_str[pos] == '\r' ||
+                json_str[pos] == '\t' || json_str[pos] == ',')) {
           ++pos;
         }
         if (pos >= json_str.size() || json_str[pos] == ']') break;
@@ -607,7 +606,8 @@ bool containsPitchClass(const std::vector<int>& vec, int value) {
 MidiSketchPianoRollInfo s_single_info;
 
 // Track name lookup
-const char* TRACK_NAMES[] = {"Vocal", "Chord", "Bass", "Drums", "SE", "Motif", "Arpeggio", "Aux", "Guitar"};
+const char* TRACK_NAMES[] = {"Vocal", "Chord",    "Bass", "Drums", "SE",
+                             "Motif", "Arpeggio", "Aux",  "Guitar"};
 
 // Fill piano roll info for a single tick
 void fillPianoRollInfo(MidiSketchPianoRollInfo* info, const midisketch::Song& song,
@@ -862,7 +862,8 @@ const char* midisketch_collision_to_string(const MidiSketchCollisionInfo* collis
   }
 
   int octave = collision->colliding_pitch / 12 - 1;
-  const char* note_name = midisketch::NOTE_NAMES[midisketch::getPitchClass(collision->colliding_pitch)];
+  const char* note_name =
+      midisketch::NOTE_NAMES[midisketch::getPitchClass(collision->colliding_pitch)];
 
   const char* interval_name = (collision->interval_semitones == 1)    ? "minor 2nd"
                               : (collision->interval_semitones == 6)  ? "tritone"

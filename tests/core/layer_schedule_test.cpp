@@ -343,8 +343,7 @@ TEST(GenerateDefaultLayerEventsTest, FirstVerseHasGradualBuild) {
     TrackMask bar0 = computeActiveTracksAtBar(events, 0);
     EXPECT_TRUE(hasTrack(bar0, TrackMask::Vocal))
         << "First verse should have vocals from the start";
-    EXPECT_TRUE(hasTrack(bar0, TrackMask::Drums))
-        << "First verse should have drums from the start";
+    EXPECT_TRUE(hasTrack(bar0, TrackMask::Drums)) << "First verse should have drums from the start";
 
     // Bar 2+ should add more layers
     TrackMask bar2 = computeActiveTracksAtBar(events, 2);
@@ -355,8 +354,7 @@ TEST(GenerateDefaultLayerEventsTest, FirstVerseHasGradualBuild) {
       if (hasTrack(bar0, mask)) bar0_count++;
       if (hasTrack(bar2, mask)) bar2_count++;
     }
-    EXPECT_GE(bar2_count, bar0_count)
-        << "First verse should have more tracks at bar 2 than bar 0";
+    EXPECT_GE(bar2_count, bar0_count) << "First verse should have more tracks at bar 2 than bar 0";
   }
 }
 
@@ -368,8 +366,7 @@ TEST(GenerateDefaultLayerEventsTest, LaterVerseNoLayerEvents) {
 
   // section_index=3 means this is a later occurrence
   auto events = generateDefaultLayerEvents(section, 3, 7);
-  EXPECT_TRUE(events.empty())
-      << "Later verse sections should not have layer events";
+  EXPECT_TRUE(events.empty()) << "Later verse sections should not have layer events";
 }
 
 // ============================================================================
@@ -413,8 +410,7 @@ TEST(ApplyDefaultLayerScheduleTest, ShortSectionsUnaffected) {
 
   for (const auto& section : sections) {
     if (section.type == SectionType::Chorus) {
-      EXPECT_TRUE(section.layer_events.empty())
-          << "Chorus should not have layer events";
+      EXPECT_TRUE(section.layer_events.empty()) << "Chorus should not have layer events";
     }
   }
 }
@@ -600,8 +596,8 @@ TEST(OutroLayerScheduleTest, OutroRemovesTracksAtEnd) {
   EXPECT_TRUE(hasTrack(bar0, TrackMask::Chord));
 
   // At the last bar, some tracks should be removed
-  TrackMask last = computeActiveTracksAtBar(outro.layer_events,
-                                            static_cast<uint8_t>(outro.bars - 1));
+  TrackMask last =
+      computeActiveTracksAtBar(outro.layer_events, static_cast<uint8_t>(outro.bars - 1));
   EXPECT_FALSE(hasTrack(last, TrackMask::Arpeggio))
       << "Arpeggio should be removed at the end of Outro";
 }

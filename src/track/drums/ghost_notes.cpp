@@ -38,7 +38,7 @@ MoodCategory getMoodCategory(Mood mood) {
     case Mood::EnergeticDance:
     case Mood::IdolPop:
     case Mood::Anthem:
-    case Mood::Yoasobi:
+    case Mood::AnimeHighEnergy:
     case Mood::LatinPop:
     case Mood::Trap:
       return MoodCategory::Energetic;
@@ -114,14 +114,16 @@ float getGhostDensity(Mood mood, SectionType section, BackingDensity backing_den
   switch (backing_density) {
     case BackingDensity::Thin:
       if (level != GhostDensityLevel::None) {
-        prob = densityLevelToProbability(static_cast<GhostDensityLevel>(static_cast<int>(level) - 1));
+        prob =
+            densityLevelToProbability(static_cast<GhostDensityLevel>(static_cast<int>(level) - 1));
       }
       break;
     case BackingDensity::Normal:
       break;
     case BackingDensity::Thick:
       if (level != GhostDensityLevel::Heavy) {
-        prob = densityLevelToProbability(static_cast<GhostDensityLevel>(static_cast<int>(level) + 1));
+        prob =
+            densityLevelToProbability(static_cast<GhostDensityLevel>(static_cast<int>(level) + 1));
       }
       break;
   }

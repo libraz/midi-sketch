@@ -137,8 +137,8 @@ class TrackGenerationContextBuilder {
 
   TrackGenerationContext build() const {
     return TrackGenerationContext{
-        song_,        params_,       rng_,        harmony_,        mutable_harmony_,
-        bass_track_,  aux_track_,    motif_track_, vocal_analysis_,
+        song_,       params_,    rng_,         harmony_,        mutable_harmony_,
+        bass_track_, aux_track_, motif_track_, vocal_analysis_,
     };
   }
 

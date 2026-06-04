@@ -48,7 +48,7 @@ enum class AuxHarmonicRole : uint8_t {
   Unison      ///< Same pitch as melody
 };
 
-/// Harmony mode: UnisonOnly, ThirdAbove (Beatles style), ThirdBelow (R&B), Alternating.
+/// Harmony mode: UnisonOnly, ThirdAbove (classic pop style), ThirdBelow (R&B), Alternating.
 enum class HarmonyMode : uint8_t {
   UnisonOnly,  ///< Same pitch as melody
   ThirdAbove,  ///< 3rd above melody
@@ -226,12 +226,12 @@ class AuxGenerator : public TrackBase {
   std::vector<NoteEvent> generateUnison(const AuxContext& ctx, const AuxConfig& config,
                                         const IHarmonyContext& harmony, std::mt19937& rng);
 
-  /// F+: Harmony - parallel 3rds/6ths above/below melody (Beatles style).
+  /// F+: Harmony - parallel 3rds/6ths above/below melody (classic pop style).
   std::vector<NoteEvent> generateHarmony(const AuxContext& ctx, const AuxConfig& config,
                                          const IHarmonyContext& harmony, HarmonyMode mode,
                                          std::mt19937& rng);
 
-  /// G: Melodic Hook - iconic intro riff (AKB48 "Fortune Cookie" style).
+  /// G: Melodic Hook - iconic intro riff (idol dance style).
   std::vector<NoteEvent> generateMelodicHook(const AuxContext& ctx, const AuxConfig& config,
                                              const IHarmonyContext& harmony, std::mt19937& rng);
 
@@ -261,12 +261,12 @@ class AuxGenerator : public TrackBase {
   void calculateAuxRange(const AuxConfig& config, const TessituraRange& main_tessitura,
                          uint8_t& out_low, uint8_t& out_high, int8_t range_ceiling = 0);
   bool isConsonantWithMelodyAndTracks(uint8_t pitch, Tick start, Tick duration,
-                   const std::vector<NoteEvent>* main_melody, const IHarmonyContext& harmony,
-                   float dissonance_tolerance = 0.0f);
+                                      const std::vector<NoteEvent>* main_melody,
+                                      const IHarmonyContext& harmony,
+                                      float dissonance_tolerance = 0.0f);
   uint8_t resolveAuxPitch(uint8_t desired, Tick start, Tick duration,
                           const std::vector<NoteEvent>* main_melody, const IHarmonyContext& harmony,
-                          uint8_t low, uint8_t high,
-                          float dissonance_tolerance = 0.0f);
+                          uint8_t low, uint8_t high, float dissonance_tolerance = 0.0f);
   std::vector<Tick> findBreathPointsInRange(const std::vector<PhraseBoundary>* boundaries,
                                             Tick start, Tick end);
 

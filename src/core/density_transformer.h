@@ -86,9 +86,7 @@ class DensityTransformer {
      * @brief Build the transformer.
      * @return Constructed DensityTransformer
      */
-    DensityTransformer build() const {
-      return DensityTransformer(sparse_map_, dense_map_);
-    }
+    DensityTransformer build() const { return DensityTransformer(sparse_map_, dense_map_); }
 
    private:
     std::unordered_map<int, int> sparse_map_;

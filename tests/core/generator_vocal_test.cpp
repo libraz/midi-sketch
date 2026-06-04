@@ -1389,7 +1389,8 @@ static size_t countShortNotesInSection(const std::vector<NoteEvent>& notes, Tick
                                        Tick section_end, Tick threshold = 60) {
   size_t count = 0;
   for (const auto& note : notes) {
-    if (note.start_tick >= section_start && note.start_tick < section_end && note.duration <= threshold) {
+    if (note.start_tick >= section_start && note.start_tick < section_end &&
+        note.duration <= threshold) {
       ++count;
     }
   }
@@ -1451,13 +1452,12 @@ TEST(UltraVocaloidTest, ChorusHasMore32ndNotesThanVerse) {
   double a_ratio = a_total > 0 ? static_cast<double>(a_short) / a_total : 0;
   double chorus_ratio = chorus_total > 0 ? static_cast<double>(chorus_short) / chorus_total : 0;
 
-  EXPECT_GT(chorus_ratio, a_ratio)
-      << "Chorus 32nd note ratio (" << chorus_ratio << ") should exceed verse ratio (" << a_ratio
-      << ")";
+  EXPECT_GT(chorus_ratio, a_ratio) << "Chorus 32nd note ratio (" << chorus_ratio
+                                   << ") should exceed verse ratio (" << a_ratio << ")";
   // Reduced threshold due to melody evaluation changes that penalize excessive
   // same-pitch runs, affecting 32nd note density in some cases.
-  EXPECT_GT(chorus_ratio, 0.12)
-      << "Chorus should have at least 12% 32nd notes, got " << chorus_ratio * 100 << "%";
+  EXPECT_GT(chorus_ratio, 0.12) << "Chorus should have at least 12% 32nd notes, got "
+                                << chorus_ratio * 100 << "%";
 }
 
 TEST(UltraVocaloidTest, ChorusHasHigherNoteDensity) {
@@ -1503,8 +1503,8 @@ TEST(UltraVocaloidTest, ChorusHasHigherNoteDensity) {
       << a_density << " notes/bar)";
   // Minimum density threshold lowered from 4.0 to 2.0 to accommodate
   // phrase_position anchoring and distance penalty changes in selectBestCandidate.
-  EXPECT_GT(chorus_density, 2.0)
-      << "Chorus should have at least 2 notes/bar, got " << chorus_density;
+  EXPECT_GT(chorus_density, 2.0) << "Chorus should have at least 2 notes/bar, got "
+                                 << chorus_density;
 }
 
 TEST(UltraVocaloidTest, StandardStyleHasFewerShortNotes) {
@@ -1587,7 +1587,8 @@ TEST(UltraVocaloidTest, MultipleSeedsGenerateValidOutput) {
     // improvements (interval=0 separation, distance penalty, phrase anchoring) may
     // cause some seeds to produce fewer very short notes as melodic continuity is
     // now preferred. We verify notes are generated but don't require a minimum ratio.
-    EXPECT_GT(notes.size(), 10u) << "Seed " << seed << " should generate a reasonable number of notes";
+    EXPECT_GT(notes.size(), 10u) << "Seed " << seed
+                                 << " should generate a reasonable number of notes";
   }
 }
 
@@ -1626,7 +1627,8 @@ TEST(UltraVocaloidTest, ChorusNotesOnThirtysecondGrid) {
       ++chorus_notes;
       Tick relative_tick = note.start_tick - chorus_start;
       // Check if on 32nd grid but not on 16th grid
-      if (relative_tick % THIRTY_SECOND_TICK == 0 && relative_tick % (THIRTY_SECOND_TICK * 2) != 0) {
+      if (relative_tick % THIRTY_SECOND_TICK == 0 &&
+          relative_tick % (THIRTY_SECOND_TICK * 2) != 0) {
         ++notes_on_32nd_grid;
       }
     }
@@ -1694,8 +1696,7 @@ TEST(CustomVocalTest, SetVocalNotesRhythmSyncThenAccompaniment) {
   // Motif should be preserved (not regenerated from scratch)
   // Post-processing may add/remove edge notes, so check core pattern
   const auto& motif_after = gen.getSong().motif().notes();
-  ASSERT_FALSE(motif_after.empty())
-      << "Motif should still exist after accompaniment generation";
+  ASSERT_FALSE(motif_after.empty()) << "Motif should still exist after accompaniment generation";
 
   size_t check_count = std::min({size_t(10), motif_before.size(), motif_after.size()});
   int matching = 0;
@@ -1766,8 +1767,7 @@ TEST(CustomVocalTest, SetVocalNotesRhythmSyncDensityProgression) {
       break;
     }
   }
-  EXPECT_TRUE(found_progression)
-      << "RhythmSync density progression should be applied";
+  EXPECT_TRUE(found_progression) << "RhythmSync density progression should be applied";
 }
 
 }  // namespace

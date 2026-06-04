@@ -17,7 +17,8 @@ PitchResolutionResult SafePitchResolver::resolvePitchWithStrategy(
     const ChordProgressionTracker& chord_tracker,
     const TrackCollisionDetector& collision_detector) const {
   // If desired pitch is already safe, use it
-  if (collision_detector.isConsonantWithOtherTracks(desired, start, duration, track, &chord_tracker)) {
+  if (collision_detector.isConsonantWithOtherTracks(desired, start, duration, track,
+                                                    &chord_tracker)) {
     return {desired, CollisionAvoidStrategy::None};
   }
 
@@ -39,8 +40,8 @@ PitchResolutionResult SafePitchResolver::resolvePitchWithStrategy(
       for (int oct_offset = -2; oct_offset <= 2; ++oct_offset) {
         int candidate = (octave + oct_offset) * 12 + note_pc;
         if (candidate < static_cast<int>(low) || candidate > static_cast<int>(high)) continue;
-        if (!collision_detector.isConsonantWithOtherTracks(static_cast<uint8_t>(candidate), start, duration, track,
-                                            &chord_tracker))
+        if (!collision_detector.isConsonantWithOtherTracks(static_cast<uint8_t>(candidate), start,
+                                                           duration, track, &chord_tracker))
           continue;
 
         int dist = std::abs(candidate - static_cast<int>(desired));
@@ -62,8 +63,8 @@ PitchResolutionResult SafePitchResolver::resolvePitchWithStrategy(
     for (int oct_offset = -2; oct_offset <= 2; ++oct_offset) {
       int candidate = (octave + oct_offset) * 12 + ct_pc;
       if (candidate < static_cast<int>(low) || candidate > static_cast<int>(high)) continue;
-      if (!collision_detector.isConsonantWithOtherTracks(static_cast<uint8_t>(candidate), start, duration, track,
-                                          &chord_tracker))
+      if (!collision_detector.isConsonantWithOtherTracks(static_cast<uint8_t>(candidate), start,
+                                                         duration, track, &chord_tracker))
         continue;
 
       int dist = std::abs(candidate - static_cast<int>(desired));
@@ -84,8 +85,8 @@ PitchResolutionResult SafePitchResolver::resolvePitchWithStrategy(
   for (int adj : adjustments) {
     int candidate = static_cast<int>(desired) + adj;
     if (candidate < static_cast<int>(low) || candidate > static_cast<int>(high)) continue;
-    if (collision_detector.isConsonantWithOtherTracks(static_cast<uint8_t>(candidate), start, duration, track,
-                                       &chord_tracker)) {
+    if (collision_detector.isConsonantWithOtherTracks(static_cast<uint8_t>(candidate), start,
+                                                      duration, track, &chord_tracker)) {
       return {static_cast<uint8_t>(candidate), CollisionAvoidStrategy::ConsonantInterval};
     }
   }
@@ -95,8 +96,8 @@ PitchResolutionResult SafePitchResolver::resolvePitchWithStrategy(
     for (int sign = -1; sign <= 1; sign += 2) {
       int candidate = static_cast<int>(desired) + sign * dist;
       if (candidate < static_cast<int>(low) || candidate > static_cast<int>(high)) continue;
-      if (collision_detector.isConsonantWithOtherTracks(static_cast<uint8_t>(candidate), start, duration, track,
-                                         &chord_tracker)) {
+      if (collision_detector.isConsonantWithOtherTracks(static_cast<uint8_t>(candidate), start,
+                                                        duration, track, &chord_tracker)) {
         return {static_cast<uint8_t>(candidate), CollisionAvoidStrategy::ExhaustiveSearch};
       }
     }
