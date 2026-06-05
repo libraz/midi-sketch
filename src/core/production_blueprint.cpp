@@ -1753,9 +1753,11 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
          InstrumentModelMode::Full, true, false, false,  // enable_slap for punchy rhythm
          true,                                           // guitar_below_vocal
          0.15f},  // ritardando_amount (RhythmLock: tight rhythm, subtle)
-        // aux_profile: Square Lead, PulseLoop/GrooveAccent, punchy rhythm focus
-        // density 1.0: references show aux/pad lines at 2.9+ notes/bar
-        {80, AuxFunction::PulseLoop, AuxFunction::PulseLoop, AuxFunction::GrooveAccent, 0.8f, 1.0f,
+        // aux_profile: Square Lead, PulseLoop throughout: RhythmSync references
+        // hold ONE aux pulse cell for most of the song (repeat_cell_consistency
+        // 0.625-0.742), so the chorus keeps the same loop instead of switching
+        // to a GrooveAccent cell. density 1.0: references show 2.9+ notes/bar.
+        {80, AuxFunction::PulseLoop, AuxFunction::PulseLoop, AuxFunction::PulseLoop, 0.8f, 1.25f,
          -4},
     },
 

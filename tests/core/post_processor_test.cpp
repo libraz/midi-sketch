@@ -1245,11 +1245,19 @@ TEST(PostProcessorTest, FixMotifVocalClashesUpdatesProvenance) {
 
   PostProcessor::fixMotifVocalClashes(motif, vocal, harmony);
 
-  // Check provenance was updated
+  // Check provenance was updated. Two passes act on this note:
+  // 1. Dissonance pass: C3 (48) clashes with vocal B2 (47, m2) and the only
+  //    non-clashing in-register chord tone is E4 (64) -> 48 becomes 64.
+  // 2. Crossing pass: 64 sits far above the vocal; the relaxed-floor
+  //    resolution lowers it to E3 (52) to minimize the register crossing.
+  // prov_original_pitch reflects the input of the LAST modification (64);
+  // the full chain (48 -> 64 -> 52) is preserved in the transform steps.
   const auto& note = motif.notes()[0];
   EXPECT_EQ(note.prov_source, static_cast<uint8_t>(NoteSource::CollisionAvoid))
       << "Provenance source should be CollisionAvoid";
-  EXPECT_EQ(note.prov_original_pitch, 48) << "Original pitch should be preserved in provenance";
+  EXPECT_EQ(note.note, 52) << "Crossing pass should lower the resolution toward the vocal";
+  EXPECT_EQ(note.prov_original_pitch, 64)
+      << "Original pitch should reflect the last modification's input";
   EXPECT_EQ(note.prov_chord_degree, 0) << "Chord degree should be recorded";
 }
 
@@ -2401,6 +2409,134 @@ TEST_F(SmoothLargeLeapsTest, SectionBoundaryLeapRegression) {
     EXPECT_LE(leap, 12) << "Large leap at index " << idx << ": "
                         << static_cast<int>(track_.notes()[idx - 1].note) << " -> "
                         << static_cast<int>(track_.notes()[idx].note);
+  }
+}
+
+TEST(PostProcessorTest, FixMotifVocalClashesPinchedRangeResolvesBelowVocal) {
+  // Pinched-range crossing regression (RhythmLock seed 10): motif A4 (69)
+  // sits above a sustained vocal D4 (62). Over an Am chord (degree 5: A, C,
+  // E) the strict register [MOTIF_LOW=60, ceiling=62] contains only C4 (60),
+  // which clashes with the vocal (M2), so the crossing previously survived.
+  // The relaxed floor (one octave below MOTIF_LOW) must resolve to a chord
+  // tone at or below the vocal (A3=57 expected).
+  MidiTrack motif, vocal;
+  vocal.addNote(NoteEventBuilder::create(0, 1920, 62, 80));  // D4 sustain
+  motif.addNote(NoteEventBuilder::create(0, 480, 69, 80));   // A4 above vocal
+
+  test::StubHarmonyContext harmony;
+  harmony.setChordDegree(5);  // vi = Am: pitch classes 9, 0, 4
+
+  PostProcessor::fixMotifVocalClashes(motif, vocal, harmony);
+
+  EXPECT_LE(motif.notes()[0].note, 62)
+      << "Crossing note must be resolved to at or below the vocal, got "
+      << static_cast<int>(motif.notes()[0].note);
+  int pc = motif.notes()[0].note % 12;
+  EXPECT_TRUE(pc == 9 || pc == 0 || pc == 4)
+      << "Resolution must be an Am chord tone, got pitch class " << pc;
+}
+
+// ============================================================================
+// Motif Repeated-Pitch Run Breaking Tests (fixMotifRepeatedPitches)
+// ============================================================================
+
+namespace {
+
+// Longest consecutive same-pitch run over a (sorted) note sequence.
+int longestSamePitchRun(const MidiTrack& track) {
+  int run = 0;
+  int best = 0;
+  int prev = -1;
+  for (const auto& note : track.notes()) {
+    run = (note.note == prev) ? run + 1 : 1;
+    prev = note.note;
+    best = std::max(best, run);
+  }
+  return best;
+}
+
+}  // namespace
+
+TEST(PostProcessorTest, FixMotifRepeatedPitchesBreaksLongRun) {
+  // 8 consecutive E4 (64) quarter notes with no overlapping vocal.
+  MidiTrack motif, vocal;
+  for (int i = 0; i < 8; ++i) {
+    motif.addNote(NoteEventBuilder::create(static_cast<Tick>(i) * 480, 480, 64, 80));
+  }
+
+  test::StubHarmonyContext harmony;
+  harmony.setChordDegree(0);  // C major: C, E, G
+
+  PostProcessor::fixMotifRepeatedPitches(motif, vocal, harmony, 5);
+
+  EXPECT_LE(longestSamePitchRun(motif), 5) << "Run of 8 must be broken at the threshold";
+  for (const auto& note : motif.notes()) {
+    int pc = note.note % 12;
+    EXPECT_TRUE(pc == 0 || pc == 4 || pc == 7)
+        << "Replacement must be a chord tone, got pitch " << static_cast<int>(note.note);
+  }
+}
+
+TEST(PostProcessorTest, FixMotifRepeatedPitchesKeepsShortRuns) {
+  // A run exactly at the threshold must be left untouched.
+  MidiTrack motif, vocal;
+  for (int i = 0; i < 5; ++i) {
+    motif.addNote(NoteEventBuilder::create(static_cast<Tick>(i) * 480, 480, 64, 80));
+  }
+
+  test::StubHarmonyContext harmony;
+  harmony.setChordDegree(0);
+
+  PostProcessor::fixMotifRepeatedPitches(motif, vocal, harmony, 5);
+
+  for (const auto& note : motif.notes()) {
+    EXPECT_EQ(note.note, 64) << "Run at the threshold must not be modified";
+  }
+}
+
+TEST(PostProcessorTest, FixMotifRepeatedPitchesRespectsVocalCeilingPinch) {
+  // Pinched range: the vocal holds C4 (60) == MOTIF_LOW across the whole run,
+  // so the strict range [MOTIF_LOW, ceiling] contains no alternative chord
+  // tone (observed in BP1/BP5: 10-14 unison repeats). The relaxed floor must
+  // break the run with a chord tone BELOW the vocal, never above it.
+  MidiTrack motif, vocal;
+  vocal.addNote(NoteEventBuilder::create(0, 10 * 480, 60, 80));  // C4 sustain
+  for (int i = 0; i < 10; ++i) {
+    motif.addNote(NoteEventBuilder::create(static_cast<Tick>(i) * 480, 480, 60, 80));
+  }
+
+  test::StubHarmonyContext harmony;
+  harmony.setChordDegree(0);  // C major: candidates below 60 are G3 (55), E3 (52)
+
+  PostProcessor::fixMotifRepeatedPitches(motif, vocal, harmony, 5);
+
+  EXPECT_LE(longestSamePitchRun(motif), 5) << "Pinched-range run must still be broken";
+  for (const auto& note : motif.notes()) {
+    EXPECT_LE(note.note, 60) << "Run-breaking must not cross above the vocal";
+    int pc = note.note % 12;
+    EXPECT_TRUE(pc == 0 || pc == 4 || pc == 7)
+        << "Replacement must be a chord tone, got pitch " << static_cast<int>(note.note);
+  }
+}
+
+TEST(PostProcessorTest, FixMotifRepeatedPitchesSkipsOctaveStacks) {
+  // Octave-doubled onsets (two notes at the same tick) are a texture, not a
+  // melodic run; they must be left untouched.
+  MidiTrack motif, vocal;
+  for (int i = 0; i < 8; ++i) {
+    Tick start = static_cast<Tick>(i) * 480;
+    motif.addNote(NoteEventBuilder::create(start, 480, 60, 80));
+    motif.addNote(NoteEventBuilder::create(start, 480, 72, 80));
+  }
+
+  test::StubHarmonyContext harmony;
+  harmony.setChordDegree(0);
+
+  PostProcessor::fixMotifRepeatedPitches(motif, vocal, harmony, 5);
+
+  for (const auto& note : motif.notes()) {
+    EXPECT_TRUE(note.note == 60 || note.note == 72)
+        << "Stacked onsets must not be modified, got " << static_cast<int>(note.note);
   }
 }
 

@@ -3,6 +3,8 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import {
   CompositionStyle,
   deserializeConfig,
+  getBlueprintCount,
+  getBlueprintDrumsRequired,
   HookIntensity,
   init,
   MidiSketch,
@@ -209,6 +211,48 @@ describe('SongConfigBuilder', () => {
       expect(result?.warnings.some((w) => w.includes('drums'))).toBe(true);
     });
 
+    it('should force drums for every blueprint with drums_required (C++ source of truth)', () => {
+      // The builder queries midisketch_blueprint_drums_required directly, so
+      // this verifies the cascade against the C++ blueprint table for ALL
+      // blueprint IDs (no hardcoded mirror list to drift out of sync).
+      const count = getBlueprintCount();
+      expect(count).toBeGreaterThan(0);
+
+      for (let id = 0; id < count; id++) {
+        const builder = new SongConfigBuilder(0);
+        builder.setDrums(false);
+        // Clear explicit flag so the cascade may flip drums back on
+        (builder as unknown as { explicitFields: Set<string> }).explicitFields.delete(
+          'drumsEnabled',
+        );
+
+        builder.setBlueprint(id);
+        const config = builder.build();
+
+        if (getBlueprintDrumsRequired(id)) {
+          expect(config.drumsEnabled, `blueprint ${id} has drums_required`).toBe(true);
+          const result = builder.getLastChangeResult();
+          expect(
+            result?.warnings.some((w) => w.includes('drums_required')),
+            `blueprint ${id} should warn about forced drums`,
+          ).toBe(true);
+        }
+      }
+    });
+
+    it('getBlueprintDrumsRequired matches the C++ blueprint table', () => {
+      // Sanity check against production_blueprint.cpp: only the RhythmSync
+      // blueprints RhythmLock(1), IdolHyper(5), IdolCoolPop(7) require drums.
+      // Note: IdolKawaii(6) is MelodyDriven and does NOT require drums — the
+      // old hardcoded JS list [1, 5, 6, 7] had drifted from the C++ table,
+      // which is exactly why the builder now queries the module directly.
+      const required: number[] = [];
+      for (let id = 0; id < getBlueprintCount(); id++) {
+        if (getBlueprintDrumsRequired(id)) required.push(id);
+      }
+      expect(required).toEqual([1, 5, 7]);
+    });
+
     it('should warn but preserve explicit BPM for RhythmSync blueprints', () => {
       const builder = new SongConfigBuilder(0);
       builder.setBlueprint(1); // RhythmLock (RhythmSync paradigm)
@@ -311,14 +355,17 @@ describe('SongConfigBuilder', () => {
       expect(config.drumsEnabled).toBe(true);
     });
 
-    it('should force drums enabled for blueprint ID 6 (IdolKawaii)', () => {
+    it('should NOT force drums for blueprint ID 6 (IdolKawaii, MelodyDriven)', () => {
+      // IdolKawaii is MelodyDriven with drums_required=false in the C++ table.
+      // The old hardcoded JS list incorrectly included it; the builder now
+      // follows the C++ source of truth and must leave drums disabled.
       const builder = new SongConfigBuilder(0);
       (builder as unknown as { config: { drumsEnabled: boolean } }).config.drumsEnabled = false;
 
       builder.setBlueprint(6);
 
       const config = builder.build();
-      expect(config.drumsEnabled).toBe(true);
+      expect(config.drumsEnabled).toBe(false);
     });
 
     it('should force drums enabled for blueprint ID 7 (IdolCoolPop)', () => {

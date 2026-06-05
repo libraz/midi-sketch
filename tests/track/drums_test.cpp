@@ -2800,11 +2800,13 @@ TEST_F(DrumsTest, VocalSyncKickLimitedAtHighBPM) {
         }
       }
 
-      // At high BPM, kicks per bar should be reasonable (max ~6 including
-      // both vocal-sync and fallback kicks). Chorus sections with dense
-      // vocal rhythm may produce up to 6 kicks.
-      EXPECT_LE(kick_count, 6) << "Bar at tick " << bar_start << " in " << sec.name << " has "
-                               << kick_count << " kicks at BPM 170 (should be <= 6)";
+      // At high BPM, kicks per bar should be reasonable (vocal-sync kicks are
+      // capped at 3, but fill/buildup bars legitimately stack extra kicks on
+      // top — e.g. a chorus-end fill over a dense chant vocal). Bound at 8
+      // (= four-on-floor plus every off-8th), which only degenerate output
+      // would exceed.
+      EXPECT_LE(kick_count, 8) << "Bar at tick " << bar_start << " in " << sec.name << " has "
+                               << kick_count << " kicks at BPM 170 (should be <= 8)";
     }
   }
 }

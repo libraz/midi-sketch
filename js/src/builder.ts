@@ -4,6 +4,7 @@
 
 import {
   GenerationParadigm,
+  getBlueprintDrumsRequired,
   getBlueprintName,
   getBlueprintParadigm,
   getBlueprintRiffPolicy,
@@ -642,11 +643,11 @@ export class SongConfigBuilder {
    * Set blueprint with cascade detection
    *
    * Setting a blueprint may automatically change:
-   * - drumsEnabled (if blueprint requires drums: ID 1,5,6,7)
+   * - drumsEnabled (if the blueprint has drums_required=true, per the C++
+   *   blueprint table via getBlueprintDrumsRequired)
    * - hookIntensity (BehavioralLoop forces Maximum)
    * - BPM warning or auto-adjustment for RhythmSync paradigm
    *
-   * Blueprint drums_required: IDs 1 (RhythmLock), 5 (IdolHyper), 6 (IdolKawaii), 7 (IdolCoolPop)
    * BehavioralLoop (ID 9): Forces HookIntensity=Maximum, RiffPolicy=LockedPitch
    *
    * @param id Blueprint ID (0-9, 255=random)
@@ -666,13 +667,11 @@ export class SongConfigBuilder {
       const paradigm = getBlueprintParadigm(id);
       const riffPolicy = getBlueprintRiffPolicy(id);
 
-      // Blueprint IDs with drums_required=true: 1, 5, 6, 7.
-      // Source of truth is C++ midisketch_blueprint_drums_required(id) (see internal.ts
-      // Api.blueprintDrumsRequired). The builder is a pure data object without a module
-      // instance, so this list is mirrored here; keep it in sync with the C++ blueprint
-      // constraints (production_blueprint.cpp).
-      const drumsRequiredBlueprints = [1, 5, 6, 7];
-      const isDrumsRequired = drumsRequiredBlueprints.includes(id);
+      // Source of truth is the C++ blueprint table (production_blueprint.cpp),
+      // queried via midisketch_blueprint_drums_required. setBlueprint already
+      // requires an initialized module (getBlueprintParadigm above), so no
+      // hardcoded mirror list is needed.
+      const isDrumsRequired = getBlueprintDrumsRequired(id);
 
       // Handle drums_required
       if (isDrumsRequired) {

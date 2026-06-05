@@ -124,6 +124,7 @@ set(TEST_SOURCES
   integration/cross_paradigm_test.cpp
   track/chord_merge_characterization_test.cpp
   track/chord_collision_regression_test.cpp
+  track/pitch_crossing_regression_test.cpp
   track/generator_iteration_snapshot_test.cpp
   core/harmony_interface_test.cpp
   core/guide_chord_test.cpp

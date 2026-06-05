@@ -410,13 +410,15 @@ uint16_t Generator::initializeGenerationState() {
   song_.setMelodySeed(seed);
   song_.setMotifSeed(seed);
 
-  // Initialize blueprint and motif configuration
+  // Initialize blueprint, then resolve BPM BEFORE motif template selection:
+  // RhythmSync clamps BPM to 160-175, and selectRhythmSyncTemplate() weights
+  // depend on the final BPM band. Selecting the template from the unclamped
+  // mood-default BPM (<130) used to force the slow-band weights (MixedGroove/
+  // HalfNoteSparse heavy, ChordPulseStabs ~1%) for every RhythmSync song.
   initializeBlueprint(seed);
+  uint16_t bpm = resolveAndClampBpm();
   configureRhythmSyncMotif();
   configureAddictiveMotif();
-
-  // Resolve and clamp BPM for paradigm constraints
-  uint16_t bpm = resolveAndClampBpm();
 
   // Build song structure
   std::vector<Section> sections = buildSongStructure(bpm);
@@ -619,6 +621,20 @@ void Generator::applyPostProcessingEffects() {
     harmony_context_->clearNotesForTrack(TrackRole::Motif);
     harmony_context_->registerTrack(song_.motif(), TrackRole::Motif);
   }
+
+  // Break residual same-pitch runs in the motif. The clash/crossing passes
+  // above resolve each pitch individually toward the highest safe chord tone
+  // under the vocal floor, which can merge neighboring runs into one long
+  // monotone line (observed: 10-11 identical onsets on BP5/7). The fix is
+  // run-aware and ceiling-aware: it picks a different chord tone at or below
+  // the overlapping vocal, so it cannot reintroduce a clash or a crossing.
+  // Threshold 5 matches the generation-side valves (kCoordAxisMonotonyThreshold
+  // in motif.cpp, breakLongPitchRuns above).
+  constexpr int kMaxMotifSamePitchRun = 5;
+  PostProcessor::fixMotifRepeatedPitches(song_.motif(), song_.vocal(), *harmony_context_,
+                                         kMaxMotifSamePitchRun);
+  harmony_context_->clearNotesForTrack(TrackRole::Motif);
+  harmony_context_->registerTrack(song_.motif(), TrackRole::Motif);
 }
 
 void Generator::generate(const GeneratorParams& params) {

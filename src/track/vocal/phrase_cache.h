@@ -349,8 +349,15 @@ inline Tick getBreathDuration(SectionType section_type, bool is_ballad,
 constexpr float kMinVocalOnsetSeconds = 0.2f;
 
 /// @brief Calculate BPM-dependent minimum onset interval in ticks.
+///
+/// Capped at one 8th note: above ~150 BPM the raw 200ms floor exceeds an 8th
+/// (240 ticks), which silently bans straight-8th vocal runs — but RhythmSync
+/// references (vocaloid/anison leads at 160-175 BPM) are built on exactly
+/// those runs (4.87-10.34 notes/bar). This helper only feeds the RhythmSync
+/// run-based onset map, so slower human-style paradigms are unaffected.
 inline Tick calcMinOnsetInterval(uint16_t bpm) {
-  return static_cast<Tick>(std::ceil(kMinVocalOnsetSeconds * bpm * TICKS_PER_BEAT / 60.0f));
+  Tick raw = static_cast<Tick>(std::ceil(kMinVocalOnsetSeconds * bpm * TICKS_PER_BEAT / 60.0f));
+  return std::min(raw, static_cast<Tick>(TICK_EIGHTH));
 }
 
 /// @brief Position bonus constants for onset scoring.

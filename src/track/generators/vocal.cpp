@@ -312,7 +312,13 @@ void VocalGenerator::postProcessVocalNotes(
   // Merge same-pitch notes with BPM-aware gap threshold.
   // At fast tempos, gate_ratio creates larger tick gaps that should still be merged.
   // SKIP for UltraVocaloid: same-pitch rapid-fire is intentional (machine-gun style)
-  if (params.vocal_style != VocalStylePreset::UltraVocaloid) {
+  // SKIP for RhythmSync locked-rhythm leads: the chanted same-pitch runs ARE the
+  // style (vocaloid/anison references sing 4.87-10.34 notes/bar); merging them
+  // collapsed the lead to ~2 notes/bar.
+  bool keep_same_pitch_runs = params.vocal_style == VocalStylePreset::UltraVocaloid ||
+                              (params.paradigm == GenerationParadigm::RhythmSync &&
+                               params.motif.rhythm_template != MotifRhythmTemplate::None);
+  if (!keep_same_pitch_runs) {
     // BPM-aware merge gap: ~50ms in real time, minimum 30 ticks
     Tick merge_gap =
         static_cast<Tick>(std::max(30.0f, 0.05f * params.bpm * TICKS_PER_BEAT / 60.0f));

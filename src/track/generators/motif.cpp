@@ -152,10 +152,12 @@ MotifRhythmTemplate selectRhythmSyncTemplate(uint16_t bpm, std::mt19937& rng,
     // default center unless the caller explicitly asks for RhythmSync drive.
     w = {{24, 8, 18, 10, 12, 12, 10, 2, 3, 1}};
   } else if (prefer_straight_sixteenth && bpm >= 130) {
-    // RhythmSync references are not one rhythm: dense 16th reference leans into
-    // relentless 16ths, while chord-pulse reference repeats short chord-tone pulses on an
-    // 8th grid. Keep both as high-probability variants.
-    w = {{9, 12, 8, 7, 8, 10, 7, 4, 18, 25}};
+    // RhythmSync references are uniformly short-pulse motifs (short_pulse_ratio
+    // 1.0, density >= 7.95 notes/bar): relentless 16ths or repeated chord-tone
+    // stabs on an 8th grid. Center on ChordPulseStabs/StraightSixteenth with
+    // GallopDrive as the mixed variant; keep a small legato-groove tail for
+    // variety.
+    w = {{5, 13, 4, 3, 4, 6, 4, 1, 20, 40}};
   } else if (bpm >= 160) {
     // Fast RhythmSync: preserve drive without forcing continuous 16ths.
     w = {{22, 18, 7, 6, 6, 10, 10, 8, 8, 5}};
@@ -1575,7 +1577,8 @@ uint8_t resolveMotifFinalPitch(int adjusted_pitch, bool is_rhythm_lock_global,
 void emitMotifNoteCoordAxis(MidiTrack& track, IHarmonyCoordinator& harmony, const NoteEvent& note,
                             Tick absolute_tick, uint8_t final_pitch, uint8_t vel,
                             const MotifPitchResult& pitch_result, bool add_octave,
-                            uint8_t motif_range_low, uint8_t motif_range_high) {
+                            bool add_stab_voice, uint8_t motif_range_low,
+                            uint8_t motif_range_high) {
   NoteOptions opts;
   opts.start = absolute_tick;
   opts.duration = note.duration;
@@ -1627,6 +1630,23 @@ void emitMotifNoteCoordAxis(MidiTrack& track, IHarmonyCoordinator& harmony, cons
       octave_opts.desired_pitch = static_cast<uint8_t>(octave_pitch);
       octave_opts.velocity = octave_vel;
       createNoteAndAdd(track, harmony, octave_opts);
+    }
+  }
+
+  // ChordPulseStabs: add a chord-tone stab voice below the lead pulse.
+  // RhythmSync chord-pulse references play these pulses as 2+ voice synth
+  // stabs, not single notes. The voice is the highest chord tone at least a
+  // 3rd below the lead, so the dyad is always a consonant triad interval.
+  if (add_stab_voice && final_pitch >= motif_range_low + 3) {
+    int8_t stab_degree = harmony.getChordDegreeAt(absolute_tick);
+    ChordToneHelper stab_helper(stab_degree);
+    auto candidates =
+        stab_helper.allInRange(motif_range_low, static_cast<uint8_t>(final_pitch - 3));
+    if (!candidates.empty()) {
+      NoteOptions stab_opts = opts;
+      stab_opts.desired_pitch = candidates.back();
+      stab_opts.velocity = static_cast<uint8_t>(vel * 0.8f);
+      createNoteAndAdd(track, harmony, stab_opts);
     }
   }
 }
@@ -1870,8 +1890,10 @@ void generateMotifForSection(MidiTrack& track, const Section& section, const Ful
       // Emit note based on mode. Pass eff_range_high so any octave-up shift
       // (PreserveContour) or doubling still respects the vocal ceiling.
       if (is_rhythm_lock_global) {
+        bool add_stab_voice =
+            (motif_params.rhythm_template == MotifRhythmTemplate::ChordPulseStabs);
         emitMotifNoteCoordAxis(track, *harmony, note, absolute_tick, final_pitch, vel, pitch_result,
-                               add_octave, motif_range_low, eff_range_high);
+                               add_octave, add_stab_voice, motif_range_low, eff_range_high);
         bar_note_count[current_bar]++;
       } else {
         if (!emitMotifNoteStandard(track, *harmony, note, absolute_tick, final_pitch, vel,

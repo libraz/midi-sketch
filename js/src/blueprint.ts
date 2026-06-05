@@ -102,6 +102,18 @@ export function getBlueprintWeight(id: number): number {
 }
 
 /**
+ * Whether the blueprint requires drums (drums_required constraint).
+ *
+ * Source of truth is the C++ blueprint table (production_blueprint.cpp),
+ * exposed via midisketch_blueprint_drums_required.
+ *
+ * @param id Blueprint ID (0-9)
+ */
+export function getBlueprintDrumsRequired(id: number): boolean {
+  return getApi().blueprintDrumsRequired(id) !== 0;
+}
+
+/**
  * Get all blueprints as an array
  */
 export function getBlueprints(): BlueprintInfo[] {

@@ -1285,11 +1285,14 @@ TEST(AuxBlueprintProfile, BalladUsesSustainPad) {
 }
 
 TEST(AuxBlueprintProfile, RhythmLockUsesPulseLoopAndGrooveAccent) {
-  // RhythmLock blueprint (ID 1) should use rhythmic functions
+  // RhythmLock blueprint (ID 1) should use rhythmic functions.
+  // Chorus is PulseLoop too: RhythmSync references hold ONE aux pulse cell
+  // for most of the song (repeat_cell_consistency 0.625-0.742), so switching
+  // the chorus to a GrooveAccent cell broke the loop identity.
   const auto& bp = getProductionBlueprint(1);
   EXPECT_EQ(bp.aux_profile.intro_function, AuxFunction::PulseLoop);
   EXPECT_EQ(bp.aux_profile.verse_function, AuxFunction::PulseLoop);
-  EXPECT_EQ(bp.aux_profile.chorus_function, AuxFunction::GrooveAccent);
+  EXPECT_EQ(bp.aux_profile.chorus_function, AuxFunction::PulseLoop);
 }
 
 TEST(AuxBlueprintProfile, IdolKawaiiUsesMelodicHook) {
@@ -1373,7 +1376,10 @@ TEST(AuxBlueprintProfile, AllBlueprintsHaveValidAuxProfile) {
     EXPECT_GT(bp.aux_profile.velocity_scale, 0.0f) << "BP " << static_cast<int>(i);
     EXPECT_LE(bp.aux_profile.velocity_scale, 1.0f) << "BP " << static_cast<int>(i);
     EXPECT_GT(bp.aux_profile.density_scale, 0.0f) << "BP " << static_cast<int>(i);
-    EXPECT_LE(bp.aux_profile.density_scale, 1.0f) << "BP " << static_cast<int>(i);
+    // density_scale may exceed 1.0 as a boost multiplier (BP1 uses 1.25 to
+    // keep the pulse loop dense after vocal-clash removal); event
+    // probabilities downstream are clamped, so cap the sanity bound at 1.5.
+    EXPECT_LE(bp.aux_profile.density_scale, 1.5f) << "BP " << static_cast<int>(i);
     // range_ceiling should be negative or zero (aux shouldn't exceed vocal)
     EXPECT_LE(bp.aux_profile.range_ceiling, 0) << "BP " << static_cast<int>(i);
   }

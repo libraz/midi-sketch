@@ -635,7 +635,7 @@ void ensureMinVoicesAtTick(MidiTrack& track, IHarmonyContext& harmony, Tick tick
 
 void generateChordBar(MidiTrack& track, Tick bar_start, const VoicedChord& voicing,
                       ChordRhythm rhythm, SectionType section, Mood mood, IHarmonyContext& harmony,
-                      uint8_t vocal_ceiling = 0) {
+                      uint8_t vocal_ceiling = 0, bool thin_eighth_pulse = false) {
   uint8_t vel = calculateVelocity(section, 0, mood);
   uint8_t vel_weak = static_cast<uint8_t>(vel * 0.8f);
   ChordVoicingState state;
@@ -704,6 +704,18 @@ void generateChordBar(MidiTrack& track, Tick bar_start, const VoicedChord& voici
           beat_vel = static_cast<uint8_t>(vel * 0.7f);
         } else {
           beat_vel = static_cast<uint8_t>(vel * 0.6f);
+        }
+
+        // Thin pulse (RhythmSync): full voicing only on beats 1 and 3, single
+        // low note on the other eighths. Reference piano comping (henceforth
+        // 12.9 notes/bar) keeps an eighth pulse but plays mostly single notes
+        // with chords on accents; a full voicing on every eighth lands at
+        // 24+/bar, far above the reference chord range (7.3-12.9).
+        if (thin_eighth_pulse && eighth != 0 && eighth != 4) {
+          state.reset(tick);
+          addChordNoteWithState(track, harmony, tick, TICK_EIGHTH, root, beat_vel, state,
+                                vocal_ceiling);
+          continue;
         }
 
         state.reset(tick);
@@ -1070,7 +1082,8 @@ bool tryCadenceFix(ChordBarContext& ctx) {
     }
 
     generateChordBar(ctx.track, ctx.bar_start, dom_voicing, ctx.rhythm, ctx.section->type,
-                     ctx.params.mood, ctx.harmony, ctx.bar_vocal_high);
+                     ctx.params.mood, ctx.harmony, ctx.bar_vocal_high,
+                     ctx.params.paradigm == GenerationParadigm::RhythmSync);
     ctx.updateConsecutiveVoicing(dom_voicing);
     ctx.prev_voicing = dom_voicing;
     ctx.has_prev = true;
@@ -1106,7 +1119,8 @@ bool tryCadenceFix(ChordBarContext& ctx) {
     }
 
     generateChordBar(ctx.track, ctx.bar_start, ii_voicing, ctx.rhythm, ctx.section->type,
-                     ctx.params.mood, ctx.harmony, ctx.bar_vocal_high);
+                     ctx.params.mood, ctx.harmony, ctx.bar_vocal_high,
+                     ctx.params.paradigm == GenerationParadigm::RhythmSync);
     ctx.updateConsecutiveVoicing(ii_voicing);
     ctx.prev_voicing = ii_voicing;
     ctx.has_prev = true;
@@ -1487,35 +1501,30 @@ bool trySusResolution(ChordBarContext& ctx) {
 
 /// @brief Normal chord generation for a bar + RegisterAdd + PeakLevel doubling.
 void generateNormalBar(ChordBarContext& ctx) {
+  bool thin_pulse = ctx.params.paradigm == GenerationParadigm::RhythmSync;
   generateChordBar(ctx.track, ctx.bar_start, ctx.voicing, ctx.rhythm, ctx.section->type,
-                   ctx.params.mood, ctx.harmony, ctx.bar_vocal_high);
+                   ctx.params.mood, ctx.harmony, ctx.bar_vocal_high, thin_pulse);
 
-  if (ctx.params.paradigm == GenerationParadigm::RhythmSync) {
+  // RhythmSync eighth bed: keep eighth-note motion under sparse rhythms only.
+  // When the rhythm is already Eighth, the (thinned) pulse covers the motion,
+  // and reference chord comping sits at 7.3-12.9 notes/bar — the old
+  // root+fifth-on-every-eighth bed alone added 16/bar on top of the voicing.
+  // For Quarter/Half/Whole bars, fill only the off-beat eighths with a low
+  // root (+4/bar) so the chord track still tracks the RhythmSync pulse.
+  if (ctx.params.paradigm == GenerationParadigm::RhythmSync &&
+      ctx.rhythm != chord_voicing::ChordRhythm::Eighth) {
     uint8_t vel = calculateVelocity(ctx.section->type, 0, ctx.params.mood);
     uint8_t bed_vel = static_cast<uint8_t>(std::clamp(static_cast<int>(vel * 0.55f), 30, 127));
     int root_low = static_cast<int>(ctx.root) - 12;
-    int fifth_low = root_low + 7;
     while (root_low < CHORD_LOW) {
       root_low += 12;
-      fifth_low += 12;
-    }
-    while (fifth_low > getEffectiveChordHigh(ctx.bar_vocal_high) && fifth_low - 12 >= CHORD_LOW) {
-      fifth_low -= 12;
     }
 
-    for (int eighth = 0; eighth < 8; ++eighth) {
+    for (int eighth = 1; eighth < 8; eighth += 2) {
       Tick tick = ctx.bar_start + eighth * TICK_EIGHTH;
-      uint8_t tick_vel = (eighth == 0 || eighth == 4)
-                             ? static_cast<uint8_t>(std::min(127, static_cast<int>(bed_vel) + 8))
-                             : bed_vel;
       if (root_low >= CHORD_LOW && root_low <= getEffectiveChordHigh(ctx.bar_vocal_high)) {
         addSafeChordNote(ctx.track, ctx.harmony, tick, TICK_EIGHTH, static_cast<uint8_t>(root_low),
-                         tick_vel, ctx.bar_vocal_high);
-      }
-      if (fifth_low >= CHORD_LOW && fifth_low <= getEffectiveChordHigh(ctx.bar_vocal_high)) {
-        addSafeChordNote(ctx.track, ctx.harmony, tick, TICK_EIGHTH, static_cast<uint8_t>(fifth_low),
-                         static_cast<uint8_t>(std::max(30, static_cast<int>(tick_vel) - 6)),
-                         ctx.bar_vocal_high);
+                         bed_vel, ctx.bar_vocal_high);
       }
     }
   }

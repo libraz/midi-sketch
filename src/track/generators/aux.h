@@ -9,6 +9,7 @@
 #ifndef MIDISKETCH_TRACK_GENERATORS_AUX_H
 #define MIDISKETCH_TRACK_GENERATORS_AUX_H
 
+#include <array>
 #include <optional>
 #include <random>
 #include <unordered_map>
@@ -286,6 +287,18 @@ class AuxGenerator : public TrackBase {
 
   std::unordered_map<AuxCacheKey, CachedAuxPhrase, AuxCacheKeyHash> phrase_cache_;
   std::optional<Motif> cached_chorus_motif_;  ///< Chorus motif for intro placement
+
+  /// One-bar loop masks cached per song so PulseLoop/GrooveAccent repeat the
+  /// same groove cell across sections (RhythmSync references hold one aux cell
+  /// for most of the song: repeat_cell_consistency 0.625-0.742). Reset at the
+  /// start of generateFromSongContext.
+  std::optional<std::array<bool, 8>> pulse_loop_mask_;
+  struct GrooveAccentMask {
+    bool beat2;
+    bool beat4;
+    std::array<bool, 4> fills;
+  };
+  std::optional<GrooveAccentMask> groove_accent_mask_;
 };
 
 }  // namespace midisketch

@@ -144,8 +144,10 @@ void generateBassTrack(MidiTrack& track, const Song& song, const GeneratorParams
 /// @param pattern Current bass pattern (affects articulation choices)
 /// @param mood Current mood (affects articulation for WholeNote)
 /// @param harmony Optional harmony context for collision checking during legato extension
+/// @param legato_eighths RhythmSync: skip Driving off-8th staccato (references
+/// play full-length 8th pulses; short_pulse_ratio 0.0)
 void applyBassArticulation(MidiTrack& track, BassPattern pattern, Mood mood,
-                           const IHarmonyContext* harmony = nullptr);
+                           const IHarmonyContext* harmony = nullptr, bool legato_eighths = false);
 
 /// @brief Adjust bass density based on section density_percent.
 ///

@@ -164,9 +164,9 @@ uint8_t lowestOverlappingVocal(Tick start, Tick end, const MidiTrack& vocal) {
 // the dissonance pass's careful resolution is preserved. This runs in
 // post-processing (after humanization) so the timing comparison is final and
 // exactly mirrors the crossing check.
-uint8_t resolveMotifAboveVocal(uint8_t original_pitch, uint8_t ceiling, int8_t degree, Tick start,
-                               Tick duration, const MidiTrack& vocal,
-                               const ICollisionDetector& harmony) {
+uint8_t resolveMotifAboveVocalImpl(uint8_t original_pitch, uint8_t ceiling, int8_t degree,
+                                   Tick start, Tick duration, const MidiTrack& vocal,
+                                   const ICollisionDetector& harmony, int floor_limit) {
   Tick end = start + duration;
   ChordTones ct = getChordTones(degree);
 
@@ -176,9 +176,9 @@ uint8_t resolveMotifAboveVocal(uint8_t original_pitch, uint8_t ceiling, int8_t d
   for (uint8_t i = 0; i < ct.count; ++i) {
     int ct_pc = ct.pitch_classes[i];
     if (ct_pc < 0) continue;
-    for (int oct = MOTIF_LOW / 12; oct <= MOTIF_HIGH / 12; ++oct) {
+    for (int oct = floor_limit / 12; oct <= MOTIF_HIGH / 12; ++oct) {
       int candidate = oct * 12 + ct_pc;
-      if (candidate < MOTIF_LOW || candidate > static_cast<int>(ceiling)) continue;
+      if (candidate < floor_limit || candidate > static_cast<int>(ceiling)) continue;
       uint8_t cand = static_cast<uint8_t>(candidate);
       if (clashesWithVocal(cand, start, end, vocal)) continue;
       if (!harmony.isConsonantWithOtherTracks(cand, start, duration, TrackRole::Motif)) continue;
@@ -190,10 +190,10 @@ uint8_t resolveMotifAboveVocal(uint8_t original_pitch, uint8_t ceiling, int8_t d
   // Strategy 2: octave-down shift that lands at or below the ceiling and stays
   // in register, without clashing with the vocal.
   int shifted = static_cast<int>(original_pitch);
-  while (shifted > static_cast<int>(ceiling) && shifted - 12 >= MOTIF_LOW) {
+  while (shifted > static_cast<int>(ceiling) && shifted - 12 >= floor_limit) {
     shifted -= 12;
   }
-  if (shifted >= MOTIF_LOW && shifted <= static_cast<int>(ceiling) && shifted != original_pitch &&
+  if (shifted >= floor_limit && shifted <= static_cast<int>(ceiling) && shifted != original_pitch &&
       !clashesWithVocal(static_cast<uint8_t>(shifted), start, end, vocal)) {
     return static_cast<uint8_t>(shifted);
   }
@@ -212,9 +212,9 @@ uint8_t resolveMotifAboveVocal(uint8_t original_pitch, uint8_t ceiling, int8_t d
     for (uint8_t i = 0; i < ct.count; ++i) {
       int ct_pc = ct.pitch_classes[i];
       if (ct_pc < 0) continue;
-      for (int oct = MOTIF_LOW / 12; oct <= MOTIF_HIGH / 12; ++oct) {
+      for (int oct = floor_limit / 12; oct <= MOTIF_HIGH / 12; ++oct) {
         int candidate = oct * 12 + ct_pc;
-        if (candidate < MOTIF_LOW || candidate > MOTIF_HIGH) continue;
+        if (candidate < floor_limit || candidate > MOTIF_HIGH) continue;
         uint8_t cand = static_cast<uint8_t>(candidate);
         if (clashesWithVocal(cand, start, end, vocal)) continue;
         if (best_vocal == 0 || cand < best_vocal) best_vocal = cand;
@@ -235,6 +235,23 @@ uint8_t resolveMotifAboveVocal(uint8_t original_pitch, uint8_t ceiling, int8_t d
   // No better option: leave the note unchanged. The caller treats an unchanged
   // result as "no fix".
   return original_pitch;
+}
+
+uint8_t resolveMotifAboveVocal(uint8_t original_pitch, uint8_t ceiling, int8_t degree, Tick start,
+                               Tick duration, const MidiTrack& vocal,
+                               const ICollisionDetector& harmony) {
+  uint8_t fixed = resolveMotifAboveVocalImpl(original_pitch, ceiling, degree, start, duration,
+                                             vocal, harmony, MOTIF_LOW);
+  if (fixed != original_pitch) return fixed;
+
+  // Pinched-range relaxation: when the vocal floor sits at or near MOTIF_LOW,
+  // the strict register [MOTIF_LOW, ceiling] can contain no resolution at all
+  // (observed in RhythmLock: vocal D4 over an Am riff leaves only clashing
+  // C4/E4 below the ceiling, so the crossing A4 stayed). Allow one octave
+  // below the static floor; the vocal-clash and consonance checks still guard
+  // the low register.
+  return resolveMotifAboveVocalImpl(original_pitch, ceiling, degree, start, duration, vocal,
+                                    harmony, MOTIF_LOW - 12);
 }
 
 }  // namespace
@@ -345,48 +362,111 @@ void PostProcessor::fixMotifRepeatedPitches(MidiTrack& motif, const MidiTrack& v
     return;
   }
 
-  std::sort(motif_notes.begin(), motif_notes.end(), [](const NoteEvent& a, const NoteEvent& b) {
-    if (a.start_tick != b.start_tick) return a.start_tick < b.start_tick;
-    return a.note < b.note;
+  // Process in chronological order WITHOUT reordering the underlying vector
+  // (callers and tests rely on creation order being preserved).
+  std::vector<size_t> order(motif_notes.size());
+  for (size_t i = 0; i < order.size(); ++i) order[i] = i;
+  std::sort(order.begin(), order.end(), [&motif_notes](size_t a, size_t b) {
+    if (motif_notes[a].start_tick != motif_notes[b].start_tick) {
+      return motif_notes[a].start_tick < motif_notes[b].start_tick;
+    }
+    return motif_notes[a].note < motif_notes[b].note;
   });
 
-  uint8_t last_pitch = motif_notes.front().note;
+  uint8_t last_pitch = 0;
   int consecutive = 0;
+  bool has_prev = false;
 
-  for (auto& note : motif_notes) {
-    if (note.note == last_pitch) {
+  for (size_t pos = 0; pos < order.size(); ++pos) {
+    auto& note = motif_notes[order[pos]];
+
+    // Octave-doubling stacks (multiple notes at the same onset) are a texture,
+    // not a melodic run; skip them and reset run tracking.
+    bool in_stack =
+        (pos + 1 < order.size() && motif_notes[order[pos + 1]].start_tick == note.start_tick) ||
+        (pos > 0 && motif_notes[order[pos - 1]].start_tick == note.start_tick);
+    if (in_stack) {
+      has_prev = false;
+      consecutive = 0;
+      continue;
+    }
+
+    if (has_prev && note.note == last_pitch) {
       ++consecutive;
     } else {
       last_pitch = note.note;
       consecutive = 1;
+      has_prev = true;
     }
 
     if (consecutive <= max_consecutive) {
       continue;
     }
 
+    // Run exceeded: pick a DIFFERENT chord tone at or below the local vocal
+    // floor that neither clashes with the vocal nor with any registered track.
+    // Earlier passes (fixMotifVocalClashes dissonance/crossing resolution,
+    // voice-limit freeze re-quantization) resolve each pitch individually and
+    // can merge neighboring same-pitch runs into one long monotone line; this
+    // is the run-aware counterpart that restores melodic variety without
+    // reintroducing a clash or a register crossing.
     uint8_t original_pitch = note.note;
+    Tick note_end = note.start_tick + note.duration;
+    uint8_t ceiling = lowestOverlappingVocal(note.start_tick, note_end, vocal);
     int8_t degree = harmony.getChordDegreeAt(note.start_tick);
-    uint8_t new_pitch =
-        findSafeChordTone(original_pitch, degree, note.start_tick, note.duration, vocal, harmony);
-    if (new_pitch == original_pitch) {
-      new_pitch = findSafeChordTone(
-          static_cast<uint8_t>(std::clamp(static_cast<int>(original_pitch) + 4, 0, 127)), degree,
-          note.start_tick, note.duration, vocal, harmony);
-    }
+    ChordTones ct = getChordTones(degree);
 
-    if (new_pitch != original_pitch) {
-#ifdef MIDISKETCH_NOTE_PROVENANCE
-      note.addTransformStep(TransformStepType::CollisionAvoid, original_pitch, new_pitch, 0, 0);
-      note.prov_original_pitch = original_pitch;
-      note.prov_source = static_cast<uint8_t>(NoteSource::CollisionAvoid);
-      note.prov_lookup_tick = note.start_tick;
-      note.prov_chord_degree = degree;
-#endif
-      note.note = new_pitch;
-      last_pitch = new_pitch;
-      consecutive = 1;
+    struct Candidate {
+      uint8_t pitch;
+      int distance;
+    };
+    std::vector<Candidate> candidates;
+    int base_octave = original_pitch / 12;
+    auto collectCandidates = [&](int floor_limit) {
+      for (uint8_t i = 0; i < ct.count; ++i) {
+        int ct_pc = ct.pitch_classes[i];
+        if (ct_pc < 0) continue;
+        for (int oct = base_octave - 2; oct <= base_octave + 1; ++oct) {
+          int cand = oct * 12 + ct_pc;
+          if (cand < floor_limit || cand > MOTIF_HIGH) continue;
+          if (cand == static_cast<int>(original_pitch)) continue;  // must break the run
+          // Never cross above the overlapping vocal (ceiling == 0 means vocal rest).
+          if (ceiling > 0 && cand > static_cast<int>(ceiling)) continue;
+          uint8_t cp = static_cast<uint8_t>(cand);
+          if (clashesWithVocal(cp, note.start_tick, note_end, vocal)) continue;
+          if (!harmony.isConsonantWithOtherTracks(cp, note.start_tick, note.duration,
+                                                  TrackRole::Motif)) {
+            continue;
+          }
+          candidates.push_back({cp, std::abs(cand - static_cast<int>(original_pitch))});
+        }
+      }
+    };
+    collectCandidates(MOTIF_LOW);
+    if (candidates.empty()) {
+      // Pinched-range relaxation: when the vocal floor sits at or near
+      // MOTIF_LOW, the strict range can contain no alternative chord tone at
+      // all (observed: vocal C4 over MOTIF_LOW=C4 pins every candidate to the
+      // run pitch itself, yielding 10-14 unison repeats). Retry one octave
+      // below the static floor; the consonance check against the bass and
+      // other tracks still guards the low register from mud.
+      collectCandidates(MOTIF_LOW - 12);
     }
+    if (candidates.empty()) {
+      continue;  // Consonance wins over monotony: keep the run.
+    }
+    std::sort(candidates.begin(), candidates.end(),
+              [](const Candidate& a, const Candidate& b) { return a.distance < b.distance; });
+    uint8_t new_pitch = candidates.front().pitch;
+
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+    note.addTransformStep(TransformStepType::ChordToneSnap, original_pitch, new_pitch, 0, 0);
+    note.prov_lookup_tick = note.start_tick;
+    note.prov_chord_degree = degree;
+#endif
+    note.note = new_pitch;
+    last_pitch = new_pitch;
+    consecutive = 1;
   }
 }
 

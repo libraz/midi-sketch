@@ -197,6 +197,10 @@ void AuxGenerator::generateFromSongContext(MidiTrack& track, const SongContext& 
     return;
   }
 
+  // New song: re-roll the per-song loop masks (see header comment).
+  pulse_loop_mask_.reset();
+  groove_accent_mask_.reset();
+
   const MidiTrack& vocal_track = *song_ctx.vocal_track;
   const auto& progression = *song_ctx.progression;
 
@@ -440,12 +444,26 @@ void AuxGenerator::generateFromSongContext(MidiTrack& track, const SongContext& 
     // Get chord degree for potential pitch variation
     int8_t chord_degree = harmony.getChordDegreeAt(note.start_tick);
 
+    // Per-onset vocal ceiling: the section-level aux_vocal_ceiling is derived
+    // from the vocal's HIGHEST pitch, so the monotony tracker below could
+    // still raise a pitch above a locally lower vocal note (register
+    // crossing). Cap at the lowest vocal pitch overlapping this note's span,
+    // mirroring resolveAuxPitch and the Motif per-onset ceiling.
+    uint8_t note_ceiling = aux_vocal_ceiling;
+    {
+      uint8_t local_vocal_low = harmony.getLowestPitchForTrackInRange(
+          note.start_tick, note.start_tick + note.duration, TrackRole::Vocal);
+      if (local_vocal_low > 0) {
+        note_ceiling = std::min(note_ceiling, std::max(local_vocal_low, AUX_LOW));
+      }
+    }
+
     // Use PitchMonotonyTracker to suggest initial pitch based on desired pitch
     PitchMonotonyTracker temp_tracker(/*enable_leap_guard=*/true);
     temp_tracker.last_pitch = actual_last_pitch;
     temp_tracker.consecutive_count = actual_consecutive_count;
     uint8_t suggested_pitch =
-        temp_tracker.trackAndSuggest(note.note, AUX_LOW, aux_vocal_ceiling, chord_degree);
+        temp_tracker.trackAndSuggest(note.note, AUX_LOW, note_ceiling, chord_degree);
 
     NoteOptions opts;
     opts.start = note.start_tick;
@@ -470,7 +488,7 @@ void AuxGenerator::generateFromSongContext(MidiTrack& track, const SongContext& 
     opts.role = TrackRole::Aux;
     opts.preference = PitchPreference::PreferChordTones;
     opts.range_low = AUX_LOW;
-    opts.range_high = aux_vocal_ceiling;
+    opts.range_high = note_ceiling;
     opts.source = NoteSource::Aux;
     opts.chord_boundary = ChordBoundaryPolicy::PreferSafe;
     // Record original pitch for provenance (before monotony tracker adjustment)
@@ -726,11 +744,54 @@ std::vector<NoteEvent> AuxGenerator::generatePulseLoop(const AuxContext& ctx,
   Tick current_tick = ctx.section_start;
   size_t pattern_idx = 0;
 
+  // A pulse loop must actually loop: rolling every 8th slot independently
+  // reads as random onsets (repeat_cell_consistency 0.17 vs RhythmSync
+  // reference 0.625-0.742). Roll a one-bar slot mask once per SONG and repeat
+  // it verbatim across sections; density_ratio still controls bar fullness.
+  if (!pulse_loop_mask_) {
+    std::array<bool, 8> mask{};
+    float slot_p = config.density_ratio * meta.base_density;
+    int active_slots = 0;
+    for (auto& slot : mask) {
+      slot = rng_util::rollProbability(rng, slot_p);
+      if (slot) ++active_slots;
+    }
+    if (active_slots < 2) {
+      mask[0] = mask[4] = true;  // Guarantee a minimal half-note pulse
+    }
+    pulse_loop_mask_ = mask;
+  }
+  const std::array<bool, 8>& slot_mask = *pulse_loop_mask_;
+
+  // Breathing slots: the last active slot drops on 1 bar in 4 and the first
+  // active slot on 1 bar in 8, so the loop breathes and
+  // repeat_cell_consistency stays inside the reference band (0.625-0.742)
+  // rather than saturating at 1.0.
+  int last_active_slot = -1;
+  int first_active_slot = -1;
+  for (int i = 0; i < 8; ++i) {
+    if (slot_mask[i]) {
+      if (first_active_slot < 0) first_active_slot = i;
+      last_active_slot = i;
+    }
+  }
+
   while (current_tick < ctx.section_end) {
-    // A2: Apply density ratio (EventProbability behavior)
-    if (!rng_util::rollProbability(rng, config.density_ratio * meta.base_density)) {
+    // A2: Apply density ratio (EventProbability behavior, per-bar loop mask)
+    int slot = static_cast<int>((current_tick % TICKS_PER_BAR) / TICK_EIGHTH);
+    if (!slot_mask[slot]) {
       current_tick += note_duration;
       continue;
+    }
+    if (slot == last_active_slot || slot == first_active_slot) {
+      Tick bar_idx = (current_tick - ctx.section_start) / TICKS_PER_BAR;
+      bool drop_last = (slot == last_active_slot && bar_idx % 4 == 3);
+      bool drop_first =
+          (slot == first_active_slot && last_active_slot != first_active_slot && bar_idx % 8 == 1);
+      if (drop_last || drop_first) {
+        current_tick += note_duration;
+        continue;
+      }
     }
 
     uint8_t pitch = pattern_pitches[pattern_idx % pattern_pitches.size()];
@@ -745,40 +806,28 @@ std::vector<NoteEvent> AuxGenerator::generatePulseLoop(const AuxContext& ctx,
     pattern_idx++;
   }
 
-  // Call-and-response: Add response notes at vocal rest positions (60% probability)
-  // This creates musical conversation with the vocal line
+  // Call-and-response: accent the existing loop note nearest each vocal rest.
+  // Adding separate response notes (even snapped onto loop slots) duplicates
+  // onset positions, which reads as a different bar cell in repeat-cell
+  // metrics and breaks the loop identity RhythmSync references hold. A
+  // velocity accent gives the same conversational lift without extra onsets.
   if (ctx.rest_positions != nullptr && !ctx.rest_positions->empty()) {
     constexpr float kResponseProbability = 0.72f;
-    uint8_t response_velocity =
-        static_cast<uint8_t>(std::min(static_cast<int>(velocity * 1.1f), 127));  // Slightly louder
-
     for (const Tick& rest_start : *ctx.rest_positions) {
-      if (rest_start < ctx.section_start || rest_start >= ctx.section_end) {
+      Tick snapped = ((rest_start + TICK_EIGHTH / 2) / TICK_EIGHTH) * TICK_EIGHTH;
+      if (snapped < ctx.section_start || snapped >= ctx.section_end) {
         continue;
       }
-
-      // 60% chance to add a response note at this rest position
       if (!rng_util::rollProbability(rng, kResponseProbability)) {
         continue;
       }
-
-      // Get chord tones at this specific tick
-      int8_t rest_chord_degree = harmony.getChordDegreeAt(rest_start);
-      ChordTones rest_ct = getChordTones(rest_chord_degree);
-      if (rest_ct.count == 0) continue;
-
-      // Choose a chord tone (prefer 5th for response)
-      int pc = (rest_ct.count > 1) ? rest_ct.pitch_classes[1] : rest_ct.pitch_classes[0];
-      if (pc < 0) continue;
-
-      uint8_t response_pitch = static_cast<uint8_t>(base_octave * 12 + pc);
-      response_pitch = std::clamp(response_pitch, aux_low, aux_high);
-
-      // Check for safety
-      response_pitch = resolveAuxPitch(response_pitch, rest_start, TICK_QUARTER, ctx.main_melody,
-                                       harmony, aux_low, aux_high, meta.dissonance_tolerance);
-
-      result.push_back({rest_start, TICK_QUARTER, response_pitch, response_velocity});
+      for (auto& note : result) {
+        if (note.start_tick == snapped) {
+          note.velocity = static_cast<uint8_t>(
+              std::min<int>(static_cast<int>(static_cast<float>(note.velocity) * 1.18f), 127));
+          break;
+        }
+      }
     }
   }
 
@@ -896,6 +945,28 @@ std::vector<NoteEvent> AuxGenerator::generateGrooveAccent(const AuxContext& ctx,
   float fill_probability = std::clamp(config.density_ratio * meta.base_density * 0.85f, 0.0f, 0.9f);
   uint8_t fill_velocity = static_cast<uint8_t>(velocity * 0.82f);
 
+  // Loop-once principle (same as PulseLoop): roll the backbeat presence and
+  // the offbeat fill mask once per SONG, then repeat the resulting one-bar
+  // groove cell verbatim across sections. Per-bar re-rolls read as random
+  // onsets instead of a groove (repeat_cell_consistency far below RhythmSync
+  // references).
+  if (!groove_accent_mask_) {
+    GrooveAccentMask mask{};
+    float backbeat_p = config.density_ratio * meta.base_density;
+    mask.beat2 = rng_util::rollProbability(rng, backbeat_p);
+    mask.beat4 = rng_util::rollProbability(rng, backbeat_p);
+    for (auto& fill : mask.fills) {
+      fill = rng_util::rollProbability(rng, fill_probability);
+    }
+    if (!mask.beat2 && !mask.beat4) {
+      mask.beat2 = mask.beat4 = true;  // GrooveAccent without a backbeat is empty
+    }
+    groove_accent_mask_ = mask;
+  }
+  bool beat2_on = groove_accent_mask_->beat2;
+  bool beat4_on = groove_accent_mask_->beat4;
+  const std::array<bool, 4>& fill_mask = groove_accent_mask_->fills;
+
   // A5: Place accents on beat 2 and 4 (backbeat)
   // Future: Could vary based on VocalGrooveFeel from params
   Tick bar_length = TICKS_PER_BAR;
@@ -904,24 +975,19 @@ std::vector<NoteEvent> AuxGenerator::generateGrooveAccent(const AuxContext& ctx,
   while (current_bar < ctx.section_end) {
     // Beat 2
     Tick beat2 = current_bar + TICKS_PER_BEAT;
-    if (beat2 >= ctx.section_start && beat2 < ctx.section_end) {
-      // A2: Apply density ratio (EventProbability behavior)
-      if (rng_util::rollProbability(rng, config.density_ratio * meta.base_density)) {
-        // A7: Use function-specific dissonance tolerance (very low for accents)
-        uint8_t pitch = resolveAuxPitch(root_pitch, beat2, TICK_EIGHTH, ctx.main_melody, harmony,
-                                        aux_low, aux_high, meta.dissonance_tolerance);
-        result.push_back({beat2, TICK_EIGHTH, pitch, velocity});
-      }
+    if (beat2_on && beat2 >= ctx.section_start && beat2 < ctx.section_end) {
+      // A7: Use function-specific dissonance tolerance (very low for accents)
+      uint8_t pitch = resolveAuxPitch(root_pitch, beat2, TICK_EIGHTH, ctx.main_melody, harmony,
+                                      aux_low, aux_high, meta.dissonance_tolerance);
+      result.push_back({beat2, TICK_EIGHTH, pitch, velocity});
     }
 
     // Beat 4
     Tick beat4 = current_bar + TICKS_PER_BEAT * 3;
-    if (beat4 >= ctx.section_start && beat4 < ctx.section_end) {
-      if (rng_util::rollProbability(rng, config.density_ratio * meta.base_density)) {
-        uint8_t pitch = resolveAuxPitch(root_pitch, beat4, TICK_EIGHTH, ctx.main_melody, harmony,
-                                        aux_low, aux_high, meta.dissonance_tolerance);
-        result.push_back({beat4, TICK_EIGHTH, pitch, velocity});
-      }
+    if (beat4_on && beat4 >= ctx.section_start && beat4 < ctx.section_end) {
+      uint8_t pitch = resolveAuxPitch(root_pitch, beat4, TICK_EIGHTH, ctx.main_melody, harmony,
+                                      aux_low, aux_high, meta.dissonance_tolerance);
+      result.push_back({beat4, TICK_EIGHTH, pitch, velocity});
     }
 
     // Offbeat fills on the "and" of every beat (5th for melodic contrast).
@@ -930,7 +996,7 @@ std::vector<NoteEvent> AuxGenerator::generateGrooveAccent(const AuxContext& ctx,
     for (int beat = 0; beat < 4; ++beat) {
       Tick offbeat = current_bar + beat * TICKS_PER_BEAT + TICK_EIGHTH;
       if (offbeat < ctx.section_start || offbeat >= ctx.section_end) continue;
-      if (!rng_util::rollProbability(rng, fill_probability)) continue;
+      if (!fill_mask[beat]) continue;
 
       uint8_t desired = offbeat_pcs[beat];
       uint8_t pitch = resolveAuxPitch(desired, offbeat, TICK_EIGHTH, ctx.main_melody, harmony,

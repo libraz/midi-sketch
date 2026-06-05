@@ -19,6 +19,7 @@ export {
   GenerationParadigm,
   type GenerationParadigmType,
   getBlueprintCount,
+  getBlueprintDrumsRequired,
   getBlueprintName,
   getBlueprintParadigm,
   getBlueprintRiffPolicy,
