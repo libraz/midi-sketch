@@ -29,6 +29,8 @@ bool isStrongBeat(Tick tick);
 ///
 /// On beat 1 of each bar, ensures the pitch is a chord tone to establish
 /// clear harmonic grounding. For other positions, returns the pitch unchanged.
+/// Non-sustained notes (< half note) reached by step are exempt
+/// (appoggiatura/suspension), so stepwise lines can cross barlines.
 ///
 /// @param pitch Current pitch candidate
 /// @param tick Tick position for downbeat check
@@ -37,10 +39,10 @@ bool isStrongBeat(Tick tick);
 /// @param vocal_low Minimum allowed pitch
 /// @param vocal_high Maximum allowed pitch
 /// @param disable_singability If true, use simple nearest chord tone
-/// @return Adjusted pitch (chord tone if on downbeat)
+/// @param duration Note duration in ticks; 0 = always enforce
 int enforceDownbeatChordTone(int pitch, Tick tick, int8_t chord_degree, int prev_pitch,
                              uint8_t vocal_low, uint8_t vocal_high,
-                             bool disable_singability = false);
+                             bool disable_singability = false, Tick duration = 0);
 
 /// @brief Find best chord tone preserving melodic direction.
 ///
@@ -72,22 +74,30 @@ int findBestChordTonePreservingDirection(int target_pitch, int prev_pitch, int8_
 /// @param vocal_high Maximum allowed pitch
 /// @param guide_tone_rate Probability percentage (0-100)
 /// @param rng Random number generator
+/// @param prev_pitch Previous pitch (-1 = unknown); a snap is rejected when it
+/// would turn a step from prev_pitch into a leap or a repeat
 /// @return Adjusted pitch (guide tone if selected)
 int enforceGuideToneOnDownbeat(int pitch, Tick tick, int8_t chord_degree, uint8_t vocal_low,
-                               uint8_t vocal_high, uint8_t guide_tone_rate, std::mt19937& rng);
+                               uint8_t vocal_high, uint8_t guide_tone_rate, std::mt19937& rng,
+                               int prev_pitch = -1);
 
 /// @brief Enforce avoid note constraint against chord tones.
 ///
 /// Checks if the pitch forms a dissonant interval (tritone, minor 2nd) with
 /// any chord tone and adjusts to the nearest safe chord tone if so.
+/// Short notes off strong beats are exempt: they act as passing/neighbor
+/// tones, which reference vocal melodies use freely (matching the
+/// duration-aware passing tone tolerance in collision detection).
 ///
 /// @param pitch Current pitch candidate
 /// @param chord_degree Current chord degree
 /// @param vocal_low Minimum allowed pitch
 /// @param vocal_high Maximum allowed pitch
+/// @param tick Note start tick (for strong beat check); 0 = always enforce
+/// @param duration Note duration in ticks; 0 = always enforce
 /// @return Adjusted pitch (safe from avoid intervals)
 int enforceAvoidNoteConstraint(int pitch, int8_t chord_degree, uint8_t vocal_low,
-                               uint8_t vocal_high);
+                               uint8_t vocal_high, Tick tick = 0, Tick duration = 0);
 
 /// @brief Enforce maximum interval constraint between consecutive notes.
 ///
@@ -124,22 +134,52 @@ int applyLeapPreparationConstraint(int new_pitch, int prev_pitch, Tick prev_dura
                                    int8_t chord_degree, uint8_t vocal_low, uint8_t vocal_high,
                                    const TessituraRange* tessitura = nullptr);
 
-/// @brief Encourage leap after long notes.
+/// @brief Encourage movement after long notes.
 ///
-/// After long notes (>= 1 beat), static pitches can feel anticlimactic.
-/// This function probabilistically encourages larger intervals.
+/// After long notes (>= 1 beat), a repeated pitch can feel static. When the
+/// candidate pitch would repeat the previous pitch, this function
+/// probabilistically replaces it with movement, preferring scale steps over
+/// chord-tone leaps. Candidates that already move are returned unchanged
+/// (reference vocal corpora show stepwise lines, not leaps, after sustains).
 ///
 /// @param new_pitch New pitch candidate
 /// @param prev_pitch Previous pitch
 /// @param prev_duration Previous note duration in ticks
 /// @param chord_degree Current chord degree
+/// @param key_offset Key offset for scale tone check
 /// @param vocal_low Minimum allowed pitch
 /// @param vocal_high Maximum allowed pitch
 /// @param rng Random number generator
-/// @return Possibly adjusted pitch with encouraged leap
-int encourageLeapAfterLongNote(int new_pitch, int prev_pitch, Tick prev_duration,
-                               int8_t chord_degree, uint8_t vocal_low, uint8_t vocal_high,
-                               std::mt19937& rng);
+/// @return Possibly adjusted pitch with encouraged movement
+int encourageMovementAfterLongNote(int new_pitch, int prev_pitch, Tick prev_duration,
+                                   int8_t chord_degree, int key_offset, uint8_t vocal_low,
+                                   uint8_t vocal_high, std::mt19937& rng);
+
+/// @brief Hard limit on same-direction leap chains.
+///
+/// Three or more consecutive leaps (each >= 3 semitones) in one direction
+/// outline an arpeggio rather than a vocal line; reference vocal corpora
+/// contain at most ~0.6 such chains per 100 moves. When two same-direction
+/// leaps have already occurred, a third is replaced by a scale step
+/// (preferring the same direction to preserve contour) or a repeat.
+///
+/// @param new_pitch New pitch candidate
+/// @param prev_pitch Previous pitch
+/// @param chain_len Number of consecutive same-direction leaps so far
+/// @param chain_dir Direction of the current leap chain (+1/-1, 0 = none)
+/// @param key_offset Key offset for scale tone check
+/// @param vocal_low Minimum allowed pitch
+/// @param vocal_high Maximum allowed pitch
+/// @return Adjusted pitch that does not extend the chain to 3
+int enforceLeapChainLimit(int new_pitch, int prev_pitch, int chain_len, int chain_dir,
+                          int key_offset, uint8_t vocal_low, uint8_t vocal_high);
+
+/// @brief Update same-direction leap chain state after a note is finalized.
+///
+/// @param interval Signed interval from previous to current note
+/// @param chain_len Chain length state (updated in place)
+/// @param chain_dir Chain direction state (updated in place)
+void updateLeapChainState(int interval, int& chain_len, int& chain_dir);
 
 }  // namespace melody
 }  // namespace midisketch

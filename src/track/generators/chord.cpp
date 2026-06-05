@@ -158,15 +158,31 @@ VoicedChord filterVoicingByCollision(const IHarmonyContext& harmony, const Voice
     effective_ceiling = vocal_ceiling_hint;
   }
 
-  VoicedChord safe = v;
+  // When the vocal sits at the bottom of its range, the ceiling can fall
+  // below the ENTIRE voicing. Filtering every pitch would let the
+  // minimum-voicing guarantee re-add the original pitches above the vocal
+  // (a high-severity register crossing); voicing the chord an octave lower
+  // keeps the structure while respecting the ceiling.
+  VoicedChord input = v;
+  if (effective_ceiling > 0 && v.count > 0) {
+    uint8_t lowest = 127;
+    for (uint8_t i = 0; i < v.count; ++i) lowest = std::min(lowest, v.pitches[i]);
+    if (lowest > effective_ceiling && lowest >= CHORD_LOW + 12) {
+      for (uint8_t i = 0; i < input.count; ++i) {
+        input.pitches[i] = static_cast<uint8_t>(input.pitches[i] - 12);
+      }
+    }
+  }
+
+  VoicedChord safe = input;
   safe.count = 0;
-  for (uint8_t i = 0; i < v.count; ++i) {
+  for (uint8_t i = 0; i < input.count; ++i) {
     // Vocal ceiling: chord should not exceed the calculated ceiling
-    if (effective_ceiling > 0 && v.pitches[i] > effective_ceiling) {
+    if (effective_ceiling > 0 && input.pitches[i] > effective_ceiling) {
       continue;
     }
-    if (!wouldClashWithRegisteredTracks(harmony, v.pitches[i], start, duration)) {
-      safe.pitches[safe.count++] = v.pitches[i];
+    if (!wouldClashWithRegisteredTracks(harmony, input.pitches[i], start, duration)) {
+      safe.pitches[safe.count++] = input.pitches[i];
     }
   }
   return safe;

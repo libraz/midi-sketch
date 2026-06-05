@@ -71,13 +71,15 @@ TEST(SelectBestCandidateTest, ShortNote_PrefersStepOverLeap) {
   EXPECT_EQ(chosen, 62);  // Step preferred for short notes
 }
 
-TEST(SelectBestCandidateTest, LongNote_PrefersModerateLeapOverSamePitch) {
-  // Long notes (>= 480 ticks) discourage same-pitch stagnation.
-  // Without root/fifth bonus, leap's melodic advantage (30 vs 15) outweighs.
-  // same(not root): 15+20+8+0=43, third: 30+20+8-12=46
+TEST(SelectBestCandidateTest, LongNote_PrefersStepOverLeapAndStagnation) {
+  // Long notes (>= 480 ticks): reference vocal corpora leave sustains by
+  // step, not by leap. A stepwise chord tone outranks both staying on the
+  // same pitch and hopping to a 3rd.
+  // same: 18+20+8+0=46, step: 30+20+10-6=54, third: 22+20+8-12=38
   auto same = makeCandidate(60, true, false, true, 0);   // C4, chord tone but NOT root/5th
+  auto step = makeCandidate(62, true, false, true, 2);   // D4 (whole step)
   auto third = makeCandidate(64, true, false, true, 4);  // E4 (major 3rd)
-  std::vector<PitchCandidate> cands = {same, third};
+  std::vector<PitchCandidate> cands = {same, step, third};
 
   PitchSelectionHints hints;
   hints.prev_pitch = 60;
@@ -85,7 +87,12 @@ TEST(SelectBestCandidateTest, LongNote_PrefersModerateLeapOverSamePitch) {
   hints.tessitura_center = 62;
 
   uint8_t chosen = selectBestCandidate(cands, 60, hints);
-  EXPECT_EQ(chosen, 64);  // Moderate leap preferred for long notes
+  EXPECT_EQ(chosen, 62);  // Step preferred for long notes
+
+  // Without a step available, staying beats a forced 3rd (no leap doctrine):
+  // same: 46 vs third: 38
+  std::vector<PitchCandidate> no_step = {same, third};
+  EXPECT_EQ(selectBestCandidate(no_step, 60, hints), 60);
 }
 
 TEST(SelectBestCandidateTest, LongNote_SamePitchStagnationPenalty) {
@@ -343,8 +350,9 @@ TEST(SelectBestCandidateTest, DurationBoundary_240IsMedium) {
 }
 
 TEST(SelectBestCandidateTest, DurationBoundary_480IsLong) {
-  // At 480 ticks, Long mode. Same-pitch gets 15 (stagnation penalty).
-  // Moderate interval (3-4) gets 30. Without root bonus, leap wins.
+  // At 480 ticks, Long mode applies its mild same-pitch stagnation penalty
+  // (18 vs Medium's 25) but a forced 3rd still doesn't beat staying:
+  // same: 18+20+8+0=46; third: 22+20+8-12=38
   auto same = makeCandidate(60, true, false, true, 0);   // NOT root/fifth
   auto third = makeCandidate(64, true, false, true, 4);  // E4
   std::vector<PitchCandidate> cands = {same, third};
@@ -354,9 +362,8 @@ TEST(SelectBestCandidateTest, DurationBoundary_480IsLong) {
   hints.note_duration = 480;
   hints.tessitura_center = 62;
 
-  // same: 15+20+8+0=43; third: 30+20+8-12=46
   uint8_t chosen = selectBestCandidate(cands, 60, hints);
-  EXPECT_EQ(chosen, 64);
+  EXPECT_EQ(chosen, 60);
 }
 
 // ============================================================================
@@ -387,9 +394,12 @@ TEST(SelectBestCandidateTest, ZeroDuration_DefaultsToMedium) {
 
 TEST(SelectBestCandidateTest, BridgeSectionRelaxesHarmonicConstraint) {
   // Bridge (section_type=4) has harmonic weight 0.7x.
-  // A scale tone should score closer to a chord tone in Bridge than in Verse.
-  auto chord = makeCandidate(64, true, false, true, 0);   // E4, chord tone
-  auto scale = makeCandidate(62, false, false, true, 0);  // D4, scale tone only
+  // A scale-tone STEP beats a chord-tone 3rd in both sections (stepwise
+  // motion outranks chord-tone hopping per reference corpora); the Bridge
+  // case additionally verifies section weights are processed without issue.
+  // Verse: chord(3rd): 18+20+9=47, scale(step): 30+12+9=51
+  auto chord = makeCandidate(64, true, false, true, 0);   // E4, chord tone (3rd from prev)
+  auto scale = makeCandidate(62, false, false, true, 0);  // D4, scale tone (step from prev)
 
   PitchSelectionHints hints_verse;
   hints_verse.prev_pitch = 60;
@@ -403,16 +413,12 @@ TEST(SelectBestCandidateTest, BridgeSectionRelaxesHarmonicConstraint) {
   hints_bridge.tessitura_center = 63;
   hints_bridge.section_type = 4;  // Bridge
 
-  // In Verse, chord tone (E4) should win due to full harmonic weight
   uint8_t verse_choice = selectBestCandidate({chord, scale}, 64, hints_verse);
-  EXPECT_EQ(verse_choice, 64);
+  EXPECT_EQ(verse_choice, 62);
 
-  // In Bridge, the reduced harmonic weight should make scale tone more competitive
-  // (may or may not win depending on other dimensions, but score gap should shrink)
+  // Bridge relaxes harmonic weight further; the scale-tone step still wins
   uint8_t bridge_choice = selectBestCandidate({chord, scale}, 64, hints_bridge);
-  // Bridge still prefers chord tone overall but the test verifies no crash
-  // and that section_type is processed
-  EXPECT_TRUE(bridge_choice == 64 || bridge_choice == 62);
+  EXPECT_EQ(bridge_choice, 62);
 }
 
 TEST(SelectBestCandidateTest, ChorusSectionBoostsHarmonicStability) {
@@ -449,7 +455,8 @@ TEST(SelectBestCandidateTest, PreChorusBoostsContourWeight) {
 }
 
 TEST(SelectBestCandidateTest, UnknownSectionTypeUsesDefaults) {
-  // section_type=-1 (unknown) should use A (verse) baseline weights.
+  // section_type=-1 (unknown) should use A (verse) baseline weights:
+  // the scale-tone step wins exactly as in the Verse case above.
   auto chord = makeCandidate(64, true, false, true, 0);
   auto scale = makeCandidate(62, false, false, true, 0);
 
@@ -460,7 +467,7 @@ TEST(SelectBestCandidateTest, UnknownSectionTypeUsesDefaults) {
   hints.section_type = -1;  // Unknown
 
   uint8_t chosen = selectBestCandidate({chord, scale}, 64, hints);
-  EXPECT_EQ(chosen, 64);  // Same as Verse baseline
+  EXPECT_EQ(chosen, 62);  // Same as Verse baseline
 }
 
 // ============================================================================

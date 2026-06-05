@@ -66,6 +66,13 @@ std::vector<NoteEvent> adjustPitchRange(const std::vector<NoteEvent>& notes, uin
     new_pitch = snapToNearestScaleTone(new_pitch, key_offset);
     // Clamp to new range
     new_pitch = std::clamp(new_pitch, static_cast<int>(new_low), static_cast<int>(new_high));
+    // Clamping can land on a chromatic range bound; walk inward to a scale tone.
+    const int inward = (new_pitch > (static_cast<int>(new_low) + new_high) / 2) ? -1 : 1;
+    while (!isScaleTone(getPitchClass(static_cast<uint8_t>(new_pitch)), key_offset) &&
+           new_pitch + inward >= static_cast<int>(new_low) &&
+           new_pitch + inward <= static_cast<int>(new_high)) {
+      new_pitch += inward;
+    }
     adjusted.note = static_cast<uint8_t>(new_pitch);
 #ifdef MIDISKETCH_NOTE_PROVENANCE
     if (old_pitch != adjusted.note) {
@@ -478,6 +485,19 @@ void applyCollisionAvoidanceWithIntervalConstraint(std::vector<NoteEvent>& notes
         int new_pitch =
             nearestChordToneWithinInterval(note.note, prev_pitch, chord_degree, MAX_VOCAL_INTERVAL,
                                            vocal_low, vocal_high, nullptr);
+        // Keep the vocal diatonic: a secondary dominant's chord tone can be
+        // chromatic (e.g. G# on V/vi). Snap to scale, then pull back inside
+        // the interval bound if the snap pushed it out.
+        new_pitch = snapToNearestScaleTone(new_pitch, 0);  // C major internally
+        if (std::abs(new_pitch - prev_pitch) > MAX_VOCAL_INTERVAL) {
+          int dir = (new_pitch > prev_pitch) ? 1 : -1;
+          new_pitch = prev_pitch + dir * MAX_VOCAL_INTERVAL;
+          while (new_pitch != prev_pitch && !isScaleTone(new_pitch % 12)) {
+            new_pitch -= dir;
+          }
+        }
+        new_pitch =
+            std::clamp(new_pitch, static_cast<int>(vocal_low), static_cast<int>(vocal_high));
         // Re-verify collision safety after interval fix
         if (!harmony.isConsonantWithOtherTracks(static_cast<uint8_t>(new_pitch), note.start_tick,
                                                 note.duration, TrackRole::Vocal)) {
@@ -520,6 +540,10 @@ void enforceSectionCeiling(std::vector<NoteEvent>& notes, const IHarmonyContext&
       snapped = snapToNearestScaleTone(lowered - 1, 0);
     }
     snapped = std::clamp(snapped, static_cast<int>(vocal_low), static_cast<int>(vocal_high));
+    // The low clamp can pin to a chromatic vocal_low; walk up to a scale tone.
+    while (!isScaleTone(getPitchClass(static_cast<uint8_t>(snapped))) && snapped < vocal_high) {
+      ++snapped;
+    }
     uint8_t candidate = static_cast<uint8_t>(snapped);
 
     // Prefer a collision-safe result; if the snapped scale tone clashes, try the

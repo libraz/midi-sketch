@@ -2057,7 +2057,8 @@ TEST_F(VocalTest, RegressionChromaticNoteFromAdjustPitchRange) {
     for (const auto& note : track.notes()) {
       int pc = note.note % 12;
       EXPECT_TRUE(c_major_pcs.count(pc) > 0)
-          << "adjustPitchRange created chromatic note at seed=" << seed << ": pitch class " << pc;
+          << "adjustPitchRange created chromatic note at seed=" << seed << ": pitch class " << pc
+          << " at tick " << note.start_tick;
     }
   }
 }

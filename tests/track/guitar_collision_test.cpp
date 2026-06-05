@@ -95,8 +95,16 @@ TEST(GuitarRoleAwareToleranceTest, DetectorRejectsSustainedGuitarM2) {
   // tolerated as a "passing tone"; with role-awareness it is rejected.
   EXPECT_FALSE(detector.isConsonantWithOtherTracks(62, 480, 120, /*exclude=*/TrackRole::Guitar));
 
-  // A melodic Motif candidate in the same situation is still tolerated.
-  EXPECT_TRUE(detector.isConsonantWithOtherTracks(62, 480, 120, /*exclude=*/TrackRole::Motif));
+  // A Motif candidate against the held CHORD note is also rejected: the
+  // existing note's role now participates in the exemption, and a sustained
+  // chord voicing is vertical harmony (counted by the dissonance analyzer)
+  // regardless of which side moved.
+  EXPECT_FALSE(detector.isConsonantWithOtherTracks(62, 480, 120, /*exclude=*/TrackRole::Motif));
+
+  // Between two melodic tracks the brief passing tone is still tolerated.
+  TrackCollisionDetector melodic;
+  melodic.registerNote(/*start=*/0, /*dur=*/1920, /*pitch=*/60, TrackRole::Aux);
+  EXPECT_TRUE(melodic.isConsonantWithOtherTracks(62, 480, 120, /*exclude=*/TrackRole::Motif));
 }
 
 // ============================================================================

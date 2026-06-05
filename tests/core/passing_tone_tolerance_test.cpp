@@ -146,40 +146,43 @@ class PassingToneCollisionTest : public ::testing::Test {
  protected:
   TrackCollisionDetector detector_;
 
-  // Register a long note from bass (whole note at bar start)
-  void registerLongChordNote(uint8_t pitch, Tick start = 0, Tick duration = 1920) {
-    detector_.registerNote(start, duration, pitch, TrackRole::Chord);
+  // Register a long sustained note from a MELODIC track (Aux). The passing
+  // tone tolerance only applies between melodic tracks: sustained harmony
+  // roles (Chord/Guitar) and the lead Vocal are excluded on either side,
+  // matching the dissonance analyzer which counts those overlaps.
+  void registerLongMelodicNote(uint8_t pitch, Tick start = 0, Tick duration = 1920) {
+    detector_.registerNote(start, duration, pitch, TrackRole::Aux);
   }
 };
 
 TEST_F(PassingToneCollisionTest, ShortM2OverlapIsConsonant) {
-  // Chord holds C4 for a whole bar
-  registerLongChordNote(60, 0, 1920);
+  // Aux holds C4 for a whole bar
+  registerLongMelodicNote(60, 0, 1920);
 
   // Motif plays D4 (M2) for 120 ticks starting at weak beat (tick 480)
-  // Overlap with chord: 120 ticks (short), M2, weak beat → tolerated
+  // Overlap: 120 ticks (short), M2, weak beat, both melodic → tolerated
   EXPECT_TRUE(detector_.isConsonantWithOtherTracks(62, 480, 120, TrackRole::Motif));
 }
 
 TEST_F(PassingToneCollisionTest, LongM2OverlapIsDissonant) {
-  // Chord holds C4 for a whole bar
-  registerLongChordNote(60, 0, 1920);
+  // Aux holds C4 for a whole bar
+  registerLongMelodicNote(60, 0, 1920);
 
   // Motif plays D4 (M2) for a full quarter note (480 ticks) → too long
   EXPECT_FALSE(detector_.isConsonantWithOtherTracks(62, 480, 480, TrackRole::Motif));
 }
 
 TEST_F(PassingToneCollisionTest, ShortM1WeakBeatIsConsonant) {
-  // Chord holds C4 for a whole bar
-  registerLongChordNote(60, 0, 1920);
+  // Aux holds C4 for a whole bar
+  registerLongMelodicNote(60, 0, 1920);
 
   // Motif plays Db4 (m2) for 120 ticks at weak beat → tolerated
   EXPECT_TRUE(detector_.isConsonantWithOtherTracks(61, 480, 120, TrackRole::Motif));
 }
 
 TEST_F(PassingToneCollisionTest, ShortM1StrongBeatIsDissonant) {
-  // Chord holds C4 for a whole bar
-  registerLongChordNote(60, 0, 1920);
+  // Aux holds C4 for a whole bar
+  registerLongMelodicNote(60, 0, 1920);
 
   // Motif plays Db4 (m2) for 120 ticks at strong beat (0) → NOT tolerated
   // (strong beat halves threshold to 60, 120 > 60)
@@ -195,8 +198,8 @@ TEST_F(PassingToneCollisionTest, LowRegisterNotTolerated) {
 }
 
 TEST_F(PassingToneCollisionTest, GetCollisionInfoConsistent) {
-  // Chord holds C4 for a whole bar
-  registerLongChordNote(60, 0, 1920);
+  // Aux holds C4 for a whole bar
+  registerLongMelodicNote(60, 0, 1920);
 
   // Short M2 overlap at weak beat → should report no collision
   auto info = detector_.getCollisionInfo(62, 480, 120, TrackRole::Motif);
@@ -209,7 +212,7 @@ TEST_F(PassingToneCollisionTest, GetCollisionInfoConsistent) {
 }
 
 TEST_F(PassingToneCollisionTest, TritoneNeverTolerated) {
-  registerLongChordNote(60, 0, 1920);
+  registerLongMelodicNote(60, 0, 1920);
 
   // Tritone (F#4 = 66) even with short overlap → not tolerated by passing tone
   // (isToleratedPassingTone only handles semitones 1 and 2)
@@ -219,7 +222,7 @@ TEST_F(PassingToneCollisionTest, TritoneNeverTolerated) {
 TEST_F(PassingToneCollisionTest, BassNotAffected) {
   // Bass notes are typically long (480+ ticks), so passing tone tolerance
   // doesn't help them. But verify a long bass note is still flagged.
-  registerLongChordNote(60, 0, 1920);  // Chord C4
+  registerLongMelodicNote(60, 0, 1920);  // Aux C4
 
   // Bass plays D3 (50) for a whole beat → M2 but long duration → dissonant
   // Actually this would be an M2 interval of 10 semitones, not 2. Let me fix.

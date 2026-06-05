@@ -194,8 +194,11 @@ static uint8_t getEffectiveHighForVocal(const IHarmonyContext& harmony, Tick ons
   uint8_t vocal_at_onset =
       harmony.getHighestPitchForTrackInRange(onset_start, onset_end, TrackRole::Vocal);
   if (vocal_at_onset > 0) {
+    // Floor at kGuitarLow: a vocal below the guitar's physical range would
+    // otherwise invert [range_low, range_high] and clamp notes below E2.
     return static_cast<uint8_t>(
-        std::min(static_cast<int>(kGuitarHigh), static_cast<int>(vocal_at_onset)));
+        std::max(static_cast<int>(kGuitarLow),
+                 std::min(static_cast<int>(kGuitarHigh), static_cast<int>(vocal_at_onset))));
   }
   return kGuitarHigh;
 }

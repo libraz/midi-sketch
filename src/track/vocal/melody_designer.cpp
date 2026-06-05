@@ -866,6 +866,11 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
   // Phase 4: Track leap resolution state for multi-note stepwise resolution
   LeapResolutionState leap_state;
 
+  // Same-direction leap chain state (hard limit: no 3+ consecutive
+  // same-direction leaps, which outline arpeggios instead of vocal lines)
+  int leap_chain_len = 0;
+  int leap_chain_dir = 0;
+
   // Generate notes for each rhythm position
   for (size_t i = 0; i < rhythm.size(); ++i) {
     const RhythmNote& rn = rhythm[i];
@@ -936,8 +941,8 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
 
     // Apply consecutive same note reduction with J-POP style probability curve
     melody::applyConsecutiveSameNoteConstraint(new_pitch, consecutive_tracker, current_pitch,
-                                               note_chord_degree, ctx.vocal_low, ctx.vocal_high, 0,
-                                               rng);
+                                               note_chord_degree, ctx.key_offset, ctx.vocal_low,
+                                               ctx.vocal_high, 0, rng);
 
     // Enforce maximum interval constraint (section-adaptive + blueprint constraint)
     // Use nearestChordToneWithinInterval to stay on chord tones
@@ -980,27 +985,30 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
           ctx.vocal_high, &ctx.tessitura);
     }
 
-    // Leap encouragement: encourage movement after long notes
+    // Movement encouragement: avoid static repeats after long notes
     if (i > 0) {
-      new_pitch =
-          melody::encourageLeapAfterLongNote(new_pitch, current_pitch, prev_note_duration,
-                                             note_chord_degree, ctx.vocal_low, ctx.vocal_high, rng);
+      new_pitch = melody::encourageMovementAfterLongNote(
+          new_pitch, current_pitch, prev_note_duration, note_chord_degree, ctx.key_offset,
+          ctx.vocal_low, ctx.vocal_high, rng);
     }
 
     // Avoid note check: melody should not form tritone/minor2nd with chord tones
+    // (short weak-beat notes pass through as passing/neighbor tones)
     new_pitch = melody::enforceAvoidNoteConstraint(new_pitch, note_chord_degree, ctx.vocal_low,
-                                                   ctx.vocal_high);
+                                                   ctx.vocal_high, note_start,
+                                                   static_cast<Tick>(rn.eighths * TICK_EIGHTH));
 
-    // Downbeat chord-tone constraint: beat 1 requires chord tones for harmonic clarity
-    new_pitch = melody::enforceDownbeatChordTone(new_pitch, note_start, note_chord_degree,
-                                                 current_pitch, ctx.vocal_low, ctx.vocal_high,
-                                                 ctx.disable_vowel_constraints);
+    // Downbeat chord-tone constraint: beat 1 requires chord tones for harmonic
+    // clarity (short stepwise approaches pass as appoggiaturas)
+    new_pitch = melody::enforceDownbeatChordTone(
+        new_pitch, note_start, note_chord_degree, current_pitch, ctx.vocal_low, ctx.vocal_high,
+        ctx.disable_vowel_constraints, static_cast<Tick>(rn.eighths * TICK_EIGHTH));
 
     // Guide tone priority: on strong beats, bias toward 3rd/7th at configured rate
     if (ctx.guide_tone_rate > 0 && ctx.vocal_attitude != VocalAttitude::Raw) {
       new_pitch = melody::enforceGuideToneOnDownbeat(new_pitch, note_start, note_chord_degree,
                                                      ctx.vocal_low, ctx.vocal_high,
-                                                     ctx.guide_tone_rate, rng);
+                                                     ctx.guide_tone_rate, rng, current_pitch);
     }
 
     // Leap-after-reversal rule: prefer step motion in opposite direction after leaps
@@ -1162,6 +1170,11 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
     new_pitch =
         std::clamp(new_pitch, static_cast<int>(ctx.vocal_low), static_cast<int>(ctx.vocal_high));
 
+    // HARD CONSTRAINT: Never extend a same-direction leap chain to 3
+    new_pitch =
+        melody::enforceLeapChainLimit(new_pitch, current_pitch, leap_chain_len, leap_chain_dir,
+                                      ctx.key_offset, ctx.vocal_low, ctx.vocal_high);
+
     // Apply pitch safety check to avoid collisions with other tracks (e.g., Motif tritone)
     // Use getSafePitchCandidates for unified collision resolution
     auto candidates =
@@ -1196,6 +1209,10 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
     note.prov_original_pitch = static_cast<uint8_t>(new_pitch);
 #endif
     result.notes.push_back(note);
+
+    // Update leap chain state from the final pitch (collision resolution may
+    // have shifted it after the chain guard ran)
+    melody::updateLeapChainState(new_pitch - current_pitch, leap_chain_len, leap_chain_dir);
 
     current_pitch = new_pitch;
     prev_note_duration = note_duration;  // Track for leap preparation

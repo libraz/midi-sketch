@@ -140,11 +140,13 @@ void breakConsecutiveSamePitch(std::vector<NoteEvent>& all_notes, const IHarmony
             if (candidate < static_cast<int>(vocal_low) || candidate > static_cast<int>(vocal_high))
               continue;
 
-            // Check if it's a chord tone or at least in scale
+            // Check if it's a chord tone or at least in scale. The vocal stays
+            // diatonic, so chromatic chord tones (e.g. secondary dominant 3rds)
+            // are excluded even when they belong to the current chord.
             int pc = candidate % 12;
-            bool is_chord_tone =
-                std::find(chord_tones.begin(), chord_tones.end(), pc) != chord_tones.end();
             bool is_scale = isScaleTone(pc);
+            bool is_chord_tone = is_scale && std::find(chord_tones.begin(), chord_tones.end(),
+                                                       pc) != chord_tones.end();
 
             if (is_chord_tone) {
               // Verify no harsh collision

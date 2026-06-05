@@ -31,6 +31,7 @@
 #include "core/mood_utils.h"
 #include "core/motif_types.h"
 #include "core/note_creator.h"
+#include "core/pitch_utils.h"
 #include "core/post_processor.h"
 #include "core/preset_data.h"
 #include "core/production_blueprint.h"
@@ -68,6 +69,8 @@ void removeComfortClashesAgainstReference(MidiTrack& track, const MidiTrack& ref
 uint8_t clampScalePitchAvoidingChord(int pitch, Tick tick, const IHarmonyContext& harmony,
                                      uint8_t low, uint8_t high);
 void duckMotifUnderLead(MidiTrack& motif, const MidiTrack& vocal, const IHarmonyContext& harmony);
+void lowerTrackCrossingsUnderVocal(MidiTrack& track, const MidiTrack& vocal,
+                                   const IHarmonyContext& harmony, TrackRole role);
 void tameStandaloneMotifSections(MidiTrack& motif, const MidiTrack& vocal,
                                  const std::vector<Section>& sections,
                                  const IHarmonyContext& harmony);
@@ -76,7 +79,8 @@ void separateMotifFromBass(MidiTrack& motif, const MidiTrack& vocal, const MidiT
 void separateGuitarFromBass(MidiTrack& guitar, const MidiTrack& bass);
 void strengthenRhythmLockBassDrive(MidiTrack& bass, const std::vector<Section>& sections);
 void breakLongPitchRuns(MidiTrack& track, const IHarmonyContext& harmony, uint8_t low, uint8_t high,
-                        int max_run);
+                        int max_run, TrackRole role);
+void trimBassBoundaryOverhangs(MidiTrack& bass, const IHarmonyContext& harmony);
 void trimVocalSustainsAtUnsafeChordChanges(MidiTrack& vocal, const IHarmonyContext& harmony);
 void applyRhythmSyncLeadDna(MidiTrack& vocal, MidiTrack& motif,
                             const std::vector<Section>& sections, const GeneratorParams& params,
@@ -504,7 +508,8 @@ void Generator::applyPostProcessingEffects() {
     // fixMotifVocalClashes), so no vocal-side recheck is required here.
     applyRhythmSyncLeadDna(song_.vocal(), song_.motif(), song_.arrangement().sections(), params_,
                            *harmony_context_);
-    breakLongPitchRuns(song_.vocal(), *harmony_context_, params_.vocal_low, params_.vocal_high, 5);
+    breakLongPitchRuns(song_.vocal(), *harmony_context_, params_.vocal_low, params_.vocal_high, 5,
+                       TrackRole::Vocal);
     harmony_context_->clearNotesForTrack(TrackRole::Vocal);
     harmony_context_->registerTrack(song_.vocal(), TrackRole::Vocal);
     harmony_context_->clearNotesForTrack(TrackRole::Motif);
@@ -514,6 +519,7 @@ void Generator::applyPostProcessingEffects() {
   // FINAL STEP: Fix inter-track clashes that may occur after all post-processing.
   // Must run AFTER humanization (which shifts note timing) and all duration
   // extensions (applyEnhancedFinalHit, ritardando, etc.).
+  trimBassBoundaryOverhangs(song_.bass(), *harmony_context_);
   PostProcessor::fixTrackVocalClashes(song_.chord(), song_.vocal(), TrackRole::Chord);
   PostProcessor::fixTrackVocalClashes(song_.aux(), song_.vocal(), TrackRole::Aux);
   PostProcessor::fixTrackVocalClashes(song_.bass(), song_.vocal(), TrackRole::Bass);
@@ -526,7 +532,7 @@ void Generator::applyPostProcessingEffects() {
     tameStandaloneMotifSections(song_.motif(), song_.vocal(), song_.arrangement().sections(),
                                 *harmony_context_);
     separateMotifFromBass(song_.motif(), song_.vocal(), song_.bass(), *harmony_context_);
-    breakLongPitchRuns(song_.motif(), *harmony_context_, 48, 84, 5);
+    breakLongPitchRuns(song_.motif(), *harmony_context_, 48, 84, 5, TrackRole::Motif);
   }
 
   // Re-sync harmony context after the batch of fixTrack*/fixMotif* (and the
@@ -544,6 +550,19 @@ void Generator::applyPostProcessingEffects() {
                          {&song_.motif(), TrackRole::Motif}}) {
     harmony_context_->clearNotesForTrack(tr.second);
     harmony_context_->registerTrack(*tr.first, tr.second);
+  }
+  if (isRhythmSyncLeadSetting(params_, resolved_blueprint_id_)) {
+    // The DNA rewrite above may have dropped the vocal register below chord
+    // voicings and aux lines that were built under the original (higher)
+    // vocal. Consonant crossings survive fixTrackVocalClashes, so lower them
+    // here.
+    lowerTrackCrossingsUnderVocal(song_.chord(), song_.vocal(), *harmony_context_,
+                                  TrackRole::Chord);
+    harmony_context_->clearNotesForTrack(TrackRole::Chord);
+    harmony_context_->registerTrack(song_.chord(), TrackRole::Chord);
+    lowerTrackCrossingsUnderVocal(song_.aux(), song_.vocal(), *harmony_context_, TrackRole::Aux);
+    harmony_context_->clearNotesForTrack(TrackRole::Aux);
+    harmony_context_->registerTrack(song_.aux(), TrackRole::Aux);
   }
   PostProcessor::fixTrackReferenceClashes(song_.aux(), song_.motif(), TrackRole::Aux);
   PostProcessor::fixTrackReferenceClashes(song_.aux(), song_.chord(), TrackRole::Aux);
@@ -1452,6 +1471,33 @@ void removeComfortClashesAgainstReference(MidiTrack& track, const MidiTrack& ref
   }
 }
 
+// Trim bass tails that bleed past a chord boundary into a dissonant
+// relationship with the next chord. Notes are placed boundary-aligned at
+// generation time (and ClipIfUnsafe handles large crossings), but timing
+// humanization can shift an approach note so its tail crosses the barline by
+// a fraction of an 8th — under createNote's passing-tone threshold yet still
+// counted by the dissonance analyzer (observed: bass F ending 24 ticks into
+// a C-chord section against the motif's E across many RhythmLock configs).
+void trimBassBoundaryOverhangs(MidiTrack& bass, const IHarmonyContext& harmony) {
+  constexpr Tick kMaxOverhang = TICK_EIGHTH;  // larger crossings were already
+                                              // evaluated at creation time
+  for (auto& note : bass.notes()) {
+    ChordBoundaryInfo info =
+        harmony.analyzeChordBoundary(note.note, note.start_tick, note.duration);
+    if (info.boundary_tick == 0 || info.overlap_ticks == 0) continue;
+    if (info.overlap_ticks > kMaxOverhang) continue;
+    if (info.safety != CrossBoundarySafety::NonChordTone &&
+        info.safety != CrossBoundarySafety::AvoidNote) {
+      continue;
+    }
+    if (info.safe_duration == 0 || info.safe_duration >= note.duration) continue;
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+    note.addTransformStep(TransformStepType::ChordBoundaryClip, note.note, note.note, 0, 0);
+#endif
+    note.duration = info.safe_duration;
+  }
+}
+
 void duckMotifUnderLead(MidiTrack& motif, const MidiTrack& vocal, const IHarmonyContext& harmony) {
   auto& motif_notes = motif.notes();
   const auto& vocal_notes = vocal.notes();
@@ -1493,14 +1539,42 @@ void duckMotifUnderLead(MidiTrack& motif, const MidiTrack& vocal, const IHarmony
     }
     uint8_t range_high = static_cast<uint8_t>(std::max(52, static_cast<int>(lead->note) - 5));
     uint8_t range_low = static_cast<uint8_t>(std::min<int>(48, range_high));
-    motif_note.note = clampScalePitchAvoidingChord(target_pitch, motif_note.start_tick, harmony,
-                                                   range_low, range_high);
-
-    if (static_cast<int>(motif_note.note) > static_cast<int>(lead->note) - 5) {
-      int fallback = static_cast<int>(lead->note) - 7;
-      motif_note.note = clampScalePitchAvoidingChord(fallback, motif_note.start_tick, harmony,
-                                                     range_low, range_high);
+    // The chord-aware clamp alone can land a close M2 over a sounding bass
+    // note; try nearby targets and require consonance with the registered
+    // tracks. If nothing in the duck range is fully consonant, KEEP the
+    // original pitch: a register crossing under the lead is a warning, but a
+    // forced clash (e.g. motif C3 wedged against a bass B2 walk-up) is a hard
+    // dissonance-gate failure.
+    uint8_t ducked = clampScalePitchAvoidingChord(target_pitch, motif_note.start_tick, harmony,
+                                                  range_low, range_high);
+    if (static_cast<int>(ducked) > static_cast<int>(lead->note) - 5) {
+      ducked = clampScalePitchAvoidingChord(static_cast<int>(lead->note) - 7, motif_note.start_tick,
+                                            harmony, range_low, range_high);
     }
+    if (!harmony.isConsonantWithOtherTracks(ducked, motif_note.start_tick, motif_note.duration,
+                                            TrackRole::Motif)) {
+      bool resolved = false;
+      static constexpr int kDuckOffsets[] = {-2, 2, -4, 4, -5, 5, -7, 7};
+      for (int offset : kDuckOffsets) {
+        int alt_target = static_cast<int>(ducked) + offset;
+        if (alt_target < static_cast<int>(range_low) || alt_target > static_cast<int>(range_high)) {
+          continue;
+        }
+        uint8_t alt = clampScalePitchAvoidingChord(alt_target, motif_note.start_tick, harmony,
+                                                   range_low, range_high);
+        if (static_cast<int>(alt) > static_cast<int>(lead->note) - 5) continue;
+        if (harmony.isConsonantWithOtherTracks(alt, motif_note.start_tick, motif_note.duration,
+                                               TrackRole::Motif)) {
+          ducked = alt;
+          resolved = true;
+          break;
+        }
+      }
+      if (!resolved) {
+        ducked = pre_pitch;
+      }
+    }
+    motif_note.note = ducked;
 
     if (motif_note.note != pre_pitch) {
 #ifdef MIDISKETCH_NOTE_PROVENANCE
@@ -1509,6 +1583,61 @@ void duckMotifUnderLead(MidiTrack& motif, const MidiTrack& vocal, const IHarmony
                                   0);
 #endif
     }
+  }
+}
+
+/// @brief Lower accompaniment notes left stranded above the vocal after the
+/// RhythmSync lead DNA rewrite.
+///
+/// applyRhythmSyncLeadDna can drop the vocal register (e.g. a verse octave
+/// drop) AFTER accompaniment tracks were voiced below the ORIGINAL vocal. The
+/// consonance-based fixers (fixTrackVocalClashes) leave such notes alone when
+/// the interval is consonant (e.g. a perfect 5th above the new vocal), so the
+/// register crossing survives to the output. For notes now sounding well
+/// above the lowest concurrent vocal pitch, try octave drops; keep the
+/// original pitch when no consonant drop exists (a crossing warning is
+/// preferable to a forced clash).
+void lowerTrackCrossingsUnderVocal(MidiTrack& track, const MidiTrack& vocal,
+                                   const IHarmonyContext& harmony, TrackRole role) {
+  auto& track_notes = track.notes();
+  const auto& vocal_notes = vocal.notes();
+  if (track_notes.empty() || vocal_notes.empty()) {
+    return;
+  }
+
+  // High-severity crossing threshold: an accompaniment pitch this far above
+  // the vocal competes with the lead for register (mirrors the
+  // pitch-crossing gate).
+  constexpr int kHighCrossing = 5;
+
+  for (auto& note : track_notes) {
+    Tick note_end = note.start_tick + note.duration;
+    int vocal_min = 128;
+    for (const auto& v : vocal_notes) {
+      Tick v_end = v.start_tick + v.duration;
+      if (note.start_tick >= v_end || note_end <= v.start_tick) continue;
+      vocal_min = std::min(vocal_min, static_cast<int>(v.note));
+    }
+    if (vocal_min >= 128) continue;  // No concurrent vocal
+    if (static_cast<int>(note.note) - vocal_min < kHighCrossing) continue;
+
+    uint8_t pre_pitch = note.note;
+    int candidate = static_cast<int>(note.note);
+    while (candidate - vocal_min >= kHighCrossing &&
+           candidate - 12 >= static_cast<int>(CHORD_LOW)) {
+      candidate -= 12;
+    }
+    if (candidate == static_cast<int>(pre_pitch)) continue;  // No room to drop
+    if (candidate - vocal_min >= kHighCrossing) continue;    // Still high: keep voicing intact
+    if (!harmony.isConsonantWithOtherTracks(static_cast<uint8_t>(candidate), note.start_tick,
+                                            note.duration, role)) {
+      continue;  // Crossing warning < forced clash
+    }
+    note.note = static_cast<uint8_t>(candidate);
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+    note.prov_source = static_cast<uint8_t>(NoteSource::PostProcess);
+    note.addTransformStep(TransformStepType::CollisionAvoid, pre_pitch, note.note, 0, 0);
+#endif
   }
 }
 
@@ -1569,8 +1698,11 @@ bool bassClashesWithMotifPitch(uint8_t pitch, const NoteEvent& motif_note, const
     }
     int interval = std::abs(static_cast<int>(pitch) - static_cast<int>(bass_note.note));
     int pc_interval = interval % 12;
+    // Tritone (pc 6) included: the dissonance analyzer flags compound tritones
+    // up to 2 octaves on non-dominant chords (e.g. motif F3 over bass B2).
     if (interval < Interval::TWO_OCTAVES &&
-        (pc_interval == 1 || pc_interval == 2 || pc_interval == 10 || pc_interval == 11)) {
+        (pc_interval == 1 || pc_interval == 2 || pc_interval == 6 || pc_interval == 10 ||
+         pc_interval == 11)) {
       return true;
     }
   }
@@ -1719,7 +1851,7 @@ void strengthenRhythmLockBassDrive(MidiTrack& bass, const std::vector<Section>& 
 }
 
 void breakLongPitchRuns(MidiTrack& track, const IHarmonyContext& harmony, uint8_t low, uint8_t high,
-                        int max_run) {
+                        int max_run, TrackRole role) {
   auto& notes = track.notes();
   if (notes.size() < static_cast<size_t>(max_run + 1)) {
     return;
@@ -1753,12 +1885,25 @@ void breakLongPitchRuns(MidiTrack& track, const IHarmonyContext& harmony, uint8_
       }
       uint8_t candidate =
           clampScalePitchAvoidingChord(target, notes[idx].start_tick, harmony, low, high);
-      if (candidate != original) {
-        notes[idx].note = candidate;
-        break;
+      if (candidate == original) {
+        continue;
       }
+      // The chord-aware clamp alone is not enough: a chord/scale tone two
+      // semitones away can still land a close M2 over a sounding bass note
+      // (observed: motif A3 over bass G3 in the RhythmLock gate). Verify
+      // against the registered tracks before accepting.
+      if (!harmony.isConsonantWithOtherTracks(candidate, notes[idx].start_tick, notes[idx].duration,
+                                              role)) {
+        continue;
+      }
+      notes[idx].note = candidate;
+      break;
     }
     if (notes[idx].note != original) {
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+      notes[idx].addTransformStep(TransformStepType::CollisionAvoid, original, notes[idx].note, 0,
+                                  0);
+#endif
       run_pitch = notes[idx].note;
       run_count = 1;
     }
@@ -1859,6 +2004,48 @@ uint8_t clampScalePitchAvoidingChord(int pitch, Tick tick, const IHarmonyContext
   return initial;
 }
 
+// Check that a pitch is not an avoid note for ANY chord sounding during
+// [tick, tick + duration). A note checked only at its start tick can sustain
+// across a chord boundary into an avoid relationship (e.g. a DNA-stamped B
+// held from V into IV forms a tritone with the new F root).
+bool isAvoidNoteOverSpan(uint8_t pitch, Tick tick, Tick duration, const IHarmonyContext& harmony) {
+  Tick end = tick + std::max<Tick>(duration, 1);
+  int8_t last_degree = -100;
+  for (Tick t = tick; t < end; t += TICKS_PER_BEAT) {
+    int8_t degree = harmony.getChordDegreeAt(t);
+    if (degree == last_degree) continue;
+    last_degree = degree;
+    uint8_t chord_root = degreeToRoot(degree, Key::C);
+    Chord chord = getChordNotes(degree);
+    bool is_minor = (chord.intervals[1] == 3);
+    if (isAvoidNoteWithContext(pitch, chord_root, is_minor, degree)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// Pick a shaped/DNA pitch near `target` that is (a) a scale tone in range,
+// (b) not an avoid note for any chord the note spans, and (c) consonant with
+// the other registered tracks. Falls back to the chord-aware start-tick clamp
+// when nothing satisfies all three (the later fixTrack* passes then resolve
+// the accompaniment side).
+uint8_t pickShapedPitch(int target, const NoteEvent& note, const IHarmonyContext& harmony,
+                        uint8_t low, uint8_t high, TrackRole role) {
+  static constexpr int kOffsets[] = {0, -1, 1, -2, 2, -3, 3, -4, 4, -5, 5, -7, 7, -12, 12};
+  for (int offset : kOffsets) {
+    int cand_target = target + offset;
+    if (cand_target < static_cast<int>(low) || cand_target > static_cast<int>(high)) {
+      continue;
+    }
+    uint8_t cand = clampScalePitch(cand_target, low, high);
+    if (isAvoidNoteOverSpan(cand, note.start_tick, note.duration, harmony)) continue;
+    if (!harmony.isConsonantWithOtherTracks(cand, note.start_tick, note.duration, role)) continue;
+    return cand;
+  }
+  return clampScalePitchAvoidingChord(target, note.start_tick, harmony, low, high);
+}
+
 std::vector<NoteEvent*> collectSectionNotes(MidiTrack& track, const Section& section,
                                             size_t max_count) {
   std::vector<NoteEvent*> notes;
@@ -1880,7 +2067,8 @@ std::vector<NoteEvent*> collectSectionNotes(MidiTrack& track, const Section& sec
 
 void shapeSectionRegister(std::vector<NoteEvent*>& notes, int low, int high, uint8_t absolute_low,
                           uint8_t absolute_high, int start_lift, int end_lift,
-                          uint8_t velocity_boost, const IHarmonyContext* harmony = nullptr) {
+                          uint8_t velocity_boost, const IHarmonyContext* harmony = nullptr,
+                          TrackRole role = TrackRole::Vocal) {
   if (notes.empty()) {
     return;
   }
@@ -1896,9 +2084,8 @@ void shapeSectionRegister(std::vector<NoteEvent*>& notes, int low, int high, uin
     int register_high = std::clamp(high + lift, register_low, static_cast<int>(absolute_high));
     int target = static_cast<int>(note.note) + lift;
     note.note = harmony != nullptr
-                    ? clampScalePitchAvoidingChord(target, note.start_tick, *harmony,
-                                                   static_cast<uint8_t>(register_low),
-                                                   static_cast<uint8_t>(register_high))
+                    ? pickShapedPitch(target, note, *harmony, static_cast<uint8_t>(register_low),
+                                      static_cast<uint8_t>(register_high), role)
                     : clampScalePitch(target, static_cast<uint8_t>(register_low),
                                       static_cast<uint8_t>(register_high));
     // Section energy differentiation: boost velocity for shaped notes.
@@ -1908,7 +2095,8 @@ void shapeSectionRegister(std::vector<NoteEvent*>& notes, int low, int high, uin
 
 void applyDnaPattern(std::vector<NoteEvent*>& notes, int base_pitch,
                      const std::vector<int>& intervals, uint8_t low, uint8_t high,
-                     uint8_t velocity_boost, const IHarmonyContext* harmony = nullptr) {
+                     uint8_t velocity_boost, const IHarmonyContext* harmony = nullptr,
+                     TrackRole role = TrackRole::Vocal) {
   if (notes.empty() || intervals.empty()) {
     return;
   }
@@ -1916,9 +2104,8 @@ void applyDnaPattern(std::vector<NoteEvent*>& notes, int base_pitch,
   for (size_t idx = 0; idx < notes.size(); ++idx) {
     NoteEvent& note = *notes[idx];
     int pitch = base_pitch + intervals[idx % intervals.size()];
-    note.note = harmony != nullptr
-                    ? clampScalePitchAvoidingChord(pitch, note.start_tick, *harmony, low, high)
-                    : clampScalePitch(pitch, low, high);
+    note.note = harmony != nullptr ? pickShapedPitch(pitch, note, *harmony, low, high, role)
+                                   : clampScalePitch(pitch, low, high);
     // Section energy differentiation: boost velocity for DNA-rewritten notes.
     note.velocity = vel::withDelta(note.velocity, static_cast<int>(velocity_boost));
   }
@@ -1970,20 +2157,24 @@ void applyRhythmSyncLeadDna(MidiTrack& vocal, MidiTrack& motif,
         break;
     }
 
+    // The vocal rewrites must be chord-aware (same as the motif calls below):
+    // a fixed DNA degree (e.g. 11 = B) stamped without harmonic context lands
+    // tritones against the bass/chord roots (B over IV = F is the classic
+    // case observed in the RhythmLock dissonance gate).
     auto all_vocal_notes = collectSectionNotes(vocal, section, 0);
     switch (section.type) {
       case SectionType::A:
         shapeSectionRegister(all_vocal_notes, vocal_center - 9, vocal_center + 2, params.vocal_low,
-                             params.vocal_high, 0, 0, 1);
+                             params.vocal_high, 0, 0, 1, &harmony);
         break;
       case SectionType::B:
         shapeSectionRegister(all_vocal_notes, vocal_center - 4, vocal_center + 7, params.vocal_low,
-                             params.vocal_high, 0, 3, 2);
+                             params.vocal_high, 0, 3, 2, &harmony);
         break;
       case SectionType::Chorus:
         shapeSectionRegister(all_vocal_notes, vocal_center, vocal_center + 10, params.vocal_low,
-                             params.vocal_high, occurrence >= 2 ? 1 : 0, occurrence >= 2 ? 3 : 1,
-                             3);
+                             params.vocal_high, occurrence >= 2 ? 1 : 0, occurrence >= 2 ? 3 : 1, 3,
+                             &harmony);
         break;
       default:
         break;
@@ -1991,19 +2182,19 @@ void applyRhythmSyncLeadDna(MidiTrack& vocal, MidiTrack& motif,
 
     auto vocal_notes = collectSectionNotes(vocal, section, 12);
     applyDnaPattern(vocal_notes, vocal_center + vocal_shift, *vocal_pattern, params.vocal_low,
-                    params.vocal_high, vocal_boost);
+                    params.vocal_high, vocal_boost, &harmony);
 
     auto all_motif_notes = collectSectionNotes(motif, section, 0);
     switch (section.type) {
       case SectionType::A:
-        shapeSectionRegister(all_motif_notes, 59, 72, 55, 88, 0, 0, 1, &harmony);
+        shapeSectionRegister(all_motif_notes, 59, 72, 55, 88, 0, 0, 1, &harmony, TrackRole::Motif);
         break;
       case SectionType::B:
-        shapeSectionRegister(all_motif_notes, 62, 76, 55, 88, 0, 3, 2, &harmony);
+        shapeSectionRegister(all_motif_notes, 62, 76, 55, 88, 0, 3, 2, &harmony, TrackRole::Motif);
         break;
       case SectionType::Chorus:
         shapeSectionRegister(all_motif_notes, 66, 82, 55, 88, occurrence >= 2 ? 1 : 0,
-                             occurrence >= 2 ? 3 : 1, 3, &harmony);
+                             occurrence >= 2 ? 3 : 1, 3, &harmony, TrackRole::Motif);
         break;
       default:
         break;

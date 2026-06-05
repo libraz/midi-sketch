@@ -120,11 +120,11 @@ int applyAllPitchConstraints(int pitch, const NoteGenerationContext& ctx,
                                                params.vocal_high, params.tessitura);
   }
 
-  // 4. Leap encouragement after long notes
+  // 4. Movement encouragement after long notes (avoid static repeats)
   if (ctx.note_index > 0) {
-    new_pitch =
-        encourageLeapAfterLongNote(new_pitch, ctx.current_pitch, ctx.prev_duration,
-                                   ctx.chord_degree, params.vocal_low, params.vocal_high, rng);
+    new_pitch = encourageMovementAfterLongNote(new_pitch, ctx.current_pitch, ctx.prev_duration,
+                                               ctx.chord_degree, params.key_offset,
+                                               params.vocal_low, params.vocal_high, rng);
   }
 
   // 5. Avoid note constraint

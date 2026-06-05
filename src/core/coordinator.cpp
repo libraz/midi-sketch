@@ -914,8 +914,10 @@ bool isConsonantWithSongTracks(const Song& song, uint8_t pitch, Tick start, Tick
 /// @brief Find a consonant chord tone for a voice-limited note.
 ///
 /// Tries all chord tones in nearby octaves, sorted by distance from the
-/// original pitch. Returns the closest consonant chord tone, or the
-/// original snapped pitch if none is consonant.
+/// original pitch, then scale tones as a passing-tone fallback. Returns -1
+/// when no consonant pitch exists in range: the caller should drop the
+/// copied note rather than place a known clash (frozen-bar copies are
+/// textural, so omitting one beats a minor 9th against another track).
 ///
 /// @param harmony Harmony context for chord tone lookup
 /// @param song The Song containing all tracks
@@ -943,9 +945,9 @@ int getVocalCeiling(const Song& song, Tick start, Tick duration, TrackRole role)
   return ceiling;
 }
 
-uint8_t findConsonantChordTone(IHarmonyCoordinator& harmony, const Song& song, uint8_t snapped,
-                               uint8_t original, Tick start, Tick duration, TrackRole role,
-                               uint8_t range_low = 0, uint8_t range_high = 127) {
+int findConsonantChordTone(IHarmonyCoordinator& harmony, const Song& song, uint8_t snapped,
+                           uint8_t original, Tick start, Tick duration, TrackRole role,
+                           uint8_t range_low = 0, uint8_t range_high = 127) {
   int8_t chord_degree = harmony.getChordDegreeAt(start);
   auto chord_tones = harmony.getChordTonesAt(start);
   int orig_octave = original / 12;
@@ -987,9 +989,34 @@ uint8_t findConsonantChordTone(IHarmonyCoordinator& harmony, const Song& song, u
     }
   }
 
-  // No consonant chord tone found; keep snapped pitch (clamped to range)
-  return static_cast<uint8_t>(std::clamp(static_cast<int>(snapped), static_cast<int>(range_low),
-                                         static_cast<int>(range_high)));
+  // No consonant chord tone found. Before accepting a known clash, try scale
+  // tones in range (a passing-tone pitch is far better than e.g. a minor 9th
+  // against the bass). This matters when the vocal ceiling shrinks the range
+  // so much that every chord tone clashes with another track.
+  std::vector<Candidate> scale_candidates;
+  for (int pc : {0, 2, 4, 5, 7, 9, 11}) {
+    for (int oct = orig_octave - 1; oct <= orig_octave + 1; ++oct) {
+      int p = oct * 12 + pc;
+      if (p < range_low || p > range_high) continue;
+      int dist = std::abs(p - static_cast<int>(original));
+      bool crosses = orig_below_vocal && p >= vocal_ceiling;
+      scale_candidates.push_back({crosses, dist, static_cast<uint8_t>(p)});
+    }
+  }
+  std::sort(scale_candidates.begin(), scale_candidates.end(),
+            [](const Candidate& a, const Candidate& b) {
+              if (a.crosses_above_vocal != b.crosses_above_vocal) return !a.crosses_above_vocal;
+              return a.distance < b.distance;
+            });
+  for (const auto& c : scale_candidates) {
+    if (isConsonantWithSongTracks(song, c.pitch, start, duration, role, chord_degree)) {
+      return c.pitch;
+    }
+  }
+
+  // No consonant pitch exists in range: signal the caller to drop the note
+  (void)snapped;
+  return -1;
 }
 
 /// @brief Max consecutive identical pitches allowed when re-quantizing frozen bars.
@@ -1158,6 +1185,19 @@ void Coordinator::applyVoiceLimit(Song& song, const std::vector<Section>& sectio
           range_low = 55;
           range_high = 84;
           break;
+        case TrackRole::Guitar:
+          // Electric guitar physical range (PhysicalModels::kElectricGuitar =
+          // [40, 76], matching kGuitarLow/kGuitarHigh in guitar.cpp). Without
+          // this case the requantization snapped guitar notes down to C2.
+          range_low = 40;
+          range_high = 76;
+          break;
+        case TrackRole::Arpeggio:
+          // Arpeggio generation range (range_low = 48 in arpeggio.cpp; the
+          // upper bound matches the synth-lead voicing ceiling).
+          range_low = 48;
+          range_high = 96;
+          break;
         default:
           break;
       }
@@ -1254,8 +1294,26 @@ void Coordinator::applyVoiceLimit(Song& song, const std::vector<Section>& sectio
         int8_t chord_degree = harmony.getChordDegreeAt(note.start_tick);
         if (!isConsonantWithSongTracks(song, candidate, note.start_tick, note.duration, fb.role,
                                        chord_degree)) {
-          candidate = findConsonantChordTone(harmony, song, candidate, note.note, note.start_tick,
-                                             note.duration, fb.role, range_low, note_range_high);
+          int resolved =
+              findConsonantChordTone(harmony, song, candidate, note.note, note.start_tick,
+                                     note.duration, fb.role, range_low, note_range_high);
+          if (resolved < 0 && note_range_high < range_high) {
+            // No consonant pitch under the vocal ceiling (the ceiling can
+            // pinch the range onto a single pitch that clashes with another
+            // track). Retry with a lifted ceiling: a minor crossing above the
+            // vocal is far less harmful than a known clash. The lift is capped
+            // at vocal + 4 semitones so the crossing stays in the checker's
+            // medium band (excess >= 5 is a high-severity gate failure).
+            uint8_t lifted_high = static_cast<uint8_t>(
+                std::min<int>(range_high, static_cast<int>(note_range_high) + 4));
+            resolved = findConsonantChordTone(harmony, song, candidate, note.note, note.start_tick,
+                                              note.duration, fb.role, range_low, lifted_high);
+          }
+          if (resolved >= 0) {
+            candidate = static_cast<uint8_t>(resolved);
+          }
+          // resolved < 0: keep snapped pitch (clash > dropped onset; the
+          // frozen bar must keep the previous bar's rhythm)
         }
 
         // Break long same-pitch runs: re-quantization collapses copied

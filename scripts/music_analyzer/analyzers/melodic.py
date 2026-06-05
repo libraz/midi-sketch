@@ -3,9 +3,21 @@
 Detects melodic issues including isolated notes, consecutive same-pitch
 repetitions, out-of-range pitches, large leaps, monotonous contours,
 phrase arc quality, and singability metrics.
+
+Melody discipline (two-layer) checks compare the vocal against
+backup/reference/target_profiles.json:
+- Layer 1 (melody_common_rules): corpus-universal prohibitions, applied
+  regardless of blueprint.
+- Layer 2 (per-category melody ranges): genre coloring, applied only when
+  the blueprint (and thus the genre category) is known. No genre-uniform
+  default is ever substituted — unknown genre means Layer 2 is skipped.
 """
 
-from typing import List
+import json
+import sys
+from functools import lru_cache
+from pathlib import Path
+from typing import List, Optional
 
 from ..constants import (
     TICKS_PER_BEAT,
@@ -21,6 +33,49 @@ from ..constants import (
 from ..helpers import note_name, tick_to_bar
 from ..models import Issue
 from .base import BaseAnalyzer
+
+_SCRIPTS_DIR = Path(__file__).resolve().parents[2]
+if str(_SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPTS_DIR))
+
+import melodic_metrics as mm  # noqa: E402  (shared measurement library)
+
+_TARGETS_PATH = _SCRIPTS_DIR.parent / "backup" / "reference" / "target_profiles.json"
+
+# Layer 2 metrics judged against category ranges (mirror of
+# compare_generation_to_targets.MELODY_COMPARED).
+MELODY_STYLE_METRICS = (
+    "step_ratio",
+    "leap_small_ratio",
+    "leap_large_ratio",
+    "run_conjunct_ratio",
+    "turns_per_100",
+    "flat_ratio",
+    "arch_ratio",
+    "range",
+    "max_streak",
+    "pitch_cell_consistency",
+)
+
+_SEVERITY_MAP = {"error": Severity.ERROR, "warning": Severity.WARNING}
+
+
+@lru_cache(maxsize=1)
+def _load_melody_targets() -> Optional[dict]:
+    """target_profiles.json content, or None when unavailable."""
+    try:
+        return json.loads(_TARGETS_PATH.read_text())
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def _category_for_blueprint(targets: dict, blueprint) -> Optional[str]:
+    if blueprint is None:
+        return None
+    for cat, info in targets.get("categories", {}).items():
+        if blueprint in info.get("blueprints", []):
+            return cat
+    return None
 
 
 class MelodicAnalyzer(BaseAnalyzer):
@@ -40,7 +95,91 @@ class MelodicAnalyzer(BaseAnalyzer):
         self._analyze_melodic_contour()
         self._analyze_melodic_arc()
         self._analyze_singability()
+        self._analyze_melody_discipline()
         return self.issues
+
+    # -----------------------------------------------------------------
+    # Melody discipline (two-layer, reference-derived)
+    # -----------------------------------------------------------------
+
+    def _analyze_melody_discipline(self):
+        """Layer 1 common prohibitions + Layer 2 genre coloring for the vocal."""
+        vocal_notes = self.notes_by_channel.get(0, [])
+        if len(vocal_notes) < 20:
+            return
+        targets = _load_melody_targets()
+        if targets is None:
+            return
+
+        seq = mm.skyline(sorted((n.start, n.duration, n.pitch) for n in vocal_notes))
+        bpm = float(self.metadata.get("bpm") or 120)
+        profile = mm.melody_profile(seq, TICKS_PER_BEAT, bpm)
+
+        self._check_common_rules(profile, targets)
+        self._check_genre_coloring(profile, targets)
+
+    def _check_common_rules(self, profile: dict, targets: dict):
+        """Layer 1: corpus-universal prohibitions (applied for any genre)."""
+        for rule_name, rule in targets.get("melody_common_rules", {}).items():
+            if rule_name.startswith("_") or rule.get("bound") is None:
+                continue
+            value = profile.get(rule["metric"])
+            if value is None:
+                continue
+            min_samples = rule.get("min_samples")
+            if min_samples and profile.get("leap12_leaps", 0) < min_samples:
+                continue
+            violated = (value > rule["bound"] if rule["direction"] == "max"
+                        else value < rule["bound"])
+            if violated:
+                self.add_issue(
+                    severity=_SEVERITY_MAP.get(rule["severity"], Severity.WARNING),
+                    category=Category.MELODIC,
+                    subcategory="melody_common",
+                    message=(f"{rule_name}: {value:.3f} vs corpus bound "
+                             f"{rule['direction']}={rule['bound']} — {rule['description']}"),
+                    tick=0,
+                    track="Vocal",
+                    details={"rule": rule_name, "value": round(value, 4),
+                             "bound": rule["bound"], "direction": rule["direction"]},
+                )
+
+    def _check_genre_coloring(self, profile: dict, targets: dict):
+        """Layer 2: per-category melody ranges. Skipped when genre unknown."""
+        category = _category_for_blueprint(targets, self.metadata.get("blueprint"))
+        if category is None:
+            self.add_issue(
+                severity=Severity.INFO,
+                category=Category.MELODIC,
+                subcategory="melody_style",
+                message=("Blueprint unknown — genre melody coloring skipped "
+                         "(uncalibrated; only common prohibitions applied)"),
+                tick=0,
+                track="Vocal",
+            )
+            return
+        ref = targets["categories"].get(category, {}).get("melody")
+        if not ref:
+            return
+        for metric in MELODY_STYLE_METRICS:
+            value = profile.get(metric)
+            bounds = ref.get(metric)
+            if value is None or not bounds:
+                continue
+            if bounds["min"] <= value <= bounds["max"]:
+                continue
+            verdict = "below" if value < bounds["min"] else "above"
+            self.add_issue(
+                severity=Severity.WARNING,
+                category=Category.MELODIC,
+                subcategory="melody_style",
+                message=(f"{metric}={value:.3f} {verdict} {category} reference "
+                         f"range {bounds['min']}-{bounds['med']}-{bounds['max']}"),
+                tick=0,
+                track="Vocal",
+                details={"metric": metric, "value": round(value, 4),
+                         "category": category, "ref": bounds},
+            )
 
     # -----------------------------------------------------------------
     # Existing analyses

@@ -255,8 +255,20 @@ std::string MidiSketch::getEventsJson() const {
       .write("division", TICKS_PER_BEAT)
       .write("duration_ticks", total_ticks)
       .write("duration_seconds", duration_seconds)
-      .write("vocal_style", static_cast<int>(params.vocal_style))
-      .beginArray("tracks");
+      .write("vocal_style", static_cast<int>(params.vocal_style));
+
+  // Generation metadata: analysis tools (music_analyzer, gap reports) resolve
+  // the blueprint -> genre category from here instead of requiring the caller
+  // to pass --blueprint-single. Without it, genre-gated checks degrade to an
+  // uncalibrated (genre-uniform) mode.
+  w.beginObject("metadata")
+      .write("blueprint", static_cast<int>(generator_.resolvedBlueprintId()))
+      .write("style", static_cast<int>(params.style_preset_id))
+      .write("mood", static_cast<int>(params.mood))
+      .write("seed", params.seed)
+      .endObject();
+
+  w.beginArray("tracks");
 
   // Write tracks (use mood-specific program numbers)
   const auto& progs = getMoodPrograms(params.mood);

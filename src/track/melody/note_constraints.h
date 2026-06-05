@@ -65,20 +65,24 @@ bool isChordTone(int pitch_pc, int8_t chord_degree);
 /// @brief Apply consecutive same note constraint.
 ///
 /// Convenience function that combines tracking and forced movement.
-/// Call this after determining the tentative next pitch.
+/// Call this after determining the tentative next pitch. Forced movement
+/// prefers scale steps over chord-tone leaps: reference vocal melodies break
+/// repeated-note figures with neighbor tones, not arpeggio hops.
 ///
 /// @param[in,out] pitch Pitch to potentially modify
 /// @param[in,out] tracker Consecutive note tracker
 /// @param prev_pitch Previous pitch (for comparison)
 /// @param chord_degree Current chord degree
+/// @param key_offset Key offset for scale tone check
 /// @param vocal_low Minimum pitch
 /// @param vocal_high Maximum pitch
 /// @param max_interval Maximum interval constraint
 /// @param rng Random number generator
 /// @return true if pitch was modified
 bool applyConsecutiveSameNoteConstraint(int& pitch, ConsecutiveSameNoteTracker& tracker,
-                                        int prev_pitch, int8_t chord_degree, uint8_t vocal_low,
-                                        uint8_t vocal_high, int max_interval, std::mt19937& rng);
+                                        int prev_pitch, int8_t chord_degree, int key_offset,
+                                        uint8_t vocal_low, uint8_t vocal_high, int max_interval,
+                                        std::mt19937& rng);
 
 }  // namespace melody
 }  // namespace midisketch

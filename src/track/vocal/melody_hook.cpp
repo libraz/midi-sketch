@@ -314,8 +314,8 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& 
       // Apply consecutive same note limit AFTER final pitch selection
       // This ensures we catch cases where collision avoidance re-selected the same pitch
       melody::applyConsecutiveSameNoteConstraint(pitch, consecutive_tracker, prev_hook_pitch,
-                                                 note_chord_degree, ctx.vocal_low, ctx.vocal_high,
-                                                 kMaxMelodicInterval, rng);
+                                                 note_chord_degree, ctx.key_offset, ctx.vocal_low,
+                                                 ctx.vocal_high, kMaxMelodicInterval, rng);
 
       NoteEvent hook_note = createNoteWithoutHarmony(current_tick, final_duration,
                                                      static_cast<uint8_t>(pitch), final_velocity);

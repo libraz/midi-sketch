@@ -31,18 +31,18 @@ namespace midisketch {
 
 namespace {
 
-// Helper to check if a pitch clashes with vocal at a given time range
+// Helper to check if a pitch clashes with vocal at a given time range.
+// Uses the same criterion as the motif-vs-vocal detection pass
+// (fullWithTritone): a resolver that ignores tritone can otherwise land a
+// motif note on the very interval the detection pass flags (e.g. F4 under a
+// vocal B4 on a IV chord).
 bool clashesWithVocal(uint8_t pitch, Tick start, Tick end, const MidiTrack& vocal) {
   for (const auto& v_note : vocal.notes()) {
     Tick v_end = v_note.start_tick + v_note.duration;
     // Check overlap
     if (start < v_end && end > v_note.start_tick) {
       int interval = std::abs(static_cast<int>(pitch) - static_cast<int>(v_note.note));
-      int interval_class = interval % 12;
-      bool is_dissonant = (interval_class == 1) ||                 // minor 2nd / minor 9th
-                          (interval_class == 11) ||                // major 7th
-                          (interval_class == 2 && interval < 12);  // major 2nd (close only)
-      if (is_dissonant) {
+      if (isDissonantSemitoneInterval(interval, DissonanceCheckOptions::fullWithTritone())) {
         return true;
       }
     }
@@ -207,8 +207,7 @@ uint8_t resolveMotifAboveVocalImpl(uint8_t original_pitch, uint8_t ceiling, int8
   // significantly smaller crossing (a small register crossing is preferable to
   // a +octave jump or an unresolved clash).
   {
-    uint8_t best_full = 0;   // consonant with vocal AND other tracks
-    uint8_t best_vocal = 0;  // consonant with vocal only
+    uint8_t best_full = 0;  // consonant with vocal AND other tracks
     for (uint8_t i = 0; i < ct.count; ++i) {
       int ct_pc = ct.pitch_classes[i];
       if (ct_pc < 0) continue;
@@ -217,19 +216,16 @@ uint8_t resolveMotifAboveVocalImpl(uint8_t original_pitch, uint8_t ceiling, int8
         if (candidate < floor_limit || candidate > MOTIF_HIGH) continue;
         uint8_t cand = static_cast<uint8_t>(candidate);
         if (clashesWithVocal(cand, start, end, vocal)) continue;
-        if (best_vocal == 0 || cand < best_vocal) best_vocal = cand;
         if (harmony.isConsonantWithOtherTracks(cand, start, duration, TrackRole::Motif)) {
           if (best_full == 0 || cand < best_full) best_full = cand;
         }
       }
     }
-    // Prefer the fully-consonant option unless it crosses much higher than the
-    // vocal-only option (then take the smaller crossing).
-    uint8_t pick = best_full;
-    if (best_vocal != 0 && (best_full == 0 || best_vocal + 4 < best_full)) {
-      pick = best_vocal;
-    }
-    if (pick != 0 && pick < original_pitch) return pick;
+    // Only a fully-consonant tone may be used: a vocal-only-consonant fallback
+    // trades a (warning-level) register crossing for a hard simultaneous clash
+    // against bass/chord (observed: motif B3 over a steady-cell bass F2 =
+    // aug 11th). Keeping the crossing is the lesser harm.
+    if (best_full != 0 && best_full < original_pitch) return best_full;
   }
 
   // No better option: leave the note unchanged. The caller treats an unchanged

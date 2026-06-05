@@ -107,8 +107,16 @@ int applyPitchChoice(PitchChoice choice, int current_pitch, int target_pitch, in
 
   switch (choice) {
     case PitchChoice::Same:
-      // Stay on nearest chord tone to current pitch
-      new_pitch = nearestChordTonePitch(current_pitch, chord_degree);
+      // Actually stay on the current pitch when it is a scale tone.
+      // Snapping "Same" to the nearest chord tone silently converted stay
+      // decisions into moves (often 3rds), inflating leap ratios. Avoid-note
+      // and downbeat chord-tone constraints run later in the pipeline and
+      // still correct genuinely unsafe pitches.
+      if (isScaleTone(current_pitch % 12, static_cast<uint8_t>(key_offset))) {
+        new_pitch = current_pitch;
+      } else {
+        new_pitch = nearestChordTonePitch(current_pitch, chord_degree);
+      }
       break;
 
     case PitchChoice::StepUp: {
@@ -260,35 +268,39 @@ int applyPitchChoice(PitchChoice choice, int current_pitch, int target_pitch, in
     } break;
 
     case PitchChoice::TargetStep:
-      // Move toward target, using nearest chord tone in that direction
-      if (target_pitch >= 0) {
-        if (target_pitch > current_pitch) {
-          // Going up toward target: find first chord tone above current
-          for (int c : candidates) {
-            if (c > current_pitch && c <= target_pitch) {
-              new_pitch = c;
-              break;
-            }
+      // Walk toward the target by scale step. Hopping to the next chord tone
+      // toward the target manufactured 3rds on every target-attraction move;
+      // reference vocals approach climax pitches with stepwise lines and
+      // land on chord tones at anchors (downbeat constraint handles that).
+      if (target_pitch >= 0 && target_pitch != current_pitch) {
+        int direction = (target_pitch > current_pitch) ? 1 : -1;
+
+        // Close enough to land directly (within a whole step)
+        if (std::abs(target_pitch - current_pitch) <= 2) {
+          new_pitch = target_pitch;
+          break;
+        }
+
+        // Prefer scale tone step toward target (whole step first)
+        for (int step = 2; step >= 1; --step) {
+          int candidate = current_pitch + direction * step;
+          if (candidate >= vocal_low && candidate <= vocal_high &&
+              isScaleTone(candidate % 12, static_cast<uint8_t>(key_offset))) {
+            new_pitch = candidate;
+            break;
           }
-          if (new_pitch == current_pitch) {
-            // No suitable chord tone found, use nearest above
+        }
+
+        // Fallback: nearest chord tone toward target
+        if (new_pitch == current_pitch) {
+          if (direction > 0) {
             for (int c : candidates) {
               if (c > current_pitch) {
                 new_pitch = c;
                 break;
               }
             }
-          }
-        } else if (target_pitch < current_pitch) {
-          // Going down toward target: find first chord tone below current
-          for (int i = static_cast<int>(candidates.size()) - 1; i >= 0; --i) {
-            if (candidates[i] < current_pitch && candidates[i] >= target_pitch) {
-              new_pitch = candidates[i];
-              break;
-            }
-          }
-          if (new_pitch == current_pitch) {
-            // No suitable chord tone found, use nearest below
+          } else {
             for (int i = static_cast<int>(candidates.size()) - 1; i >= 0; --i) {
               if (candidates[i] < current_pitch) {
                 new_pitch = candidates[i];
@@ -296,10 +308,10 @@ int applyPitchChoice(PitchChoice choice, int current_pitch, int target_pitch, in
               }
             }
           }
-        } else {
-          // Already at target
-          new_pitch = nearestChordTonePitch(current_pitch, chord_degree);
         }
+      } else if (isScaleTone(current_pitch % 12, static_cast<uint8_t>(key_offset))) {
+        // At target (or no target): hold position when already on a scale tone
+        new_pitch = current_pitch;
       } else {
         new_pitch = nearestChordTonePitch(current_pitch, chord_degree);
       }

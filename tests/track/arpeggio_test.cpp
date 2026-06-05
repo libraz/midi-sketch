@@ -926,6 +926,11 @@ TEST_F(ArpeggioTest, PhraseEndSplitMatchesChordTrack) {
         Tick chord_end = chord_note.start_tick + chord_note.duration;
         if (chord_end < problem_tick) continue;
 
+        // The two notes must actually sound together: a chord note ending
+        // exactly where the arpeggio note starts (end-exclusive) cannot clash.
+        Tick arp_end = arp_note.start_tick + arp_note.duration;
+        if (chord_note.start_tick >= arp_end || chord_end <= arp_note.start_tick) continue;
+
         // Check interval - must be within one octave to be a real clash
         int raw_interval =
             std::abs(static_cast<int>(arp_note.note) - static_cast<int>(chord_note.note));

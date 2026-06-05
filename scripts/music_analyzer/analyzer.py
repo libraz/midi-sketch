@@ -278,6 +278,13 @@ class MusicAnalyzer:
                 'pitch_repetition_rate': {
                     Severity.ERROR: 2.0, Severity.WARNING: 1.0, Severity.INFO: 0.2,
                 },
+                # Two-layer melody discipline (song-level issues, one per metric)
+                'melody_common': {
+                    Severity.ERROR: 5.0, Severity.WARNING: 2.0, Severity.INFO: 0.2,
+                },
+                'melody_style': {
+                    Severity.ERROR: 2.0, Severity.WARNING: 1.0, Severity.INFO: 0.1,
+                },
             },
             Category.HARMONIC: {
                 'dissonance': {

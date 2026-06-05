@@ -9,6 +9,7 @@
 #include <cmath>
 
 #include "core/chord_utils.h"
+#include "core/pitch_utils.h"
 #include "core/rng_util.h"
 
 namespace midisketch {
@@ -100,11 +101,32 @@ int findNearestDifferentChordTone(int current_pitch, int8_t chord_degree, uint8_
 }
 
 bool applyConsecutiveSameNoteConstraint(int& pitch, ConsecutiveSameNoteTracker& tracker,
-                                        int prev_pitch, int8_t chord_degree, uint8_t vocal_low,
-                                        uint8_t vocal_high, int max_interval, std::mt19937& rng) {
+                                        int prev_pitch, int8_t chord_degree, int key_offset,
+                                        uint8_t vocal_low, uint8_t vocal_high, int max_interval,
+                                        std::mt19937& rng) {
   if (pitch == prev_pitch) {
     tracker.increment();
     if (tracker.shouldForceMovement(rng)) {
+      // Prefer scale steps (whole step first) to break the repetition with a
+      // neighbor tone. Jumping to a chord tone here manufactured 3rds;
+      // reference vocals break repeated-note figures by step.
+      std::vector<int> step_candidates;
+      for (int step : {2, 1}) {
+        for (int dir : {1, -1}) {
+          int candidate = pitch + dir * step;
+          if (candidate >= vocal_low && candidate <= vocal_high &&
+              isScaleTone(candidate % 12, static_cast<uint8_t>(key_offset))) {
+            step_candidates.push_back(candidate);
+          }
+        }
+        if (!step_candidates.empty()) break;
+      }
+      if (!step_candidates.empty()) {
+        pitch = rng_util::selectRandom(rng, step_candidates);
+        tracker.reset();
+        return true;
+      }
+
       int new_pitch =
           findNearestDifferentChordTone(pitch, chord_degree, vocal_low, vocal_high, max_interval);
       if (new_pitch != pitch) {

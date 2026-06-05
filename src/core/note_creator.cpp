@@ -602,6 +602,30 @@ std::vector<PitchCandidate> getSafePitchCandidates(const ICollisionDetector& har
   // Helper to add a candidate if safe
   auto tryAddCandidate = [&](uint8_t pitch, CollisionAvoidStrategy strategy) {
     if (pitch < range_low || pitch > range_high) return;
+    // Skip duplicates: repeated pitches waste candidate slots (the list is
+    // capped), squeezing out genuinely different alternatives.
+    for (const auto& existing : candidates) {
+      if (existing.pitch == pitch) return;
+    }
+    // Vocal melodies stay diatonic: the vocal pipeline snaps to scale BEFORE
+    // collision resolution, so a chromatic candidate chosen here (interval
+    // adjustment, doubling a chromatic accompaniment note, or a secondary
+    // dominant chord tone) would leak through as a chromatic vocal note.
+    if (role == TrackRole::Vocal && strategy != CollisionAvoidStrategy::None &&
+        !isScaleTone(getPitchClass(pitch))) {
+      return;
+    }
+    // Bass stays on chord tones: PreferRootFifth resolution must never land
+    // on a 2nd/6th or a chromatic neighbor of the root. The bass defines the
+    // harmony, so a resolved alternative is only valid if it is a tone of the
+    // active chord (root/3rd/5th/7th in any octave).
+    if (preference == PitchPreference::PreferRootFifth &&
+        strategy != CollisionAvoidStrategy::None) {
+      int cand_pc = getPitchClass(pitch);
+      if (std::find(chord_tones.begin(), chord_tones.end(), cand_pc) == chord_tones.end()) {
+        return;
+      }
+    }
     if (!harmony.isConsonantWithOtherTracks(pitch, start, duration, role)) return;
 
     PitchCandidate candidate;
@@ -682,6 +706,24 @@ std::vector<PitchCandidate> getSafePitchCandidates(const ICollisionDetector& har
       int max_dist = (role == TrackRole::Vocal) ? 24 : 12;
       if (dist > max_dist) continue;
       tryAddCandidate(sounding_pitch, CollisionAvoidStrategy::ActualSounding);
+    }
+  }
+
+  // Strategy 1.75: Scale-step neighbors of the desired pitch.
+  // Generated BEFORE chord tones so the candidate cap cannot squeeze them
+  // out: stepwise alternatives preserve the melodic line, and reference
+  // vocal corpora prefer steps over chord-tone hops at every duration.
+  // Skipped for PreferRootFifth (bass): a scale-step neighbor of the root
+  // (e.g. E for an F root) is a non-chord tone on the downbeat, which the
+  // bass role must never produce — chord tones in other octaves are the
+  // correct alternatives there.
+  if (preference != PitchPreference::PreferRootFifth) {
+    for (int adj : {2, -2, 1, -1}) {
+      int p = static_cast<int>(desired_pitch) + adj;
+      if (p >= static_cast<int>(range_low) && p <= static_cast<int>(range_high) &&
+          isScaleTone(getPitchClass(static_cast<uint8_t>(p)))) {
+        tryAddCandidate(static_cast<uint8_t>(p), CollisionAvoidStrategy::ConsonantInterval);
+      }
     }
   }
 
@@ -774,7 +816,9 @@ std::vector<PitchCandidate> getSafePitchCandidates(const ICollisionDetector& har
   }
 
   // Strategy 3: Consonant interval adjustments
-  static const int kConsonantIntervals[] = {3, -3, 4, -4, 5, -5, 7, -7, 12, -12, 2, -2, 1, -1};
+  // Steps first: when the candidate cap cuts this list short, near-desired
+  // adjustments must survive (collision avoidance should minimally perturb).
+  static const int kConsonantIntervals[] = {2, -2, 1, -1, 3, -3, 4, -4, 5, -5, 7, -7, 12, -12};
   for (int adj : kConsonantIntervals) {
     int pitch = static_cast<int>(desired_pitch) + adj;
     if (pitch >= static_cast<int>(range_low) && pitch <= static_cast<int>(range_high)) {
@@ -989,7 +1033,10 @@ uint8_t selectBestCandidate(const std::vector<PitchCandidate>& candidates, uint8
     int abs_interval = std::abs(interval);
 
     // === Dimension 1: Melodic continuity (max 35) ===
-    // Rhythm-interval coupling: short notes prefer steps, long notes allow leaps.
+    // Reference vocal corpora prefer stepwise motion at every duration (step
+    // ratio 0.20-0.64 vs small-leap ratio <= 0.20 across all categories).
+    // Steps outrank 3rds even after long notes; fast notes are nearly always
+    // conjunct (reference run conjunct ratio 0.75+).
     float melodic_score = 0.0f;
     switch (dur_cat) {
       case DurationCat::Short:
@@ -998,23 +1045,23 @@ uint8_t selectBestCandidate(const std::vector<PitchCandidate>& candidates, uint8
         else if (abs_interval <= 2)
           melodic_score = 35.0f;
         else if (abs_interval <= 4)
-          melodic_score = 20.0f;
+          melodic_score = 10.0f;
         else if (abs_interval <= 7)
-          melodic_score = 5.0f;
+          melodic_score = 2.0f;
         else
           melodic_score = -1.5f * abs_interval;
         break;
       case DurationCat::Long:
         if (abs_interval == 0)
-          melodic_score = 15.0f;
+          melodic_score = 18.0f;
         else if (abs_interval <= 2)
-          melodic_score = 25.0f;
-        else if (abs_interval <= 4)
           melodic_score = 30.0f;
+        else if (abs_interval <= 4)
+          melodic_score = 22.0f;
         else if (abs_interval <= 7)
-          melodic_score = 25.0f;
-        else if (abs_interval <= 12)
           melodic_score = 15.0f;
+        else if (abs_interval <= 12)
+          melodic_score = 8.0f;
         else
           melodic_score = -1.0f * abs_interval;
         break;
@@ -1024,9 +1071,9 @@ uint8_t selectBestCandidate(const std::vector<PitchCandidate>& candidates, uint8
         else if (abs_interval <= 2)
           melodic_score = 30.0f;
         else if (abs_interval <= 4)
-          melodic_score = 25.0f;
+          melodic_score = 18.0f;
         else if (abs_interval <= 7)
-          melodic_score = 15.0f;
+          melodic_score = 8.0f;
         else
           melodic_score = -1.0f * abs_interval;
         break;
@@ -1048,14 +1095,17 @@ uint8_t selectBestCandidate(const std::vector<PitchCandidate>& candidates, uint8
 
     score += melodic_score * sw.melodic;
 
-    // === Dimension 2: Harmonic stability (max 25) ===
+    // === Dimension 2: Harmonic stability (max 20) ===
+    // Chord/scale gap kept moderate: a wide gap made chord tones a 3rd away
+    // systematically outrank scale-tone steps, turning melodies into
+    // chord-tone hopping. Downbeat anchoring is enforced separately.
     {
       float harmonic_score = 0.0f;
       if (c.is_chord_tone) {
-        harmonic_score += 20.0f;
-        if (c.is_root_or_fifth) harmonic_score += 5.0f;
+        harmonic_score += 16.0f;
+        if (c.is_root_or_fifth) harmonic_score += 4.0f;
       } else if (c.is_scale_tone) {
-        harmonic_score += 10.0f;
+        harmonic_score += 12.0f;
       }
       score += harmonic_score * sw.harmonic;
     }

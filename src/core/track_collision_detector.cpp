@@ -113,16 +113,19 @@ bool TrackCollisionDetector::isConsonantWithOtherTracks(
 
       // Duration-aware passing tone tolerance:
       // Brief overlaps allow stepwise dissonances for contrapuntal movement.
-      // Pass the candidate's role so sustained harmony tracks (Guitar/Chord)
-      // are excluded from the melodic passing-tone exemption: a guitar strum or
-      // chord voicing is vertical harmony, not a brief melodic passing tone.
-      // The existing note's role is left at the default (melodic) so that a
-      // melodic candidate (e.g. Motif) keeps its passing-tone tolerance even
-      // against a sustained chord note.
-      {
+      // Both roles are passed so sustained harmony tracks (Guitar/Chord) are
+      // excluded from the melodic passing-tone exemption on EITHER side: a
+      // chord voicing is vertical harmony, and a stepwise clash against it is
+      // counted by the dissonance analyzer regardless of which side moved
+      // (observed: motif D4 placed against a sounding chord E4 at the same
+      // onset was tolerated here but flagged by the gate).
+      // The lead vocal gets no tolerance either: a brief second rubbing
+      // against the melody is what listeners notice first, and the dissonance
+      // gate counts every such overlap.
+      if (note.track != TrackRole::Vocal) {
         Tick overlap_duration = std::min(end, note.end) - std::max(start, note.start);
         if (isToleratedPassingTone(actual_semitones, overlap_duration, pitch, note.pitch, start,
-                                   exclude)) {
+                                   exclude, note.track)) {
           continue;
         }
       }
@@ -132,6 +135,32 @@ bool TrackCollisionDetector::isConsonantWithOtherTracks(
         if (isHarmonicTrack(note.track)) {
           int pc_interval = actual_semitones % 12;
           if (pc_interval == 6 && actual_semitones < 36) {
+            return false;
+          }
+        }
+      }
+
+      // Mirror the analyzer's compound-interval rules (analysis/dissonance.cpp
+      // checkIntervalDissonance + bass M7 special case) so generation never
+      // accepts an interval the dissonance gate counts as a clash:
+      {
+        int pc_interval = actual_semitones % 12;
+        // Compound tritone (e.g. vocal B4 over bass F3 = aug 11th) is
+        // dissonant on non-dominant chords for ANY track pair.
+        if (pc_interval == 6 && actual_semitones <= 24) {
+          int normalized = ((chord_degree % 7) + 7) % 7;
+          if (normalized != 4 && normalized != 6) {
+            return false;
+          }
+        }
+        // Major-7th pitch class against a low bass note (< C3): the low
+        // register overtone content makes this clash audible even with
+        // 2+ octaves of separation.
+        if (pc_interval == 11) {
+          uint8_t bass_side_pitch = 128;
+          if (note.track == TrackRole::Bass) bass_side_pitch = note.pitch;
+          if (exclude == TrackRole::Bass) bass_side_pitch = std::min(bass_side_pitch, pitch);
+          if (bass_side_pitch < 48) {
             return false;
           }
         }
@@ -172,10 +201,10 @@ CollisionInfo TrackCollisionDetector::getCollisionInfo(
       int actual_semitones = std::abs(static_cast<int>(pitch) - static_cast<int>(note.pitch));
 
       // Duration-aware passing tone tolerance (consistent with isConsonantWithOtherTracks)
-      {
+      if (note.track != TrackRole::Vocal) {
         Tick overlap_duration = std::min(end, note.end) - std::max(start, note.start);
         if (isToleratedPassingTone(actual_semitones, overlap_duration, pitch, note.pitch, start,
-                                   exclude)) {
+                                   exclude, note.track)) {
           continue;
         }
       }
