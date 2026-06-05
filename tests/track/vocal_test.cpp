@@ -1107,10 +1107,12 @@ TEST_F(VocalTest, OffBeatGrooveGeneratesValidOutput) {
   const auto& vocal = gen.getSong().vocal().notes();
   EXPECT_FALSE(vocal.empty()) << "OffBeat groove should generate notes";
 
-  // Verify all notes are valid
+  // Verify all notes are valid. The climax Chorus (PeakLevel::Max) is allowed
+  // vocal_high + 2 by design ("break out" headroom, see climax_extension in
+  // vocal.cpp), so the upper bound includes that allowance.
   for (const auto& note : vocal) {
     EXPECT_GE(note.note, params_.vocal_low);
-    EXPECT_LE(note.note, params_.vocal_high);
+    EXPECT_LE(note.note, params_.vocal_high + 2);
     EXPECT_GT(note.duration, 0);
   }
 }

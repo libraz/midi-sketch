@@ -193,16 +193,19 @@ void recordProvenanceTransforms(NoteEvent& event, const ProvenanceParams& params
 // PreserveContour monotony check.
 std::optional<uint8_t> resolveWithOctaveFallback(const IHarmonyContext& harmony,
                                                  const NoteOptions& opts, Tick effective_duration) {
-  // Try octave-down if desired exceeds range_high, then clamp as last resort
+  // Fold down by octaves if desired exceeds range_high (preserves pitch class,
+  // so a chord tone stays a chord tone), then clamp as last resort. A single
+  // hard clamp would land on range_high itself, which under a vocal-pitch
+  // ceiling means doubling the vocal on an arbitrary (possibly non-chord) tone.
   uint8_t fallback_pitch = opts.desired_pitch;
   if (fallback_pitch > opts.range_high) {
-    int octave_down = static_cast<int>(fallback_pitch) - 12;
-    if (octave_down >= static_cast<int>(opts.range_low) &&
-        octave_down <= static_cast<int>(opts.range_high)) {
-      fallback_pitch = static_cast<uint8_t>(octave_down);
-    } else {
-      fallback_pitch = opts.range_high;
+    int folded = static_cast<int>(fallback_pitch);
+    while (folded > static_cast<int>(opts.range_high) &&
+           folded - 12 >= static_cast<int>(opts.range_low)) {
+      folded -= 12;
     }
+    fallback_pitch = (folded <= static_cast<int>(opts.range_high)) ? static_cast<uint8_t>(folded)
+                                                                   : opts.range_high;
   }
 
   // Final safety check: if fallback still causes dissonance, try octave shifts
@@ -727,8 +730,21 @@ std::vector<PitchCandidate> getSafePitchCandidates(const ICollisionDetector& har
     }
   }
 
-  // Strategy 2: Based on preference, try specific pitches
+  // Strategy 2: Based on preference, try specific pitches.
+  // For accompaniment, center the octave window on the legal range when the
+  // desired pitch lies outside it (e.g. an arpeggio pattern far above a
+  // vocal-pitch ceiling): octaves around an unreachable desired pitch would
+  // yield zero candidates, leaving only exhaustive-search pitches near
+  // range_high. Vocal keeps the window at the desired pitch: its candidates
+  // must stay near the melodic line, not near the range edge.
   int octave = desired_pitch / 12;
+  if (role != TrackRole::Vocal) {
+    if (desired_pitch > range_high) {
+      octave = range_high / 12;
+    } else if (desired_pitch < range_low) {
+      octave = range_low / 12;
+    }
+  }
 
   switch (preference) {
     case PitchPreference::PreferRootFifth:

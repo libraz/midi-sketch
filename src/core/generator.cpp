@@ -82,6 +82,7 @@ void breakLongPitchRuns(MidiTrack& track, const IHarmonyContext& harmony, uint8_
                         int max_run, TrackRole role);
 void trimBassBoundaryOverhangs(MidiTrack& bass, const IHarmonyContext& harmony);
 void trimVocalSustainsAtUnsafeChordChanges(MidiTrack& vocal, const IHarmonyContext& harmony);
+void trimClashingNoteTails(Song& song, const IHarmonyContext& harmony);
 void applyRhythmSyncLeadDna(MidiTrack& vocal, MidiTrack& motif,
                             const std::vector<Section>& sections, const GeneratorParams& params,
                             const IHarmonyContext& harmony);
@@ -654,6 +655,32 @@ void Generator::applyPostProcessingEffects() {
                                          kMaxMotifSamePitchRun);
   harmony_context_->clearNotesForTrack(TrackRole::Motif);
   harmony_context_->registerTrack(song_.motif(), TrackRole::Motif);
+
+  // Final register-crossing resolution for every paradigm: the collision and
+  // run-breaking passes above resolve pitches individually and can push an
+  // accompaniment note well above the concurrent vocal (observed: a motif
+  // collision rewrite landing a 10-semitone crossing). Octave-drop such notes
+  // back under the vocal where a consonant drop exists. The RhythmSync motif
+  // is the coordinate axis and is governed by duckMotifUnderLead instead.
+  // Arpeggio is excluded: its high sparkle register above the vocal is
+  // intentional (octave-dropping it collapses runs onto a single pitch).
+  {
+    std::vector<std::pair<MidiTrack*, TrackRole>> crossing_tracks = {
+        {&song_.chord(), TrackRole::Chord}, {&song_.aux(), TrackRole::Aux}};
+    if (!isRhythmSyncLeadSetting(params_, resolved_blueprint_id_)) {
+      crossing_tracks.emplace_back(&song_.motif(), TrackRole::Motif);
+    }
+    for (const auto& tr : crossing_tracks) {
+      lowerTrackCrossingsUnderVocal(*tr.first, song_.vocal(), *harmony_context_, tr.second);
+      harmony_context_->clearNotesForTrack(tr.second);
+      harmony_context_->registerTrack(*tr.first, tr.second);
+    }
+  }
+
+  // Very last note-mutating step: every pass above can leave a short
+  // always-dissonant tail overlap (durations only are changed here, so no
+  // re-registration ordering issues can follow).
+  trimClashingNoteTails(song_, *harmony_context_);
 }
 
 void Generator::generate(const GeneratorParams& params) {
@@ -1498,6 +1525,132 @@ void trimBassBoundaryOverhangs(MidiTrack& bass, const IHarmonyContext& harmony) 
   }
 }
 
+/// @brief Final safety net: trim always-dissonant tail overlaps left by late passes.
+///
+/// Creation-time collision checks validate each note against the notes
+/// registered at that moment, but later passes mutate notes directly:
+/// humanization shifts onsets and stretches durations, same-pitch merges
+/// extend a note through another track's onset, and pitch rewrites
+/// (chord-tone requantization, duck/crossing fixes) move notes into spans
+/// that were clear when the other track was voiced. Any of these can leave a
+/// brief always-dissonant overlap (m2/m9, compound tritone, M7 over a low
+/// bass) that the dissonance gate counts as a simultaneous clash (observed:
+/// a bass leading-tone approach B2 entering under a motif note that a
+/// same-pitch merge had extended across the chord boundary).
+///
+/// Only the always-dissonant interval rules from the analyzer are applied,
+/// and only tail overlaps are handled: the earlier note is shortened to end
+/// at the clashing note's onset. Same-onset clashes are left for the
+/// pitch-level fixers (trimming cannot resolve them).
+void trimClashingNoteTails(Song& song, const IHarmonyContext& harmony) {
+  constexpr Tick kMaxTailOverlap = TICK_QUARTER;  // longer overlaps were
+                                                  // visible at creation time
+  // A 32nd-note stub is the shortest musically acceptable remainder (a bass
+  // approach note reduced to a ghost-note blip beats an m9/M7 clash).
+  constexpr Tick kMinRemainder = TICK_32ND;
+
+  const std::pair<MidiTrack*, TrackRole> tracks[] = {
+      {&song.vocal(), TrackRole::Vocal},  {&song.chord(), TrackRole::Chord},
+      {&song.bass(), TrackRole::Bass},    {&song.motif(), TrackRole::Motif},
+      {&song.aux(), TrackRole::Aux},      {&song.arpeggio(), TrackRole::Arpeggio},
+      {&song.guitar(), TrackRole::Guitar}};
+
+  // Always-dissonant test mirroring the analyzer / collision detector rules.
+  auto isAlwaysDissonant = [&harmony](int semitones, uint8_t lower_pitch, Tick at) {
+    if (semitones == 1 || semitones == 13) return true;  // m2 / m9
+    int pc = semitones % 12;
+    // M7 pitch class against a low bass note (< C3): audible even with
+    // octaves of separation.
+    if (pc == 11 && lower_pitch < 48) return true;
+    // Tritone (incl. compound up to 2 octaves) outside dominant-function chords.
+    if (pc == 6 && semitones <= 24) {
+      int degree = harmony.getChordDegreeAt(at);
+      int normalized = ((degree % 7) + 7) % 7;
+      if (normalized != 4 && normalized != 6) return true;
+    }
+    return false;
+  };
+
+  for (const auto& [earlier_track, earlier_role] : tracks) {
+    for (const auto& [later_track, later_role] : tracks) {
+      if (earlier_track == later_track) continue;
+      for (auto& a : earlier_track->notes()) {
+        Tick a_end = a.start_tick + a.duration;
+        for (const auto& b : later_track->notes()) {
+          if (b.start_tick <= a.start_tick) continue;  // need a true tail overlap
+          if (b.start_tick >= a_end) continue;
+          Tick overlap = a_end - b.start_tick;
+          if (overlap > kMaxTailOverlap) continue;
+          Tick remainder = b.start_tick - a.start_tick;
+          if (remainder < kMinRemainder) continue;
+          int semitones = std::abs(static_cast<int>(a.note) - static_cast<int>(b.note));
+          uint8_t lower_pitch = std::min(a.note, b.note);
+          if (!isAlwaysDissonant(semitones, lower_pitch, b.start_tick)) continue;
+          a.duration = remainder;
+          a_end = a.start_tick + a.duration;
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+          a.addTransformStep(TransformStepType::PostProcessDuration, 0, 0, -1, 0);
+#endif
+        }
+      }
+    }
+  }
+
+  // Same-onset always-dissonant pairs cannot be tail-trimmed. When one side
+  // is a short decorative stab (<= an eighth) clashing with a longer note,
+  // remove the stab from the more decorative track (precedent:
+  // removeComfortClashesAgainstReference also deletes clashing notes). Two
+  // independent collision fixers can resolve INTO each other (observed: a
+  // post-process motif rewrite to B3 at the same onset as a guitar stab
+  // already moved to F3 = a mutual tritone neither checker saw).
+  auto decorativeness = [](TrackRole role) {
+    switch (role) {
+      case TrackRole::Arpeggio:
+        return 6;
+      case TrackRole::Guitar:
+        return 5;
+      case TrackRole::Chord:
+        return 4;
+      case TrackRole::Aux:
+        return 3;
+      case TrackRole::Motif:
+        return 2;
+      case TrackRole::Bass:
+        return 1;
+      default:
+        return 0;  // Vocal and everything else: never delete
+    }
+  };
+  for (const auto& pair_a : tracks) {
+    for (const auto& pair_b : tracks) {
+      // Visit each unordered pair once, with pair_a as the deletion side.
+      MidiTrack* track_a = pair_a.first;
+      const MidiTrack* track_b = pair_b.first;
+      if (track_a == track_b) continue;
+      if (decorativeness(pair_a.second) <= decorativeness(pair_b.second)) continue;
+      if (decorativeness(pair_a.second) == 0) continue;
+      auto& a_notes = track_a->notes();
+      a_notes.erase(
+          std::remove_if(a_notes.begin(), a_notes.end(),
+                         [&](const NoteEvent& a) {
+                           if (a.duration > TICK_EIGHTH) return false;
+                           for (const auto& b : track_b->notes()) {
+                             if (b.start_tick != a.start_tick) continue;
+                             if (b.duration < a.duration) continue;
+                             int semitones =
+                                 std::abs(static_cast<int>(a.note) - static_cast<int>(b.note));
+                             uint8_t lower_pitch = std::min(a.note, b.note);
+                             if (isAlwaysDissonant(semitones, lower_pitch, a.start_tick)) {
+                               return true;
+                             }
+                           }
+                           return false;
+                         }),
+          a_notes.end());
+    }
+  }
+}
+
 void duckMotifUnderLead(MidiTrack& motif, const MidiTrack& vocal, const IHarmonyContext& harmony) {
   auto& motif_notes = motif.notes();
   const auto& vocal_notes = vocal.notes();
@@ -1610,7 +1763,9 @@ void lowerTrackCrossingsUnderVocal(MidiTrack& track, const MidiTrack& vocal,
   // pitch-crossing gate).
   constexpr int kHighCrossing = 5;
 
-  for (auto& note : track_notes) {
+  std::vector<size_t> unresolvable;
+  for (size_t note_idx = 0; note_idx < track_notes.size(); ++note_idx) {
+    auto& note = track_notes[note_idx];
     Tick note_end = note.start_tick + note.duration;
     int vocal_min = 128;
     for (const auto& v : vocal_notes) {
@@ -1629,15 +1784,51 @@ void lowerTrackCrossingsUnderVocal(MidiTrack& track, const MidiTrack& vocal,
     }
     if (candidate == static_cast<int>(pre_pitch)) continue;  // No room to drop
     if (candidate - vocal_min >= kHighCrossing) continue;    // Still high: keep voicing intact
-    if (!harmony.isConsonantWithOtherTracks(static_cast<uint8_t>(candidate), note.start_tick,
-                                            note.duration, role)) {
-      continue;  // Crossing warning < forced clash
+    // Pick the fold with the longest consonant span. A single fold can be
+    // dissonant for the full duration of a long note (e.g. it lands a major
+    // 2nd under a later vocal note, or a chord change mid-note clashes), yet
+    // be perfectly consonant for a leading prefix; trimming to that prefix
+    // beats keeping the note above the melody.
+    int chosen = -1;
+    Tick chosen_end = 0;
+    for (int p = candidate; p >= static_cast<int>(CHORD_LOW); p -= 12) {
+      if (harmony.isConsonantWithOtherTracks(static_cast<uint8_t>(p), note.start_tick,
+                                             note.duration, role)) {
+        chosen = p;
+        chosen_end = note_end;
+        break;
+      }
+      Tick safe_end =
+          harmony.getMaxSafeEnd(note.start_tick, static_cast<uint8_t>(p), role, note_end);
+      if (safe_end > chosen_end) {
+        chosen = p;
+        chosen_end = safe_end;
+      }
     }
-    note.note = static_cast<uint8_t>(candidate);
+    if (chosen < 0 || chosen_end < note.start_tick + TICK_EIGHTH) {
+      // No fold has even an eighth of consonant span from the onset. For a
+      // sustained note this means it crosses far above the vocal AND clashes
+      // everywhere underneath — removing it is musically better than either.
+      // Short notes are left as a brief crossing (warning < forced clash).
+      if (note.duration >= TICK_HALF) {
+        unresolvable.push_back(note_idx);
+      }
+      continue;
+    }
+    note.note = static_cast<uint8_t>(chosen);
 #ifdef MIDISKETCH_NOTE_PROVENANCE
     note.prov_source = static_cast<uint8_t>(NoteSource::PostProcess);
     note.addTransformStep(TransformStepType::CollisionAvoid, pre_pitch, note.note, 0, 0);
 #endif
+    if (chosen_end < note_end) {
+      note.duration = chosen_end - note.start_tick;
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+      note.addTransformStep(TransformStepType::PostProcessDuration, 0, 0, -1, 0);
+#endif
+    }
+  }
+  for (auto it = unresolvable.rbegin(); it != unresolvable.rend(); ++it) {
+    track_notes.erase(track_notes.begin() + static_cast<std::ptrdiff_t>(*it));
   }
 }
 
@@ -1877,7 +2068,10 @@ void breakLongPitchRuns(MidiTrack& track, const IHarmonyContext& harmony, uint8_
     }
 
     uint8_t original = notes[idx].note;
-    static constexpr int kOffsets[] = {2, -2, 4, -4, 5, -5, 7, -7, 9, -9};
+    // Step-first order: whole steps, then diatonic half steps (E-F/B-C),
+    // then increasingly wide leaps. Breaking a run with a step preserves the
+    // melodic line; a leap should be the last resort.
+    static constexpr int kOffsets[] = {2, -2, 1, -1, 4, -4, 5, -5, 7, -7, 9, -9};
     for (int offset : kOffsets) {
       int target = static_cast<int>(original) + offset;
       if (target < static_cast<int>(low) || target > static_cast<int>(high)) {

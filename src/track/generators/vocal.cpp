@@ -876,6 +876,14 @@ void VocalGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContex
         }
 #endif
       }
+      // Section boundary invariant: a vocal note must start inside its own
+      // section. Phrase windows can overshoot the section end (uneven bar
+      // splits, transition pickups), and a note starting at section_end lands
+      // in the NEXT section — including call sections (Chant/MixBreak) that
+      // must stay vocal-free.
+      if (note.start_tick >= section_end) {
+        continue;
+      }
       all_notes.push_back(note);
     }
 

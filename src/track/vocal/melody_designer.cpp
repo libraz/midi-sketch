@@ -34,6 +34,7 @@
 #include "track/melody/pitch_constraints.h"
 #include "track/melody/pitch_resolver.h"
 #include "track/melody/rhythm_generator.h"
+#include "track/melody/skeleton.h"
 #include "track/vocal/phrase_planner.h"
 #include "track/vocal/vocal_helpers.h"
 
@@ -856,6 +857,17 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
     target_pitch = calculateTargetPitch(tmpl, ctx, current_pitch, harmony, rng);
   }
 
+  // Skeleton-first generation: fix anchor chord tones at strong beats along
+  // an arc contour, then fill between anchors with stepwise motion (see
+  // track/melody/skeleton.h). Reference vocal melodies are predominantly
+  // conjunct; the per-note random walk below remains as fallback for phrases
+  // too short to carry a skeleton.
+  int climax_amp =
+      (ctx.section_type == SectionType::Chorus || ctx.section_type == SectionType::B) ? 7 : 4;
+  melody::PhraseSkeleton skeleton =
+      melody::computePhraseSkeleton(rhythm, phrase_start, current_pitch, target_pitch, climax_amp,
+                                    harmony, ctx.vocal_low, ctx.vocal_high);
+
   // Track consecutive same notes for J-POP style probability curve
   melody::ConsecutiveSameNoteTracker consecutive_tracker;
 
@@ -878,6 +890,12 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
 
     // Calculate note timing first to get correct chord degree
     Tick note_start = phrase_start + static_cast<Tick>(rn.beat * TICKS_PER_BEAT);
+    // Articulation-gap accumulation can push a rhythm position to (or past)
+    // the phrase end; such a note has no room and would start inside the next
+    // section (observed: a vocal note at a call-section boundary).
+    if (note_start >= phrase_start + phrase_beats * TICKS_PER_BEAT) {
+      break;
+    }
     int8_t note_chord_degree = harmony.getChordDegreeAt(note_start);
 
     // Select pitch movement (with rhythm-melody coupling and optional contour template)
@@ -932,13 +950,23 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
     if (using_motif_fragment && motif_target_pitch >= 0) {
       // Use motif-guided pitch for fragment notes
       new_pitch = motif_target_pitch;
+    } else if (skeleton.valid && skeleton.anchor_pitch[i] >= 0) {
+      // Skeleton anchor: chord tone on the arc, fixed before infill
+      new_pitch = skeleton.anchor_pitch[i];
+    } else if (skeleton.valid && skeleton.next_anchor[i] >= 0) {
+      // Infill: step toward the next anchor
+      int na = skeleton.next_anchor[i];
+      new_pitch = melody::skeletonInfillPitch(current_pitch, skeleton.anchor_pitch[na],
+                                              na - static_cast<int>(i), rng,
+                                              ctx.vocal_attitude == VocalAttitude::Raw);
+      new_pitch =
+          std::clamp(new_pitch, static_cast<int>(ctx.vocal_low), static_cast<int>(ctx.vocal_high));
     } else {
       new_pitch =
           applyPitchChoice(choice, current_pitch, target_pitch, note_chord_degree, ctx.key_offset,
                            ctx.vocal_low, ctx.vocal_high, ctx.vocal_attitude,
                            ctx.disable_vowel_constraints, rn.eighths, ctx.tension_usage);
     }
-
     // Apply consecutive same note reduction with J-POP style probability curve
     melody::applyConsecutiveSameNoteConstraint(new_pitch, consecutive_tracker, current_pitch,
                                                note_chord_degree, ctx.key_offset, ctx.vocal_low,
@@ -985,8 +1013,10 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
           ctx.vocal_high, &ctx.tessitura);
     }
 
-    // Movement encouragement: avoid static repeats after long notes
-    if (i > 0) {
+    // Movement encouragement: avoid static repeats after long notes.
+    // Skipped under skeleton guidance: the infill already re-aims at the next
+    // anchor each note, and a forced post-long-note jump breaks the arc.
+    if (i > 0 && !skeleton.valid) {
       new_pitch = melody::encourageMovementAfterLongNote(
           new_pitch, current_pitch, prev_note_duration, note_chord_degree, ctx.key_offset,
           ctx.vocal_low, ctx.vocal_high, rng);
@@ -1004,8 +1034,10 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
         new_pitch, note_start, note_chord_degree, current_pitch, ctx.vocal_low, ctx.vocal_high,
         ctx.disable_vowel_constraints, static_cast<Tick>(rn.eighths * TICK_EIGHTH));
 
-    // Guide tone priority: on strong beats, bias toward 3rd/7th at configured rate
-    if (ctx.guide_tone_rate > 0 && ctx.vocal_attitude != VocalAttitude::Raw) {
+    // Guide tone priority: on strong beats, bias toward 3rd/7th at configured rate.
+    // Skipped under skeleton guidance: anchors are already chord tones on the
+    // arc; re-voicing them toward a distant 3rd/7th manufactures leaps.
+    if (ctx.guide_tone_rate > 0 && ctx.vocal_attitude != VocalAttitude::Raw && !skeleton.valid) {
       new_pitch = melody::enforceGuideToneOnDownbeat(new_pitch, note_start, note_chord_degree,
                                                      ctx.vocal_low, ctx.vocal_high,
                                                      ctx.guide_tone_rate, rng, current_pitch);

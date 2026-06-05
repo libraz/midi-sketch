@@ -261,6 +261,7 @@ void PostProcessor::fixMotifVocalClashes(MidiTrack& motif, const MidiTrack& voca
     return;
   }
 
+  bool head_shifted = false;
   for (auto& m_note : motif_notes) {
     Tick m_end = m_note.start_tick + m_note.duration;
 
@@ -276,6 +277,37 @@ void PostProcessor::fixMotifVocalClashes(MidiTrack& motif, const MidiTrack& voca
             isDissonantSemitoneInterval(interval, DissonanceCheckOptions::fullWithTritone());
 
         if (is_dissonant) {
+          // Grazing overlap: when the clashing vocal note only clips the head
+          // or tail of the motif note, trim the graze instead of rewriting the
+          // pitch. A pitch rewrite for a sub-eighth graze manufactures leaps,
+          // and for long notes (where no full-duration alternative exists
+          // below the vocal) it can escape far above the melody.
+          Tick ov_start = std::max(m_note.start_tick, v_note.start_tick);
+          Tick ov_end = std::min(m_end, v_end);
+          if (ov_end - ov_start <= TICK_EIGHTH) {
+            if (v_end <= m_note.start_tick + TICK_EIGHTH && m_end >= v_end + TICK_EIGHTH) {
+              // Head graze: start after the clashing vocal note ends.
+              m_note.duration -= (v_end - m_note.start_tick);
+              m_note.start_tick = v_end;
+              m_end = m_note.start_tick + m_note.duration;
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+              m_note.addTransformStep(TransformStepType::PostProcessDuration, 0, 0, -1, 0);
+#endif
+              head_shifted = true;
+              continue;  // Re-check remaining vocal notes against the trimmed note
+            }
+            if (v_note.start_tick + TICK_EIGHTH >= m_end &&
+                v_note.start_tick >= m_note.start_tick + TICK_EIGHTH) {
+              // Tail graze: end before the clashing vocal note starts.
+              m_note.duration = v_note.start_tick - m_note.start_tick;
+              m_end = m_note.start_tick + m_note.duration;
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+              m_note.addTransformStep(TransformStepType::PostProcessDuration, 0, 0, -1, 0);
+#endif
+              continue;  // Re-check remaining vocal notes against the trimmed note
+            }
+          }
+
           int8_t degree = harmony.getChordDegreeAt(m_note.start_tick);
           uint8_t original_pitch = m_note.note;
 
@@ -287,11 +319,23 @@ void PostProcessor::fixMotifVocalClashes(MidiTrack& motif, const MidiTrack& voca
           uint8_t new_pitch = findSafeChordTone(original_pitch, degree, m_note.start_tick,
                                                 m_note.duration, vocal, harmony, vocal_ceiling);
 
-          // If still clashing with vocal, try using getSafePitchCandidates as last resort
+          // If still clashing with vocal, try using getSafePitchCandidates as last resort.
+          // Cap the search at the vocal ceiling first: an unconstrained range lets the
+          // resolver escape far above the melody (register crossing). Fall back to the
+          // full motif range only when nothing below the vocal is available
+          // (crossing warning < forced clash).
           if (clashesWithVocal(new_pitch, m_note.start_tick, m_end, vocal)) {
+            uint8_t cand_high = (vocal_ceiling > MOTIF_LOW && vocal_ceiling < MOTIF_HIGH)
+                                    ? vocal_ceiling
+                                    : MOTIF_HIGH;
             auto candidates =
                 getSafePitchCandidates(harmony, original_pitch, m_note.start_tick, m_note.duration,
-                                       TrackRole::Motif, MOTIF_LOW, MOTIF_HIGH);
+                                       TrackRole::Motif, MOTIF_LOW, cand_high);
+            if (candidates.empty() && cand_high != MOTIF_HIGH) {
+              candidates =
+                  getSafePitchCandidates(harmony, original_pitch, m_note.start_tick,
+                                         m_note.duration, TrackRole::Motif, MOTIF_LOW, MOTIF_HIGH);
+            }
             if (!candidates.empty()) {
               // Select best candidate with melodic continuity preference
               PitchSelectionHints hints;
@@ -318,6 +362,14 @@ void PostProcessor::fixMotifVocalClashes(MidiTrack& motif, const MidiTrack& voca
         }
       }
     }
+  }
+
+  // Head-graze trimming moves note starts forward; restore start-tick order
+  // for downstream passes that assume sorted notes.
+  if (head_shifted) {
+    std::stable_sort(
+        motif_notes.begin(), motif_notes.end(),
+        [](const NoteEvent& a, const NoteEvent& b) { return a.start_tick < b.start_tick; });
   }
 
   // Second pass: resolve motif notes that cross ABOVE the vocal. The vocal

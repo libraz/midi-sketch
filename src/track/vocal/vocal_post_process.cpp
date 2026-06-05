@@ -132,39 +132,56 @@ void breakConsecutiveSamePitch(std::vector<NoteEvent>& all_notes, const IHarmony
           auto chord_tones = harmony.getChordTonesAt(tick);
           if (chord_tones.empty()) continue;
 
-          // Try to find a chord tone ±3 or ±4 semitones from streak_pitch
+          // Neighbor pitches for interval/non-chord-tone legality checks: the
+          // alternation note must stay singable relative to BOTH neighbors
+          // (an offset picked against streak_pitch alone can land 10+
+          // semitones from the note that follows the streak).
+          int prev_pitch = (j > 0) ? static_cast<int>(all_notes[j - 1].note) : -1;
+          int next_pitch =
+              (j + 1 < all_notes.size()) ? static_cast<int>(all_notes[j + 1].note) : -1;
+          Tick gap_to_next = 0;
+          if (j + 1 < all_notes.size()) {
+            Tick cur_end = tick + duration;
+            gap_to_next =
+                all_notes[j + 1].start_tick > cur_end ? all_notes[j + 1].start_tick - cur_end : 0;
+          }
+
+          // Step-first candidate order: an adjacent scale tone preserves the
+          // conjunct motion of the line (neighbor-tone figure); chord-tone
+          // zigzags (+/-3..7) are the fallback for notes that must stay on
+          // chord tones (strong beat / long / phrase-final).
           int best_alt = -1;
-          int best_dist = 100;
-          for (int interval : {3, -3, 4, -4, 5, -5, 7, -7}) {
+          for (int interval : {1, -1, 2, -2, 3, -3, 4, -4, 5, -5, 7, -7}) {
             int candidate = static_cast<int>(streak_pitch) + interval;
             if (candidate < static_cast<int>(vocal_low) || candidate > static_cast<int>(vocal_high))
               continue;
 
-            // Check if it's a chord tone or at least in scale. The vocal stays
-            // diatonic, so chromatic chord tones (e.g. secondary dominant 3rds)
-            // are excluded even when they belong to the current chord.
+            // The vocal stays diatonic, so chromatic chord tones (e.g.
+            // secondary dominant 3rds) are excluded even when they belong to
+            // the current chord.
             int pc = candidate % 12;
-            bool is_scale = isScaleTone(pc);
-            bool is_chord_tone = is_scale && std::find(chord_tones.begin(), chord_tones.end(),
-                                                       pc) != chord_tones.end();
-
-            if (is_chord_tone) {
-              // Verify no harsh collision
-              if (harmony.isConsonantWithOtherTracks(static_cast<uint8_t>(candidate), tick,
-                                                     duration, TrackRole::Vocal)) {
-                int dist = std::abs(interval);
-                if (dist < best_dist) {
-                  best_dist = dist;
-                  best_alt = candidate;
-                }
-              }
-            } else if (is_scale && best_alt < 0) {
-              // Fallback to scale tone if no safe chord tone found
-              if (harmony.isConsonantWithOtherTracks(static_cast<uint8_t>(candidate), tick,
-                                                     duration, TrackRole::Vocal)) {
-                best_alt = candidate;
-              }
+            if (!isScaleTone(pc)) continue;
+            bool is_chord_tone =
+                std::find(chord_tones.begin(), chord_tones.end(), pc) != chord_tones.end();
+            // Non-chord tones must qualify as theory-legal passing/neighbor
+            // figures (weak beat, short, step-connected) and must not be
+            // avoid notes against the chord root.
+            if (!is_chord_tone &&
+                (!isLegalNonChordTone(prev_pitch, candidate, next_pitch, tick, duration,
+                                      gap_to_next) ||
+                 isAvoidNoteForDegree(candidate, harmony.getChordDegreeAt(tick)))) {
+              continue;
             }
+            // Keep the line singable relative to both neighbors.
+            if (prev_pitch >= 0 && std::abs(candidate - prev_pitch) > kMaxMelodicInterval) continue;
+            if (next_pitch >= 0 && std::abs(candidate - next_pitch) > kMaxMelodicInterval) continue;
+            // Verify no harsh collision.
+            if (!harmony.isConsonantWithOtherTracks(static_cast<uint8_t>(candidate), tick, duration,
+                                                    TrackRole::Vocal)) {
+              continue;
+            }
+            best_alt = candidate;  // offsets are distance-ordered: first hit wins
+            break;
           }
 
           if (best_alt >= 0) {

@@ -11,6 +11,7 @@
 #include <string>
 
 #include "core/section_types.h"
+#include "core/timing_constants.h"
 
 namespace midisketch {
 
@@ -723,6 +724,66 @@ inline bool isScaleTone(int pitch_class, int key = 0) {
  * @return Pitch snapped to nearest scale tone in the given key
  */
 int snapToNearestScaleTone(int pitch, int key_offset);
+
+/**
+ * @brief Check whether a note qualifies as a theory-legal non-chord tone.
+ *
+ * Classical voice-leading admits non-chord tones that are diatonic, short,
+ * metrically weak, and step-connected to their neighbors:
+ * - Passing tone: approached and left by step (e.g. C-D-E over a C chord).
+ * - Neighbor tone: approached by step and left by step back.
+ * - Anticipation: approached by step, repeated as the next note (unison out).
+ *
+ * Such notes do not need chord-tone snapping; snapping them converts the
+ * stepwise motion the melody generator chose into 3-4 semitone leaps.
+ * Skeleton notes — strong beats (1 and 3 in 4/4), long notes, and phrase
+ * finals — never qualify and must stay on chord tones.
+ *
+ * @param prev_pitch Previous note pitch (-1 if none: never legal)
+ * @param cur_pitch Candidate pitch under test
+ * @param next_pitch Next note pitch (-1 if none: never legal)
+ * @param cur_start Start tick of the candidate note
+ * @param cur_duration Duration of the candidate note in ticks
+ * @param gap_to_next Ticks between the candidate's end and the next onset
+ *                    (a rest longer than an eighth marks a phrase final)
+ * @param key Key offset from C (0 = C major internal representation)
+ * @return true if the pitch is admissible as a passing/neighbor/anticipation
+ *         tone and may keep its non-chord pitch
+ */
+/**
+ * @brief Check whether a pitch is a traditional avoid note over a diatonic
+ *        chord degree (C major internal representation).
+ *
+ * Avoid notes are the classical exception to passing/neighbor-tone freedom: a
+ * weak-beat diatonic passing tone that forms a tritone/m2/M7 with the chord
+ * root (e.g. B over IV=F) audibly clashes with the root the bass MUST play,
+ * so it may not be kept as a non-chord tone. Degrees outside 0-6 (secondary
+ * dominants, borrowed chords) report avoid=true conservatively: their roots
+ * are not derivable from the diatonic table.
+ */
+inline bool isAvoidNoteForDegree(int pitch, int8_t degree) {
+  if (degree < 0 || degree > 6) return true;
+  static constexpr int kDegreeRootPc[7] = {0, 2, 4, 5, 7, 9, 11};
+  bool is_minor = (degree == 1 || degree == 2 || degree == 5);
+  return isAvoidNoteSimple(pitch, static_cast<uint8_t>(kDegreeRootPc[degree]), is_minor);
+}
+
+inline bool isLegalNonChordTone(int prev_pitch, int cur_pitch, int next_pitch, Tick cur_start,
+                                Tick cur_duration, Tick gap_to_next, int key = 0) {
+  if (prev_pitch < 0 || next_pitch < 0) return false;
+  // Must be diatonic.
+  if (!isScaleTone(getPitchClass(static_cast<uint8_t>(cur_pitch)), key)) return false;
+  // Short: an eighth note or less.
+  if (cur_duration > TICK_EIGHTH) return false;
+  // A rest after the note makes it phrase-final (skeleton note).
+  if (gap_to_next > TICK_EIGHTH) return false;
+  // Metrically weak: not on (or within a 16th after) beat 1 or beat 3.
+  if (positionInBar(cur_start) % (TICKS_PER_BEAT * 2) < TICK_SIXTEENTH) return false;
+  // Step-connected: approached by step, left by step or unison (anticipation).
+  int step_in = std::abs(cur_pitch - prev_pitch);
+  int step_out = std::abs(next_pitch - cur_pitch);
+  return step_in >= 1 && step_in <= 2 && step_out <= 2;
+}
 
 // ============================================================================
 // Track Pitch Clamping

@@ -13,6 +13,7 @@
 #include "core/harmony_context.h"
 #include "core/i_harmony_context.h"
 #include "core/song.h"
+#include "core/timing_constants.h"
 #include "core/types.h"
 #include "track/generators/bass.h"
 #include "track/generators/chord.h"
@@ -504,6 +505,14 @@ int countDissonantClashes(const MidiTrack& track1, const MidiTrack& track2) {
         // Check for dissonant intervals: minor 2nd (1), major 2nd (2)
         int interval = std::abs(pc1 - pc2);
         if (interval > 6) interval = 12 - interval;
+        // Major-2nd class exposure of an eighth note or less is a weak-beat
+        // passing/neighbor tone over a sustained voicing — theory-legal, not
+        // a clash. The minor-2nd class stays counted at any duration.
+        if (interval == 2) {
+          Tick overlap = std::min(end1, end2) - std::max(static_cast<Tick>(note1.start_tick),
+                                                         static_cast<Tick>(note2.start_tick));
+          if (overlap <= TICK_EIGHTH) continue;
+        }
         // Minor 2nd is the most dissonant, major 2nd is also harsh
         if (interval == 1 || interval == 2) {
           count++;
@@ -645,7 +654,11 @@ TEST_F(ChordWithContextTest, RegressionVocalCloseIntervalOriginalBug) {
   ASSERT_GT(vocal_track.noteCount(), 0u);
   ASSERT_GT(chord_track.noteCount(), 0u);
 
-  // Count close interval clashes (major 2nd = interval 2)
+  // Count SUSTAINED close interval exposure (major 2nd pitch class). Brief
+  // overlaps (<= an eighth note) are weak-beat passing/neighbor tones over a
+  // sustained chord bed — theory-legal non-chord tones, not the regression
+  // this test guards against (the original bug was repeated clashes lasting
+  // whole bars at bars 17/22/24/46/48/72).
   int major_2nd_count = 0;
   for (const auto& vocal_note : vocal_track.notes()) {
     Tick vocal_end = vocal_note.start_tick + vocal_note.duration;
@@ -656,6 +669,9 @@ TEST_F(ChordWithContextTest, RegressionVocalCloseIntervalOriginalBug) {
       int chord_pc = chord_note.note % 12;
 
       if (vocal_note.start_tick < chord_end && chord_note.start_tick < vocal_end) {
+        Tick overlap =
+            std::min(vocal_end, chord_end) - std::max(vocal_note.start_tick, chord_note.start_tick);
+        if (overlap <= TICK_EIGHTH) continue;  // brief passing exposure
         int interval = std::abs(vocal_pc - chord_pc);
         if (interval > 6) interval = 12 - interval;
         if (interval == 2) {  // Major 2nd specifically
@@ -665,12 +681,9 @@ TEST_F(ChordWithContextTest, RegressionVocalCloseIntervalOriginalBug) {
     }
   }
 
-  // After fix, major 2nd clashes should be minimal.
-  // Phase 3 slash chords and modal interchange may introduce a few additional
-  // close-interval voicings. selectBestCandidate() prefers chord tones which
-  // may occasionally result in acceptable close voicings. Threshold raised to 22
-  // to accommodate density improvements.
-  EXPECT_LT(major_2nd_count, 22) << "Major 2nd clashes between Vocal and Chord should be minimal";
+  // After fix, sustained major 2nd clashes should be near zero.
+  EXPECT_LT(major_2nd_count, 8) << "Sustained major 2nd exposure between Vocal and Chord "
+                                   "should be minimal";
 }
 
 // === Chord-Bass Tritone Avoidance Tests ===

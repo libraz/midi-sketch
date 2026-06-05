@@ -487,7 +487,10 @@ TEST_F(GuitarGenerationTest, PowerChordIntervalsArePerfectFifths) {
   for (size_t idx = 1; idx < guitar.notes().size(); ++idx) {
     if (guitar.notes()[idx].start_tick == guitar.notes()[idx - 1].start_tick) {
       int interval = std::abs(guitar.notes()[idx].note - guitar.notes()[idx - 1].note);
-      if (interval == 7 || interval == 12) {
+      // Perfect 5th or octave, including compound forms (e.g. 19 = octave+5th
+      // when resolveSustainedChordPitch octave-displaces the 5th to keep
+      // root+5th intact instead of dropping it).
+      if (interval > 0 && (interval % 12 == 7 || interval % 12 == 0)) {
         valid_intervals++;
       }
       power_chord_count++;

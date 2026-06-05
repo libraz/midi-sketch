@@ -442,27 +442,50 @@ void applyCollisionAvoidanceWithIntervalConstraint(std::vector<NoteEvent>& notes
     hints.tessitura_center = (vocal_low + vocal_high) / 2;
     uint8_t safe_pitch =
         candidates.empty() ? note.note : selectBestCandidate(candidates, note.note, hints);
-    // Snap to chord tone (to maintain harmonic stability)
-    int snapped = nearestChordTonePitch(safe_pitch, chord_degree);
-    snapped = std::clamp(snapped, static_cast<int>(vocal_low), static_cast<int>(vocal_high));
-    // Re-snap to scale if clamp moved us off a chord tone
-    snapped = snapToNearestScaleTone(snapped, 0);  // Always C major internally
-    uint8_t snapped_pitch = static_cast<uint8_t>(
-        std::clamp(snapped, static_cast<int>(vocal_low), static_cast<int>(vocal_high)));
-    // Re-verify collision safety after snapping (snapping can introduce new clashes)
-    if (!harmony.isConsonantWithOtherTracks(snapped_pitch, note.start_tick, note.duration,
-                                            TrackRole::Vocal)) {
-      // Snapping broke collision safety - try diatonic snap of safe_pitch first
-      int diatonic_safe = snapToNearestScaleTone(safe_pitch, 0);
-      diatonic_safe =
-          std::clamp(diatonic_safe, static_cast<int>(vocal_low), static_cast<int>(vocal_high));
-      if (static_cast<uint8_t>(diatonic_safe) != snapped_pitch &&
-          harmony.isConsonantWithOtherTracks(static_cast<uint8_t>(diatonic_safe), note.start_tick,
-                                             note.duration, TrackRole::Vocal)) {
-        snapped_pitch = static_cast<uint8_t>(diatonic_safe);
-      } else {
-        // Last resort: collision-safe pitch (may be non-diatonic)
-        snapped_pitch = safe_pitch;
+    safe_pitch = static_cast<uint8_t>(std::clamp(
+        static_cast<int>(safe_pitch), static_cast<int>(vocal_low), static_cast<int>(vocal_high)));
+
+    // Theory-legal non-chord tones (weak-beat, short, step-connected passing/
+    // neighbor/anticipation tones) keep their collision-safe pitch: snapping
+    // them to chord tones converts the stepwise motion the melody generator
+    // chose into 3-4 semitone leaps. Skeleton notes (strong beats, long notes,
+    // phrase finals) fall through to the chord-tone snap below.
+    bool keep_as_nct = false;
+    if (i > 0 && i + 1 < notes.size()) {
+      Tick cur_end = note.start_tick + note.duration;
+      Tick gap_to_next =
+          notes[i + 1].start_tick > cur_end ? notes[i + 1].start_tick - cur_end : Tick{0};
+      keep_as_nct = isLegalNonChordTone(notes[i - 1].note, safe_pitch, notes[i + 1].note,
+                                        note.start_tick, note.duration, gap_to_next) &&
+                    !isAvoidNoteForDegree(safe_pitch, chord_degree) &&
+                    harmony.isConsonantWithOtherTracks(safe_pitch, note.start_tick, note.duration,
+                                                       TrackRole::Vocal);
+    }
+
+    uint8_t snapped_pitch = safe_pitch;
+    if (!keep_as_nct) {
+      // Snap to chord tone (to maintain harmonic stability)
+      int snapped = nearestChordTonePitch(safe_pitch, chord_degree);
+      snapped = std::clamp(snapped, static_cast<int>(vocal_low), static_cast<int>(vocal_high));
+      // Re-snap to scale if clamp moved us off a chord tone
+      snapped = snapToNearestScaleTone(snapped, 0);  // Always C major internally
+      snapped_pitch = static_cast<uint8_t>(
+          std::clamp(snapped, static_cast<int>(vocal_low), static_cast<int>(vocal_high)));
+      // Re-verify collision safety after snapping (snapping can introduce new clashes)
+      if (!harmony.isConsonantWithOtherTracks(snapped_pitch, note.start_tick, note.duration,
+                                              TrackRole::Vocal)) {
+        // Snapping broke collision safety - try diatonic snap of safe_pitch first
+        int diatonic_safe = snapToNearestScaleTone(safe_pitch, 0);
+        diatonic_safe =
+            std::clamp(diatonic_safe, static_cast<int>(vocal_low), static_cast<int>(vocal_high));
+        if (static_cast<uint8_t>(diatonic_safe) != snapped_pitch &&
+            harmony.isConsonantWithOtherTracks(static_cast<uint8_t>(diatonic_safe), note.start_tick,
+                                               note.duration, TrackRole::Vocal)) {
+          snapped_pitch = static_cast<uint8_t>(diatonic_safe);
+        } else {
+          // Last resort: collision-safe pitch (may be non-diatonic)
+          snapped_pitch = safe_pitch;
+        }
       }
     }
     note.note = snapped_pitch;
