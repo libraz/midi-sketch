@@ -1621,10 +1621,13 @@ void emitMotifNoteCoordAxis(MidiTrack& track, IHarmonyCoordinator& harmony, cons
   (void)pitch_result;
 #endif
 
-  // Octave doubling in RhythmLock
+  // Octave doubling in RhythmLock. Skip when the octave layer exceeds the
+  // motif range: NoCollisionCheck's range fold would land it back on the base
+  // pitch, producing a pointless unison duplicate (counted as a same-pitch
+  // run by the monotony checks).
   if (add_octave) {
     int octave_pitch = final_pitch + 12;
-    if (octave_pitch <= 108) {
+    if (octave_pitch <= 108 && octave_pitch <= static_cast<int>(motif_range_high)) {
       uint8_t octave_vel = static_cast<uint8_t>(vel * 0.85f);
       NoteOptions octave_opts = opts;
       octave_opts.desired_pitch = static_cast<uint8_t>(octave_pitch);

@@ -150,7 +150,9 @@ TEST_F(NoteCreatorTest, NoCollisionCheck) {
 }
 
 TEST_F(NoteCreatorTest, NoCollisionCheckClampsToRange) {
-  // desired_pitch > range_high should be clamped to range_high
+  // desired_pitch > range_high is folded down by octaves (pitch class is
+  // preserved; a chromatic clamp to the range edge would manufacture a
+  // non-chord tone the caller never verified).
   NoteOptions opts;
   opts.start = 0;
   opts.duration = 480;
@@ -165,11 +167,11 @@ TEST_F(NoteCreatorTest, NoCollisionCheckClampsToRange) {
   auto note = createNote(harmony_, opts);
 
   ASSERT_TRUE(note.has_value());
-  EXPECT_EQ(note->note, 84);  // Clamped to range_high
+  EXPECT_EQ(note->note, 78);  // 90 folded down one octave (same pitch class)
 }
 
 TEST_F(NoteCreatorTest, NoCollisionCheckClampsToRangeLow) {
-  // desired_pitch < range_low should be clamped to range_low
+  // desired_pitch < range_low is folded up by octaves (pitch class preserved)
   NoteOptions opts;
   opts.start = 0;
   opts.duration = 480;
@@ -184,7 +186,7 @@ TEST_F(NoteCreatorTest, NoCollisionCheckClampsToRangeLow) {
   auto note = createNote(harmony_, opts);
 
   ASSERT_TRUE(note.has_value());
-  EXPECT_EQ(note->note, 60);  // Clamped to range_low
+  EXPECT_EQ(note->note, 62);  // 50 folded up one octave (same pitch class)
 }
 
 TEST_F(NoteCreatorTest, NoCollisionCheckNoClampWhenInRange) {

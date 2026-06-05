@@ -419,11 +419,14 @@ void addChordNoteWithState(MidiTrack& track, IHarmonyContext& harmony, Tick star
     // Full duration failed: try explicit duration shortening.
     // This handles cases where Motif enters mid-sustain and createNoteAndAdd's
     // pitch resolution can't find a suitable alternative.
+    // Skip when the pitch is above the vocal ceiling: NoCollisionCheck below
+    // would fold/clamp it into range as an UNVERIFIED pitch (observed: G4
+    // clamped to F#4 under ceiling 66 = tritone against the bass root).
     Tick safe_end = harmony.getMaxSafeEnd(start, pitch, TrackRole::Chord, start + duration);
     Tick safe_dur = safe_end - start;
     constexpr Tick kMinChordDurationForMinimum = 240;  // 8th note minimum
 
-    if (safe_dur >= kMinChordDurationForMinimum && safe_dur < duration) {
+    if (pitch <= effective_high && safe_dur >= kMinChordDurationForMinimum && safe_dur < duration) {
       if (harmony.isConsonantWithOtherTracks(pitch, start, safe_dur, TrackRole::Chord)) {
         NoteOptions opts;
         opts.start = start;

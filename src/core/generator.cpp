@@ -1555,20 +1555,15 @@ void trimClashingNoteTails(Song& song, const IHarmonyContext& harmony) {
       {&song.aux(), TrackRole::Aux},      {&song.arpeggio(), TrackRole::Arpeggio},
       {&song.guitar(), TrackRole::Guitar}};
 
-  // Always-dissonant test mirroring the analyzer / collision detector rules.
+  // Dissonance test mirroring the analyzer (analysis/dissonance.cpp): the
+  // gate counts every interval isDissonantActualInterval() flags within a
+  // 2-octave separation, so the tail trim must use exactly the same rule.
+  // (The previous narrower rule let micro tail overlaps through: a laid-back
+  // bass G3 spilling 42 ticks into a motif A3 = M2 the analyzer counts.)
   auto isAlwaysDissonant = [&harmony](int semitones, uint8_t lower_pitch, Tick at) {
-    if (semitones == 1 || semitones == 13) return true;  // m2 / m9
-    int pc = semitones % 12;
-    // M7 pitch class against a low bass note (< C3): audible even with
-    // octaves of separation.
-    if (pc == 11 && lower_pitch < 48) return true;
-    // Tritone (incl. compound up to 2 octaves) outside dominant-function chords.
-    if (pc == 6 && semitones <= 24) {
-      int degree = harmony.getChordDegreeAt(at);
-      int normalized = ((degree % 7) + 7) % 7;
-      if (normalized != 4 && normalized != 6) return true;
-    }
-    return false;
+    (void)lower_pitch;
+    if (semitones > 24) return false;  // Wide separation: analyzer ignores
+    return isDissonantActualInterval(semitones, harmony.getChordDegreeAt(at));
   };
 
   for (const auto& [earlier_track, earlier_role] : tracks) {

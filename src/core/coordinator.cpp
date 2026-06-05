@@ -1231,6 +1231,11 @@ void Coordinator::applyVoiceLimit(Song& song, const std::vector<Section>& sectio
         return notes[a].note < notes[b].note;
       });
 
+      // Tail segments created by splitting cross-boundary notes (appended
+      // after the loop: push_back during iteration would invalidate the
+      // `note` reference held inside the loop).
+      std::vector<NoteEvent> split_tails;
+
       // Carry in the same-pitch run from notes preceding the bar. Earlier
       // frozen bars are processed first (frozen_bars is in ascending bar
       // order per track), so their re-quantized pitches are already final.
@@ -1309,6 +1314,53 @@ void Coordinator::applyVoiceLimit(Song& song, const std::vector<Section>& sectio
             resolved = findConsonantChordTone(harmony, song, candidate, note.note, note.start_tick,
                                               note.duration, fb.role, range_low, lifted_high);
           }
+          // A note crossing a mid-bar chord change may have no single pitch
+          // consonant over BOTH harmonic contexts (every candidate clashes
+          // somewhere in the span: e.g. a bar-long pad over Am→F with a
+          // moving vocal). Split at the boundary and resolve each segment
+          // against its own context; an unresolvable tail is dropped (a
+          // shorter pad note beats a sustained M7 against the new bass root).
+          if (resolved < 0) {
+            Tick note_end = note.start_tick + note.duration;
+            Tick boundary = harmony.getNextChordChangeTick(note.start_tick);
+            if (boundary > note.start_tick && boundary < note_end) {
+              Tick head_dur = boundary - note.start_tick;
+              int head_res =
+                  isConsonantWithSongTracks(song, candidate, note.start_tick, head_dur, fb.role,
+                                            chord_degree)
+                      ? candidate
+                      : findConsonantChordTone(harmony, song, candidate, note.note, note.start_tick,
+                                               head_dur, fb.role, range_low, note_range_high);
+              int tail_res =
+                  findConsonantChordTone(harmony, song, candidate, note.note, boundary,
+                                         note_end - boundary, fb.role, range_low, note_range_high);
+              if (head_res >= 0 && head_res == tail_res) {
+                // One pitch satisfies both contexts: keep the full duration.
+                resolved = head_res;
+              } else if (head_res >= 0) {
+                resolved = head_res;
+                note.duration = head_dur;
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+                note.addTransformStep(TransformStepType::PostProcessDuration, 0, 0, -1, 0);
+#endif
+                if (tail_res >= 0) {
+                  NoteEvent tail = note;
+                  tail.start_tick = boundary;
+                  tail.duration = note_end - boundary;
+                  tail.note = static_cast<uint8_t>(tail_res);
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+                  tail.prov_lookup_tick = boundary;
+                  if (tail.note != note.note) {
+                    tail.addTransformStep(TransformStepType::ChordToneSnap, note.note, tail.note, 0,
+                                          0);
+                  }
+#endif
+                  split_tails.push_back(tail);
+                }
+              }
+            }
+          }
+
           if (resolved >= 0) {
             candidate = static_cast<uint8_t>(resolved);
           }
@@ -1343,6 +1395,14 @@ void Coordinator::applyVoiceLimit(Song& song, const std::vector<Section>& sectio
           same_run = 1;
           has_prev = true;
         }
+      }
+
+      // Append tail segments from cross-boundary splits (deferred to avoid
+      // invalidating note references during the loop above). Like the
+      // frozen-bar copies themselves, these are appended unsorted; downstream
+      // consumers sort by start tick.
+      for (const auto& tail : split_tails) {
+        notes.push_back(tail);
       }
     }
   }

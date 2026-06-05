@@ -321,11 +321,20 @@ CreateNoteResult createNoteWithResult(IHarmonyContext& harmony, const NoteOption
 
   // NoCollisionCheck: skip safety check, just create the note
   if (opts.preference == PitchPreference::NoCollisionCheck) {
-    // Safety net: clamp to [range_low, range_high] if range is specified
+    // Safety net: fold into [range_low, range_high] by octaves (preserves the
+    // pitch class, so a chord tone stays a chord tone). A chromatic clamp to
+    // the range edge would manufacture a non-chord tone the caller never
+    // verified (observed: G4 clamped to F#4 under a vocal ceiling of 66 =
+    // tritone against the bass root).
     uint8_t final_pitch = opts.desired_pitch;
     if (opts.range_high > 0 && opts.range_low <= opts.range_high) {
-      if (final_pitch > opts.range_high) final_pitch = opts.range_high;
-      if (final_pitch < opts.range_low) final_pitch = opts.range_low;
+      int folded = final_pitch;
+      while (folded > opts.range_high && folded - 12 >= opts.range_low) folded -= 12;
+      while (folded < opts.range_low && folded + 12 <= opts.range_high) folded += 12;
+      // Last resort if no octave fits inside the range
+      folded =
+          std::clamp(folded, static_cast<int>(opts.range_low), static_cast<int>(opts.range_high));
+      final_pitch = static_cast<uint8_t>(folded);
     }
 
     NoteEvent event =
@@ -342,6 +351,16 @@ CreateNoteResult createNoteWithResult(IHarmonyContext& harmony, const NoteOption
     prov.final_duration = effective_duration;
     prov.next_degree = boundary_info.next_degree;
     recordProvenanceTransforms(event, prov);
+
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+    // The fold above is the only pitch change this path can make; record it
+    // so the note is never a silent mover in provenance forensics.
+    if (final_pitch != opts.desired_pitch && opts.record_provenance) {
+      event.addTransformStep(TransformStepType::RangeClamp, opts.desired_pitch, final_pitch,
+                             static_cast<int8_t>(opts.range_low),
+                             static_cast<int8_t>(opts.range_high));
+    }
+#endif
 
     finalizeResult(result, event, final_pitch, true_original, CollisionAvoidStrategy::None,
                    effective_duration, harmony, opts);
