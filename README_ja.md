@@ -12,7 +12,7 @@
 
 ---
 
-### [デモ](https://midisketch.libraz.net/ja/) | [ドキュメント](https://midisketch.libraz.net/ja/docs/getting-started.html)
+### [デモ](https://midisketch.libraz.net/ja/) | [ドキュメント](https://midisketch.libraz.net/ja/docs/getting-started)
 
 ---
 
@@ -88,13 +88,13 @@ sketch.destroy();
 
 ## ドキュメント
 
-- [はじめに](https://midisketch.libraz.net/ja/docs/getting-started.html)
-- [APIリファレンス (JavaScript)](https://midisketch.libraz.net/ja/docs/api-js.html)
-- [APIリファレンス (C++)](https://midisketch.libraz.net/ja/docs/api-cpp.html)
-- [プリセット一覧](https://midisketch.libraz.net/ja/docs/presets.html)
-- [トラック生成](https://midisketch.libraz.net/ja/docs/track-generators.html)
-- [アーキテクチャ](https://midisketch.libraz.net/ja/docs/architecture.html)
-- [CLIリファレンス](https://midisketch.libraz.net/ja/docs/cli.html)
+- [はじめに](https://midisketch.libraz.net/ja/docs/getting-started)
+- [APIリファレンス (JavaScript)](https://midisketch.libraz.net/ja/docs/api-js)
+- [APIリファレンス (C++)](https://midisketch.libraz.net/ja/docs/api-cpp)
+- [プリセット一覧](https://midisketch.libraz.net/ja/docs/presets)
+- [トラック生成](https://midisketch.libraz.net/ja/docs/track-generators)
+- [アーキテクチャ](https://midisketch.libraz.net/ja/docs/architecture)
+- [CLIリファレンス](https://midisketch.libraz.net/ja/docs/cli)
 
 ## ライセンス
 

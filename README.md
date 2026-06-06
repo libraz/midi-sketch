@@ -11,7 +11,7 @@ A C++17 library for auto-generating pop music MIDI sketches. Designed for WebAss
 
 ---
 
-### [Live Demo](https://midisketch.libraz.net/) | [Documentation](https://midisketch.libraz.net/docs/getting-started.html)
+### [Live Demo](https://midisketch.libraz.net/) | [Documentation](https://midisketch.libraz.net/docs/getting-started)
 
 ---
 
@@ -87,13 +87,13 @@ sketch.destroy();
 
 ## Documentation
 
-- [Getting Started](https://midisketch.libraz.net/docs/getting-started.html)
-- [API Reference (JavaScript)](https://midisketch.libraz.net/docs/api-js.html)
-- [API Reference (C++)](https://midisketch.libraz.net/docs/api-cpp.html)
-- [Presets](https://midisketch.libraz.net/docs/presets.html)
-- [Track Generators](https://midisketch.libraz.net/docs/track-generators.html)
-- [Architecture](https://midisketch.libraz.net/docs/architecture.html)
-- [CLI Reference](https://midisketch.libraz.net/docs/cli.html)
+- [Getting Started](https://midisketch.libraz.net/docs/getting-started)
+- [API Reference (JavaScript)](https://midisketch.libraz.net/docs/api-js)
+- [API Reference (C++)](https://midisketch.libraz.net/docs/api-cpp)
+- [Presets](https://midisketch.libraz.net/docs/presets)
+- [Track Generators](https://midisketch.libraz.net/docs/track-generators)
+- [Architecture](https://midisketch.libraz.net/docs/architecture)
+- [CLI Reference](https://midisketch.libraz.net/docs/cli)
 
 ## License
 
