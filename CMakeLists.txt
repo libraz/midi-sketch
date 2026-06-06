@@ -49,6 +49,13 @@ if(MSVC)
   add_compile_options(/W4)
 else()
   add_compile_options(-Wall -Wextra -Wpedantic)
+  # Deterministic floating point across platforms: GCC contracts a*b+c into
+  # fused multiply-add (and does so across statements), Clang contracts only
+  # within expressions. On FMA-capable targets (aarch64, AVX2) this changes
+  # float results, which flips score comparisons and desynchronizes the
+  # seeded RNG stream between Linux and macOS builds. Generation must be
+  # bit-identical on every platform (seed reproducibility, WASM/CLI parity).
+  add_compile_options(-ffp-contract=off)
 endif()
 
 # Code Coverage

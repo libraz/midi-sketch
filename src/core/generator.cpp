@@ -509,12 +509,21 @@ void Generator::applyPostProcessingEffects() {
     // fixMotifVocalClashes), so no vocal-side recheck is required here.
     applyRhythmSyncLeadDna(song_.vocal(), song_.motif(), song_.arrangement().sections(), params_,
                            *harmony_context_);
-    breakLongPitchRuns(song_.vocal(), *harmony_context_, params_.vocal_low, params_.vocal_high, 5,
-                       TrackRole::Vocal);
+    // Re-register vocal/motif BEFORE breaking pitch runs: the DNA rewrite
+    // changed both tracks, so the consonance checks inside breakLongPitchRuns
+    // must see the new pitches. Checking against the stale (pre-DNA)
+    // registration rejects every alternative as a phantom clash and leaves
+    // long same-pitch runs unbroken.
     harmony_context_->clearNotesForTrack(TrackRole::Vocal);
     harmony_context_->registerTrack(song_.vocal(), TrackRole::Vocal);
     harmony_context_->clearNotesForTrack(TrackRole::Motif);
     harmony_context_->registerTrack(song_.motif(), TrackRole::Motif);
+    breakLongPitchRuns(song_.vocal(), *harmony_context_, params_.vocal_low, params_.vocal_high, 5,
+                       TrackRole::Vocal);
+    // breakLongPitchRuns may have changed vocal pitches; refresh once more so
+    // the accompaniment-side clash fixes below see the final vocal.
+    harmony_context_->clearNotesForTrack(TrackRole::Vocal);
+    harmony_context_->registerTrack(song_.vocal(), TrackRole::Vocal);
   }
 
   // FINAL STEP: Fix inter-track clashes that may occur after all post-processing.
@@ -627,6 +636,22 @@ void Generator::applyPostProcessingEffects() {
     harmony_context_->clearNotesForTrack(tr.second);
     harmony_context_->registerTrack(*tr.first, tr.second);
   }
+
+  // Final vocal monotony guard for every paradigm: the chord-tone snap and
+  // collision passes above resolve pitches individually toward the safest
+  // chord tone, which can merge neighboring notes into one long same-pitch
+  // run (observed: 11 consecutive A5s on BP1 without the AnimeHighEnergy
+  // lead setting). The RhythmSync lead branch already ran this right after
+  // the DNA rewrite; run it here for every path so a degenerate stuck-note
+  // line cannot reach the final output. Alternatives are consonance-checked
+  // against the freshly registered accompaniment, so no new clash can be
+  // introduced; the crossing/motif passes below see the corrected vocal.
+  harmony_context_->clearNotesForTrack(TrackRole::Vocal);
+  harmony_context_->registerTrack(song_.vocal(), TrackRole::Vocal);
+  breakLongPitchRuns(song_.vocal(), *harmony_context_, params_.vocal_low, params_.vocal_high, 5,
+                     TrackRole::Vocal);
+  harmony_context_->clearNotesForTrack(TrackRole::Vocal);
+  harmony_context_->registerTrack(song_.vocal(), TrackRole::Vocal);
 
   // Final guarantee: the inter-track clash passes above (fixInterTrackClashes,
   // fixTrackReferenceClashes) can raise motif pitches to dodge chord/bass,

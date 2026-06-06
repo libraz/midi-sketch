@@ -11,6 +11,7 @@
 
 #include "core/note_timeline_utils.h"
 #include "core/post_processor.h"
+#include "core/rng_util.h"
 #include "core/timing_constants.h"
 #include "core/timing_offset_calculator.h"
 #include "core/velocity_helper.h"
@@ -31,7 +32,6 @@ void PostProcessor::applyHumanization(std::vector<MidiTrack*>& tracks, const Hum
   constexpr int MAX_VELOCITY_VARIATION = 12;  // Was 8
 
   float velocity_scale = params.velocity;
-  std::uniform_int_distribution<int> velocity_dist(-MAX_VELOCITY_VARIATION, MAX_VELOCITY_VARIATION);
 
   for (MidiTrack* track : tracks) {
     auto& notes = track->notes();
@@ -41,7 +41,9 @@ void PostProcessor::applyHumanization(std::vector<MidiTrack*>& tracks, const Hum
       // after humanization. Actual ghost notes (25-35) are intentionally created
       // by addBassGhostNotes and should remain in that range.
       float vel_factor = isStrongBeat(note.start_tick) ? 0.5f : 1.0f;
-      int vel_offset = static_cast<int>(velocity_dist(rng) * velocity_scale * vel_factor);
+      int vel_offset = static_cast<int>(
+          rng_util::rollRange(rng, -MAX_VELOCITY_VARIATION, MAX_VELOCITY_VARIATION) *
+          velocity_scale * vel_factor);
       int new_velocity = static_cast<int>(note.velocity) + vel_offset;
       // Preserve intentional ghost notes (25-35), but prevent non-ghost notes from
       // falling into ghost range. Notes originally above 35 should stay above 35.
@@ -111,8 +113,8 @@ void PostProcessor::applySectionAwareVelocityHumanization(std::vector<MidiTrack*
       float beat_factor = isStrongBeat(note.start_tick) ? 0.5f : 1.0f;
       float max_variation = note.velocity * variation_pct * beat_factor;
 
-      std::uniform_real_distribution<float> dist(-max_variation, max_variation);
-      int new_vel = static_cast<int>(note.velocity) + static_cast<int>(dist(rng));
+      int new_vel = static_cast<int>(note.velocity) +
+                    static_cast<int>(rng_util::rollFloat(rng, -max_variation, max_variation));
       // Preserve intentional ghost notes (25-35), but prevent non-ghost notes from
       // falling into ghost range. Notes originally above 35 should stay above 35.
       int min_velocity = (note.velocity <= 35) ? 1 : 36;

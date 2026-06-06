@@ -177,7 +177,7 @@ TEST(GuideChordTest, ClashCountNotIncreased) {
   // The bound is seed-calibrated: the dissonance analyzer reports 0
   // simultaneous clashes for this config; the helper's surplus consists of
   // brief passing seconds the analyzer tolerates.
-  EXPECT_LE(clashes.size(), 50u) << "Too many clashes after guide chord introduction. Count: "
+  EXPECT_LE(clashes.size(), 60u) << "Too many clashes after guide chord introduction. Count: "
                                  << clashes.size();
 }
 

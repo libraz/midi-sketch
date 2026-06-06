@@ -539,9 +539,12 @@ VocalSyncCallback createVocalSyncCallback(const VocalAnalysis& vocal_analysis, u
             return min_dist;
           };
 
-          // Sort by distance to strong beats (closest first)
-          std::sort(onsets.begin(), onsets.end(),
-                    [&beatDistance](Tick a, Tick b) { return beatDistance(a) < beatDistance(b); });
+          // Sort by distance to strong beats (closest first). stable_sort keeps
+          // chronological order for equidistant onsets so the truncation below
+          // is deterministic across platforms.
+          std::stable_sort(onsets.begin(), onsets.end(), [&beatDistance](Tick a, Tick b) {
+            return beatDistance(a) < beatDistance(b);
+          });
           onsets.resize(kMaxVocalSyncKicks);
           // Re-sort chronologically for playback order
           std::sort(onsets.begin(), onsets.end());

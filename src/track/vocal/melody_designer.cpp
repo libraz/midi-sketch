@@ -191,7 +191,6 @@ std::vector<NoteEvent> subdivideSyllabic(const std::vector<NoteEvent>& notes, fl
     }
 
     // Generate subdivided notes
-    std::uniform_int_distribution<int> vel_dist(-4, 4);
     Tick current_tick = note.start_tick;
     for (int s = 0; s < split_count; ++s) {
       NoteEvent sub_note = note;
@@ -203,7 +202,7 @@ std::vector<NoteEvent> subdivideSyllabic(const std::vector<NoteEvent>& notes, fl
         sub_note.duration = split_dur;
       }
       // Velocity micro-variation
-      int vel_delta = vel_dist(rng);
+      int vel_delta = rng_util::rollRange(rng, -4, 4);
       sub_note.velocity =
           static_cast<uint8_t>(std::clamp(static_cast<int>(note.velocity) + vel_delta, 1, 127));
 #ifdef MIDISKETCH_NOTE_PROVENANCE
@@ -667,9 +666,10 @@ std::vector<NoteEvent> MelodyDesigner::generateSectionWithEvaluation(
     candidates.emplace_back(std::move(melody), combined_score);
   }
 
-  // Sort by score (highest first)
-  std::sort(candidates.begin(), candidates.end(),
-            [](const auto& a, const auto& b) { return a.second > b.second; });
+  // Sort by score (highest first). stable_sort keeps insertion order for
+  // equal scores so tie-breaking is deterministic across platforms.
+  std::stable_sort(candidates.begin(), candidates.end(),
+                   [](const auto& a, const auto& b) { return a.second > b.second; });
 
   // Cull bottom 50%: only keep top half
   size_t keep_count = std::max(static_cast<size_t>(1), candidates.size() / 2);

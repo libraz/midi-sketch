@@ -183,7 +183,8 @@ std::vector<uint8_t> arrangeByPattern(const std::vector<uint8_t>& notes, Arpeggi
     }
 
     case ArpeggioPattern::Random:
-      std::shuffle(result.begin(), result.end(), rng);
+      // Deterministic Fisher-Yates (std::shuffle is implementation-defined).
+      rng_util::shuffle(result.begin(), result.end(), rng);
       break;
 
     case ArpeggioPattern::Pinwheel: {

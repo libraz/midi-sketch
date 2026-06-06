@@ -977,11 +977,16 @@ int findConsonantChordTone(IHarmonyCoordinator& harmony, const Song& song, uint8
   }
 
   // Sort by distance from original pitch; candidates that would newly cross
-  // above the vocal are deprioritized.
-  std::sort(candidates.begin(), candidates.end(), [](const Candidate& a, const Candidate& b) {
-    if (a.crosses_above_vocal != b.crosses_above_vocal) return !a.crosses_above_vocal;
-    return a.distance < b.distance;
-  });
+  // above the vocal are deprioritized. stable_sort keeps the deterministic
+  // insertion order for equidistant candidates (unstable sort tie-breaking is
+  // implementation-defined and diverges across platforms).
+  std::stable_sort(candidates.begin(), candidates.end(),
+                   [](const Candidate& a, const Candidate& b) {
+                     if (a.crosses_above_vocal != b.crosses_above_vocal) {
+                       return !a.crosses_above_vocal;
+                     }
+                     return a.distance < b.distance;
+                   });
 
   for (const auto& c : candidates) {
     if (isConsonantWithSongTracks(song, c.pitch, start, duration, role, chord_degree)) {
@@ -1003,11 +1008,13 @@ int findConsonantChordTone(IHarmonyCoordinator& harmony, const Song& song, uint8
       scale_candidates.push_back({crosses, dist, static_cast<uint8_t>(p)});
     }
   }
-  std::sort(scale_candidates.begin(), scale_candidates.end(),
-            [](const Candidate& a, const Candidate& b) {
-              if (a.crosses_above_vocal != b.crosses_above_vocal) return !a.crosses_above_vocal;
-              return a.distance < b.distance;
-            });
+  std::stable_sort(scale_candidates.begin(), scale_candidates.end(),
+                   [](const Candidate& a, const Candidate& b) {
+                     if (a.crosses_above_vocal != b.crosses_above_vocal) {
+                       return !a.crosses_above_vocal;
+                     }
+                     return a.distance < b.distance;
+                   });
   for (const auto& c : scale_candidates) {
     if (isConsonantWithSongTracks(song, c.pitch, start, duration, role, chord_degree)) {
       return c.pitch;
@@ -1064,10 +1071,15 @@ uint8_t diversifyRepeatedChordTone(IHarmonyCoordinator& harmony, const Song& son
     }
   }
 
-  std::sort(candidates.begin(), candidates.end(), [](const Candidate& a, const Candidate& b) {
-    if (a.crosses_above_vocal != b.crosses_above_vocal) return !a.crosses_above_vocal;
-    return a.distance < b.distance;
-  });
+  // stable_sort: equidistant candidates keep insertion order so tie-breaking
+  // is deterministic across platforms.
+  std::stable_sort(candidates.begin(), candidates.end(),
+                   [](const Candidate& a, const Candidate& b) {
+                     if (a.crosses_above_vocal != b.crosses_above_vocal) {
+                       return !a.crosses_above_vocal;
+                     }
+                     return a.distance < b.distance;
+                   });
 
   for (const auto& c : candidates) {
     if (c.crosses_above_vocal) {

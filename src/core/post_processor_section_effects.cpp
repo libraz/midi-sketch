@@ -122,9 +122,11 @@ void PostProcessor::applyExitSustain(std::vector<NoteEvent>& notes, Tick section
 
   if (last_bar_notes.empty()) return;
 
-  // Sort by start_tick
-  std::sort(last_bar_notes.begin(), last_bar_notes.end(),
-            [](const NoteEvent* a, const NoteEvent* b) { return a->start_tick < b->start_tick; });
+  // Sort by start_tick. stable_sort keeps the original order for simultaneous
+  // notes so the result is deterministic across platforms.
+  std::stable_sort(
+      last_bar_notes.begin(), last_bar_notes.end(),
+      [](const NoteEvent* a, const NoteEvent* b) { return a->start_tick < b->start_tick; });
 
   // Collect unique start_ticks (sorted)
   std::vector<Tick> unique_starts;

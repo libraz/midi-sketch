@@ -13,6 +13,7 @@
 #include <random>
 
 #include "core/note_timeline_utils.h"
+#include "core/rng_util.h"
 
 namespace midisketch {
 
@@ -325,8 +326,19 @@ MotionType selectMotionType(int8_t vocal_direction, int bar_position, std::mt199
 
   // Weighted random selection for moving vocal:
   // Oblique 40%, Contrary 30%, Similar 20%, Parallel 10%
-  std::discrete_distribution<int> dist({40, 30, 20, 10});
-  int choice = dist(rng);
+  // (cumulative roll instead of std::discrete_distribution, whose engine
+  // usage is implementation-defined and diverges across platforms)
+  int roll = rng_util::rollRange(rng, 0, 99);
+  int choice;
+  if (roll < 40) {
+    choice = 0;
+  } else if (roll < 70) {
+    choice = 1;
+  } else if (roll < 90) {
+    choice = 2;
+  } else {
+    choice = 3;
+  }
 
   // Stylistic adjustment: even bars favor independence over parallel motion
   if (bar_position % 2 == 0 && choice == 3) {

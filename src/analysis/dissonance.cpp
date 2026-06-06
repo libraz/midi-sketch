@@ -322,9 +322,9 @@ std::vector<TimedNote> collectPitchedNotes(const Song& song) {
   addTrackNotes(song.aux(), TrackRole::Aux);
   addTrackNotes(song.guitar(), TrackRole::Guitar);
 
-  // Sort by start time
-  std::sort(notes.begin(), notes.end(),
-            [](const TimedNote& a, const TimedNote& b) { return a.start < b.start; });
+  // Sort by start time. stable_sort: deterministic order for simultaneous notes.
+  std::stable_sort(notes.begin(), notes.end(),
+                   [](const TimedNote& a, const TimedNote& b) { return a.start < b.start; });
 
   return notes;
 }
@@ -936,9 +936,10 @@ DissonanceReport analyzeDissonance(const Song& song, const GeneratorParams& para
     }
   }
 
-  // Sort issues by tick position
-  std::sort(report.issues.begin(), report.issues.end(),
-            [](const DissonanceIssue& a, const DissonanceIssue& b) { return a.tick < b.tick; });
+  // Sort issues by tick position. stable_sort: deterministic order for same-tick issues.
+  std::stable_sort(
+      report.issues.begin(), report.issues.end(),
+      [](const DissonanceIssue& a, const DissonanceIssue& b) { return a.tick < b.tick; });
 
   return report;
 }
@@ -977,8 +978,8 @@ DissonanceReport analyzeDissonanceFromParsedMidi(const ParsedMidi& midi) {
     }
   }
 
-  // Sort by start time
-  std::sort(
+  // Sort by start time. stable_sort: deterministic order for simultaneous notes.
+  std::stable_sort(
       all_notes.begin(), all_notes.end(),
       [](const TimedNoteWithName& a, const TimedNoteWithName& b) { return a.start < b.start; });
 
@@ -1099,9 +1100,10 @@ DissonanceReport analyzeDissonanceFromParsedMidi(const ParsedMidi& midi) {
 
   report.summary.total_issues = report.summary.simultaneous_clashes;
 
-  // Sort by tick
-  std::sort(report.issues.begin(), report.issues.end(),
-            [](const DissonanceIssue& a, const DissonanceIssue& b) { return a.tick < b.tick; });
+  // Sort by tick. stable_sort: deterministic order for same-tick issues.
+  std::stable_sort(
+      report.issues.begin(), report.issues.end(),
+      [](const DissonanceIssue& a, const DissonanceIssue& b) { return a.tick < b.tick; });
 
   return report;
 }

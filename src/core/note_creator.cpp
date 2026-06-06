@@ -109,18 +109,30 @@ void rankCandidates(std::vector<PitchCandidate>& candidates, PitchPreference pre
             break;
 
           default:
-            // Guide tones (3rd/7th) preferred as tiebreaker among chord tones.
-            // Non-chord-tone candidates are not affected (melodic freedom preserved).
-            if (a.is_chord_tone && b.is_chord_tone) {
-              if (a.is_guide_tone != b.is_guide_tone) {
-                return a.is_guide_tone;
-              }
-            }
             break;
         }
 
         // Tertiary: prefer smaller interval from desired
-        return std::abs(a.interval_from_desired) < std::abs(b.interval_from_desired);
+        int a_dist = std::abs(a.interval_from_desired);
+        int b_dist = std::abs(b.interval_from_desired);
+        if (a_dist != b_dist) {
+          return a_dist < b_dist;
+        }
+
+        // Quaternary: guide tones (3rd/7th) break equal-distance ties.
+        // NOTE: this key must apply unconditionally. The previous version
+        // compared guide tones only when BOTH candidates were chord tones,
+        // which violates strict weak ordering (the "tie" relation is not
+        // transitive across chord-tone / non-chord-tone boundaries), making
+        // std::stable_sort results implementation-defined — libstdc++ and
+        // libc++ produced different candidate orders from identical input,
+        // breaking cross-platform reproducibility.
+        bool a_guide = a.is_chord_tone && a.is_guide_tone;
+        bool b_guide = b.is_chord_tone && b.is_guide_tone;
+        if (a_guide != b_guide) {
+          return a_guide;
+        }
+        return false;  // Equivalent: stable_sort keeps insertion order.
       });
 }
 

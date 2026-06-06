@@ -647,11 +647,15 @@ TEST(MotifOverrideE2ETest, MotifRhythmDensitySparseVsDriving) {
   // Sparse uses quarter-note grid, Driving uses eighth-note grid
   // This produces different rhythmic positions even with the same note_count
   // Verify that the generated patterns differ (different note positions)
+  // Pin the blueprint: the default (255) picks a random blueprint per seed,
+  // and locked-rhythm blueprints select motif templates independently of the
+  // motif_rhythm_density override under test.
   Generator gen_sparse;
   SongConfig config_sparse = createDefaultSongConfig(0);
   config_sparse.composition_style = CompositionStyle::BackgroundMotif;
   config_sparse.motif_rhythm_density = 0;  // Sparse
   config_sparse.seed = 42;
+  config_sparse.blueprint_id = 0;
   gen_sparse.generateFromConfig(config_sparse);
 
   Generator gen_driving;
@@ -659,6 +663,7 @@ TEST(MotifOverrideE2ETest, MotifRhythmDensitySparseVsDriving) {
   config_driving.composition_style = CompositionStyle::BackgroundMotif;
   config_driving.motif_rhythm_density = 2;  // Driving
   config_driving.seed = 42;
+  config_driving.blueprint_id = 0;
   gen_driving.generateFromConfig(config_driving);
 
   const auto& sparse_notes = gen_sparse.getSong().motif().notes();

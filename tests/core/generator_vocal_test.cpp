@@ -965,6 +965,11 @@ TEST(UltraVocaloidTest, ChorusGeneratesShortNotes) {
   SongConfig config = createDefaultSongConfig(0);
   config.seed = 42;
   config.vocal_style = VocalStylePreset::UltraVocaloid;
+  // Pin the blueprint: the default (255) picks a random blueprint per seed,
+  // and locked-rhythm blueprints suppress the machine-gun 32nds this test
+  // verifies. The UltraVocaloid character is what's under test, not the
+  // blueprint roll.
+  config.blueprint_id = 0;
   gen.generateFromConfig(config);
 
   const auto& notes = gen.getSong().vocal().notes();
@@ -1012,6 +1017,9 @@ TEST(UltraVocaloidTest, ReducedConsecutiveSameNotes) {
   SongConfig config = createDefaultSongConfig(0);
   config.seed = 42;
   config.vocal_style = VocalStylePreset::UltraVocaloid;
+  // Pin the blueprint (default 255 = random per seed); see
+  // ChorusGeneratesShortNotes.
+  config.blueprint_id = 0;
   gen.generateFromConfig(config);
 
   const auto& notes = gen.getSong().vocal().notes();
@@ -1048,6 +1056,9 @@ TEST(UltraVocaloidTest, VerseDensityLowerThanChorus) {
   SongConfig config = createDefaultSongConfig(0);
   config.seed = 42;
   config.vocal_style = VocalStylePreset::UltraVocaloid;
+  // Pin the blueprint (default 255 = random per seed); see
+  // ChorusGeneratesShortNotes.
+  config.blueprint_id = 0;
   gen.generateFromConfig(config);
 
   const auto& notes = gen.getSong().vocal().notes();

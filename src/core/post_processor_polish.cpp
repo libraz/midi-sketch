@@ -98,10 +98,15 @@ uint8_t findSafeChordTone(uint8_t original_pitch, int8_t degree, Tick start, Tic
   // Return best non-clashing chord tone: prefer at-or-below the vocal ceiling,
   // then closest to the original pitch.
   if (!candidates.empty()) {
-    std::sort(candidates.begin(), candidates.end(), [](const Candidate& a, const Candidate& b) {
-      if (a.above_ceiling != b.above_ceiling) return !a.above_ceiling;  // below ceiling first
-      return a.distance < b.distance;
-    });
+    // stable_sort: equidistant candidates keep insertion order so tie-breaking
+    // is deterministic across platforms.
+    std::stable_sort(candidates.begin(), candidates.end(),
+                     [](const Candidate& a, const Candidate& b) {
+                       if (a.above_ceiling != b.above_ceiling) {
+                         return !a.above_ceiling;  // below ceiling first
+                       }
+                       return a.distance < b.distance;
+                     });
     return candidates[0].pitch;
   }
 
@@ -503,8 +508,11 @@ void PostProcessor::fixMotifRepeatedPitches(MidiTrack& motif, const MidiTrack& v
     if (candidates.empty()) {
       continue;  // Consonance wins over monotony: keep the run.
     }
-    std::sort(candidates.begin(), candidates.end(),
-              [](const Candidate& a, const Candidate& b) { return a.distance < b.distance; });
+    // stable_sort: equidistant candidates keep insertion order so tie-breaking
+    // is deterministic across platforms.
+    std::stable_sort(
+        candidates.begin(), candidates.end(),
+        [](const Candidate& a, const Candidate& b) { return a.distance < b.distance; });
     uint8_t new_pitch = candidates.front().pitch;
 
 #ifdef MIDISKETCH_NOTE_PROVENANCE
@@ -751,8 +759,10 @@ void PostProcessor::smoothLargeLeaps(MidiTrack& track, int max_semitones) {
   auto& notes = track.notes();
   if (notes.size() < 2) return;
 
-  // Sort by start tick to ensure correct adjacency
-  std::sort(notes.begin(), notes.end(), [](const NoteEvent& lhs, const NoteEvent& rhs) {
+  // Sort by start tick to ensure correct adjacency. stable_sort keeps the
+  // original order for simultaneous notes so the result is deterministic
+  // across platforms.
+  std::stable_sort(notes.begin(), notes.end(), [](const NoteEvent& lhs, const NoteEvent& rhs) {
     return lhs.start_tick < rhs.start_tick;
   });
 

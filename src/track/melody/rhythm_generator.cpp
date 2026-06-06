@@ -514,9 +514,10 @@ uint8_t selectPitchForLockedRhythmEnhanced(uint8_t prev_pitch, int8_t chord_degr
     scored_candidates.emplace_back(pitch, score);
   }
 
-  // Sort by score (highest first)
-  std::sort(scored_candidates.begin(), scored_candidates.end(),
-            [](const auto& a, const auto& b) { return a.second > b.second; });
+  // Sort by score (highest first). stable_sort keeps insertion order for
+  // equal scores so tie-breaking is deterministic across platforms.
+  std::stable_sort(scored_candidates.begin(), scored_candidates.end(),
+                   [](const auto& a, const auto& b) { return a.second > b.second; });
 
   // Weighted probabilistic selection from top candidates
   // This maintains some variety while preferring better options

@@ -177,9 +177,10 @@ std::vector<MidiEvent> MidiTrack::toMidiEvents(uint8_t channel) const {
         {note.start_tick + note.duration, static_cast<uint8_t>(0x80 | channel), note.note, 0});
   }
 
-  // Sort by tick time
-  std::sort(events.begin(), events.end(),
-            [](const MidiEvent& a, const MidiEvent& b) { return a.tick < b.tick; });
+  // Sort by tick time. stable_sort keeps the original order for simultaneous
+  // events so the byte-level output is deterministic across platforms.
+  std::stable_sort(events.begin(), events.end(),
+                   [](const MidiEvent& a, const MidiEvent& b) { return a.tick < b.tick; });
 
   return events;
 }

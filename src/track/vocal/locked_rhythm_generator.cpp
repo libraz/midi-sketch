@@ -413,9 +413,10 @@ std::vector<NoteEvent> generateLockedRhythmWithEvaluation(
     return generateLockedRhythmCandidate(rhythm, section, designer, harmony, ctx, rng, phrase_plan);
   }
 
-  // Sort by score (highest first)
-  std::sort(candidates.begin(), candidates.end(),
-            [](const auto& a, const auto& b) { return a.second > b.second; });
+  // Sort by score (highest first). stable_sort keeps insertion order for
+  // equal scores so tie-breaking is deterministic across platforms.
+  std::stable_sort(candidates.begin(), candidates.end(),
+                   [](const auto& a, const auto& b) { return a.second > b.second; });
 
   // Keep top half
   size_t keep_count = std::max(static_cast<size_t>(1), candidates.size() / 2);

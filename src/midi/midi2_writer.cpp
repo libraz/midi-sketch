@@ -104,7 +104,9 @@ void Midi2Writer::writeTrackData(const MidiTrack& track, uint8_t group, uint8_t 
   // when a note ends and another starts at the same tick, the old note
   // is properly closed (note-off 0x80) before the new one starts (note-on 0x90).
   // CC events (0xB0) are placed between note-off and note-on.
-  std::sort(events.begin(), events.end(), [](const Event& a, const Event& b) {
+  // stable_sort keeps the original order for same-time same-type events (e.g.
+  // chord note-ons) so the byte-level output is deterministic across platforms.
+  std::stable_sort(events.begin(), events.end(), [](const Event& a, const Event& b) {
     if (a.time != b.time) return a.time < b.time;
     // At same time: note-off (0x80) < CC (0xB0) < note-on (0x90)
     return a.type < b.type;
@@ -165,7 +167,8 @@ void Midi2Writer::writeMarkerData(const MidiTrack& track, uint8_t group, uint16_
     events.push_back({tempo_map[i].tick, true, i});
   }
 
-  std::sort(events.begin(), events.end(), [](const TimedEvent& a, const TimedEvent& b) {
+  // stable_sort: deterministic order for same-tick same-kind events.
+  std::stable_sort(events.begin(), events.end(), [](const TimedEvent& a, const TimedEvent& b) {
     if (a.tick != b.tick) return a.tick < b.tick;
     return !a.is_tempo && b.is_tempo;
   });

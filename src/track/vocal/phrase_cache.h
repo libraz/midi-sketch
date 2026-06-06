@@ -475,9 +475,12 @@ inline CachedRhythmPattern buildRunBasedOnsetMap(
         scored.push_back({idx, s, b});
       }
 
-      // Sort by score descending (keep highest scored)
-      std::sort(scored.begin(), scored.end(),
-                [](const ScoredOnset& a, const ScoredOnset& b) { return a.score > b.score; });
+      // Sort by score descending (keep highest scored). stable_sort keeps
+      // insertion order for equal scores so tie-breaking is deterministic
+      // across platforms.
+      std::stable_sort(
+          scored.begin(), scored.end(),
+          [](const ScoredOnset& a, const ScoredOnset& b) { return a.score > b.score; });
 
       // Keep top `target` onsets
       size_t keep_count = static_cast<size_t>(std::max(target, 2));

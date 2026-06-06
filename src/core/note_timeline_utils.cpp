@@ -91,8 +91,11 @@ void fixOverlapsWithMinDuration(std::vector<NoteEvent>& notes, Tick min_duration
 }
 
 void sortByStartTick(std::vector<NoteEvent>& notes) {
-  std::sort(notes.begin(), notes.end(),
-            [](const NoteEvent& a, const NoteEvent& b) { return a.start_tick < b.start_tick; });
+  // stable_sort keeps the original order for simultaneous notes so the result
+  // is deterministic across platforms.
+  std::stable_sort(notes.begin(), notes.end(), [](const NoteEvent& a, const NoteEvent& b) {
+    return a.start_tick < b.start_tick;
+  });
 }
 
 }  // namespace NoteTimeline
