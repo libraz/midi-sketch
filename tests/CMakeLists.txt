@@ -21,6 +21,7 @@ set(TEST_SOURCES
   core/generator_vocal_test.cpp
   core/generator_vocal_first_test.cpp
   core/generator_motif_test.cpp
+  core/motif_riff_coherence_test.cpp
   core/generator_dynamics_test.cpp
   core/generator_state_test.cpp
   core/midi_track_test.cpp

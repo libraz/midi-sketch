@@ -88,6 +88,13 @@ void applyRhythmSyncLeadDna(MidiTrack& vocal, MidiTrack& motif,
                             const IHarmonyContext& harmony);
 bool isRhythmSyncLeadSetting(const GeneratorParams& params, uint8_t resolved_blueprint_id);
 
+/// Intended riff realization per onset: start tick -> sorted pitch stack.
+using MotifRiffReference = std::map<Tick, std::vector<uint8_t>>;
+MotifRiffReference captureMotifRiffReference(const MidiTrack& motif);
+void restoreMotifRiffFromReference(MidiTrack& motif, const MidiTrack& vocal, const MidiTrack& aux,
+                                   const MotifRiffReference& reference,
+                                   const IHarmonyContext& harmony);
+
 /// Apply density progression to sections for RhythmSync style.
 /// "Peak is a temporal event" - density increases over time.
 void applyDensityProgressionToSections(std::vector<Section>& sections,
@@ -526,6 +533,15 @@ void Generator::applyPostProcessingEffects() {
     harmony_context_->registerTrack(song_.vocal(), TrackRole::Vocal);
   }
 
+  // Capture the riff identity NOW, after the intentional register shaping
+  // (lead DNA) but before the per-note collision passes below scatter it.
+  // restoreMotifRiffFromReference pulls divergent notes back to this
+  // reference at the end of the pipeline wherever the final state allows.
+  MotifRiffReference riff_reference;
+  if (params_.paradigm == GenerationParadigm::RhythmSync && !song_.motif().empty()) {
+    riff_reference = captureMotifRiffReference(song_.motif());
+  }
+
   // FINAL STEP: Fix inter-track clashes that may occur after all post-processing.
   // Must run AFTER humanization (which shifts note timing) and all duration
   // extensions (applyEnhancedFinalHit, ritardando, etc.).
@@ -534,15 +550,22 @@ void Generator::applyPostProcessingEffects() {
   PostProcessor::fixTrackVocalClashes(song_.aux(), song_.vocal(), TrackRole::Aux);
   PostProcessor::fixTrackVocalClashes(song_.bass(), song_.vocal(), TrackRole::Bass);
   PostProcessor::fixTrackVocalClashes(song_.guitar(), song_.vocal(), TrackRole::Guitar);
-  PostProcessor::fixMotifVocalClashes(song_.motif(), song_.vocal(), *harmony_context_);
   if (isRhythmSyncLeadSetting(params_, resolved_blueprint_id_)) {
     strengthenRhythmLockBassDrive(song_.bass(), song_.arrangement().sections());
     PostProcessor::fixTrackVocalClashes(song_.bass(), song_.vocal(), TrackRole::Bass);
+    // Duck the riff under the lead FIRST, as a bar-coherent transposition.
+    // Running the per-note clash fixer before the duck would rewrite motif
+    // pitches individually against a vocal the riff is about to move away
+    // from, scattering the riff for no benefit; after the duck only true
+    // residual dissonances remain for the per-note fixer.
     duckMotifUnderLead(song_.motif(), song_.vocal(), *harmony_context_);
+    PostProcessor::fixMotifVocalClashes(song_.motif(), song_.vocal(), *harmony_context_);
     tameStandaloneMotifSections(song_.motif(), song_.vocal(), song_.arrangement().sections(),
                                 *harmony_context_);
     separateMotifFromBass(song_.motif(), song_.vocal(), song_.bass(), *harmony_context_);
     breakLongPitchRuns(song_.motif(), *harmony_context_, 48, 84, 5, TrackRole::Motif);
+  } else {
+    PostProcessor::fixMotifVocalClashes(song_.motif(), song_.vocal(), *harmony_context_);
   }
 
   // Re-sync harmony context after the batch of fixTrack*/fixMotif* (and the
@@ -560,6 +583,20 @@ void Generator::applyPostProcessingEffects() {
                          {&song_.motif(), TrackRole::Motif}}) {
     harmony_context_->clearNotesForTrack(tr.second);
     harmony_context_->registerTrack(*tr.first, tr.second);
+  }
+
+  // First riff restore: pull the motif back toward the captured riff BEFORE
+  // the aux/arpeggio/guitar reference-clash passes below resolve those tracks
+  // against it. Resolving them against a scattered motif locks the scatter
+  // in: the accompaniment then occupies pitches that conflict with the riff's
+  // reference realization, and the final restore can no longer take it back.
+  // A second restore at the end of the pipeline undoes the scatter added by
+  // the later motif-mutating passes (fixMotifRepeatedPitches etc.).
+  if (params_.paradigm == GenerationParadigm::RhythmSync && !riff_reference.empty()) {
+    restoreMotifRiffFromReference(song_.motif(), song_.vocal(), song_.aux(), riff_reference,
+                                  *harmony_context_);
+    harmony_context_->clearNotesForTrack(TrackRole::Motif);
+    harmony_context_->registerTrack(song_.motif(), TrackRole::Motif);
   }
   if (isRhythmSyncLeadSetting(params_, resolved_blueprint_id_)) {
     // The DNA rewrite above may have dropped the vocal register below chord
@@ -700,6 +737,18 @@ void Generator::applyPostProcessingEffects() {
       harmony_context_->clearNotesForTrack(tr.second);
       harmony_context_->registerTrack(*tr.first, tr.second);
     }
+  }
+
+  // Restore the RhythmSync riff identity scattered by the per-note collision
+  // passes above. Must run as the LAST pitch-mutating motif step so later
+  // passes cannot re-scatter the riff; every stamp is consonance-verified, so
+  // no clash-fixing pass needs to run after it. Re-register the motif so the
+  // tail-trim pass below sees fresh state.
+  if (params_.paradigm == GenerationParadigm::RhythmSync && !riff_reference.empty()) {
+    restoreMotifRiffFromReference(song_.motif(), song_.vocal(), song_.aux(), riff_reference,
+                                  *harmony_context_);
+    harmony_context_->clearNotesForTrack(TrackRole::Motif);
+    harmony_context_->registerTrack(song_.motif(), TrackRole::Motif);
   }
 
   // Very last note-mutating step: every pass above can leave a short
@@ -1678,7 +1727,8 @@ void duckMotifUnderLead(MidiTrack& motif, const MidiTrack& vocal, const IHarmony
     return;
   }
 
-  for (auto& motif_note : motif_notes) {
+  // Find the vocal note with the largest temporal overlap for a motif note.
+  auto findLead = [&vocal_notes](const NoteEvent& motif_note) -> const NoteEvent* {
     Tick motif_end = motif_note.start_tick + motif_note.duration;
     const NoteEvent* lead = nullptr;
     Tick best_overlap = 0;
@@ -1693,68 +1743,172 @@ void duckMotifUnderLead(MidiTrack& motif, const MidiTrack& vocal, const IHarmony
       lead = &vocal_note;
       best_overlap = overlap;
     }
-    if (lead == nullptr) {
+    return lead;
+  };
+
+  // BAR-COHERENT duck: the motif is the locked riff, so per-note ducking to
+  // varying depths breaks the riff's shape bar by bar. Instead, decide ONE
+  // octave drop per bar from the bar's worst lead competition and transpose
+  // the whole bar uniformly — the bar stays an exact transposition of the
+  // riff. Only notes whose uniform drop is dissonant against the final
+  // registered tracks fall back to a per-note resolution.
+  std::map<Tick, std::vector<size_t>> bars;
+  for (size_t i = 0; i < motif_notes.size(); ++i) {
+    bars[motif_notes[i].start_tick / TICKS_PER_BAR].push_back(i);
+  }
+
+  for (auto& [bar, indices] : bars) {
+    // Required drop = max over the bar's competing notes; a bar drops as a
+    // whole only when a meaningful share of its notes compete with the lead.
+    // Isolated competing notes are ducked individually below — a uniform
+    // octave drop for one stray note would flatten the section register arc
+    // (verse low → chorus high) that the lead DNA establishes.
+    int drop_octaves = 0;
+    int lowest_pitch = 127;
+    size_t competing = 0;
+    for (size_t idx : indices) {
+      const NoteEvent& note = motif_notes[idx];
+      lowest_pitch = std::min(lowest_pitch, static_cast<int>(note.note));
+      const NoteEvent* lead = findLead(note);
+      if (lead == nullptr) continue;
+      int distance_from_lead = static_cast<int>(note.note) - static_cast<int>(lead->note);
+      bool competes_for_lead = distance_from_lead >= -2 ||
+                               (distance_from_lead >= -7 && note.velocity + 6 >= lead->velocity);
+      if (!competes_for_lead) continue;
+      ++competing;
+      int needed = 0;
+      int target = static_cast<int>(note.note);
+      while (target > static_cast<int>(lead->note) - 5 && needed < 2) {
+        target -= 12;
+        ++needed;
+      }
+      drop_octaves = std::max(drop_octaves, needed);
+    }
+    // Respect the register floor: shrink the drop until the bar's lowest
+    // note stays at or above 48.
+    while (drop_octaves > 0 && lowest_pitch - drop_octaves * 12 < 48) {
+      --drop_octaves;
+    }
+    if (drop_octaves == 0) {
       continue;
     }
-
-    int distance_from_lead = static_cast<int>(motif_note.note) - static_cast<int>(lead->note);
-    bool competes_for_lead =
-        distance_from_lead >= -2 ||
-        (distance_from_lead >= -7 && motif_note.velocity + 6 >= lead->velocity);
-    if (!competes_for_lead) {
-      continue;
-    }
-
-    uint8_t pre_pitch = motif_note.note;
-    int target_pitch = static_cast<int>(motif_note.note);
-    while (target_pitch > static_cast<int>(lead->note) - 5) {
-      target_pitch -= 12;
-    }
-    uint8_t range_high = static_cast<uint8_t>(std::max(52, static_cast<int>(lead->note) - 5));
-    uint8_t range_low = static_cast<uint8_t>(std::min<int>(48, range_high));
-    // The chord-aware clamp alone can land a close M2 over a sounding bass
-    // note; try nearby targets and require consonance with the registered
-    // tracks. If nothing in the duck range is fully consonant, KEEP the
-    // original pitch: a register crossing under the lead is a warning, but a
-    // forced clash (e.g. motif C3 wedged against a bass B2 walk-up) is a hard
-    // dissonance-gate failure.
-    uint8_t ducked = clampScalePitchAvoidingChord(target_pitch, motif_note.start_tick, harmony,
-                                                  range_low, range_high);
-    if (static_cast<int>(ducked) > static_cast<int>(lead->note) - 5) {
-      ducked = clampScalePitchAvoidingChord(static_cast<int>(lead->note) - 7, motif_note.start_tick,
-                                            harmony, range_low, range_high);
-    }
-    if (!harmony.isConsonantWithOtherTracks(ducked, motif_note.start_tick, motif_note.duration,
-                                            TrackRole::Motif)) {
-      bool resolved = false;
-      static constexpr int kDuckOffsets[] = {-2, 2, -4, 4, -5, 5, -7, 7};
-      for (int offset : kDuckOffsets) {
-        int alt_target = static_cast<int>(ducked) + offset;
-        if (alt_target < static_cast<int>(range_low) || alt_target > static_cast<int>(range_high)) {
-          continue;
+    if (competing * 10 < indices.size() * 3) {  // < 30% compete: per-note duck
+      for (size_t idx : indices) {
+        NoteEvent& note = motif_notes[idx];
+        const NoteEvent* lead = findLead(note);
+        if (lead == nullptr) continue;
+        int distance_from_lead = static_cast<int>(note.note) - static_cast<int>(lead->note);
+        bool competes_for_lead = distance_from_lead >= -2 ||
+                                 (distance_from_lead >= -7 && note.velocity + 6 >= lead->velocity);
+        if (!competes_for_lead) continue;
+        uint8_t pre_pitch = note.note;
+        int cand = static_cast<int>(note.note) - 12;
+        if (cand < 48) continue;
+        // Deterministic on riff position: octave fold first, then the chord
+        // tone nearest the fold, so sibling bars duck the stray note the
+        // same way. A context-dependent nearby-offset walk is the last
+        // resort before keeping the original (crossing warning < forced
+        // clash).
+        uint8_t ducked = static_cast<uint8_t>(cand);
+        if (!harmony.isConsonantWithOtherTracks(ducked, note.start_tick, note.duration,
+                                                TrackRole::Motif)) {
+          uint8_t range_high = static_cast<uint8_t>(std::min(84, cand + 7));
+          ChordToneHelper ct_helper(harmony.getChordDegreeAt(note.start_tick));
+          uint8_t chord_tone = ct_helper.nearestInRange(ducked, 48, range_high);
+          if (harmony.isConsonantWithOtherTracks(chord_tone, note.start_tick, note.duration,
+                                                 TrackRole::Motif)) {
+            ducked = chord_tone;
+          } else {
+            bool resolved = false;
+            static constexpr int kDuckOffsets[] = {-2, 2, -4, 4, -5, 5, -7, 7};
+            for (int offset : kDuckOffsets) {
+              int alt_target = cand + offset;
+              if (alt_target < 48 || alt_target > static_cast<int>(range_high)) {
+                continue;
+              }
+              uint8_t alt = clampScalePitchAvoidingChord(alt_target, note.start_tick, harmony, 48,
+                                                         range_high);
+              if (harmony.isConsonantWithOtherTracks(alt, note.start_tick, note.duration,
+                                                     TrackRole::Motif)) {
+                ducked = alt;
+                resolved = true;
+                break;
+              }
+            }
+            if (!resolved) {
+              continue;  // keep the original
+            }
+          }
         }
-        uint8_t alt = clampScalePitchAvoidingChord(alt_target, motif_note.start_tick, harmony,
-                                                   range_low, range_high);
-        if (static_cast<int>(alt) > static_cast<int>(lead->note) - 5) continue;
-        if (harmony.isConsonantWithOtherTracks(alt, motif_note.start_tick, motif_note.duration,
-                                               TrackRole::Motif)) {
-          ducked = alt;
-          resolved = true;
-          break;
-        }
-      }
-      if (!resolved) {
-        ducked = pre_pitch;
-      }
-    }
-    motif_note.note = ducked;
-
-    if (motif_note.note != pre_pitch) {
+        note.note = ducked;
+        if (note.note != pre_pitch) {
 #ifdef MIDISKETCH_NOTE_PROVENANCE
-      motif_note.prov_source = static_cast<uint8_t>(NoteSource::PostProcess);
-      motif_note.addTransformStep(TransformStepType::CollisionAvoid, pre_pitch, motif_note.note, 0,
-                                  0);
+          note.prov_source = static_cast<uint8_t>(NoteSource::PostProcess);
+          note.addTransformStep(TransformStepType::CollisionAvoid, pre_pitch, note.note, 0, 0);
 #endif
+        }
+      }
+      continue;
+    }
+
+    for (size_t idx : indices) {
+      NoteEvent& note = motif_notes[idx];
+      uint8_t pre_pitch = note.note;
+      int cand = static_cast<int>(note.note) - drop_octaves * 12;
+      if (cand < 48) {
+        continue;  // floor guard for outlier low notes
+      }
+      uint8_t ducked = static_cast<uint8_t>(cand);
+      if (!harmony.isConsonantWithOtherTracks(ducked, note.start_tick, note.duration,
+                                              TrackRole::Motif)) {
+        // Per-note fallback, riff-position deterministic FIRST: the chord
+        // tone nearest the dropped target depends only on the chord, so
+        // sibling bars at the same riff position fall back to the SAME pitch
+        // and the riff shape stays aligned across section instances. Only
+        // then try nearby offsets (context-dependent). If nothing in the
+        // duck range is fully consonant, KEEP the original pitch: a register
+        // crossing under the lead is a warning, but a forced clash is a hard
+        // dissonance-gate failure.
+        bool resolved = false;
+        uint8_t range_high = static_cast<uint8_t>(std::min(84, cand + 7));
+        uint8_t range_low = 48;
+        ChordToneHelper ct_helper(harmony.getChordDegreeAt(note.start_tick));
+        uint8_t chord_tone = ct_helper.nearestInRange(ducked, range_low, range_high);
+        if (harmony.isConsonantWithOtherTracks(chord_tone, note.start_tick, note.duration,
+                                               TrackRole::Motif)) {
+          ducked = chord_tone;
+          resolved = true;
+        }
+        if (!resolved) {
+          static constexpr int kDuckOffsets[] = {-2, 2, -4, 4, -5, 5, -7, 7};
+          for (int offset : kDuckOffsets) {
+            int alt_target = cand + offset;
+            if (alt_target < static_cast<int>(range_low) ||
+                alt_target > static_cast<int>(range_high)) {
+              continue;
+            }
+            uint8_t alt = clampScalePitchAvoidingChord(alt_target, note.start_tick, harmony,
+                                                       range_low, range_high);
+            if (harmony.isConsonantWithOtherTracks(alt, note.start_tick, note.duration,
+                                                   TrackRole::Motif)) {
+              ducked = alt;
+              resolved = true;
+              break;
+            }
+          }
+        }
+        if (!resolved) {
+          ducked = pre_pitch;
+        }
+      }
+      note.note = ducked;
+
+      if (note.note != pre_pitch) {
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+        note.prov_source = static_cast<uint8_t>(NoteSource::PostProcess);
+        note.addTransformStep(TransformStepType::CollisionAvoid, pre_pitch, note.note, 0, 0);
+#endif
+      }
     }
   }
 }
@@ -2202,9 +2356,13 @@ uint8_t clampScalePitchAvoidingChord(int pitch, Tick tick, const IHarmonyContext
     return initial;
   }
 
+  // Walk candidates from the CLAMPED pitch, not the raw input: when the input
+  // sits far outside [low, high] (e.g. a register shift from a much lower
+  // octave), every raw-input offset is out of range, the walk finds nothing,
+  // and the avoid note from the initial clamp leaks through.
   for (int offset = 1; offset <= 12; ++offset) {
     for (int direction : {-1, 1}) {
-      int candidate_pitch = pitch + direction * offset;
+      int candidate_pitch = static_cast<int>(initial) + direction * offset;
       if (candidate_pitch < static_cast<int>(low) || candidate_pitch > static_cast<int>(high)) {
         continue;
       }
@@ -2247,8 +2405,12 @@ bool isAvoidNoteOverSpan(uint8_t pitch, Tick tick, Tick duration, const IHarmony
 uint8_t pickShapedPitch(int target, const NoteEvent& note, const IHarmonyContext& harmony,
                         uint8_t low, uint8_t high, TrackRole role) {
   static constexpr int kOffsets[] = {0, -1, 1, -2, 2, -3, 3, -4, 4, -5, 5, -7, 7, -12, 12};
+  // Walk candidates from the range-clamped target: a raw target far outside
+  // [low, high] (e.g. a register shift from a much lower octave) would put
+  // every offset candidate out of range and skip the whole walk.
+  const int base = std::clamp(target, static_cast<int>(low), static_cast<int>(high));
   for (int offset : kOffsets) {
-    int cand_target = target + offset;
+    int cand_target = base + offset;
     if (cand_target < static_cast<int>(low) || cand_target > static_cast<int>(high)) {
       continue;
     }
@@ -2303,6 +2465,68 @@ void shapeSectionRegister(std::vector<NoteEvent*>& notes, int low, int high, uin
                     : clampScalePitch(target, static_cast<uint8_t>(register_low),
                                       static_cast<uint8_t>(register_high));
     // Section energy differentiation: boost velocity for shaped notes.
+    note.velocity = vel::withDelta(note.velocity, static_cast<int>(velocity_boost));
+  }
+}
+
+/// @brief Shift a section's motif notes into a target register, riff-coherently.
+///
+/// The per-note variant (shapeSectionRegister) interpolates the lift across
+/// the section's notes and resolves every note independently through
+/// pickShapedPitch, which scatters identical riff cycles into different
+/// realizations. This variant preserves the riff shape: the lift is constant
+/// within each bar (interpolated per BAR across the section, so an intended
+/// register rise still happens bar-by-bar), and within a bar every occurrence
+/// of the same source pitch resolves to the same target pitch. A per-bar
+/// uniform transposition does not change the bar's relative-pitch shape, so
+/// sibling riff cycles stay transpositions of each other. Individual notes
+/// that still clash after this are handled by the collision passes and the
+/// final restoreMotifRiffFromReference pass.
+void shiftMotifRegisterBarUniform(std::vector<NoteEvent*>& notes, const Section& section, int low,
+                                  int high, uint8_t absolute_low, uint8_t absolute_high,
+                                  int start_lift, int end_lift, uint8_t velocity_boost,
+                                  const IHarmonyContext& harmony) {
+  if (notes.empty()) {
+    return;
+  }
+
+  low = std::clamp(low, static_cast<int>(absolute_low), static_cast<int>(absolute_high));
+  high = std::clamp(high, low, static_cast<int>(absolute_high));
+
+  const int section_bars = std::max<int>(1, section.bars);
+  int current_bar = -1;
+  int lift = start_lift;
+  int register_low = low;
+  int register_high = high;
+  // (chord degree, source pitch) -> target pitch, per bar. Keyed by chord so
+  // an in-bar chord change cannot reuse a resolution that is an avoid note
+  // for the other chord; riff uniformity is preserved within each chord span
+  // (sibling bars have aligned chords).
+  std::map<std::pair<int8_t, uint8_t>, uint8_t> resolved;
+
+  for (NoteEvent* note_ptr : notes) {
+    NoteEvent& note = *note_ptr;
+    int bar = static_cast<int>((note.start_tick - section.start_tick) / TICKS_PER_BAR);
+    if (bar != current_bar) {
+      current_bar = bar;
+      float pos = section_bars == 1 ? 0.0f : static_cast<float>(bar) / (section_bars - 1);
+      lift = static_cast<int>(std::round(start_lift + (end_lift - start_lift) * pos));
+      register_low =
+          std::clamp(low + lift, static_cast<int>(absolute_low), static_cast<int>(absolute_high));
+      register_high = std::clamp(high + lift, register_low, static_cast<int>(absolute_high));
+      resolved.clear();
+    }
+
+    int8_t degree = harmony.getChordDegreeAt(note.start_tick);
+    auto key = std::make_pair(degree, note.note);
+    auto it = resolved.find(key);
+    if (it == resolved.end()) {
+      uint8_t target = pickShapedPitch(static_cast<int>(note.note) + lift, note, harmony,
+                                       static_cast<uint8_t>(register_low),
+                                       static_cast<uint8_t>(register_high), TrackRole::Motif);
+      it = resolved.emplace(key, target).first;
+    }
+    note.note = it->second;
     note.velocity = vel::withDelta(note.velocity, static_cast<int>(velocity_boost));
   }
 }
@@ -2398,20 +2622,284 @@ void applyRhythmSyncLeadDna(MidiTrack& vocal, MidiTrack& motif,
     applyDnaPattern(vocal_notes, vocal_center + vocal_shift, *vocal_pattern, params.vocal_low,
                     params.vocal_high, vocal_boost, &harmony);
 
+    // Motif register shaping uses the bar-uniform variant: the motif is the
+    // locked riff, and per-note resolution would scatter its cycles into
+    // different realizations (riff identity loss).
     auto all_motif_notes = collectSectionNotes(motif, section, 0);
     switch (section.type) {
       case SectionType::A:
-        shapeSectionRegister(all_motif_notes, 59, 72, 55, 88, 0, 0, 1, &harmony, TrackRole::Motif);
+        shiftMotifRegisterBarUniform(all_motif_notes, section, 59, 72, 55, 88, 0, 0, 1, harmony);
         break;
       case SectionType::B:
-        shapeSectionRegister(all_motif_notes, 62, 76, 55, 88, 0, 3, 2, &harmony, TrackRole::Motif);
+        shiftMotifRegisterBarUniform(all_motif_notes, section, 62, 76, 55, 88, 0, 3, 2, harmony);
         break;
       case SectionType::Chorus:
-        shapeSectionRegister(all_motif_notes, 66, 82, 55, 88, occurrence >= 2 ? 1 : 0,
-                             occurrence >= 2 ? 3 : 1, 3, &harmony, TrackRole::Motif);
+        // Chorus register sits an octave-plus above the verse so the section
+        // arc (verse low → chorus high) survives the bar-coherent duck: when
+        // the chorus vocal forces a whole-bar octave drop, the riff still
+        // lands above the verse register.
+        shiftMotifRegisterBarUniform(all_motif_notes, section, 70, 84, 55, 88,
+                                     occurrence >= 2 ? 1 : 0, occurrence >= 2 ? 3 : 1, 3, harmony);
         break;
       default:
         break;
+    }
+  }
+}
+
+/// @brief Capture the motif's intended riff realization (onset -> pitch stack).
+///
+/// Taken right after the intentional register shaping (lead DNA) and BEFORE
+/// the per-note collision passes, so it records the riff identity those
+/// passes are about to scatter.
+MotifRiffReference captureMotifRiffReference(const MidiTrack& motif) {
+  MotifRiffReference reference;
+  for (const auto& note : motif.notes()) {
+    reference[note.start_tick].push_back(note.note);
+  }
+  for (auto& [tick, stack] : reference) {
+    std::sort(stack.begin(), stack.end());
+  }
+  return reference;
+}
+
+/// @brief Restore the RhythmSync motif's riff identity after the collision passes.
+///
+/// Track generation replays the coordinate-axis riff from a per-section-type
+/// cache (replayCachedNotesCoordinateAxis), so sibling bars start out as the
+/// same riff realization. The collision and register passes
+/// (fixMotifVocalClashes, duckMotifUnderLead, separateMotifFromBass,
+/// fixInterTrackClashes, ...) then resolve pitches note-by-note against local
+/// context. Many of those rewrites are forced by TRANSIENT state — a chord or
+/// aux note that itself later moves or gets deleted — so by the end of the
+/// pipeline the original riff pitch is often consonant again, but the scatter
+/// remains and the locked riff has lost its identity.
+///
+/// This pass undoes the unnecessary scatter: each motif note whose pitch
+/// diverged from the captured reference is restored to the reference pitch
+/// when that is verified safe against the FINAL track state — consonant with
+/// the registered tracks, no avoid note over the note's span, never above the
+/// lowest overlapping vocal pitch, and never extending a same-pitch run past
+/// the monotony threshold. Unsafe restores are skipped, so the pass can only
+/// increase self-similarity and cannot introduce a clash, a register
+/// crossing, or a monotone run.
+void restoreMotifRiffFromReference(MidiTrack& motif, const MidiTrack& vocal, const MidiTrack& aux,
+                                   const MotifRiffReference& reference,
+                                   const IHarmonyContext& harmony) {
+  auto& motif_notes = motif.notes();
+  if (motif_notes.empty() || reference.empty()) {
+    return;
+  }
+
+  // Process notes chronologically; the underlying vector order is preserved
+  // (only pitches are mutated).
+  std::vector<size_t> order(motif_notes.size());
+  for (size_t i = 0; i < order.size(); ++i) order[i] = i;
+  std::sort(order.begin(), order.end(), [&motif_notes](size_t a, size_t b) {
+    if (motif_notes[a].start_tick != motif_notes[b].start_tick) {
+      return motif_notes[a].start_tick < motif_notes[b].start_tick;
+    }
+    return motif_notes[a].note < motif_notes[b].note;
+  });
+
+  // A restore target is acceptable when it stays under the overlapping vocal
+  // (the vocal owns the top register — same contract as the crossing fixers),
+  // is no avoid note anywhere over the note's span, and is consonant with the
+  // final state of all other registered tracks.
+  auto vocalFloorFor = [&vocal](const NoteEvent& note) -> uint8_t {
+    Tick note_end = note.start_tick + note.duration;
+    uint8_t vocal_floor = 0;  // 0 = vocal rest over the note's span
+    for (const auto& v : vocal.notes()) {
+      Tick v_end = v.start_tick + v.duration;
+      if (note.start_tick >= v_end || note_end <= v.start_tick) continue;
+      if (vocal_floor == 0 || v.note < vocal_floor) vocal_floor = v.note;
+    }
+    return vocal_floor;
+  };
+  auto isSafeTarget = [&vocalFloorFor, &aux, &harmony](const NoteEvent& note, uint8_t target) {
+    uint8_t vocal_floor = vocalFloorFor(note);
+    // Stay clearly under the overlapping vocal: a restore AT the vocal floor
+    // (or 1-2 below) still competes with the lead for the top register (the
+    // duck pass uses lead-5; the crossing checks flag >= lead-2).
+    if (vocal_floor > 0 && target > vocal_floor - 3) return false;
+    if (isAvoidNoteOverSpan(target, note.start_tick, note.duration, harmony)) return false;
+    // Strong beats (1 and 3) must carry chord tones: the dissonance analyzer
+    // flags strong-beat non-chord tones as high severity, and the riff's
+    // anchor notes should outline the harmony anyway.
+    Tick in_bar = note.start_tick % TICKS_PER_BAR;
+    if (in_bar % (TICKS_PER_BEAT * 2) == 0) {
+      ChordToneHelper ct(harmony.getChordDegreeAt(note.start_tick));
+      if (!ct.isChordTone(target)) return false;
+    }
+    // Reject close seconds against the aux pulse loop explicitly: the generic
+    // consonance check tolerates a brief stepwise overlap as a passing tone,
+    // but the dissonance analyzer flags every close m2/M2 between motif and
+    // aux, and the aux was voiced against the PRE-restore motif.
+    Tick note_end = note.start_tick + note.duration;
+    for (const auto& a : aux.notes()) {
+      Tick a_end = a.start_tick + a.duration;
+      if (note.start_tick >= a_end || note_end <= a.start_tick) continue;
+      int interval = std::abs(static_cast<int>(target) - static_cast<int>(a.note));
+      if (interval == 1 || interval == 2) return false;
+    }
+    return harmony.isConsonantWithOtherTracks(target, note.start_tick, note.duration,
+                                              TrackRole::Motif);
+  };
+
+  // Pair current notes with the reference stack at the same onset by voice
+  // rank (pitch order). Onsets moved by head-graze trimming simply find no
+  // reference entry and keep their current pitch.
+  struct RestoreCandidate {
+    size_t idx;
+    uint8_t reference_pitch;
+  };
+  std::map<Tick, std::vector<RestoreCandidate>> bars;
+  std::map<Tick, size_t> bar_note_counts;
+  for (size_t pos = 0; pos < order.size(); ++pos) {
+    size_t idx = order[pos];
+    const NoteEvent& note = motif_notes[idx];
+    ++bar_note_counts[note.start_tick / TICKS_PER_BAR];
+    auto ref_it = reference.find(note.start_tick);
+    if (ref_it == reference.end()) continue;
+    const auto& stack = ref_it->second;
+    size_t voice = 0;
+    for (size_t back = pos; back > 0; --back) {
+      if (motif_notes[order[back - 1]].start_tick != note.start_tick) break;
+      ++voice;
+    }
+    if (voice >= stack.size()) continue;
+    bars[note.start_tick / TICKS_PER_BAR].push_back({idx, stack[voice]});
+  }
+
+  // Restore BAR-WISE with a uniform octave shift fallback. The scatter passes
+  // duck individual notes under the per-bar vocal, so the exact reference
+  // pitch is often unavailable in one bar but fine in its siblings; restoring
+  // note-by-note then leaves every bar with a different residual. A whole-bar
+  // restore at a uniform shift (0 or -12) keeps the bar an exact
+  // transposition of the riff — identical relative shape — while still
+  // respecting the vocal ceiling and consonance per note. Bars where neither
+  // shift verifies fall back to per-note restore at shift 0, which can only
+  // reduce the divergence.
+  constexpr int kBarShifts[] = {0, -12};
+  std::map<size_t, uint8_t> stamps;
+  for (auto& [bar, candidates] : bars) {
+    bool bar_restored = false;
+    // A non-zero whole-bar shift is only shape-preserving when every note in
+    // the bar participates; notes without a reference entry (e.g. moved by
+    // head-graze trimming) would stay behind and produce a mixed shape.
+    const bool full_coverage = candidates.size() == bar_note_counts[bar];
+    for (int shift : kBarShifts) {
+      if (shift != 0 && !full_coverage) continue;
+      bool all_ok = true;
+      for (const auto& cand : candidates) {
+        int target = static_cast<int>(cand.reference_pitch) + shift;
+        if (shift != 0 && (target < 48 || target > 84)) {
+          all_ok = false;
+          break;
+        }
+        const NoteEvent& note = motif_notes[cand.idx];
+        if (note.note == target) continue;  // already in place: nothing to verify
+        if (!isSafeTarget(note, static_cast<uint8_t>(target))) {
+          all_ok = false;
+          break;
+        }
+      }
+      if (!all_ok) continue;
+      for (const auto& cand : candidates) {
+        uint8_t target = static_cast<uint8_t>(static_cast<int>(cand.reference_pitch) + shift);
+        if (motif_notes[cand.idx].note != target) {
+          stamps[cand.idx] = target;
+        }
+      }
+      bar_restored = true;
+      break;
+    }
+    if (bar_restored) continue;
+    // Partial fallback: neither uniform shift verifies for the whole bar.
+    // Pick the shift that restores the MOST notes, stamp those, and converge
+    // the stragglers onto the chord tone nearest the (shifted) reference —
+    // the same correction replayCachedNotesCoordinateAxis applies, so sibling
+    // bars sharing a chord degrade to the SAME pitch and their shapes still
+    // mostly converge.
+    int best_shift = 0;
+    size_t best_passes = 0;
+    for (int shift : kBarShifts) {
+      size_t passes = 0;
+      for (const auto& cand : candidates) {
+        int target = static_cast<int>(cand.reference_pitch) + shift;
+        if (shift != 0 && (target < 48 || target > 84)) continue;
+        const NoteEvent& note = motif_notes[cand.idx];
+        if (note.note == target || isSafeTarget(note, static_cast<uint8_t>(target))) {
+          ++passes;
+        }
+      }
+      if (passes > best_passes) {
+        best_passes = passes;
+        best_shift = shift;
+      }
+    }
+    for (const auto& cand : candidates) {
+      const NoteEvent& note = motif_notes[cand.idx];
+      int shifted = static_cast<int>(cand.reference_pitch) + best_shift;
+      bool in_range = best_shift == 0 || (shifted >= 48 && shifted <= 84);
+      if (in_range && note.note == shifted) continue;
+      if (in_range && isSafeTarget(note, static_cast<uint8_t>(shifted))) {
+        stamps[cand.idx] = static_cast<uint8_t>(shifted);
+        continue;
+      }
+      uint8_t vocal_floor = vocalFloorFor(note);
+      uint8_t ceiling = (vocal_floor > 0 && vocal_floor < 84) ? vocal_floor : 84;
+      if (ceiling < 48) continue;
+      ChordToneHelper helper(harmony.getChordDegreeAt(note.start_tick));
+      uint8_t reference_shifted =
+          static_cast<uint8_t>(std::clamp(shifted, 48, static_cast<int>(ceiling)));
+      uint8_t chord_tone = helper.nearestInRange(reference_shifted, 48, ceiling);
+      if (chord_tone != note.note && isSafeTarget(note, chord_tone)) {
+        stamps[cand.idx] = chord_tone;
+      }
+    }
+  }
+  if (stamps.empty()) {
+    return;
+  }
+
+  // Apply stamps chronologically with the same monotony guard as
+  // fixMotifRepeatedPitches: a stamp must not extend a single-voice
+  // same-pitch run past the threshold (stacks are texture, not runs).
+  constexpr int kMaxSamePitchRun = 5;
+  uint8_t last_pitch = 0;
+  int consecutive = 0;
+  bool has_prev = false;
+  for (size_t pos = 0; pos < order.size(); ++pos) {
+    size_t idx = order[pos];
+    NoteEvent& note = motif_notes[idx];
+    bool in_stack =
+        (pos + 1 < order.size() && motif_notes[order[pos + 1]].start_tick == note.start_tick) ||
+        (pos > 0 && motif_notes[order[pos - 1]].start_tick == note.start_tick);
+    auto it = stamps.find(idx);
+    uint8_t target = (it != stamps.end()) ? it->second : note.note;
+    if (in_stack) {
+      has_prev = false;
+      consecutive = 0;
+    } else {
+      if (it != stamps.end() && has_prev && target == last_pitch &&
+          consecutive >= kMaxSamePitchRun) {
+        target = note.note;  // drop the stamp: it would extend a monotone run
+      }
+      if (has_prev && target == last_pitch) {
+        ++consecutive;
+      } else {
+        last_pitch = target;
+        consecutive = 1;
+        has_prev = true;
+      }
+    }
+    if (target != note.note) {
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+      note.addTransformStep(TransformStepType::ChordToneSnap, note.note, target, 0, 0);
+      note.prov_source = static_cast<uint8_t>(NoteSource::PostProcess);
+#endif
+      note.note = target;
     }
   }
 }
