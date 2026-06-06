@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
+import type { SongConfig } from '../../js/src/index';
 import {
   CompositionStyle,
   deserializeConfig,
@@ -8,11 +9,10 @@ import {
   HookIntensity,
   init,
   MidiSketch,
-  serializeConfig,
   SongConfigBuilder,
+  serializeConfig,
   VocalStylePreset,
 } from '../../js/src/index';
-import type { SongConfig } from '../../js/src/index';
 
 describe('SongConfigBuilder', () => {
   beforeAll(async () => {
@@ -248,7 +248,9 @@ describe('SongConfigBuilder', () => {
       // which is exactly why the builder now queries the module directly.
       const required: number[] = [];
       for (let id = 0; id < getBlueprintCount(); id++) {
-        if (getBlueprintDrumsRequired(id)) required.push(id);
+        if (getBlueprintDrumsRequired(id)) {
+          required.push(id);
+        }
       }
       expect(required).toEqual([1, 5, 7]);
     });

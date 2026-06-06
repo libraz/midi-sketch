@@ -420,12 +420,11 @@ export class WasmTestContext {
 
       const json = serializeAccompanimentConfig(config);
       return generateFn(this.handle, json, json.length);
-    } else {
-      const generateFn = this.module.cwrap('midisketch_generate_accompaniment', 'number', [
-        'number',
-      ]) as (h: number) => number;
-      return generateFn(this.handle);
     }
+    const generateFn = this.module.cwrap('midisketch_generate_accompaniment', 'number', [
+      'number',
+    ]) as (h: number) => number;
+    return generateFn(this.handle);
   }
 
   regenerateAccompaniment(seedOrConfig?: number | AccompanimentConfigOptions): number {
@@ -438,13 +437,12 @@ export class WasmTestContext {
 
       const json = serializeAccompanimentConfig(seedOrConfig);
       return regenerateFn(this.handle, json, json.length);
-    } else {
-      const regenerateFn = this.module.cwrap('midisketch_regenerate_accompaniment', 'number', [
-        'number',
-        'number',
-      ]) as (h: number, seed: number) => number;
-      return regenerateFn(this.handle, seedOrConfig ?? 0);
     }
+    const regenerateFn = this.module.cwrap('midisketch_regenerate_accompaniment', 'number', [
+      'number',
+      'number',
+    ]) as (h: number, seed: number) => number;
+    return regenerateFn(this.handle, seedOrConfig ?? 0);
   }
 
   generateWithVocal(config: SongConfigOptions): number {

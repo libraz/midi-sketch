@@ -10,29 +10,57 @@
     "rules": {
       "recommended": true,
       "complexity": {
-        "noForEach": "warn",
-        "useArrowFunction": "error"
+        "noForEach": "off",
+        "noUselessStringConcat": "error",
+        "useArrowFunction": "error",
+        "noUselessContinue": "error",
+        "noUselessTernary": "error"
       },
       "style": {
         "noNonNullAssertion": "warn",
+        "noNestedTernary": "error",
+        "noParameterAssign": { "level": "error", "options": { "propertyAssignment": "deny" } },
+        "noUselessElse": "error",
+        "noYodaExpression": "error",
         "useBlockStatements": "error",
+        "useCollapsedElseIf": "error",
         "useConst": "error",
+        "useDefaultParameterLast": "error",
+        "useExponentiationOperator": "error",
         "useExportType": "error",
         "useImportType": "error",
         "useNodejsImportProtocol": "error",
         "useNumberNamespace": "error",
         "useSelfClosingElements": "error",
+        "useShorthandAssign": "error",
         "useSingleVarDeclarator": "error",
-        "useTemplate": "error"
+        "useTemplate": "error",
+        "useNamingConvention": {
+          "level": "error",
+          "options": {
+            "strictCase": false,
+            "conventions": [
+              { "selector": { "kind": "objectLiteralProperty" }, "match": ".*" },
+              { "selector": { "kind": "typeProperty" }, "match": ".*" },
+              {
+                "selector": { "kind": "const" },
+                "formats": ["camelCase", "PascalCase", "CONSTANT_CASE"]
+              }
+            ]
+          }
+        }
       },
       "suspicious": {
         "noConsole": "warn",
         "noDoubleEquals": "error",
-        "noExplicitAny": "warn"
+        "noExplicitAny": "warn",
+        "noVar": "error",
+        "useAwait": "error"
       },
       "correctness": {
         "noUnusedImports": "error",
-        "noUnusedVariables": "error"
+        "noUnusedVariables": "error",
+        "noUnusedFunctionParameters": "error"
       }
     }
   },

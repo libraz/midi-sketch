@@ -114,27 +114,30 @@ describe('CLI/WASM Parity', () => {
   /**
    * Apply the same unconditional defaults that CLI's runGenerateMode applies
    * from ParsedArgs defaults. This aligns the WASM config with CLI behavior
-   * when no explicit flags are passed.
+   * when no explicit flags are passed. Returns a new config object.
    */
-  function applyCliArgDefaults(config: Record<string, unknown>) {
-    // CLI unconditionally sets these from ParsedArgs defaults:
-    config.mood = 0;
-    config.mood_explicit = false;
-    config.vocal_style = 0;
-    config.bpm = 0; // args.bpm defaults to 0 (= auto, resolved during generation)
-    config.target_duration_seconds = 0;
-    config.skip_vocal = false;
-    config.addictive_mode = false;
-    config.arpeggio_enabled = false;
-    config.composition_style = 0;
-    config.modulation_timing = 0;
-    config.enable_syncopation = false;
-
-    // CLI unconditionally sets chord_extension sub-fields
-    const chordExt = (config.chord_extension ?? {}) as Record<string, unknown>;
-    chordExt.enable_sus = false;
-    chordExt.enable_9th = false;
-    config.chord_extension = chordExt;
+  function withCliArgDefaults(config: Record<string, unknown>): Record<string, unknown> {
+    return {
+      ...config,
+      // CLI unconditionally sets these from ParsedArgs defaults:
+      mood: 0,
+      mood_explicit: false,
+      vocal_style: 0,
+      bpm: 0, // args.bpm defaults to 0 (= auto, resolved during generation)
+      target_duration_seconds: 0,
+      skip_vocal: false,
+      addictive_mode: false,
+      arpeggio_enabled: false,
+      composition_style: 0,
+      modulation_timing: 0,
+      enable_syncopation: false,
+      // CLI unconditionally sets chord_extension sub-fields
+      chord_extension: {
+        ...((config.chord_extension ?? {}) as Record<string, unknown>),
+        enable_sus: false,
+        enable_9th: false,
+      },
+    };
   }
 
   /**
@@ -196,10 +199,8 @@ describe('CLI/WASM Parity', () => {
    * Build WASM config JSON that matches CLI behavior for a given test case.
    */
   function buildWasmConfig(tc: ParityTestCase): string {
-    const config = getDefaultConfigJson(tc.stylePresetId);
-
     // Apply CLI's unconditional arg defaults first
-    applyCliArgDefaults(config);
+    const config = withCliArgDefaults(getDefaultConfigJson(tc.stylePresetId));
 
     // Apply test-specific overrides (same as what CLI flags would set)
     config.seed = tc.seed;
