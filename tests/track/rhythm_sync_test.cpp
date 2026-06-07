@@ -1051,7 +1051,12 @@ TEST_F(RhythmLockVocalQuality, MinStrongBeatDuration) {
       if (!is_strong) continue;
 
       total_strong_beat_notes++;
-      if (note.duration < TICK_EIGHTH) {
+      // Gate articulation shortens a sung 8th to 90-96% of its span
+      // (computeGateRatio), so a 216-230 tick note is still a full 8th
+      // rhythmically. Only count notes below the shortest gated 8th as
+      // true grace notes.
+      constexpr Tick kGatedEighthMin = TICK_EIGHTH * 9 / 10;  // 216
+      if (note.duration < kGatedEighthMin) {
         short_strong_beat_notes++;
       }
     }

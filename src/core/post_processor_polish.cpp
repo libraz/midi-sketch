@@ -408,8 +408,8 @@ void PostProcessor::fixMotifVocalClashes(MidiTrack& motif, const MidiTrack& voca
 }
 
 void PostProcessor::fixMotifRepeatedPitches(MidiTrack& motif, const MidiTrack& vocal,
-                                            const ICollisionDetector& harmony,
-                                            int max_consecutive) {
+                                            const ICollisionDetector& harmony, int max_consecutive,
+                                            const MidiTrack* aux) {
   auto& motif_notes = motif.notes();
   if (motif_notes.empty() || max_consecutive < 1) {
     return;
@@ -490,6 +490,23 @@ void PostProcessor::fixMotifRepeatedPitches(MidiTrack& motif, const MidiTrack& v
           if (!harmony.isConsonantWithOtherTracks(cp, note.start_tick, note.duration,
                                                   TrackRole::Motif)) {
             continue;
+          }
+          // Reject close seconds against overlapping aux notes explicitly:
+          // the generic consonance check above tolerates a brief stepwise
+          // overlap as a passing tone, but the dissonance analyzer flags
+          // every close m2/M2 between motif and aux.
+          if (aux != nullptr) {
+            bool close_second = false;
+            for (const auto& a : aux->notes()) {
+              Tick a_end = a.start_tick + a.duration;
+              if (note.start_tick >= a_end || note_end <= a.start_tick) continue;
+              int interval = std::abs(static_cast<int>(cp) - static_cast<int>(a.note));
+              if (interval == 1 || interval == 2) {
+                close_second = true;
+                break;
+              }
+            }
+            if (close_second) continue;
           }
           candidates.push_back({cp, std::abs(cand - static_cast<int>(original_pitch))});
         }

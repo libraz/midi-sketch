@@ -687,6 +687,14 @@ void addBassNoteWithTritoneCheck(MidiTrack& track, IHarmonyContext& harmony, Tic
   Tick end = start + duration;
   std::vector<int> chord_pcs =
       harmony.getPitchClassesFromTrackInRange(start, end, TrackRole::Chord);
+  // Track order generates Bass before Chord, so during initial generation the
+  // chord track is empty and the range query returns nothing — which silently
+  // disabled this check (observed: a B2 approach note sustained a tritone
+  // against the later-voiced F chord). Fall back to the theoretical chord
+  // tones so the tritone test always has a harmonic reference.
+  if (chord_pcs.empty()) {
+    chord_pcs = harmony.getChordTonesAt(start);
+  }
 
   // If the pitch forms a tritone with chord, try to find a safe alternative
   int pitch_pc = pitch % 12;
@@ -1510,16 +1518,24 @@ void applyBassMicrovariation(MidiTrack& track, Tick bar_start, IHarmonyContext& 
         static_cast<int>(next_root) + 2   // whole-step above
     };
 
+    // The generic consonance check below does not test tritones, and at bass
+    // generation time the chord track does not exist yet — a half-step-below
+    // approach (e.g. B under a still-sounding F chord) sustained an aug-11th
+    // against the later-voiced chord. Check candidates against the
+    // theoretical chord tones at the note's position.
+    auto current_chord_pcs = harmony.getChordTonesAt(target.start_tick);
     for (int cand : candidates) {
       if (cand < BASS_LOW || cand > BASS_HIGH) continue;
       // Only accept diatonic pitches to maintain key consistency
       if (!isDiatonic(cand)) continue;
+      if (hasTritoneWithChord(cand % 12, current_chord_pcs)) continue;
       uint8_t cand_u8 = static_cast<uint8_t>(cand);
       if (harmony.isConsonantWithOtherTracks(cand_u8, target.start_tick, target.duration,
                                              TrackRole::Bass)) {
         target.note = cand_u8;
 #ifdef MIDISKETCH_NOTE_PROVENANCE
         target.prov_original_pitch = original_pitch;
+        target.addTransformStep(TransformStepType::CollisionAvoid, original_pitch, cand_u8, 0, 0);
 #endif
         break;
       }

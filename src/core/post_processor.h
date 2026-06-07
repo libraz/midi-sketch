@@ -185,8 +185,14 @@ class PostProcessor {
   /// @param vocal Vocal track (read-only reference for clash avoidance)
   /// @param harmony Harmony context for chord tone lookup
   /// @param max_consecutive Maximum allowed same pitch streak
+  /// @param aux Optional aux track: alternatives that land a close second
+  ///            (m2/M2) on an overlapping aux note are rejected. The generic
+  ///            consonance check tolerates a brief stepwise overlap as a
+  ///            passing tone, but the dissonance analyzer flags every close
+  ///            second between motif and aux.
   static void fixMotifRepeatedPitches(MidiTrack& motif, const MidiTrack& vocal,
-                                      const ICollisionDetector& harmony, int max_consecutive = 5);
+                                      const ICollisionDetector& harmony, int max_consecutive = 5,
+                                      const MidiTrack* aux = nullptr);
 
   /// @brief Fix track-vocal clashes that may occur after post-processing.
   ///

@@ -82,6 +82,7 @@ void breakLongPitchRuns(MidiTrack& track, const IHarmonyContext& harmony, uint8_
                         int max_run, TrackRole role);
 void trimBassBoundaryOverhangs(MidiTrack& bass, const IHarmonyContext& harmony);
 void trimVocalSustainsAtUnsafeChordChanges(MidiTrack& vocal, const IHarmonyContext& harmony);
+void trimSustainsAtDissonantChordChanges(MidiTrack& track, const IHarmonyContext& harmony);
 void trimClashingNoteTails(Song& song, const IHarmonyContext& harmony);
 void applyRhythmSyncLeadDna(MidiTrack& vocal, MidiTrack& motif,
                             const std::vector<Section>& sections, const GeneratorParams& params,
@@ -525,7 +526,9 @@ void Generator::applyPostProcessingEffects() {
     harmony_context_->registerTrack(song_.vocal(), TrackRole::Vocal);
     harmony_context_->clearNotesForTrack(TrackRole::Motif);
     harmony_context_->registerTrack(song_.motif(), TrackRole::Motif);
-    breakLongPitchRuns(song_.vocal(), *harmony_context_, params_.vocal_low, params_.vocal_high, 5,
+    // Max run of 4: 3-4 repeated pitches work as emphasis, 5+ reads as
+    // monotony in a pop vocal line.
+    breakLongPitchRuns(song_.vocal(), *harmony_context_, params_.vocal_low, params_.vocal_high, 4,
                        TrackRole::Vocal);
     // breakLongPitchRuns may have changed vocal pitches; refresh once more so
     // the accompaniment-side clash fixes below see the final vocal.
@@ -685,7 +688,9 @@ void Generator::applyPostProcessingEffects() {
   // introduced; the crossing/motif passes below see the corrected vocal.
   harmony_context_->clearNotesForTrack(TrackRole::Vocal);
   harmony_context_->registerTrack(song_.vocal(), TrackRole::Vocal);
-  breakLongPitchRuns(song_.vocal(), *harmony_context_, params_.vocal_low, params_.vocal_high, 5,
+  // Max run of 4 matches the post-DNA guard above: 3-4 repeated pitches work
+  // as emphasis, 5+ reads as monotony in a pop vocal line.
+  breakLongPitchRuns(song_.vocal(), *harmony_context_, params_.vocal_low, params_.vocal_high, 4,
                      TrackRole::Vocal);
   harmony_context_->clearNotesForTrack(TrackRole::Vocal);
   harmony_context_->registerTrack(song_.vocal(), TrackRole::Vocal);
@@ -714,7 +719,7 @@ void Generator::applyPostProcessingEffects() {
   // in motif.cpp, breakLongPitchRuns above).
   constexpr int kMaxMotifSamePitchRun = 5;
   PostProcessor::fixMotifRepeatedPitches(song_.motif(), song_.vocal(), *harmony_context_,
-                                         kMaxMotifSamePitchRun);
+                                         kMaxMotifSamePitchRun, &song_.aux());
   harmony_context_->clearNotesForTrack(TrackRole::Motif);
   harmony_context_->registerTrack(song_.motif(), TrackRole::Motif);
 
@@ -750,6 +755,12 @@ void Generator::applyPostProcessingEffects() {
     harmony_context_->clearNotesForTrack(TrackRole::Motif);
     harmony_context_->registerTrack(song_.motif(), TrackRole::Motif);
   }
+
+  // Post-generation pitch rewrites above resolve against the chord at each
+  // note's start tick; a long motif note re-pitched there can sustain into a
+  // chromatically different chord (deeper than the tail-trim window below).
+  // Duration-only change, so no re-registration is required.
+  trimSustainsAtDissonantChordChanges(song_.motif(), *harmony_context_);
 
   // Very last note-mutating step: every pass above can leave a short
   // always-dissonant tail overlap (durations only are changed here, so no
@@ -2242,6 +2253,23 @@ void breakLongPitchRuns(MidiTrack& track, const IHarmonyContext& harmony, uint8_
     }
 
     uint8_t original = notes[idx].note;
+    // Snapshot of everything sounding across this note: the generic
+    // consonance check below tolerates a brief stepwise overlap as a passing
+    // tone, but the dissonance analyzer flags every close m2/M2 the
+    // run-break lands on a sounding note (observed: vocal C5 -> D5 placed
+    // directly on a held aux C5). Reject such candidates explicitly.
+    Tick run_note_end = notes[idx].start_tick + notes[idx].duration;
+    CollisionSnapshot snapshot = harmony.getCollisionSnapshot(
+        notes[idx].start_tick, 2 * std::max<Tick>(notes[idx].duration, TICK_SIXTEENTH));
+    auto landsCloseSecond = [&](uint8_t cand) {
+      for (const auto& info : snapshot.notes_in_range) {
+        if (info.track == role) continue;
+        if (notes[idx].start_tick >= info.end || run_note_end <= info.start) continue;
+        int interval = std::abs(static_cast<int>(cand) - static_cast<int>(info.pitch));
+        if (interval == 1 || interval == 2) return true;
+      }
+      return false;
+    };
     // Step-first order: whole steps, then diatonic half steps (E-F/B-C),
     // then increasingly wide leaps. Breaking a run with a step preserves the
     // melodic line; a leap should be the last resort.
@@ -2254,6 +2282,9 @@ void breakLongPitchRuns(MidiTrack& track, const IHarmonyContext& harmony, uint8_
       uint8_t candidate =
           clampScalePitchAvoidingChord(target, notes[idx].start_tick, harmony, low, high);
       if (candidate == original) {
+        continue;
+      }
+      if (landsCloseSecond(candidate)) {
         continue;
       }
       // The chord-aware clamp alone is not enough: a chord/scale tone two
@@ -2310,6 +2341,60 @@ void trimVocalSustainsAtUnsafeChordChanges(MidiTrack& vocal, const IHarmonyConte
       constexpr Tick kMinRemaining = TICK_EIGHTH;
       if (tick > note.start_tick + kMinRemaining + kReleaseGap) {
         note.duration = tick - note.start_tick - kReleaseGap;
+      }
+      break;
+    }
+  }
+}
+
+/// Trim sustained notes whose pitch becomes a chromatic conflict after a
+/// mid-note chord change. Post-generation pitch rewrites (e.g. the
+/// motif-above-vocal resolution in fixMotifVocalClashes) pick a pitch from the
+/// chord at the note's START tick only; when the note crosses into a chord
+/// whose tones sit a half step away (observed: motif G4 sustained into a
+/// secondary-dominant E with G#), the result is an m2-class clash too deep
+/// inside the note for the tail-trim window to catch. Unlike the vocal
+/// variant above, this only trims on a real chromatic conflict — a benign
+/// non-chord tone (9th, 6th) over the new chord is kept.
+void trimSustainsAtDissonantChordChanges(MidiTrack& track, const IHarmonyContext& harmony) {
+  for (auto& note : track.notes()) {
+    if (note.duration <= TICK_QUARTER) {
+      continue;
+    }
+
+    Tick note_end = note.start_tick + note.duration;
+    int8_t start_degree = harmony.getChordDegreeAt(note.start_tick);
+    for (Tick tick = note.start_tick + TICK_SIXTEENTH; tick < note_end; tick += TICK_SIXTEENTH) {
+      int8_t degree = harmony.getChordDegreeAt(tick);
+      if (degree == start_degree) {
+        continue;
+      }
+      start_degree = degree;
+
+      int pitch_class = static_cast<int>(note.note % 12);
+      bool is_chord_tone = false;
+      bool half_step_conflict = false;
+      for (int ct_pc : harmony.getChordTonesAt(tick)) {
+        if (ct_pc == pitch_class) {
+          is_chord_tone = true;
+          break;
+        }
+        int dist = std::abs(ct_pc - pitch_class);
+        if (std::min(dist, 12 - dist) == 1) {
+          half_step_conflict = true;
+        }
+      }
+      if (is_chord_tone || !half_step_conflict) {
+        continue;
+      }
+
+      constexpr Tick kReleaseGap = 30;
+      constexpr Tick kMinRemaining = TICK_EIGHTH;
+      if (tick > note.start_tick + kMinRemaining + kReleaseGap) {
+        note.duration = tick - note.start_tick - kReleaseGap;
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+        note.addTransformStep(TransformStepType::PostProcessDuration, 0, 0, -1, 0);
+#endif
       }
       break;
     }

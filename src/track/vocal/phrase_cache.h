@@ -482,32 +482,34 @@ inline CachedRhythmPattern buildRunBasedOnsetMap(
           scored.begin(), scored.end(),
           [](const ScoredOnset& a, const ScoredOnset& b) { return a.score > b.score; });
 
-      // Keep top `target` onsets
       size_t keep_count = static_cast<size_t>(std::max(target, 2));
       if (keep_count > scored.size()) keep_count = scored.size();
 
-      std::vector<float> kept_beats;
-      kept_beats.reserve(keep_count);
-      for (size_t k = 0; k < keep_count; ++k) {
-        kept_beats.push_back(scored[k].beat);
+      // ================================================================
+      // Phase 5: select onsets with min_interval enforcement
+      // ================================================================
+      // Accept onsets in descending score order, rejecting any onset closer
+      // than min_interval to an already-accepted one. Score-first selection
+      // keeps strong beats over nearby weak onsets: a chronological gap
+      // filter would keep a bar-end 16th pickup (beat 3.75, low accent) and
+      // then drop the next bar's downbeat, leaving the vocal with no onset
+      // on the strong beat and an orphaned off-grid pickup.
+      std::vector<float> final_beats;
+      final_beats.reserve(keep_count);
+      for (const auto& so : scored) {
+        if (final_beats.size() >= keep_count) break;
+        bool conflict = false;
+        for (float fb : final_beats) {
+          if (std::abs(so.beat - fb) < min_interval_beats) {
+            conflict = true;
+            break;
+          }
+        }
+        if (!conflict) final_beats.push_back(so.beat);
       }
 
       // Sort by beat position (chronological order)
-      std::sort(kept_beats.begin(), kept_beats.end());
-
-      // ================================================================
-      // Phase 5: min_interval check
-      // ================================================================
-      std::vector<float> final_beats;
-      if (!kept_beats.empty()) {
-        final_beats.push_back(kept_beats[0]);
-        for (size_t k = 1; k < kept_beats.size(); ++k) {
-          float gap_beats = kept_beats[k] - final_beats.back();
-          if (gap_beats >= min_interval_beats) {
-            final_beats.push_back(kept_beats[k]);
-          }
-        }
-      }
+      std::sort(final_beats.begin(), final_beats.end());
 
       for (float b : final_beats) {
         result.onset_beats.push_back(b);
