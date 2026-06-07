@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.15)
 cmake_policy(SET CMP0048 NEW)
 cmake_policy(SET CMP0077 NEW)
-project(midi-sketch VERSION 0.2.0 LANGUAGES CXX)
+project(midi-sketch VERSION 0.2.1 LANGUAGES CXX)
 
 # Get git commit hash and build timestamp
 execute_process(

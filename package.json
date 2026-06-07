@@ -1,6 +1,6 @@
 {
   "name": "@libraz/midi-sketch",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "type": "module",
   "packageManager": "yarn@4.12.0",
   "description": "MIDI auto-generation library for pop music sketches",
