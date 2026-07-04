@@ -7,8 +7,10 @@
 
 #include <gtest/gtest.h>
 
+#include <cstdlib>
 #include <map>
 #include <set>
+#include <vector>
 
 #include "core/generator.h"
 #include "core/song.h"
@@ -1613,6 +1615,49 @@ TEST_F(BassTest, SlapPopHasVelocityVariation) {
       break;
     }
   }
+}
+
+TEST_F(BassTest, SlapPopViaHintProducesOctaveDisplacement) {
+  params_.blueprint_id = 4;
+  params_.mood = Mood::StraightPop;
+  params_.seed = 42;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& bass = gen.getSong().bass();
+  const auto& sections = gen.getSong().arrangement().sections();
+
+  bool found_slap_pop_section = false;
+  bool found_octave_displacement = false;
+
+  for (const auto& sec : sections) {
+    if (sec.bass_style_hint != 16) continue;  // SlapPop hint
+    found_slap_pop_section = true;
+
+    std::vector<uint8_t> pitches;
+    for (const auto& note : bass.notes()) {
+      if (note.start_tick >= sec.start_tick && note.start_tick < sec.endTick()) {
+        pitches.push_back(note.note);
+      }
+    }
+
+    for (size_t i = 0; i < pitches.size(); ++i) {
+      for (size_t j = i + 1; j < pitches.size(); ++j) {
+        int interval = std::abs(static_cast<int>(pitches[i]) - static_cast<int>(pitches[j]));
+        if (interval == 12 && pitches[i] % 12 == pitches[j] % 12) {
+          found_octave_displacement = true;
+          break;
+        }
+      }
+      if (found_octave_displacement) break;
+    }
+    break;
+  }
+
+  ASSERT_TRUE(found_slap_pop_section) << "Expected BP4 to include a SlapPop hint section";
+  EXPECT_TRUE(found_octave_displacement)
+      << "SlapPop should emit a real octave displacement instead of repeating the root";
 }
 
 TEST_F(BassTest, FastRunViaHintProducesNotes) {

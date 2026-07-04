@@ -23,7 +23,7 @@ class IHarmonyContext;
 struct KickPatternCache;
 
 // ============================================================================
-// Bass Articulation Types (Task 4-1)
+// Bass Articulation Types
 // ============================================================================
 // Articulation affects note gate (duration) and velocity for human-like performance.
 
@@ -76,7 +76,7 @@ inline int getArticulationVelocityDelta(BassArticulation art) {
 
 /// Bass pattern analysis for chord voicing coordination (avoid doubling).
 struct BassAnalysis {
-  bool has_root_on_beat1 = true;   ///< Root note sounds on beat 1 (strong)
+  bool has_root_on_beat1 = false;  ///< Root note sounds on beat 1 (strong)
   bool has_root_on_beat3 = false;  ///< Root note sounds on beat 3 (secondary strong)
   bool has_fifth = false;          ///< Pattern includes 5th above root
   bool uses_octave_jump = false;   ///< Pattern includes octave leaps
@@ -115,6 +115,29 @@ enum class BassPattern : uint8_t {
   FastRun      ///< 32nd note diatonic scale run
 };
 
+/// @brief Select a diatonic approach note into the next bar's root.
+uint8_t selectBassApproachNote(uint8_t current_root, uint8_t next_root, int8_t target_degree);
+
+/// @brief Select a playable octave displacement from the root.
+uint8_t selectBassOctaveNote(uint8_t root);
+
+/// @brief Select the next diatonic bass pitch while preserving pitch class at range limits.
+uint8_t selectNextBassDiatonic(uint8_t pitch, int direction);
+
+/// @brief Select a diatonic third above the root while preserving pitch class at range limits.
+uint8_t selectBassDiatonicThird(uint8_t root);
+
+/// @brief Select a vocal-aware bass pattern before riff-policy and peak-level adjustments.
+BassPattern selectPatternForVocalDensity(float vocal_density, const Section& section,
+                                         const GeneratorParams& params, std::mt19937& rng);
+
+/// @brief Promote a bass pattern for peak sections.
+BassPattern promoteBassPatternForPeakLevel(BassPattern pattern, PeakLevel peak_level);
+
+/// @brief Adjust a bass pitch according to vocal motion while staying on chord tones.
+uint8_t adjustPitchForMotion(uint8_t base_pitch, MotionType motion, int8_t vocal_direction,
+                             uint8_t vocal_pitch, int8_t degree);
+
 // ============================================================================
 // Standalone Generation Functions
 // ============================================================================
@@ -128,7 +151,7 @@ void generateBassTrack(MidiTrack& track, const Song& song, const GeneratorParams
                        const VocalAnalysis* vocal_analysis = nullptr);
 
 // ============================================================================
-// Bass Articulation Post-Processing (Task 4-2, 4-3)
+// Bass Articulation Post-Processing
 // ============================================================================
 
 /// @brief Apply articulation to bass notes for human-like performance.

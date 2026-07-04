@@ -367,6 +367,232 @@ TEST_F(BassWithVocalTest, IntegrationWithGenerateWithVocal) {
   }
 }
 
+TEST_F(BassWithVocalTest, DominantPreparationPreservesSelectedDensePattern) {
+  Song song;
+  std::vector<Section> sections;
+
+  Section pre_chorus;
+  pre_chorus.type = SectionType::B;
+  pre_chorus.start_tick = 0;
+  pre_chorus.bars = 2;
+  pre_chorus.track_mask = TrackMask::Bass;
+  pre_chorus.bass_style_hint = static_cast<uint8_t>(BassPattern::Driving) + 1;
+  sections.push_back(pre_chorus);
+
+  Section chorus;
+  chorus.type = SectionType::Chorus;
+  chorus.start_tick = 2 * TICKS_PER_BAR;
+  chorus.bars = 2;
+  chorus.track_mask = TrackMask::Bass;
+  sections.push_back(chorus);
+
+  song.setArrangement(Arrangement(sections));
+
+  params_.mood = Mood::EnergeticDance;
+  params_.chord_id = 0;
+  params_.paradigm = GenerationParadigm::Traditional;
+
+  HarmonyContext harmony;
+  harmony.initialize(song.arrangement(), getChordProgression(params_.chord_id), params_.mood);
+
+  MidiTrack bass_track;
+  std::mt19937 rng(params_.seed);
+  generateBassTrack(bass_track, song, params_, rng, harmony, nullptr, nullptr);
+
+  Tick prep_second_half = TICKS_PER_BAR + TICK_HALF;
+  size_t notes_in_dominant_half = 0;
+  for (const auto& note : bass_track.notes()) {
+    if (note.start_tick >= prep_second_half && note.start_tick < 2 * TICKS_PER_BAR) {
+      ++notes_in_dominant_half;
+    }
+  }
+
+  EXPECT_GE(notes_in_dominant_half, 3u)
+      << "Driving-style B->Chorus dominant preparation should keep an eighth-note pulse";
+}
+
+TEST_F(BassWithVocalTest, RootFifthUsesFifthWhenOnlyBeatOnePrecheckWouldClash) {
+  Song song;
+  Section verse;
+  verse.type = SectionType::A;
+  verse.start_tick = 0;
+  verse.bars = 2;
+  verse.track_mask = TrackMask::Bass;
+  verse.bass_style_hint = static_cast<uint8_t>(BassPattern::RootFifth) + 1;
+  song.setArrangement(Arrangement({verse}));
+
+  params_.mood = Mood::StraightPop;
+  params_.chord_id = 0;
+  params_.paradigm = GenerationParadigm::Traditional;
+
+  HarmonyContext harmony;
+  harmony.initialize(song.arrangement(), getChordProgression(params_.chord_id), params_.mood);
+  harmony.registerNote(0, TICKS_PER_BEAT, 66, TrackRole::Vocal);  // F# only overlaps beat 1.
+
+  MidiTrack bass_track;
+  std::mt19937 rng(params_.seed);
+  generateBassTrack(bass_track, song, params_, rng, harmony, nullptr, nullptr);
+
+  bool found_beat3_fifth = false;
+  for (const auto& note : bass_track.notes()) {
+    if (note.start_tick == 2 * TICKS_PER_BEAT && getPitchClass(note.note) == 7) {
+      found_beat3_fifth = true;
+      break;
+    }
+  }
+
+  EXPECT_TRUE(found_beat3_fifth)
+      << "RootFifth should keep the beat-3 fifth when only beat 1 would have clashed";
+}
+
+TEST_F(BassWithVocalTest, KickSyncDoesNotCreateOffGridPartialAdjustment) {
+  Song song;
+  Section verse;
+  verse.type = SectionType::A;
+  verse.start_tick = 0;
+  verse.bars = 2;
+  verse.track_mask = TrackMask::Bass;
+  verse.bass_style_hint = static_cast<uint8_t>(BassPattern::RootFifth) + 1;
+  song.setArrangement(Arrangement({verse}));
+
+  params_.mood = Mood::StraightPop;
+  params_.chord_id = 0;
+  params_.paradigm = GenerationParadigm::Traditional;
+
+  KickPatternCache kick_cache;
+  kick_cache.kick_ticks[0] = 2 * TICKS_PER_BEAT + TICK_SIXTEENTH;  // 1080, one 16th after beat 3.
+  kick_cache.kick_count = 1;
+  kick_cache.kicks_per_bar = 1.0f;
+  kick_cache.dominant_interval = TICKS_PER_BEAT;
+
+  HarmonyContext harmony;
+  harmony.initialize(song.arrangement(), getChordProgression(params_.chord_id), params_.mood);
+
+  MidiTrack bass_track;
+  std::mt19937 rng(params_.seed);
+  generateBassTrack(bass_track, song, params_, rng, harmony, &kick_cache, nullptr);
+
+  for (const auto& note : bass_track.notes()) {
+    EXPECT_EQ(note.start_tick % TICK_SIXTEENTH, 0)
+        << "Kick sync should snap fully to a kick or leave the original grid position";
+  }
+}
+
+TEST_F(BassWithVocalTest, SameRootSectionEndDoesNotEmitApproachEighth) {
+  Song song;
+  Section verse;
+  verse.type = SectionType::A;
+  verse.start_tick = 0;
+  verse.bars = 1;
+  verse.track_mask = TrackMask::Bass;
+  verse.bass_style_hint = static_cast<uint8_t>(BassPattern::RootFifth) + 1;
+  song.setArrangement(Arrangement({verse}));
+
+  params_.mood = Mood::StraightPop;
+  params_.paradigm = GenerationParadigm::Traditional;
+
+  ChordProgression one_chord{{0, -1, -1, -1, -1, -1, -1, -1}, 1};
+  HarmonyContext harmony;
+  harmony.initialize(song.arrangement(), one_chord, params_.mood);
+
+  MidiTrack bass_track;
+  std::mt19937 rng(params_.seed);
+  generateBassTrack(bass_track, song, params_, rng, harmony, nullptr, nullptr);
+
+  Tick approach_slot = 3 * TICK_QUARTER + TICK_EIGHTH;
+  for (const auto& note : bass_track.notes()) {
+    EXPECT_NE(note.start_tick, approach_slot)
+        << "Same-root section end should sustain the root, not emit an approach eighth";
+  }
+}
+
+TEST_F(BassWithVocalTest, SameRootMicrovariationDoesNotCreateApproachTone) {
+  Song song;
+  Section verse;
+  verse.type = SectionType::A;
+  verse.start_tick = 0;
+  verse.bars = 4;
+  verse.track_mask = TrackMask::Bass;
+  verse.bass_style_hint = static_cast<uint8_t>(BassPattern::RootFifth) + 1;
+  song.setArrangement(Arrangement({verse}));
+
+  params_.mood = Mood::StraightPop;
+  params_.paradigm = GenerationParadigm::Traditional;
+
+  ChordProgression one_chord{{0, -1, -1, -1, -1, -1, -1, -1}, 1};
+
+  for (uint32_t seed = 1; seed <= 32; ++seed) {
+    HarmonyContext harmony;
+    harmony.initialize(song.arrangement(), one_chord, params_.mood);
+
+    MidiTrack bass_track;
+    std::mt19937 rng(seed);
+    generateBassTrack(bass_track, song, params_, rng, harmony, nullptr, nullptr);
+
+    Tick final_bar_start = 3 * TICKS_PER_BAR;
+    for (const auto& note : bass_track.notes()) {
+      if (note.start_tick < final_bar_start || note.start_tick >= final_bar_start + TICKS_PER_BAR) {
+        continue;
+      }
+      int pc = getPitchClass(note.note);
+      EXPECT_TRUE(pc == 0 || pc == 7)
+          << "Same-root RootFifth microvariation should keep root/fifth pitch classes, seed="
+          << seed << " note=" << static_cast<int>(note.note);
+    }
+  }
+}
+
+TEST_F(BassWithVocalTest, ArticulationUsesPatternForEachSection) {
+  Song song;
+  std::vector<Section> sections;
+
+  Section first;
+  first.type = SectionType::A;
+  first.start_tick = 0;
+  first.bars = 1;
+  first.track_mask = TrackMask::Bass;
+  first.bass_style_hint = static_cast<uint8_t>(BassPattern::WholeNote) + 1;
+  sections.push_back(first);
+
+  Section second;
+  second.type = SectionType::Chorus;
+  second.start_tick = TICKS_PER_BAR;
+  second.bars = 1;
+  second.track_mask = TrackMask::Bass;
+  second.bass_style_hint = static_cast<uint8_t>(BassPattern::Driving) + 1;
+  sections.push_back(second);
+
+  song.setArrangement(Arrangement(sections));
+
+  params_.mood = Mood::EnergeticDance;
+  params_.chord_id = 0;
+  params_.paradigm = GenerationParadigm::Traditional;
+
+  HarmonyContext harmony;
+  harmony.initialize(song.arrangement(), getChordProgression(params_.chord_id), params_.mood);
+
+  MidiTrack bass_track;
+  std::mt19937 rng(params_.seed);
+  generateBassTrack(bass_track, song, params_, rng, harmony, nullptr, nullptr);
+
+  bool found_driving_off_eighth = false;
+  for (const auto& note : bass_track.notes()) {
+    if (note.start_tick < second.start_tick || note.start_tick >= second.endTick()) {
+      continue;
+    }
+    if ((note.start_tick % TICK_QUARTER) != TICK_EIGHTH) {
+      continue;
+    }
+
+    found_driving_off_eighth = true;
+    EXPECT_LE(note.duration, static_cast<Tick>(TICK_EIGHTH * 0.6))
+        << "Second section should use its Driving pattern for staccato off-eighth articulation";
+  }
+
+  EXPECT_TRUE(found_driving_off_eighth)
+      << "Driving section should generate off-eighth notes for articulation regression coverage";
+}
+
 // ============================================================================
 // Part 2: Dissonance Regression Tests (from bass_dissonance_regression_test.cpp)
 // ============================================================================

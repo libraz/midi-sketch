@@ -10,8 +10,10 @@
 
 #include <gtest/gtest.h>
 
+#include <cstdlib>
 #include <iomanip>
 #include <map>
+#include <random>
 #include <set>
 #include <sstream>
 #include <vector>
@@ -68,6 +70,80 @@ std::string formatChordTones(const std::vector<int>& tones) {
   }
   result += "}";
   return result;
+}
+
+TEST(BassAnalysisTest, EmptyBarReportsNoRootOnBeat1) {
+  MidiTrack track;
+
+  BassAnalysis analysis = BassAnalysis::analyzeBar(track, 0, 48);
+
+  EXPECT_FALSE(analysis.has_root_on_beat1);
+}
+
+TEST(BassAnalysisTest, Beat1FifthDoesNotReportRootOnBeat1) {
+  MidiTrack track;
+  track.addNote(NoteEventBuilder::create(0, TICKS_PER_BEAT, 55, 100));  // G over C.
+
+  BassAnalysis analysis = BassAnalysis::analyzeBar(track, 0, 48);
+
+  EXPECT_FALSE(analysis.has_root_on_beat1);
+  EXPECT_TRUE(analysis.has_fifth);
+}
+
+TEST(BassAnalysisTest, Beat1RootReportsRootOnBeat1) {
+  MidiTrack track;
+  track.addNote(NoteEventBuilder::create(0, TICKS_PER_BEAT, 48, 100));  // C root.
+
+  BassAnalysis analysis = BassAnalysis::analyzeBar(track, 0, 48);
+
+  EXPECT_TRUE(analysis.has_root_on_beat1);
+}
+
+TEST(BassDensityAdjustmentTest, PreservesHintedSyncopatedTresilloAndSlapPopOffbeats) {
+  for (BassPattern pattern :
+       {BassPattern::Syncopated, BassPattern::Tresillo, BassPattern::SlapPop}) {
+    MidiTrack track;
+    track.addNote(NoteEventBuilder::create(0, TICK_EIGHTH, 48, 100));
+    track.addNote(NoteEventBuilder::create(TICK_EIGHTH, TICK_EIGHTH, 55, 80));
+    track.addNote(NoteEventBuilder::create(TICK_QUARTER, TICK_EIGHTH, 48, 100));
+
+    Section section;
+    section.type = SectionType::A;
+    section.start_tick = 0;
+    section.bars = 1;
+    section.density_percent = 60;
+    section.bass_style_hint = static_cast<uint8_t>(pattern) + 1;
+
+    applyDensityAdjustment(track, section);
+
+    bool kept_offbeat = false;
+    for (const auto& note : track.notes()) {
+      if (note.start_tick == TICK_EIGHTH) {
+        kept_offbeat = true;
+        break;
+      }
+    }
+
+    EXPECT_TRUE(kept_offbeat) << "Pattern " << static_cast<int>(pattern)
+                              << " should preserve its offbeat identity";
+  }
+}
+
+TEST(BassDensityAdjustmentTest, LowDensityStillThinsUnhintedOffbeats) {
+  MidiTrack track;
+  track.addNote(NoteEventBuilder::create(0, TICK_EIGHTH, 48, 100));
+  track.addNote(NoteEventBuilder::create(TICK_EIGHTH, TICK_EIGHTH, 55, 80));
+
+  Section section;
+  section.type = SectionType::A;
+  section.start_tick = 0;
+  section.bars = 1;
+  section.density_percent = 60;
+
+  applyDensityAdjustment(track, section);
+
+  ASSERT_EQ(track.notes().size(), 1u);
+  EXPECT_EQ(track.notes()[0].start_tick, 0);
 }
 
 // ============================================================================
@@ -282,8 +358,8 @@ TEST_F(BassDiatonicTest, RegressionOriginalBugCase) {
 
 // Test: Diatonic chord progressions produce diatonic bass
 TEST_F(BassDiatonicTest, DiatonicChordProgressionsProduceDiatonicBass) {
-  std::vector<uint8_t> diatonic_progressions = {0, 1,  2,  3,  4,  5,  6,  7,  8,
-                                                9, 10, 13, 14, 15, 16, 17, 18, 19};
+  std::vector<uint8_t> diatonic_progressions = {0, 1,  2,  3,  4,  5,  6,  7, 8,
+                                                9, 10, 13, 14, 16, 17, 18, 19};
 
   for (uint8_t chord_id : diatonic_progressions) {
     params_.chord_id = chord_id;
@@ -303,9 +379,14 @@ TEST_F(BassDiatonicTest, DiatonicChordProgressionsProduceDiatonicBass) {
 
 // Test: Borrowed chord progressions correctly use non-diatonic roots
 TEST_F(BassDiatonicTest, BorrowedChordProgressionsUseCorrectRoots) {
-  std::vector<uint8_t> borrowed_progressions = {11, 12};
+  const std::map<uint8_t, std::set<int>> borrowed_progressions = {
+      {11, {10}},        // bVII
+      {12, {10}},        // bVII
+      {15, {3, 8, 10}},  // bVI, bVII chord tones
+      {21, {1, 8}},      // bII root, iv minor third color
+  };
 
-  for (uint8_t chord_id : borrowed_progressions) {
+  for (const auto& [chord_id, expected_pitch_classes] : borrowed_progressions) {
     params_.chord_id = chord_id;
     params_.seed = 42;
 
@@ -315,13 +396,13 @@ TEST_F(BassDiatonicTest, BorrowedChordProgressionsUseCorrectRoots) {
     const auto& track = gen.getSong().bass();
     auto non_diatonic = findNonDiatonicNotes(track);
 
-    EXPECT_FALSE(non_diatonic.empty())
-        << "Progression " << static_cast<int>(chord_id) << " with bVII should have Bb notes";
+    EXPECT_FALSE(non_diatonic.empty()) << "Borrowed progression " << static_cast<int>(chord_id)
+                                       << " should produce non-diatonic bass color";
 
     for (const auto& [tick, pitch] : non_diatonic) {
-      EXPECT_EQ(pitch % 12, 10)
-          << "Borrowed chord progression should only have Bb (pitch class 10), "
-          << "but found pitch class " << (pitch % 12);
+      EXPECT_TRUE(expected_pitch_classes.count(pitch % 12) > 0)
+          << "Borrowed chord progression " << static_cast<int>(chord_id)
+          << " produced unexpected non-diatonic pitch class " << (pitch % 12);
     }
   }
 }
@@ -441,6 +522,125 @@ TEST_F(ChordFunctionApproachTest, SubdominantChordFunctionClassification) {
   for (int8_t deg : subdominant_degrees) {
     EXPECT_TRUE(deg == 1 || deg == 3) << "Degree " << (int)deg << " should be subdominant function";
   }
+}
+
+TEST_F(ChordFunctionApproachTest, ApproachCandidateSurvivesAllRootsAndDegrees) {
+  for (int root_pc = 0; root_pc < 12; ++root_pc) {
+    uint8_t next_root = static_cast<uint8_t>(40 + root_pc);
+    uint8_t current_root = static_cast<uint8_t>(next_root + 7);
+    if (current_root > BASS_HIGH) {
+      current_root = static_cast<uint8_t>(current_root - 12);
+    }
+
+    for (int8_t degree = 0; degree < 7; ++degree) {
+      uint8_t approach = selectBassApproachNote(current_root, next_root, degree);
+
+      EXPECT_GE(approach, BASS_LOW) << "root_pc=" << root_pc << " degree=" << (int)degree;
+      EXPECT_LE(approach, BASS_HIGH) << "root_pc=" << root_pc << " degree=" << (int)degree;
+      EXPECT_NE(approach, next_root) << "Approach collapsed to target root for root_pc=" << root_pc
+                                     << " degree=" << (int)degree;
+      EXPECT_NE(approach, static_cast<uint8_t>(next_root - 12))
+          << "Approach collapsed to octave-below fallback for root_pc=" << root_pc
+          << " degree=" << (int)degree;
+    }
+  }
+}
+
+TEST_F(ChordFunctionApproachTest, OctaveDeviceUsesPlayableDisplacementAcrossBassRange) {
+  for (uint8_t root = BASS_LOW; root <= BASS_HIGH; ++root) {
+    uint8_t octave = selectBassOctaveNote(root);
+
+    EXPECT_GE(octave, BASS_LOW) << "root=" << (int)root;
+    EXPECT_LE(octave, BASS_HIGH) << "root=" << (int)root;
+    EXPECT_EQ(octave % 12, root % 12) << "root=" << (int)root;
+    EXPECT_NE(octave, root) << "Octave device collapsed to root=" << (int)root;
+    EXPECT_EQ(std::abs(static_cast<int>(octave) - static_cast<int>(root)), 12)
+        << "root=" << (int)root;
+  }
+}
+
+TEST_F(ChordFunctionApproachTest, DiatonicStepWrapsInsteadOfClampingAtRangeEdges) {
+  EXPECT_EQ(selectNextBassDiatonic(55, +1), 45)  // G3 -> A2
+      << "Upper-range walking step should wrap down instead of clamping to G3";
+  EXPECT_EQ(selectNextBassDiatonic(53, +1), 55)  // F3 -> G3
+      << "In-range step should remain in the current octave";
+  EXPECT_EQ(selectNextBassDiatonic(BASS_LOW, -1), 38)  // E1 -> D2
+      << "Lower-range walking step should wrap up instead of clamping to E1";
+}
+
+TEST_F(ChordFunctionApproachTest, WalkingBassUpperRootsKeepStepwiseMotion) {
+  std::vector<uint8_t> f_walk = {53, selectNextBassDiatonic(53, +1),
+                                 selectNextBassDiatonic(selectNextBassDiatonic(53, +1), +1)};
+  std::vector<uint8_t> g_walk = {55, selectNextBassDiatonic(55, +1),
+                                 selectNextBassDiatonic(selectNextBassDiatonic(55, +1), +1)};
+
+  EXPECT_EQ((std::set<uint8_t>(f_walk.begin(), f_walk.end()).size()), 3u)
+      << "IV walking line should not collapse to a single clamped pitch";
+  EXPECT_EQ((std::set<uint8_t>(g_walk.begin(), g_walk.end()).size()), 3u)
+      << "V walking line should not collapse to a single clamped pitch";
+}
+
+TEST_F(ChordFunctionApproachTest, RnBDiatonicThirdWrapsInsteadOfClampingToRootOrHighLimit) {
+  uint8_t f_third = selectBassDiatonicThird(53);  // F3 -> A2
+  uint8_t g_third = selectBassDiatonicThird(55);  // G3 -> B2
+
+  EXPECT_EQ(f_third, 45);
+  EXPECT_EQ(g_third, 47);
+  EXPECT_EQ(f_third % 12, 9);
+  EXPECT_EQ(g_third % 12, 11);
+  EXPECT_NE(f_third, 53);
+  EXPECT_NE(g_third, 55);
+}
+
+TEST_F(ChordFunctionApproachTest, MotionAdjustmentMovesToNearestChordTone) {
+  constexpr uint8_t kC3 = 48;
+  constexpr uint8_t kVocalC5 = 72;
+  constexpr int8_t kTonicDegree = 0;
+
+  EXPECT_EQ(adjustPitchForMotion(kC3, MotionType::Similar, +1, kVocalC5, kTonicDegree), 52)
+      << "Similar upward motion should move C3 to E3 instead of rejecting a semitone step";
+  EXPECT_EQ(adjustPitchForMotion(kC3, MotionType::Contrary, +1, kVocalC5, kTonicDegree), 43)
+      << "Contrary motion against upward vocal should move C3 down to G2";
+  EXPECT_EQ(adjustPitchForMotion(kC3, MotionType::Similar, -1, kVocalC5, kTonicDegree), 43)
+      << "Similar downward motion should move C3 to G2";
+  EXPECT_EQ(adjustPitchForMotion(kC3, MotionType::Contrary, -1, kVocalC5, kTonicDegree), 52)
+      << "Contrary motion against downward vocal should move C3 up to E3";
+}
+
+TEST_F(ChordFunctionApproachTest, HighVocalDensityStillSimplifiesNonPeakVerse) {
+  GeneratorParams params;
+  params.mood = Mood::EnergeticDance;
+
+  Section verse;
+  verse.type = SectionType::A;
+  verse.peak_level = PeakLevel::None;
+  verse.backing_density = BackingDensity::Normal;
+
+  std::mt19937 rng(7);
+  EXPECT_EQ(selectPatternForVocalDensity(0.9f, verse, params, rng), BassPattern::WholeNote);
+}
+
+TEST_F(ChordFunctionApproachTest, HighVocalDensityDoesNotCollapsePeakChorusToWholeNote) {
+  GeneratorParams params;
+  params.mood = Mood::EnergeticDance;
+
+  Section chorus;
+  chorus.type = SectionType::Chorus;
+  chorus.peak_level = PeakLevel::Max;
+  chorus.backing_density = BackingDensity::Thick;
+
+  std::mt19937 rng(7);
+  BassPattern pattern = selectPatternForVocalDensity(0.9f, chorus, params, rng);
+
+  EXPECT_NE(pattern, BassPattern::WholeNote)
+      << "Peak chorus should keep an active bass pattern despite dense vocal coverage";
+}
+
+TEST_F(ChordFunctionApproachTest, PeakLevelPromotionRaisesSparseBassPatterns) {
+  EXPECT_EQ(promoteBassPatternForPeakLevel(BassPattern::WholeNote, PeakLevel::Medium),
+            BassPattern::RootFifth);
+  EXPECT_EQ(promoteBassPatternForPeakLevel(BassPattern::WholeNote, PeakLevel::Max),
+            BassPattern::Syncopated);
 }
 
 // --- Chromatic Approach Tests ---
