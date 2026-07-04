@@ -121,6 +121,78 @@ void printIssueWithContext(const midisketch::DissonanceIssue& issue, const char*
 
 }  // namespace
 
+const char* songConfigErrorName(midisketch::SongConfigError error) {
+  switch (error) {
+    case midisketch::SongConfigError::OK:
+      return "OK";
+    case midisketch::SongConfigError::InvalidStylePreset:
+      return "Invalid style preset";
+    case midisketch::SongConfigError::InvalidChordProgression:
+      return "Invalid chord progression";
+    case midisketch::SongConfigError::InvalidForm:
+      return "Invalid form";
+    case midisketch::SongConfigError::InvalidVocalAttitude:
+      return "Invalid vocal attitude";
+    case midisketch::SongConfigError::InvalidVocalRange:
+      return "Invalid vocal range";
+    case midisketch::SongConfigError::InvalidBpm:
+      return "Invalid BPM";
+    case midisketch::SongConfigError::DurationTooShortForCall:
+      return "Duration too short for call settings";
+    case midisketch::SongConfigError::InvalidModulationAmount:
+      return "Invalid modulation amount";
+    case midisketch::SongConfigError::InvalidKey:
+      return "Invalid key";
+    case midisketch::SongConfigError::InvalidCompositionStyle:
+      return "Invalid composition style";
+    case midisketch::SongConfigError::InvalidArpeggioPattern:
+      return "Invalid arpeggio pattern";
+    case midisketch::SongConfigError::InvalidArpeggioSpeed:
+      return "Invalid arpeggio speed";
+    case midisketch::SongConfigError::InvalidVocalStyle:
+      return "Invalid vocal style";
+    case midisketch::SongConfigError::InvalidMelodyTemplate:
+      return "Invalid melody template";
+    case midisketch::SongConfigError::InvalidMelodicComplexity:
+      return "Invalid melodic complexity";
+    case midisketch::SongConfigError::InvalidHookIntensity:
+      return "Invalid hook intensity";
+    case midisketch::SongConfigError::InvalidVocalGroove:
+      return "Invalid vocal groove";
+    case midisketch::SongConfigError::InvalidCallDensity:
+      return "Invalid call density";
+    case midisketch::SongConfigError::InvalidIntroChant:
+      return "Invalid intro chant";
+    case midisketch::SongConfigError::InvalidMixPattern:
+      return "Invalid mix pattern";
+    case midisketch::SongConfigError::InvalidMotifRepeatScope:
+      return "Invalid motif repeat scope";
+    case midisketch::SongConfigError::InvalidArrangementGrowth:
+      return "Invalid arrangement growth";
+    case midisketch::SongConfigError::InvalidModulationTiming:
+      return "Invalid modulation timing";
+    case midisketch::SongConfigError::InvalidBlueprint:
+      return "Invalid production blueprint";
+    case midisketch::SongConfigError::InvalidCallSetting:
+      return "Invalid call setting";
+    case midisketch::SongConfigError::InvalidEnergyCurve:
+      return "Invalid energy curve";
+    case midisketch::SongConfigError::InvalidDriveFeel:
+      return "Invalid drive feel";
+    case midisketch::SongConfigError::InvalidMoraRhythmMode:
+      return "Invalid mora rhythm mode";
+    case midisketch::SongConfigError::InvalidProbability:
+      return "Invalid probability";
+    case midisketch::SongConfigError::InvalidArpeggioRange:
+      return "Invalid arpeggio range";
+    case midisketch::SongConfigError::InvalidMelodyOverride:
+      return "Invalid melody override";
+    case midisketch::SongConfigError::InvalidMotifOverride:
+      return "Invalid motif override";
+  }
+  return "Unknown config error";
+}
+
 const char* keyName(midisketch::Key key) {
   static const char* names[] = {"C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"};
   int idx = static_cast<int>(key);
@@ -312,6 +384,41 @@ void showBarNotes(const midisketch::ParsedMidi& midi, int bar_num) {
       }
       std::cout << "\n";
     }
+  }
+}
+
+void showTickNotes(const midisketch::ParsedMidi& midi, midisketch::Tick tick) {
+  std::cout << "\n=== Notes at tick " << tick << " ===\n\n";
+
+  std::vector<std::string> track_order = {"Vocal",    "Chord", "Bass",   "Motif",
+                                          "Arpeggio", "Aux",   "Guitar", "Drums"};
+  bool any_notes = false;
+
+  for (const auto& track_name : track_order) {
+    const midisketch::ParsedTrack* track = midi.getTrack(track_name);
+    if (!track || track->notes.empty()) continue;
+
+    std::vector<std::string> sounding_notes;
+    for (const auto& note : track->notes) {
+      midisketch::Tick note_end = note.start_tick + note.duration;
+      if (note.start_tick <= tick && tick < note_end) {
+        sounding_notes.push_back(midisketch::midiNoteToName(note.note));
+      }
+    }
+
+    if (!sounding_notes.empty()) {
+      any_notes = true;
+      std::cout << track_name << ": ";
+      for (size_t i = 0; i < sounding_notes.size(); ++i) {
+        if (i > 0) std::cout << ", ";
+        std::cout << sounding_notes[i];
+      }
+      std::cout << "\n";
+    }
+  }
+
+  if (!any_notes) {
+    std::cout << "(no notes sounding)\n";
   }
 }
 

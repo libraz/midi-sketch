@@ -81,8 +81,14 @@ int runRegenerateMode(const ParsedArgs& args) {
     config.seed = args.new_seed;
   }
 
+  auto validation_error = midisketch::validateSongConfig(config);
+  if (validation_error != midisketch::SongConfigError::OK) {
+    std::cerr << "Error: Invalid SongConfig: " << songConfigErrorName(validation_error) << "\n";
+    return 1;
+  }
+
   midisketch::MidiFormat output_format = args.midi_format;
-  if (args.midi_format == midisketch::kDefaultMidiFormat &&
+  if (!args.midi_format_explicit && args.midi_format == midisketch::kDefaultMidiFormat &&
       original_format == midisketch::DetectedMidiFormat::SMF1) {
     output_format = midisketch::MidiFormat::SMF1;
   }
@@ -109,13 +115,35 @@ int runRegenerateMode(const ParsedArgs& args) {
   if (args.analyze) {
     const auto& params = sketch.getParams();
     auto report = midisketch::analyzeDissonance(song, params);
-    printDissonanceSummary(report);
 
     auto analysis_json = midisketch::dissonanceReportToJson(report);
-    std::ofstream analysis_file("analysis.json");
-    if (analysis_file) {
-      analysis_file << analysis_json;
-      std::cout << "\nSaved: analysis.json\n";
+    if (args.json_output) {
+      std::cout << analysis_json;
+    } else {
+      printDissonanceSummary(report);
+
+      std::ofstream analysis_file("analysis.json");
+      if (analysis_file) {
+        analysis_file << analysis_json;
+        std::cout << "\nSaved: analysis.json\n";
+      }
+    }
+  }
+
+  if (args.dump_collisions_tick > 0) {
+    std::cout << "\n" << sketch.getHarmonyContext().dumpNotesAt(args.dump_collisions_tick) << "\n";
+  }
+
+  if (args.bar_num > 0) {
+    if (output_format == midisketch::MidiFormat::SMF1) {
+      midisketch::MidiReader reader;
+      if (reader.read("regenerated.mid")) {
+        showBarNotes(reader.getParsedMidi(), args.bar_num);
+      } else {
+        std::cerr << "Error reading regenerated.mid for bar inspection\n";
+      }
+    } else {
+      std::cout << "Bar note inspection is only available for SMF1 output.\n";
     }
   }
 

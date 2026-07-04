@@ -255,6 +255,7 @@ typedef enum {
   MIDISKETCH_CONFIG_INVALID_ARPEGGIO_RANGE = 30,
   MIDISKETCH_CONFIG_INVALID_MELODY_OVERRIDE = 31,
   MIDISKETCH_CONFIG_INVALID_MOTIF_OVERRIDE = 32,
+  MIDISKETCH_CONFIG_INVALID_JSON = 33,
 } MidiSketchConfigError;
 
 /** @brief Get error message for config error. @param error Error code @return Message (static) */

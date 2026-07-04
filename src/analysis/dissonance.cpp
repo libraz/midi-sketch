@@ -304,12 +304,14 @@ std::vector<TimedNote> collectPitchedNotes(const Song& song) {
       tn.end = note.start_tick + note.duration;
       tn.pitch = note.note;
       tn.track = role;
+#ifdef MIDISKETCH_NOTE_PROVENANCE
       // Copy provenance
       tn.prov_chord_degree = note.prov_chord_degree;
       tn.prov_lookup_tick = note.prov_lookup_tick;
       tn.prov_source = note.prov_source;
       tn.prov_original_pitch = note.prov_original_pitch;
       tn.has_provenance = note.hasValidProvenance();
+#endif
       notes.push_back(tn);
     }
   };
@@ -673,11 +675,13 @@ void detectNonChordTonesInTrack(const MidiTrack& track, TrackRole role, bool is_
     issue.chord_degree = degree;
     issue.chord_name = getChordNameFromDegree(degree);
     issue.chord_tones = getChordToneNames(degree);
+#ifdef MIDISKETCH_NOTE_PROVENANCE
     issue.has_provenance = note.hasValidProvenance();
     issue.prov_chord_degree = note.prov_chord_degree;
     issue.prov_lookup_tick = note.prov_lookup_tick;
     issue.prov_source = note.prov_source;
     issue.prov_original_pitch = note.prov_original_pitch;
+#endif
 
     report.issues.push_back(issue);
     report.summary.non_chord_tones++;
@@ -772,11 +776,13 @@ void detectSustainedInTrack(const MidiTrack& track, TrackRole role,
         issue.chord_tones = getChordToneNames(new_degree);
         issue.note_start_tick = note_start;
         issue.original_chord_name = getChordNameFromDegree(start_degree);
+#ifdef MIDISKETCH_NOTE_PROVENANCE
         issue.has_provenance = note.hasValidProvenance();
         issue.prov_chord_degree = note.prov_chord_degree;
         issue.prov_lookup_tick = note.prov_lookup_tick;
         issue.prov_source = note.prov_source;
         issue.prov_original_pitch = note.prov_original_pitch;
+#endif
 
         report.issues.push_back(issue);
         report.summary.sustained_over_chord_change++;
@@ -862,11 +868,13 @@ void detectNonDiatonicInTrack(const MidiTrack& track, TrackRole role, Key key,
     issue.pitch_name = midiNoteToNameInternal(transposed_pitch);
     issue.key_name = getKeyName(key);
     issue.scale_tones = getScaleTones(key);
+#ifdef MIDISKETCH_NOTE_PROVENANCE
     issue.has_provenance = note.hasValidProvenance();
     issue.prov_chord_degree = note.prov_chord_degree;
     issue.prov_lookup_tick = note.prov_lookup_tick;
     issue.prov_source = note.prov_source;
     issue.prov_original_pitch = note.prov_original_pitch;
+#endif
 
     report.issues.push_back(issue);
     report.summary.non_diatonic_notes++;

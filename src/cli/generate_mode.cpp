@@ -8,6 +8,7 @@
 #include <climits>
 #include <fstream>
 #include <iostream>
+#include <sstream>
 
 #include "cli/display_helpers.h"
 #include "core/json_helpers.h"
@@ -18,6 +19,16 @@
 #include "midisketch.h"
 
 namespace cli {
+
+namespace {
+
+int reportConfigError(midisketch::SongConfigError error) {
+  if (error == midisketch::SongConfigError::OK) return 0;
+  std::cerr << "Error: Invalid SongConfig: " << songConfigErrorName(error) << "\n";
+  return 1;
+}
+
+}  // namespace
 
 midisketch::SongConfig configFromMetadata(const std::string& metadata) {
   midisketch::json::Parser p(metadata);
@@ -190,6 +201,12 @@ midisketch::SongConfig configFromMetadata(const std::string& metadata) {
 }
 
 int runGenerateMode(const ParsedArgs& args) {
+  std::ostringstream suppressed_stdout;
+  std::streambuf* original_stdout = nullptr;
+  if (args.json_output) {
+    original_stdout = std::cout.rdbuf(suppressed_stdout.rdbuf());
+  }
+
   std::cout << "midi-sketch v" << midisketch::MidiSketch::version() << "\n\n";
 
   midisketch::MidiSketch sketch;
@@ -368,6 +385,14 @@ int runGenerateMode(const ParsedArgs& args) {
     config.motif_rhythm_density = static_cast<uint8_t>(args.motif_rhythm_density);
   }
 
+  if (int validation_status = reportConfigError(midisketch::validateSongConfig(config));
+      validation_status != 0) {
+    if (original_stdout) {
+      std::cout.rdbuf(original_stdout);
+    }
+    return validation_status;
+  }
+
   const auto& preset = midisketch::getStylePreset(config.style_preset_id);
 
   if (config.blueprint_id == 255) {
@@ -446,13 +471,20 @@ int runGenerateMode(const ParsedArgs& args) {
   if (args.analyze) {
     const auto& params = sketch.getParams();
     auto report = midisketch::analyzeDissonance(song, params);
-    printDissonanceSummary(report, &song);
 
     auto analysis_json = midisketch::dissonanceReportToJson(report);
-    std::ofstream analysis_file("analysis.json");
-    if (analysis_file) {
-      analysis_file << analysis_json;
-      std::cout << "\nSaved: analysis.json\n";
+    if (args.json_output) {
+      std::cout.rdbuf(original_stdout);
+      original_stdout = nullptr;
+      std::cout << analysis_json;
+    } else {
+      printDissonanceSummary(report, &song);
+
+      std::ofstream analysis_file("analysis.json");
+      if (analysis_file) {
+        analysis_file << analysis_json;
+        std::cout << "\nSaved: analysis.json\n";
+      }
     }
   }
 
@@ -463,6 +495,10 @@ int runGenerateMode(const ParsedArgs& args) {
     } else {
       std::cerr << "Error reading output.mid for bar inspection\n";
     }
+  }
+
+  if (original_stdout) {
+    std::cout.rdbuf(original_stdout);
   }
 
   return 0;

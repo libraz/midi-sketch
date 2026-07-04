@@ -101,6 +101,10 @@ TEST(CApiTest, ConfigErrorStringReturnsMessage) {
   const char* bpm_msg = midisketch_config_error_string(MIDISKETCH_CONFIG_INVALID_BPM);
   EXPECT_NE(bpm_msg, nullptr);
   EXPECT_NE(strlen(bpm_msg), 0u);
+
+  const char* json_msg = midisketch_config_error_string(MIDISKETCH_CONFIG_INVALID_JSON);
+  EXPECT_NE(json_msg, nullptr);
+  EXPECT_NE(strlen(json_msg), 0u);
 }
 
 TEST(CApiTest, GetLastConfigErrorAfterValidGeneration) {

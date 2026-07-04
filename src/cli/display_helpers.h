@@ -12,6 +12,7 @@
 
 #include "analysis/dissonance.h"
 #include "core/basic_types.h"
+#include "core/preset_data.h"
 #include "core/preset_types.h"
 #include "core/song.h"
 #include "midi/midi_reader.h"
@@ -24,12 +25,18 @@ const char* keyName(midisketch::Key key);
 // Convert VocalStylePreset enum to display name
 const char* vocalStyleName(midisketch::VocalStylePreset style);
 
+// Convert SongConfig validation error to display name
+const char* songConfigErrorName(midisketch::SongConfigError error);
+
 // Print dissonance analysis summary
 void printDissonanceSummary(const midisketch::DissonanceReport& report,
                             const midisketch::Song* song = nullptr);
 
 // Display notes at a specific bar, grouped by track
 void showBarNotes(const midisketch::ParsedMidi& midi, int bar_num);
+
+// Display notes sounding at a specific tick, grouped by track
+void showTickNotes(const midisketch::ParsedMidi& midi, midisketch::Tick tick);
 
 // Get all notes playing at a specific tick from the song
 std::vector<std::pair<std::string, uint8_t>> getAllNotesAtTick(const midisketch::Song& song,

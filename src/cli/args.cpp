@@ -5,9 +5,11 @@
 
 #include "cli/args.h"
 
+#include <cerrno>
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <limits>
 
 #include "core/preset_data.h"
 #include "core/production_blueprint.h"
@@ -17,11 +19,192 @@ namespace cli {
 
 namespace {
 
+bool parseLongStrict(const char* arg, long& out) {
+  if (arg == nullptr || *arg == '\0') return false;
+  errno = 0;
+  char* endptr = nullptr;
+  long value = std::strtol(arg, &endptr, 10);
+  if (errno == ERANGE || endptr == arg || *endptr != '\0') return false;
+  out = value;
+  return true;
+}
+
+bool parseUnsignedLongStrict(const char* arg, unsigned long& out) {
+  if (arg == nullptr || *arg == '\0' || arg[0] == '-') return false;
+  errno = 0;
+  char* endptr = nullptr;
+  unsigned long value = std::strtoul(arg, &endptr, 10);
+  if (errno == ERANGE || endptr == arg || *endptr != '\0') return false;
+  out = value;
+  return true;
+}
+
+bool parseIntInRange(const char* option, const char* arg, int min_value, int max_value, int& out) {
+  long value = 0;
+  if (!parseLongStrict(arg, value) || value < min_value || value > max_value) {
+    std::cerr << "Error: " << option << " must be " << min_value << "-" << max_value << "\n";
+    return false;
+  }
+  out = static_cast<int>(value);
+  return true;
+}
+
+bool parseUint8InRange(const char* option, const char* arg, int min_value, int max_value,
+                       uint8_t& out) {
+  int value = 0;
+  if (!parseIntInRange(option, arg, min_value, max_value, value)) return false;
+  out = static_cast<uint8_t>(value);
+  return true;
+}
+
+bool parseUint16InRange(const char* option, const char* arg, int min_value, int max_value,
+                        uint16_t& out) {
+  int value = 0;
+  if (!parseIntInRange(option, arg, min_value, max_value, value)) return false;
+  out = static_cast<uint16_t>(value);
+  return true;
+}
+
+bool parseUint32Option(const char* option, const char* arg, uint32_t& out) {
+  unsigned long value = 0;
+  if (!parseUnsignedLongStrict(arg, value) ||
+      value > static_cast<unsigned long>(std::numeric_limits<uint32_t>::max())) {
+    std::cerr << "Error: " << option << " must be 0-" << std::numeric_limits<uint32_t>::max()
+              << "\n";
+    return false;
+  }
+  out = static_cast<uint32_t>(value);
+  return true;
+}
+
+bool parseTickOption(const char* option, const char* arg, midisketch::Tick& out) {
+  uint32_t value = 0;
+  if (!parseUint32Option(option, arg, value)) return false;
+  out = static_cast<midisketch::Tick>(value);
+  return true;
+}
+
+bool parseBpmArg(const char* arg, uint16_t& out) {
+  int value = 0;
+  if (!parseIntInRange("--bpm", arg, 0, 240, value)) return false;
+  if (value != 0 && value < 40) {
+    std::cerr << "Error: --bpm must be 0 or 40-240\n";
+    return false;
+  }
+  out = static_cast<uint16_t>(value);
+  return true;
+}
+
+bool parseMotifLengthArg(const char* arg, int& out) {
+  int value = 0;
+  if (!parseIntInRange("--motif-length", arg, 0, 4, value)) return false;
+  if (value != 0 && value != 1 && value != 2 && value != 4) {
+    std::cerr << "Error: --motif-length must be 0, 1, 2, or 4\n";
+    return false;
+  }
+  out = value;
+  return true;
+}
+
+bool parseMotifNoteCountArg(const char* arg, int& out) {
+  int value = 0;
+  if (!parseIntInRange("--motif-note-count", arg, 0, 8, value)) return false;
+  if (value != 0 && value < 3) {
+    std::cerr << "Error: --motif-note-count must be 0 or 3-8\n";
+    return false;
+  }
+  out = value;
+  return true;
+}
+
+bool parsePresetOrRangeArg(const char* option, const char* arg, int preset_value, int min_value,
+                           int max_value, int& out) {
+  int value = 0;
+  if (!parseIntInRange(option, arg, min_value, preset_value, value)) return false;
+  if (value != preset_value && value > max_value) {
+    std::cerr << "Error: " << option << " must be " << preset_value << " or " << min_value << "-"
+              << max_value << "\n";
+    return false;
+  }
+  out = value;
+  return true;
+}
+
+bool optionRequiresValue(const char* option) {
+  static const char* kOptions[] = {"--input",
+                                   "--seed",
+                                   "--style",
+                                   "--blueprint",
+                                   "--mood",
+                                   "--chord",
+                                   "--vocal-style",
+                                   "--bpm",
+                                   "--duration",
+                                   "--form",
+                                   "--key",
+                                   "--vocal-attitude",
+                                   "--vocal-low",
+                                   "--vocal-high",
+                                   "--format",
+                                   "--validate",
+                                   "--regenerate",
+                                   "--new-seed",
+                                   "--bar",
+                                   "--modulation",
+                                   "--composition",
+                                   "--dump-collisions-at",
+                                   "--drive",
+                                   "--vocal-groove",
+                                   "--melodic-complexity",
+                                   "--hook-intensity",
+                                   "--melody-template",
+                                   "--humanize-timing",
+                                   "--humanize-velocity",
+                                   "--arpeggio-pattern",
+                                   "--arpeggio-speed",
+                                   "--arpeggio-octave",
+                                   "--arpeggio-gate",
+                                   "--call",
+                                   "--intro-chant",
+                                   "--mix-pattern",
+                                   "--call-density",
+                                   "--modulation-semitones",
+                                   "--arrangement",
+                                   "--motif-repeat-scope",
+                                   "--motif-length",
+                                   "--motif-note-count",
+                                   "--motif-motion",
+                                   "--motif-register-high",
+                                   "--motif-rhythm-density",
+                                   "--energy-curve",
+                                   "--melody-max-leap",
+                                   "--melody-phrase-length",
+                                   "--melody-long-note-ratio",
+                                   "--melody-chorus-register-shift",
+                                   "--melody-hook-repetition",
+                                   "--melody-use-leading-tone"};
+  for (const char* known : kOptions) {
+    if (std::strcmp(option, known) == 0) return true;
+  }
+  return false;
+}
+
+bool hasModeConflict(const ParsedArgs& args) {
+  int mode_count = 0;
+  if (!args.input_file.empty()) ++mode_count;
+  if (!args.validate_file.empty()) ++mode_count;
+  if (!args.regenerate_file.empty()) ++mode_count;
+  return mode_count > 1;
+}
+
 // Parse a name-or-number argument for blueprint
 bool parseBlueprintArg(const char* arg, int& out) {
-  char* endptr = nullptr;
-  unsigned long val = std::strtoul(arg, &endptr, 10);
-  if (endptr != arg && *endptr == '\0') {
+  unsigned long val = 0;
+  if (parseUnsignedLongStrict(arg, val)) {
+    if (val != 255 && val >= midisketch::getProductionBlueprintCount()) {
+      std::cerr << "Unknown blueprint: " << arg << "\n";
+      return false;
+    }
     out = static_cast<int>(val);
     return true;
   }
@@ -41,9 +224,12 @@ bool parseBlueprintArg(const char* arg, int& out) {
 
 // Parse a name-or-number argument for mood
 bool parseMoodArg(const char* arg, uint8_t& out) {
-  char* endptr = nullptr;
-  unsigned long val = std::strtoul(arg, &endptr, 10);
-  if (endptr != arg && *endptr == '\0') {
+  unsigned long val = 0;
+  if (parseUnsignedLongStrict(arg, val)) {
+    if (val >= midisketch::MOOD_COUNT) {
+      std::cerr << "Unknown mood: " << arg << "\n";
+      return false;
+    }
     out = static_cast<uint8_t>(val);
     return true;
   }
@@ -63,9 +249,12 @@ bool parseMoodArg(const char* arg, uint8_t& out) {
 
 // Parse a name-or-number argument for chord progression
 bool parseChordArg(const char* arg, int& out) {
-  char* endptr = nullptr;
-  unsigned long val = std::strtoul(arg, &endptr, 10);
-  if (endptr != arg && *endptr == '\0') {
+  unsigned long val = 0;
+  if (parseUnsignedLongStrict(arg, val)) {
+    if (val >= midisketch::CHORD_COUNT) {
+      std::cerr << "Unknown chord progression: " << arg << "\n";
+      return false;
+    }
     out = static_cast<int>(val);
     return true;
   }
@@ -82,9 +271,12 @@ bool parseChordArg(const char* arg, int& out) {
 
 // Parse a name-or-number argument for form/structure
 bool parseFormArg(const char* arg, int& out) {
-  char* endptr = nullptr;
-  long val = std::strtol(arg, &endptr, 10);
-  if (endptr != arg && *endptr == '\0') {
+  long val = 0;
+  if (parseLongStrict(arg, val)) {
+    if (val < 0 || val >= midisketch::STRUCTURE_COUNT) {
+      std::cerr << "Unknown form: " << arg << "\n";
+      return false;
+    }
     out = static_cast<int>(val);
     return true;
   }
@@ -233,9 +425,16 @@ ParsedArgs parseArgs(int argc, char* argv[]) {
       args.input_file = argv[++i];
       args.analyze = true;
     } else if (std::strcmp(argv[i], "--seed") == 0 && i + 1 < argc) {
-      args.seed = static_cast<uint32_t>(std::strtoul(argv[++i], nullptr, 10));
+      if (!parseUint32Option("--seed", argv[++i], args.seed)) {
+        args.parse_error = true;
+        return args;
+      }
     } else if (std::strcmp(argv[i], "--style") == 0 && i + 1 < argc) {
-      args.style_id = static_cast<uint8_t>(std::strtoul(argv[++i], nullptr, 10));
+      if (!parseUint8InRange("--style", argv[++i], 0, midisketch::STYLE_PRESET_COUNT - 1,
+                             args.style_id)) {
+        args.parse_error = true;
+        return args;
+      }
     } else if (std::strcmp(argv[i], "--blueprint") == 0 && i + 1 < argc) {
       if (!parseBlueprintArg(argv[++i], args.blueprint_id)) {
         args.parse_error = true;
@@ -253,44 +452,68 @@ ParsedArgs parseArgs(int argc, char* argv[]) {
         return args;
       }
     } else if (std::strcmp(argv[i], "--vocal-style") == 0 && i + 1 < argc) {
-      args.vocal_style = static_cast<uint8_t>(std::strtoul(argv[++i], nullptr, 10));
+      if (!parseUint8InRange("--vocal-style", argv[++i], 0, 13, args.vocal_style)) {
+        args.parse_error = true;
+        return args;
+      }
     } else if (std::strcmp(argv[i], "--bpm") == 0 && i + 1 < argc) {
-      args.bpm = static_cast<uint16_t>(std::strtoul(argv[++i], nullptr, 10));
+      if (!parseBpmArg(argv[++i], args.bpm)) {
+        args.parse_error = true;
+        return args;
+      }
     } else if (std::strcmp(argv[i], "--duration") == 0 && i + 1 < argc) {
-      args.duration = static_cast<uint16_t>(std::strtoul(argv[++i], nullptr, 10));
+      if (!parseUint16InRange("--duration", argv[++i], 0, std::numeric_limits<uint16_t>::max(),
+                              args.duration)) {
+        args.parse_error = true;
+        return args;
+      }
     } else if (std::strcmp(argv[i], "--form") == 0 && i + 1 < argc) {
       if (!parseFormArg(argv[++i], args.form_id)) {
         args.parse_error = true;
         return args;
       }
     } else if (std::strcmp(argv[i], "--key") == 0 && i + 1 < argc) {
-      args.key_id = static_cast<int>(std::strtol(argv[++i], nullptr, 10));
+      if (!parseIntInRange("--key", argv[++i], 0, 11, args.key_id)) {
+        args.parse_error = true;
+        return args;
+      }
     } else if (std::strcmp(argv[i], "--skip-vocal") == 0) {
       args.skip_vocal = true;
     } else if (std::strcmp(argv[i], "--vocal-attitude") == 0 && i + 1 < argc) {
-      args.vocal_attitude = static_cast<int>(std::strtoul(argv[++i], nullptr, 10));
+      if (!parseIntInRange("--vocal-attitude", argv[++i], 0, 2, args.vocal_attitude)) {
+        args.parse_error = true;
+        return args;
+      }
     } else if (std::strcmp(argv[i], "--vocal-low") == 0 && i + 1 < argc) {
-      args.vocal_low = static_cast<int>(std::strtoul(argv[++i], nullptr, 10));
+      if (!parseIntInRange("--vocal-low", argv[++i], 36, 96, args.vocal_low)) {
+        args.parse_error = true;
+        return args;
+      }
     } else if (std::strcmp(argv[i], "--vocal-high") == 0 && i + 1 < argc) {
-      args.vocal_high = static_cast<int>(std::strtoul(argv[++i], nullptr, 10));
+      if (!parseIntInRange("--vocal-high", argv[++i], 36, 96, args.vocal_high)) {
+        args.parse_error = true;
+        return args;
+      }
     } else if (std::strcmp(argv[i], "--format") == 0 && i + 1 < argc) {
       if (!parseFormatArg(argv[++i], args.midi_format)) {
         args.parse_error = true;
         return args;
       }
+      args.midi_format_explicit = true;
     } else if (std::strcmp(argv[i], "--validate") == 0 && i + 1 < argc) {
       args.validate_file = argv[++i];
     } else if (std::strcmp(argv[i], "--regenerate") == 0 && i + 1 < argc) {
       args.regenerate_file = argv[++i];
     } else if (std::strcmp(argv[i], "--new-seed") == 0 && i + 1 < argc) {
-      args.new_seed = static_cast<uint32_t>(std::strtoul(argv[++i], nullptr, 10));
+      if (!parseUint32Option("--new-seed", argv[++i], args.new_seed)) {
+        args.parse_error = true;
+        return args;
+      }
       args.use_new_seed = true;
     } else if (std::strcmp(argv[i], "--json") == 0) {
       args.json_output = true;
     } else if (std::strcmp(argv[i], "--bar") == 0 && i + 1 < argc) {
-      args.bar_num = static_cast<int>(std::strtol(argv[++i], nullptr, 10));
-      if (args.bar_num < 1) {
-        std::cerr << "Error: --bar must be >= 1\n";
+      if (!parseIntInRange("--bar", argv[++i], 1, std::numeric_limits<int>::max(), args.bar_num)) {
         args.parse_error = true;
         return args;
       }
@@ -299,9 +522,15 @@ ParsedArgs parseArgs(int argc, char* argv[]) {
     } else if (std::strcmp(argv[i], "--arpeggio") == 0) {
       args.arpeggio_enabled = true;
     } else if (std::strcmp(argv[i], "--modulation") == 0 && i + 1 < argc) {
-      args.modulation = static_cast<uint8_t>(std::strtoul(argv[++i], nullptr, 10));
+      if (!parseUint8InRange("--modulation", argv[++i], 0, 4, args.modulation)) {
+        args.parse_error = true;
+        return args;
+      }
     } else if (std::strcmp(argv[i], "--composition") == 0 && i + 1 < argc) {
-      args.composition_style = static_cast<uint8_t>(std::strtoul(argv[++i], nullptr, 10));
+      if (!parseUint8InRange("--composition", argv[++i], 0, 2, args.composition_style)) {
+        args.parse_error = true;
+        return args;
+      }
     } else if (std::strcmp(argv[i], "--enable-sus") == 0) {
       args.enable_sus = true;
     } else if (std::strcmp(argv[i], "--enable-9th") == 0) {
@@ -309,83 +538,193 @@ ParsedArgs parseArgs(int argc, char* argv[]) {
     } else if (std::strcmp(argv[i], "--syncopation") == 0) {
       args.syncopation = true;
     } else if (std::strcmp(argv[i], "--dump-collisions-at") == 0 && i + 1 < argc) {
-      args.dump_collisions_tick =
-          static_cast<midisketch::Tick>(std::strtoul(argv[++i], nullptr, 10));
+      if (!parseTickOption("--dump-collisions-at", argv[++i], args.dump_collisions_tick)) {
+        args.parse_error = true;
+        return args;
+      }
     } else if (std::strcmp(argv[i], "--drive") == 0 && i + 1 < argc) {
-      args.drive_feel = static_cast<int>(std::strtoul(argv[++i], nullptr, 10));
+      if (!parseIntInRange("--drive", argv[++i], 0, 100, args.drive_feel)) {
+        args.parse_error = true;
+        return args;
+      }
     } else if (std::strcmp(argv[i], "--no-drums") == 0) {
       args.no_drums = true;
     } else if (std::strcmp(argv[i], "--vocal-groove") == 0 && i + 1 < argc) {
-      args.vocal_groove = static_cast<int>(std::strtoul(argv[++i], nullptr, 10));
+      if (!parseIntInRange("--vocal-groove", argv[++i], 0, 5, args.vocal_groove)) {
+        args.parse_error = true;
+        return args;
+      }
     } else if (std::strcmp(argv[i], "--melodic-complexity") == 0 && i + 1 < argc) {
-      args.melodic_complexity = static_cast<int>(std::strtoul(argv[++i], nullptr, 10));
+      if (!parseIntInRange("--melodic-complexity", argv[++i], 0, 2, args.melodic_complexity)) {
+        args.parse_error = true;
+        return args;
+      }
     } else if (std::strcmp(argv[i], "--hook-intensity") == 0 && i + 1 < argc) {
-      args.hook_intensity = static_cast<int>(std::strtoul(argv[++i], nullptr, 10));
+      if (!parseIntInRange("--hook-intensity", argv[++i], 0, 4, args.hook_intensity)) {
+        args.parse_error = true;
+        return args;
+      }
     } else if (std::strcmp(argv[i], "--melody-template") == 0 && i + 1 < argc) {
-      args.melody_template = static_cast<int>(std::strtoul(argv[++i], nullptr, 10));
+      if (!parseIntInRange("--melody-template", argv[++i], 0, 7, args.melody_template)) {
+        args.parse_error = true;
+        return args;
+      }
     } else if (std::strcmp(argv[i], "--humanize") == 0) {
       args.humanize = true;
     } else if (std::strcmp(argv[i], "--humanize-timing") == 0 && i + 1 < argc) {
-      args.humanize_timing = static_cast<int>(std::strtoul(argv[++i], nullptr, 10));
+      if (!parseIntInRange("--humanize-timing", argv[++i], 0, 100, args.humanize_timing)) {
+        args.parse_error = true;
+        return args;
+      }
     } else if (std::strcmp(argv[i], "--humanize-velocity") == 0 && i + 1 < argc) {
-      args.humanize_velocity = static_cast<int>(std::strtoul(argv[++i], nullptr, 10));
+      if (!parseIntInRange("--humanize-velocity", argv[++i], 0, 100, args.humanize_velocity)) {
+        args.parse_error = true;
+        return args;
+      }
     } else if (std::strcmp(argv[i], "--arpeggio-pattern") == 0 && i + 1 < argc) {
-      args.arpeggio_pattern = static_cast<int>(std::strtoul(argv[++i], nullptr, 10));
+      if (!parseIntInRange("--arpeggio-pattern", argv[++i], 0, 7, args.arpeggio_pattern)) {
+        args.parse_error = true;
+        return args;
+      }
     } else if (std::strcmp(argv[i], "--arpeggio-speed") == 0 && i + 1 < argc) {
-      args.arpeggio_speed = static_cast<int>(std::strtoul(argv[++i], nullptr, 10));
+      if (!parseIntInRange("--arpeggio-speed", argv[++i], 0, 2, args.arpeggio_speed)) {
+        args.parse_error = true;
+        return args;
+      }
     } else if (std::strcmp(argv[i], "--arpeggio-octave") == 0 && i + 1 < argc) {
-      args.arpeggio_octave = static_cast<int>(std::strtoul(argv[++i], nullptr, 10));
+      if (!parseIntInRange("--arpeggio-octave", argv[++i], 1, 3, args.arpeggio_octave)) {
+        args.parse_error = true;
+        return args;
+      }
     } else if (std::strcmp(argv[i], "--arpeggio-gate") == 0 && i + 1 < argc) {
-      args.arpeggio_gate = static_cast<int>(std::strtoul(argv[++i], nullptr, 10));
+      if (!parseIntInRange("--arpeggio-gate", argv[++i], 0, 100, args.arpeggio_gate)) {
+        args.parse_error = true;
+        return args;
+      }
     } else if (std::strcmp(argv[i], "--no-se") == 0) {
       args.no_se = true;
     } else if (std::strcmp(argv[i], "--call") == 0 && i + 1 < argc) {
-      args.call_setting = static_cast<int>(std::strtoul(argv[++i], nullptr, 10));
+      if (!parseIntInRange("--call", argv[++i], 0, 2, args.call_setting)) {
+        args.parse_error = true;
+        return args;
+      }
     } else if (std::strcmp(argv[i], "--no-call-notes") == 0) {
       args.no_call_notes = true;
     } else if (std::strcmp(argv[i], "--intro-chant") == 0 && i + 1 < argc) {
-      args.intro_chant = static_cast<int>(std::strtoul(argv[++i], nullptr, 10));
+      if (!parseIntInRange("--intro-chant", argv[++i], 0, 2, args.intro_chant)) {
+        args.parse_error = true;
+        return args;
+      }
     } else if (std::strcmp(argv[i], "--mix-pattern") == 0 && i + 1 < argc) {
-      args.mix_pattern = static_cast<int>(std::strtoul(argv[++i], nullptr, 10));
+      if (!parseIntInRange("--mix-pattern", argv[++i], 0, 2, args.mix_pattern)) {
+        args.parse_error = true;
+        return args;
+      }
     } else if (std::strcmp(argv[i], "--call-density") == 0 && i + 1 < argc) {
-      args.call_density = static_cast<int>(std::strtoul(argv[++i], nullptr, 10));
+      if (!parseIntInRange("--call-density", argv[++i], 0, 3, args.call_density)) {
+        args.parse_error = true;
+        return args;
+      }
     } else if (std::strcmp(argv[i], "--enable-7th") == 0) {
       args.enable_7th = true;
     } else if (std::strcmp(argv[i], "--enable-tritone-sub") == 0) {
       args.enable_tritone_sub = true;
     } else if (std::strcmp(argv[i], "--modulation-semitones") == 0 && i + 1 < argc) {
-      args.modulation_semitones = static_cast<int>(std::strtoul(argv[++i], nullptr, 10));
+      if (!parseIntInRange("--modulation-semitones", argv[++i], 1, 4, args.modulation_semitones)) {
+        args.parse_error = true;
+        return args;
+      }
     } else if (std::strcmp(argv[i], "--arrangement") == 0 && i + 1 < argc) {
-      args.arrangement = static_cast<int>(std::strtoul(argv[++i], nullptr, 10));
+      if (!parseIntInRange("--arrangement", argv[++i], 0, 1, args.arrangement)) {
+        args.parse_error = true;
+        return args;
+      }
     } else if (std::strcmp(argv[i], "--motif-repeat-scope") == 0 && i + 1 < argc) {
-      args.motif_repeat_scope = static_cast<int>(std::strtoul(argv[++i], nullptr, 10));
+      if (!parseIntInRange("--motif-repeat-scope", argv[++i], 0, 1, args.motif_repeat_scope)) {
+        args.parse_error = true;
+        return args;
+      }
     } else if (std::strcmp(argv[i], "--motif-length") == 0 && i + 1 < argc) {
-      args.motif_length = static_cast<int>(std::strtoul(argv[++i], nullptr, 10));
+      if (!parseMotifLengthArg(argv[++i], args.motif_length)) {
+        args.parse_error = true;
+        return args;
+      }
     } else if (std::strcmp(argv[i], "--motif-note-count") == 0 && i + 1 < argc) {
-      args.motif_note_count = static_cast<int>(std::strtoul(argv[++i], nullptr, 10));
+      if (!parseMotifNoteCountArg(argv[++i], args.motif_note_count)) {
+        args.parse_error = true;
+        return args;
+      }
     } else if (std::strcmp(argv[i], "--motif-motion") == 0 && i + 1 < argc) {
-      args.motif_motion = static_cast<int>(std::strtoul(argv[++i], nullptr, 10));
+      if (!parsePresetOrRangeArg("--motif-motion", argv[++i], 255, 0, 5, args.motif_motion)) {
+        args.parse_error = true;
+        return args;
+      }
     } else if (std::strcmp(argv[i], "--motif-register-high") == 0 && i + 1 < argc) {
-      args.motif_register_high = static_cast<int>(std::strtoul(argv[++i], nullptr, 10));
+      if (!parseIntInRange("--motif-register-high", argv[++i], 0, 2, args.motif_register_high)) {
+        args.parse_error = true;
+        return args;
+      }
     } else if (std::strcmp(argv[i], "--motif-rhythm-density") == 0 && i + 1 < argc) {
-      args.motif_rhythm_density = static_cast<int>(std::strtoul(argv[++i], nullptr, 10));
+      if (!parsePresetOrRangeArg("--motif-rhythm-density", argv[++i], 255, 0, 2,
+                                 args.motif_rhythm_density)) {
+        args.parse_error = true;
+        return args;
+      }
     } else if (std::strcmp(argv[i], "--energy-curve") == 0 && i + 1 < argc) {
-      args.energy_curve = static_cast<int>(std::strtoul(argv[++i], nullptr, 10));
+      if (!parseIntInRange("--energy-curve", argv[++i], 0, 3, args.energy_curve)) {
+        args.parse_error = true;
+        return args;
+      }
     } else if (std::strcmp(argv[i], "--melody-max-leap") == 0 && i + 1 < argc) {
-      args.melody_max_leap = static_cast<int>(std::strtoul(argv[++i], nullptr, 10));
+      if (!parseIntInRange("--melody-max-leap", argv[++i], 0, 12, args.melody_max_leap)) {
+        args.parse_error = true;
+        return args;
+      }
     } else if (std::strcmp(argv[i], "--melody-phrase-length") == 0 && i + 1 < argc) {
-      args.melody_phrase_length = static_cast<int>(std::strtoul(argv[++i], nullptr, 10));
+      if (!parseIntInRange("--melody-phrase-length", argv[++i], 0, 8, args.melody_phrase_length)) {
+        args.parse_error = true;
+        return args;
+      }
     } else if (std::strcmp(argv[i], "--melody-long-note-ratio") == 0 && i + 1 < argc) {
-      args.melody_long_note_ratio = static_cast<int>(std::strtoul(argv[++i], nullptr, 10));
+      if (!parseIntInRange("--melody-long-note-ratio", argv[++i], 0, 100,
+                           args.melody_long_note_ratio)) {
+        args.parse_error = true;
+        return args;
+      }
     } else if (std::strcmp(argv[i], "--melody-chorus-register-shift") == 0 && i + 1 < argc) {
-      args.melody_chorus_register_shift = static_cast<int>(std::strtol(argv[++i], nullptr, 10));
+      if (!parseIntInRange("--melody-chorus-register-shift", argv[++i], -12, 12,
+                           args.melody_chorus_register_shift)) {
+        args.parse_error = true;
+        return args;
+      }
     } else if (std::strcmp(argv[i], "--melody-hook-repetition") == 0 && i + 1 < argc) {
-      args.melody_hook_repetition = static_cast<int>(std::strtoul(argv[++i], nullptr, 10));
+      if (!parseIntInRange("--melody-hook-repetition", argv[++i], 0, 2,
+                           args.melody_hook_repetition)) {
+        args.parse_error = true;
+        return args;
+      }
     } else if (std::strcmp(argv[i], "--melody-use-leading-tone") == 0 && i + 1 < argc) {
-      args.melody_use_leading_tone = static_cast<int>(std::strtoul(argv[++i], nullptr, 10));
+      if (!parseIntInRange("--melody-use-leading-tone", argv[++i], 0, 2,
+                           args.melody_use_leading_tone)) {
+        args.parse_error = true;
+        return args;
+      }
     } else if (std::strcmp(argv[i], "--help") == 0 || std::strcmp(argv[i], "-h") == 0) {
       args.show_help = true;
+    } else {
+      if (optionRequiresValue(argv[i])) {
+        std::cerr << "Error: " << argv[i] << " requires a value\n";
+      } else {
+        std::cerr << "Error: Unknown option: " << argv[i] << "\n";
+      }
+      args.parse_error = true;
+      return args;
     }
+  }
+
+  if (!args.show_help && hasModeConflict(args)) {
+    std::cerr << "Error: --input, --validate, and --regenerate are mutually exclusive\n";
+    args.parse_error = true;
   }
 
   return args;

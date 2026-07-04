@@ -45,6 +45,8 @@ set(TEST_SOURCES
   core/melody_embellishment_test.cpp
   core/syllabic_subdivider_test.cpp
   core/piano_roll_test.cpp
+  cli/args_test.cpp
+  ../src/cli/args.cpp
   core/music_theory_test.cpp
   core/velocity_test.cpp
   core/velocity_clamp_test.cpp

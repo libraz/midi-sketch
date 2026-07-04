@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 #include <sstream>
 #include <unordered_map>
 
@@ -96,6 +97,8 @@ const char* midisketch_config_error_string(MidiSketchConfigError error) {
       return "Invalid melody override value";
     case MIDISKETCH_CONFIG_INVALID_MOTIF_OVERRIDE:
       return "Invalid motif override value";
+    case MIDISKETCH_CONFIG_INVALID_JSON:
+      return "Invalid JSON config input";
     default:
       return "Unknown config error";
   }
@@ -439,7 +442,7 @@ const char* midisketch_create_default_config_json(uint8_t style_id) {
 
 MidiSketchConfigError midisketch_validate_config_json(const char* config_json, size_t json_length) {
   if (!config_json) {
-    return MIDISKETCH_CONFIG_INVALID_STYLE;
+    return MIDISKETCH_CONFIG_INVALID_JSON;
   }
 
   midisketch::json::Parser p(std::string(config_json, json_length));
@@ -781,8 +784,18 @@ MidiSketchPianoRollData* midisketch_get_piano_roll_safety(MidiSketchHandle handl
   const auto& harmony = sketch->getHarmonyContext();
   const auto& params = sketch->getParams();
 
-  // Calculate entry count
+  const uint32_t total_ticks = song.arrangement().totalTicks();
+  end_tick = std::min(end_tick, total_ticks);
+  if (start_tick > end_tick) {
+    return nullptr;
+  }
+
+  constexpr size_t kMaxPianoRollBatchCount = 100000;
   size_t count = (end_tick - start_tick) / step + 1;
+  count = std::min(count, kMaxPianoRollBatchCount);
+  if (count == 0 || count > std::numeric_limits<size_t>::max() / sizeof(MidiSketchPianoRollInfo)) {
+    return nullptr;
+  }
 
   // Allocate result
   auto* result = static_cast<MidiSketchPianoRollData*>(malloc(sizeof(MidiSketchPianoRollData)));

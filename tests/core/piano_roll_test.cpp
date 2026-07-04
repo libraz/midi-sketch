@@ -5,6 +5,7 @@
 
 #include <gtest/gtest.h>
 
+#include <cstdint>
 #include <cstring>
 
 #include "core/chord_utils.h"
@@ -72,6 +73,22 @@ TEST_F(PianoRollTest, BatchGetInvalidRangeReturnsNull) {
 
 TEST_F(PianoRollTest, BatchGetZeroStepReturnsNull) {
   MidiSketchPianoRollData* data = midisketch_get_piano_roll_safety(handle_, 0, 1920, 0);
+  EXPECT_EQ(data, nullptr);
+}
+
+TEST_F(PianoRollTest, BatchGetClampsEndTickToSongLength) {
+  MidiSketchPianoRollData* data = midisketch_get_piano_roll_safety(handle_, 0, UINT32_MAX, 480);
+
+  ASSERT_NE(data, nullptr);
+  ASSERT_GT(data->count, 0u);
+  EXPECT_LT(data->count, 100000u);
+
+  midisketch_free_piano_roll_data(data);
+}
+
+TEST_F(PianoRollTest, BatchGetReturnsNullWhenStartExceedsSongAfterClamp) {
+  MidiSketchPianoRollData* data =
+      midisketch_get_piano_roll_safety(handle_, UINT32_MAX - 10, UINT32_MAX, 1);
   EXPECT_EQ(data, nullptr);
 }
 

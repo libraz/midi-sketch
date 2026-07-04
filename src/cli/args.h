@@ -40,6 +40,7 @@ struct ParsedArgs {
   int vocal_low = -1;
   int vocal_high = -1;
   midisketch::MidiFormat midi_format = midisketch::kDefaultMidiFormat;
+  bool midi_format_explicit = false;
   int bar_num = 0;
   bool addictive = false;
   bool arpeggio_enabled = false;
