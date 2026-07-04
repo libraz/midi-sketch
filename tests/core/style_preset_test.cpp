@@ -5,6 +5,8 @@
 
 #include <gtest/gtest.h>
 
+#include <set>
+
 #include "core/chord.h"
 #include "core/config_converter.h"
 #include "core/generator.h"
@@ -80,7 +82,7 @@ TEST(StylePresetTest, VocalAttitudeFlags) {
 
 TEST(StylePresetTest, RecommendedProgressions) {
   const StylePreset& preset = getStylePreset(0);
-  // First recommended progression should be valid (0 = Canon)
+  // First recommended progression should be valid (0 = FourChordPop)
   EXPECT_GE(preset.recommended_progressions[0], 0);
   EXPECT_LT(preset.recommended_progressions[0], CHORD_COUNT);
 }
@@ -107,6 +109,50 @@ TEST(StylePresetTest, MoraRhythmModeFlowsThroughConfigConverter) {
   EXPECT_EQ(params.melody_params.mora_rhythm_mode, MoraRhythmMode::MoraTimed);
 }
 
+TEST(StylePresetTest, SeedSelectsAmongRecommendedProgressions) {
+  SongConfig config = createDefaultSongConfig(0);
+  EXPECT_EQ(config.chord_progression_id, 255);
+
+  std::set<uint8_t> selected;
+  for (uint32_t seed = 1; seed <= 32; ++seed) {
+    config.seed = seed;
+    selected.insert(ConfigConverter::convert(config).chord_id);
+  }
+
+  EXPECT_GT(selected.size(), 1u) << "Default style progression selection should vary by seed.";
+  const StylePreset& preset = getStylePreset(config.style_preset_id);
+  for (uint8_t id : selected) {
+    bool found = false;
+    for (int8_t rec : preset.recommended_progressions) {
+      if (rec < 0) break;
+      found = found || id == static_cast<uint8_t>(rec);
+    }
+    EXPECT_TRUE(found) << "Selected progression must come from style recommendations";
+  }
+}
+
+TEST(StylePresetTest, ExplicitChordProgressionIsPreserved) {
+  SongConfig config = createDefaultSongConfig(0);
+  config.seed = 7;
+  config.chord_progression_id = 0;
+
+  GeneratorParams params = ConfigConverter::convert(config);
+
+  EXPECT_EQ(params.chord_id, 0);
+}
+
+TEST(StylePresetTest, MoodDefaultsEnableChordExtensions) {
+  SongConfig config = createDefaultSongConfig(13);  // City Pop
+  config.seed = 42;
+  config.mood = static_cast<uint8_t>(Mood::CityPop);
+  config.mood_explicit = true;
+
+  GeneratorParams params = ConfigConverter::convert(config);
+
+  EXPECT_TRUE(params.chord_extension.enable_7th);
+  EXPECT_TRUE(params.chord_extension.enable_9th);
+}
+
 // ============================================================================
 // ChordProgressionMeta Tests
 // ============================================================================
@@ -114,13 +160,13 @@ TEST(StylePresetTest, MoraRhythmModeFlowsThroughConfigConverter) {
 TEST(ChordProgressionMetaTest, GetMeta) {
   const ChordProgressionMeta& meta = getChordProgressionMeta(0);
   EXPECT_EQ(meta.id, 0);
-  EXPECT_STREQ(meta.name, "Canon");
+  EXPECT_STREQ(meta.name, "FourChordPop");
   EXPECT_EQ(meta.profile, FunctionalProfile::Loop);
 }
 
 TEST(ChordProgressionMetaTest, StyleCompatibility) {
   const ChordProgressionMeta& canon = getChordProgressionMeta(0);
-  // Canon should be compatible with minimal and dance styles
+  // FourChordPop should be compatible with minimal and dance styles
   EXPECT_TRUE(canon.compatible_styles & STYLE_MINIMAL);
   EXPECT_TRUE(canon.compatible_styles & STYLE_DANCE);
 }
@@ -142,6 +188,19 @@ TEST(ChordProgressionMetaTest, RockProgressions) {
     if (id == 11 || id == 12) has_rock = true;
   }
   EXPECT_TRUE(has_rock);
+}
+
+TEST(ChordProgressionMetaTest, BuiltInProgressionsHaveUniqueDegreeSequences) {
+  std::set<std::vector<int8_t>> seen;
+
+  for (uint8_t id = 0; id < CHORD_COUNT; ++id) {
+    const auto& progression = getChordProgression(id);
+    std::vector<int8_t> degrees(progression.degrees.begin(),
+                                progression.degrees.begin() + progression.length);
+
+    EXPECT_TRUE(seen.insert(degrees).second)
+        << getChordProgressionName(id) << " duplicates an existing chord progression";
+  }
 }
 
 // ============================================================================
@@ -418,6 +477,7 @@ TEST(GenerateFromConfigTest, BpmZeroUsesDefault) {
   SongConfig config = createDefaultSongConfig(0);
   config.bpm = 0;  // Use default
   config.seed = 12345;
+  config.blueprint_id = 0;
 
   MidiSketch sketch;
   sketch.generateFromConfig(config);
@@ -473,6 +533,7 @@ TEST(VocalDensityTest, SectionDensityAffectsNotes) {
   // A melody section with Sparse density should have fewer notes than Full.
   SongConfig config = createDefaultSongConfig(0);
   config.seed = 12345;
+  config.blueprint_id = 0;
 
   MidiSketch sketch;
   sketch.generateFromConfig(config);
@@ -539,6 +600,7 @@ TEST(VocalAttitudeTest, MinimalGroovePopAcceptsExpressive) {
 TEST(BackingDensityTest, SectionsHaveBackingDensity) {
   SongConfig config = createDefaultSongConfig(0);
   config.seed = 12345;
+  config.blueprint_id = 0;
 
   MidiSketch sketch;
   sketch.generateFromConfig(config);
@@ -590,9 +652,9 @@ TEST(FunctionalProfileTest, ProgressionsHaveFunctionalProfile) {
 }
 
 TEST(FunctionalProfileTest, TensionBuildHasDifferentProfile) {
-  // Canon progression should be Loop
-  const ChordProgressionMeta& canon = getChordProgressionMeta(0);
-  EXPECT_EQ(canon.profile, FunctionalProfile::Loop);
+  // FourChordPop progression should be Loop
+  const ChordProgressionMeta& four_chord_pop = getChordProgressionMeta(0);
+  EXPECT_EQ(four_chord_pop.profile, FunctionalProfile::Loop);
 }
 
 TEST(AllowUnisonRepeatTest, IdolStyleDisallowsUnisonRepeat) {
@@ -1404,7 +1466,7 @@ TEST(NameLookupTest, FindChordProgressionByName) {
   // Test common chord progression names
   auto chord = findChordProgressionByName("pop");
   ASSERT_TRUE(chord.has_value());
-  EXPECT_EQ(*chord, 0);  // Canonical (I-V-vi-IV)
+  EXPECT_EQ(*chord, 0);  // FourChordPop (I-V-vi-IV)
 
   chord = findChordProgressionByName("royal_road");
   ASSERT_TRUE(chord.has_value());

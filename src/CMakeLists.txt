@@ -6,6 +6,7 @@ set(MIDISKETCH_CORE_SOURCES
   core/generator.cpp
   core/structure.cpp
   core/chord.cpp
+  core/chord_extension_planner.cpp
   core/velocity.cpp
   core/preset_data.cpp
   core/midi_track.cpp

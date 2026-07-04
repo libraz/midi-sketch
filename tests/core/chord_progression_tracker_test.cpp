@@ -12,6 +12,8 @@
 
 #include "core/arrangement.h"
 #include "core/chord.h"
+#include "core/timing_constants.h"
+#include "core/track_collision_detector.h"
 
 using namespace midisketch;
 
@@ -72,6 +74,46 @@ TEST_F(ChordProgressionTrackerTest, ChordDegreeAt_BeyondEnd) {
   EXPECT_EQ(tracker_.getChordDegreeAt(999999), 0);
 }
 
+TEST(ChordProgressionTrackerStandaloneTest, VerseReharmonizationIsInSharedTimeline) {
+  Section verse;
+  verse.type = SectionType::A;
+  verse.start_tick = 0;
+  verse.bars = 4;
+  verse.name = "A";
+  Arrangement arrangement({verse});
+
+  ChordProgression progression{};
+  progression.degrees = {0, 3, 5, 2};  // IV is not cadential and has no adjacent ii.
+  progression.length = 4;
+
+  ChordProgressionTracker tracker;
+  tracker.initialize(arrangement, progression, Mood::StraightPop);
+
+  EXPECT_EQ(tracker.getChordDegreeAt(TICKS_PER_BAR), 1)
+      << "A-section IV->ii reharmonization must be visible to all tracks";
+}
+
+TEST(ChordProgressionTrackerStandaloneTest, BSectionSubdivisionIsInSharedTimeline) {
+  Section prechorus;
+  prechorus.type = SectionType::B;
+  prechorus.start_tick = 0;
+  prechorus.bars = 2;
+  prechorus.name = "B";
+  Arrangement arrangement({prechorus});
+
+  ChordProgression progression{};
+  progression.degrees = {0, 4, 5, 3};
+  progression.length = 4;
+
+  ChordProgressionTracker tracker;
+  tracker.initialize(arrangement, progression, Mood::StraightPop);
+
+  EXPECT_EQ(tracker.getChordDegreeAt(0), 0);
+  EXPECT_EQ(tracker.getChordDegreeAt(TICK_HALF), 4);
+  EXPECT_EQ(tracker.getChordDegreeAt(TICKS_PER_BAR), 5);
+  EXPECT_EQ(tracker.getChordDegreeAt(TICKS_PER_BAR + TICK_HALF), 3);
+}
+
 // ============================================================================
 // getChordTonesAt
 // ============================================================================
@@ -90,6 +132,82 @@ TEST_F(ChordProgressionTrackerTest, ChordTonesAt_V) {
   EXPECT_NE(std::find(tones.begin(), tones.end(), 7), tones.end());
   EXPECT_NE(std::find(tones.begin(), tones.end(), 11), tones.end());
   EXPECT_NE(std::find(tones.begin(), tones.end(), 2), tones.end());
+}
+
+TEST_F(ChordProgressionTrackerTest, ChordExtensionDefaultsToNone) {
+  EXPECT_EQ(tracker_.getChordExtensionAt(0), ChordExtension::None);
+  EXPECT_EQ(tracker_.getChordExtensionAt(TICKS_PER_BAR), ChordExtension::None);
+  EXPECT_FALSE(tracker_.hasChordExtensionAt(0));
+}
+
+TEST_F(ChordProgressionTrackerTest, SecondaryDominantStoresDom7Extension) {
+  tracker_.registerSecondaryDominant(TICK_HALF, TICKS_PER_BAR, 2);
+
+  EXPECT_EQ(tracker_.getChordExtensionAt(TICK_HALF), ChordExtension::Dom7);
+  EXPECT_TRUE(tracker_.hasChordExtensionAt(TICK_HALF));
+  EXPECT_EQ(tracker_.getChordExtensionAt(TICK_HALF - 1), ChordExtension::None);
+  EXPECT_EQ(tracker_.getChordExtensionAt(TICKS_PER_BAR), ChordExtension::None);
+}
+
+TEST_F(ChordProgressionTrackerTest, RegisterChordExtensionStoresPlannedPlainTriad) {
+  tracker_.registerChordExtension(0, TICKS_PER_BAR, ChordExtension::None);
+
+  EXPECT_TRUE(tracker_.hasChordExtensionAt(0));
+  EXPECT_EQ(tracker_.getChordExtensionAt(0), ChordExtension::None);
+}
+
+TEST_F(ChordProgressionTrackerTest, RegisterChordExtensionSplitsRange) {
+  tracker_.registerChordExtension(TICK_HALF, TICKS_PER_BAR + TICK_HALF, ChordExtension::Maj7);
+
+  EXPECT_FALSE(tracker_.hasChordExtensionAt(TICK_HALF - 1));
+  EXPECT_TRUE(tracker_.hasChordExtensionAt(TICK_HALF));
+  EXPECT_EQ(tracker_.getChordExtensionAt(TICK_HALF), ChordExtension::Maj7);
+  EXPECT_EQ(tracker_.getChordExtensionAt(TICKS_PER_BAR + TICK_HALF - 1), ChordExtension::Maj7);
+  EXPECT_FALSE(tracker_.hasChordExtensionAt(TICKS_PER_BAR + TICK_HALF));
+}
+
+TEST_F(ChordProgressionTrackerTest, RegisterChordExtensionPreservesSecondaryDominant) {
+  tracker_.registerSecondaryDominant(TICK_HALF, TICKS_PER_BAR, 2);
+  tracker_.registerChordExtension(0, TICKS_PER_BAR, ChordExtension::Maj7);
+
+  EXPECT_EQ(tracker_.getChordExtensionAt(TICK_HALF - 1), ChordExtension::Maj7);
+  EXPECT_EQ(tracker_.getChordExtensionAt(TICK_HALF), ChordExtension::Dom7);
+}
+
+TEST_F(ChordProgressionTrackerTest, CollisionDetectorAllowsDominantTritoneOnV) {
+  TrackCollisionDetector detector;
+  Tick v_bar = TICKS_PER_BAR;
+  detector.registerNote(v_bar, TICKS_PER_BEAT, 65, TrackRole::Chord);  // F in G7
+
+  EXPECT_TRUE(
+      detector.isConsonantWithOtherTracks(71, v_bar, TICKS_PER_BEAT, TrackRole::Motif, &tracker_))
+      << "B-F tritone is a chord-defining interval on V7 and should be allowed";
+
+  CollisionInfo info =
+      detector.getCollisionInfo(71, v_bar, TICKS_PER_BEAT, TrackRole::Motif, &tracker_);
+  EXPECT_FALSE(info.has_collision);
+}
+
+TEST_F(ChordProgressionTrackerTest, CollisionDetectorAllowsRegisteredSecondaryDominantTritone) {
+  ChordProgressionTracker tracker;
+  tracker.initialize(arrangement_, progression_, Mood::StraightPop);
+  tracker.registerSecondaryDominant(TICK_HALF, TICKS_PER_BAR, 0);  // C7: C-E-G-Bb
+
+  TrackCollisionDetector detector;
+  detector.registerNote(TICK_HALF, TICKS_PER_BEAT, 70, TrackRole::Chord);  // Bb
+
+  EXPECT_TRUE(detector.isConsonantWithOtherTracks(64, TICK_HALF, TICKS_PER_BEAT, TrackRole::Motif,
+                                                  &tracker))
+      << "E-Bb tritone should be allowed inside a registered C7 secondary dominant";
+}
+
+TEST_F(ChordProgressionTrackerTest, CollisionDetectorAllowsRootMajorSeventhOnTonic) {
+  TrackCollisionDetector detector;
+  detector.registerNote(0, TICKS_PER_BEAT, 60, TrackRole::Chord);  // C
+
+  EXPECT_TRUE(
+      detector.isConsonantWithOtherTracks(71, 0, TICKS_PER_BEAT, TrackRole::Motif, &tracker_))
+      << "B over C should be allowed when treated as Imaj7 color";
 }
 
 // ============================================================================

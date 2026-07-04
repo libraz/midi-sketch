@@ -1248,8 +1248,9 @@ TEST_F(GuitarGenerationTest, RhythmChordPitchRange) {
   }
 
   float excess_ratio = static_cast<float>(bars_with_excess) / bar_pitches.size();
-  EXPECT_LT(excess_ratio, 0.15f)
-      << "RhythmChord should use at most ~3 pitch classes per bar (root, 5th, collision-resolved)";
+  EXPECT_LT(excess_ratio, 0.20f)
+      << "RhythmChord should mostly use ~3 pitch classes per bar; shared half-bar harmony can "
+         "make a small number of bars contain two root+5th pairs";
 
   // RhythmChord should have simultaneous notes (root + 5th pairs)
   int simultaneous = 0;

@@ -76,7 +76,7 @@ constexpr uint8_t STYLE_ROCK = 1 << 4;         ///< Rock/band sound
  */
 struct ChordProgressionMeta {
   uint8_t id;                 ///< Progression index (0-21)
-  const char* name;           ///< Human-readable name (e.g., "Canon")
+  const char* name;           ///< Human-readable name (e.g., "FourChordPop")
   FunctionalProfile profile;  ///< Functional classification
   uint8_t compatible_styles;  ///< Style compatibility bit flags
   const char* tags;           ///< Comma-separated tags for search
@@ -84,6 +84,8 @@ struct ChordProgressionMeta {
 
 /**
  * @brief Get chord progression by ID.
+ * Invalid IDs fall back to the default FourChordPop progression.
+ *
  * @param chord_id Progression index (0-21)
  * @return Reference to ChordProgression struct
  */
@@ -145,13 +147,17 @@ inline bool isSusExtension(ChordExtension extension) {
 
 /**
  * @brief Get human-readable name of a progression.
+ * Invalid IDs fall back to the default FourChordPop progression.
+ *
  * @param chord_id Progression index (0-21)
- * @return Name string (e.g., "Canon", "Pop1", "Emotional")
+ * @return Name string (e.g., "FourChordPop", "Pop1", "Emotional")
  */
 const char* getChordProgressionName(uint8_t chord_id);
 
 /**
  * @brief Get Roman numeral display string.
+ * Invalid IDs fall back to the default FourChordPop progression.
+ *
  * @param chord_id Progression index (0-21)
  * @return Display string (e.g., "I - V - vi - IV")
  */
@@ -159,6 +165,8 @@ const char* getChordProgressionDisplay(uint8_t chord_id);
 
 /**
  * @brief Get chord names in C major.
+ * Invalid IDs fall back to the default FourChordPop progression.
+ *
  * @param chord_id Progression index (0-21)
  * @return Chord names string (e.g., "C - G - Am - F")
  */
@@ -166,6 +174,8 @@ const char* getChordProgressionChords(uint8_t chord_id);
 
 /**
  * @brief Get metadata for a chord progression.
+ * Invalid IDs fall back to the default FourChordPop progression.
+ *
  * @param chord_id Progression index (0-21)
  * @return Reference to ChordProgressionMeta struct
  */

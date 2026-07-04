@@ -604,14 +604,18 @@ TEST(MotifOverrideE2ETest, MotifMotionStepwiseVsWideLeap) {
   SongConfig config_stepwise = createDefaultSongConfig(0);
   config_stepwise.composition_style = CompositionStyle::BackgroundMotif;
   config_stepwise.motif_motion = 0;  // Stepwise
+  config_stepwise.chord_progression_id = 0;
   config_stepwise.seed = 42;
+  config_stepwise.blueprint_id = 0;
   gen_stepwise.generateFromConfig(config_stepwise);
 
   Generator gen_wideleap;
   SongConfig config_wideleap = createDefaultSongConfig(0);
   config_wideleap.composition_style = CompositionStyle::BackgroundMotif;
   config_wideleap.motif_motion = 2;  // WideLeap
+  config_wideleap.chord_progression_id = 0;
   config_wideleap.seed = 42;
+  config_wideleap.blueprint_id = 0;
   gen_wideleap.generateFromConfig(config_wideleap);
 
   // Calculate average interval for each

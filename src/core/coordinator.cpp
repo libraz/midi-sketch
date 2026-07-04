@@ -9,6 +9,7 @@
 #include <optional>
 
 #include "core/chord.h"
+#include "core/chord_extension_planner.h"
 #include "core/chord_utils.h"
 #include "core/harmony_coordinator.h"
 #include "core/midi_track.h"
@@ -35,6 +36,69 @@ namespace midisketch {
 Coordinator::Coordinator() : harmony_(std::make_unique<HarmonyCoordinator>()), rng_(42) {}
 
 Coordinator::~Coordinator() = default;
+
+namespace {
+
+void planAndRegisterChordExtensions(const Arrangement& arrangement, const GeneratorParams& params,
+                                    IHarmonyCoordinator& harmony) {
+  if (!params.chord_extension.enable_sus && !params.chord_extension.enable_7th &&
+      !params.chord_extension.enable_9th) {
+    return;
+  }
+
+  constexpr uint32_t kChordExtensionSalt = 0xC07DE719;
+  uint32_t extension_seed = params.seed ^ kChordExtensionSalt;
+  if (extension_seed == 0) extension_seed = kChordExtensionSalt;
+  std::mt19937 extension_rng(extension_seed);
+
+  ChordExtension prev_extension = ChordExtension::None;
+
+  for (const auto& section : arrangement.sections()) {
+    for (uint8_t bar = 0; bar < section.bars; ++bar) {
+      Tick bar_start = section.start_tick + bar * TICKS_PER_BAR;
+      Tick bar_end = bar_start + TICKS_PER_BAR;
+
+      for (Tick entry_start = bar_start; entry_start < bar_end;) {
+        Tick next_entry = harmony.getNextChordEntryTick(entry_start);
+        Tick entry_end = (next_entry > entry_start && next_entry < bar_end) ? next_entry : bar_end;
+
+        if (harmony.isSecondaryDominantAt(entry_start)) {
+          prev_extension = harmony.getChordExtensionAt(entry_start);
+          entry_start = entry_end;
+          continue;
+        }
+
+        int8_t degree = harmony.getChordDegreeAt(entry_start);
+        int8_t next_degree = harmony.getChordDegreeAt(entry_end);
+        int8_t prev_degree =
+            (entry_start >= TICKS_PER_BAR) ? harmony.getChordDegreeAt(entry_start - 1) : -1;
+
+        bool is_minor_chord = (degree == 1 || degree == 2 || degree == 5);
+        bool is_dominant_chord = (degree == 4);
+        ReharmonizationResult reharm =
+            reharmonizeForSection(degree, section.type, is_minor_chord, is_dominant_chord,
+                                  params.chord_extension.enable_7th, next_degree, prev_degree);
+
+        ChordExtension extension = selectChordExtension(
+            reharm.degree, section.type, bar, section.bars, params.chord_extension, extension_rng);
+
+        if (reharm.extension_overridden) {
+          extension = reharm.extension;
+        }
+
+        if (isSusExtension(prev_extension) && isSusExtension(extension)) {
+          extension = ChordExtension::None;
+        }
+
+        harmony.registerChordExtension(entry_start, entry_end, extension);
+        prev_extension = extension;
+        entry_start = entry_end;
+      }
+    }
+  }
+}
+
+}  // namespace
 
 // ============================================================================
 // Initialization
@@ -84,6 +148,7 @@ void Coordinator::initialize(const GeneratorParams& params) {
     planAndRegisterSecondaryDominants(arrangement_, progression, params.mood, sec_dom_rng,
                                       *harmony_);
   }
+  planAndRegisterChordExtensions(arrangement_, params_, *harmony_);
 
   // Set track priorities in harmony coordinator
   auto* harmony_coord = dynamic_cast<HarmonyCoordinator*>(harmony_.get());
@@ -166,6 +231,7 @@ void Coordinator::initialize(const GeneratorParams& params, const Arrangement& a
     planAndRegisterSecondaryDominants(arrangement_, progression, params.mood, sec_dom_rng,
                                       *harmony);
   }
+  planAndRegisterChordExtensions(arrangement_, params_, *harmony);
 
   // Set track priorities in external harmony coordinator
   auto* harmony_coord = dynamic_cast<HarmonyCoordinator*>(harmony);

@@ -1140,6 +1140,11 @@ uint8_t selectBestCandidate(const std::vector<PitchCandidate>& candidates, uint8
       }
     }
 
+    int interval_class = abs_interval % 12;
+    if (abs_interval >= 10 && (interval_class == 1 || interval_class == 11)) {
+      melodic_score -= 80.0f;
+    }
+
     score += melodic_score * sw.melodic;
 
     // === Dimension 2: Harmonic stability (max 20) ===

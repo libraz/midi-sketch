@@ -54,6 +54,14 @@ class IHarmonyContext : public ICollisionDetector, public INoteRegistration {
   virtual void registerSecondaryDominant(Tick start, Tick end, int8_t degree) = 0;
 
   /**
+   * @brief Register the planned extension for an existing chord range.
+   *
+   * Used by Coordinator before track generation so every track sees the same
+   * chord quality that the chord track will voice.
+   */
+  virtual void registerChordExtension(Tick start, Tick end, ChordExtension extension) = 0;
+
+  /**
    * @brief Check if a secondary dominant is active at a given tick.
    * @param tick Position in ticks
    * @return true if a pre-registered secondary dominant covers this tick

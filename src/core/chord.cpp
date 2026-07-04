@@ -5,8 +5,6 @@
 
 #include "core/chord.h"
 
-#include <algorithm>
-
 #include "core/pitch_utils.h"
 #include "core/section_properties.h"
 
@@ -18,7 +16,7 @@ namespace {
 // Format: {{degrees...}, length}
 constexpr ChordProgression PROGRESSIONS[22] = {
     // 4-chord progressions (length = 4)
-    {{0, 4, 5, 3, -1, -1, -1, -1}, 4},   // 0: Canon - I - V - vi - IV
+    {{0, 4, 5, 3, -1, -1, -1, -1}, 4},   // 0: FourChordPop - I - V - vi - IV
     {{0, 5, 3, 4, -1, -1, -1, -1}, 4},   // 1: Pop1 - I - vi - IV - V
     {{5, 3, 0, 4, -1, -1, -1, -1}, 4},   // 2: Axis - vi - IV - I - V
     {{3, 0, 4, 5, -1, -1, -1, -1}, 4},   // 3: Pop2 - IV - I - V - vi
@@ -33,19 +31,19 @@ constexpr ChordProgression PROGRESSIONS[22] = {
     {{0, 3, 10, 0, -1, -1, -1, -1}, 4},  // 12: Rock2 - I - IV - bVII - I
     {{0, 4, 5, 2, -1, -1, -1, -1}, 4},   // 13: Extended4 - I - V - vi - iii
     {{5, 0, 4, 3, -1, -1, -1, -1}, 4},   // 14: Minor3 - vi - I - V - IV
-    {{5, 3, 4, 0, -1, -1, -1, -1}, 4},   // 15: MinorPop - vi - IV - V - I
+    {{5, 8, 10, 0, -1, -1, -1, -1}, 4},  // 15: AeolianPop - vi - bVI - bVII - I
     {{5, 2, 3, 0, -1, -1, -1, -1}, 4},   // 16: AnimeHighEnergy1 - vi - iii - IV - I
     {{1, 4, 0, 5, -1, -1, -1, -1}, 4},   // 17: JazzPop - ii - V - I - vi
     {{5, 1, 4, 0, -1, -1, -1, -1}, 4},   // 18: AnimeHighEnergy2 - vi - ii - V - I
     {{0, 5, 1, 4, -1, -1, -1, -1}, 4},   // 19: CityPop - I - vi - ii - V
     // 5-chord progressions (length = 5)
-    {{0, 4, 5, 2, 3, -1, -1, -1}, 5},  // 20: Extended5 - I - V - vi - iii - IV
-    {{5, 3, 0, 4, 1, -1, -1, -1}, 5},  // 21: Emotional5 - vi - IV - I - V - ii
+    {{0, 4, 5, 2, 3, -1, -1, -1}, 5},    // 20: Extended5 - I - V - vi - iii - IV
+    {{5, 12, 13, 4, 0, -1, -1, -1}, 5},  // 21: NeapolitanPop - vi - iv - bII - V - I
 };
 
 // Chord progression names
 const char* PROGRESSION_NAMES[22] = {
-    "Canon",
+    "FourChordPop",
     "Pop1",
     "Axis",
     "Pop2",
@@ -60,18 +58,18 @@ const char* PROGRESSION_NAMES[22] = {
     "Rock2",
     "Extended4",
     "Minor3",
-    "MinorPop",
+    "AeolianPop",
     "AnimeHighEnergy1",
     "JazzPop",
     "AnimeHighEnergy2",
     "CityPop",
     "Extended5",
-    "Emotional5",
+    "NeapolitanPop",
 };
 
 // Chord progression display strings (Roman numeral notation)
 const char* PROGRESSION_ROMAN[22] = {
-    "I - V - vi - IV",        // Canon
+    "I - V - vi - IV",        // FourChordPop
     "I - vi - IV - V",        // Pop1
     "vi - IV - I - V",        // Axis
     "IV - I - V - vi",        // Pop2
@@ -86,46 +84,46 @@ const char* PROGRESSION_ROMAN[22] = {
     "I - IV - bVII - I",      // Rock2
     "I - V - vi - iii",       // Extended4
     "vi - I - V - IV",        // Minor3
-    "vi - IV - V - I",        // MinorPop
+    "vi - bVI - bVII - I",    // AeolianPop
     "vi - iii - IV - I",      // AnimeHighEnergy1
     "ii - V - I - vi",        // JazzPop
     "vi - ii - V - I",        // AnimeHighEnergy2
     "I - vi - ii - V",        // CityPop
     "I - V - vi - iii - IV",  // Extended5
-    "vi - IV - I - V - ii",   // Emotional5
+    "vi - iv - bII - V - I",  // NeapolitanPop
 };
 
 // Chord progression display strings (C major chord names)
 const char* PROGRESSION_CHORDS[22] = {
-    "C - G - Am - F",       // Canon
-    "C - Am - F - G",       // Pop1
-    "Am - F - C - G",       // Axis
-    "F - C - G - Am",       // Pop2
-    "C - F - G - C",        // Classic
-    "C - F - Am - G",       // Pop3
-    "F - G - Em - Am",      // Oudou (Royal Road progression)
-    "Am - G - F - G",       // Minor1
-    "Am - F - G - C",       // Minor2
-    "C - G - Em - F",       // Pop4
-    "C - Em - F - G",       // Pop5
-    "C - Bb - F - C",       // Rock1
-    "C - F - Bb - C",       // Rock2
-    "C - G - Am - Em",      // Extended4
-    "Am - C - G - F",       // Minor3
-    "Am - F - G - C",       // MinorPop
-    "Am - Em - F - C",      // AnimeHighEnergy1
-    "Dm - G - C - Am",      // JazzPop
-    "Am - Dm - G - C",      // AnimeHighEnergy2
-    "C - Am - Dm - G",      // CityPop
-    "C - G - Am - Em - F",  // Extended5
-    "Am - F - C - G - Dm",  // Emotional5
+    "C - G - Am - F",        // FourChordPop
+    "C - Am - F - G",        // Pop1
+    "Am - F - C - G",        // Axis
+    "F - C - G - Am",        // Pop2
+    "C - F - G - C",         // Classic
+    "C - F - Am - G",        // Pop3
+    "F - G - Em - Am",       // Oudou (Royal Road progression)
+    "Am - G - F - G",        // Minor1
+    "Am - F - G - C",        // Minor2
+    "C - G - Em - F",        // Pop4
+    "C - Em - F - G",        // Pop5
+    "C - Bb - F - C",        // Rock1
+    "C - F - Bb - C",        // Rock2
+    "C - G - Am - Em",       // Extended4
+    "Am - C - G - F",        // Minor3
+    "Am - Ab - Bb - C",      // AeolianPop
+    "Am - Em - F - C",       // AnimeHighEnergy1
+    "Dm - G - C - Am",       // JazzPop
+    "Am - Dm - G - C",       // AnimeHighEnergy2
+    "C - Am - Dm - G",       // CityPop
+    "C - G - Am - Em - F",   // Extended5
+    "Am - Fm - Db - G - C",  // NeapolitanPop
 };
 
 // Chord progression metadata with style compatibility
 // Compatible styles: STYLE_MINIMAL=1, STYLE_DANCE=2, STYLE_IDOL_STD=4, STYLE_IDOL_ENERGY=8,
 // STYLE_ROCK=16
 constexpr ChordProgressionMeta PROGRESSION_META[22] = {
-    {0, "Canon", FunctionalProfile::Loop, 0b00001111, "4ch_loop,diatonic"},
+    {0, "FourChordPop", FunctionalProfile::Loop, 0b00001111, "4ch_loop,diatonic"},
     {1, "Pop1", FunctionalProfile::Loop, 0b00001111, "4ch_loop,diatonic"},
     {2, "Axis", FunctionalProfile::Loop, 0b00011011, "4ch_loop,minor_feel"},
     {3, "Pop2", FunctionalProfile::Loop, 0b00000111, "4ch_loop,diatonic"},
@@ -140,14 +138,20 @@ constexpr ChordProgressionMeta PROGRESSION_META[22] = {
     {12, "Rock2", FunctionalProfile::TensionBuild, 0b00010000, "bVII,rock"},
     {13, "Extended4", FunctionalProfile::Stable, 0b00000011, "iii_usage,extended"},
     {14, "Minor3", FunctionalProfile::Loop, 0b00001010, "minor_feel,dance"},
-    {15, "MinorPop", FunctionalProfile::TensionBuild, 0b00001011, "minor_start,90s"},
+    {15, "AeolianPop", FunctionalProfile::TensionBuild, 0b00011011,
+     "minor_start,borrowed,bVI,bVII"},
     {16, "AnimeHighEnergy1", FunctionalProfile::Loop, 0b00001010, "anime,minor_start"},
     {17, "JazzPop", FunctionalProfile::CadenceStrong, 0b00000011, "ii_V_I,jazz"},
     {18, "AnimeHighEnergy2", FunctionalProfile::CadenceStrong, 0b00001010, "turnaround,anime"},
     {19, "CityPop", FunctionalProfile::Stable, 0b00000011, "city_pop,groove"},
     {20, "Extended5", FunctionalProfile::Loop, 0b00000111, "5ch_loop,extended"},
-    {21, "Emotional5", FunctionalProfile::TensionBuild, 0b00001010, "5ch_loop,emotional"},
+    {21, "NeapolitanPop", FunctionalProfile::CadenceStrong, 0b00001011, "5ch_loop,borrowed,iv,bII"},
 };
+
+template <typename T, size_t N>
+constexpr size_t safeProgressionIndex(uint8_t chord_id, const T (&)[N]) {
+  return chord_id < N ? static_cast<size_t>(chord_id) : 0;
+}
 
 // Builds a chord from scale degree.
 // Degrees: I=0, ii=1, iii=2, IV=3, V=4, vi=5, vii=6, bVI=8, bVII=10, bIII=11,
@@ -265,8 +269,7 @@ int degreeToSemitone(int8_t degree) {
 }
 
 const ChordProgression& getChordProgression(uint8_t chord_id) {
-  constexpr size_t count = sizeof(PROGRESSIONS) / sizeof(PROGRESSIONS[0]);
-  return PROGRESSIONS[std::min(static_cast<size_t>(chord_id), count - 1)];
+  return PROGRESSIONS[safeProgressionIndex(chord_id, PROGRESSIONS)];
 }
 
 uint8_t degreeToRoot(int8_t degree, Key key) {
@@ -370,23 +373,19 @@ Chord getExtendedChord(int8_t degree, ChordExtension extension) {
 }
 
 const char* getChordProgressionName(uint8_t chord_id) {
-  constexpr size_t count = sizeof(PROGRESSION_NAMES) / sizeof(PROGRESSION_NAMES[0]);
-  return PROGRESSION_NAMES[std::min(static_cast<size_t>(chord_id), count - 1)];
+  return PROGRESSION_NAMES[safeProgressionIndex(chord_id, PROGRESSION_NAMES)];
 }
 
 const char* getChordProgressionDisplay(uint8_t chord_id) {
-  constexpr size_t count = sizeof(PROGRESSION_ROMAN) / sizeof(PROGRESSION_ROMAN[0]);
-  return PROGRESSION_ROMAN[std::min(static_cast<size_t>(chord_id), count - 1)];
+  return PROGRESSION_ROMAN[safeProgressionIndex(chord_id, PROGRESSION_ROMAN)];
 }
 
 const char* getChordProgressionChords(uint8_t chord_id) {
-  constexpr size_t count = sizeof(PROGRESSION_CHORDS) / sizeof(PROGRESSION_CHORDS[0]);
-  return PROGRESSION_CHORDS[std::min(static_cast<size_t>(chord_id), count - 1)];
+  return PROGRESSION_CHORDS[safeProgressionIndex(chord_id, PROGRESSION_CHORDS)];
 }
 
 const ChordProgressionMeta& getChordProgressionMeta(uint8_t chord_id) {
-  constexpr size_t count = sizeof(PROGRESSION_META) / sizeof(PROGRESSION_META[0]);
-  return PROGRESSION_META[std::min(static_cast<size_t>(chord_id), count - 1)];
+  return PROGRESSION_META[safeProgressionIndex(chord_id, PROGRESSION_META)];
 }
 
 std::vector<uint8_t> getChordProgressionsByStyle(uint8_t style_mask) {

@@ -12,6 +12,7 @@
 #include <iostream>
 #include <sstream>
 
+#include "core/chord.h"
 #include "core/chord_progression_tracker.h"
 #include "core/midi_track.h"
 #include "core/pitch_utils.h"
@@ -24,6 +25,26 @@ namespace {
 bool isHarmonicTrack(TrackRole role) {
   return role == TrackRole::Bass || role == TrackRole::Chord || role == TrackRole::Vocal ||
          role == TrackRole::Motif || role == TrackRole::Aux || role == TrackRole::Guitar;
+}
+
+bool isDominantFunctionContext(int8_t chord_degree, const ChordProgressionTracker* chord_tracker,
+                               Tick tick) {
+  int normalized = ((chord_degree % 7) + 7) % 7;
+  return normalized == 4 || normalized == 6 ||
+         (chord_tracker != nullptr && chord_tracker->isSecondaryDominantAt(tick));
+}
+
+bool isRootMajorSeventhContext(uint8_t a, uint8_t b, int8_t chord_degree) {
+  int normalized = ((chord_degree % 7) + 7) % 7;
+  if (normalized != 0 && normalized != 3) {
+    return false;
+  }
+
+  int root_pc = ((degreeToSemitone(chord_degree) % 12) + 12) % 12;
+  int maj7_pc = (root_pc + 11) % 12;
+  int a_pc = a % 12;
+  int b_pc = b % 12;
+  return (a_pc == root_pc && b_pc == maj7_pc) || (b_pc == root_pc && a_pc == maj7_pc);
 }
 
 }  // namespace
@@ -124,17 +145,20 @@ bool TrackCollisionDetector::isConsonantWithOtherTracks(
       // gate counts every such overlap.
       if (note.track != TrackRole::Vocal) {
         Tick overlap_duration = std::min(end, note.end) - std::max(start, note.start);
-        if (isToleratedPassingTone(actual_semitones, overlap_duration, pitch, note.pitch, start,
-                                   exclude, note.track)) {
+        Tick overlap_start = std::max(start, note.start);
+        if (isToleratedPassingTone(actual_semitones, overlap_duration, pitch, note.pitch,
+                                   overlap_start, exclude, note.track)) {
           continue;
         }
       }
 
-      // Special case: Tritone between harmonic tracks is ALWAYS dissonant
+      // Special case: tritone between harmonic tracks is dissonant except in
+      // dominant-function contexts (V, vii°, registered secondary dominants).
       if (exclude_is_harmonic) {
         if (isHarmonicTrack(note.track)) {
           int pc_interval = actual_semitones % 12;
-          if (pc_interval == 6 && actual_semitones < 36) {
+          if (pc_interval == 6 && actual_semitones < 36 &&
+              !isDominantFunctionContext(chord_degree, chord_tracker, start)) {
             return false;
           }
         }
@@ -148,8 +172,7 @@ bool TrackCollisionDetector::isConsonantWithOtherTracks(
         // Compound tritone (e.g. vocal B4 over bass F3 = aug 11th) is
         // dissonant on non-dominant chords for ANY track pair.
         if (pc_interval == 6 && actual_semitones <= 24) {
-          int normalized = ((chord_degree % 7) + 7) % 7;
-          if (normalized != 4 && normalized != 6) {
+          if (!isDominantFunctionContext(chord_degree, chord_tracker, start)) {
             return false;
           }
         }
@@ -163,6 +186,14 @@ bool TrackCollisionDetector::isConsonantWithOtherTracks(
           if (bass_side_pitch < 48) {
             return false;
           }
+        }
+
+        if (pc_interval == 11 && isRootMajorSeventhContext(pitch, note.pitch, chord_degree)) {
+          continue;
+        }
+
+        if (pc_interval == 6 && isDominantFunctionContext(chord_degree, chord_tracker, start)) {
+          continue;
         }
       }
 
@@ -203,8 +234,9 @@ CollisionInfo TrackCollisionDetector::getCollisionInfo(
       // Duration-aware passing tone tolerance (consistent with isConsonantWithOtherTracks)
       if (note.track != TrackRole::Vocal) {
         Tick overlap_duration = std::min(end, note.end) - std::max(start, note.start);
-        if (isToleratedPassingTone(actual_semitones, overlap_duration, pitch, note.pitch, start,
-                                   exclude, note.track)) {
+        Tick overlap_start = std::max(start, note.start);
+        if (isToleratedPassingTone(actual_semitones, overlap_duration, pitch, note.pitch,
+                                   overlap_start, exclude, note.track)) {
           continue;
         }
       }
@@ -212,7 +244,8 @@ CollisionInfo TrackCollisionDetector::getCollisionInfo(
       if (exclude_is_harmonic) {
         if (isHarmonicTrack(note.track)) {
           int pc_interval = actual_semitones % 12;
-          if (pc_interval == 6 && actual_semitones < 36) {
+          if (pc_interval == 6 && actual_semitones < 36 &&
+              !isDominantFunctionContext(chord_degree, chord_tracker, start)) {
             info.has_collision = true;
             info.colliding_pitch = note.pitch;
             info.colliding_track = note.track;
@@ -220,6 +253,15 @@ CollisionInfo TrackCollisionDetector::getCollisionInfo(
             return info;
           }
         }
+      }
+
+      if ((actual_semitones % 12) == 11 &&
+          isRootMajorSeventhContext(pitch, note.pitch, chord_degree)) {
+        continue;
+      }
+      if ((actual_semitones % 12) == 6 &&
+          isDominantFunctionContext(chord_degree, chord_tracker, start)) {
+        continue;
       }
 
       if (isDissonantActualInterval(actual_semitones, chord_degree)) {
@@ -484,6 +526,12 @@ void TrackCollisionDetector::rebuildBeatIndex() {
 
 Tick TrackCollisionDetector::getMaxSafeEnd(Tick note_start, uint8_t pitch, TrackRole exclude,
                                            Tick desired_end) const {
+  return getMaxSafeEnd(note_start, pitch, exclude, desired_end, nullptr);
+}
+
+Tick TrackCollisionDetector::getMaxSafeEnd(Tick note_start, uint8_t pitch, TrackRole exclude,
+                                           Tick desired_end,
+                                           const ChordProgressionTracker* chord_tracker) const {
   Tick safe_end = desired_end;
 
   std::vector<size_t> indices;
@@ -498,7 +546,10 @@ Tick TrackCollisionDetector::getMaxSafeEnd(Tick note_start, uint8_t pitch, Track
     if (note.start >= desired_end) continue;
 
     int actual_semitones = std::abs(static_cast<int>(pitch) - static_cast<int>(note.pitch));
-    bool is_dissonant = isDissonantActualInterval(actual_semitones, 0);
+    Tick overlap_start = std::max(note_start, note.start);
+    int8_t chord_degree =
+        chord_tracker != nullptr ? chord_tracker->getChordDegreeAt(overlap_start) : 0;
+    bool is_dissonant = isDissonantActualInterval(actual_semitones, chord_degree);
 
     if (is_dissonant) {
       if (note.start > note_start && note.start < safe_end) {

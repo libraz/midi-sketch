@@ -325,6 +325,31 @@ TEST(SongConfigJsonTest, AllStylePresetsRoundtrip) {
   }
 }
 
+TEST(AccompanimentConfigJsonTest, EmptyJsonUsesCppGuitarDefault) {
+  json::Parser p("{}");
+  AccompanimentConfig restored;
+  restored.readFrom(p);
+
+  EXPECT_TRUE(restored.guitar_enabled);
+}
+
+TEST(AccompanimentConfigJsonTest, GuitarEnabledRoundtripPreservesExplicitFalse) {
+  AccompanimentConfig original;
+  original.guitar_enabled = false;
+
+  std::ostringstream oss;
+  json::Writer w(oss);
+  w.beginObject();
+  original.writeTo(w);
+  w.endObject();
+
+  json::Parser p(oss.str());
+  AccompanimentConfig restored;
+  restored.readFrom(p);
+
+  EXPECT_FALSE(restored.guitar_enabled);
+}
+
 // ============================================================================
 // JSON C API Tests
 // ============================================================================
@@ -358,6 +383,10 @@ TEST(JsonApiTest, ValidateConfigJson) {
   const char* invalid_json = R"({"style_preset_id":99})";
   EXPECT_NE(midisketch_validate_config_json(invalid_json, strlen(invalid_json)),
             MIDISKETCH_CONFIG_OK);
+}
+
+TEST(JsonApiTest, ValidateConfigJsonNullInputReportsInvalidJson) {
+  EXPECT_EQ(midisketch_validate_config_json(nullptr, 0), MIDISKETCH_CONFIG_INVALID_JSON);
 }
 
 TEST(JsonApiTest, GenerateVocalFromJson) {

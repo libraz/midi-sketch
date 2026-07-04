@@ -1445,6 +1445,7 @@ TEST(UltraVocaloidTest, ChorusHasMore32ndNotesThanVerse) {
   config.seed = 12345;
   config.vocal_style = VocalStylePreset::UltraVocaloid;
   config.form = StructurePattern::FullPop;  // Has both A and Chorus sections
+  config.blueprint_id = 0;
 
   gen.generateFromConfig(config);
   const auto& song = gen.getSong();
@@ -1543,6 +1544,7 @@ TEST(UltraVocaloidTest, StandardStyleHasFewerShortNotes) {
   config_ultra.seed = 12345;
   config_ultra.vocal_style = VocalStylePreset::UltraVocaloid;
   config_ultra.form = StructurePattern::FullPop;
+  config_ultra.blueprint_id = 0;
   gen_ultra.generateFromConfig(config_ultra);
 
   Generator gen_standard;
@@ -1550,6 +1552,7 @@ TEST(UltraVocaloidTest, StandardStyleHasFewerShortNotes) {
   config_standard.seed = 12345;
   config_standard.vocal_style = VocalStylePreset::Standard;
   config_standard.form = StructurePattern::FullPop;
+  config_standard.blueprint_id = 0;
   gen_standard.generateFromConfig(config_standard);
 
   const auto& ultra_notes = gen_ultra.getSong().vocal().notes();
@@ -1628,6 +1631,7 @@ TEST(UltraVocaloidTest, ChorusNotesOnThirtysecondGrid) {
   config.seed = 12345;
   config.vocal_style = VocalStylePreset::UltraVocaloid;
   config.form = StructurePattern::FullPop;
+  config.blueprint_id = 0;
 
   gen.generateFromConfig(config);
   const auto& song = gen.getSong();

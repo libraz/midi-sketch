@@ -52,6 +52,13 @@ class ChordProgressionTracker : public IChordLookup {
   std::vector<int> getChordTonesAt(Tick tick) const override;
 
   /**
+   * @brief Get explicit chord extension for the active chord entry.
+   */
+  ChordExtension getChordExtensionAt(Tick tick) const override;
+
+  bool hasChordExtensionAt(Tick tick) const override;
+
+  /**
    * @brief Get the tick of the next chord change after the given tick.
    * @param after Position to search from
    * @return Tick of next chord change, or 0 if none found
@@ -84,6 +91,9 @@ class ChordProgressionTracker : public IChordLookup {
    */
   void registerSecondaryDominant(Tick start, Tick end, int8_t degree);
 
+  /// @brief Register an extension for existing chord entries in a tick range.
+  void registerChordExtension(Tick start, Tick end, ChordExtension extension);
+
   /// @brief Check if a secondary dominant is active at a given tick.
   /// @param tick Position in ticks
   /// @return true if a pre-registered secondary dominant covers this tick
@@ -101,6 +111,8 @@ class ChordProgressionTracker : public IChordLookup {
     Tick start;
     Tick end;
     int8_t degree;
+    ChordExtension extension = ChordExtension::None;
+    bool extension_planned = false;
     bool is_secondary_dominant = false;
   };
 

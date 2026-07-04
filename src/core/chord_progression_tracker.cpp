@@ -21,7 +21,21 @@ void ChordProgressionTracker::initialize(const Arrangement& arrangement,
   const auto& sections = arrangement.sections();
 
   for (const auto& section : sections) {
-    HarmonicRhythmInfo harmonic = HarmonicRhythmInfo::forSection(section.type, mood);
+    HarmonicRhythmInfo harmonic = HarmonicRhythmInfo::forSection(section, mood);
+
+    auto degreeForSlot = [&](int chord_idx) {
+      int8_t degree = progression.degrees[chord_idx];
+      int8_t next_degree = progression.degrees[(chord_idx + 1) % progression.length];
+      int8_t prev_degree =
+          progression.degrees[(chord_idx + progression.length - 1) % progression.length];
+      bool is_minor = (degree == 1 || degree == 2 || degree == 5);
+      bool is_dominant = (degree == 4);
+      // Track only degree-level reharmonization here. Extension color remains a
+      // voicing/generation concern until the timeline stores chord quality.
+      return reharmonizeForSection(degree, section.type, is_minor, is_dominant,
+                                   /*enable_7th=*/false, next_degree, prev_degree)
+          .degree;
+    };
 
     for (uint8_t bar = 0; bar < section.bars; ++bar) {
       Tick bar_start = section.start_tick + bar * TICKS_PER_BAR;
@@ -31,12 +45,23 @@ void ChordProgressionTracker::initialize(const Arrangement& arrangement,
       if (harmonic.density == HarmonicDensity::Slow) {
         // Slow: chord changes every 2 bars
         chord_idx = (bar / 2) % progression.length;
+      } else if (harmonic.subdivision == 2) {
+        chord_idx = getChordIndexForSubdividedBar(bar, 0, progression.length);
       } else {
         // Normal/Dense: chord changes every bar
         chord_idx = bar % progression.length;
       }
 
-      int8_t degree = progression.degrees[chord_idx];
+      int8_t degree = degreeForSlot(chord_idx);
+
+      if (harmonic.subdivision == 2) {
+        Tick half_bar = TICKS_PER_BAR / 2;
+        int next_chord_idx = getChordIndexForSubdividedBar(bar, 1, progression.length);
+        int8_t next_degree = degreeForSlot(next_chord_idx);
+        chords_.push_back({bar_start, bar_start + half_bar, degree});
+        chords_.push_back({bar_start + half_bar, bar_start + TICKS_PER_BAR, next_degree});
+        continue;
+      }
 
       // Check if this bar should split for phrase-end anticipation (Dense
       // rhythm) Uses same logic as chord_track for synchronization
@@ -51,7 +76,7 @@ void ChordProgressionTracker::initialize(const Arrangement& arrangement,
 
         // Second half: next chord (anticipation)
         int next_chord_idx = (chord_idx + 1) % progression.length;
-        int8_t next_degree = progression.degrees[next_chord_idx];
+        int8_t next_degree = degreeForSlot(next_chord_idx);
         chords_.push_back({bar_start + half_bar, bar_start + TICKS_PER_BAR, next_degree});
       } else {
         // Normal: one chord for the whole bar
@@ -119,33 +144,62 @@ Tick ChordProgressionTracker::getNextChordEntryTick(Tick after) const {
 
 std::vector<int> ChordProgressionTracker::getChordTonesAt(Tick tick) const {
   int8_t degree = getChordDegreeAt(tick);
-  std::vector<int> tones = getChordTonePitchClasses(degree);
+  ChordExtension extension = getChordExtensionAt(tick);
+  if (extension == ChordExtension::None) {
+    return getChordTonePitchClasses(degree);
+  }
 
-  // Secondary dominants are voiced as Dom7 by the chord track
-  // (getExtendedChord(degree, Dom7)). The base triad lookup above omits the
-  // dominant minor 7th, so other tracks (Motif/Aux/Arpeggio) would pick pitches
-  // without it. Add the minor 7th (interval 10 from the chord root) over a
-  // registered secondary-dominant span so chord-tone selection sees the full
-  // Dom7. Also force a major 3rd (interval 4): a secondary dominant always has
-  // dominant quality even if the underlying diatonic degree is minor.
-  if (isSecondaryDominantAt(tick)) {
-    int root_pc = ((degreeToSemitone(degree) % 12) + 12) % 12;
-    int major_third_pc = (root_pc + 4) % 12;
-    int minor_third_pc = (root_pc + 3) % 12;
-    int seventh_pc = (root_pc + 10) % 12;
-
-    // Replace any minor 3rd with the dominant major 3rd.
-    tones.erase(std::remove(tones.begin(), tones.end(), minor_third_pc), tones.end());
-    if (std::find(tones.begin(), tones.end(), major_third_pc) == tones.end()) {
-      tones.push_back(major_third_pc);
-    }
-    // Add the dominant 7th if not already present.
-    if (std::find(tones.begin(), tones.end(), seventh_pc) == tones.end()) {
-      tones.push_back(seventh_pc);
+  Chord chord = getExtendedChord(degree, extension);
+  int root_pc = ((degreeToSemitone(degree) % 12) + 12) % 12;
+  std::vector<int> tones;
+  tones.reserve(chord.note_count);
+  for (uint8_t i = 0; i < chord.note_count; ++i) {
+    int interval = chord.intervals[i];
+    if (interval >= 0) {
+      int pc = (root_pc + interval) % 12;
+      if (std::find(tones.begin(), tones.end(), pc) == tones.end()) {
+        tones.push_back(pc);
+      }
     }
   }
 
   return tones;
+}
+
+ChordExtension ChordProgressionTracker::getChordExtensionAt(Tick tick) const {
+  if (chords_.empty()) {
+    return ChordExtension::None;
+  }
+
+  auto it = std::upper_bound(chords_.begin(), chords_.end(), tick,
+                             [](Tick t, const ChordInfo& c) { return t < c.start; });
+
+  if (it != chords_.begin()) {
+    --it;
+    if (tick >= it->start && tick < it->end) {
+      return it->extension;
+    }
+  }
+
+  return ChordExtension::None;
+}
+
+bool ChordProgressionTracker::hasChordExtensionAt(Tick tick) const {
+  if (chords_.empty()) {
+    return false;
+  }
+
+  auto it = std::upper_bound(chords_.begin(), chords_.end(), tick,
+                             [](Tick t, const ChordInfo& c) { return t < c.start; });
+
+  if (it != chords_.begin()) {
+    --it;
+    if (tick >= it->start && tick < it->end) {
+      return it->extension_planned;
+    }
+  }
+
+  return false;
 }
 
 ChordBoundaryInfo ChordProgressionTracker::analyzeChordBoundary(uint8_t pitch, Tick start,
@@ -202,6 +256,46 @@ ChordBoundaryInfo ChordProgressionTracker::analyzeChordBoundary(uint8_t pitch, T
 
 void ChordProgressionTracker::clear() { chords_.clear(); }
 
+void ChordProgressionTracker::registerChordExtension(Tick start, Tick end,
+                                                     ChordExtension extension) {
+  if (chords_.empty() || start >= end) {
+    return;
+  }
+
+  std::vector<ChordInfo> updated;
+  updated.reserve(chords_.size() + 2);
+
+  for (const auto& chord : chords_) {
+    if (end <= chord.start || start >= chord.end) {
+      updated.push_back(chord);
+      continue;
+    }
+
+    if (start > chord.start) {
+      ChordInfo before = chord;
+      before.end = start;
+      updated.push_back(before);
+    }
+
+    ChordInfo middle = chord;
+    middle.start = std::max(chord.start, start);
+    middle.end = std::min(chord.end, end);
+    if (!middle.is_secondary_dominant) {
+      middle.extension = extension;
+      middle.extension_planned = true;
+    }
+    updated.push_back(middle);
+
+    if (end < chord.end) {
+      ChordInfo after = chord;
+      after.start = end;
+      updated.push_back(after);
+    }
+  }
+
+  chords_ = std::move(updated);
+}
+
 bool ChordProgressionTracker::isSecondaryDominantAt(Tick tick) const {
   if (chords_.empty()) {
     return false;
@@ -237,11 +331,11 @@ void ChordProgressionTracker::registerSecondaryDominant(Tick start, Tick end, in
       chord.end = start;
 
       // Insert secondary dominant with flag set
-      ChordInfo sec_dom_info{start, end, degree, true};
+      ChordInfo sec_dom_info{start, end, degree, ChordExtension::Dom7, true, true};
 
       // If there's remaining portion after the secondary dominant, add it back
       if (end < original_end) {
-        ChordInfo remaining{end, original_end, original_degree, false};
+        ChordInfo remaining{end, original_end, original_degree, ChordExtension::None, false, false};
         // Insert both after current position
         chords_.insert(chords_.begin() + static_cast<long>(i) + 1, sec_dom_info);
         chords_.insert(chords_.begin() + static_cast<long>(i) + 2, remaining);

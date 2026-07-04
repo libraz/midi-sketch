@@ -116,6 +116,22 @@ TEST(SelectBestCandidateTest, LongNote_SamePitchStagnationPenalty) {
   EXPECT_EQ(short_chosen, 60);  // Only candidate, but confirms it works
 }
 
+TEST(SelectBestCandidateTest, AvoidsWideDissonantFallbackIntervals) {
+  auto major_seventh = makeCandidate(71, true, false, true, 0);  // B4 from C4
+  auto minor_ninth = makeCandidate(73, true, false, true, 0);    // Db5 from C4
+  auto fifth = makeCandidate(67, false, false, true, 0);         // G4 from C4
+
+  PitchSelectionHints hints;
+  hints.prev_pitch = 60;
+  hints.note_duration = 480;
+  hints.tessitura_center = 67;
+
+  EXPECT_EQ(selectBestCandidate({major_seventh, fifth}, 60, hints), 67)
+      << "Wide major-seventh fallback should lose to a consonant alternative";
+  EXPECT_EQ(selectBestCandidate({minor_ninth, fifth}, 60, hints), 67)
+      << "Minor-ninth fallback should lose to a consonant alternative";
+}
+
 TEST(SelectBestCandidateTest, MediumNote_PrefersStepOverLeap) {
   // Medium notes (240-479 ticks) prefer steps (30 pts) over leaps 5-7 (15 pts).
   auto step = makeCandidate(62, true, false, true, 0);

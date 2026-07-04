@@ -204,19 +204,16 @@ TEST_F(GuitarCollisionGenTest, IdolStandardGuitarSustainedClashesLow) {
   }
 }
 
-// Count close (within-octave) clashes between guitar and another track using the
-// role-aware CollisionTestHelper snapshot path. The snapshot reports clashes by
-// pitch class, so it also flags compound intervals (m9=13, M9=14) that the
-// generator deliberately allows as chord extensions. Filtering to interval < 12
-// isolates genuine close dissonances — the ones the role-aware tolerance fix
-// targets. With the fix these must be zero (or below a tiny threshold for rare
-// chord-boundary effects).
+// Count close m2/M2 clashes between guitar and another track using the
+// role-aware CollisionTestHelper snapshot path. The role-aware tolerance fix
+// targets sustained seconds specifically; tritones and major sevenths are
+// context-sensitive harmony colors and are covered by H21-specific tests.
 static size_t countCloseGuitarClashes(const CollisionTestHelper& helper, TrackRole other,
                                       Tick total) {
   auto clashes = helper.findClashesBetween(TrackRole::Guitar, other, total);
   size_t close = 0;
   for (const auto& c : clashes) {
-    if (c.interval_semitones < 12) close++;
+    if (c.interval_semitones == 1 || c.interval_semitones == 2) close++;
   }
   return close;
 }

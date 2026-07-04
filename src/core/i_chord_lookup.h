@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "core/basic_types.h"
+#include "core/section_types.h"
 
 namespace midisketch {
 
@@ -44,6 +45,24 @@ class IChordLookup {
    * @return Vector of pitch classes (0-11) that are chord tones
    */
   virtual std::vector<int> getChordTonesAt(Tick tick) const = 0;
+
+  /**
+   * @brief Get the explicit chord extension active at a specific tick.
+   *
+   * Degree lookup remains the broad harmonic identity; this exposes chord
+   * quality when the shared timeline knows it, such as registered secondary
+   * dominants. Implementations that only track triads may keep the default.
+   */
+  virtual ChordExtension getChordExtensionAt(Tick /*tick*/) const { return ChordExtension::None; }
+
+  /**
+   * @brief Whether the active chord entry has an explicit planned extension.
+   *
+   * This returns true even when the planned extension is ChordExtension::None;
+   * callers can distinguish "planned as plain triad" from "lookup has no
+   * extension timeline".
+   */
+  virtual bool hasChordExtensionAt(Tick /*tick*/) const { return false; }
 
   /**
    * @brief Get the tick of the next chord change after the given tick.

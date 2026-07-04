@@ -145,6 +145,8 @@ TEST_F(PassingToneToleranceTest, ZeroOverlap_Tolerated) {
 class PassingToneCollisionTest : public ::testing::Test {
  protected:
   TrackCollisionDetector detector_;
+  static constexpr Tick kWeakBeat = 480;
+  static constexpr Tick kStrongBeat3 = 960;
 
   // Register a long sustained note from a MELODIC track (Aux). The passing
   // tone tolerance only applies between melodic tracks: sustained harmony
@@ -187,6 +189,23 @@ TEST_F(PassingToneCollisionTest, ShortM1StrongBeatIsDissonant) {
   // Motif plays Db4 (m2) for 120 ticks at strong beat (0) → NOT tolerated
   // (strong beat halves threshold to 60, 120 > 60)
   EXPECT_FALSE(detector_.isConsonantWithOtherTracks(61, 0, 120, TrackRole::Motif));
+}
+
+TEST_F(PassingToneCollisionTest, StrongBeatUsesOverlapStartNotCandidateStart) {
+  // Existing note enters later on beat 3. The candidate starts on weak beat 2,
+  // but the actual m2 rub begins at beat 3, so strong-beat thresholds apply.
+  registerLongMelodicNote(60, kStrongBeat3, 120);
+
+  EXPECT_FALSE(detector_.isConsonantWithOtherTracks(61, kWeakBeat, 600, TrackRole::Motif))
+      << "Generation path must classify by overlap start, matching snapshots";
+
+  auto info = detector_.getCollisionInfo(61, kWeakBeat, 600, TrackRole::Motif);
+  EXPECT_TRUE(info.has_collision);
+
+  detector_.registerNote(kWeakBeat, 600, 61, TrackRole::Motif);
+  auto snapshot = detector_.getCollisionSnapshot(kStrongBeat3, TICKS_PER_BEAT);
+  ASSERT_EQ(snapshot.clashes.size(), 1u);
+  EXPECT_EQ(snapshot.clashes[0].interval_semitones, 1);
 }
 
 TEST_F(PassingToneCollisionTest, LowRegisterNotTolerated) {

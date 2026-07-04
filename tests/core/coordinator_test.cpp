@@ -7,6 +7,7 @@
 
 #include <gtest/gtest.h>
 
+#include "core/chord.h"
 #include "core/harmony_coordinator.h"
 #include "core/i_track_base.h"
 #include "core/pitch_utils.h"
@@ -261,6 +262,59 @@ TEST(HarmonyCoordinatorTest, MustAvoid_Drums) {
   coord.markTrackGenerated(TrackRole::Drums);
   EXPECT_FALSE(coord.mustAvoid(TrackRole::Chord, TrackRole::Drums));
   EXPECT_FALSE(coord.mustAvoid(TrackRole::Drums, TrackRole::Chord));
+}
+
+TEST(CoordinatorTest, ExternalInitializePlansChordExtensionsIntoHarmony) {
+  Section chorus;
+  chorus.type = SectionType::Chorus;
+  chorus.start_tick = 0;
+  chorus.bars = 4;
+  chorus.name = "Chorus";
+  Arrangement arrangement({chorus});
+
+  GeneratorParams params;
+  params.seed = 12345;
+  params.chord_id = 0;
+  params.mood = Mood::StraightPop;
+  params.chord_extension.enable_7th = true;
+  params.chord_extension.enable_sus = false;
+  params.chord_extension.enable_9th = false;
+  params.chord_extension.seventh_probability = 1.0f;
+
+  std::mt19937 rng(params.seed);
+  HarmonyCoordinator harmony;
+  harmony.initialize(arrangement, getChordProgression(params.chord_id), params.mood);
+
+  Coordinator coord;
+  coord.initialize(params, arrangement, rng, &harmony);
+
+  EXPECT_TRUE(harmony.hasChordExtensionAt(0));
+  EXPECT_EQ(harmony.getChordExtensionAt(0), ChordExtension::Maj7);
+}
+
+TEST(CoordinatorTest, GenerateAllTracksMarksPriorityTargetsGenerated) {
+  Section verse;
+  verse.type = SectionType::A;
+  verse.start_tick = 0;
+  verse.bars = 2;
+  verse.name = "Verse";
+  Arrangement arrangement({verse});
+
+  GeneratorParams params;
+  params.seed = 12345;
+  params.chord_id = 0;
+  params.mood = Mood::StraightPop;
+
+  std::mt19937 rng(params.seed);
+  HarmonyCoordinator harmony;
+  harmony.initialize(arrangement, getChordProgression(params.chord_id), params.mood);
+
+  Coordinator coord;
+  coord.initialize(params, arrangement, rng, &harmony);
+  Song song;
+  coord.generateAllTracks(song);
+
+  EXPECT_TRUE(harmony.mustAvoid(TrackRole::Chord, TrackRole::Vocal));
 }
 
 // ============================================================================

@@ -26,47 +26,34 @@ void planAndRegisterSecondaryDominants(const Arrangement& arrangement,
   // Minimum interval between SDs in bars (absolute bar index across the song).
   constexpr int kSDCooldownBars = 2;
 
-  // Track previous section's last chord degree for section-boundary insertion.
-  int8_t prev_section_last_degree = 0;
   int global_bar = 0;
   int last_sd_bar = -kSDCooldownBars;  // Allow SD from the very first bar
 
   for (size_t sec_idx = 0; sec_idx < sections.size(); ++sec_idx) {
     const auto& section = sections[sec_idx];
 
-    // --- Section boundary: Chorus preceded by ii/IV/vi (deterministic) ---
+    HarmonicRhythmInfo harmonic = HarmonicRhythmInfo::forSection(section.type, mood);
+
+    // --- Section boundary: prepare the actual first chord of the Chorus ---
     if (sec_idx > 0 && section.type == SectionType::Chorus) {
-      bool is_good_target = (prev_section_last_degree == 1 ||  // ii
-                             prev_section_last_degree == 3 ||  // IV
-                             prev_section_last_degree == 5);   // vi
+      int8_t target_degree = harmony.getChordDegreeAt(section.start_tick);
+      bool is_good_target = (target_degree == 1 ||  // ii
+                             target_degree == 3 ||  // IV
+                             target_degree == 4 ||  // V
+                             target_degree == 5);   // vi
 
       if (is_good_target) {
         Tick prev_section_end = section.start_tick;
         Tick insert_start = prev_section_end - TICK_HALF;
 
-        int8_t sec_dom_degree;
-        switch (prev_section_last_degree) {
-          case 1:
-            sec_dom_degree = 5;
-            break;  // V/ii = vi
-          case 3:
-            sec_dom_degree = 0;
-            break;  // V/IV = I
-          case 5:
-            sec_dom_degree = 2;
-            break;  // V/vi = iii
-          default:
-            sec_dom_degree = 4;
-            break;
+        int8_t sec_dom_degree = getSecondaryDominantDegree(target_degree);
+        if (sec_dom_degree >= 0) {
+          harmony.registerSecondaryDominant(insert_start, prev_section_end, sec_dom_degree);
+          // Reflect boundary SD in cooldown to prevent cross-section consecutive SDs.
+          last_sd_bar = global_bar - 1;
         }
-
-        harmony.registerSecondaryDominant(insert_start, prev_section_end, sec_dom_degree);
-        // Reflect boundary SD in cooldown to prevent cross-section consecutive SDs.
-        last_sd_bar = global_bar - 1;
       }
     }
-
-    HarmonicRhythmInfo harmonic = HarmonicRhythmInfo::forSection(section.type, mood);
 
     // Use same effective_prog_length as chord.cpp (no max_chord_count here
     // since planner doesn't know about BackgroundMotif config, and the
@@ -117,9 +104,6 @@ void planAndRegisterSecondaryDominants(const Arrangement& arrangement,
           }
         }
       }
-
-      // Track last degree for section-boundary logic
-      prev_section_last_degree = degree;
     }
 
     global_bar += section.bars;

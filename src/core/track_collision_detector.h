@@ -244,6 +244,8 @@ class TrackCollisionDetector {
    * @return Safe end tick (may be less than desired_end)
    */
   Tick getMaxSafeEnd(Tick note_start, uint8_t pitch, TrackRole exclude, Tick desired_end) const;
+  Tick getMaxSafeEnd(Tick note_start, uint8_t pitch, TrackRole exclude, Tick desired_end,
+                     const ChordProgressionTracker* chord_tracker) const;
 
  private:
   // Registered note from a track.

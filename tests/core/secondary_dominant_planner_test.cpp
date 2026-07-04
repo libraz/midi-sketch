@@ -3,11 +3,14 @@
  * @brief Tests for secondary dominant pre-registration.
  */
 
+#include "core/secondary_dominant_planner.h"
+
 #include <gtest/gtest.h>
 
 #include "core/chord.h"
 #include "core/chord_utils.h"
 #include "core/generator.h"
+#include "core/harmony_context.h"
 #include "core/pitch_utils.h"
 #include "core/timing_constants.h"
 #include "core/types.h"
@@ -189,6 +192,39 @@ TEST(SecondaryDominantPlannerTest, Dom7ChordTonesAtSecondaryDominant) {
   EXPECT_EQ(interval_root_to_3rd, 4) << "Major 3rd should be 4 semitones";
   EXPECT_EQ(interval_root_to_5th, 7) << "Perfect 5th should be 7 semitones";
   EXPECT_EQ(interval_root_to_7th, 10) << "Minor 7th should be 10 semitones";
+}
+
+TEST(SecondaryDominantPlannerTest, ChorusBoundaryTargetsNextSectionFirstChord) {
+  Section prechorus{};
+  prechorus.type = SectionType::B;
+  prechorus.name = "B";
+  prechorus.bars = 4;
+  prechorus.start_bar = 0;
+  prechorus.start_tick = 0;
+
+  Section chorus{};
+  chorus.type = SectionType::Chorus;
+  chorus.name = "CHORUS";
+  chorus.bars = 4;
+  chorus.start_bar = 4;
+  chorus.start_tick = 4 * TICKS_PER_BAR;
+  Arrangement arrangement({prechorus, chorus});
+
+  ChordProgression progression{};
+  progression.degrees = {3, 0, 4, 5};  // B ends on vi, Chorus starts on IV.
+  progression.length = 4;
+
+  HarmonyContext harmony;
+  harmony.initialize(arrangement, progression, Mood::AnimeHighEnergy);
+
+  std::mt19937 rng(12345);
+  planAndRegisterSecondaryDominants(arrangement, progression, Mood::AnimeHighEnergy, rng, harmony);
+
+  Tick boundary_tick = chorus.start_tick - TICK_HALF;
+  ASSERT_TRUE(harmony.isSecondaryDominantAt(boundary_tick));
+  EXPECT_EQ(harmony.getChordDegreeAt(boundary_tick), 0)
+      << "Boundary SD should be V/IV (I7 in C), based on the Chorus first chord, "
+         "not V/vi from the previous section tail.";
 }
 
 }  // namespace

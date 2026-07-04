@@ -203,7 +203,7 @@ struct SongConfig {
   uint32_t seed = 0;  ///< 0 = random
 
   /// Layer 2: Chord progression
-  uint8_t chord_progression_id = 0;
+  uint8_t chord_progression_id = 255;  ///< 255 = auto-select from style recommendations
 
   /// Layer 3: Structure
   StructurePattern form = StructurePattern::StandardPop;

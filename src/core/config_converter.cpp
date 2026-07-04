@@ -45,6 +45,26 @@ constexpr StylePresetMapping kStylePresetMappings[] = {
 
 constexpr size_t kStylePresetCount = sizeof(kStylePresetMappings) / sizeof(kStylePresetMappings[0]);
 
+uint32_t stableMix(uint32_t value) {
+  value ^= value >> 16;
+  value *= 0x7FEB352Du;
+  value ^= value >> 15;
+  value *= 0x846CA68Bu;
+  value ^= value >> 16;
+  return value;
+}
+
+uint8_t selectRecommendedProgression(const StylePreset& preset, uint32_t seed) {
+  uint8_t candidates[8]{};
+  uint8_t count = 0;
+  for (int8_t id : preset.recommended_progressions) {
+    if (id < 0) break;
+    candidates[count++] = static_cast<uint8_t>(id);
+  }
+  if (count == 0) return 0;
+  return candidates[stableMix(seed ^ 0x43484F52u) % count];  // "CHOR"
+}
+
 }  // namespace
 
 void ConfigConverter::applyVocalStylePreset(GeneratorParams& params) {
@@ -209,7 +229,15 @@ GeneratorParams ConfigConverter::convert(const SongConfig& config) {
     params.form_explicit = true;  // Skip Blueprint section_flow
   }
 
-  params.chord_id = config.chord_progression_id;
+  if (config.chord_progression_id == 255) {
+    params.chord_id = (config.seed != 0)
+                          ? selectRecommendedProgression(preset, config.seed)
+                          : (preset.recommended_progressions[0] >= 0
+                                 ? static_cast<uint8_t>(preset.recommended_progressions[0])
+                                 : 0);
+  } else {
+    params.chord_id = config.chord_progression_id;
+  }
   params.key = config.key;
   params.drums_enabled = config.drums_enabled;
   params.drums_enabled_explicit = config.drums_enabled_explicit;
@@ -251,6 +279,27 @@ GeneratorParams ConfigConverter::convert(const SongConfig& config) {
 
   // Chord extensions
   params.chord_extension = config.chord_extension;
+
+  if (!params.chord_extension.enable_sus && !params.chord_extension.enable_7th &&
+      !params.chord_extension.enable_9th) {
+    switch (params.mood) {
+      case Mood::CityPop:
+      case Mood::RnBNeoSoul:
+      case Mood::Lofi:
+        params.chord_extension.enable_7th = true;
+        params.chord_extension.enable_9th = true;
+        break;
+      case Mood::Ballad:
+      case Mood::Sentimental:
+      case Mood::Nostalgic:
+      case Mood::Chill:
+        params.chord_extension.enable_7th = true;
+        params.chord_extension.enable_sus = true;
+        break;
+      default:
+        break;
+    }
+  }
 
   // Apply mood-based chord extension probability adjustments.
   // NOTE: enable_* flags are NOT overridden here - they come from the user/preset config.

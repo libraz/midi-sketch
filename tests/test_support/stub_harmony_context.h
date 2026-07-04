@@ -102,6 +102,9 @@ class StubHarmonyContext : public IHarmonyCoordinator {
     ++secondary_dominant_count_;
   }
 
+  void registerChordExtension(Tick /*start*/, Tick /*end*/, ChordExtension /*extension*/) override {
+  }
+
   bool isSecondaryDominantAt(Tick /*tick*/) const override { return false; }
 
   std::string dumpNotesAt(Tick tick, Tick /*range_ticks*/ = 1920) const override {

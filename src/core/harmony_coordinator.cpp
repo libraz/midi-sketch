@@ -78,6 +78,12 @@ FORWARD_CONST(int8_t, getChordDegreeAt, Tick tick) { return base_context_.getCho
 FORWARD_CONST(std::vector<int>, getChordTonesAt, Tick tick) {
   return base_context_.getChordTonesAt(tick);
 }
+FORWARD_CONST(ChordExtension, getChordExtensionAt, Tick tick) {
+  return base_context_.getChordExtensionAt(tick);
+}
+FORWARD_CONST(bool, hasChordExtensionAt, Tick tick) {
+  return base_context_.hasChordExtensionAt(tick);
+}
 FORWARD_CONST(Tick, getNextChordChangeTick, Tick after) {
   return base_context_.getNextChordChangeTick(after);
 }
@@ -132,6 +138,9 @@ FORWARD_VOID(registerTrack, const MidiTrack& track, TrackRole role) {
 }
 FORWARD_VOID(registerSecondaryDominant, Tick start, Tick end, int8_t degree) {
   base_context_.registerSecondaryDominant(start, end, degree);
+}
+FORWARD_VOID(registerChordExtension, Tick start, Tick end, ChordExtension extension) {
+  base_context_.registerChordExtension(start, end, extension);
 }
 FORWARD_CONST(bool, isSecondaryDominantAt, Tick tick) {
   return base_context_.isSecondaryDominantAt(tick);

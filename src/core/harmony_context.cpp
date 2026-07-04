@@ -36,6 +36,14 @@ std::vector<int> HarmonyContext::getChordTonesAt(Tick tick) const {
   return chord_tracker_.getChordTonesAt(tick);
 }
 
+ChordExtension HarmonyContext::getChordExtensionAt(Tick tick) const {
+  return chord_tracker_.getChordExtensionAt(tick);
+}
+
+bool HarmonyContext::hasChordExtensionAt(Tick tick) const {
+  return chord_tracker_.hasChordExtensionAt(tick);
+}
+
 ChordBoundaryInfo HarmonyContext::analyzeChordBoundary(uint8_t pitch, Tick start,
                                                        Tick duration) const {
   return chord_tracker_.analyzeChordBoundary(pitch, start, duration);
@@ -84,6 +92,10 @@ void HarmonyContext::registerSecondaryDominant(Tick start, Tick end, int8_t degr
   chord_tracker_.registerSecondaryDominant(start, end, degree);
 }
 
+void HarmonyContext::registerChordExtension(Tick start, Tick end, ChordExtension extension) {
+  chord_tracker_.registerChordExtension(start, end, extension);
+}
+
 bool HarmonyContext::isSecondaryDominantAt(Tick tick) const {
   return chord_tracker_.isSecondaryDominantAt(tick);
 }
@@ -98,7 +110,8 @@ CollisionSnapshot HarmonyContext::getCollisionSnapshot(Tick tick, Tick range_tic
 
 Tick HarmonyContext::getMaxSafeEnd(Tick note_start, uint8_t pitch, TrackRole exclude,
                                    Tick desired_end) const {
-  return collision_detector_.getMaxSafeEnd(note_start, pitch, exclude, desired_end);
+  return collision_detector_.getMaxSafeEnd(note_start, pitch, exclude, desired_end,
+                                           &chord_tracker_);
 }
 
 std::vector<int> HarmonyContext::getSoundingPitchClasses(Tick start, Tick end,

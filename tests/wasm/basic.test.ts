@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { ACCOMPANIMENT_FIELDS } from '../../js/src/config-fields';
 import { WasmTestContext } from './test-helpers';
 
 describe('MidiSketch WASM - Basic', () => {
@@ -39,5 +40,10 @@ describe('MidiSketch WASM - Basic', () => {
   it('should return chord count', () => {
     const chordCount = ctx.module.cwrap('midisketch_chord_count', 'number', []) as () => number;
     expect(chordCount()).toBeGreaterThan(0);
+  });
+
+  it('should match C++ accompaniment guitar default', () => {
+    const guitar = ACCOMPANIMENT_FIELDS.find((field) => field.js === 'guitarEnabled');
+    expect(guitar?.default).toBe(true);
   });
 });

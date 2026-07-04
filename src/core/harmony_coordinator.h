@@ -40,6 +40,10 @@ class HarmonyCoordinator : public IHarmonyCoordinator {
 
   std::vector<int> getChordTonesAt(Tick tick) const override;
 
+  ChordExtension getChordExtensionAt(Tick tick) const override;
+
+  bool hasChordExtensionAt(Tick tick) const override;
+
   void registerNote(Tick start, Tick duration, uint8_t pitch, TrackRole track) override;
 
   void registerTrack(const MidiTrack& track, TrackRole role) override;
@@ -66,6 +70,8 @@ class HarmonyCoordinator : public IHarmonyCoordinator {
                                                    TrackRole role) const override;
 
   void registerSecondaryDominant(Tick start, Tick end, int8_t degree) override;
+
+  void registerChordExtension(Tick start, Tick end, ChordExtension extension) override;
 
   bool isSecondaryDominantAt(Tick tick) const override;
 

@@ -1286,12 +1286,8 @@ SongConfig createDefaultSongConfig(uint8_t style_id) {
   config.humanize = false;
   config.blueprint_id = 255;  // Random (user-facing default)
 
-  // Pick first recommended progression
-  if (preset.recommended_progressions[0] >= 0) {
-    config.chord_progression_id = static_cast<uint8_t>(preset.recommended_progressions[0]);
-  } else {
-    config.chord_progression_id = 0;
-  }
+  // Auto-select from style recommendations during conversion.
+  config.chord_progression_id = 255;
 
   return config;
 }
@@ -1303,7 +1299,7 @@ SongConfigError validateSongConfig(const SongConfig& config) {
   }
 
   // Validate chord progression ID
-  if (config.chord_progression_id >= CHORD_COUNT) {
+  if (config.chord_progression_id != 255 && config.chord_progression_id >= CHORD_COUNT) {
     return SongConfigError::InvalidChordProgression;
   }
 
@@ -1625,7 +1621,7 @@ std::optional<uint8_t> findChordProgressionByName(const std::string& name) {
   // For now, this is a basic implementation; extend as needed
   // Common chord progression names
   static const std::pair<const char*, uint8_t> CHORD_NAMES[] = {
-      {"canonical", 0},                    // I-V-vi-IV
+      {"canonical", 0},                    // common four-chord pop: I-V-vi-IV
       {"pop", 0},         {"fifties", 1},  // I-vi-IV-V
       {"doo_wop", 1},     {"jazz", 2},     // ii-V-I-vi
       {"royal_road", 3},                   // IV-V-iii-vi ("oudou" / royal road progression)

@@ -11,6 +11,7 @@
 #include "core/chord.h"
 #include "core/harmony_context.h"
 #include "core/midi_track.h"
+#include "core/timing_constants.h"
 
 using namespace midisketch;
 
@@ -66,6 +67,31 @@ TEST_F(NoteCreatorTest, CreateNoteNoCollision) {
 
   ASSERT_TRUE(note.has_value());
   EXPECT_EQ(note->note, 60);
+}
+
+TEST_F(NoteCreatorTest, GetMaxSafeEndUsesCurrentChordDegreeForTritoneContext) {
+  Section section;
+  section.type = SectionType::Chorus;
+  section.start_tick = 0;
+  section.bars = 1;
+  section.name = "Chorus";
+  Arrangement arrangement({section});
+
+  ChordProgression tonic{{0, -1, -1, -1, -1, -1, -1, -1}, 1};
+  HarmonyContext tonic_harmony;
+  tonic_harmony.initialize(arrangement, tonic, Mood::StraightPop);
+  tonic_harmony.registerNote(TICK_QUARTER, TICK_QUARTER, 65, TrackRole::Chord);  // F4
+
+  EXPECT_EQ(tonic_harmony.getMaxSafeEnd(0, 71, TrackRole::Motif, TICK_HALF), TICK_QUARTER)
+      << "B-F tritone should trim on tonic harmony";
+
+  ChordProgression dominant{{4, -1, -1, -1, -1, -1, -1, -1}, 1};
+  HarmonyContext dominant_harmony;
+  dominant_harmony.initialize(arrangement, dominant, Mood::StraightPop);
+  dominant_harmony.registerNote(TICK_QUARTER, TICK_QUARTER, 65, TrackRole::Chord);  // F4
+
+  EXPECT_EQ(dominant_harmony.getMaxSafeEnd(0, 71, TrackRole::Motif, TICK_HALF), TICK_HALF)
+      << "B-F tritone is chord-defining in V7 context and must not over-trim";
 }
 
 TEST_F(NoteCreatorTest, CreateNoteAndAddWorksCorrectly) {

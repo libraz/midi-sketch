@@ -10,7 +10,7 @@
 namespace midisketch {
 namespace {
 
-TEST(ChordTest, CanonProgression) {
+TEST(ChordTest, FourChordPopProgression) {
   const auto& prog = getChordProgression(0);
   // I – V – vi – IV
   EXPECT_EQ(prog.degrees[0], 0);  // I
@@ -57,12 +57,27 @@ TEST(ChordTest, ChordQualityClassification) {
 }
 
 TEST(ChordTest, ProgressionNames) {
-  EXPECT_STREQ(getChordProgressionName(0), "Canon");
+  EXPECT_STREQ(getChordProgressionName(0), "FourChordPop");
   EXPECT_STREQ(getChordProgressionName(1), "Pop1");
 }
 
 TEST(ChordTest, ProgressionDisplay) {
   EXPECT_STREQ(getChordProgressionDisplay(0), "I - V - vi - IV");
+}
+
+TEST(ChordTest, InvalidProgressionIdFallsBackToDefault) {
+  const auto& fallback = getChordProgression(255);
+  const auto& default_progression = getChordProgression(0);
+
+  EXPECT_EQ(fallback.length, default_progression.length);
+  EXPECT_EQ(fallback.degrees[0], 0);
+  EXPECT_EQ(fallback.degrees[1], 4);
+  EXPECT_EQ(fallback.degrees[2], 5);
+  EXPECT_EQ(fallback.degrees[3], 3);
+  EXPECT_STREQ(getChordProgressionName(255), getChordProgressionName(0));
+  EXPECT_STREQ(getChordProgressionDisplay(255), getChordProgressionDisplay(0));
+  EXPECT_STREQ(getChordProgressionChords(255), getChordProgressionChords(0));
+  EXPECT_EQ(getChordProgressionMeta(255).id, 0);
 }
 
 // ===== Chord Extension Tests =====
@@ -163,6 +178,8 @@ TEST(ChordTest, NewProgressionNames) {
   EXPECT_STREQ(getChordProgressionName(17), "JazzPop");
   EXPECT_STREQ(getChordProgressionName(18), "AnimeHighEnergy2");
   EXPECT_STREQ(getChordProgressionName(19), "CityPop");
+  EXPECT_STREQ(getChordProgressionName(15), "AeolianPop");
+  EXPECT_STREQ(getChordProgressionName(21), "NeapolitanPop");
 }
 
 TEST(ChordTest, NewProgressionDisplays) {
@@ -170,6 +187,18 @@ TEST(ChordTest, NewProgressionDisplays) {
   EXPECT_STREQ(getChordProgressionDisplay(17), "ii - V - I - vi");
   EXPECT_STREQ(getChordProgressionDisplay(18), "vi - ii - V - I");
   EXPECT_STREQ(getChordProgressionDisplay(19), "I - vi - ii - V");
+  EXPECT_STREQ(getChordProgressionDisplay(15), "vi - bVI - bVII - I");
+  EXPECT_STREQ(getChordProgressionDisplay(21), "vi - iv - bII - V - I");
+}
+
+TEST(ChordTest, ProgressionTableUsesBorrowedChords) {
+  const auto& aeolian = getChordProgression(15);
+  EXPECT_EQ(aeolian.degrees[1], 8);   // bVI
+  EXPECT_EQ(aeolian.degrees[2], 10);  // bVII
+
+  const auto& neapolitan = getChordProgression(21);
+  EXPECT_EQ(neapolitan.degrees[1], 12);  // iv
+  EXPECT_EQ(neapolitan.degrees[2], 13);  // bII
 }
 
 // ===== 9th Chord Extension Tests =====
