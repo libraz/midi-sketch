@@ -41,7 +41,7 @@
     "webassembly"
   ],
   "author": "libraz <libraz@libraz.net>",
-  "license": "Apache-2.0",
+  "license": "AGPL-3.0-only",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/libraz/midi-sketch.git"
@@ -54,12 +54,12 @@
     "node": ">=16.0.0"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.4.16",
-    "esbuild": "^0.28.0",
-    "lint-staged": "^17.0.7",
+    "@biomejs/biome": "^2.5.2",
+    "esbuild": "^0.28.1",
+    "lint-staged": "^17.0.8",
     "simple-git-hooks": "^2.13.1",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.8"
+    "vitest": "^4.1.9"
   },
   "volta": {
     "node": "22.22.3",
