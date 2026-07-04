@@ -73,6 +73,20 @@ int getEffectiveMaxInterval(SectionType section_type, uint8_t ctx_max_leap) {
   return melody::getEffectiveMaxInterval(section_type, ctx_max_leap);
 }
 
+Tick getPickupDuration(AnticipationRestMode mode) {
+  switch (mode) {
+    case AnticipationRestMode::Subtle:
+      return TICK_SIXTEENTH;
+    case AnticipationRestMode::Moderate:
+      return TICK_EIGHTH;
+    case AnticipationRestMode::Pronounced:
+      return TICK_QUARTER;
+    case AnticipationRestMode::Off:
+    default:
+      return 0;
+  }
+}
+
 // Import additional submodule functions
 using melody::applySequentialTransposition;
 using melody::calculatePhraseCount;
@@ -205,6 +219,7 @@ std::vector<NoteEvent> subdivideSyllabic(const std::vector<NoteEvent>& notes, fl
       int vel_delta = rng_util::rollRange(rng, -4, 4);
       sub_note.velocity =
           static_cast<uint8_t>(std::clamp(static_cast<int>(note.velocity) + vel_delta, 1, 127));
+      sub_note.is_syllabic_subdivision = true;
 #ifdef MIDISKETCH_NOTE_PROVENANCE
       sub_note.prov_source = static_cast<uint8_t>(NoteSource::SyllabicSub);
 #endif
@@ -294,9 +309,9 @@ std::vector<NoteEvent> MelodyDesigner::generateSection(const MelodyTemplate& tmp
   std::vector<NoteEvent> result;
 
   // Build phrase plan - replaces manual phrase count, timing, contour, and density calculation
-  PhrasePlan plan =
-      PhrasePlanner::buildPlan(ctx.section_type, ctx.section_start, ctx.section_end,
-                               ctx.section_bars, ctx.mood, ctx.vocal_style, nullptr, ctx.bpm);
+  PhrasePlan plan = PhrasePlanner::buildPlan(
+      ctx.section_type, ctx.section_start, ctx.section_end, ctx.section_bars, ctx.mood,
+      ctx.vocal_style, nullptr, ctx.bpm, ctx.phrase_length_bars, ctx.anticipation_rest);
 
   int prev_pitch = -1;
   int direction_inertia = 0;
@@ -341,15 +356,62 @@ std::vector<NoteEvent> MelodyDesigner::generateSection(const MelodyTemplate& tmp
     applyPhrasePairCadence(phrase_result.notes, planned.pair_role, harmony, ctx.vocal_low,
                            ctx.vocal_high);
 
+    // Optional anacrusis/pickup: place a short note just before non-initial phrases
+    // when an anticipation rest mode reserves enough tail space.
+    Tick pickup_duration = getPickupDuration(phrase_ctx.anticipation_rest);
+    if (pickup_duration > 0 && planned.phrase_index > 0 && !phrase_result.notes.empty() &&
+        phrase_start >= ctx.section_start + pickup_duration) {
+      Tick pickup_start = phrase_start - pickup_duration;
+      bool has_space = true;
+      if (!result.empty()) {
+        Tick prev_end = result.back().start_tick + result.back().duration;
+        has_space = (prev_end + TICK_SIXTEENTH <= pickup_start);
+        if (!has_space && pickup_start > TICK_SIXTEENTH) {
+          Tick max_prev_end = pickup_start - TICK_SIXTEENTH;
+          NoteEvent& prev_note = result.back();
+          if (max_prev_end >= prev_note.start_tick + TICK_SIXTEENTH) {
+            prev_note.duration = max_prev_end - prev_note.start_tick;
+            has_space = true;
+          }
+        }
+      }
+
+      if (has_space) {
+        const NoteEvent& first_note = phrase_result.notes.front();
+        int8_t pickup_degree = harmony.getChordDegreeAt(pickup_start);
+        int pickup_pitch = nearestChordTonePitch(first_note.note, pickup_degree);
+        pickup_pitch = std::clamp(pickup_pitch, static_cast<int>(ctx.vocal_low),
+                                  static_cast<int>(ctx.vocal_high));
+        if (!result.empty()) {
+          pickup_pitch = nearestChordToneWithinInterval(
+              pickup_pitch, result.back().note, pickup_degree,
+              getEffectiveMaxInterval(ctx.section_type, ctx.max_leap_semitones), ctx.vocal_low,
+              ctx.vocal_high, &ctx.tessitura);
+        }
+
+        uint8_t pickup_velocity =
+            static_cast<uint8_t>(std::max(1, static_cast<int>(first_note.velocity) - 12));
+        NoteEvent pickup = createNoteWithoutHarmony(
+            pickup_start, pickup_duration, static_cast<uint8_t>(pickup_pitch), pickup_velocity);
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+        pickup.prov_source = static_cast<uint8_t>(NoteSource::MelodyPhrase);
+        pickup.prov_chord_degree = pickup_degree;
+        pickup.prov_lookup_tick = pickup_start;
+        pickup.prov_original_pitch = static_cast<uint8_t>(pickup_pitch);
+#endif
+        phrase_result.notes.insert(phrase_result.notes.begin(), pickup);
+      }
+    }
+
     // Append notes to result, enforcing interval constraint between phrases
-    constexpr int MAX_PHRASE_INTERVAL = 9;  // Major 6th
+    int max_phrase_interval = getEffectiveMaxInterval(ctx.section_type, ctx.max_leap_semitones);
     for (const auto& note : phrase_result.notes) {
       NoteEvent adjusted_note = note;
       // Check interval with previous note in result
       if (!result.empty()) {
         int prev_note_pitch = result.back().note;
         int interval = std::abs(static_cast<int>(adjusted_note.note) - prev_note_pitch);
-        if (interval > MAX_PHRASE_INTERVAL) {
+        if (interval > max_phrase_interval) {
           // Get chord degree at this note's position for chord tone snapping
           int8_t note_chord_degree = harmony.getChordDegreeAt(adjusted_note.start_tick);
 #ifdef MIDISKETCH_NOTE_PROVENANCE
@@ -357,7 +419,7 @@ std::vector<NoteEvent> MelodyDesigner::generateSection(const MelodyTemplate& tmp
 #endif
           // Use nearestChordToneWithinInterval to stay on chord tones
           uint8_t interval_fixed = static_cast<uint8_t>(nearestChordToneWithinInterval(
-              adjusted_note.note, prev_note_pitch, note_chord_degree, MAX_PHRASE_INTERVAL,
+              adjusted_note.note, prev_note_pitch, note_chord_degree, max_phrase_interval,
               ctx.vocal_low, ctx.vocal_high, &ctx.tessitura));
           // Re-verify collision safety after interval fix
           if (harmony.isConsonantWithOtherTracks(interval_fixed, adjusted_note.start_tick,
@@ -433,15 +495,15 @@ std::vector<NoteEvent> MelodyDesigner::generateSection(const MelodyTemplate& tmp
     result = MelodicEmbellisher::embellish(result, emb_config, harmony, ctx.key_offset, rng);
   }
 
-  // Final downbeat chord-tone enforcement with interval constraint
-  // Ensures all notes on beat 1 are chord tones, even after embellishment
-  // Also enforces kMaxMelodicInterval between consecutive notes
-  // Use shared constant from pitch_utils.h
+  // Final downbeat chord-tone enforcement with interval constraint.
+  // Ensures all notes on beat 1 are chord tones, even after embellishment,
+  // and re-applies the section/blueprint-aware maximum interval.
   //
   // APPOGGIATURA EXCEPTION: Preserve non-chord tones on downbeats that resolve
   // down by step (1-2 semitones) to the next note. Appoggiaturas create emotional
   // tension common in expressive pop and ballad vocals.
   int prev_final_pitch = -1;
+  int effective_max_interval = getEffectiveMaxInterval(ctx.section_type, ctx.max_leap_semitones);
   for (size_t note_idx = 0; note_idx < result.size(); ++note_idx) {
     auto& note = result[note_idx];
     Tick bar_pos = positionInBar(note.start_tick);
@@ -487,11 +549,10 @@ std::vector<NoteEvent> MelodyDesigner::generateSection(const MelodyTemplate& tmp
           // Use interval-aware snapping to preserve melodic contour
           uint8_t old_pitch = note.note;
           int new_pitch;
-          int max_interval = getMaxMelodicIntervalForSection(ctx.section_type);
           if (prev_final_pitch >= 0) {
             new_pitch = nearestChordToneWithinInterval(note.note, prev_final_pitch, chord_degree,
-                                                       max_interval, ctx.vocal_low, ctx.vocal_high,
-                                                       &ctx.tessitura);
+                                                       effective_max_interval, ctx.vocal_low,
+                                                       ctx.vocal_high, &ctx.tessitura);
           } else {
             new_pitch = nearestChordTonePitch(note.note, chord_degree);
           }
@@ -516,15 +577,14 @@ std::vector<NoteEvent> MelodyDesigner::generateSection(const MelodyTemplate& tmp
     // Enforce interval constraint between all consecutive notes
     if (prev_final_pitch >= 0) {
       int interval = std::abs(static_cast<int>(note.note) - prev_final_pitch);
-      int max_interval = getMaxMelodicIntervalForSection(ctx.section_type);
-      if (interval > max_interval) {
+      if (interval > effective_max_interval) {
         int8_t chord_degree = harmony.getChordDegreeAt(note.start_tick);
 #ifdef MIDISKETCH_NOTE_PROVENANCE
         uint8_t old_pitch = note.note;
 #endif
-        int constrained_pitch =
-            nearestChordToneWithinInterval(note.note, prev_final_pitch, chord_degree, max_interval,
-                                           ctx.vocal_low, ctx.vocal_high, &ctx.tessitura);
+        int constrained_pitch = nearestChordToneWithinInterval(
+            note.note, prev_final_pitch, chord_degree, effective_max_interval, ctx.vocal_low,
+            ctx.vocal_high, &ctx.tessitura);
         // Defensive clamp to ensure vocal range is respected
         constrained_pitch = std::clamp(constrained_pitch, static_cast<int>(ctx.vocal_low),
                                        static_cast<int>(ctx.vocal_high));
@@ -642,7 +702,7 @@ std::vector<NoteEvent> MelodyDesigner::generateSectionWithEvaluation(
     float combined_score = style_total * 0.4f + culling_score * 0.4f + bias_score * 0.2f;
 
     // GlobalMotif bonus: reward for similar contour/intervals
-    // Weight scaled by section type (Task 5-1: section-specific importance):
+    // Weight scaled by section type so important sections preserve motif identity.
     // - Chorus: 0.35 (maximum hook recognition)
     // - A (1st): 0.15 (introduce motif fragments)
     // - B: 0.22 (strong tension building)
@@ -875,7 +935,7 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
   // Pop vocal theory: large leaps need preparation time (longer preceding note)
   Tick prev_note_duration = TICKS_PER_BEAT;  // Default to quarter note
 
-  // Phase 4: Track leap resolution state for multi-note stepwise resolution
+  // Track leap resolution state for multi-note stepwise resolution.
   LeapResolutionState leap_state;
 
   // Same-direction leap chain state (hard limit: no 3+ consecutive
@@ -947,6 +1007,7 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
     // Use note_chord_degree (chord at this note's position) instead of ctx.chord_degree
     // Pass note_eighths for rhythm-melody coupling
     int new_pitch;
+    int max_interval = getEffectiveMaxInterval(ctx.section_type, ctx.max_leap_semitones);
     if (using_motif_fragment && motif_target_pitch >= 0) {
       // Use motif-guided pitch for fragment notes
       new_pitch = motif_target_pitch;
@@ -962,10 +1023,10 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
       new_pitch =
           std::clamp(new_pitch, static_cast<int>(ctx.vocal_low), static_cast<int>(ctx.vocal_high));
     } else {
-      new_pitch =
-          applyPitchChoice(choice, current_pitch, target_pitch, note_chord_degree, ctx.key_offset,
-                           ctx.vocal_low, ctx.vocal_high, ctx.vocal_attitude,
-                           ctx.disable_vowel_constraints, rn.eighths, ctx.tension_usage);
+      new_pitch = applyPitchChoice(choice, current_pitch, target_pitch, note_chord_degree,
+                                   ctx.key_offset, ctx.vocal_low, ctx.vocal_high,
+                                   ctx.vocal_attitude, ctx.disable_vowel_constraints, rn.eighths,
+                                   ctx.tension_usage, max_interval);
     }
     // Apply consecutive same note reduction with J-POP style probability curve
     melody::applyConsecutiveSameNoteConstraint(new_pitch, consecutive_tracker, current_pitch,
@@ -975,7 +1036,6 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
     // Enforce maximum interval constraint (section-adaptive + blueprint constraint)
     // Use nearestChordToneWithinInterval to stay on chord tones
     // getEffectiveMaxInterval considers both section type and blueprint limits
-    int max_interval = getEffectiveMaxInterval(ctx.section_type, ctx.max_leap_semitones);
     int interval = std::abs(new_pitch - current_pitch);
     if (interval > max_interval) {
       new_pitch =

@@ -33,6 +33,7 @@ class IHarmonyContext;
  * - NeighborTone: Decorates a chord tone by stepping away and returning
  * - Appoggiatura: Accented non-chord tone resolving by step
  * - Anticipation: Arrives early on next chord's tone
+ * - Suspension: Holds a previous harmony tone into a new chord, then resolves down
  * - Tension: Color tones (9th, 11th, 13th) derived from chord extensions
  */
 enum class NCTType : uint8_t {
@@ -41,6 +42,7 @@ enum class NCTType : uint8_t {
   NeighborTone,  ///< NT: step away and return to same chord tone (weak beat)
   Appoggiatura,  ///< APP: accented dissonance resolving by step (strong beat)
   Anticipation,  ///< ANT: early arrival of next chord's tone (syncopation)
+  Suspension,    ///< SUS: held tone from previous chord resolving down by step
   Tension        ///< 9th, 11th, 13th from chord extensions
 };
 
@@ -77,6 +79,7 @@ struct EmbellishmentConfig {
   float neighbor_tone_ratio = 0.08f;  ///< Proportion of neighbor tones
   float appoggiatura_ratio = 0.05f;   ///< Proportion of appoggiaturas (expressive)
   float anticipation_ratio = 0.05f;   ///< Proportion of anticipations (syncopation)
+  float suspension_ratio = 0.02f;     ///< Proportion of suspensions at chord boundaries
 
   // === Tension Settings ===
   bool enable_tensions = false;  ///< Enable 9th/11th/13th as melody tones
@@ -134,8 +137,8 @@ struct EmbellishmentConfig {
     }
 
     // Scale non-chord-tone ratios (keep chord_tone_ratio as complement)
-    float total_nct =
-        passing_tone_ratio + neighbor_tone_ratio + appoggiatura_ratio + anticipation_ratio;
+    float total_nct = passing_tone_ratio + neighbor_tone_ratio + appoggiatura_ratio +
+                      anticipation_ratio + suspension_ratio;
     float new_total_nct = total_nct * nct_multiplier;
 
     // Clamp to prevent chord_tone_ratio from going below 50%
@@ -147,6 +150,7 @@ struct EmbellishmentConfig {
       neighbor_tone_ratio *= scale;
       appoggiatura_ratio *= scale;
       anticipation_ratio *= scale;
+      suspension_ratio *= scale;
     }
 
     // Adjust chord_tone_ratio to maintain sum ~1.0
@@ -170,8 +174,8 @@ struct EmbellishmentConfig {
     float multiplier = (occurrence >= 3) ? 1.4f : 1.2f;
 
     // Scale non-chord-tone ratios
-    float total_nct =
-        passing_tone_ratio + neighbor_tone_ratio + appoggiatura_ratio + anticipation_ratio;
+    float total_nct = passing_tone_ratio + neighbor_tone_ratio + appoggiatura_ratio +
+                      anticipation_ratio + suspension_ratio;
     float new_total_nct = total_nct * multiplier;
 
     // Clamp to prevent chord_tone_ratio from going below 50%
@@ -183,6 +187,7 @@ struct EmbellishmentConfig {
       neighbor_tone_ratio *= scale;
       appoggiatura_ratio *= scale;
       anticipation_ratio *= scale;
+      suspension_ratio *= scale;
     }
 
     // Adjust chord_tone_ratio to maintain sum ~1.0
@@ -319,6 +324,18 @@ class MelodicEmbellisher {
   static std::optional<std::pair<NoteEvent, NoteEvent>> tryConvertToAppoggiatura(
       const NoteEvent& chord_tone, bool upper, int key_offset, bool allow_chromatic,
       std::mt19937& rng);
+
+  /**
+   * @brief Try to convert a chord-boundary note into a suspension.
+   *
+   * Creates an accented hold from the previous harmony that resolves down by
+   * step to the current chord tone.
+   *
+   * @return Pair of notes (suspension, resolution) or nullopt
+   */
+  static std::optional<std::pair<NoteEvent, NoteEvent>> tryAddSuspension(
+      const NoteEvent& previous, const NoteEvent& resolution, int8_t previous_chord_degree,
+      int key_offset, bool allow_chromatic, std::mt19937& rng);
 
   /**
    * @brief Try to add an anticipation before a chord change.

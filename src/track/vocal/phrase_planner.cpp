@@ -14,18 +14,40 @@
 
 namespace midisketch {
 
+namespace {
+
+Tick getAnticipationGuard(AnticipationRestMode mode) {
+  switch (mode) {
+    case AnticipationRestMode::Subtle:
+      return TICK_SIXTEENTH;
+    case AnticipationRestMode::Moderate:
+      return TICK_EIGHTH;
+    case AnticipationRestMode::Pronounced:
+      return TICK_QUARTER;
+    case AnticipationRestMode::Off:
+    default:
+      return 0;
+  }
+}
+
+}  // namespace
+
 // ============================================================================
 // Public API
 // ============================================================================
 
 PhrasePlan PhrasePlanner::buildPlan(SectionType section_type, Tick section_start, Tick section_end,
                                     uint8_t section_bars, Mood mood, VocalStylePreset vocal_style,
-                                    const CachedRhythmPattern* rhythm_pattern, uint16_t bpm) {
+                                    const CachedRhythmPattern* rhythm_pattern, uint16_t bpm,
+                                    uint8_t phrase_length_bars,
+                                    AnticipationRestMode anticipation_rest) {
   PhrasePlan plan;
   plan.section_type = section_type;
   plan.section_start = section_start;
   plan.section_end = section_end;
   plan.section_bars = section_bars;
+  plan.phrase_length_bars = phrase_length_bars;
+  plan.anticipation_rest = anticipation_rest;
 
   // Step 1: Determine phrase count and antecedent-consequent structure
   determinePhraseStructure(plan);
@@ -61,7 +83,12 @@ void PhrasePlanner::determinePhraseStructure(PhrasePlan& plan) {
   uint8_t phrase_count = 0;
   uint8_t pair_count = 0;
 
-  if (plan.section_bars >= 8) {
+  if (plan.phrase_length_bars > 0) {
+    uint8_t phrase_length =
+        std::clamp(plan.phrase_length_bars, static_cast<uint8_t>(1), plan.section_bars);
+    phrase_count = melody::calculatePhraseCount(plan.section_bars, phrase_length);
+    pair_count = phrase_count / 2;
+  } else if (plan.section_bars >= 8) {
     // 8 bars -> 4 phrases -> 2 pairs [Ant, Cons, Ant, Cons]
     phrase_count = plan.section_bars / 2;
     pair_count = phrase_count / 2;
@@ -122,6 +149,7 @@ void PhrasePlanner::assignPhraseTiming(PhrasePlan& plan, Mood mood, VocalStylePr
 
   Tick breath =
       melody::getBreathDuration(plan.section_type, mood, 0.5f, 60, nullptr, vocal_style, bpm);
+  Tick anticipation_guard = getAnticipationGuard(plan.anticipation_rest);
 
   uint8_t phrase_count = static_cast<uint8_t>(plan.phrases.size());
 
@@ -165,7 +193,7 @@ void PhrasePlanner::assignPhraseTiming(PhrasePlan& plan, Mood mood, VocalStylePr
 
     // Breath is a tail guard (no-sing zone at phrase end)
     phrase.breath_before = 0;
-    phrase.breath_after = (idx < phrase_count - 1) ? breath : 0;
+    phrase.breath_after = (idx < phrase_count - 1) ? std::max(breath, anticipation_guard) : 0;
 
     // Beat count
     Tick phrase_duration = phrase.end_tick - phrase.start_tick;

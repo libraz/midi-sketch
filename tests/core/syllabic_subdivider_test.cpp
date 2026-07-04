@@ -106,6 +106,7 @@ std::vector<NoteEvent> subdivideSyllabic(const std::vector<NoteEvent>& notes, fl
       int vel_delta = vel_dist(rng);
       sub_note.velocity =
           static_cast<uint8_t>(std::clamp(static_cast<int>(note.velocity) + vel_delta, 1, 127));
+      sub_note.is_syllabic_subdivision = true;
 #ifdef MIDISKETCH_NOTE_PROVENANCE
       sub_note.prov_source = static_cast<uint8_t>(NoteSource::SyllabicSub);
 #endif
@@ -335,8 +336,6 @@ TEST(SyllabicSubdivideTest, HighBpmMinDurationRespected) {
 // E2E: subdivideSyllabic + mergeSamePitchNotes
 // ============================================================================
 
-#ifdef MIDISKETCH_NOTE_PROVENANCE
-
 TEST(SyllabicSubdivideE2E, SubdividedNotesSurviveMerge) {
   // After subdivision, mergeSamePitchNotes must NOT undo the split.
   std::mt19937 rng(42);
@@ -349,10 +348,13 @@ TEST(SyllabicSubdivideE2E, SubdividedNotesSurviveMerge) {
   size_t count_before = subdivided.size();
   ASSERT_GE(count_before, 3u) << "Should have at least 3 notes after subdivision";
 
-  // Verify subdivision notes carry SyllabicSub provenance
+  // Verify subdivision notes carry the always-on subdivision marker.
   for (size_t i = 0; i < count_before - 1; ++i) {
     if (subdivided[i].note == 72) {
+      EXPECT_TRUE(subdivided[i].is_syllabic_subdivision);
+#ifdef MIDISKETCH_NOTE_PROVENANCE
       EXPECT_EQ(subdivided[i].prov_source, static_cast<uint8_t>(NoteSource::SyllabicSub));
+#endif
     }
   }
 
@@ -369,7 +371,5 @@ TEST(SyllabicSubdivideE2E, SubdividedNotesSurviveMerge) {
   }
   EXPECT_EQ(total_dur, TICK_QUARTER * 2);
 }
-
-#endif  // MIDISKETCH_NOTE_PROVENANCE
 
 }  // namespace midisketch

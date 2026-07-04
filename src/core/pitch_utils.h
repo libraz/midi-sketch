@@ -733,6 +733,7 @@ int snapToNearestScaleTone(int pitch, int key_offset);
  * - Passing tone: approached and left by step (e.g. C-D-E over a C chord).
  * - Neighbor tone: approached by step and left by step back.
  * - Anticipation: approached by step, repeated as the next note (unison out).
+ * - Suspension: held from the previous harmony, resolving down by step.
  *
  * Such notes do not need chord-tone snapping; snapping them converts the
  * stepwise motion the melody generator chose into 3-4 semitone leaps.
@@ -747,8 +748,8 @@ int snapToNearestScaleTone(int pitch, int key_offset);
  * @param gap_to_next Ticks between the candidate's end and the next onset
  *                    (a rest longer than an eighth marks a phrase final)
  * @param key Key offset from C (0 = C major internal representation)
- * @return true if the pitch is admissible as a passing/neighbor/anticipation
- *         tone and may keep its non-chord pitch
+ * @return true if the pitch is admissible as a passing/neighbor/anticipation/
+ *         suspension tone and may keep its non-chord pitch
  */
 /**
  * @brief Check whether a pitch is a traditional avoid note over a diatonic
@@ -768,11 +769,31 @@ inline bool isAvoidNoteForDegree(int pitch, int8_t degree) {
   return isAvoidNoteSimple(pitch, static_cast<uint8_t>(kDegreeRootPc[degree]), is_minor);
 }
 
+inline bool isLegalSuspensionTone(int prev_pitch, int cur_pitch, int next_pitch, Tick cur_start,
+                                  Tick cur_duration, Tick gap_to_next, int key = 0) {
+  if (prev_pitch < 0 || next_pitch < 0) return false;
+  if (!isScaleTone(getPitchClass(static_cast<uint8_t>(cur_pitch)), key)) return false;
+  if (gap_to_next > TICK_EIGHTH) return false;
+
+  Tick position = positionInBar(cur_start);
+  bool accented = position % TICKS_PER_BEAT < TICK_SIXTEENTH;
+  if (!accented) return false;
+  if (cur_duration > TICK_QUARTER) return false;
+
+  int hold_in = std::abs(cur_pitch - prev_pitch);
+  int resolution_down = cur_pitch - next_pitch;
+  return hold_in == 0 && resolution_down >= 1 && resolution_down <= 2;
+}
+
 inline bool isLegalNonChordTone(int prev_pitch, int cur_pitch, int next_pitch, Tick cur_start,
                                 Tick cur_duration, Tick gap_to_next, int key = 0) {
   if (prev_pitch < 0 || next_pitch < 0) return false;
   // Must be diatonic.
   if (!isScaleTone(getPitchClass(static_cast<uint8_t>(cur_pitch)), key)) return false;
+  if (isLegalSuspensionTone(prev_pitch, cur_pitch, next_pitch, cur_start, cur_duration, gap_to_next,
+                            key)) {
+    return true;
+  }
   // Short: an eighth note or less.
   if (cur_duration > TICK_EIGHTH) return false;
   // A rest after the note makes it phrase-final (skeleton note).

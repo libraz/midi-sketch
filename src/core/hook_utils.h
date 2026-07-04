@@ -119,7 +119,7 @@ inline SkeletonPattern getSkeletonPattern(HookSkeleton skeleton) {
       // X X+2 X+4 X+5 - Ascending question (unresolved)
       return {{0, 2, 4, 5, 0, 0}, 4};
 
-    // Phase 3: New patterns for addictiveness improvement
+    // Additional high-memorability patterns.
     case HookSkeleton::StepwiseDescent:
       // X X-1 X-2 X-3 - Gradual descent creates melancholic resolution
       return {{0, -1, -2, -3, 0, 0}, 4};
@@ -175,7 +175,7 @@ struct SkeletonWeights {
   float wide_arch = 0.0f;        ///< Weight for WideArch skeleton
   float narrow_pendulum = 0.0f;  ///< Weight for NarrowPendulum skeleton
   float question_mark = 0.0f;    ///< Weight for QuestionMark skeleton
-  // Phase 3: New patterns for addictiveness
+  // High-memorability patterns.
   float stepwise_descent = 0.0f;    ///< Weight for StepwiseDescent skeleton
   float octave_leap = 0.0f;         ///< Weight for OctaveLeap skeleton
   float suspend_resolve = 0.0f;     ///< Weight for SuspendResolve skeleton
@@ -207,7 +207,7 @@ constexpr SkeletonWeights kChorusSkeletonWeights = {
     0.8f,  // wide_arch - Dramatic contour
     0.5f,  // narrow_pendulum - Subtle motion
     0.6f,  // question_mark - Creates tension
-    // Phase 3: New patterns
+    // Additional hook patterns.
     1.0f,  // stepwise_descent - Melancholic resolution (effective in chorus)
     0.8f,  // octave_leap - Dramatic impact
     0.7f,  // suspend_resolve - Tension release
@@ -238,7 +238,7 @@ constexpr SkeletonWeights kDefaultSkeletonWeights = {
     0.6f,  // wide_arch - Save drama for chorus
     0.8f,  // narrow_pendulum - Works well in verses
     0.7f,  // question_mark - Good for pre-chorus
-    // Phase 3: New patterns
+    // Additional hook patterns.
     0.8f,  // stepwise_descent - Good for verse resolution
     0.5f,  // octave_leap - Save impact for chorus
     0.7f,  // suspend_resolve - Works in pre-chorus
@@ -284,7 +284,7 @@ inline SkeletonWeights applyHookIntensityToWeights(const SkeletonWeights& base,
       result.wide_arch *= 1.2f;
       result.narrow_pendulum *= 1.1f;
       result.question_mark *= 1.2f;
-      // Phase 3 patterns: favor variety
+      // High-memorability patterns favor variety.
       result.stepwise_descent *= 1.2f;
       result.octave_leap *= 1.3f;
       result.suspend_resolve *= 1.1f;
@@ -311,7 +311,7 @@ inline SkeletonWeights applyHookIntensityToWeights(const SkeletonWeights& base,
       result.double_ascend *= 1.2f;
       result.triple_hit *= 1.4f;  // Emphasis is catchy
       result.wide_arch *= 1.1f;
-      // Phase 3 patterns: moderate boost
+      // High-memorability patterns receive a moderate boost.
       result.stepwise_descent *= 1.2f;
       result.octave_leap *= 1.1f;
       result.suspend_resolve *= 1.1f;
@@ -335,7 +335,7 @@ inline SkeletonWeights applyHookIntensityToWeights(const SkeletonWeights& base,
       result.triple_hit *= 1.7f;  // Very catchy
       result.wide_arch *= 1.3f;
       result.staircase *= 1.1f;
-      // Phase 3 patterns: maximize memorability
+      // High-memorability patterns maximize memorability.
       result.stepwise_descent *= 1.5f;  // Strong emotional impact
       result.octave_leap *= 1.4f;       // Dramatic
       result.suspend_resolve *= 1.3f;
@@ -370,7 +370,7 @@ inline SkeletonWeights applyHookIntensityToWeights(const SkeletonWeights& base,
       result.syncopated *= 0.5f;
       result.leap_return *= 0.4f;
 
-      // Phase 3 patterns: addictive ones boosted, complex suppressed
+      // Addictive patterns are boosted, complex ones suppressed.
       result.stepwise_descent *= 1.5f;    // Simple, effective
       result.octave_leap *= 0.4f;         // Too dramatic for loops
       result.suspend_resolve *= 1.3f;     // Simple tension-release
@@ -437,7 +437,7 @@ inline HookSkeleton selectHookSkeleton(SectionType type, std::mt19937& rng,
                 weights.chromatic_slide + weights.double_ascend + weights.staircase +
                 weights.triple_hit + weights.wide_arch + weights.narrow_pendulum +
                 weights.question_mark +
-                // Phase 3: New patterns
+                // Additional hook patterns.
                 weights.stepwise_descent + weights.octave_leap + weights.suspend_resolve +
                 weights.symmetric_arch + weights.anticipation_build + weights.echo_phrasing +
                 weights.stutter_repeat + weights.ostinato;
@@ -496,7 +496,7 @@ inline HookSkeleton selectHookSkeleton(SectionType type, std::mt19937& rng,
   cumulative += weights.question_mark;
   if (roll < cumulative) return HookSkeleton::QuestionMark;
 
-  // Phase 3: New patterns
+  // Additional hook patterns.
   cumulative += weights.stepwise_descent;
   if (roll < cumulative) return HookSkeleton::StepwiseDescent;
 

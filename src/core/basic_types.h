@@ -240,10 +240,11 @@ inline void addDrumNote(MidiTrack& track, Tick start, Tick duration, uint8_t not
 
 /// @brief Note event (combines note-on/off for easy editing).
 struct NoteEvent {
-  Tick start_tick;   ///< Start time in ticks
-  Tick duration;     ///< Duration in ticks
-  uint8_t note;      ///< MIDI note number (0-127)
-  uint8_t velocity;  ///< MIDI velocity (0-127)
+  Tick start_tick;                       ///< Start time in ticks
+  Tick duration;                         ///< Duration in ticks
+  uint8_t note;                          ///< MIDI note number (0-127)
+  uint8_t velocity;                      ///< MIDI velocity (0-127)
+  bool is_syllabic_subdivision = false;  ///< Intentional lyric syllable rearticulation
 
 #ifdef MIDISKETCH_NOTE_PROVENANCE
   // === Provenance tracking for debugging ===

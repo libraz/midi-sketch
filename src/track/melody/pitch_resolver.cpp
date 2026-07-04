@@ -17,7 +17,8 @@ namespace melody {
 
 int applyPitchChoice(PitchChoice choice, int current_pitch, int target_pitch, int8_t chord_degree,
                      int key_offset, uint8_t vocal_low, uint8_t vocal_high, VocalAttitude attitude,
-                     bool disable_singability, float note_eighths, float tension_usage) {
+                     bool disable_singability, float note_eighths, float tension_usage,
+                     int max_melodic_interval) {
   // VocalAttitude affects candidate pitch selection:
   //   Clean: chord tones only (1, 3, 5)
   //   Expressive: chord tones + tensions (7, 9)
@@ -173,16 +174,15 @@ int applyPitchChoice(PitchChoice choice, int current_pitch, int target_pitch, in
         // No chord tone above, use nearest
         best = nearestChordTonePitch(current_pitch, chord_degree);
       }
-      // SINGABILITY: Enforce maximum interval constraint (major 6th = 9 semitones)
-      // Large leaps are difficult to sing and sound unnatural in pop melodies
-      constexpr int kMaxMelodicInterval = 9;
-      if (best >= 0 && std::abs(best - current_pitch) > kMaxMelodicInterval) {
+      // SINGABILITY: Enforce section/blueprint-aware maximum interval.
+      // Large leaps are difficult to sing and sound unnatural in pop melodies.
+      if (best >= 0 && std::abs(best - current_pitch) > max_melodic_interval) {
         // Find closest chord tone within max interval
         int closest = -1;
         int closest_dist = 127;
         for (int c : candidates) {
           int dist = std::abs(c - current_pitch);
-          if (dist <= kMaxMelodicInterval && dist < closest_dist) {
+          if (dist <= max_melodic_interval && dist < closest_dist) {
             closest_dist = dist;
             closest = c;
           }
@@ -245,15 +245,14 @@ int applyPitchChoice(PitchChoice choice, int current_pitch, int target_pitch, in
       if (best < 0) {
         best = nearestChordTonePitch(current_pitch, chord_degree);
       }
-      // SINGABILITY: Enforce maximum interval constraint (major 6th = 9 semitones)
-      constexpr int kMaxMelodicInterval = 9;
-      if (best >= 0 && std::abs(best - current_pitch) > kMaxMelodicInterval) {
+      // SINGABILITY: Enforce section/blueprint-aware maximum interval.
+      if (best >= 0 && std::abs(best - current_pitch) > max_melodic_interval) {
         // Find closest chord tone within max interval
         int closest = -1;
         int closest_dist = 127;
         for (int c : candidates) {
           int dist = std::abs(c - current_pitch);
-          if (dist <= kMaxMelodicInterval && dist < closest_dist) {
+          if (dist <= max_melodic_interval && dist < closest_dist) {
             closest_dist = dist;
             closest = c;
           }

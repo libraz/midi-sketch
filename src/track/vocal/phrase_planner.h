@@ -41,12 +41,16 @@ class PhrasePlanner {
   /// @param mood Mood preset for breath calculation
   /// @param vocal_style Vocal style preset for breath duration
   /// @param rhythm_pattern Optional locked rhythm pattern (nullptr for free path)
+  /// @param bpm Tempo for breath calculation
+  /// @param phrase_length_bars Optional phrase length override (0=default planner)
+  /// @param anticipation_rest Optional pickup reservation before phrase starts
   /// @return Complete phrase plan for the section
   static PhrasePlan buildPlan(SectionType section_type, Tick section_start, Tick section_end,
                               uint8_t section_bars, Mood mood,
                               VocalStylePreset vocal_style = VocalStylePreset::Standard,
                               const CachedRhythmPattern* rhythm_pattern = nullptr,
-                              uint16_t bpm = 120);
+                              uint16_t bpm = 120, uint8_t phrase_length_bars = 0,
+                              AnticipationRestMode anticipation_rest = AnticipationRestMode::Off);
 
  private:
   /// @brief Step 1: Determine phrase count and antecedent-consequent structure.

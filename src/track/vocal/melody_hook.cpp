@@ -140,7 +140,6 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& 
   }
 
   Tick current_tick = hook_start;
-  // kMaxMelodicInterval from pitch_utils.h (Major 6th - singable leap limit)
 
   // Generate hook notes with chord-aware pitch selection
   int prev_hook_pitch = base_pitch;
@@ -184,7 +183,7 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& 
       }
 
       // Find nearest chord tone within vocal range and interval constraint
-      int max_interval = getMaxMelodicIntervalForSection(ctx.section_type);
+      int max_interval = melody::getEffectiveMaxInterval(ctx.section_type, ctx.max_leap_semitones);
       pitch =
           nearestChordToneWithinInterval(pitch, prev_hook_pitch, note_chord_degree, max_interval,
                                          ctx.vocal_low, ctx.vocal_high, &ctx.tessitura);
@@ -248,12 +247,11 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& 
       // FINAL SAFETY CHECK: Re-enforce max interval after all adjustments
       // Downbeat snapping and avoid note checks might have created large intervals
       {
-        int section_max_interval = getMaxMelodicIntervalForSection(ctx.section_type);
         int final_interval = std::abs(pitch - prev_hook_pitch);
-        if (final_interval > section_max_interval) {
+        if (final_interval > max_interval) {
           pitch = nearestChordToneWithinInterval(pitch, prev_hook_pitch, note_chord_degree,
-                                                 section_max_interval, ctx.vocal_low,
-                                                 ctx.vocal_high, &ctx.tessitura);
+                                                 max_interval, ctx.vocal_low, ctx.vocal_high,
+                                                 &ctx.tessitura);
           // Defensive clamp to ensure vocal range is respected
           pitch =
               std::clamp(pitch, static_cast<int>(ctx.vocal_low), static_cast<int>(ctx.vocal_high));
@@ -315,7 +313,7 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& 
       // This ensures we catch cases where collision avoidance re-selected the same pitch
       melody::applyConsecutiveSameNoteConstraint(pitch, consecutive_tracker, prev_hook_pitch,
                                                  note_chord_degree, ctx.key_offset, ctx.vocal_low,
-                                                 ctx.vocal_high, kMaxMelodicInterval, rng);
+                                                 ctx.vocal_high, max_interval, rng);
 
       NoteEvent hook_note = createNoteWithoutHarmony(current_tick, final_duration,
                                                      static_cast<uint8_t>(pitch), final_velocity);

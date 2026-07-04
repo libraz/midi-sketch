@@ -19,6 +19,7 @@
 #include "core/timing_constants.h"
 #include "test_helpers/note_event_test_helper.h"
 #include "track/melody/contour_direction.h"
+#include "track/melody/melody_utils.h"
 #include "track/melody/motif_support.h"
 
 namespace midisketch {
@@ -84,6 +85,13 @@ TEST(MelodyDesignerTest, SelectPitchChoiceWithTarget) {
 
   // RunUpTarget has strong target attraction (0.8)
   EXPECT_GT(target_count, 30);
+}
+
+TEST(MelodyDesignerTest, EffectiveMaxIntervalUsesSectionAndContextLimits) {
+  EXPECT_EQ(melody::getEffectiveMaxInterval(SectionType::Chorus, 12), 12);
+  EXPECT_EQ(melody::getEffectiveMaxInterval(SectionType::Bridge, 14), 14);
+  EXPECT_EQ(melody::getEffectiveMaxInterval(SectionType::B, 14), 10);
+  EXPECT_EQ(melody::getEffectiveMaxInterval(SectionType::Chorus, 7), 7);
 }
 
 // ============================================================================
@@ -341,6 +349,31 @@ TEST(MelodyDesignerTest, GenerateSectionNotesInTimeRange) {
     EXPECT_GE(note.start_tick, ctx.section_start);
     EXPECT_LE(note.start_tick + note.duration, ctx.section_end + TICKS_PER_BEAT);
   }
+}
+
+TEST(MelodyDesignerTest, AnticipationRestCreatesPickupBeforePhraseBoundary) {
+  MelodyDesigner designer;
+  std::mt19937 rng(42);
+  const MelodyTemplate& tmpl = getTemplate(MelodyTemplateId::PlateauTalk);
+  auto ctx = createTestContext();
+  ctx.section_end = TICKS_PER_BAR * 4;
+  ctx.section_bars = 4;
+  ctx.anticipation_rest = AnticipationRestMode::Moderate;
+  ctx.enable_embellishment = false;
+  HarmonyContext harmony;
+
+  auto notes = designer.generateSection(tmpl, ctx, harmony, rng);
+
+  Tick expected_pickup_start = 2 * TICKS_PER_BAR - TICK_EIGHTH;
+  bool found_pickup = false;
+  for (const auto& note : notes) {
+    if (note.start_tick == expected_pickup_start && note.duration == TICK_EIGHTH) {
+      found_pickup = true;
+      break;
+    }
+  }
+
+  EXPECT_TRUE(found_pickup) << "Moderate anticipation should create an eighth-note pickup";
 }
 
 TEST(MelodyDesignerTest, GenerateSectionDifferentTemplates) {

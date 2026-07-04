@@ -16,6 +16,8 @@
 #include "core/harmony_coordinator.h"
 #include "core/i_track_base.h"
 #include "core/melody_embellishment.h"
+#include "core/pitch_utils.h"
+#include "core/production_blueprint.h"
 #include "core/song.h"
 #include "core/timing_constants.h"
 #include "core/types.h"
@@ -625,6 +627,18 @@ TEST_F(VocalTest, SectionCadencePreservesRangeConstraints) {
   }
 }
 
+TEST_F(VocalTest, IdolKawaiiClimaxPitchDoesNotOctaveDropInPostClamp) {
+  MidiTrack vocal;
+  vocal.addNote(NoteEventBuilder::create(0, TICKS_PER_BEAT, 81, 100));  // A5: G5 + extension
+
+  const auto& bp = getProductionBlueprint(6);  // IdolKawaii
+  clampTrackPitch(vocal, bp.constraints.max_pitch);
+
+  ASSERT_EQ(vocal.notes().size(), 1u);
+  EXPECT_EQ(vocal.notes().front().note, 81)
+      << "A5 climax should remain above G5 instead of octave-dropping to A4";
+}
+
 // Test: Call-response phrase structure (2+2 bar pattern)
 // Call phrases (bars 0-1) should avoid root endings
 // Response phrases (bars 2-3) should prefer root endings
@@ -892,9 +906,10 @@ TEST_F(VocalTest, HookIntensityOffDisablesHooks) {
   EXPECT_FALSE(vocal.empty()) << "Hook intensity Off should still generate vocal notes";
 
   // Verify all notes are valid
+  constexpr uint8_t kAllowedClimaxExtension = 2;
   for (const auto& note : vocal) {
     EXPECT_GE(note.note, params_.vocal_low);
-    EXPECT_LE(note.note, params_.vocal_high);
+    EXPECT_LE(note.note, params_.vocal_high + kAllowedClimaxExtension);
     EXPECT_GT(note.duration, 0);
     EXPECT_GT(note.velocity, 0);
     EXPECT_LE(note.velocity, 127);
@@ -1527,16 +1542,20 @@ TEST_F(VocalTest, CachedPhraseVariationMaintainsRecognizability) {
       note_counts.push_back(count);
     }
 
-    // All instances should have similar note counts (within 50% of first)
+    // All instances should have similar note counts. Shared half-bar harmony can
+    // legitimately add a few connector notes in later repeated sections, so
+    // keep this as a recognizability bound rather than exact phrase equality.
+    constexpr float kMinRecognizableNoteCountRatio = 0.5f;
+    constexpr float kMaxRecognizableNoteCountRatio = 1.65f;
     if (note_counts[0] > 0) {
       for (size_t i = 1; i < note_counts.size(); ++i) {
         float ratio = static_cast<float>(note_counts[i]) / note_counts[0];
-        EXPECT_GT(ratio, 0.5f) << "Cached phrase variation should maintain similar note count. "
-                               << "First instance: " << note_counts[0] << ", Instance " << i << ": "
-                               << note_counts[i];
-        EXPECT_LT(ratio, 1.5f) << "Cached phrase variation should not add too many notes. "
-                               << "First instance: " << note_counts[0] << ", Instance " << i << ": "
-                               << note_counts[i];
+        EXPECT_GT(ratio, kMinRecognizableNoteCountRatio)
+            << "Cached phrase variation should maintain similar note count. "
+            << "First instance: " << note_counts[0] << ", Instance " << i << ": " << note_counts[i];
+        EXPECT_LT(ratio, kMaxRecognizableNoteCountRatio)
+            << "Cached phrase variation should not add too many notes. "
+            << "First instance: " << note_counts[0] << ", Instance " << i << ": " << note_counts[i];
       }
     }
   }
@@ -2646,6 +2665,7 @@ TEST(EmbellishmentOccurrenceScaling, NCTRatiosScaleWithOccurrence) {
   EXPECT_NEAR(config2.neighbor_tone_ratio, 0.08f * 1.2f, 0.001f);
   EXPECT_NEAR(config2.appoggiatura_ratio, 0.05f * 1.2f, 0.001f);
   EXPECT_NEAR(config2.anticipation_ratio, 0.05f * 1.2f, 0.001f);
+  EXPECT_NEAR(config2.suspension_ratio, 0.02f * 1.2f, 0.001f);
 
   // Occurrence 3+: 1.4x multiplier
   EmbellishmentConfig config3 = base_config;
@@ -2654,6 +2674,7 @@ TEST(EmbellishmentOccurrenceScaling, NCTRatiosScaleWithOccurrence) {
   EXPECT_NEAR(config3.neighbor_tone_ratio, 0.08f * 1.4f, 0.001f);
   EXPECT_NEAR(config3.appoggiatura_ratio, 0.05f * 1.4f, 0.001f);
   EXPECT_NEAR(config3.anticipation_ratio, 0.05f * 1.4f, 0.001f);
+  EXPECT_NEAR(config3.suspension_ratio, 0.02f * 1.4f, 0.001f);
 }
 
 TEST(EmbellishmentOccurrenceScaling, ChordToneRatioAdjustedToMaintainSum) {
@@ -2664,12 +2685,13 @@ TEST(EmbellishmentOccurrenceScaling, ChordToneRatioAdjustedToMaintainSum) {
   config.neighbor_tone_ratio = 0.08f;
   config.appoggiatura_ratio = 0.05f;
   config.anticipation_ratio = 0.05f;
+  config.suspension_ratio = 0.02f;
   config.tension_ratio = 0.0f;
 
   config.adjustForOccurrence(2);
 
   float total_nct = config.passing_tone_ratio + config.neighbor_tone_ratio +
-                    config.appoggiatura_ratio + config.anticipation_ratio;
+                    config.appoggiatura_ratio + config.anticipation_ratio + config.suspension_ratio;
   float expected_ct = 1.0f - total_nct - config.tension_ratio;
   EXPECT_NEAR(config.chord_tone_ratio, expected_ct, 0.001f);
 }
@@ -2682,12 +2704,13 @@ TEST(EmbellishmentOccurrenceScaling, NCTClampsAt50Percent) {
   config.neighbor_tone_ratio = 0.15f;
   config.appoggiatura_ratio = 0.10f;
   config.anticipation_ratio = 0.05f;
+  config.suspension_ratio = 0.02f;
   config.tension_ratio = 0.0f;
 
   config.adjustForOccurrence(3);  // 1.4x multiplier
 
   float total_nct = config.passing_tone_ratio + config.neighbor_tone_ratio +
-                    config.appoggiatura_ratio + config.anticipation_ratio;
+                    config.appoggiatura_ratio + config.anticipation_ratio + config.suspension_ratio;
   // Total NCT should be clamped at 0.5
   EXPECT_LE(total_nct, 0.50f + 0.001f) << "NCT total should be clamped at 50%, got " << total_nct;
   EXPECT_GE(config.chord_tone_ratio, 0.49f) << "Chord tone ratio should not go below ~50%";

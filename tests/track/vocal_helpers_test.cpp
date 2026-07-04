@@ -7,14 +7,65 @@
 
 #include <gtest/gtest.h>
 
+#include "core/midi_track.h"
 #include "core/note_source.h"
 #include "core/note_timeline_utils.h"
+#include "core/pitch_utils.h"
 #include "core/timing_constants.h"
 #include "core/types.h"
 #include "test_helpers/note_event_test_helper.h"
+#include "test_support/stub_harmony_context.h"
+#include "track/vocal/vocal_post_process.h"
 
 namespace midisketch {
 namespace {
+
+TEST(RegisterShiftTest, LaterVerseDoesNotReceiveProgressiveLift) {
+  StyleMelodyParams params;
+  params.verse_register_shift = -2;
+
+  EXPECT_EQ(getRegisterShift(SectionType::A, params, 1), -2);
+  EXPECT_EQ(getRegisterShift(SectionType::A, params, 2), -2);
+  EXPECT_EQ(getRegisterShift(SectionType::A, params, 4), -2);
+}
+
+TEST(RegisterShiftTest, LaterChorusReceivesProgressiveLift) {
+  StyleMelodyParams params;
+  params.chorus_register_shift = 5;
+
+  EXPECT_EQ(getRegisterShift(SectionType::Chorus, params, 1), 5);
+  EXPECT_EQ(getRegisterShift(SectionType::Chorus, params, 2), 7);
+  EXPECT_EQ(getRegisterShift(SectionType::Chorus, params, 4), 9);
+}
+
+TEST(NonChordToneLegalityTest, SuspensionMayRemainAccentedAtBoundary) {
+  EXPECT_TRUE(isLegalSuspensionTone(65, 65, 64, 0, TICK_EIGHTH, 0));
+  EXPECT_TRUE(isLegalNonChordTone(65, 65, 64, 0, TICK_EIGHTH, 0));
+
+  EXPECT_FALSE(isLegalSuspensionTone(65, 65, 64, TICK_EIGHTH, TICK_EIGHTH, 0))
+      << "Suspensions should be accented, not off-beat passing tones.";
+  EXPECT_FALSE(isLegalSuspensionTone(65, 65, 67, 0, TICK_EIGHTH, 0))
+      << "Suspensions must resolve downward by step.";
+}
+
+TEST(VocalPostProcessTest, BreakSameDirectionLeapChainsFoldsThirdLeap) {
+  test::StubHarmonyContext harmony;
+  harmony.setAllPitchesSafe(true);
+  harmony.setChordDegree(0);
+
+  std::vector<NoteEvent> notes = {
+      NoteEventTestHelper::create(0, TICK_EIGHTH, 60, 90),
+      NoteEventTestHelper::create(TICK_EIGHTH, TICK_EIGHTH, 64, 90),
+      NoteEventTestHelper::create(TICK_EIGHTH * 2, TICK_EIGHTH, 67, 90),
+      NoteEventTestHelper::create(TICK_EIGHTH * 3, TICK_EIGHTH, 71, 90),
+  };
+
+  breakSameDirectionLeapChains(notes, harmony, 57, 86);
+
+  ASSERT_EQ(notes.size(), 4u);
+  EXPECT_LT(std::abs(static_cast<int>(notes[3].note) - static_cast<int>(notes[2].note)), 3)
+      << "The third same-direction leap should be folded into step/repeat motion.";
+}
 
 // ============================================================================
 // removeOverlaps Tests
@@ -593,19 +644,22 @@ TEST(DurationUnderflowTest, TickSubtractionPatternSafety) {
 // mergeSamePitchNotes — SyllabicSub preservation tests
 // ============================================================================
 
-#ifdef MIDISKETCH_NOTE_PROVENANCE
-
 class MergeSamePitchSyllabicSubTest : public ::testing::Test {
  protected:
   NoteEvent makeSubNote(Tick start, Tick duration, uint8_t pitch, uint8_t velocity = 80) {
     NoteEvent note = NoteEventTestHelper::create(start, duration, pitch, velocity);
+    note.is_syllabic_subdivision = true;
+#ifdef MIDISKETCH_NOTE_PROVENANCE
     note.prov_source = static_cast<uint8_t>(NoteSource::SyllabicSub);
+#endif
     return note;
   }
 
   NoteEvent makeMelodyNote(Tick start, Tick duration, uint8_t pitch, uint8_t velocity = 80) {
     NoteEvent note = NoteEventTestHelper::create(start, duration, pitch, velocity);
+#ifdef MIDISKETCH_NOTE_PROVENANCE
     note.prov_source = static_cast<uint8_t>(NoteSource::MelodyPhrase);
+#endif
     return note;
   }
 };
@@ -669,8 +723,6 @@ TEST_F(MergeSamePitchSyllabicSubTest, FourWaySplitPreserved) {
     EXPECT_EQ(notes[i].note, 72);
   }
 }
-
-#endif  // MIDISKETCH_NOTE_PROVENANCE
 
 }  // namespace
 }  // namespace midisketch

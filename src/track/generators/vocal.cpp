@@ -46,6 +46,7 @@
 namespace midisketch {
 
 // Note: enforceVocalPitchConstraints, breakConsecutiveSamePitch,
+// breakSameDirectionLeapChains,
 // and applyVocalPitchBendExpressions are in track/vocal/vocal_post_process.cpp
 
 // ============================================================================
@@ -332,13 +333,20 @@ void VocalGenerator::postProcessVocalNotes(
   applyVelocityBalance(all_notes, velocity_scale);
 
   // Enforce pitch constraints (interval limits and scale enforcement)
-  enforceVocalPitchConstraints(all_notes, params, harmony);
+  enforceVocalPitchConstraints(all_notes, params, harmony, &song.arrangement().sections());
 
   // Break up excessive consecutive same-pitch notes (RhythmSync compatibility)
   // This addresses monotonous melody issues in RhythmSync paradigm where
   // collision avoidance can cause long runs of the same pitch.
   // max_consecutive=3 means 4th note onwards gets alternated for melodic interest.
-  breakConsecutiveSamePitch(all_notes, harmony, effective_vocal_low, effective_vocal_high, 3);
+  uint8_t post_process_max_leap =
+      params.melody_max_leap_override
+          ? params.melody_params.max_leap_interval
+          : (params.blueprint_ref != nullptr ? params.blueprint_ref->constraints.max_leap_semitones
+                                             : static_cast<uint8_t>(kMaxMelodicInterval));
+  breakConsecutiveSamePitch(all_notes, harmony, effective_vocal_low, effective_vocal_high, 3,
+                            &song.arrangement().sections(), post_process_max_leap);
+  breakSameDirectionLeapChains(all_notes, harmony, effective_vocal_low, effective_vocal_high);
 
   // Re-enforce per-section ceilings AFTER all song-wide pitch passes. Earlier
   // passes (enforceVocalPitchConstraints, breakConsecutiveSamePitch) operate on
@@ -496,7 +504,7 @@ void VocalGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContex
     int8_t register_shift = getRegisterShift(section.type, params.melody_params, occurrence);
 
     // ========================================================================
-    // Climax Range Expansion (Task 3.11)
+    // Climax range expansion.
     // For the last Chorus (peak_level=Max): allow vocal_high + 2 semitones
     // This gives the vocalist room to "break out" at the climax
     // ========================================================================
@@ -614,9 +622,10 @@ void VocalGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContex
       }
 
       // Build phrase plan for this section (uses rhythm lock if available)
-      PhrasePlan phrase_plan = PhrasePlanner::buildPlan(
-          section.type, section_start, section_end, section.bars, params.mood, params.vocal_style,
-          current_rhythm_lock, params.bpm);
+      PhrasePlan phrase_plan =
+          PhrasePlanner::buildPlan(section.type, section_start, section_end, section.bars,
+                                   params.mood, params.vocal_style, current_rhythm_lock, params.bpm,
+                                   params.melody_params.phrase_length_bars, sctx.anticipation_rest);
 
       // Mark first chorus phrase as hold-burst entry if previous section was B
       if (section.type == SectionType::Chorus && !phrase_plan.phrases.empty()) {

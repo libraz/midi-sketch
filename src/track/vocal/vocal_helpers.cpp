@@ -116,10 +116,10 @@ int8_t getRegisterShift(SectionType type, const StyleMelodyParams& params, int o
       break;
   }
 
-  // Progressive tessitura shift for Chorus and A (verse) sections
-  // J-POP analysis: later occurrences of key sections are often higher
-  // This creates emotional build-up across the song
-  if (type == SectionType::Chorus || type == SectionType::A) {
+  // Progressive tessitura shift for hook sections only.
+  // Later verses should stay in the lower setup register so the next chorus
+  // still feels like a lift.
+  if (type == SectionType::Chorus || type == SectionType::Drop) {
     if (occurrence == 2) {
       // 2nd occurrence: +2 semitones for noticeable lift
       base_shift += 2;
@@ -445,21 +445,22 @@ void applyCollisionAvoidanceWithIntervalConstraint(std::vector<NoteEvent>& notes
     safe_pitch = static_cast<uint8_t>(std::clamp(
         static_cast<int>(safe_pitch), static_cast<int>(vocal_low), static_cast<int>(vocal_high)));
 
-    // Theory-legal non-chord tones (weak-beat, short, step-connected passing/
-    // neighbor/anticipation tones) keep their collision-safe pitch: snapping
+    // Theory-legal non-chord tones keep their collision-safe pitch: snapping
     // them to chord tones converts the stepwise motion the melody generator
-    // chose into 3-4 semitone leaps. Skeleton notes (strong beats, long notes,
-    // phrase finals) fall through to the chord-tone snap below.
+    // chose into 3-4 semitone leaps. Suspensions are accented exceptions, so
+    // they may remain on strong beats when they resolve down by step.
     bool keep_as_nct = false;
     if (i > 0 && i + 1 < notes.size()) {
       Tick cur_end = note.start_tick + note.duration;
       Tick gap_to_next =
           notes[i + 1].start_tick > cur_end ? notes[i + 1].start_tick - cur_end : Tick{0};
+      bool is_suspension = isLegalSuspensionTone(notes[i - 1].note, safe_pitch, notes[i + 1].note,
+                                                 note.start_tick, note.duration, gap_to_next);
       keep_as_nct = isLegalNonChordTone(notes[i - 1].note, safe_pitch, notes[i + 1].note,
                                         note.start_tick, note.duration, gap_to_next) &&
-                    !isAvoidNoteForDegree(safe_pitch, chord_degree) &&
+                    (is_suspension || !isAvoidNoteForDegree(safe_pitch, chord_degree)) &&
                     harmony.isConsonantWithOtherTracks(safe_pitch, note.start_tick, note.duration,
-                                                       TrackRole::Vocal);
+                                                       TrackRole::Vocal, is_suspension);
     }
 
     uint8_t snapped_pitch = safe_pitch;
@@ -619,9 +620,12 @@ void mergeSamePitchNotes(std::vector<NoteEvent>& notes, Tick max_gap) {
 
       // Same pitch and gap is small enough: merge (tie)
       if (next.note == current.note && gap <= max_gap) {
-#ifdef MIDISKETCH_NOTE_PROVENANCE
         // Never merge syllabic subdivision notes -- they represent
         // intentional same-pitch rearticulation for lyric syllables.
+        if (current.is_syllabic_subdivision || next.is_syllabic_subdivision) {
+          break;
+        }
+#ifdef MIDISKETCH_NOTE_PROVENANCE
         if (current.prov_source == static_cast<uint8_t>(NoteSource::SyllabicSub) ||
             next.prov_source == static_cast<uint8_t>(NoteSource::SyllabicSub)) {
           break;
@@ -789,6 +793,9 @@ void mergeSamePitchNotesNearSectionEnds(std::vector<NoteEvent>& notes,
         Tick gap = (next.start_tick > current_end) ? (next.start_tick - current_end) : 0;
 
         if (next.note == current.note && gap <= max_gap && isInMergeRegion(next.start_tick)) {
+          if (current.is_syllabic_subdivision || next.is_syllabic_subdivision) {
+            break;
+          }
 #ifdef MIDISKETCH_NOTE_PROVENANCE
           if (current.prov_source == static_cast<uint8_t>(NoteSource::SyllabicSub) ||
               next.prov_source == static_cast<uint8_t>(NoteSource::SyllabicSub)) {

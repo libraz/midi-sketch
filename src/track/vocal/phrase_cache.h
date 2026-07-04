@@ -443,7 +443,7 @@ inline CachedRhythmPattern buildRunBasedOnsetMap(
       }
     } else {
       // ================================================================
-      // Phase 3: Select target onsets from all phrase onsets
+      // Select target onsets from all phrase onsets.
       // ================================================================
       // Strategy: score each onset by accent weight + position bonus,
       // then keep the top `target` onsets.
@@ -486,7 +486,7 @@ inline CachedRhythmPattern buildRunBasedOnsetMap(
       if (keep_count > scored.size()) keep_count = scored.size();
 
       // ================================================================
-      // Phase 5: select onsets with min_interval enforcement
+      // Select onsets while enforcing the minimum interval.
       // ================================================================
       // Accept onsets in descending score order, rejecting any onset closer
       // than min_interval to an already-accepted one. Score-first selection

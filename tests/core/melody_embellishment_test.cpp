@@ -7,6 +7,10 @@
 
 #include <gtest/gtest.h>
 
+#include "test_helpers/note_event_test_helper.h"
+#include "test_support/stub_harmony_context.h"
+#include "track/track.h"
+
 namespace midisketch {
 namespace {
 
@@ -22,6 +26,47 @@ TEST(PentatonicModeTest, EnumValuesExist) {
             static_cast<uint8_t>(PentatonicMode::Blues));
   EXPECT_NE(static_cast<uint8_t>(PentatonicMode::Major),
             static_cast<uint8_t>(PentatonicMode::Blues));
+}
+
+class BoundaryHarmonyContext : public test::StubHarmonyContext {
+ public:
+  int8_t getChordDegreeAt(Tick tick) const override {
+    return tick < TICKS_PER_BAR ? 3 : 0;  // F -> C
+  }
+};
+
+TEST(NCTTypeTest, SuspensionTypeExists) {
+  EXPECT_NE(static_cast<uint8_t>(NCTType::Suspension), static_cast<uint8_t>(NCTType::Anticipation));
+  EXPECT_NE(static_cast<uint8_t>(NCTType::Suspension), static_cast<uint8_t>(NCTType::Tension));
+}
+
+TEST(MelodicEmbellisherTest, GeneratesSuspensionAtChordBoundary) {
+  std::vector<NoteEvent> skeleton;
+  skeleton.push_back(NoteEventTestHelper::create(TICKS_PER_BAR - TICK_EIGHTH, TICK_EIGHTH, 65, 80));
+  skeleton.push_back(NoteEventTestHelper::create(TICKS_PER_BAR, TICK_QUARTER, 64, 80));
+
+  EmbellishmentConfig config;
+  config.chord_tone_ratio = 0.0f;
+  config.passing_tone_ratio = 0.0f;
+  config.neighbor_tone_ratio = 0.0f;
+  config.appoggiatura_ratio = 0.0f;
+  config.anticipation_ratio = 0.0f;
+  config.suspension_ratio = 1.0f;
+  config.syncopation_level = 0.0f;
+  config.max_consecutive_ncts = 4;
+
+  BoundaryHarmonyContext harmony;
+  harmony.setAllPitchesSafe(true);
+  std::mt19937 rng(7);
+
+  auto result = MelodicEmbellisher::embellish(skeleton, config, harmony, 0, rng);
+
+  ASSERT_EQ(result.size(), 3u);
+  EXPECT_EQ(result[0].note, 65);
+  EXPECT_EQ(result[1].start_tick, TICKS_PER_BAR);
+  EXPECT_EQ(result[1].note, 65);
+  EXPECT_EQ(result[2].note, 64);
+  EXPECT_EQ(result[1].start_tick + result[1].duration, result[2].start_tick);
 }
 
 // ============================================================================

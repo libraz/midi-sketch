@@ -21,23 +21,50 @@
 #include "core/structure.h"
 #include "core/timing_constants.h"
 #include "core/velocity.h"
+#include "track/melody/melody_utils.h"
 
 namespace midisketch {
 
+namespace {
+
+SectionType sectionTypeAt(Tick tick, const std::vector<Section>* sections) {
+  if (sections == nullptr) return SectionType::A;
+  for (const auto& section : *sections) {
+    Tick section_end = section.start_tick + static_cast<Tick>(section.bars) * TICKS_PER_BAR;
+    if (tick >= section.start_tick && tick < section_end) {
+      return section.type;
+    }
+  }
+  return SectionType::A;
+}
+
+int effectiveMaxIntervalAt(Tick tick, const std::vector<Section>* sections, uint8_t ctx_max_leap) {
+  return melody::getEffectiveMaxInterval(sectionTypeAt(tick, sections), ctx_max_leap);
+}
+
+}  // namespace
+
 void enforceVocalPitchConstraints(std::vector<NoteEvent>& all_notes, const GeneratorParams& params,
-                                  IHarmonyContext& harmony) {
-  // FINAL INTERVAL ENFORCEMENT: Ensure no consecutive notes exceed kMaxMelodicInterval
+                                  IHarmonyContext& harmony, const std::vector<Section>* sections) {
+  uint8_t ctx_max_leap =
+      params.melody_max_leap_override
+          ? params.melody_params.max_leap_interval
+          : (params.blueprint_ref != nullptr ? params.blueprint_ref->constraints.max_leap_semitones
+                                             : static_cast<uint8_t>(kMaxMelodicInterval));
+
+  // FINAL INTERVAL ENFORCEMENT: section/blueprint-aware singability limit.
   for (size_t i = 1; i < all_notes.size(); ++i) {
     int prev_pitch = all_notes[i - 1].note;
     int curr_pitch = all_notes[i].note;
     int interval = std::abs(curr_pitch - prev_pitch);
-    if (interval > kMaxMelodicInterval) {
+    int max_interval = effectiveMaxIntervalAt(all_notes[i].start_tick, sections, ctx_max_leap);
+    if (interval > max_interval) {
       int8_t chord_degree = harmony.getChordDegreeAt(all_notes[i].start_tick);
 #ifdef MIDISKETCH_NOTE_PROVENANCE
       uint8_t old_pitch = all_notes[i].note;
 #endif
       int fixed_pitch =
-          nearestChordToneWithinInterval(curr_pitch, prev_pitch, chord_degree, kMaxMelodicInterval,
+          nearestChordToneWithinInterval(curr_pitch, prev_pitch, chord_degree, max_interval,
                                          params.vocal_low, params.vocal_high, nullptr);
       // Re-verify collision safety after interval fix
       if (!harmony.isConsonantWithOtherTracks(static_cast<uint8_t>(fixed_pitch),
@@ -82,7 +109,8 @@ void enforceVocalPitchConstraints(std::vector<NoteEvent>& all_notes, const Gener
 }
 
 void breakConsecutiveSamePitch(std::vector<NoteEvent>& all_notes, const IHarmonyContext& harmony,
-                               uint8_t vocal_low, uint8_t vocal_high, int max_consecutive) {
+                               uint8_t vocal_low, uint8_t vocal_high, int max_consecutive,
+                               const std::vector<Section>* sections, uint8_t ctx_max_leap) {
   if (all_notes.size() < static_cast<size_t>(max_consecutive + 1)) return;
 
   // Sort by time first
@@ -91,6 +119,9 @@ void breakConsecutiveSamePitch(std::vector<NoteEvent>& all_notes, const IHarmony
   size_t streak_start = 0;
   int streak_count = 1;
   uint8_t streak_pitch = all_notes[0].note;
+  if (all_notes[0].is_syllabic_subdivision) {
+    streak_count = 0;
+  }
 #ifdef MIDISKETCH_NOTE_PROVENANCE
   // Syllabic subdivision notes are intentional same-pitch rearticulation;
   // the first note of a subdivision group should not seed a monotony streak.
@@ -100,6 +131,11 @@ void breakConsecutiveSamePitch(std::vector<NoteEvent>& all_notes, const IHarmony
 #endif
 
   for (size_t i = 1; i <= all_notes.size(); ++i) {
+    // Syllabic subdivision notes are intentional same-pitch rearticulation;
+    // they should not count toward monotony streaks.
+    if (i < all_notes.size() && all_notes[i].is_syllabic_subdivision) {
+      continue;
+    }
 #ifdef MIDISKETCH_NOTE_PROVENANCE
     // Syllabic subdivision notes are intentional same-pitch rearticulation;
     // they should not count toward monotony streaks.
@@ -119,8 +155,11 @@ void breakConsecutiveSamePitch(std::vector<NoteEvent>& all_notes, const IHarmony
       if (streak_count > max_consecutive) {
         // Break up the streak: modify every other note starting from position max_consecutive
         for (size_t j = streak_start + static_cast<size_t>(max_consecutive); j < i; j += 2) {
-#ifdef MIDISKETCH_NOTE_PROVENANCE
           // Never change pitch of syllabic subdivision notes.
+          if (all_notes[j].is_syllabic_subdivision) {
+            continue;
+          }
+#ifdef MIDISKETCH_NOTE_PROVENANCE
           if (all_notes[j].prov_source == static_cast<uint8_t>(NoteSource::SyllabicSub)) {
             continue;
           }
@@ -173,8 +212,9 @@ void breakConsecutiveSamePitch(std::vector<NoteEvent>& all_notes, const IHarmony
               continue;
             }
             // Keep the line singable relative to both neighbors.
-            if (prev_pitch >= 0 && std::abs(candidate - prev_pitch) > kMaxMelodicInterval) continue;
-            if (next_pitch >= 0 && std::abs(candidate - next_pitch) > kMaxMelodicInterval) continue;
+            int max_interval = effectiveMaxIntervalAt(tick, sections, ctx_max_leap);
+            if (prev_pitch >= 0 && std::abs(candidate - prev_pitch) > max_interval) continue;
+            if (next_pitch >= 0 && std::abs(candidate - next_pitch) > max_interval) continue;
             // Verify no harsh collision.
             if (!harmony.isConsonantWithOtherTracks(static_cast<uint8_t>(candidate), tick, duration,
                                                     TrackRole::Vocal)) {
@@ -205,6 +245,75 @@ void breakConsecutiveSamePitch(std::vector<NoteEvent>& all_notes, const IHarmony
         streak_pitch = all_notes[i].note;
       }
     }
+  }
+}
+
+void breakSameDirectionLeapChains(std::vector<NoteEvent>& all_notes, const IHarmonyContext& harmony,
+                                  uint8_t vocal_low, uint8_t vocal_high) {
+  if (all_notes.size() < 4) return;
+
+  NoteTimeline::sortByStartTick(all_notes);
+
+  int chain_count = 0;
+  int chain_sign = 0;
+  for (size_t i = 1; i < all_notes.size(); ++i) {
+    int prev_pitch = static_cast<int>(all_notes[i - 1].note);
+    int curr_pitch = static_cast<int>(all_notes[i].note);
+    int interval = curr_pitch - prev_pitch;
+    int sign = (interval > 0) ? 1 : (interval < 0 ? -1 : 0);
+    bool is_leap = std::abs(interval) >= 3;
+
+    if (is_leap && sign != 0 && (chain_count == 0 || sign == chain_sign)) {
+      ++chain_count;
+      chain_sign = sign;
+    } else {
+      chain_count = (is_leap && sign != 0) ? 1 : 0;
+      chain_sign = sign;
+    }
+
+    if (chain_count < 3) continue;
+
+    const int offsets_up_chain[] = {-1, -2, 0, 1, 2};
+    const int offsets_down_chain[] = {1, 2, 0, -1, -2};
+    const int* offsets = chain_sign > 0 ? offsets_up_chain : offsets_down_chain;
+    int fixed_pitch = -1;
+    for (size_t oi = 0; oi < 5; ++oi) {
+      int candidate = prev_pitch + offsets[oi];
+      if (candidate < static_cast<int>(vocal_low) || candidate > static_cast<int>(vocal_high)) {
+        continue;
+      }
+      if (!isScaleTone(candidate % 12)) continue;
+      if (isAvoidNoteForDegree(candidate, harmony.getChordDegreeAt(all_notes[i].start_tick))) {
+        continue;
+      }
+      if (!harmony.isConsonantWithOtherTracks(static_cast<uint8_t>(candidate),
+                                              all_notes[i].start_tick, all_notes[i].duration,
+                                              TrackRole::Vocal)) {
+        continue;
+      }
+      fixed_pitch = candidate;
+      break;
+    }
+
+    if (fixed_pitch < 0) continue;
+
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+    uint8_t old_pitch = all_notes[i].note;
+#endif
+    all_notes[i].note = static_cast<uint8_t>(fixed_pitch);
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+    if (old_pitch != all_notes[i].note) {
+      all_notes[i].prov_original_pitch = old_pitch;
+      all_notes[i].addTransformStep(TransformStepType::IntervalFix, old_pitch, all_notes[i].note, 0,
+                                    0);
+    }
+#endif
+
+    int new_interval = fixed_pitch - prev_pitch;
+    int new_sign = (new_interval > 0) ? 1 : (new_interval < 0 ? -1 : 0);
+    bool new_is_leap = std::abs(new_interval) >= 3;
+    chain_count = new_is_leap && new_sign != 0 ? 1 : 0;
+    chain_sign = new_sign;
   }
 }
 

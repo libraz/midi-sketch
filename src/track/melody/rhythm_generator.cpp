@@ -403,7 +403,7 @@ uint8_t selectPitchForLockedRhythmEnhanced(uint8_t prev_pitch, int8_t chord_degr
   }
 
   // =========================================================================
-  // Phase 1: Apply direction bias based on phrase position
+  // Apply direction bias based on phrase position.
   // =========================================================================
   // Section-specific thresholds for melodic arch shape
   auto [ascending_end, descending_start] = getDirectionBiasThresholds(ctx.section_type);
@@ -415,7 +415,7 @@ uint8_t selectPitchForLockedRhythmEnhanced(uint8_t prev_pitch, int8_t chord_degr
   }
 
   // =========================================================================
-  // Phase 2: Apply direction inertia
+  // Apply direction inertia.
   // =========================================================================
   // Direction inertia creates melodic momentum - once moving up/down,
   // continue that direction to create smooth phrases
@@ -429,7 +429,7 @@ uint8_t selectPitchForLockedRhythmEnhanced(uint8_t prev_pitch, int8_t chord_degr
   }
 
   // =========================================================================
-  // Phase 3: Check GlobalMotif interval pattern
+  // Check GlobalMotif interval pattern.
   // =========================================================================
   // If we have a cached GlobalMotif, try to follow its interval pattern
   // This creates song-wide melodic unity
@@ -445,7 +445,7 @@ uint8_t selectPitchForLockedRhythmEnhanced(uint8_t prev_pitch, int8_t chord_degr
   }
 
   // =========================================================================
-  // Phase 4: Score and select best candidate
+  // Score and select best candidate.
   // =========================================================================
   std::vector<std::pair<uint8_t, float>> scored_candidates;
   scored_candidates.reserve(candidates.size());

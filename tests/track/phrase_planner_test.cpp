@@ -714,6 +714,50 @@ TEST(PhrasePlannerTest, BarDistributionIsBalanced) {
   }
 }
 
+TEST(PhrasePlannerTest, PhraseLengthOverrideFourBarsProducesTwoPhrases) {
+  PhrasePlan plan =
+      PhrasePlanner::buildPlan(SectionType::A, kSectionStart, k8BarEnd, 8, Mood::StraightPop,
+                               VocalStylePreset::Standard, nullptr, 120, 4);
+
+  ASSERT_EQ(plan.phrases.size(), 2u);
+  EXPECT_EQ(plan.phrases[0].start_tick, 0u);
+  EXPECT_EQ(plan.phrases[0].end_tick, 4 * TICKS_PER_BAR);
+  EXPECT_EQ(plan.phrases[0].beats, 16);
+  EXPECT_EQ(plan.phrases[1].start_tick, 4 * TICKS_PER_BAR);
+  EXPECT_EQ(plan.phrases[1].end_tick, 8 * TICKS_PER_BAR);
+  EXPECT_EQ(plan.phrases[1].beats, 16);
+}
+
+TEST(PhrasePlannerTest, PhraseLengthOverrideOneBarProducesEightPhrases) {
+  PhrasePlan plan =
+      PhrasePlanner::buildPlan(SectionType::A, kSectionStart, k8BarEnd, 8, Mood::StraightPop,
+                               VocalStylePreset::Standard, nullptr, 120, 1);
+
+  ASSERT_EQ(plan.phrases.size(), 8u);
+  for (size_t idx = 0; idx < plan.phrases.size(); ++idx) {
+    EXPECT_EQ(plan.phrases[idx].start_tick, idx * TICKS_PER_BAR);
+    EXPECT_EQ(plan.phrases[idx].end_tick, (idx + 1) * TICKS_PER_BAR);
+    EXPECT_EQ(plan.phrases[idx].beats, 4);
+  }
+}
+
+TEST(PhrasePlannerTest, AnticipationRestReservesPickupTailGuard) {
+  PhrasePlan off_plan = PhrasePlanner::buildPlan(SectionType::A, kSectionStart, k4BarEnd, 4,
+                                                 Mood::StraightPop, VocalStylePreset::Standard,
+                                                 nullptr, 120, 0, AnticipationRestMode::Off);
+  PhrasePlan moderate_plan = PhrasePlanner::buildPlan(
+      SectionType::A, kSectionStart, k4BarEnd, 4, Mood::StraightPop, VocalStylePreset::Standard,
+      nullptr, 120, 0, AnticipationRestMode::Moderate);
+
+  ASSERT_GE(off_plan.phrases.size(), 2u);
+  ASSERT_GE(moderate_plan.phrases.size(), 2u);
+  EXPECT_EQ(moderate_plan.anticipation_rest, AnticipationRestMode::Moderate);
+  EXPECT_GE(moderate_plan.phrases[0].breath_after, TICK_EIGHTH);
+  EXPECT_GE(moderate_plan.phrases[0].breath_after, off_plan.phrases[0].breath_after);
+  EXPECT_EQ(moderate_plan.phrases[0].singable_end,
+            moderate_plan.phrases[0].end_tick - moderate_plan.phrases[0].breath_after);
+}
+
 TEST(PhrasePlannerTest, PhraseCountClampedToTotalBars) {
   // 3 bars section with determinePhraseStructure returning > 3 phrases
   // section_bars=3 -> phrase_count=1 (since < 4), but let's test clamp logic

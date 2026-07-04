@@ -74,11 +74,12 @@ EmbellishmentConfig MelodicEmbellisher::getConfigForMood(Mood mood) {
     case Mood::BrightUpbeat:
     case Mood::IdolPop:
     case Mood::Anthem:
-      config.chord_tone_ratio = 0.72f;
+      config.chord_tone_ratio = 0.71f;
       config.passing_tone_ratio = 0.13f;  // Increased from 0.12
       config.neighbor_tone_ratio = 0.08f;
       config.appoggiatura_ratio = 0.04f;  // Increased from 0.03
       config.anticipation_ratio = 0.03f;  // Increased from 0.02
+      config.suspension_ratio = 0.01f;
       config.prefer_pentatonic = true;
       config.syncopation_level = 0.2f;
       break;
@@ -87,11 +88,12 @@ EmbellishmentConfig MelodicEmbellisher::getConfigForMood(Mood mood) {
     case Mood::DarkPop:
     case Mood::Dramatic:
     case Mood::Nostalgic:
-      config.chord_tone_ratio = 0.60f;
+      config.chord_tone_ratio = 0.57f;
       config.passing_tone_ratio = 0.12f;
       config.neighbor_tone_ratio = 0.10f;
       config.appoggiatura_ratio = 0.12f;
       config.anticipation_ratio = 0.06f;
+      config.suspension_ratio = 0.03f;
       config.prefer_pentatonic = false;
       config.pentatonic_mode = PentatonicMode::Minor;
       config.chromatic_approach = true;
@@ -100,11 +102,12 @@ EmbellishmentConfig MelodicEmbellisher::getConfigForMood(Mood mood) {
 
     // === Jazz-influenced: CityPop has jazz harmony ===
     case Mood::CityPop:
-      config.chord_tone_ratio = 0.50f;
+      config.chord_tone_ratio = 0.48f;
       config.passing_tone_ratio = 0.15f;
       config.neighbor_tone_ratio = 0.10f;
       config.appoggiatura_ratio = 0.10f;
       config.anticipation_ratio = 0.10f;
+      config.suspension_ratio = 0.02f;
       config.enable_tensions = true;
       config.tension_ratio = 0.05f;
       config.prefer_pentatonic = false;
@@ -118,11 +121,12 @@ EmbellishmentConfig MelodicEmbellisher::getConfigForMood(Mood mood) {
     case Mood::Ballad:
     case Mood::Sentimental:
     case Mood::EmotionalPop:
-      config.chord_tone_ratio = 0.55f;
+      config.chord_tone_ratio = 0.52f;
       config.passing_tone_ratio = 0.14f;
       config.neighbor_tone_ratio = 0.10f;
       config.appoggiatura_ratio = 0.12f;  // Expressive appoggiaturas for "setsunai"
       config.anticipation_ratio = 0.06f;
+      config.suspension_ratio = 0.03f;
       config.enable_tensions = true;
       config.tension_ratio = 0.06f;  // Doubled: richer 9th/13th color for emotional depth
       config.prefer_pentatonic = true;
@@ -134,11 +138,12 @@ EmbellishmentConfig MelodicEmbellisher::getConfigForMood(Mood mood) {
     case Mood::EnergeticDance:
     case Mood::LightRock:
     case Mood::FutureBass:
-      config.chord_tone_ratio = 0.78f;
+      config.chord_tone_ratio = 0.77f;
       config.passing_tone_ratio = 0.10f;
       config.neighbor_tone_ratio = 0.05f;
       config.appoggiatura_ratio = 0.02f;
       config.anticipation_ratio = 0.05f;
+      config.suspension_ratio = 0.01f;
       config.prefer_pentatonic = true;
       config.syncopation_level = 0.5f;
       break;
@@ -146,11 +151,12 @@ EmbellishmentConfig MelodicEmbellisher::getConfigForMood(Mood mood) {
     // === Chill/Synth: floating, gentle ===
     case Mood::Chill:
     case Mood::Synthwave:
-      config.chord_tone_ratio = 0.68f;
+      config.chord_tone_ratio = 0.66f;
       config.passing_tone_ratio = 0.12f;
       config.neighbor_tone_ratio = 0.10f;
       config.appoggiatura_ratio = 0.05f;
       config.anticipation_ratio = 0.05f;
+      config.suspension_ratio = 0.02f;
       config.enable_tensions = true;
       config.tension_ratio = 0.04f;
       config.prefer_pentatonic = true;
@@ -160,11 +166,12 @@ EmbellishmentConfig MelodicEmbellisher::getConfigForMood(Mood mood) {
 
     // === Anime/AnimeHighEnergy: fast, melodic, some tension ===
     case Mood::AnimeHighEnergy:
-      config.chord_tone_ratio = 0.65f;
+      config.chord_tone_ratio = 0.63f;
       config.passing_tone_ratio = 0.15f;
       config.neighbor_tone_ratio = 0.08f;
       config.appoggiatura_ratio = 0.07f;
       config.anticipation_ratio = 0.05f;
+      config.suspension_ratio = 0.02f;
       config.enable_tensions = true;
       config.tension_ratio = 0.02f;
       config.prefer_pentatonic = true;
@@ -184,6 +191,7 @@ EmbellishmentConfig MelodicEmbellisher::getConfigForMood(Mood mood) {
       config.neighbor_tone_ratio = 0.10f;  // Increased from 0.08
       config.appoggiatura_ratio = 0.05f;
       config.anticipation_ratio = 0.05f;
+      config.suspension_ratio = 0.0f;
       config.prefer_pentatonic = true;
       config.syncopation_level = 0.3f;
       break;
@@ -209,6 +217,7 @@ std::vector<NoteEvent> MelodicEmbellisher::embellish(const std::vector<NoteEvent
 
   for (size_t i = 0; i < skeleton.size(); ++i) {
     const NoteEvent& current = skeleton[i];
+    const NoteEvent* previous = (i > 0) ? &skeleton[i - 1] : nullptr;
     const NoteEvent* next = (i + 1 < skeleton.size()) ? &skeleton[i + 1] : nullptr;
 
     BeatStrength beat = getBeatStrength(current.start_tick);
@@ -222,14 +231,38 @@ std::vector<NoteEvent> MelodicEmbellisher::embellish(const std::vector<NoteEvent
 
     // === Check for NCT opportunity ===
     // NCT selection uses cumulative probability distribution:
-    // - passing_tone_ratio, neighbor_tone_ratio, appoggiatura_ratio, anticipation_ratio
-    //   are checked sequentially with cumulative thresholds
+    // - suspension_ratio, passing_tone_ratio, neighbor_tone_ratio, appoggiatura_ratio,
+    //   anticipation_ratio are checked sequentially with cumulative thresholds
     // - If roll doesn't fall into any NCT band, the note remains as a Chord Tone
     // - Therefore: chord_tone_ratio = 1.0 - sum(all NCT ratios)
     // - The chord_tone_ratio field in config is for DOCUMENTATION purposes only;
     //   actual CT probability is implicitly the remaining probability mass
 
-    // 1. Passing Tone: between notes with large intervals
+    // 1. Suspension: chord-boundary hold resolving down by step
+    cumulative += config.suspension_ratio;
+    if (previous != nullptr && roll < cumulative && beat == BeatStrength::Strong &&
+        current.duration >= MIN_SPLIT_DURATION * 2 &&
+        consecutive_ncts < config.max_consecutive_ncts) {
+      int8_t previous_chord_degree = harmony.getChordDegreeAt(previous->start_tick);
+      if (previous_chord_degree != chord_degree) {
+        auto sus_pair = tryAddSuspension(*previous, current, previous_chord_degree, key_offset,
+                                         config.chromatic_approach, rng);
+        if (sus_pair &&
+            harmony.isConsonantWithOtherTracks(sus_pair->first.note, sus_pair->first.start_tick,
+                                               sus_pair->first.duration, TrackRole::Vocal, true) &&
+            harmony.isConsonantWithOtherTracks(sus_pair->second.note, sus_pair->second.start_tick,
+                                               sus_pair->second.duration, TrackRole::Vocal)) {
+          setEmbellishmentProv(sus_pair->first, chord_degree);
+          setEmbellishmentProv(sus_pair->second, chord_degree);
+          result.push_back(sus_pair->first);
+          result.push_back(sus_pair->second);
+          consecutive_ncts++;
+          continue;
+        }
+      }
+    }
+
+    // 2. Passing Tone: between notes with large intervals
     cumulative += config.passing_tone_ratio;
     if (next != nullptr && roll < cumulative && consecutive_ncts < config.max_consecutive_ncts) {
       int interval = std::abs(static_cast<int>(next->note) - static_cast<int>(current.note));
@@ -246,7 +279,7 @@ std::vector<NoteEvent> MelodicEmbellisher::embellish(const std::vector<NoteEvent
       }
     }
 
-    // 2. Neighbor Tone: decoration on weak beats
+    // 3. Neighbor Tone: decoration on weak beats
     cumulative += config.neighbor_tone_ratio;
     if (roll < cumulative && beat != BeatStrength::Strong &&
         current.duration >= MIN_SPLIT_DURATION * 2 &&
@@ -265,7 +298,7 @@ std::vector<NoteEvent> MelodicEmbellisher::embellish(const std::vector<NoteEvent
       }
     }
 
-    // 3. Appoggiatura: expressive dissonance on strong beats
+    // 4. Appoggiatura: expressive dissonance on strong beats
     cumulative += config.appoggiatura_ratio;
     if (roll < cumulative && beat == BeatStrength::Strong &&
         current.duration >= MIN_SPLIT_DURATION * 2 &&
@@ -286,7 +319,7 @@ std::vector<NoteEvent> MelodicEmbellisher::embellish(const std::vector<NoteEvent
       }
     }
 
-    // 4. Anticipation: syncopation before chord change
+    // 5. Anticipation: syncopation before chord change
     cumulative += config.anticipation_ratio;
     if (roll < cumulative && next != nullptr &&
         rng_util::rollFloat(rng, 0.0f, 1.0f) < config.syncopation_level &&
@@ -313,7 +346,7 @@ std::vector<NoteEvent> MelodicEmbellisher::embellish(const std::vector<NoteEvent
       }
     }
 
-    // 5. Tension: replace CT with tension tone (if enabled)
+    // 6. Tension: replace CT with tension tone (if enabled)
     if (config.enable_tensions && config.tension_ratio > 0.0f &&
         rng_util::rollFloat(rng, 0.0f, 1.0f) < config.tension_ratio) {
       auto tension_pitch = getTensionPitch(chord_degree, current.note, 48, 84, rng);
@@ -632,6 +665,59 @@ std::optional<std::pair<NoteEvent, NoteEvent>> MelodicEmbellisher::tryConvertToA
   res.velocity = static_cast<uint8_t>(chord_tone.velocity * 0.9f);  // Softer
 
   return std::make_pair(app, res);
+}
+
+std::optional<std::pair<NoteEvent, NoteEvent>> MelodicEmbellisher::tryAddSuspension(
+    const NoteEvent& previous, const NoteEvent& resolution, int8_t previous_chord_degree,
+    int key_offset, bool allow_chromatic, std::mt19937& rng) {
+  if (resolution.duration < MIN_SPLIT_DURATION * 2) return std::nullopt;
+  if (getBeatStrength(resolution.start_tick) != BeatStrength::Strong) return std::nullopt;
+
+  auto previous_chord_tones = getChordTonePitchClasses(previous_chord_degree);
+  if (previous_chord_tones.empty()) return std::nullopt;
+
+  int sus_pitch = -1;
+  int held_interval = static_cast<int>(previous.note) - static_cast<int>(resolution.note);
+  if (held_interval >= 1 && held_interval <= 2) {
+    sus_pitch = previous.note;
+  } else {
+    for (int interval : {2, 1}) {
+      int candidate = static_cast<int>(resolution.note) + interval;
+      int pc = getPitchClass(static_cast<uint8_t>(candidate));
+      if (std::find(previous_chord_tones.begin(), previous_chord_tones.end(), pc) ==
+          previous_chord_tones.end()) {
+        continue;
+      }
+      sus_pitch = candidate;
+      break;
+    }
+  }
+
+  if (sus_pitch < 0 || sus_pitch > 127) return std::nullopt;
+  int sus_pc = getPitchClass(static_cast<uint8_t>(sus_pitch));
+  if (!allow_chromatic && !isScaleTone(sus_pc, key_offset)) return std::nullopt;
+  if (std::find(previous_chord_tones.begin(), previous_chord_tones.end(), sus_pc) ==
+      previous_chord_tones.end()) {
+    return std::nullopt;
+  }
+
+  Tick grid = getQuantizationGrid(rng);
+  Tick sus_duration = ((resolution.duration / 2) / grid) * grid;
+  if (sus_duration < grid) sus_duration = grid;
+  Tick res_duration = resolution.duration - sus_duration;
+  if (res_duration < grid) return std::nullopt;
+
+  NoteEvent sus = resolution;
+  sus.duration = sus_duration;
+  sus.note = static_cast<uint8_t>(sus_pitch);
+  sus.velocity = static_cast<uint8_t>(std::min(127, resolution.velocity + 6));
+
+  NoteEvent res = resolution;
+  res.start_tick = resolution.start_tick + sus_duration;
+  res.duration = res_duration;
+  res.velocity = static_cast<uint8_t>(resolution.velocity * 0.92f);
+
+  return std::make_pair(sus, res);
 }
 
 std::optional<NoteEvent> MelodicEmbellisher::tryAddAnticipation(const NoteEvent& current,

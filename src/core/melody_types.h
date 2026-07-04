@@ -303,7 +303,7 @@ enum class HookSkeleton : uint8_t {
   WideArch,        ///< Wide arch: X X+4 X+7 X+4 X
   NarrowPendulum,  ///< Narrow swing: X X+1 X-1 X
   QuestionMark,    ///< Ascending question: X X+2 X+4 X+5
-  // Phase 3: New patterns for addictiveness improvement
+  // Hook patterns for improved memorability.
   StepwiseDescent,    ///< Gradual descending steps: X X-1 X-2 X-3 (melancholic resolution)
   OctaveLeap,         ///< Jump up octave then resolve: X X+7 X+4 (dramatic impact)
   SuspendResolve,     ///< Suspended tension then release: X X+1 X+1 X (sus4-like)

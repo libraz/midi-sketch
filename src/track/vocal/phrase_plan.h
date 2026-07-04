@@ -76,6 +76,9 @@ struct PhrasePlan {
   Tick section_start = 0;
   Tick section_end = 0;
   uint8_t section_bars = 8;
+  uint8_t phrase_length_bars = 0;  ///< Optional user/style override (0=default planner)
+  AnticipationRestMode anticipation_rest =
+      AnticipationRestMode::Off;  ///< Optional pickup reservation before phrase starts
   std::vector<PlannedPhrase> phrases;
   uint8_t pair_count = 0;
 };

@@ -65,12 +65,13 @@ std::vector<NoteEvent> toRelativeTiming(const std::vector<NoteEvent>& notes, Tic
 /**
  * @brief Get register shift for section type.
  *
- * Supports progressive tessitura shift based on occurrence count:
+ * Supports progressive tessitura shift for hook sections based on occurrence count:
  * - 1st occurrence: base shift from params
  * - 2nd occurrence: +2 semitones (builds energy)
  * - 3rd+ occurrence: +1 per occurrence (cap at +4 total progressive shift)
  *
- * This mimics J-POP arrangement practice where later choruses are higher.
+ * This mimics J-POP arrangement practice where later choruses are higher while
+ * verses remain in a lower setup register.
  *
  * @param type Section type
  * @param params Melody parameters

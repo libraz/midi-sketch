@@ -128,7 +128,7 @@ class MelodyDesigner {
     uint8_t phrase_length_bars = 0;  ///< Override phrase length in bars (0=use template)
 
     // ========================================================================
-    // Task 5-2: Internal 4-Stage Structure within Section
+    // Internal 4-stage structure within a section.
     // ========================================================================
     // For 8-bar sections, track internal 2-bar "sub-phrase index" (0-3):
     // - 0 (bars 1-2): Presentation - motif initial/recap, higher plateau_ratio

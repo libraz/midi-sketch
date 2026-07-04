@@ -28,9 +28,8 @@ void MelodyDesigner::applyTransitionApproach(std::vector<NoteEvent>& notes,
   const auto& trans = *ctx.transition_to_next;
   Tick approach_start = ctx.section_end - trans.approach_beats * TICKS_PER_BEAT;
 
-  // Maximum allowed interval (major 6th = 9 semitones)
-  // kMaxMelodicInterval from pitch_utils.h
-
+  int effective_max_interval =
+      melody::getEffectiveMaxInterval(ctx.section_type, ctx.max_leap_semitones);
   int prev_pitch = -1;
 
   for (auto& note : notes) {
@@ -56,14 +55,13 @@ void MelodyDesigner::applyTransitionApproach(std::vector<NoteEvent>& notes,
 
     // Ensure interval constraint with previous note
     if (prev_pitch >= 0) {
-      int max_interval = getMaxMelodicIntervalForSection(ctx.section_type);
       int interval = std::abs(new_pitch - prev_pitch);
-      if (interval > max_interval) {
+      if (interval > effective_max_interval) {
         // Reduce the shift to stay within interval constraint
         if (new_pitch > prev_pitch) {
-          new_pitch = prev_pitch + max_interval;
+          new_pitch = prev_pitch + effective_max_interval;
         } else {
-          new_pitch = prev_pitch - max_interval;
+          new_pitch = prev_pitch - effective_max_interval;
         }
         // Snap to scale to prevent chromatic notes
         new_pitch = snapToNearestScaleTone(new_pitch, ctx.key_offset);
@@ -97,7 +95,7 @@ void MelodyDesigner::applyTransitionApproach(std::vector<NoteEvent>& notes,
   if (trans.use_leading_tone && !notes.empty()) {
     int last_pitch = notes.back().note;
     int leading_pitch = ctx.tessitura.center - 1;
-    if (std::abs(leading_pitch - last_pitch) <= kMaxMelodicInterval) {
+    if (std::abs(leading_pitch - last_pitch) <= effective_max_interval) {
       insertLeadingTone(notes, ctx, harmony);
     }
   }
@@ -129,7 +127,8 @@ void MelodyDesigner::insertLeadingTone(std::vector<NoteEvent>& notes, const Sect
 
   // Check interval constraint with last note
   int interval = std::abs(leading_pitch - static_cast<int>(last_note.note));
-  if (interval > kMaxMelodicInterval) {
+  int max_interval = melody::getEffectiveMaxInterval(ctx.section_type, ctx.max_leap_semitones);
+  if (interval > max_interval) {
     return;
   }
 
