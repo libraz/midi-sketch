@@ -5,23 +5,69 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <map>
+#include <random>
 #include <set>
 
 #include "core/chord.h"
 #include "core/generator.h"
 #include "core/production_blueprint.h"
 #include "core/song.h"
+#include "core/structure.h"
+#include "core/track_generation_context.h"
 #include "core/types.h"
+#include "instrument/keyboard/piano_model.h"
 #include "test_support/generator_test_fixture.h"
+#include "test_support/stub_harmony_context.h"
 #include "test_support/test_constants.h"
+#include "track/chord/bass_coordination.h"
+#include "track/chord/chord_rhythm.h"
 #include "track/chord/voice_leading.h"
 #include "track/chord/voicing_generator.h"
 #include "track/generators/chord.h"
+#include "track/vocal/vocal_analysis.h"
 
 namespace midisketch {
+
+uint8_t getVocalCeilingForRange(const IHarmonyContext& harmony, Tick start, Tick end,
+                                uint8_t fallback_ceiling);
+bool wouldCreateVoicingMinorSecond(const chord_voicing::VoicedChord& voicing,
+                                   uint8_t candidate_pitch);
+
 namespace {
 
 class ChordTrackTest : public test::GeneratorTestFixture {};
+
+const Section* findSection(const Song& song, SectionType type) {
+  for (const auto& section : song.arrangement().sections()) {
+    if (section.type == type) return &section;
+  }
+  return nullptr;
+}
+
+bool isDiminishedPitchClassSet(const std::set<int>& pcs) {
+  for (int root = 0; root < 12; ++root) {
+    if (pcs.count(root) > 0 && pcs.count((root + 3) % 12) > 0 && pcs.count((root + 6) % 12) > 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
+int countDiminishedOnsetsInSection(const MidiTrack& track, const Section& section) {
+  std::map<Tick, std::set<int>> pcs_by_tick;
+  for (const auto& note : track.notes()) {
+    if (note.start_tick < section.start_tick || note.start_tick >= section.endTick()) continue;
+    pcs_by_tick[note.start_tick].insert(note.note % 12);
+  }
+
+  int count = 0;
+  for (const auto& [tick, pcs] : pcs_by_tick) {
+    if (isDiminishedPitchClassSet(pcs)) ++count;
+  }
+  return count;
+}
 
 TEST_F(ChordTrackTest, ChordTrackGenerated) {
   Generator gen;
@@ -29,6 +75,71 @@ TEST_F(ChordTrackTest, ChordTrackGenerated) {
 
   const auto& song = gen.getSong();
   EXPECT_FALSE(song.chord().empty());
+}
+
+TEST_F(ChordTrackTest, PassingDiminishedLimitedToPreChorusApproach) {
+  params_.structure = StructurePattern::FullPop;
+  params_.mood = Mood::StraightPop;
+  params_.chord_id = 0;
+  params_.seed = 424242;
+  params_.humanize = false;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const Section* prechorus = findSection(gen.getSong(), SectionType::B);
+  ASSERT_NE(prechorus, nullptr);
+
+  EXPECT_LE(countDiminishedOnsetsInSection(gen.getSong().chord(), *prechorus), 1)
+      << "Passing diminished should be an approach color, not a B-section default.";
+}
+
+TEST_F(ChordTrackTest, VocalCeilingUsesHighRegisterNotLowOrnament) {
+  params_.structure = StructurePattern::StandardPop;
+  params_.mood = Mood::CityPop;
+  params_.chord_id = 0;
+  params_.seed = 20260704;
+  params_.humanize = false;
+
+  Generator gen;
+  gen.generateVocal(params_);
+
+  test::StubHarmonyContext harmony;
+  harmony.setAllPitchesSafe(true);
+  harmony.setChordDegree(0);
+  harmony.setLowestPitchForTrack(55);
+  harmony.setHighestPitchForTrack(76);
+
+  VocalAnalysis vocal_analysis;
+  MidiTrack chord_track;
+  std::mt19937 rng(params_.seed + 1);
+  auto ctx = TrackGenerationContextBuilder(gen.getSong(), params_, rng, harmony)
+                 .withMutableHarmony(&harmony)
+                 .withVocalAnalysis(&vocal_analysis)
+                 .build();
+
+  generateChordTrackWithContext(chord_track, ctx);
+
+  ASSERT_FALSE(chord_track.empty());
+  uint8_t max_pitch = 0;
+  for (const auto& note : chord_track.notes()) {
+    max_pitch = std::max(max_pitch, note.note);
+  }
+
+  EXPECT_GT(max_pitch, 52)
+      << "A low vocal ornament must not collapse the whole chord voicing below C3.";
+  EXPECT_LE(max_pitch, 73) << "Chord voicing should still respect the high vocal register margin.";
+}
+
+TEST_F(ChordTrackTest, LowLocalVocalCeilingKeepsChordMidRegister) {
+  test::StubHarmonyContext harmony;
+  harmony.setLowestPitchForTrack(55);
+  harmony.setHighestPitchForTrack(55);
+
+  uint8_t ceiling = getVocalCeilingForRange(harmony, 0, TICK_QUARTER, 55);
+
+  EXPECT_GE(ceiling, 60)
+      << "A low local vocal note should not octave-drop the whole chord voicing into bass range";
 }
 
 TEST_F(ChordTrackTest, ChordHasNotes) {
@@ -331,6 +442,15 @@ TEST_F(ChordTrackTest, NoAnticipationInIntroOutro) {
   }
 }
 
+TEST_F(ChordTrackTest, AnticipationPitchClassUsesReferenceRegister) {
+  EXPECT_EQ(chord_voicing::nearestPitchClassInRegister(0, 72), 72)
+      << "C anticipation near C5 should not be forced down to C4";
+  EXPECT_EQ(chord_voicing::nearestPitchClassInRegister(11, 59), 59)
+      << "B near B3 should stay in the local register";
+  EXPECT_EQ(chord_voicing::nearestPitchClassInRegister(2, 77), 74)
+      << "D near F5 should choose D5 rather than D4";
+}
+
 // ============================================================================
 // C3 Open Voicing Diversity Tests
 // ============================================================================
@@ -380,28 +500,100 @@ TEST_F(ChordTrackTest, DramaticMoodUsesVariedVoicings) {
 // ============================================================================
 
 TEST_F(ChordTrackTest, RootlessVoicingsGenerateMultipleNotes) {
-  // Enable 7th chords to trigger rootless voicing selection
-  params_.mood = Mood::Dramatic;  // Dramatic mood uses rootless in B/Chorus
-  params_.structure = StructurePattern::FullPop;
-  params_.chord_extension.enable_7th = true;
-  params_.chord_extension.seventh_probability = 0.8f;
-  params_.seed = 70707;
+  auto rootless =
+      chord_voicing::generateVoicings(MIDI_C4, getExtendedChord(0, ChordExtension::Maj7),
+                                      chord_voicing::VoicingType::Rootless, 1u << 0);
 
-  Generator gen;
-  gen.generate(params_);
+  ASSERT_FALSE(rootless.empty());
+  EXPECT_TRUE(
+      std::any_of(rootless.begin(), rootless.end(), [](const chord_voicing::VoicedChord& voicing) {
+        return voicing.type == chord_voicing::VoicingType::Rootless && voicing.count >= 3;
+      }));
+}
 
-  const auto& chord_track = gen.getSong().chord();
-  EXPECT_FALSE(chord_track.empty());
-
-  // Check that chords have 3-4 simultaneous notes (rootless voicings)
-  std::map<Tick, int> notes_per_tick;
-  for (const auto& note : chord_track.notes()) {
-    notes_per_tick[note.start_tick]++;
+TEST_F(ChordTrackTest, RootlessVoicingTypeIsReachableWhenBassHasRoot) {
+  bool saw_rootless = false;
+  for (uint32_t seed = 0; seed < 64 && !saw_rootless; ++seed) {
+    std::mt19937 rng(seed);
+    saw_rootless = chord_voicing::selectVoicingType(SectionType::Chorus, Mood::CityPop, true,
+                                                    &rng) == chord_voicing::VoicingType::Rootless;
   }
 
-  // Some chords should have 4 voices due to C4 enhancement
-  // (May vary by seed and voicing selection)
-  EXPECT_GT(notes_per_tick.size(), 0u) << "Should have chord events";
+  EXPECT_TRUE(saw_rootless) << "Rootless voicing should be selectable in sophisticated moods "
+                               "when bass supplies the root";
+}
+
+TEST_F(ChordTrackTest, RootlessVoicingTypeRequiresBassRoot) {
+  for (uint32_t seed = 0; seed < 64; ++seed) {
+    std::mt19937 rng(seed);
+    EXPECT_NE(chord_voicing::selectVoicingType(SectionType::Chorus, Mood::CityPop, false, &rng),
+              chord_voicing::VoicingType::Rootless);
+  }
+}
+
+TEST_F(ChordTrackTest, SpreadVoicingUsesDiminishedFifthForDiminishedChord) {
+  const uint8_t root = degreeToRoot(14, Key::C);  // F# diminished in C major: F#-A-C.
+  auto spread = chord_voicing::generateSpreadVoicings(root, getChordNotes(14));
+
+  ASSERT_FALSE(spread.empty());
+  for (const auto& voicing : spread) {
+    std::set<int> pitch_classes;
+    for (uint8_t i = 0; i < voicing.count; ++i) {
+      pitch_classes.insert(voicing.pitches[i] % 12);
+    }
+
+    EXPECT_TRUE(pitch_classes.count(0)) << "F#dim spread voicing should include C natural";
+    EXPECT_FALSE(pitch_classes.count(1)) << "F#dim spread voicing must not use C# perfect fifth";
+  }
+}
+
+TEST_F(ChordTrackTest, BassTritoneClashAllowsDominantSeventhChordTones) {
+  const Chord dominant = getExtendedChord(4, ChordExtension::Dom7);  // G-B-D-F.
+  const uint8_t root = degreeToRoot(4, Key::C);
+
+  EXPECT_TRUE(chord_voicing::clashesWithBass(5, 11))
+      << "Context-free bass clash detection remains conservative";
+  EXPECT_FALSE(chord_voicing::clashesWithBass(5, 11, root, dominant))
+      << "F against B is the chord-defining tritone inside G7";
+}
+
+TEST_F(ChordTrackTest, BassTritoneClashStillRejectsNonChordTritone) {
+  const Chord tonic = getChordNotes(0);  // C-E-G.
+  const uint8_t root = degreeToRoot(0, Key::C);
+
+  EXPECT_TRUE(chord_voicing::clashesWithBass(6, 0, root, tonic))
+      << "F# over C is not a chord-defining tritone in C major";
+}
+
+TEST_F(ChordTrackTest, BassTritoneCleanupPreservesDominantSeventh) {
+  const Chord dominant = getExtendedChord(4, ChordExtension::Dom7);  // G-B-D-F.
+  const uint8_t root = degreeToRoot(4, Key::C);
+  chord_voicing::VoicedChord voicing{};
+  voicing.count = 4;
+  voicing.pitches = {67, 71, 74, 77, 0};  // G-B-D-F.
+
+  auto cleaned = chord_voicing::removeClashingPitch(voicing, 1u << 11, root, dominant);
+
+  EXPECT_EQ(cleaned.count, 4);
+  EXPECT_TRUE(std::any_of(cleaned.pitches.begin(), cleaned.pitches.begin() + cleaned.count,
+                          [](uint8_t pitch) { return pitch % 12 == 5; }))
+      << "Dominant 7th should not be removed just because bass contains B";
+}
+
+TEST_F(ChordTrackTest, CadenceFixAppliesToIrregularMainSectionBeforeChorus) {
+  EXPECT_TRUE(chord_voicing::needsCadenceFix(8, 5, SectionType::A, SectionType::Chorus));
+}
+
+TEST_F(ChordTrackTest, CadenceFixSkipsEvenProgressionLength) {
+  EXPECT_FALSE(chord_voicing::needsCadenceFix(8, 4, SectionType::A, SectionType::Chorus));
+}
+
+TEST_F(ChordTrackTest, CadenceFixSkipsTransitionalCurrentSection) {
+  EXPECT_FALSE(chord_voicing::needsCadenceFix(8, 5, SectionType::Intro, SectionType::A));
+}
+
+TEST_F(ChordTrackTest, CadenceFixSkipsBeforeBookendSection) {
+  EXPECT_FALSE(chord_voicing::needsCadenceFix(8, 5, SectionType::A, SectionType::Outro));
 }
 
 // ============================================================================
@@ -1036,6 +1228,19 @@ TEST_F(ChordTrackTest, AreVoicingsIdentical_IgnoresTypeAndSubtype) {
   EXPECT_TRUE(chord_voicing::areVoicingsIdentical(a, b));
 }
 
+TEST_F(ChordTrackTest, AugmentVoicingRejectsMinorSecondClusterCandidates) {
+  chord_voicing::VoicedChord voicing{};
+  voicing.pitches = {60, 64, 0, 0, 0};
+  voicing.count = 2;
+
+  EXPECT_TRUE(wouldCreateVoicingMinorSecond(voicing, 61))
+      << "C and Db should be rejected as an internal minor-second cluster";
+  EXPECT_TRUE(wouldCreateVoicingMinorSecond(voicing, 63))
+      << "E and Eb should be rejected as an internal minor-second cluster";
+  EXPECT_FALSE(wouldCreateVoicingMinorSecond(voicing, 67))
+      << "A fifth above C should remain available for minimum voicing fill";
+}
+
 // ============================================================================
 // voicingRepetitionPenalty Tests
 // ============================================================================
@@ -1255,6 +1460,162 @@ TEST_F(ChordKeyboardPlayabilityTest, ChordVoicingsHaveMultipleNotes) {
 
   EXPECT_GT(chords_with_3_plus, 0)
       << "Keyboard playability should not reduce all voicings below 3 notes";
+}
+
+TEST_F(ChordKeyboardPlayabilityTest, BeginnerBlueprintProducesPlayableSimultaneousVoicings) {
+  ProductionBlueprint constrained_blueprint = getProductionBlueprint(3);  // Ballad: Beginner keys
+  constrained_blueprint.constraints.instrument_mode = InstrumentModelMode::ConstraintsOnly;
+  constrained_blueprint.constraints.keys_skill = InstrumentSkillLevel::Beginner;
+
+  params_.blueprint_ref = &constrained_blueprint;
+  params_.arrangement_growth = ArrangementGrowth::LayerAdd;
+  params_.seed = 424242;
+  params_.bpm = 132;
+
+  Song song;
+  auto sections = buildStructure(StructurePattern::StandardPop);
+  for (auto& section : sections) {
+    section.peak_level = PeakLevel::None;
+  }
+  song.setArrangement(Arrangement(sections));
+
+  test::StubHarmonyContext harmony;
+  std::mt19937 rng(params_.seed);
+  TrackGenerationContext ctx{song, params_, rng, harmony};
+
+  MidiTrack chord;
+  generateChordTrack(chord, ctx);
+  ASSERT_GT(chord.notes().size(), 0u);
+
+  std::map<Tick, std::vector<uint8_t>> voicings_by_tick;
+  for (const auto& note : chord.notes()) {
+    voicings_by_tick[note.start_tick].push_back(note.note);
+  }
+
+  PianoModel beginner(InstrumentSkillLevel::Beginner);
+  for (const auto& [tick, pitches] : voicings_by_tick) {
+    std::string pitch_list;
+    for (uint8_t pitch : pitches) {
+      if (!pitch_list.empty()) pitch_list += ",";
+      pitch_list += std::to_string(pitch);
+    }
+    EXPECT_TRUE(beginner.isVoicingPlayable(pitches))
+        << "Beginner keyboard constraints should produce playable chord voicing at tick " << tick
+        << " pitches=[" << pitch_list << "]";
+  }
+}
+
+TEST_F(ChordTrackTest, RegisterAddAddsUpperOctaveLayer) {
+  auto generate = [&](ArrangementGrowth growth, uint32_t seed) {
+    GeneratorParams params;
+    params.seed = seed;
+    params.mood = Mood::StraightPop;
+    params.paradigm = GenerationParadigm::Traditional;
+    params.arrangement_growth = growth;
+    params.humanize = false;
+
+    Generator gen;
+    gen.generate(params);
+    return gen.getSong();
+  };
+
+  bool saw_upper_octave_add = false;
+  for (uint32_t seed = 1; seed <= 16; ++seed) {
+    Song base = generate(ArrangementGrowth::LayerAdd, seed);
+    Song register_add = generate(ArrangementGrowth::RegisterAdd, seed);
+
+    std::map<Tick, std::multiset<uint8_t>> base_by_tick;
+    std::map<Tick, std::multiset<uint8_t>> register_by_tick;
+    for (const auto& note : base.chord().notes()) {
+      base_by_tick[note.start_tick].insert(note.note);
+    }
+    for (const auto& note : register_add.chord().notes()) {
+      register_by_tick[note.start_tick].insert(note.note);
+    }
+
+    for (const auto& [tick, pitches] : register_by_tick) {
+      std::multiset<uint8_t> extras = pitches;
+      for (uint8_t base_pitch : base_by_tick[tick]) {
+        auto it = extras.find(base_pitch);
+        if (it != extras.end()) {
+          extras.erase(it);
+        }
+      }
+
+      for (uint8_t extra_pitch : extras) {
+        EXPECT_GE(extra_pitch, 60) << "RegisterAdd should not add bass-register lower octaves";
+        saw_upper_octave_add = true;
+      }
+    }
+  }
+
+  EXPECT_TRUE(saw_upper_octave_add) << "RegisterAdd should add a non-bass-register octave layer";
+}
+
+TEST_F(ChordTrackTest, NonRhythmSyncEighthCompingIsThinned) {
+  Section mix;
+  mix.type = SectionType::MixBreak;
+  mix.name = "Mix";
+  mix.start_tick = 0;
+  mix.bars = 1;
+  mix.backing_density = BackingDensity::Thick;
+  mix.track_mask = TrackMask::Chord;
+
+  Song song;
+  song.setArrangement(Arrangement({mix}));
+
+  test::StubHarmonyContext harmony;
+  bool saw_eighth_motion = false;
+
+  for (uint32_t seed = 1; seed <= 32; ++seed) {
+    GeneratorParams params;
+    params.seed = seed;
+    params.mood = Mood::BrightUpbeat;
+    params.paradigm = GenerationParadigm::Traditional;
+    params.arrangement_growth = ArrangementGrowth::LayerAdd;
+    params.humanize = false;
+
+    std::mt19937 rng(seed);
+    TrackGenerationContext ctx{song, params, rng, harmony};
+    MidiTrack chord;
+    generateChordTrack(chord, ctx);
+
+    EXPECT_LE(chord.notes().size(), 12u)
+        << "Non-RhythmSync eighth comping should be thinned instead of playing full voicings on "
+           "all eighths; seed="
+        << seed;
+
+    for (const auto& note : chord.notes()) {
+      Tick offset = note.start_tick % TICKS_PER_BAR;
+      if (offset % TICK_EIGHTH == 0 && offset % TICK_QUARTER != 0) {
+        saw_eighth_motion = true;
+      }
+    }
+  }
+
+  EXPECT_TRUE(saw_eighth_motion) << "Test should exercise at least one non-RhythmSync eighth pulse";
+}
+
+TEST_F(ChordTrackTest, RhythmSyncChordRhythmAppliesBackingDensity) {
+  for (SectionType section : {SectionType::A, SectionType::Chorus, SectionType::MixBreak}) {
+    std::mt19937 normal_rng(20260704);
+    std::mt19937 thin_rng(20260704);
+    std::mt19937 thick_rng(20260704);
+
+    chord_voicing::ChordRhythm normal =
+        chord_voicing::selectRhythm(section, Mood::StraightPop, BackingDensity::Normal,
+                                    GenerationParadigm::RhythmSync, normal_rng);
+    chord_voicing::ChordRhythm thin = chord_voicing::selectRhythm(
+        section, Mood::StraightPop, BackingDensity::Thin, GenerationParadigm::RhythmSync, thin_rng);
+    chord_voicing::ChordRhythm thick =
+        chord_voicing::selectRhythm(section, Mood::StraightPop, BackingDensity::Thick,
+                                    GenerationParadigm::RhythmSync, thick_rng);
+
+    EXPECT_EQ(thin, chord_voicing::adjustSparser(normal))
+        << "RhythmSync must honor Thin backing density for section " << static_cast<int>(section);
+    EXPECT_EQ(thick, chord_voicing::adjustDenser(normal))
+        << "RhythmSync must honor Thick backing density for section " << static_cast<int>(section);
+  }
 }
 
 }  // namespace

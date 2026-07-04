@@ -246,10 +246,12 @@ std::vector<VoicedChord> generateSpreadVoicings(uint8_t root, const Chord& chord
 
     bool valid = true;
 
-    // Spread voicing: distribute across 2+ octaves
-    // Pattern: Root in bass, 5th in middle, 3rd+7th on top
+    // Spread voicing: distribute across 2+ octaves.
+    // Pattern: root in bass, chord-defined 5th in middle, 3rd+7th on top.
     int root_pitch = base_octave + (root % 12);
-    int fifth_pitch = root_pitch + 7 + 12;                   // 5th up an octave
+    int fifth_interval =
+        (chord.note_count >= 3 && chord.intervals[2] >= 0) ? chord.intervals[2] : 7;
+    int fifth_pitch = root_pitch + fifth_interval + 12;      // 5th up an octave
     int third_pitch = root_pitch + chord.intervals[1] + 24;  // 3rd up two octaves
 
     v.pitches[0] = static_cast<uint8_t>(root_pitch);
@@ -316,7 +318,7 @@ std::vector<VoicedChord> generateRootlessVoicings(uint8_t root, const Chord& cho
       // Check if 9th clashes with bass
       if (bass_pitch_mask != 0) {
         int ninth_pc = (root_pc + 2) % 12;
-        if (clashesWithBassMask(ninth_pc, bass_pitch_mask)) {
+        if (clashesWithBassMask(ninth_pc, bass_pitch_mask, root, chord)) {
           extension = 17;  // Use 11th instead (octave + 5)
         }
       }
@@ -331,12 +333,12 @@ std::vector<VoicedChord> generateRootlessVoicings(uint8_t root, const Chord& cho
       // If bass pitch class is known, check if M7 would clash
       if (bass_pitch_mask != 0) {
         int m7_pc = (root_pc + 11) % 12;
-        if (!clashesWithBassMask(m7_pc, bass_pitch_mask)) {
+        if (!clashesWithBassMask(m7_pc, bass_pitch_mask, root, chord)) {
           seventh = 11;  // M7 is safe, use it for richer sound
         }
         // Check 9th clash
         int ninth_pc = (root_pc + 2) % 12;
-        if (clashesWithBassMask(ninth_pc, bass_pitch_mask)) {
+        if (clashesWithBassMask(ninth_pc, bass_pitch_mask, root, chord)) {
           ninth = -1;  // Skip 9th
         }
       }
@@ -373,7 +375,7 @@ std::vector<VoicedChord> generateRootlessVoicings(uint8_t root, const Chord& cho
       }
 
       // Additional check: skip voicing if this pitch clashes with bass
-      if (bass_pitch_mask != 0 && clashesWithBassMask(pitch % 12, bass_pitch_mask)) {
+      if (bass_pitch_mask != 0 && clashesWithBassMask(pitch % 12, bass_pitch_mask, root, chord)) {
         // Skip this voice but continue with others
         continue;
       }

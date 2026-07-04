@@ -121,8 +121,9 @@ bool isDominant(int8_t degree);
 bool shouldAddDominantPreparation(SectionType current, SectionType next, int8_t current_degree,
                                   Mood mood);
 
-/// Check if section ending needs a cadence fix for irregular progression lengths.
-/// Returns true if the progression ends mid-cycle at section end.
+/// Check if a main-content section ending needs a cadence fix for irregular progression lengths.
+/// Returns true if the progression ends mid-cycle at section end and the next section is not a
+/// song bookend.
 /// @param section_bars Number of bars in section
 /// @param progression_length Length of chord progression
 /// @param section Current section type
@@ -135,6 +136,15 @@ bool needsCadenceFix(uint8_t section_bars, uint8_t progression_length, SectionTy
 /// @param section Section type
 /// @return True if anticipation is allowed
 bool allowsAnticipation(SectionType section);
+
+/// Place a pitch class in the octave nearest to a reference pitch.
+/// @param pitch_class Pitch class (0-11)
+/// @param reference_pitch Register reference for octave choice
+/// @param low Inclusive lower bound
+/// @param high Inclusive upper bound
+/// @return MIDI pitch with the requested pitch class, or clamped reference if range is impossible
+uint8_t nearestPitchClassInRegister(int pitch_class, int reference_pitch, uint8_t low = CHORD_LOW,
+                                    uint8_t high = CHORD_HIGH);
 
 /// @}
 

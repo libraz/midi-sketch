@@ -18,9 +18,11 @@ namespace chord_voicing {
 
 namespace {}  // namespace
 
-VoicingType selectVoicingType(SectionType section, Mood mood, bool /*bass_has_root*/,
+VoicingType selectVoicingType(SectionType section, Mood mood, bool bass_has_root,
                               std::mt19937* rng) {
   bool is_ballad = MoodClassification::isBallad(mood);
+  bool supports_rootless = bass_has_root && (mood == Mood::CityPop || mood == Mood::Nostalgic ||
+                                             mood == Mood::Dramatic || mood == Mood::ModernPop);
 
   // Intro/Interlude/Outro/Chant: always close voicing for stability
   if (isTransitionalSection(section)) {
@@ -43,18 +45,25 @@ VoicingType selectVoicingType(SectionType section, Mood mood, bool /*bass_has_ro
     return rng_util::rollProbability(*rng, threshold);
   };
 
-  // B section: Close 60%, Open 40% (reduce darkness from previous Rootless-heavy)
+  // B section: mostly Close/Open, with restrained rootless color when bass carries the root.
   if (section == SectionType::B) {
     if (is_ballad) {
       return VoicingType::Close;  // Ballads: always close for intimacy
     }
+    if (supports_rootless && rollProb(0.20f)) {
+      return VoicingType::Rootless;
+    }
     return rollProb(0.40f) ? VoicingType::Open : VoicingType::Close;
   }
 
-  // Chorus: Open 60%, Close 40% (spacious release, room for vocals)
+  // Chorus: Open 60%, Close 40% (spacious release, room for vocals), with
+  // occasional rootless voicings in sophisticated moods.
   if (section == SectionType::Chorus) {
     if (is_ballad) {
       return VoicingType::Open;  // Ballads: open for emotional breadth
+    }
+    if (supports_rootless && rollProb(0.30f)) {
+      return VoicingType::Rootless;
     }
     return rollProb(0.60f) ? VoicingType::Open : VoicingType::Close;
   }
@@ -63,6 +72,9 @@ VoicingType selectVoicingType(SectionType section, Mood mood, bool /*bass_has_ro
   if (section == SectionType::Bridge) {
     if (is_ballad) {
       return VoicingType::Close;  // Ballads: intimate bridge
+    }
+    if (supports_rootless && rollProb(0.25f)) {
+      return VoicingType::Rootless;
     }
     return rollProb(0.50f) ? VoicingType::Open : VoicingType::Close;
   }
@@ -142,11 +154,11 @@ VoicedChord selectVoicing(uint8_t root, const Chord& chord, const VoicedChord& p
   if (bass_pitch_mask != 0) {
     std::vector<VoicedChord> filtered;
     for (const auto& v : candidates) {
-      if (!voicingClashesWithBass(v, bass_pitch_mask)) {
+      if (!voicingClashesWithBass(v, bass_pitch_mask, root, chord)) {
         filtered.push_back(v);
       } else {
         // Try removing the clashing pitch
-        VoicedChord cleaned = removeClashingPitch(v, bass_pitch_mask);
+        VoicedChord cleaned = removeClashingPitch(v, bass_pitch_mask, root, chord);
         if (cleaned.count >= 2) {  // Need at least 2 notes for a chord
           filtered.push_back(cleaned);
         }
@@ -167,7 +179,7 @@ VoicedChord selectVoicing(uint8_t root, const Chord& chord, const VoicedChord& p
       if (chord.intervals[i] >= 0) {
         int pitch = std::clamp(root + chord.intervals[i], (int)CHORD_LOW, (int)CHORD_HIGH);
         // Skip if clashes with bass
-        if (bass_pitch_mask != 0 && clashesWithBassMask(pitch % 12, bass_pitch_mask)) {
+        if (bass_pitch_mask != 0 && clashesWithBassMask(pitch % 12, bass_pitch_mask, root, chord)) {
           continue;
         }
         fallback.pitches[fallback.count] = static_cast<uint8_t>(pitch);
@@ -280,7 +292,7 @@ bool needsCadenceFix(uint8_t section_bars, uint8_t progression_length, SectionTy
     return false;  // Progression completes naturally
   }
 
-  // Only apply before sections that need resolution (A, Chorus)
+  // Do not force a ii-V turnaround into song bookends.
   if (isBookendSection(next_section)) {
     return false;
   }
@@ -290,6 +302,34 @@ bool needsCadenceFix(uint8_t section_bars, uint8_t progression_length, SectionTy
 
 bool allowsAnticipation(SectionType section) {
   return getSectionProperties(section).allows_anticipation;
+}
+
+uint8_t nearestPitchClassInRegister(int pitch_class, int reference_pitch, uint8_t low,
+                                    uint8_t high) {
+  if (low > high) {
+    return static_cast<uint8_t>(std::clamp(reference_pitch, 0, 127));
+  }
+
+  const int normalized_pc = ((pitch_class % 12) + 12) % 12;
+  int best_pitch = -1;
+  int best_distance = 128;
+
+  for (int pitch = normalized_pc; pitch <= 127; pitch += 12) {
+    if (pitch < low || pitch > high) continue;
+
+    int distance = std::abs(pitch - reference_pitch);
+    if (distance < best_distance) {
+      best_distance = distance;
+      best_pitch = pitch;
+    }
+  }
+
+  if (best_pitch >= 0) {
+    return static_cast<uint8_t>(best_pitch);
+  }
+
+  return static_cast<uint8_t>(
+      std::clamp(reference_pitch, static_cast<int>(low), static_cast<int>(high)));
 }
 
 }  // namespace chord_voicing

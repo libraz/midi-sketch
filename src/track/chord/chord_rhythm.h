@@ -64,6 +64,20 @@ inline ChordRhythm adjustDenser(ChordRhythm rhythm) {
   return rhythm;
 }
 
+/// Apply backing density adjustment to a selected rhythm.
+/// @param rhythm Selected rhythm before density adjustment
+/// @param backing_density Backing track density
+/// @return Density-adjusted rhythm
+inline ChordRhythm applyBackingDensity(ChordRhythm rhythm, BackingDensity backing_density) {
+  if (backing_density == BackingDensity::Thin) {
+    return adjustSparser(rhythm);
+  }
+  if (backing_density == BackingDensity::Thick) {
+    return adjustDenser(rhythm);
+  }
+  return rhythm;
+}
+
 /// Select rhythm pattern based on section, mood, backing density, and paradigm.
 /// Uses RNG to add variation while respecting musical constraints.
 /// Design: Express energy through voicing spread, not rhythm density.
@@ -86,22 +100,22 @@ inline ChordRhythm selectRhythm(SectionType section, Mood mood, BackingDensity b
   // to avoid long notes clashing with moving Motif pitches during their sustain.
   if (paradigm == GenerationParadigm::RhythmSync) {
     float roll = rng_util::rollFloat(rng, 0.0f, 1.0f);
+    ChordRhythm selected = ChordRhythm::Quarter;
 
     // RhythmSync: keep chords rhythmically active so the harmony bed matches
     // the 16th-driven coordinate axis instead of sitting under it as pads.
     if (isHighEnergySection(section)) {
       // High-energy sections: 70% Eighth, 30% Quarter
-      if (roll < 0.70f) return ChordRhythm::Eighth;
-      return ChordRhythm::Quarter;
+      selected = (roll < 0.70f) ? ChordRhythm::Eighth : ChordRhythm::Quarter;
     } else if (isInstrumentalBreak(section) || section == SectionType::Outro) {
       // Transition sections: keep some motion but leave more space
-      if (roll < 0.70f) return ChordRhythm::Eighth;
-      return ChordRhythm::Quarter;
+      selected = (roll < 0.70f) ? ChordRhythm::Eighth : ChordRhythm::Quarter;
     } else {
       // A/Bridge sections: quarter pulse with frequent eighth-note push
-      if (roll < 0.80f) return ChordRhythm::Eighth;
-      return ChordRhythm::Quarter;
+      selected = (roll < 0.80f) ? ChordRhythm::Eighth : ChordRhythm::Quarter;
     }
+
+    return applyBackingDensity(selected, backing_density);
   }
 
   bool is_ballad = MoodClassification::isBallad(mood);
@@ -215,14 +229,7 @@ inline ChordRhythm selectRhythm(SectionType section, Mood mood, BackingDensity b
     }
   }
 
-  // Adjust rhythm based on backing density
-  if (backing_density == BackingDensity::Thin) {
-    selected = adjustSparser(selected);
-  } else if (backing_density == BackingDensity::Thick) {
-    selected = adjustDenser(selected);
-  }
-
-  return selected;
+  return applyBackingDensity(selected, backing_density);
 }
 
 }  // namespace chord_voicing

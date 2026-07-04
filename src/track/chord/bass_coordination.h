@@ -40,11 +40,25 @@ uint16_t buildBassPitchMask(const MidiTrack* bass_track, Tick bar_start, Tick ba
 /// @return True if interval is dissonant (minor 2nd or tritone)
 bool clashesWithBass(int pitch_class, int bass_pitch_class);
 
+/// Check if a pitch class clashes with bass in the current chord context.
+/// Tritones are allowed when both notes are chord-defining tones of a dominant
+/// 7th or diminished sonority; minor 2nds remain clashes.
+/// @param pitch_class Pitch class to check (0-11)
+/// @param bass_pitch_class Bass pitch class (0-11)
+/// @param root Current chord root MIDI pitch
+/// @param chord Current chord structure
+/// @return True if interval is dissonant in this chord context
+bool clashesWithBass(int pitch_class, int bass_pitch_class, uint8_t root, const Chord& chord);
+
 /// Check if a pitch class clashes with any bass pitch in the mask.
 /// @param pitch_class Pitch class to check (0-11)
 /// @param bass_pitch_mask Bitmask of bass pitch classes (bit N = pitch class N present)
 /// @return True if interval is dissonant with any bass pitch
 bool clashesWithBassMask(int pitch_class, uint16_t bass_pitch_mask);
+
+/// Context-aware version of clashesWithBassMask().
+bool clashesWithBassMask(int pitch_class, uint16_t bass_pitch_mask, uint8_t root,
+                         const Chord& chord);
 
 /// Check if a voicing has any pitch that clashes with bass.
 /// @param v Voicing to check
@@ -52,11 +66,19 @@ bool clashesWithBassMask(int pitch_class, uint16_t bass_pitch_mask);
 /// @return True if any pitch clashes
 bool voicingClashesWithBass(const VoicedChord& v, uint16_t bass_pitch_mask);
 
+/// Context-aware version of voicingClashesWithBass().
+bool voicingClashesWithBass(const VoicedChord& v, uint16_t bass_pitch_mask, uint8_t root,
+                            const Chord& chord);
+
 /// Remove clashing pitch from voicing.
 /// @param v Original voicing
 /// @param bass_pitch_mask Bitmask of bass pitch classes, or 0 if unknown
 /// @return Modified voicing with clashing pitches removed
 VoicedChord removeClashingPitch(const VoicedChord& v, uint16_t bass_pitch_mask);
+
+/// Context-aware version of removeClashingPitch().
+VoicedChord removeClashingPitch(const VoicedChord& v, uint16_t bass_pitch_mask, uint8_t root,
+                                const Chord& chord);
 
 /// @}
 
