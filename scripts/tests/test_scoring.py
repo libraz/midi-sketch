@@ -2,7 +2,15 @@
 
 import unittest
 
-from conftest import Note, MusicAnalyzer, TICKS_PER_BAR, TICKS_PER_BEAT
+from conftest import (
+    Category,
+    Issue,
+    Note,
+    MusicAnalyzer,
+    Severity,
+    TICKS_PER_BAR,
+    TICKS_PER_BEAT,
+)
 
 
 class TestScoring(unittest.TestCase):
@@ -39,6 +47,29 @@ class TestScoring(unittest.TestCase):
         result = MusicAnalyzer(notes).analyze_all()
 
         self.assertLess(result.score.harmonic, 100)
+
+    def test_new_arrangement_subcategories_have_explicit_penalties(self):
+        """Important arrangement issues should not fall back to default weights."""
+        analyzer = MusicAnalyzer([])
+        analyzer.issues = [
+            Issue(Severity.WARNING, Category.ARRANGEMENT, "lead_dominance", "", 0),
+            Issue(Severity.WARNING, Category.ARRANGEMENT, "unintended_solo_spotlight", "", 0),
+        ]
+
+        score = analyzer._calculate_scores([])
+
+        self.assertEqual(score.details["arrangement_penalty"], 2.5)
+
+    def test_section_pause_balance_has_explicit_penalty(self):
+        """Section pause balance should not fall back to default weights."""
+        analyzer = MusicAnalyzer([])
+        analyzer.issues = [
+            Issue(Severity.WARNING, Category.STRUCTURE, "section_pause_balance", "", 0),
+        ]
+
+        score = analyzer._calculate_scores([])
+
+        self.assertEqual(score.details["structure_penalty"], 1.0)
 
 
 if __name__ == "__main__":

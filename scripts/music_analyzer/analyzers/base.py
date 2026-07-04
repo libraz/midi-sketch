@@ -44,14 +44,80 @@ class BaseAnalyzer:
 
     @property
     def sections(self):
-        """Estimated song sections (lazy computed)."""
+        """Song sections from metadata when available, otherwise estimates."""
         if self._sections is None:
-            self._sections = self._estimate_sections()
+            self._sections = self._metadata_sections() or self._estimate_sections()
         return self._sections
 
     def analyze(self) -> List[Issue]:
         """Run all analyses for this domain. Override in subclasses."""
         raise NotImplementedError
+
+    def _metadata_sections(self) -> list:
+        """Return normalized sections from generation metadata if present."""
+        raw_sections = self.metadata.get('sections', [])
+        if not raw_sections:
+            return []
+
+        sections = []
+        vocal = self.notes_by_channel.get(0, [])
+        for idx, raw in enumerate(raw_sections):
+            start_tick = raw.get('start_ticks', raw.get('startTick'))
+            end_tick = raw.get('end_ticks', raw.get('endTick'))
+
+            if start_tick is None:
+                start_bar = raw.get('start_bar', raw.get('startBar', idx * SECTION_LENGTH_BARS + 1))
+                start_tick = (max(1, int(start_bar)) - 1) * TICKS_PER_BAR
+            if end_tick is None:
+                if 'end_bar' in raw:
+                    end_tick = int(raw['end_bar']) * TICKS_PER_BAR
+                elif 'bars' in raw:
+                    end_tick = int(start_tick) + int(raw['bars']) * TICKS_PER_BAR
+                else:
+                    end_tick = int(start_tick) + SECTION_LENGTH_BARS * TICKS_PER_BAR
+
+            start_tick = int(start_tick)
+            end_tick = int(end_tick)
+            if end_tick <= start_tick:
+                continue
+
+            sec_notes = [n for n in vocal if start_tick <= n.start < end_tick]
+            bars = max(1, (end_tick - start_tick) / TICKS_PER_BAR)
+            raw_type = str(raw.get('type', raw.get('name', 'verse')))
+            section_type = self._normalize_section_type(raw_type)
+            start_bar = raw.get('start_bar', tick_to_bar(start_tick))
+            end_bar = raw.get('end_bar', tick_to_bar(end_tick - 1))
+
+            sections.append({
+                'start_bar': int(start_bar),
+                'end_bar': int(end_bar),
+                'start_ticks': start_tick,
+                'end_ticks': end_tick,
+                'density': len(sec_notes) / bars,
+                'avg_pitch': (
+                    sum(n.pitch for n in sec_notes) / len(sec_notes)
+                    if sec_notes else 0
+                ),
+                'avg_velocity': (
+                    sum(n.velocity for n in sec_notes) / len(sec_notes)
+                    if sec_notes else 0
+                ),
+                'note_count': len(sec_notes),
+                'type': section_type,
+                'raw_type': raw_type,
+            })
+
+        return sections
+
+    @staticmethod
+    def _normalize_section_type(section_type: str) -> str:
+        """Map generated section names to analyzer section roles."""
+        value = section_type.lower()
+        if 'chorus' in value or value in {'c', 'hook'}:
+            return 'chorus'
+        if 'bridge' in value or 'interlude' in value or value in {'b', 'prechorus', 'pre_chorus'}:
+            return 'bridge'
+        return 'verse'
 
     def _estimate_sections(self) -> list:
         """Estimate sections as 8-bar groups with type classification."""

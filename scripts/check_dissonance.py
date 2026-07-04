@@ -11,6 +11,9 @@ import json
 import sys
 import argparse
 from pathlib import Path
+
+STYLE_PRESET_COUNT = 17
+PRODUCTION_BLUEPRINT_COUNT = 10
 from dataclasses import dataclass, field
 from typing import Optional
 from collections import defaultdict
@@ -922,17 +925,17 @@ Filters:
         seeds = list(range(1, 11))
         styles = [0]
         chords = [0]
-        blueprints = list(range(9))
+        blueprints = list(range(PRODUCTION_BLUEPRINT_COUNT))
     elif args.medium:
         seeds = list(range(1, 51))
-        styles = list(range(13))
+        styles = list(range(STYLE_PRESET_COUNT))
         chords = [0]
-        blueprints = list(range(9))
+        blueprints = list(range(PRODUCTION_BLUEPRINT_COUNT))
     elif args.full:
         seeds = list(range(1, 101))
-        styles = list(range(13))
+        styles = list(range(STYLE_PRESET_COUNT))
         chords = list(range(20))
-        blueprints = list(range(9))
+        blueprints = list(range(PRODUCTION_BLUEPRINT_COUNT))
     else:
         # Custom configuration
         if args.random_seeds:
@@ -946,9 +949,9 @@ Filters:
         else:
             seeds = list(range(args.seed_start, args.seed_start + args.seeds))
 
-        styles = list(range(15)) if args.styles == "all" else [int(x) for x in args.styles.split(",")]
+        styles = list(range(STYLE_PRESET_COUNT)) if args.styles == "all" else [int(x) for x in args.styles.split(",")]
         chords = list(range(22)) if args.chords == "all" else [int(x) for x in args.chords.split(",")]
-        blueprints = list(range(9)) if args.blueprints == "all" else [int(x) for x in args.blueprints.split(",")]
+        blueprints = list(range(PRODUCTION_BLUEPRINT_COUNT)) if args.blueprints == "all" else [int(x) for x in args.blueprints.split(",")]
 
     # Build filters dict
     filters = {

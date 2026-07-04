@@ -3,6 +3,7 @@
 import unittest
 
 from conftest import Note, MusicAnalyzer, TICKS_PER_BAR, TICKS_PER_BEAT
+from music_analyzer.analyzers.base import BaseAnalyzer
 
 
 def _make_section(section_type, name, start_bar, end_bar):
@@ -55,6 +56,58 @@ class TestStructureAnalysis(unittest.TestCase):
 
         empty_issues = [i for i in result.issues if i.subcategory == "empty_track"]
         self.assertGreaterEqual(len(empty_issues), 3)
+
+
+class TestEnergyCurve(unittest.TestCase):
+    """Test top-level energy curve calculation."""
+
+    def test_drum_only_bar_contributes_energy(self):
+        notes = [
+            Note(
+                start=beat * TICKS_PER_BEAT,
+                duration=TICKS_PER_BEAT // 4,
+                pitch=36,
+                velocity=100,
+                channel=9,
+            )
+            for beat in range(4)
+        ]
+
+        curve = MusicAnalyzer(notes)._calculate_energy_curve()
+
+        self.assertEqual(len(curve), 1)
+        self.assertGreater(curve[0][1], 0.0)
+
+
+class DummyAnalyzer(BaseAnalyzer):
+    """Concrete analyzer for BaseAnalyzer section tests."""
+
+    def analyze(self):
+        return []
+
+
+class TestBaseAnalyzerSections(unittest.TestCase):
+    """Test shared section resolution."""
+
+    def test_metadata_sections_take_precedence_over_estimation(self):
+        """Explicit generated sections should be used instead of energy guesses."""
+        sections = [
+            _make_section('A', 'A', 1, 8),
+            _make_section('Chorus', 'Chorus', 9, 16),
+        ]
+        notes = _fill_notes(1, 8, 12, channels=[0]) + _fill_notes(9, 16, 2, channels=[0])
+        analyzer = DummyAnalyzer(
+            notes=notes,
+            notes_by_channel={0: notes},
+            metadata={'sections': sections},
+        )
+
+        resolved = analyzer.sections
+
+        self.assertEqual(len(resolved), 2)
+        self.assertEqual(resolved[0]['type'], 'verse')
+        self.assertEqual(resolved[1]['type'], 'chorus')
+        self.assertEqual(resolved[1]['start_ticks'], 8 * TICKS_PER_BAR)
 
 
 class TestChorusDensityInversion(unittest.TestCase):

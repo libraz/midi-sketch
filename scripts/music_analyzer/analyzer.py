@@ -105,35 +105,63 @@ class MusicAnalyzer:
         if len(bars) < 8:
             return hooks
 
+        def is_contiguous(bar_window: list) -> bool:
+            return all(
+                bar_window[idx] == bar_window[0] + idx
+                for idx in range(len(bar_window))
+            )
+
+        def flatten(pattern: tuple) -> list:
+            return [p for bar_pitches in pattern for p in bar_pitches]
+
+        def interval_similarity(a: list, b: list) -> float:
+            if len(a) != len(b) or len(a) < 2:
+                return 0.0
+            intervals_a = [a[idx] - a[idx - 1] for idx in range(1, len(a))]
+            intervals_b = [b[idx] - b[idx - 1] for idx in range(1, len(b))]
+            if not intervals_a:
+                return 0.0
+            matches = sum(
+                1 for ia, ib in zip(intervals_a, intervals_b)
+                if abs(ia - ib) <= 1
+            )
+            return matches / len(intervals_a)
+
         for start in range(len(bars) - 7):
             pattern_bars = bars[start:start + 4]
+            if not is_contiguous(pattern_bars):
+                continue
             pattern = tuple(tuple(pitches_by_bar[b]) for b in pattern_bars)
+            flat_pitches = flatten(pattern)
 
-            if not pattern or all(len(p) == 0 for p in pattern):
+            if not pattern or len(flat_pitches) < 6:
                 continue
 
             occurrences = [pattern_bars[0]]
+            best_similarity = 1.0
 
             for check_start in range(start + 4, len(bars) - 3):
                 check_bars = bars[check_start:check_start + 4]
+                if not is_contiguous(check_bars):
+                    continue
                 check_pattern = tuple(
                     tuple(pitches_by_bar[b]) for b in check_bars
                 )
+                check_pitches = flatten(check_pattern)
+                similarity = interval_similarity(flat_pitches, check_pitches)
 
-                if check_pattern == pattern:
+                if similarity >= 0.75:
                     occurrences.append(check_bars[0])
+                    best_similarity = min(best_similarity, similarity)
 
             if len(occurrences) >= 2:
-                flat_pitches = [
-                    p for bar_pitches in pattern for p in bar_pitches
-                ]
                 hooks.append(HookPattern(
                     start_bar=pattern_bars[0],
                     end_bar=pattern_bars[-1],
                     pitches=flat_pitches,
                     rhythm=[],
                     occurrences=occurrences,
-                    similarity=1.0,
+                    similarity=best_similarity,
                 ))
                 break
 
@@ -151,7 +179,7 @@ class MusicAnalyzer:
 
             bar_notes = [
                 n for n in self.notes
-                if bar_start <= n.start < bar_end and n.channel != 9
+                if bar_start <= n.start < bar_end
             ]
             if not bar_notes:
                 energy_curve.append((bar, 0.0))
@@ -417,6 +445,9 @@ class MusicAnalyzer:
                 'motif_vocal_clash': {
                     Severity.ERROR: 2.0, Severity.WARNING: 1.0, Severity.INFO: 0.3,
                 },
+                'lead_dominance': {
+                    Severity.ERROR: 3.0, Severity.WARNING: 1.5, Severity.INFO: 0.3,
+                },
                 'motif_density_balance': {
                     Severity.ERROR: 0.5, Severity.WARNING: 0.3, Severity.INFO: 0.1,
                 },
@@ -425,6 +456,9 @@ class MusicAnalyzer:
                 },
                 'submelody_vocal_crossing': {
                     Severity.ERROR: 1.5, Severity.WARNING: 0.8, Severity.INFO: 0.2,
+                },
+                'unintended_solo_spotlight': {
+                    Severity.ERROR: 2.0, Severity.WARNING: 1.0, Severity.INFO: 0.3,
                 },
                 'motif_contour_preservation': {
                     Severity.ERROR: 1.5, Severity.WARNING: 0.8, Severity.INFO: 0.2,
@@ -484,6 +518,9 @@ class MusicAnalyzer:
                 },
                 'drums_energy_inversion': {
                     Severity.ERROR: 1.5, Severity.WARNING: 0.8, Severity.INFO: 0.2,
+                },
+                'section_pause_balance': {
+                    Severity.ERROR: 2.0, Severity.WARNING: 1.0, Severity.INFO: 0.3,
                 },
             },
         }

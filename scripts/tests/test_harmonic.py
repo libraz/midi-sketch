@@ -159,6 +159,18 @@ class TestBassTrackAnalysis(unittest.TestCase):
                         if i.subcategory in ["range_low", "range_high"] and i.track == "Bass"]
         self.assertEqual(len(range_issues), 0)
 
+    def test_bass_contour_treats_sixths_as_structured_motion(self):
+        """m6/M6 bass accompaniment leaps should not be classified as random."""
+        notes = []
+        pitches = [48, 56, 65, 57, 66, 58, 67, 59]  # +m6, +M6, -m6 pattern
+        for idx, pitch in enumerate(pitches):
+            notes.append(make_bass_note(idx * (TICKS_PER_BEAT // 2), pitch))
+
+        result = MusicAnalyzer(notes).analyze_all()
+
+        contour_issues = [i for i in result.issues if i.subcategory == "bass_contour"]
+        self.assertEqual(len(contour_issues), 0)
+
 
 class TestDissonanceDetection(unittest.TestCase):
     """Test dissonance detection including sus chords."""
@@ -188,6 +200,34 @@ class TestDissonanceDetection(unittest.TestCase):
         dissonance_issues = [i for i in result.issues if i.subcategory == "dissonance"]
         self.assertGreater(len(dissonance_issues), 0)
         self.assertIn("major 7th", dissonance_issues[0].message)
+
+    def test_sixteenth_offbeat_overlap_detection(self):
+        """Dissonance should be detected even when overlap starts off the 240-tick grid."""
+        notes = [
+            Note(start=0, duration=TICKS_PER_BEAT, pitch=60, velocity=80, channel=0),
+            Note(start=TICKS_PER_BEAT // 4, duration=60, pitch=61, velocity=80, channel=1),
+        ]
+
+        result = MusicAnalyzer(notes).analyze_all()
+
+        dissonance_issues = [i for i in result.issues if i.subcategory == "dissonance"]
+        self.assertGreater(len(dissonance_issues), 0)
+        self.assertEqual(dissonance_issues[0].tick, TICKS_PER_BEAT // 4)
+        self.assertIn("minor 2nd", dissonance_issues[0].message)
+
+    def test_minor_ninth_detection(self):
+        """Raw 13-semitone minor 9th should not be skipped as a wide minor 2nd."""
+        notes = [
+            Note(start=0, duration=TICKS_PER_BEAT, pitch=48, velocity=80, channel=2),
+            Note(start=0, duration=TICKS_PER_BEAT, pitch=61, velocity=80, channel=1),
+        ]
+
+        result = MusicAnalyzer(notes).analyze_all()
+
+        dissonance_issues = [i for i in result.issues if i.subcategory == "dissonance"]
+        self.assertGreater(len(dissonance_issues), 0)
+        self.assertIn("minor 9th", dissonance_issues[0].message)
+        self.assertEqual(dissonance_issues[0].details["interval_semitones"], 13)
 
     def test_sus4_not_flagged_as_error(self):
         """Sus4 chord (C-F-G) should not be flagged as error dissonance."""

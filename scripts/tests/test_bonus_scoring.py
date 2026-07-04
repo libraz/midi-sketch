@@ -10,7 +10,8 @@ from conftest import Note, MusicAnalyzer, TICKS_PER_BAR, TICKS_PER_BEAT
 
 from music_analyzer.models import Bonus, QualityScore
 from music_analyzer.constants import Category
-from music_analyzer.blueprints import BLUEPRINT_PROFILES
+from music_analyzer.blueprints import BLUEPRINT_PROFILES, BlueprintProfile
+from music_analyzer.analyzers.bonus_harmonic import BonusHarmonicAnalyzer
 
 
 def _make_song(bars=32, with_patterns=True):
@@ -170,8 +171,125 @@ class TestBonusIntegration(unittest.TestCase):
             )
 
 
+class TestHookDetection(unittest.TestCase):
+    """Test top-level hook detection."""
+
+    @staticmethod
+    def _note(bar, offset_beats, pitch):
+        return Note(
+            start=(bar - 1) * TICKS_PER_BAR + offset_beats * TICKS_PER_BEAT,
+            duration=TICKS_PER_BEAT - 60,
+            pitch=pitch,
+            velocity=90,
+            channel=0,
+        )
+
+    def test_detects_transposed_repeated_four_bar_hook(self):
+        phrase = [60, 62, 64, 65, 63, 62, 65, 63]
+        notes = []
+        for idx, pitch in enumerate(phrase):
+            notes.append(self._note(1 + idx // 2, idx % 2, pitch))
+        for idx, pitch in enumerate(phrase):
+            notes.append(self._note(5 + idx // 2, idx % 2, pitch + 2))
+
+        hooks = MusicAnalyzer(notes)._detect_hooks()
+
+        self.assertEqual(len(hooks), 1)
+        self.assertEqual(hooks[0].occurrences, [1, 5])
+        self.assertGreaterEqual(hooks[0].similarity, 0.75)
+
+    def test_ignores_non_contiguous_bar_windows(self):
+        notes = []
+        for idx, bar in enumerate([1, 3, 5, 7, 9, 11, 13, 15]):
+            notes.append(self._note(bar, 0, 60 + (idx % 4)))
+
+        hooks = MusicAnalyzer(notes)._detect_hooks()
+
+        self.assertEqual(hooks, [])
+
+    def test_ignores_single_hit_per_bar_repetition(self):
+        notes = []
+        phrase = [60, 62, 64, 65]
+        for idx, pitch in enumerate(phrase):
+            notes.append(self._note(1 + idx, 0, pitch))
+        for idx, pitch in enumerate(phrase):
+            notes.append(self._note(5 + idx, 0, pitch))
+
+        hooks = MusicAnalyzer(notes)._detect_hooks()
+
+        self.assertEqual(hooks, [])
+
+
+class TestHarmonicCadenceBonus(unittest.TestCase):
+    """Test cadence scoring with bass inversion context."""
+
+    @staticmethod
+    def _sections():
+        return [
+            {'type': 'verse', 'start_bar': 1, 'end_bar': 8},
+            {'type': 'chorus', 'start_bar': 9, 'end_bar': 16},
+        ]
+
+    @staticmethod
+    def _analyzer(end_bass_pitch, start_bass_pitch):
+        end_tick = 7 * TICKS_PER_BAR
+        start_tick = 8 * TICKS_PER_BAR
+        notes = [
+            Note(start=end_tick, duration=TICKS_PER_BAR, pitch=67, velocity=80, channel=1,
+                 provenance={'chord_degree': 4, 'source': 'chord_voicing'}),
+            Note(start=start_tick, duration=TICKS_PER_BAR, pitch=60, velocity=80, channel=1,
+                 provenance={'chord_degree': 0, 'source': 'chord_voicing'}),
+            Note(start=end_tick, duration=TICKS_PER_BAR, pitch=end_bass_pitch, velocity=80,
+                 channel=2, provenance={'chord_degree': 4, 'source': 'bass_pattern'}),
+            Note(start=start_tick, duration=TICKS_PER_BAR, pitch=start_bass_pitch, velocity=80,
+                 channel=2, provenance={'chord_degree': 0, 'source': 'bass_pattern'}),
+        ]
+        return BonusHarmonicAnalyzer(
+            notes=notes,
+            notes_by_channel={1: notes[:2], 2: notes[2:]},
+        )
+
+    def test_root_position_v_i_cadence_gets_full_boundary_credit(self):
+        analyzer = self._analyzer(43, 48)  # G -> C
+
+        score = analyzer._evaluate_cadences(self._sections())
+
+        self.assertEqual(score, 1.0)
+
+    def test_inverted_v_i_cadence_gets_partial_boundary_credit(self):
+        analyzer = self._analyzer(47, 52)  # B -> E over V -> I
+
+        score = analyzer._evaluate_cadences(self._sections())
+
+        self.assertEqual(score, 0.5)
+
+
 class TestBlueprintDifferentiation(unittest.TestCase):
     """Test that different blueprints produce different bonus weights."""
+
+    def test_blueprint_profile_default_weights_match_implemented_arrangement_weight(self):
+        profile = BlueprintProfile("Default", "Traditional", "Free")
+
+        self.assertEqual(profile.weight_arrangement, 0.15)
+        self.assertAlmostEqual(
+            profile.weight_melodic
+            + profile.weight_harmonic
+            + profile.weight_rhythm
+            + profile.weight_arrangement
+            + profile.weight_structure,
+            1.0,
+        )
+
+    def test_all_blueprint_weights_sum_to_one(self):
+        for profile in BLUEPRINT_PROFILES.values():
+            total = (
+                profile.weight_melodic
+                + profile.weight_harmonic
+                + profile.weight_rhythm
+                + profile.weight_arrangement
+                + profile.weight_structure
+            )
+            self.assertAlmostEqual(total, 1.0, msg=profile.name)
 
     def test_rhythm_blueprint_groove_bonus(self):
         """Blueprint 1 (RhythmLock, groove_weight=1.5) should give higher

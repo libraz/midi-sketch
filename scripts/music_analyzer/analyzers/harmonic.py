@@ -55,82 +55,77 @@ class HarmonicAnalyzer(BaseAnalyzer):
 
     def _analyze_dissonance(self):
         """Detect dissonant intervals between simultaneous notes across channels."""
-        time_slices = defaultdict(list)
-        for note in self.notes:
-            if note.channel == 9:  # Skip drums
-                continue
-            for tick in range(note.start, note.end, TICKS_PER_BEAT // 2):
-                time_slices[tick].append(note)
+        pitched_notes = [note for note in self.notes if note.channel != 9]
 
-        checked_pairs = set()
+        for idx, note_a in enumerate(pitched_notes):
+            for note_b in pitched_notes[idx + 1:]:
+                if note_b.start >= note_a.end and note_a.start <= note_b.start:
+                    break
+                if note_a.channel == note_b.channel:
+                    continue
 
-        for tick, active_notes in time_slices.items():
-            pitch_info = [
-                (note.pitch, note.channel, note)
-                for note in active_notes
-                if note.start <= tick < note.end
-            ]
+                overlap_start = max(note_a.start, note_b.start)
+                overlap_end = min(note_a.end, note_b.end)
+                if overlap_start >= overlap_end:
+                    continue
 
-            for idx, (pitch_a, channel_a, note_a) in enumerate(pitch_info):
-                for pitch_b, channel_b, note_b in pitch_info[idx + 1:]:
-                    if channel_a == channel_b:
-                        continue
+                pitch_a = note_a.pitch
+                pitch_b = note_b.pitch
+                channel_a = note_a.channel
+                channel_b = note_b.channel
+                raw_interval = abs(pitch_a - pitch_b)
+                interval = raw_interval % 12
+                interval_key = 13 if raw_interval == 13 else interval
 
-                    raw_interval = abs(pitch_a - pitch_b)
-                    interval = raw_interval % 12
-                    pair_key = (min(note_a.start, note_b.start),
-                                pitch_a, pitch_b, channel_a, channel_b)
+                # Only flag close compound seconds, except the canonical minor 9th.
+                if raw_interval > 12 and interval in [1, 2] and raw_interval != 13:
+                    continue
 
-                    if pair_key in checked_pairs:
-                        continue
-                    checked_pairs.add(pair_key)
+                if interval_key not in DISSONANT_INTERVALS:
+                    continue
 
-                    # Only flag close voicing (within 12 semitones)
-                    if raw_interval > 12 and interval in [1, 2]:
-                        continue
-
-                    if interval in DISSONANT_INTERVALS:
-                        # Major 7th: wider voicings (24+ semitones) are less harsh
-                        if interval == 11:
-                            if raw_interval >= 36:
-                                continue  # 3+ octaves: not perceptually dissonant
-                            elif raw_interval > 23:
-                                severity = Severity.INFO  # 2-3 octaves: notable but acceptable
-                            else:
-                                is_bass_collision = (
-                                    (channel_a == 2 or channel_b == 2)
-                                    and min(pitch_a, pitch_b) < 60
-                                )
-                                severity = (Severity.ERROR if is_bass_collision
-                                            else Severity.WARNING)
-                        else:
-                            is_bass_collision = (
-                                (channel_a == 2 or channel_b == 2)
-                                and min(pitch_a, pitch_b) < 60
-                            )
-                            severity = (Severity.ERROR if is_bass_collision
-                                        else Severity.WARNING)
-
-                        track_a = TRACK_NAMES.get(channel_a, f"Ch{channel_a}")
-                        track_b = TRACK_NAMES.get(channel_b, f"Ch{channel_b}")
-                        self.add_issue(
-                            severity=severity,
-                            category=Category.HARMONIC,
-                            subcategory="dissonance",
-                            message=(f"{DISSONANT_INTERVALS[interval]}: "
-                                     f"{track_a} {note_name(pitch_a)} vs "
-                                     f"{track_b} {note_name(pitch_b)}"),
-                            tick=tick,
-                            track=f"{track_a}/{track_b}",
-                            details={
-                                "interval": DISSONANT_INTERVALS[interval],
-                                "interval_semitones": raw_interval,
-                                "track1": track_a,
-                                "track2": track_b,
-                                "pitch1": pitch_a,
-                                "pitch2": pitch_b,
-                            },
+                # Major 7th: wider voicings (24+ semitones) are less harsh
+                if interval_key == 11:
+                    if raw_interval >= 36:
+                        continue  # 3+ octaves: not perceptually dissonant
+                    elif raw_interval > 23:
+                        severity = Severity.INFO  # 2-3 octaves: notable but acceptable
+                    else:
+                        is_bass_collision = (
+                            (channel_a == 2 or channel_b == 2)
+                            and min(pitch_a, pitch_b) < 60
                         )
+                        severity = (Severity.ERROR if is_bass_collision
+                                    else Severity.WARNING)
+                else:
+                    is_bass_collision = (
+                        (channel_a == 2 or channel_b == 2)
+                        and min(pitch_a, pitch_b) < 60
+                    )
+                    severity = (Severity.ERROR if is_bass_collision
+                                else Severity.WARNING)
+
+                track_a = TRACK_NAMES.get(channel_a, f"Ch{channel_a}")
+                track_b = TRACK_NAMES.get(channel_b, f"Ch{channel_b}")
+                self.add_issue(
+                    severity=severity,
+                    category=Category.HARMONIC,
+                    subcategory="dissonance",
+                    message=(f"{DISSONANT_INTERVALS[interval_key]}: "
+                             f"{track_a} {note_name(pitch_a)} vs "
+                             f"{track_b} {note_name(pitch_b)}"),
+                    tick=overlap_start,
+                    track=f"{track_a}/{track_b}",
+                    details={
+                        "interval": DISSONANT_INTERVALS[interval_key],
+                        "interval_semitones": raw_interval,
+                        "overlap_ticks": overlap_end - overlap_start,
+                        "track1": track_a,
+                        "track2": track_b,
+                        "pitch1": pitch_a,
+                        "pitch2": pitch_b,
+                    },
+                )
 
     def _analyze_chord_voicing(self):
         """Analyze chord track for voicing issues.
@@ -775,8 +770,9 @@ class HarmonicAnalyzer(BaseAnalyzer):
                 total_intervals += 1
                 if interval <= 2:
                     stepwise_count += 1
-                elif 3 <= interval <= 7 or interval == 12:
-                    # Include P4(5), P5(7), and octave(12) as structured motion
+                elif 3 <= interval <= 9 or interval == 12:
+                    # Include thirds through sixths, P5, and octave as
+                    # structured arpeggiated/accompaniment motion.
                     arpeggiated_count += 1
 
             if total_intervals == 0:

@@ -279,7 +279,7 @@ class ArrangementAnalyzer(BaseAnalyzer):
                 if motif_note.start < vocal_note.end and motif_note.end > vocal_note.start:
                     overlap_count += 1
                     interval = abs(motif_note.pitch - vocal_note.pitch) % 12
-                    if interval in (1, 2, 6, 11):
+                    if self._is_motif_vocal_clash(motif_note, vocal_note, interval):
                         clash_count += 1
                     break
         if overlap_count > 4:
@@ -293,6 +293,33 @@ class ArrangementAnalyzer(BaseAnalyzer):
                     tick=0, track="Motif/Vocal",
                     details={"clash_ratio": clash_ratio, "clash_count": clash_count},
                 )
+
+    def _is_motif_vocal_clash(self, motif_note, vocal_note, interval: int) -> bool:
+        """Return whether a motif/vocal interval is an actual clash."""
+        if interval not in (1, 2, 6, 11):
+            return False
+
+        # Seconds remain a vocal-arrangement clash even if used as chord color.
+        if interval in (1, 2):
+            return True
+
+        # Tritones and major sevenths can be valid chord tones (V7, maj7).
+        # Use the sounding chord track as the harmonic context when available.
+        overlap_start = max(motif_note.start, vocal_note.start)
+        overlap_end = min(motif_note.end, vocal_note.end)
+        midpoint = (overlap_start + overlap_end) // 2
+        chord_pcs = {
+            note.pitch % 12
+            for note in self.notes_by_channel.get(1, [])
+            if note.start <= midpoint < note.end
+        }
+        if not chord_pcs:
+            return True
+
+        return not {
+            motif_note.pitch % 12,
+            vocal_note.pitch % 12,
+        }.issubset(chord_pcs)
 
     def _analyze_lead_dominance(self):
         """Quantify whether support lines overtake the main melody.

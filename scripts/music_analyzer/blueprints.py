@@ -21,8 +21,8 @@ class BlueprintProfile:
     riff_policy: str  # Free, Locked, Evolving
     weight_melodic: float = 0.25
     weight_harmonic: float = 0.25
-    weight_rhythm: float = 0.20
-    weight_arrangement: float = 0.20
+    weight_rhythm: float = 0.25
+    weight_arrangement: float = 0.15
     weight_structure: float = 0.10
     leap_tolerance: float = 1.0
     density_tolerance: float = 1.0
@@ -136,6 +136,17 @@ BLUEPRINT_PROFILES = {
         leap_tolerance=1.2,
         hook_bonus_weight=1.2, groove_bonus_weight=0.5,
         tension_bonus_weight=1.5, dynamics_bonus_weight=1.5,
+        simplicity_bonus_weight=1.0,
+        bonus_cap_melodic=12.0,
+    ),
+    9: BlueprintProfile(
+        "BehavioralLoop", "RhythmSync", "Locked",
+        weight_melodic=0.25, weight_harmonic=0.20, weight_rhythm=0.30,
+        weight_arrangement=0.15, weight_structure=0.10,
+        density_tolerance=1.3, rhythm_sync_required=True,
+        motif_consistency_min=0.9, leap_tolerance=1.2,
+        hook_bonus_weight=1.5, groove_bonus_weight=1.3,
+        tension_bonus_weight=0.8, dynamics_bonus_weight=0.8,
         simplicity_bonus_weight=1.0,
         bonus_cap_melodic=12.0,
     ),

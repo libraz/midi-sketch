@@ -214,5 +214,55 @@ class TestSubmelodyVocalCrossing(unittest.TestCase):
         self.assertEqual(len(above_issues), 0)
 
 
+class TestMotifVocalInterference(unittest.TestCase):
+    """Test motif/vocal clash detection with harmonic context."""
+
+    def _get_clash_issues(self, notes):
+        result = MusicAnalyzer(notes).analyze_all()
+        return [
+            iss for iss in result.issues
+            if iss.subcategory == "motif_vocal_clash"
+        ]
+
+    def test_major_seventh_chord_tones_do_not_count_as_clash(self):
+        notes = []
+        for beat in range(6):
+            tick = beat * TICKS_PER_BEAT
+            notes.append(_make_note(0, tick, TICKS_PER_BEAT, 60))
+            notes.append(_make_note(3, tick, TICKS_PER_BEAT, 71))
+        notes.extend([
+            _make_note(1, 0, 6 * TICKS_PER_BEAT, 60),
+            _make_note(1, 0, 6 * TICKS_PER_BEAT, 64),
+            _make_note(1, 0, 6 * TICKS_PER_BEAT, 67),
+            _make_note(1, 0, 6 * TICKS_PER_BEAT, 71),
+        ])
+
+        self.assertEqual(self._get_clash_issues(notes), [])
+
+    def test_dominant_tritone_chord_tones_do_not_count_as_clash(self):
+        notes = []
+        for beat in range(6):
+            tick = beat * TICKS_PER_BEAT
+            notes.append(_make_note(0, tick, TICKS_PER_BEAT, 71))
+            notes.append(_make_note(3, tick, TICKS_PER_BEAT, 77))
+        notes.extend([
+            _make_note(1, 0, 6 * TICKS_PER_BEAT, 67),
+            _make_note(1, 0, 6 * TICKS_PER_BEAT, 71),
+            _make_note(1, 0, 6 * TICKS_PER_BEAT, 74),
+            _make_note(1, 0, 6 * TICKS_PER_BEAT, 77),
+        ])
+
+        self.assertEqual(self._get_clash_issues(notes), [])
+
+    def test_tritone_without_chord_context_still_counts_as_clash(self):
+        notes = []
+        for beat in range(6):
+            tick = beat * TICKS_PER_BEAT
+            notes.append(_make_note(0, tick, TICKS_PER_BEAT, 71))
+            notes.append(_make_note(3, tick, TICKS_PER_BEAT, 77))
+
+        self.assertGreaterEqual(len(self._get_clash_issues(notes)), 1)
+
+
 if __name__ == "__main__":
     unittest.main()

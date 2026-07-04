@@ -248,7 +248,9 @@ class BonusHarmonicAnalyzer(BaseBonusAnalyzer):
         """Detect V->I cadences at section boundaries.
 
         Looks for degree 4 (V chord) near the end of one section and
-        degree 0 (I chord) near the start of the next section.
+        degree 0 (I chord) near the start of the next section. Bass pitch
+        classes are checked as well so inverted V->I motion is not scored
+        the same as a root-position authentic cadence.
 
         Args:
             sections: List of section dicts.
@@ -256,7 +258,7 @@ class BonusHarmonicAnalyzer(BaseBonusAnalyzer):
         Returns:
             Score in [0.0, 2.0].
         """
-        cadence_count = 0
+        cadence_score = 0.0
         boundary_count = 0
 
         for idx in range(len(sections) - 1):
@@ -266,25 +268,60 @@ class BonusHarmonicAnalyzer(BaseBonusAnalyzer):
             end_bar = sections[idx]['end_bar']
             end_tick = (end_bar - 1) * TICKS_PER_BAR
             end_degree = self._get_chord_degree_near_tick(end_tick)
+            end_bass_pc = self._get_bass_pitch_class_near_tick(end_tick)
 
             # Start of next section: first bar, beat 1.
             start_bar = sections[idx + 1]['start_bar']
             start_tick = (start_bar - 1) * TICKS_PER_BAR
             start_degree = self._get_chord_degree_near_tick(start_tick)
+            start_bass_pc = self._get_bass_pitch_class_near_tick(start_tick)
 
-            # V -> I cadence: degree 4 -> degree 0.
-            if end_degree == 4 and start_degree == 0:
-                cadence_count += 1
+            cadence_score += self._cadence_strength(
+                end_degree, start_degree, end_bass_pc, start_bass_pc
+            )
 
         if boundary_count == 0:
             return 0.0
 
-        # At least one cadence earns 1 point, two or more earns full 2 points.
-        if cadence_count >= 2:
-            return 2.0
-        elif cadence_count == 1:
+        return min(2.0, cadence_score)
+
+    def _cadence_strength(
+        self,
+        end_degree: int,
+        start_degree: int,
+        end_bass_pc: Optional[int],
+        start_bass_pc: Optional[int],
+    ) -> float:
+        """Return V->I cadence strength, including bass inversion context."""
+        if end_degree != 4 or start_degree != 0:
+            return 0.0
+
+        dominant_root = DEGREE_TO_ROOT_PC.get(4)
+        tonic_root = DEGREE_TO_ROOT_PC.get(0)
+
+        if end_bass_pc is None or start_bass_pc is None:
+            return 0.5
+        if end_bass_pc == dominant_root and start_bass_pc == tonic_root:
             return 1.0
-        return 0.0
+        return 0.5
+
+    def _get_bass_pitch_class_near_tick(self, tick: int) -> Optional[int]:
+        """Get the bass pitch class active at or nearest to a tick."""
+        bass_notes = self.notes_by_channel.get(2, [])
+        if not bass_notes:
+            return None
+
+        best_note = None
+        best_dist = float('inf')
+        for note in bass_notes:
+            if note.start <= tick < note.end:
+                return note.pitch % 12
+            dist = abs(note.start - tick)
+            if dist < best_dist and dist <= TICKS_PER_BEAT:
+                best_dist = dist
+                best_note = note
+
+        return best_note.pitch % 12 if best_note else None
 
     def _evaluate_tension_arc(
         self, section_tensions: list

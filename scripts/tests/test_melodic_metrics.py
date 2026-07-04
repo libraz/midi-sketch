@@ -16,6 +16,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import melodic_metrics as mm
+from music_analyzer.constants import SINGABILITY_SKIP_MAX, SINGABILITY_STEP_MAX
 
 TARGETS_PATH = (Path(__file__).resolve().parents[2]
                 / "backup" / "reference" / "target_profiles.json")
@@ -43,6 +44,10 @@ class TestIntervalDistribution(unittest.TestCase):
         self.assertAlmostEqual(dist["step_ratio"], 0.25)
         self.assertAlmostEqual(dist["leap_small_ratio"], 0.25)
         self.assertAlmostEqual(dist["leap_large_ratio"], 0.25)
+
+    def test_music_analyzer_uses_shared_step_definition(self):
+        self.assertEqual(SINGABILITY_STEP_MAX, mm.STEP_MAX)
+        self.assertEqual(SINGABILITY_SKIP_MAX, mm.LEAP_SMALL_MAX)
 
 
 class TestLeapRecovery(unittest.TestCase):

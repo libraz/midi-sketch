@@ -9,6 +9,7 @@ from collections import Counter
 from typing import List
 
 from ..constants import (TICKS_PER_BEAT, TICKS_PER_BAR, Severity, Category,
+                         SINGABILITY_STEP_MAX, SINGABILITY_SKIP_MAX,
                          VOCAL_STYLE_VOCALOID, VOCAL_STYLE_ULTRA_VOCALOID)
 from ..helpers import note_name, tick_to_bar
 from ..models import Issue
@@ -170,9 +171,9 @@ class VocalAnalyzer(BaseAnalyzer):
                 continue
             interval_val = abs(vocal[idx].pitch - vocal[idx - 1].pitch)
             total += 1
-            if interval_val <= 2:
+            if interval_val <= SINGABILITY_STEP_MAX:
                 intervals['step'] += 1
-            elif interval_val <= 4:
+            elif interval_val <= SINGABILITY_SKIP_MAX:
                 intervals['third'] += 1
             elif interval_val <= 7:
                 intervals['fourth_fifth'] += 1
@@ -368,7 +369,8 @@ class VocalAnalyzer(BaseAnalyzer):
 
         A phrase boundary is detected when the gap between notes is at
         least half a beat (240 ticks). Phrases where the last 2 beats
-        lack a note >= 1 beat in duration suggest missing sustain/resolution.
+        lack a sufficiently long note suggest missing sustain/resolution.
+        Vocaloid and idol styles accept shorter staccato phrase endings.
         Only checks phrases with 4+ notes.
         """
         vocal = self.notes_by_channel.get(0, [])
@@ -376,6 +378,7 @@ class VocalAnalyzer(BaseAnalyzer):
             return
 
         phrase_gap = TICKS_PER_BEAT // 2
+        sustain_threshold = self._phrase_end_sustain_threshold()
         phrases = []
         current_phrase = [vocal[0]]
 
@@ -401,7 +404,7 @@ class VocalAnalyzer(BaseAnalyzer):
 
             tail_notes = [n for n in phrase if n.end > tail_start]
             has_sustained = any(
-                n.duration >= TICKS_PER_BEAT for n in tail_notes
+                n.duration >= sustain_threshold for n in tail_notes
             )
 
             if not has_sustained:
@@ -416,6 +419,7 @@ class VocalAnalyzer(BaseAnalyzer):
                     details={
                         "phrase_notes": len(phrase),
                         "tail_durations": [n.duration for n in tail_notes],
+                        "sustain_threshold": sustain_threshold,
                     },
                 )
 
@@ -435,8 +439,18 @@ class VocalAnalyzer(BaseAnalyzer):
                         "short_end_count": short_end_count,
                         "checked_count": checked_count,
                         "ratio": ratio,
+                        "sustain_threshold": sustain_threshold,
                     },
                 )
+
+    def _phrase_end_sustain_threshold(self) -> int:
+        """Return style-aware minimum phrase-end duration."""
+        vocal_style = self.metadata.get('vocal_style')
+        if vocal_style in (VOCAL_STYLE_VOCALOID, VOCAL_STYLE_ULTRA_VOCALOID):
+            return TICKS_PER_BEAT // 4
+        if self.profile and self.profile.name.startswith("Idol"):
+            return TICKS_PER_BEAT // 4
+        return TICKS_PER_BEAT
 
     def _analyze_section_range_contrast(self):
         """Check if chorus has wider pitch range than verse.

@@ -6,6 +6,8 @@ and severity/category enums used across the music analyzer.
 
 from enum import Enum
 
+from melodic_metrics import LEAP_SMALL_MAX, STEP_MAX
+
 
 # =============================================================================
 # MIDI CONSTANTS
@@ -122,9 +124,11 @@ CHORD_FUNCTION_MAP = {0: 'T', 2: 'S', 4: 'S', 5: 'T', 7: 'D', 9: 'T', 11: 'D'}
 # Beat strength weights (1-indexed beat positions in 4/4)
 BEAT_STRENGTH = {1: 1.0, 2: 0.4, 3: 0.7, 4: 0.4}
 
-# Singability interval thresholds (in semitones)
-SINGABILITY_STEP_MAX = 5   # <=5 semitones = step
-SINGABILITY_SKIP_MAX = 9   # <=9 semitones = skip
+# Singability interval thresholds (in semitones). Definitions come from the
+# shared melodic measurement library so analyzer scoring and reference profiling
+# cannot drift.
+SINGABILITY_STEP_MAX = STEP_MAX
+SINGABILITY_SKIP_MAX = LEAP_SMALL_MAX
 
 
 # =============================================================================

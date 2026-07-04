@@ -7,6 +7,7 @@ from conftest import (
     TICKS_PER_BAR, TICKS_PER_BEAT,
     make_vocal_note,
 )
+from music_analyzer.constants import VOCAL_STYLE_VOCALOID
 
 
 class TestPhraseEndResolution(unittest.TestCase):
@@ -56,6 +57,43 @@ class TestPhraseEndResolution(unittest.TestCase):
             ))
 
         result = MusicAnalyzer(notes).analyze_all()
+
+        phrase_end_issues = [
+            i for i in result.issues
+            if i.subcategory == "phrase_end_short"
+        ]
+        self.assertEqual(len(phrase_end_issues), 0)
+
+    def test_vocaloid_staccato_ending_no_issue(self):
+        """Vocaloid style accepts 16th-note phrase endings."""
+        notes = []
+        for phrase_idx in range(3):
+            start = phrase_idx * TICKS_PER_BAR * 2
+            notes.extend(self._make_phrase(
+                start, 6, end_duration=TICKS_PER_BEAT // 4,
+            ))
+
+        result = MusicAnalyzer(
+            notes,
+            metadata={'vocal_style': VOCAL_STYLE_VOCALOID},
+        ).analyze_all()
+
+        phrase_end_issues = [
+            i for i in result.issues
+            if i.subcategory == "phrase_end_short"
+        ]
+        self.assertEqual(len(phrase_end_issues), 0)
+
+    def test_idol_blueprint_staccato_ending_no_issue(self):
+        """Idol blueprints accept short stylistic phrase endings."""
+        notes = []
+        for phrase_idx in range(3):
+            start = phrase_idx * TICKS_PER_BAR * 2
+            notes.extend(self._make_phrase(
+                start, 6, end_duration=TICKS_PER_BEAT // 4,
+            ))
+
+        result = MusicAnalyzer(notes, blueprint=4).analyze_all()
 
         phrase_end_issues = [
             i for i in result.issues
