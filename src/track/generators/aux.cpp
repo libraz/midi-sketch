@@ -216,7 +216,8 @@ void AuxGenerator::generateFromSongContext(MidiTrack& track, const SongContext& 
   uint8_t aux_vocal_ceiling = AUX_HIGH;  // Default aux high
   if (vocal_analysis.highest_pitch > 0) {
     int ceiling = static_cast<int>(vocal_analysis.highest_pitch) + aux_profile.range_ceiling;
-    aux_vocal_ceiling = static_cast<uint8_t>(std::clamp(ceiling, 36, static_cast<int>(AUX_HIGH)));
+    aux_vocal_ceiling = static_cast<uint8_t>(
+        std::clamp(ceiling, static_cast<int>(AUX_LOW), static_cast<int>(AUX_HIGH)));
   }
 
   // Extract motif from first chorus for intro placement
@@ -314,7 +315,8 @@ void AuxGenerator::generateFromSongContext(MidiTrack& track, const SongContext& 
 #ifdef MIDISKETCH_NOTE_PROVENANCE
           uint8_t old_pitch = note.note;
 #endif
-          note.note = static_cast<uint8_t>(std::clamp(snapped_pitch, 48, 84));
+          note.note = static_cast<uint8_t>(
+              std::clamp(snapped_pitch, static_cast<int>(AUX_LOW), static_cast<int>(AUX_HIGH)));
 #ifdef MIDISKETCH_NOTE_PROVENANCE
           if (old_pitch != note.note) {
             note.prov_original_pitch = old_pitch;
@@ -597,7 +599,9 @@ void AuxGenerator::resolvePitchClashes(std::vector<NoteEvent>& notes, IHarmonyCo
       for (int tone : valid_tones) {
         for (int oct_offset = -1; oct_offset <= 1; ++oct_offset) {
           int candidate = (octave + oct_offset) * 12 + tone;
-          if (candidate < 36 || candidate > 96) continue;
+          if (candidate < static_cast<int>(AUX_LOW) || candidate > static_cast<int>(AUX_HIGH)) {
+            continue;
+          }
 
           // Check if this candidate is safe (use trimmed duration if applicable)
           if (harmony.isConsonantWithOtherTracks(static_cast<uint8_t>(candidate), note.start_tick,
@@ -1234,14 +1238,25 @@ void AuxGenerator::calculateAuxRange(const AuxConfig& config, const TessituraRan
   int half_width = config.range_width / 2;
 
   // Apply vocal ceiling constraint from blueprint range_ceiling
-  int max_pitch = 96;
+  int max_pitch = AUX_HIGH;
   if (range_ceiling != 0 && main_tessitura.high > 0) {
     int vocal_cap = static_cast<int>(main_tessitura.high) + range_ceiling;
-    max_pitch = std::min(96, vocal_cap);
+    max_pitch = std::clamp(vocal_cap, static_cast<int>(AUX_LOW), static_cast<int>(AUX_HIGH));
   }
 
-  out_low = static_cast<uint8_t>(std::clamp(center - half_width, 36, max_pitch));
-  out_high = static_cast<uint8_t>(std::clamp(center + half_width, 36, max_pitch));
+  int low = std::clamp(center - half_width, static_cast<int>(AUX_LOW), max_pitch);
+  int high = std::clamp(center + half_width, static_cast<int>(AUX_LOW), max_pitch);
+
+  int target_width = std::max(0, static_cast<int>(config.range_width));
+  if (target_width > 0 && high - low < target_width && high < max_pitch) {
+    high = std::min(max_pitch, low + target_width);
+  }
+  if (target_width > 0 && high - low < target_width && low > static_cast<int>(AUX_LOW)) {
+    low = std::max(static_cast<int>(AUX_LOW), high - target_width);
+  }
+
+  out_low = static_cast<uint8_t>(low);
+  out_high = static_cast<uint8_t>(high);
 
   if (out_low > out_high) {
     std::swap(out_low, out_high);
@@ -1515,7 +1530,8 @@ std::vector<NoteEvent> AuxGenerator::generateHarmony(const AuxContext& ctx, cons
     new_pitch = nearestChordTonePitch(new_pitch, chord_degree);
 
     // Clamp to reasonable range
-    harm.note = static_cast<uint8_t>(std::clamp(new_pitch, 48, 84));
+    harm.note = static_cast<uint8_t>(
+        std::clamp(new_pitch, static_cast<int>(AUX_LOW), static_cast<int>(AUX_HIGH)));
 
     // Reduce velocity
     harm.velocity = vel::scale(note.velocity, config.velocity_ratio);
@@ -1555,11 +1571,33 @@ std::vector<NoteEvent> AuxGenerator::generateMelodicHook(const AuxContext& ctx,
   std::vector<NoteEvent> base_hook;
   int8_t chord_degree = harmony.getChordDegreeAt(ctx.section_start);
 
-  // Start from chord root in aux range
-  int base_pitch = nearestChordTonePitch((aux_low + aux_high) / 2, chord_degree);
+  ChordTones chord_tones = getChordTones(chord_degree);
+  int root_pc = chord_tones.pitch_classes[0];
+  int third_pc = (chord_tones.count >= 2) ? chord_tones.pitch_classes[1] : root_pc;
+  int fifth_pc = (chord_tones.count >= 3) ? chord_tones.pitch_classes[2] : root_pc;
 
-  // Simple melodic pattern: root, 3rd, 5th, 3rd
-  std::array<int, 4> intervals = {0, 4, 7, 4};  // Major chord intervals
+  auto nearestPitchClassInRange = [](int target_pitch, int pitch_class, uint8_t low, uint8_t high) {
+    int best_pitch = static_cast<int>(low);
+    int best_distance = 128;
+    for (int pitch = low; pitch <= high; ++pitch) {
+      if (getPitchClass(pitch) != pitch_class) continue;
+      int distance = std::abs(pitch - target_pitch);
+      if (distance < best_distance) {
+        best_pitch = pitch;
+        best_distance = distance;
+      }
+    }
+    return best_pitch;
+  };
+
+  int range_center = (aux_low + aux_high) / 2;
+  int base_pitch = nearestPitchClassInRange(range_center, root_pc, aux_low, aux_high);
+
+  auto intervalFromRoot = [root_pc](int pitch_class) { return (pitch_class - root_pc + 12) % 12; };
+
+  // Simple melodic pattern: root, chord 3rd, chord 5th, chord 3rd.
+  std::array<int, 4> intervals = {0, intervalFromRoot(third_pc), intervalFromRoot(fifth_pc),
+                                  intervalFromRoot(third_pc)};
 
   const auto& meta = getAuxFunctionMeta(AuxFunction::MelodicHook);
 
@@ -1984,8 +2022,10 @@ std::vector<NoteEvent> AuxGenerator::generateSustainPad(const AuxContext& ctx,
     int root_pc = current_ct.pitch_classes[0];
     int third_pc = (current_ct.count >= 2) ? current_ct.pitch_classes[1] : root_pc;
 
-    uint8_t root_pitch = static_cast<uint8_t>(std::clamp(octave * 12 + root_pc, 36, 84));
-    uint8_t third_pitch = static_cast<uint8_t>(std::clamp(octave * 12 + third_pc, 36, 84));
+    uint8_t root_pitch = static_cast<uint8_t>(
+        std::clamp(octave * 12 + root_pc, static_cast<int>(AUX_LOW), static_cast<int>(AUX_HIGH)));
+    uint8_t third_pitch = static_cast<uint8_t>(
+        std::clamp(octave * 12 + third_pc, static_cast<int>(AUX_LOW), static_cast<int>(AUX_HIGH)));
 
     // Ensure pitches are in valid range
     root_pitch = std::clamp(root_pitch, aux_low, aux_high);
@@ -2015,7 +2055,8 @@ std::vector<NoteEvent> AuxGenerator::generateSustainPad(const AuxContext& ctx,
     if (rng_util::rollProbability(rng, 0.3f) && voice_count >= 2) {
       // Occasionally add fifth for richer texture
       int fifth_pc = (current_ct.count >= 3) ? current_ct.pitch_classes[2] : root_pc;
-      uint8_t fifth_pitch = static_cast<uint8_t>(std::clamp(octave * 12 + fifth_pc + 12, 48, 96));
+      uint8_t fifth_pitch = static_cast<uint8_t>(std::clamp(
+          octave * 12 + fifth_pc + 12, static_cast<int>(AUX_LOW), static_cast<int>(AUX_HIGH)));
       fifth_pitch = std::clamp(fifth_pitch, aux_low, aux_high);
 
       if (fifth_pitch != safe_root && fifth_pitch != third_pitch) {

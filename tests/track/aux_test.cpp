@@ -165,8 +165,8 @@ TEST(AuxTest, PulseLoopNotesInRange) {
   auto notes = generator.generatePulseLoop(ctx, config, harmony, rng);
 
   for (const auto& note : notes) {
-    EXPECT_GE(note.note, 36);
-    EXPECT_LE(note.note, 96);
+    EXPECT_GE(note.note, AUX_LOW);
+    EXPECT_LE(note.note, AUX_HIGH);
   }
 }
 
@@ -657,6 +657,44 @@ TEST(AuxTest, MelodicHookHasRepetition) {
   auto notes = generator.generateMelodicHook(ctx, config, harmony, rng);
 
   EXPECT_GT(notes.size(), 8u) << "MelodicHook should produce multiple phrases";
+}
+
+TEST(AuxTest, MelodicHookUsesMinorThirdForMinorChord) {
+  AuxGenerator generator;
+  auto ctx = createTestContext();
+  ctx.chord_degree = 5;  // vi = A minor in C major.
+  ctx.section_end = TICKS_PER_BAR * 2;
+
+  Section section;
+  section.type = SectionType::A;
+  section.start_tick = ctx.section_start;
+  section.bars = 2;
+
+  ChordProgression one_chord{{5, -1, -1, -1, -1, -1, -1, -1}, 1};
+  HarmonyContext harmony;
+  harmony.initialize(Arrangement({section}), one_chord, Mood::StraightPop);
+  std::mt19937 rng(42);
+
+  AuxConfig config;
+  config.function = AuxFunction::MelodicHook;
+  config.velocity_ratio = 0.8f;
+  config.range_offset = 0;
+  config.range_width = 24;
+
+  auto notes = generator.generateMelodicHook(ctx, config, harmony, rng);
+
+  ASSERT_GE(notes.size(), 4u);
+  std::vector<int> first_cell_pcs;
+  for (size_t idx = 0; idx < 4; ++idx) {
+    first_cell_pcs.push_back(notes[idx].note % 12);
+  }
+
+  EXPECT_EQ(first_cell_pcs[0], 9);  // A root.
+  EXPECT_EQ(first_cell_pcs[1], 0);  // C minor third, not C#.
+  EXPECT_EQ(first_cell_pcs[2], 4);  // E fifth.
+  EXPECT_EQ(first_cell_pcs[3], 0);  // C minor third returns.
+  EXPECT_EQ(std::count(first_cell_pcs.begin(), first_cell_pcs.end(), 1), 0)
+      << "MelodicHook should not force a major third over a minor chord";
 }
 
 // ============================================================================
@@ -1447,6 +1485,34 @@ TEST(AuxCounterMelodyDensity, RhythmSyncSectionsAreDenseAndNotIsolated) {
     EXPECT_FALSE(left_gap && right_gap) << "Isolated aux note at tick " << starts[i] << " (bar "
                                         << (starts[i] / TICKS_PER_BAR) << ")";
   }
+}
+
+TEST(AuxBlueprintProfile, IdolKawaiiSignatureTracksSoundInFirstChorus) {
+  Generator gen;
+  GeneratorParams params;
+  params.blueprint_id = 6;  // IdolKawaii
+  params.seed = 42;
+  gen.generate(params);
+
+  const auto& song = gen.getSong();
+  const auto& sections = song.arrangement().sections();
+
+  const Section* first_chorus = nullptr;
+  for (const auto& sec : sections) {
+    if (sec.type == SectionType::Chorus) {
+      first_chorus = &sec;
+      break;
+    }
+  }
+  ASSERT_NE(first_chorus, nullptr);
+
+  int aux_notes =
+      countAuxNotesIn(song.aux().notes(), first_chorus->start_tick, first_chorus->endTick());
+  int motif_notes =
+      countAuxNotesIn(song.motif().notes(), first_chorus->start_tick, first_chorus->endTick());
+
+  EXPECT_GT(aux_notes, 0) << "IdolKawaii Music Box Aux should sound in the first Chorus";
+  EXPECT_GT(motif_notes, 0) << "IdolKawaii Locked motif should sound in the first Chorus";
 }
 
 // (b) Aux pitches must stay within the documented physical-model range
