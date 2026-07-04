@@ -7,8 +7,11 @@
 
 #include <gtest/gtest.h>
 
+#include <fstream>
 #include <random>
 #include <set>
+#include <sstream>
+#include <string>
 
 #include "core/chord_utils.h"
 #include "core/generator.h"
@@ -16,6 +19,9 @@
 #include "core/types.h"
 
 namespace midisketch {
+
+uint8_t computeArpeggioRangeHigh(uint8_t vocal_at_onset);
+
 namespace {
 
 class ArpeggioTest : public ::testing::Test {
@@ -290,6 +296,24 @@ TEST_F(ArpeggioTest, PedalRootRepeatsRoot) {
     EXPECT_GE(track.notes()[i].note, 48) << "PedalRoot note should be >= C3";
     EXPECT_LE(track.notes()[i].note, 108) << "PedalRoot note should be <= C8";
   }
+}
+
+TEST_F(ArpeggioTest, LowVocalCeilingKeepsShimmerRegisterAvailable) {
+  EXPECT_GE(computeArpeggioRangeHigh(55), 72)
+      << "Low vocal notes should not fold arpeggio into chord/bass register";
+  EXPECT_EQ(computeArpeggioRangeHigh(0), 108)
+      << "No vocal at onset should leave the full arpeggio ceiling open";
+}
+
+TEST_F(ArpeggioTest, GeneratorDoesNotBypassCollisionChecks) {
+  std::ifstream source("../../src/track/generators/arpeggio.cpp");
+  ASSERT_TRUE(source.is_open());
+
+  std::stringstream buffer;
+  buffer << source.rdbuf();
+
+  EXPECT_EQ(buffer.str().find("PitchPreference::NoCollisionCheck"), std::string::npos)
+      << "Arpeggio overlays should use normal collision-aware note creation";
 }
 
 TEST_F(ArpeggioTest, BrokenChordAscendsThenDescends) {
@@ -739,36 +763,20 @@ TEST_F(ArpeggioTest, ChordTrackArpeggioSyncInSlowDensity) {
   const auto& harmony = gen.getHarmonyContext();
   for (const auto& note : arpeggio.notes()) {
     if (note.start_tick < bar3_start || note.start_tick >= bar3_end) continue;
-    int8_t degree = harmony.getChordDegreeAt(note.start_tick);
     int pc = getPitchClass(note.note);
-    bool is_tone = isChordTone(note.note, degree);
-    // Over a registered secondary-dominant span (V/IV = C7, degree 0), the
-    // chord is voiced as Dom7, so getChordTonesAt() now exposes the dominant
-    // 7th to the arpeggio. Allow the 7th extension here just like the chord
-    // track loop below.
-    if (!is_tone) {
-      constexpr int SCALE[] = {0, 2, 4, 5, 7, 9, 11};
-      int root_pc = SCALE[degree % 7];
-      is_tone = (pc == (root_pc + 10) % 12) || (pc == (root_pc + 11) % 12);
-    }
+    auto tones = harmony.getChordTonesAt(note.start_tick);
+    bool is_tone = std::find(tones.begin(), tones.end(), pc) != tones.end();
     EXPECT_TRUE(is_tone) << "Arpeggio bar 3 note " << static_cast<int>(note.note)
-                         << " should be chord tone of degree " << static_cast<int>(degree);
+                         << " should be a chord tone at tick " << note.start_tick;
   }
 
   for (const auto& note : chord_track.notes()) {
     if (note.start_tick < bar3_start || note.start_tick >= bar3_end) continue;
-    int8_t degree = harmony.getChordDegreeAt(note.start_tick);
     int pc = getPitchClass(note.note);
-    bool is_tone = isChordTone(note.note, degree);
-    // Allow 7th extension (minor 7th = 10 semitones above root)
-    if (!is_tone) {
-      constexpr int SCALE[] = {0, 2, 4, 5, 7, 9, 11};
-      int root_pc = SCALE[degree % 7];
-      is_tone = (pc == (root_pc + 10) % 12) || (pc == (root_pc + 11) % 12);
-    }
+    auto tones = harmony.getChordTonesAt(note.start_tick);
+    bool is_tone = std::find(tones.begin(), tones.end(), pc) != tones.end();
     EXPECT_TRUE(is_tone) << "Chord track bar 3 note " << static_cast<int>(note.note)
-                         << " (pc=" << pc << ") should be chord tone of degree "
-                         << static_cast<int>(degree);
+                         << " (pc=" << pc << ") should be a chord tone at tick " << note.start_tick;
   }
 }
 
@@ -1008,6 +1016,46 @@ TEST_F(ArpeggioTest, SwingShiftsUpbeatNotes) {
                           << ") from swing, but not found";
   EXPECT_TRUE(found_short) << "Expected short gap (odd→even = " << (TRIPLET - EXPECTED_SWING)
                            << ") from swing, but not found";
+}
+
+TEST_F(ArpeggioTest, IdolHyperRhythmSyncKeepsBlueprintSwing) {
+  params_.blueprint_id = 5;  // IdolHyper: RhythmSync with section swing_amount > 0
+  params_.mood = Mood::IdolPop;
+  params_.drums_enabled = true;
+  params_.seed = 42;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& track = gen.getSong().arpeggio();
+  ASSERT_GT(track.notes().size(), 4u);
+
+  const auto& sections = gen.getSong().arrangement().sections();
+  const Section* swung_chorus = nullptr;
+  for (const auto& sec : sections) {
+    if (sec.type == SectionType::Chorus && sec.swing_amount > 0.0f) {
+      swung_chorus = &sec;
+      break;
+    }
+  }
+  ASSERT_NE(swung_chorus, nullptr);
+
+  constexpr Tick kSixteenth = TICKS_PER_BEAT / 4;
+  constexpr Tick kExpectedSwing = 60;  // 0.5 * 16th-note duration
+  bool found_swung_sixteenth = false;
+  for (const auto& note : track.notes()) {
+    if (note.start_tick < swung_chorus->start_tick || note.start_tick >= swung_chorus->endTick()) {
+      continue;
+    }
+    Tick pos = (note.start_tick - swung_chorus->start_tick) % kSixteenth;
+    if (pos == kExpectedSwing) {
+      found_swung_sixteenth = true;
+      break;
+    }
+  }
+
+  EXPECT_TRUE(found_swung_sixteenth)
+      << "IdolHyper RhythmSync arpeggio should keep section swing_amount";
 }
 
 TEST_F(ArpeggioTest, NoSwingProducesExactGrid) {

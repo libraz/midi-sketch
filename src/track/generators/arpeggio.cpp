@@ -26,6 +26,17 @@
 
 namespace midisketch {
 
+uint8_t computeArpeggioRangeHigh(uint8_t vocal_at_onset) {
+  constexpr uint8_t kDefaultArpeggioHigh = 108;
+  constexpr uint8_t kMinShimmerCeiling = 72;
+  if (vocal_at_onset == 0) {
+    return kDefaultArpeggioHigh;
+  }
+  return static_cast<uint8_t>(
+      std::min(static_cast<int>(kDefaultArpeggioHigh),
+               std::max(static_cast<int>(vocal_at_onset), static_cast<int>(kMinShimmerCeiling))));
+}
+
 ArpeggioStyle getArpeggioStyleForMood(Mood mood) {
   ArpeggioStyle style;
 
@@ -325,7 +336,7 @@ ArpeggioSectionParams calculateArpeggioSectionParams(const Section& section,
 
   if (params.paradigm == GenerationParadigm::RhythmSync) {
     result.speed = ArpeggioSpeed::Sixteenth;
-    result.swing_amount = 0.0f;
+    result.swing_amount = std::max(0.0f, section.swing_amount);
     result.gate = std::max(result.gate, 0.95f);
   }
 
@@ -512,8 +523,7 @@ void ArpeggioGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackCon
             opts.role = TrackRole::Arpeggio;
             opts.preference = PitchPreference::PreferChordTones;
             opts.range_low = 48;
-            opts.range_high =
-                (vocal_at_onset > 0) ? std::min(108, static_cast<int>(vocal_at_onset)) : 108;
+            opts.range_high = computeArpeggioRangeHigh(vocal_at_onset);
             opts.source = NoteSource::Arpeggio;
             opts.chord_boundary = ChordBoundaryPolicy::ClipAtBoundary;
 
@@ -544,7 +554,7 @@ void ArpeggioGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackCon
                 shimmer_opts.desired_pitch = static_cast<uint8_t>(note + 12);
                 shimmer_opts.velocity =
                     static_cast<uint8_t>(std::max(30, static_cast<int>(velocity) - 22));
-                shimmer_opts.preference = PitchPreference::NoCollisionCheck;
+                shimmer_opts.preference = PitchPreference::PreferChordTones;
                 add_arp_note(shimmer_opts);
               }
               if (pattern_index % 6 == 3 && note + 12 <= opts.range_high) {
@@ -552,7 +562,7 @@ void ArpeggioGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackCon
                 shimmer_opts.desired_pitch = static_cast<uint8_t>(note + 12);
                 shimmer_opts.velocity =
                     static_cast<uint8_t>(std::max(28, static_cast<int>(velocity) - 26));
-                shimmer_opts.preference = PitchPreference::NoCollisionCheck;
+                shimmer_opts.preference = PitchPreference::PreferChordTones;
                 add_arp_note(shimmer_opts);
               }
               uint8_t layer_pitch = static_cast<uint8_t>(note - 12);
@@ -563,7 +573,7 @@ void ArpeggioGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackCon
                 layer_opts.desired_pitch = layer_pitch;
                 layer_opts.velocity =
                     static_cast<uint8_t>(std::max(35, static_cast<int>(velocity) - 14));
-                layer_opts.preference = PitchPreference::NoCollisionCheck;
+                layer_opts.preference = PitchPreference::PreferChordTones;
                 layer_opts.range_low = 48;
                 layer_opts.range_high = opts.range_high;
                 add_arp_note(layer_opts);
@@ -578,7 +588,7 @@ void ArpeggioGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackCon
                   sub_layer_opts.desired_pitch = sub_pitch;
                   sub_layer_opts.velocity =
                       static_cast<uint8_t>(std::max(32, static_cast<int>(velocity) - 24));
-                  sub_layer_opts.preference = PitchPreference::NoCollisionCheck;
+                  sub_layer_opts.preference = PitchPreference::PreferChordTones;
                   sub_layer_opts.range_low = 48;
                   sub_layer_opts.range_high = opts.range_high;
                   add_arp_note(sub_layer_opts);
