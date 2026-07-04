@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "core/i_harmony_coordinator.h"
+#include "core/midi_track.h"
 
 namespace midisketch {
 namespace test {
