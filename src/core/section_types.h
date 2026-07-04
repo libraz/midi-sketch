@@ -125,6 +125,18 @@ inline TrackMask computeActiveTracksAtBar(const std::vector<LayerEvent>& events,
   return active;
 }
 
+/// @brief Compute active tracks when layer events refine a section's base track mask.
+inline TrackMask computeActiveTracksAtBar(const std::vector<LayerEvent>& events, uint8_t bar_offset,
+                                          TrackMask base_mask) {
+  TrackMask active = base_mask;
+  for (const auto& event : events) {
+    if (event.bar_offset > bar_offset) break;
+    active = active | event.tracks_add_mask;
+    active = active & ~event.tracks_remove_mask;
+  }
+  return active;
+}
+
 /// @brief Check if a specific track is active at a given bar according to layer events.
 /// @param events Vector of layer events
 /// @param bar_offset Target bar (0-based within section)
@@ -133,6 +145,12 @@ inline TrackMask computeActiveTracksAtBar(const std::vector<LayerEvent>& events,
 inline bool isTrackActiveAtBar(const std::vector<LayerEvent>& events, uint8_t bar_offset,
                                TrackMask track) {
   return hasTrack(computeActiveTracksAtBar(events, bar_offset), track);
+}
+
+/// @brief Check track activity when layer events refine a section's base track mask.
+inline bool isTrackActiveAtBar(const std::vector<LayerEvent>& events, uint8_t bar_offset,
+                               TrackMask track, TrackMask base_mask) {
+  return hasTrack(computeActiveTracksAtBar(events, bar_offset, base_mask), track);
 }
 
 // ============================================================================

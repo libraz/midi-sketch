@@ -765,5 +765,33 @@ TEST_F(RhythmSyncVocalFirstTest, GenerateVocalDoesNotClampExplicitBpm) {
   EXPECT_EQ(gen.getSong().bpm(), 120u) << "Explicit BPM should not be clamped";
 }
 
+TEST(GeneratorBlueprintTempoTest, ExplicitBlueprintUsesTempoDefaultWhenBpmAuto) {
+  GeneratorParams params;
+  params.blueprint_id = 6;  // IdolKawaii
+  params.mood = Mood::IdolPop;
+  params.bpm = 0;
+  params.bpm_explicit = false;
+  params.seed = 42;
+
+  Generator gen;
+  gen.generate(params);
+
+  EXPECT_EQ(gen.getSong().bpm(), getProductionBlueprint(6).tempo_default);
+}
+
+TEST(GeneratorBlueprintTempoTest, ExplicitBpmOverridesBlueprintTempoDefault) {
+  GeneratorParams params;
+  params.blueprint_id = 6;  // IdolKawaii
+  params.mood = Mood::IdolPop;
+  params.bpm = 140;
+  params.bpm_explicit = true;
+  params.seed = 42;
+
+  Generator gen;
+  gen.generate(params);
+
+  EXPECT_EQ(gen.getSong().bpm(), 140u);
+}
+
 }  // namespace
 }  // namespace midisketch

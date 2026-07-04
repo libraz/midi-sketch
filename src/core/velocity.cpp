@@ -52,6 +52,10 @@ constexpr float kMoodVelocityAdjustment[24] = {
 };
 // clang-format on
 
+int sectionEnergyRank(const Section& section) {
+  return static_cast<int>(getEffectiveSectionEnergy(section));
+}
+
 }  // namespace
 
 float getMoodVelocityAdjustment(Mood mood) {
@@ -249,8 +253,7 @@ void applyTransitionDynamics(MidiTrack& track, Tick section_start, Tick section_
   }
 
   // Special case: B section leading to Chorus gets 2-phase dynamics
-  // Phase 1 (first half): Suppression period (0.85 -> 0.92)
-  // Phase 2 (second half): Crescendo build (0.92 -> 1.00)
+  // First half suppresses slightly, then the second half crescendos.
   // This creates contrast while avoiding excessive velocity reduction
   bool full_section_dynamics = (from == SectionType::B && to == SectionType::Chorus);
 
@@ -269,13 +272,13 @@ void applyTransitionDynamics(MidiTrack& track, Tick section_start, Tick section_
       if (note.start_tick >= section_start && note.start_tick < section_end) {
         float multiplier;
         if (note.start_tick < midpoint) {
-          // Phase 1: Suppression
+          // Suppression period.
           float progress = static_cast<float>(note.start_tick - section_start) /
                            static_cast<float>(midpoint - section_start);
           multiplier = velocity::kTransitionSuppressionStart +
                        velocity::kTransitionSuppressionRange * progress;
         } else {
-          // Phase 2: Crescendo
+          // Crescendo period.
           float progress = static_cast<float>(note.start_tick - midpoint) /
                            static_cast<float>(section_end - midpoint);
           multiplier =
@@ -407,10 +410,16 @@ void applyAllEntryPatternDynamics(std::vector<MidiTrack*>& tracks,
 // ============================================================================
 
 void applyBarVelocityCurve(MidiTrack& track, const Section& section) {
+  applyBarVelocityCurve(track, section, nullptr);
+}
+
+void applyBarVelocityCurve(MidiTrack& track, const Section& section, const Section* prev_section) {
   auto& notes = track.notes();
   if (notes.empty()) return;
 
   Tick section_end = section.endTick();
+  bool is_energy_lift =
+      prev_section != nullptr && sectionEnergyRank(section) > sectionEnergyRank(*prev_section);
 
   for (auto& note : notes) {
     // Only modify notes within this section
@@ -421,6 +430,9 @@ void applyBarVelocityCurve(MidiTrack& track, const Section& section) {
 
       // Get velocity multiplier for this bar position
       float multiplier = getBarVelocityMultiplier(bar_in_section, section.bars, section.type);
+      if (is_energy_lift && bar_in_section == 0) {
+        multiplier = std::max(multiplier, 1.0f);
+      }
 
       // Apply multiplier
       int new_vel = static_cast<int>(note.velocity * multiplier);
@@ -431,10 +443,12 @@ void applyBarVelocityCurve(MidiTrack& track, const Section& section) {
 
 void applyAllBarVelocityCurves(std::vector<MidiTrack*>& tracks,
                                const std::vector<Section>& sections) {
-  for (const auto& section : sections) {
+  for (size_t idx = 0; idx < sections.size(); ++idx) {
+    const auto& section = sections[idx];
+    const Section* prev_section = (idx > 0) ? &sections[idx - 1] : nullptr;
     for (MidiTrack* track : tracks) {
       if (track != nullptr) {
-        applyBarVelocityCurve(*track, section);
+        applyBarVelocityCurve(*track, section, prev_section);
       }
     }
   }
@@ -449,7 +463,7 @@ void applyMelodyContourVelocity(MidiTrack& track, const std::vector<Section>& se
   if (notes.size() < 2) return;
 
   // ============================================================================
-  // Task 5-4: Melody Climax Point Clarification
+  // Melody climax point handling.
   // ============================================================================
   // Highest note boost depends on position within section:
   // - "Climax bars" (bar 5-6 of 8-bar section): +10 extra (peak emphasis)
@@ -490,7 +504,7 @@ void applyMelodyContourVelocity(MidiTrack& track, const std::vector<Section>& se
 
         int vel_adj = 0;
 
-        // Phrase-high note boost (Task 5-4: climax-aware)
+        // Phrase-high note boost for climax-aware contouring.
         if (note.note == highest_pitch) {
           // Determine bar position for this specific note
           int note_bar_in_section = static_cast<int>(tickToBar(note.start_tick - section_start));

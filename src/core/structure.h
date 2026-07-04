@@ -94,7 +94,7 @@ void applyAddictiveModeExitPatterns(std::vector<Section>& sections, bool addicti
  *
  * Adjusts section energy levels based on the selected curve:
  * - GradualBuild: Starts low, builds to peak at last chorus (default)
- * - FrontLoaded: High energy throughout, slight dip in bridge
+ * - FrontLoaded: High energy throughout, peak chorus, slight dip in bridge
  * - WavePattern: Alternates between low and high energy
  * - SteadyState: Maintains consistent medium energy
  *

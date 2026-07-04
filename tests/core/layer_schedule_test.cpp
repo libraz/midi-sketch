@@ -52,6 +52,23 @@ TEST(ComputeActiveTracksTest, EmptyEventsReturnsNone) {
   EXPECT_EQ(computeActiveTracksAtBar(events, 5), TrackMask::None);
 }
 
+TEST(ComputeActiveTracksTest, BaseMaskPreservesBlueprintTracks) {
+  std::vector<LayerEvent> events;
+  events.emplace_back(2, TrackMask::Motif, TrackMask::None);
+
+  TrackMask base = TrackMask::Chord | TrackMask::Bass | TrackMask::Aux | TrackMask::Guitar;
+
+  TrackMask bar0 = computeActiveTracksAtBar(events, 0, base);
+  EXPECT_TRUE(hasTrack(bar0, TrackMask::Chord));
+  EXPECT_TRUE(hasTrack(bar0, TrackMask::Bass));
+  EXPECT_TRUE(hasTrack(bar0, TrackMask::Aux));
+  EXPECT_TRUE(hasTrack(bar0, TrackMask::Guitar));
+  EXPECT_FALSE(hasTrack(bar0, TrackMask::Motif));
+
+  TrackMask bar2 = computeActiveTracksAtBar(events, 2, base);
+  EXPECT_TRUE(hasTrack(bar2, TrackMask::Motif));
+}
+
 TEST(ComputeActiveTracksTest, SingleAddEvent) {
   std::vector<LayerEvent> events;
   events.emplace_back(0, TrackMask::Drums, TrackMask::None);
@@ -143,6 +160,18 @@ TEST(IsTrackActiveAtBarTest, TrackRemoved) {
 
   EXPECT_TRUE(isTrackActiveAtBar(events, 5, TrackMask::Aux));
   EXPECT_FALSE(isTrackActiveAtBar(events, 6, TrackMask::Aux));
+}
+
+TEST(IsTrackActiveAtBarTest, BaseMaskUsedBeforeFirstLayerEvent) {
+  std::vector<LayerEvent> events;
+  events.emplace_back(4, TrackMask::Motif, TrackMask::None);
+
+  TrackMask base = TrackMask::Aux | TrackMask::Guitar;
+
+  EXPECT_TRUE(isTrackActiveAtBar(events, 0, TrackMask::Aux, base));
+  EXPECT_TRUE(isTrackActiveAtBar(events, 0, TrackMask::Guitar, base));
+  EXPECT_FALSE(isTrackActiveAtBar(events, 0, TrackMask::Motif, base));
+  EXPECT_TRUE(isTrackActiveAtBar(events, 4, TrackMask::Motif, base));
 }
 
 // ============================================================================
@@ -358,6 +387,17 @@ TEST(GenerateDefaultLayerEventsTest, FirstVerseHasGradualBuild) {
   }
 }
 
+TEST(GenerateDefaultLayerEventsTest, FirstVerseHeuristicUsesOnlyEarlySectionIndex) {
+  Section section;
+  section.type = SectionType::A;
+  section.bars = 8;
+  section.start_tick = 0;
+
+  EXPECT_FALSE(generateDefaultLayerEvents(section, 0, 5).empty());
+  EXPECT_FALSE(generateDefaultLayerEvents(section, 1, 5).empty());
+  EXPECT_TRUE(generateDefaultLayerEvents(section, 2, 5).empty());
+}
+
 TEST(GenerateDefaultLayerEventsTest, LaterVerseNoLayerEvents) {
   Section section;
   section.type = SectionType::A;
@@ -399,6 +439,18 @@ TEST(ApplyDefaultLayerScheduleTest, DoesNotOverrideExistingEvents) {
   // Should still have exactly 1 event (not overwritten)
   EXPECT_EQ(sections[0].layer_events.size(), 1u);
   EXPECT_EQ(sections[0].layer_events[0].tracks_add_mask, TrackMask::All);
+}
+
+TEST(ApplyDefaultLayerScheduleTest, ImmediateIntroDoesNotForceStagger) {
+  std::vector<Section> sections(1);
+  sections[0].type = SectionType::Intro;
+  sections[0].bars = 4;
+  sections[0].entry_pattern = EntryPattern::Immediate;
+
+  applyDefaultLayerSchedule(sections);
+
+  EXPECT_TRUE(sections[0].layer_events.empty())
+      << "Immediate intro should not receive forced stagger layer events";
 }
 
 TEST(ApplyDefaultLayerScheduleTest, ShortSectionsUnaffected) {
@@ -600,6 +652,29 @@ TEST(OutroLayerScheduleTest, OutroRemovesTracksAtEnd) {
       computeActiveTracksAtBar(outro.layer_events, static_cast<uint8_t>(outro.bars - 1));
   EXPECT_FALSE(hasTrack(last, TrackMask::Arpeggio))
       << "Arpeggio should be removed at the end of Outro";
+}
+
+TEST(OutroLayerScheduleTest, OutroEndsWithChordSustainNotDrumsOnly) {
+  Section outro;
+  outro.type = SectionType::Outro;
+  outro.bars = 8;
+  outro.start_tick = 0;
+  outro.layer_events = generateDefaultLayerEvents(outro, 4, 5);
+
+  ASSERT_FALSE(outro.layer_events.empty());
+
+  TrackMask last =
+      computeActiveTracksAtBar(outro.layer_events, static_cast<uint8_t>(outro.bars - 1));
+  EXPECT_TRUE(hasTrack(last, TrackMask::Chord))
+      << "Outro should leave chord sustain for the final bar";
+  EXPECT_FALSE(hasTrack(last, TrackMask::Drums))
+      << "Outro should not end with drums as the only remaining layer";
+  EXPECT_FALSE(hasTrack(last, TrackMask::Bass))
+      << "Outro should clear bass before the final sustained chord";
+  EXPECT_FALSE(hasTrack(last, TrackMask::Vocal))
+      << "Outro should leave the final bar to the sustained chord";
+  EXPECT_FALSE(hasTrack(last, TrackMask::Guitar))
+      << "Outro should not leave guitar as a competing final layer";
 }
 
 }  // namespace

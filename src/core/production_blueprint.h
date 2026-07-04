@@ -78,6 +78,10 @@ struct BlueprintConstraints {
   /// Idol references run busy synth riffs (4.8-9 notes/bar); the default
   /// 6 onsets / 2 bars reads sparse for those blueprints.
   uint8_t motif_note_count = 0;
+
+  /// Drum style hint (0=auto, otherwise DrumStyle enum + 1).
+  /// When > 0, overrides mood-based drum style selection.
+  uint8_t drum_style_hint = 0;
 };
 
 /// @brief Section slot definition for blueprint section flow.
@@ -261,6 +265,12 @@ struct ProductionBlueprint {
   /// @brief Blueprint-specific aux track behavior profile.
   /// Controls function selection, MIDI program, velocity/density, and range ceiling.
   AuxProfile aux_profile;
+
+  /// @brief Blueprint tempo identity used when BPM is not explicitly set.
+  /// 0 = use mood/style default.
+  uint16_t tempo_default = 0;
+  uint16_t tempo_min = 0;
+  uint16_t tempo_max = 0;
 };
 
 // ============================================================================
@@ -287,6 +297,15 @@ uint8_t getProductionBlueprintCount();
  * @return Selected blueprint ID
  */
 uint8_t selectProductionBlueprint(std::mt19937& rng, uint8_t explicit_id = 255);
+
+/**
+ * @brief Select a blueprint while respecting mood compatibility for random choices.
+ * @param rng Random number generator
+ * @param explicit_id If < 255, use this ID directly; otherwise random selection
+ * @param mood Mood enum value used to filter random candidates
+ * @return Selected blueprint ID
+ */
+uint8_t selectProductionBlueprintForMood(std::mt19937& rng, uint8_t explicit_id, uint8_t mood);
 
 /**
  * @brief Get blueprint name by ID.

@@ -216,6 +216,19 @@ void applyAllEntryPatternDynamics(std::vector<MidiTrack*>& tracks,
 void applyBarVelocityCurve(MidiTrack& track, const Section& section);
 
 /**
+ * @brief Apply bar-level velocity curves with transition context.
+ *
+ * When the current section has higher effective energy than the previous
+ * section, the first bar is protected from phrase-start dips so an entry into
+ * a chorus or climax does not become quieter than the setup section.
+ *
+ * @param track Track to modify (in-place)
+ * @param section Section containing the notes to modify
+ * @param prev_section Previous section, or nullptr if none
+ */
+void applyBarVelocityCurve(MidiTrack& track, const Section& section, const Section* prev_section);
+
+/**
  * @brief Apply bar-level velocity curves to all tracks for all sections.
  *
  * Processes each section and applies bar-level velocity curves to create

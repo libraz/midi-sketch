@@ -78,14 +78,14 @@ class PostProcessingPipeline {
   /** @brief Orchestrate the three-phase post-processing pipeline. */
   void applyPostProcessingPipeline(const Context& ctx);
 
-  /** @brief Phase 1: Velocity shaping (contour, accent, bar curves, micro-dynamics). */
+  /** @brief Velocity shaping (contour, accent, bar curves, micro-dynamics). */
   void applyVelocityShaping(const Context& ctx, std::vector<MidiTrack*>& tracks);
 
-  /** @brief Phase 2: Transition effects (section transitions, exit patterns, emotion). */
+  /** @brief Transition effects (section transitions, exit patterns, emotion). */
   void applyTransitionEffects(const Context& ctx, std::vector<MidiTrack*>& tracks,
                               const std::vector<TrackRole>& track_roles);
 
-  /** @brief Phase 3: Final adjustments (chord boundary clipping, panning, expression). */
+  /** @brief Final adjustments (chord boundary clipping, panning, expression). */
   void applyFinalAdjustments(const Context& ctx);
 
   /** @brief Apply EmotionCurve-based velocity adjustments for section transitions. */

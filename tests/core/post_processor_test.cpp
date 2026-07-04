@@ -12,8 +12,10 @@
 #include <vector>
 
 #include "core/arrangement.h"
+#include "core/emotion_curve.h"
 #include "core/midi_track.h"
 #include "core/note_source.h"
+#include "core/post_processing_pipeline.h"
 #include "core/preset_data.h"
 #include "core/section_types.h"
 #include "core/song.h"
@@ -93,6 +95,76 @@ TEST_F(ChorusDropTest, TruncatesMelodicTracksInLastBeat) {
 
   EXPECT_TRUE(found_truncated) << "Should have truncated notes";
   EXPECT_TRUE(found_removed) << "Notes starting in drop zone should be removed";
+}
+
+TEST_F(ChorusDropTest, PipelineIncludesAuxInDropZone) {
+  Song song;
+  song.setArrangement(Arrangement(sections_));
+
+  Tick drop_zone_start = 8 * TICKS_PER_BAR - TICKS_PER_BEAT;
+  song.aux().addNote(
+      NoteEventBuilder::create(drop_zone_start - TICKS_PER_BEAT, TICKS_PER_BEAT * 2, 72, 80));
+  song.aux().addNote(
+      NoteEventBuilder::create(drop_zone_start + TICKS_PER_BEAT / 2, TICKS_PER_BEAT / 2, 76, 80));
+
+  GeneratorParams params;
+  params.humanize = false;
+
+  test::StubHarmonyContext harmony;
+  std::mt19937 rng(1234);
+  EmotionCurve emotion_curve;
+  emotion_curve.plan(sections_, Mood::ModernPop);
+
+  PostProcessingPipeline pipeline;
+  PostProcessingPipeline::Context ctx{song, params, harmony, rng, nullptr, emotion_curve};
+  pipeline.run(ctx);
+
+  bool found_truncated = false;
+  for (const auto& note : song.aux().notes()) {
+    EXPECT_FALSE(note.start_tick >= drop_zone_start && note.start_tick < 8 * TICKS_PER_BAR)
+        << "Aux notes starting in the drop zone should be removed";
+    if (note.start_tick < drop_zone_start) {
+      EXPECT_LE(note.start_tick + note.duration, drop_zone_start)
+          << "Aux notes extending into the drop zone should be truncated";
+      found_truncated = true;
+    }
+  }
+
+  EXPECT_TRUE(found_truncated);
+}
+
+TEST(PostProcessingPipelineTest, GradualBuildEntryDoesNotFadeLeadVocal) {
+  Section intro;
+  intro.type = SectionType::Intro;
+  intro.start_tick = 0;
+  intro.bars = 2;
+  intro.entry_pattern = EntryPattern::GradualBuild;
+
+  Song song;
+  song.setArrangement(Arrangement({intro}));
+  song.vocal().addNote(NoteEventBuilder::create(0, TICKS_PER_BEAT, 60, 100));
+  song.chord().addNote(NoteEventBuilder::create(0, TICKS_PER_BEAT, 60, 100));
+
+  GeneratorParams params;
+  params.humanize = false;
+  params.mood = Mood::StraightPop;
+
+  test::StubHarmonyContext harmony;
+  std::mt19937 rng(1234);
+  EmotionCurve emotion_curve;
+  emotion_curve.plan(song.arrangement().sections(), params.mood);
+
+  PostProcessingPipeline pipeline;
+  PostProcessingPipeline::Context ctx{song, params, harmony, rng, nullptr, emotion_curve};
+  pipeline.run(ctx);
+
+  ASSERT_FALSE(song.vocal().notes().empty());
+  ASSERT_FALSE(song.chord().notes().empty());
+
+  EXPECT_GT(song.vocal().notes()[0].velocity, 70u)
+      << "Lead vocal should not receive GradualBuild's 60% backing-track entry fade";
+  EXPECT_LT(song.chord().notes()[0].velocity, song.vocal().notes()[0].velocity)
+      << "Backing chord should still receive the GradualBuild entry fade";
 }
 
 TEST_F(ChorusDropTest, PreservesVocalTrack) {
@@ -1253,12 +1325,14 @@ TEST(PostProcessorTest, FixMotifVocalClashesUpdatesProvenance) {
   // prov_original_pitch reflects the input of the LAST modification (64);
   // the full chain (48 -> 64 -> 52) is preserved in the transform steps.
   const auto& note = motif.notes()[0];
+  EXPECT_EQ(note.note, 52) << "Crossing pass should lower the resolution toward the vocal";
+#ifdef MIDISKETCH_NOTE_PROVENANCE
   EXPECT_EQ(note.prov_source, static_cast<uint8_t>(NoteSource::CollisionAvoid))
       << "Provenance source should be CollisionAvoid";
-  EXPECT_EQ(note.note, 52) << "Crossing pass should lower the resolution toward the vocal";
   EXPECT_EQ(note.prov_original_pitch, 64)
       << "Original pitch should reflect the last modification's input";
   EXPECT_EQ(note.prov_chord_degree, 0) << "Chord degree should be recorded";
+#endif
 }
 
 // Core fix test: Motif is already a chord tone but clashes with vocal

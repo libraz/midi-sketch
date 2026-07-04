@@ -114,7 +114,7 @@ class PostProcessor {
                                TrackRole track_role = TrackRole::Vocal);
 
   // ============================================================================
-  // Section Transition Effects (Phase 2)
+  // Section Transition Effects
   // ============================================================================
 
   /// @brief Apply chorus drop effect (moment of silence before chorus).

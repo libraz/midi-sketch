@@ -25,6 +25,20 @@
 
 namespace midisketch {
 
+namespace {
+
+DrumStyle resolveDrumStyle(Mood mood, const ProductionBlueprint* blueprint) {
+  if (blueprint != nullptr && blueprint->constraints.drum_style_hint > 0) {
+    uint8_t style_index = blueprint->constraints.drum_style_hint - 1;
+    if (style_index <= static_cast<uint8_t>(DrumStyle::Latin)) {
+      return static_cast<DrumStyle>(style_index);
+    }
+  }
+  return getMoodDrumStyle(mood);
+}
+
+}  // namespace
+
 // ============================================================================
 // Pipeline Entry Point
 // ============================================================================
@@ -61,13 +75,13 @@ void PostProcessingPipeline::applyPostProcessingPipeline(const Context& ctx) {
     track_roles.push_back(TrackRole::Motif);
   }
 
-  // Phase 1: Velocity shaping
+  // Velocity shaping.
   applyVelocityShaping(ctx, tracks);
 
-  // Phase 2: Transition effects
+  // Transition effects.
   applyTransitionEffects(ctx, tracks, track_roles);
 
-  // Phase 3: Final adjustments
+  // Final adjustments.
   applyFinalAdjustments(ctx);
 }
 
@@ -108,8 +122,18 @@ void PostProcessingPipeline::applyTransitionEffects(const Context& ctx,
   // Apply transition dynamics (section endings)
   midisketch::applyAllTransitionDynamics(tracks, sections);
 
-  // Apply entry pattern dynamics (section beginnings)
-  midisketch::applyAllEntryPatternDynamics(tracks, sections);
+  // Apply entry pattern dynamics (section beginnings) to backing tracks only.
+  // Lead vocal dynamics are shaped by melody/phrase processors; fading the
+  // vocal entry to 60% makes GradualBuild sections sound unintentionally buried.
+  std::vector<MidiTrack*> entry_tracks;
+  entry_tracks.reserve(tracks.size());
+  for (size_t idx = 0; idx < tracks.size(); ++idx) {
+    bool is_vocal = idx < track_roles.size() && track_roles[idx] == TrackRole::Vocal;
+    if (!is_vocal && tracks[idx] != &ctx.song.vocal()) {
+      entry_tracks.push_back(tracks[idx]);
+    }
+  }
+  midisketch::applyAllEntryPatternDynamics(entry_tracks, sections);
 
   // Apply exit patterns for musical section endings (boundary-aware sustain)
   PostProcessor::applyAllExitPatterns(tracks, track_roles, sections, &ctx.harmony);
@@ -118,7 +142,7 @@ void PostProcessingPipeline::applyTransitionEffects(const Context& ctx,
   // Note: Vocal is excluded - it's the main melody and should continue through
   // Only backing tracks (chord, bass, etc.) are truncated for dramatic effect
   std::vector<MidiTrack*> backing_tracks = {&ctx.song.chord(), &ctx.song.bass(), &ctx.song.motif(),
-                                            &ctx.song.arpeggio()};
+                                            &ctx.song.arpeggio(), &ctx.song.aux()};
   if (ctx.params.guitar_enabled) {
     backing_tracks.push_back(&ctx.song.guitar());
   }
@@ -248,7 +272,7 @@ uint8_t PostProcessingPipeline::applyEmotionToVelocity(const Context& ctx, uint8
 void PostProcessingPipeline::applyEmotionBasedDynamics(const Context& ctx,
                                                        std::vector<MidiTrack*>& tracks,
                                                        const std::vector<Section>& sections) {
-  // ========== Phase 1: Section-wide velocity adjustment based on emotion ==========
+  // Section-wide velocity adjustment based on emotion.
   for (auto* track : tracks) {
     for (auto& note : track->notes()) {
       // 1. Find which section this note belongs to
@@ -263,7 +287,7 @@ void PostProcessingPipeline::applyEmotionBasedDynamics(const Context& ctx,
     }
   }
 
-  // ========== Phase 2: Transition velocity ramp (existing processing) ==========
+  // Transition velocity ramp.
   for (size_t i = 0; i + 1 < sections.size(); ++i) {
     const auto& current_section = sections[i];
     auto hint = ctx.emotion_curve.getTransitionHint(i);
@@ -319,7 +343,7 @@ void PostProcessingPipeline::applyHumanization(const Context& ctx) {
   // drive_feel scales timing offsets: laid-back = reduced, aggressive = increased
   // vocal_style affects human timing physics (UltraVocaloid=mechanical, Human=natural)
   // humanize_timing globally scales all timing offsets (0.0 = grid, 1.0 = full variation)
-  DrumStyle drum_style = getMoodDrumStyle(ctx.params.mood);
+  DrumStyle drum_style = resolveDrumStyle(ctx.params.mood, ctx.blueprint);
   PostProcessor::applyMicroTimingOffsets(
       ctx.song.vocal(), ctx.song.bass(), ctx.song.drums(), &sections, ctx.params.drive_feel,
       ctx.params.vocal_style, drum_style, ctx.params.humanize_timing, ctx.params.paradigm);

@@ -244,7 +244,7 @@ void PostProcessor::applyAllExitPatterns(std::vector<MidiTrack*>& tracks,
 }
 
 // ============================================================================
-// Chorus Drop Implementation (Phase 2, Task 2-2)
+// Chorus Drop Implementation
 // ============================================================================
 
 void PostProcessor::applyChorusDrop(std::vector<MidiTrack*>& tracks,
@@ -358,7 +358,7 @@ void PostProcessor::applyChorusDrop(std::vector<MidiTrack*>& tracks,
 }
 
 // ============================================================================
-// Ritardando Implementation (Phase 2, Task 2-3)
+// Ritardando Implementation
 // ============================================================================
 
 namespace {}  // namespace
@@ -401,7 +401,7 @@ void PostProcessor::applyRitDecrescendo(std::vector<MidiTrack*>& tracks,
 }
 
 // ============================================================================
-// Enhanced FinalHit Implementation (Phase 2, Task 2-4)
+// Enhanced FinalHit Implementation
 // ============================================================================
 
 // Helper: Check if extending a chord note would create dissonance with vocal

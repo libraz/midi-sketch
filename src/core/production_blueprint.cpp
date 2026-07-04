@@ -9,6 +9,7 @@
 #include <cctype>
 #include <cstring>
 
+#include "core/preset_data.h"
 #include "core/rng_util.h"
 
 namespace midisketch {
@@ -29,6 +30,7 @@ constexpr TrackMask RHYTHMLOCK_DENSE_SYNTH_BED =
 // stagger_bars, custom_layer_schedule, layer_add_at_mid, layer_remove_at_end,
 // guitar_style_hint(GT), phrase_tail_rest(PT), max_moving_voices(MV),
 // motif_motion_hint(MM), guide_tone_rate(GR), vocal_range_span(VS)
+constexpr uint8_t DRUM_STYLE_HINT_FOUR_ON_FLOOR = static_cast<uint8_t>(DrumStyle::FourOnFloor) + 1;
 constexpr SectionSlot RHYTHMLOCK_FLOW[] = {
     // Intro: all tracks with staggered entry, atmospheric drums
     {SectionType::Intro, 4, TrackMask::All, EntryPattern::Stagger, SectionEnergy::Low, 60, 50,
@@ -1172,14 +1174,14 @@ constexpr SectionSlot IDOL_HYPER_FLOW[] = {
 // Uses OnBeat time_feel for bouncy feel, Subtle drops for gentle transitions
 constexpr SectionSlot IDOL_KAWAII_FLOW[] = {
     // Intro: soft, cute (all defaults)
-    {SectionType::Intro, 4, TrackMask::Chord | TrackMask::Drums, EntryPattern::Immediate,
-     SectionEnergy::Low, 55, 50, PeakLevel::None, DrumRole::Minimal, -1.0f, SectionModifier::None,
-     100, ExitPattern::None, TimeFeel::OnBeat, 1.0f, ChorusDropStyle::None},
+    {SectionType::Intro, 4, TrackMask::Chord | TrackMask::Drums | TrackMask::Aux | TrackMask::Motif,
+     EntryPattern::Immediate, SectionEnergy::Low, 55, 50, PeakLevel::None, DrumRole::Minimal, -1.0f,
+     SectionModifier::None, 100, ExitPattern::None, TimeFeel::OnBeat, 1.0f, ChorusDropStyle::None},
 
     // A melody: Fingerpick, voice limit=2, guide tone 60%, vocal range 12st, phrase tail rest
     {SectionType::A,
      8,
-     TrackMask::Vocal | TrackMask::Drums | TrackMask::Chord,
+     TrackMask::Vocal | TrackMask::Drums | TrackMask::Chord | TrackMask::Aux | TrackMask::Motif,
      EntryPattern::Immediate,
      SectionEnergy::Low,
      60,
@@ -1207,7 +1209,8 @@ constexpr SectionSlot IDOL_KAWAII_FLOW[] = {
     // First Chorus: Strum, voice limit=3, guide tone 55%, vocal range 12st
     {SectionType::Chorus,
      8,
-     TrackMask::Vocal | TrackMask::Drums | TrackMask::Chord | TrackMask::Bass,
+     TrackMask::Vocal | TrackMask::Drums | TrackMask::Chord | TrackMask::Bass | TrackMask::Aux |
+         TrackMask::Motif,
      EntryPattern::DropIn,
      SectionEnergy::Medium,
      70,
@@ -1235,7 +1238,8 @@ constexpr SectionSlot IDOL_KAWAII_FLOW[] = {
     // 2nd A melody: Fingerpick, voice limit=2, guide tone 60%, vocal range 12st, phrase tail rest
     {SectionType::A,
      8,
-     TrackMask::Vocal | TrackMask::Drums | TrackMask::Chord | TrackMask::Bass,
+     TrackMask::Vocal | TrackMask::Drums | TrackMask::Chord | TrackMask::Bass | TrackMask::Aux |
+         TrackMask::Motif,
      EntryPattern::Immediate,
      SectionEnergy::Medium,
      65,
@@ -1289,9 +1293,10 @@ constexpr SectionSlot IDOL_KAWAII_FLOW[] = {
      12},
 
     // Cute Break (all defaults)
-    {SectionType::Interlude, 4, TrackMask::Chord | TrackMask::Vocal, EntryPattern::Immediate,
-     SectionEnergy::Low, 55, 50, PeakLevel::None, DrumRole::Minimal, -1.0f, SectionModifier::None,
-     100, ExitPattern::None, TimeFeel::LaidBack, 2.0f, ChorusDropStyle::Subtle},
+    {SectionType::Interlude, 4, TrackMask::Chord | TrackMask::Vocal | TrackMask::Aux,
+     EntryPattern::Immediate, SectionEnergy::Low, 55, 50, PeakLevel::None, DrumRole::Minimal, -1.0f,
+     SectionModifier::None, 100, ExitPattern::None, TimeFeel::LaidBack, 2.0f,
+     ChorusDropStyle::Subtle},
 
     // Last Chorus: Strum, voice limit=3, guide tone 55%, vocal range 12st
     {SectionType::Chorus,
@@ -1728,6 +1733,9 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         // choruses (1.9-6.7 notes/bar); EmotionalPad measured ~0.7
         {0xFF, AuxFunction::MelodicHook, AuxFunction::MotifCounter, AuxFunction::MelodicHook, 1.0f,
          1.0f, -2},
+        122,
+        96,
+        150,
     },
 
     // 1: RhythmLock (rhythm-synced, RhythmSync-oriented)
@@ -1759,6 +1767,9 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         // to a GrooveAccent cell. density 1.0: references show 2.9+ notes/bar.
         {80, AuxFunction::PulseLoop, AuxFunction::PulseLoop, AuxFunction::PulseLoop, 0.8f, 1.25f,
          -4},
+        168,
+        160,
+        175,
     },
 
     // 2: StoryPop (melody-driven story pop)
@@ -1787,6 +1798,9 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         // aux_profile: Mood default, PhraseTail for gap-filling, gentle EmotionalPad chorus
         {0xFF, AuxFunction::MelodicHook, AuxFunction::PhraseTail, AuxFunction::EmotionalPad, 0.7f,
          0.75f, -2},
+        128,
+        112,
+        148,
     },
 
     // 3: Ballad (sparse, emotional)
@@ -1817,6 +1831,9 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         // aux_profile: Choir Aahs, SustainPad throughout, very quiet and sparse
         {52, AuxFunction::SustainPad, AuxFunction::SustainPad, AuxFunction::SustainPad, 0.5f, 0.5f,
          -7},
+        82,
+        68,
+        98,
     },
 
     // 4: IdolStandard (classic idol pop: memorable melody, gradual build)
@@ -1847,6 +1864,9 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         // density 1.0: idol references show aux lines at 2.9-10.3 notes/bar
         {0xFF, AuxFunction::MelodicHook, AuxFunction::PhraseTail, AuxFunction::Unison, 0.90f, 1.0f,
          -2},
+        150,
+        138,
+        168,
     },
 
     // 5: IdolHyper (high BPM, chorus-first, high density)
@@ -1876,6 +1896,9 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         // aux_profile: Square Lead, PulseLoop/GrooveAccent, high energy punch
         {80, AuxFunction::GrooveAccent, AuxFunction::PulseLoop, AuxFunction::GrooveAccent, 0.85f,
          0.9f, -4},
+        168,
+        160,
+        175,
     },
 
     // 6: IdolKawaii (sweet, bouncy, restrained)
@@ -1896,7 +1919,7 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         false,                      // addictive_mode
         // mood_mask: BrightUpbeat(1), IdolPop(14), AnimeHighEnergy(16)
         (1u << 1) | (1u << 14) | (1u << 16),
-        {80, 79, 7, true,  // max_vel=80, max_pitch=G5(79), max_leap=7, prefer_stepwise
+        {80, 86, 7, true,  // max_vel=80, max_pitch=D6(86), max_leap=7, prefer_stepwise
          InstrumentSkillLevel::Beginner, InstrumentSkillLevel::Beginner,
          InstrumentSkillLevel::Beginner,  // keys_skill
          InstrumentModelMode::ConstraintsOnly, false, false,
@@ -1907,6 +1930,9 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         // aux_profile: Music Box, MelodicHook throughout for cute sparkle, low density
         {10, AuxFunction::MelodicHook, AuxFunction::MelodicHook, AuxFunction::MelodicHook, 0.6f,
          0.6f, -5},
+        132,
+        124,
+        146,
     },
 
     // 7: IdolCoolPop (cool, four-on-floor, uniform)
@@ -1931,10 +1957,13 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
          InstrumentSkillLevel::Advanced,                 // keys_skill
          InstrumentModelMode::Full, true, false, false,  // enable_slap for funky grooves
          true,                                           // guitar_below_vocal
-         0.15f},  // ritardando_amount (IdolCoolPop: cool, subtle)
+         0.15f, 0, DRUM_STYLE_HINT_FOUR_ON_FLOOR},       // drum_style_hint: four-on-floor
         // aux_profile: Square Lead, PulseLoop/GrooveAccent, cool driving energy
         {80, AuxFunction::PulseLoop, AuxFunction::PulseLoop, AuxFunction::GrooveAccent, 0.8f, 0.85f,
          -4},
+        170,
+        160,
+        178,
     },
 
     // 8: IdolEmo (quiet→explosive, emotional, late peak)
@@ -1965,6 +1994,9 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         // aux_profile: Choir Aahs, SustainPad throughout, very quiet and sparse
         {52, AuxFunction::SustainPad, AuxFunction::SustainPad, AuxFunction::SustainPad, 0.55f, 0.5f,
          -7},
+        96,
+        82,
+        116,
     },
 
     // 9: BehavioralLoop (addictive, highly repetitive hooks)
@@ -1993,6 +2025,9 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         // aux_profile: Mood default, PulseLoop for addictive loop feel
         {0xFF, AuxFunction::MelodicHook, AuxFunction::PulseLoop, AuxFunction::PulseLoop, 0.9f, 0.9f,
          -2},
+        128,
+        100,
+        170,
     },
 };
 
@@ -2043,6 +2078,44 @@ uint8_t selectProductionBlueprint(std::mt19937& rng, uint8_t explicit_id) {
   }
 
   return 0;  // Fallback
+}
+
+uint8_t selectProductionBlueprintForMood(std::mt19937& rng, uint8_t explicit_id, uint8_t mood) {
+  if (explicit_id < BLUEPRINT_COUNT) {
+    return explicit_id;
+  }
+
+  auto compatible = [mood](uint8_t id) {
+    uint32_t mask = BLUEPRINTS[id].mood_mask;
+    return mask == 0 || (mask & (1u << mood)) != 0;
+  };
+
+  uint32_t total_weight = 0;
+  for (uint8_t i = 0; i < BLUEPRINT_COUNT; ++i) {
+    if (!compatible(i)) {
+      continue;
+    }
+    total_weight += BLUEPRINTS[i].weight;
+  }
+
+  if (total_weight == 0) {
+    return selectProductionBlueprint(rng, explicit_id);
+  }
+
+  uint32_t roll =
+      static_cast<uint32_t>(rng_util::rollRange(rng, 0, static_cast<int>(total_weight - 1)));
+  uint32_t cumulative = 0;
+  for (uint8_t i = 0; i < BLUEPRINT_COUNT; ++i) {
+    if (!compatible(i)) {
+      continue;
+    }
+    cumulative += BLUEPRINTS[i].weight;
+    if (roll < cumulative) {
+      return i;
+    }
+  }
+
+  return 0;
 }
 
 const char* getProductionBlueprintName(uint8_t id) {

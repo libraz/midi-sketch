@@ -689,6 +689,25 @@ TEST(EnergyCurveTest, FrontLoadedDipsBridgeSections) {
   }
 }
 
+TEST(EnergyCurveTest, FrontLoadedPromotesChorusToPeak) {
+  // FrontLoaded should preserve a clear verse/chorus contrast by making Chorus peak.
+  auto sections = buildStructure(StructurePattern::FullPop);
+
+  applyEnergyCurve(sections, EnergyCurve::FrontLoaded);
+
+  bool saw_chorus = false;
+  for (const auto& section : sections) {
+    if (section.type == SectionType::Chorus) {
+      saw_chorus = true;
+      EXPECT_EQ(section.energy, SectionEnergy::Peak)
+          << "FrontLoaded should push Chorus sections to Peak energy";
+      EXPECT_GE(section.base_velocity, 90)
+          << "FrontLoaded Peak chorus should get a matching velocity floor";
+    }
+  }
+  EXPECT_TRUE(saw_chorus);
+}
+
 TEST(EnergyCurveTest, WavePatternAlternatesEnergy) {
   // WavePattern should create alternating high/low energy
   auto sections = buildStructure(StructurePattern::FullPop);
@@ -727,6 +746,26 @@ TEST(EnergyCurveTest, WavePatternDropsAfterChorus) {
           << "WavePattern should drop A sections after Chorus to Low";
     }
   }
+}
+
+TEST(EnergyCurveTest, WavePatternBreakdownsResetHighWave) {
+  // Interlude/Bridge after a Chorus should act as breakdowns, not inherit high wave energy.
+  auto sections = buildStructure(StructurePattern::ExtendedFull);
+
+  applyEnergyCurve(sections, EnergyCurve::WavePattern);
+
+  bool saw_breakdown = false;
+  for (size_t i = 1; i < sections.size(); ++i) {
+    if ((sections[i].type == SectionType::Interlude || sections[i].type == SectionType::Bridge) &&
+        sections[i - 1].type == SectionType::Chorus) {
+      saw_breakdown = true;
+      EXPECT_EQ(sections[i].energy, SectionEnergy::Low)
+          << "WavePattern should reset to low energy for breakdown sections";
+      EXPECT_LE(sections[i].base_velocity, 68)
+          << "WavePattern breakdown sections should get the low-wave velocity cap";
+    }
+  }
+  EXPECT_TRUE(saw_breakdown);
 }
 
 TEST(EnergyCurveTest, EmptySectionsHandledGracefully) {

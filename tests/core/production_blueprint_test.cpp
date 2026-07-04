@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "core/generator.h"
+#include "core/preset_data.h"
 #include "core/preset_types.h"
 #include "core/structure.h"
 #include "test_helpers/note_event_test_helper.h"
@@ -172,6 +173,42 @@ TEST_F(ProductionBlueprintTest, IdolKawaiiBlueprint) {
   EXPECT_FALSE(bp.drums_sync_vocal);
   EXPECT_FALSE(bp.intro_kick_enabled);
   EXPECT_FALSE(bp.intro_bass_enabled);
+}
+
+TEST_F(ProductionBlueprintTest, IdolKawaiiSignatureTracksStartBeforeSecondChorus) {
+  const auto& bp = getProductionBlueprint(6);
+  ASSERT_NE(bp.section_flow, nullptr);
+
+  int chorus_count = 0;
+  bool first_chorus_has_signature_tracks = false;
+  bool early_sections_have_signature_tracks = true;
+  for (uint8_t i = 0; i < bp.section_count; ++i) {
+    const auto& slot = bp.section_flow[i];
+    if (slot.type == SectionType::Chorus) {
+      ++chorus_count;
+      if (chorus_count == 1) {
+        first_chorus_has_signature_tracks = hasTrack(slot.enabled_tracks, TrackMask::Aux) &&
+                                            hasTrack(slot.enabled_tracks, TrackMask::Motif);
+      }
+    }
+    if (chorus_count < 2) {
+      early_sections_have_signature_tracks =
+          early_sections_have_signature_tracks && (hasTrack(slot.enabled_tracks, TrackMask::Aux) ||
+                                                   hasTrack(slot.enabled_tracks, TrackMask::Motif));
+    }
+  }
+
+  EXPECT_TRUE(first_chorus_has_signature_tracks)
+      << "IdolKawaii first Chorus should include Music Box Aux and Locked motif";
+  EXPECT_TRUE(early_sections_have_signature_tracks)
+      << "IdolKawaii signature tracks should not be silent until the second Chorus";
+}
+
+TEST_F(ProductionBlueprintTest, IdolKawaiiAllowsClimaxAboveG5) {
+  const auto& bp = getProductionBlueprint(6);
+
+  EXPECT_STREQ(bp.name, "IdolKawaii");
+  EXPECT_EQ(bp.constraints.max_pitch, 86) << "D6 ceiling should preserve A5 climax headroom";
 }
 
 TEST_F(ProductionBlueprintTest, IdolCoolPopBlueprint) {
@@ -367,6 +404,29 @@ TEST_F(ProductionBlueprintTest, SelectRandomReproducibility) {
   }
 
   EXPECT_EQ(seq1, seq2);
+}
+
+TEST_F(ProductionBlueprintTest, SelectRandomForMoodSkipsIncompatibleBlueprints) {
+  std::mt19937 rng(4242);
+  uint8_t ballad_mood = static_cast<uint8_t>(Mood::Ballad);
+
+  for (int i = 0; i < 200; ++i) {
+    uint8_t id = selectProductionBlueprintForMood(rng, 255, ballad_mood);
+    EXPECT_TRUE(isMoodCompatible(id, ballad_mood))
+        << "Random blueprint selection should respect mood_mask";
+  }
+}
+
+TEST_F(ProductionBlueprintTest, BlueprintsDeclareTempoIdentity) {
+  for (uint8_t i = 0; i < getProductionBlueprintCount(); ++i) {
+    const auto& bp = getProductionBlueprint(i);
+    if (bp.weight == 0) {
+      continue;
+    }
+    EXPECT_GT(bp.tempo_default, 0u) << bp.name << " should declare tempo_default";
+    EXPECT_LE(bp.tempo_min, bp.tempo_default) << bp.name;
+    EXPECT_GE(bp.tempo_max, bp.tempo_default) << bp.name;
+  }
 }
 
 // ============================================================================
@@ -1451,6 +1511,7 @@ TEST_F(ProductionBlueprintTest, BlueprintConstraintsDefaultValues) {
   EXPECT_FALSE(constraints.enable_slap);
   EXPECT_FALSE(constraints.enable_tapping);
   EXPECT_FALSE(constraints.enable_harmonics);
+  EXPECT_EQ(constraints.drum_style_hint, 0);
 }
 
 TEST_F(ProductionBlueprintTest, BlueprintConstraintsCustomValues) {
@@ -1462,6 +1523,7 @@ TEST_F(ProductionBlueprintTest, BlueprintConstraintsCustomValues) {
   constraints.enable_slap = true;
   constraints.enable_tapping = true;
   constraints.enable_harmonics = true;
+  constraints.drum_style_hint = static_cast<uint8_t>(DrumStyle::FourOnFloor) + 1;
 
   EXPECT_EQ(constraints.bass_skill, InstrumentSkillLevel::Advanced);
   EXPECT_EQ(constraints.guitar_skill, InstrumentSkillLevel::Virtuoso);
@@ -1469,6 +1531,14 @@ TEST_F(ProductionBlueprintTest, BlueprintConstraintsCustomValues) {
   EXPECT_TRUE(constraints.enable_slap);
   EXPECT_TRUE(constraints.enable_tapping);
   EXPECT_TRUE(constraints.enable_harmonics);
+  EXPECT_EQ(constraints.drum_style_hint, static_cast<uint8_t>(DrumStyle::FourOnFloor) + 1);
+}
+
+TEST_F(ProductionBlueprintTest, IdolCoolPopForcesFourOnFloorDrumStyle) {
+  const auto& bp = getProductionBlueprint(7);
+
+  EXPECT_STREQ(bp.name, "IdolCoolPop");
+  EXPECT_EQ(bp.constraints.drum_style_hint, static_cast<uint8_t>(DrumStyle::FourOnFloor) + 1);
 }
 
 TEST_F(ProductionBlueprintTest, AllBlueprintConstraintsHaveExpectedInstrumentMode) {

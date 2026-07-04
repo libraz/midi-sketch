@@ -5,6 +5,7 @@
 
 #include "core/generator.h"
 #include "core/preset_data.h"
+#include "core/section_properties.h"
 #include "core/structure.h"
 #include "core/types.h"
 #include "gtest/gtest.h"
@@ -170,6 +171,63 @@ TEST_F(CallSystemTest, InsertCallSections_MixBreakHasVocalDensityNone) {
       EXPECT_EQ(s.vocal_density, VocalDensity::None);
     }
   }
+}
+
+TEST_F(CallSystemTest, InsertCallSections_PreservesExistingDensityPercent) {
+  std::vector<Section> sections;
+
+  Section intro;
+  intro.type = SectionType::Intro;
+  intro.name = "intro";
+  intro.bars = 4;
+  intro.density_percent = 61;
+  sections.push_back(intro);
+
+  Section verse;
+  verse.type = SectionType::A;
+  verse.name = "verse";
+  verse.bars = 8;
+  verse.density_percent = 73;
+  sections.push_back(verse);
+
+  Section chorus_one;
+  chorus_one.type = SectionType::Chorus;
+  chorus_one.name = "chorus_one";
+  chorus_one.bars = 8;
+  chorus_one.density_percent = 97;
+  sections.push_back(chorus_one);
+
+  Section chorus_two;
+  chorus_two.type = SectionType::Chorus;
+  chorus_two.name = "chorus_two";
+  chorus_two.bars = 8;
+  chorus_two.density_percent = 88;
+  sections.push_back(chorus_two);
+
+  insertCallSections(sections, IntroChant::Gachikoi, MixPattern::Standard, 120);
+
+  bool found_chant = false;
+  bool found_mix = false;
+  for (const auto& section : sections) {
+    if (section.name == "intro") EXPECT_EQ(section.density_percent, 61);
+    if (section.name == "verse") EXPECT_EQ(section.density_percent, 73);
+    if (section.name == "chorus_one") EXPECT_EQ(section.density_percent, 97);
+    if (section.name == "chorus_two") EXPECT_EQ(section.density_percent, 88);
+
+    if (section.type == SectionType::Chant) {
+      found_chant = true;
+      EXPECT_EQ(section.density_percent,
+                getSectionProperties(SectionType::Chant).default_density_percent);
+    }
+    if (section.type == SectionType::MixBreak) {
+      found_mix = true;
+      EXPECT_EQ(section.density_percent,
+                getSectionProperties(SectionType::MixBreak).default_density_percent);
+    }
+  }
+
+  EXPECT_TRUE(found_chant);
+  EXPECT_TRUE(found_mix);
 }
 
 // ============================================================================
@@ -346,6 +404,7 @@ TEST_F(CallSystemTest, DrumsTrack_ChantSection_HasReducedDensity) {
   config.intro_chant = IntroChant::Gachikoi;
   config.target_duration_seconds = 120;
   config.seed = 12345;
+  config.blueprint_id = 0;
 
   gen.generateFromConfig(config);
 
@@ -434,6 +493,7 @@ TEST_F(CallSystemTest, BassTrack_ChantSection_HasSimplePattern) {
   config.intro_chant = IntroChant::Gachikoi;
   config.target_duration_seconds = 120;
   config.seed = 12345;
+  config.blueprint_id = 0;
 
   gen.generateFromConfig(config);
 
@@ -475,6 +535,7 @@ TEST_F(CallSystemTest, ChordTrack_ChantSection_HasSustainedVoicing) {
   config.intro_chant = IntroChant::Gachikoi;
   config.target_duration_seconds = 120;
   config.seed = 12345;
+  config.blueprint_id = 0;
 
   gen.generateFromConfig(config);
 

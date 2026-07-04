@@ -478,6 +478,33 @@ TEST(VelocityTest, ApplyBarVelocityCurveEmptyTrack) {
   EXPECT_TRUE(track.notes().empty());
 }
 
+TEST(VelocityTest, EnergyLiftSectionEntryAvoidsPhraseHeadDip) {
+  MidiTrack track;
+
+  Section pre_chorus;
+  pre_chorus.type = SectionType::B;
+  pre_chorus.start_tick = 0;
+  pre_chorus.bars = 4;
+  pre_chorus.energy = SectionEnergy::Low;
+
+  Section chorus;
+  chorus.type = SectionType::Chorus;
+  chorus.start_tick = 4 * TICKS_PER_BAR;
+  chorus.bars = 4;
+  chorus.energy = SectionEnergy::High;
+
+  uint8_t initial_vel = 100;
+  track.addNote(NoteEventBuilder::create(3 * TICKS_PER_BAR, 480, 60, initial_vel));
+  track.addNote(NoteEventBuilder::create(chorus.start_tick, 480, 64, initial_vel));
+
+  std::vector<MidiTrack*> tracks = {&track};
+  std::vector<Section> sections = {pre_chorus, chorus};
+  applyAllBarVelocityCurves(tracks, sections);
+
+  EXPECT_GE(track.notes()[1].velocity, track.notes()[0].velocity)
+      << "A higher-energy chorus entry should not become quieter than the preceding setup bar";
+}
+
 // ============================================================================
 // EmotionCurve Integration Tests (Task 3.5)
 // ============================================================================

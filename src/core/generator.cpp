@@ -18,6 +18,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <initializer_list>
 #include <map>
 #include <vector>
 
@@ -78,6 +79,18 @@ void separateMotifFromBass(MidiTrack& motif, const MidiTrack& vocal, const MidiT
                            const IHarmonyContext& harmony);
 void separateGuitarFromBass(MidiTrack& guitar, const MidiTrack& bass);
 void strengthenRhythmLockBassDrive(MidiTrack& bass, const std::vector<Section>& sections);
+
+void reregisterTrack(IHarmonyCoordinator& harmony, MidiTrack& track, TrackRole role) {
+  harmony.clearNotesForTrack(role);
+  harmony.registerTrack(track, role);
+}
+
+void reregisterTracks(IHarmonyCoordinator& harmony,
+                      std::initializer_list<std::pair<MidiTrack*, TrackRole>> tracks) {
+  for (const auto& tr : tracks) {
+    reregisterTrack(harmony, *tr.first, tr.second);
+  }
+}
 void breakLongPitchRuns(MidiTrack& track, const IHarmonyContext& harmony, uint8_t low, uint8_t high,
                         int max_run, TrackRole role);
 void trimBassBoundaryOverhangs(MidiTrack& bass, const IHarmonyContext& harmony);
@@ -88,6 +101,7 @@ void applyRhythmSyncLeadDna(MidiTrack& vocal, MidiTrack& motif,
                             const std::vector<Section>& sections, const GeneratorParams& params,
                             const IHarmonyContext& harmony);
 bool isRhythmSyncLeadSetting(const GeneratorParams& params, uint8_t resolved_blueprint_id);
+bool shouldRestoreLockedMotifRiff(const GeneratorParams& params);
 
 /// Intended riff realization per onset: start tick -> sorted pitch stack.
 using MotifRiffReference = std::map<Tick, std::vector<uint8_t>>;
@@ -159,8 +173,10 @@ void Generator::initializeBlueprint(uint32_t seed) {
   // Use separate RNG with derived seed to avoid disturbing main rng_ state
   constexpr uint32_t kBlueprintMagic = 0x424C5052;  // "BLPR"
   std::mt19937 blueprint_rng(seed ^ kBlueprintMagic);
-  resolved_blueprint_id_ = selectProductionBlueprint(blueprint_rng, params_.blueprint_id);
+  resolved_blueprint_id_ = selectProductionBlueprintForMood(blueprint_rng, params_.blueprint_id,
+                                                            static_cast<uint8_t>(params_.mood));
   blueprint_ = &getProductionBlueprint(resolved_blueprint_id_);
+  params_.blueprint_id = resolved_blueprint_id_;
 
   // Copy blueprint settings to params for track generation
   params_.paradigm = blueprint_->paradigm;
@@ -169,6 +185,10 @@ void Generator::initializeBlueprint(uint32_t seed) {
 
   // Store blueprint reference for constraint access during generation
   params_.blueprint_ref = blueprint_;
+
+  if (!params_.bpm_explicit && params_.bpm == 0 && blueprint_->tempo_default > 0) {
+    params_.bpm = blueprint_->tempo_default;
+  }
 
   // Blueprint motif density override (idol riffs are busier than the default)
   if (blueprint_->constraints.motif_note_count > 0 && !params_.motif_note_count_explicit) {
@@ -501,6 +521,17 @@ void Generator::applyPostProcessingEffects() {
   // Apply layer scheduling (per-bar track activation/deactivation)
   applyLayerSchedule();
 
+  // Layer scheduling removes notes after generation. Refresh the collision
+  // registry immediately so post-processing never reasons about notes that the
+  // arrangement mask has already muted.
+  reregisterTracks(*harmony_context_, {{&song_.vocal(), TrackRole::Vocal},
+                                       {&song_.chord(), TrackRole::Chord},
+                                       {&song_.aux(), TrackRole::Aux},
+                                       {&song_.bass(), TrackRole::Bass},
+                                       {&song_.guitar(), TrackRole::Guitar},
+                                       {&song_.motif(), TrackRole::Motif},
+                                       {&song_.arpeggio(), TrackRole::Arpeggio}});
+
   // Run the post-processing pipeline (staggered entry, velocity shaping,
   // transitions, final adjustments, expression curves, humanization)
   PostProcessingPipeline::Context pp_ctx{song_, params_,    *harmony_context_,
@@ -536,12 +567,12 @@ void Generator::applyPostProcessingEffects() {
     harmony_context_->registerTrack(song_.vocal(), TrackRole::Vocal);
   }
 
-  // Capture the riff identity NOW, after the intentional register shaping
-  // (lead DNA) but before the per-note collision passes below scatter it.
-  // restoreMotifRiffFromReference pulls divergent notes back to this
-  // reference at the end of the pipeline wherever the final state allows.
+  // Capture the locked riff identity NOW, after intentional register shaping
+  // but before the per-note collision passes below scatter it.
+  // restoreMotifRiffFromReference pulls divergent notes back to this reference
+  // at the end of the pipeline wherever the final state allows.
   MotifRiffReference riff_reference;
-  if (params_.paradigm == GenerationParadigm::RhythmSync && !song_.motif().empty()) {
+  if (shouldRestoreLockedMotifRiff(params_) && !song_.motif().empty()) {
     riff_reference = captureMotifRiffReference(song_.motif());
   }
 
@@ -566,7 +597,7 @@ void Generator::applyPostProcessingEffects() {
     tameStandaloneMotifSections(song_.motif(), song_.vocal(), song_.arrangement().sections(),
                                 *harmony_context_);
     separateMotifFromBass(song_.motif(), song_.vocal(), song_.bass(), *harmony_context_);
-    breakLongPitchRuns(song_.motif(), *harmony_context_, 48, 84, 5, TrackRole::Motif);
+    breakLongPitchRuns(song_.motif(), *harmony_context_, 55, 84, 5, TrackRole::Motif);
   } else {
     PostProcessor::fixMotifVocalClashes(song_.motif(), song_.vocal(), *harmony_context_);
   }
@@ -579,14 +610,11 @@ void Generator::applyPostProcessingEffects() {
   // trimVocalSustainsAtUnsafeChordChanges, and the vocal-first
   // refineVocalForAccompaniment) must see fresh state. Done in ALL paradigms;
   // the RhythmSync branch no longer double-registers Bass/Motif.
-  for (const auto& tr : {std::pair<MidiTrack*, TrackRole>{&song_.chord(), TrackRole::Chord},
-                         {&song_.aux(), TrackRole::Aux},
-                         {&song_.bass(), TrackRole::Bass},
-                         {&song_.guitar(), TrackRole::Guitar},
-                         {&song_.motif(), TrackRole::Motif}}) {
-    harmony_context_->clearNotesForTrack(tr.second);
-    harmony_context_->registerTrack(*tr.first, tr.second);
-  }
+  reregisterTracks(*harmony_context_, {{&song_.chord(), TrackRole::Chord},
+                                       {&song_.aux(), TrackRole::Aux},
+                                       {&song_.bass(), TrackRole::Bass},
+                                       {&song_.guitar(), TrackRole::Guitar},
+                                       {&song_.motif(), TrackRole::Motif}});
 
   // First riff restore: pull the motif back toward the captured riff BEFORE
   // the aux/arpeggio/guitar reference-clash passes below resolve those tracks
@@ -595,7 +623,7 @@ void Generator::applyPostProcessingEffects() {
   // reference realization, and the final restore can no longer take it back.
   // A second restore at the end of the pipeline undoes the scatter added by
   // the later motif-mutating passes (fixMotifRepeatedPitches etc.).
-  if (params_.paradigm == GenerationParadigm::RhythmSync && !riff_reference.empty()) {
+  if (shouldRestoreLockedMotifRiff(params_) && !riff_reference.empty()) {
     restoreMotifRiffFromReference(song_.motif(), song_.vocal(), song_.aux(), riff_reference,
                                   *harmony_context_);
     harmony_context_->clearNotesForTrack(TrackRole::Motif);
@@ -667,15 +695,12 @@ void Generator::applyPostProcessingEffects() {
   // re-registration. Re-register all harmonic accompaniment tracks so any later
   // consumer (notably the vocal-first refineVocalForAccompaniment, which queries
   // the harmony context for every accompaniment track) observes fresh state.
-  for (const auto& tr : {std::pair<MidiTrack*, TrackRole>{&song_.chord(), TrackRole::Chord},
-                         {&song_.aux(), TrackRole::Aux},
-                         {&song_.bass(), TrackRole::Bass},
-                         {&song_.guitar(), TrackRole::Guitar},
-                         {&song_.motif(), TrackRole::Motif},
-                         {&song_.arpeggio(), TrackRole::Arpeggio}}) {
-    harmony_context_->clearNotesForTrack(tr.second);
-    harmony_context_->registerTrack(*tr.first, tr.second);
-  }
+  reregisterTracks(*harmony_context_, {{&song_.chord(), TrackRole::Chord},
+                                       {&song_.aux(), TrackRole::Aux},
+                                       {&song_.bass(), TrackRole::Bass},
+                                       {&song_.guitar(), TrackRole::Guitar},
+                                       {&song_.motif(), TrackRole::Motif},
+                                       {&song_.arpeggio(), TrackRole::Arpeggio}});
 
   // Final vocal monotony guard for every paradigm: the chord-tone snap and
   // collision passes above resolve pitches individually toward the safest
@@ -744,12 +769,12 @@ void Generator::applyPostProcessingEffects() {
     }
   }
 
-  // Restore the RhythmSync riff identity scattered by the per-note collision
-  // passes above. Must run as the LAST pitch-mutating motif step so later
-  // passes cannot re-scatter the riff; every stamp is consonance-verified, so
-  // no clash-fixing pass needs to run after it. Re-register the motif so the
+  // Restore locked riff identity scattered by the per-note collision passes
+  // above. Must run as the LAST pitch-mutating motif step so later passes
+  // cannot re-scatter the riff; every stamp is consonance-verified, so no
+  // clash-fixing pass needs to run after it. Re-register the motif so the
   // tail-trim pass below sees fresh state.
-  if (params_.paradigm == GenerationParadigm::RhythmSync && !riff_reference.empty()) {
+  if (shouldRestoreLockedMotifRiff(params_) && !riff_reference.empty()) {
     restoreMotifRiffFromReference(song_.motif(), song_.vocal(), song_.aux(), riff_reference,
                                   *harmony_context_);
     harmony_context_->clearNotesForTrack(TrackRole::Motif);
@@ -771,13 +796,13 @@ void Generator::applyPostProcessingEffects() {
 void Generator::generate(const GeneratorParams& params) {
   acceptParams(params);
 
-  // Phase 1: Initialize all state
+  // Initialize all state.
   initializeGenerationState();
 
-  // Phase 2: Generate all tracks
+  // Generate all tracks.
   generateAllTracksViaCoordinator();
 
-  // Phase 3: Apply post-processing
+  // Apply post-processing.
   applyPostProcessingEffects();
 }
 
@@ -1519,7 +1544,7 @@ namespace {
 /// @return true if the note should be removed (track inactive at this bar)
 bool shouldRemoveNoteForLayerSchedule(const NoteEvent& note, Tick section_start, Tick section_end,
                                       const std::vector<LayerEvent>& layer_events,
-                                      TrackMask track_mask) {
+                                      TrackMask track_mask, TrackMask section_base_mask) {
   // Only process notes within this section
   if (note.start_tick < section_start || note.start_tick >= section_end) {
     return false;
@@ -1528,8 +1553,15 @@ bool shouldRemoveNoteForLayerSchedule(const NoteEvent& note, Tick section_start,
   // Calculate which bar this note falls in (0-based)
   uint8_t bar_offset = static_cast<uint8_t>(tickToBar(note.start_tick - section_start));
 
-  // Check if this track is active at this bar
-  return !isTrackActiveAtBar(layer_events, bar_offset, track_mask);
+  bool schedule_defines_full_mask = !layer_events.empty() && layer_events.front().bar_offset == 0 &&
+                                    layer_events.front().tracks_add_mask != TrackMask::None;
+
+  // Default intro/interlude schedules define the active set from scratch.
+  // Remove-only or delayed schedules refine the blueprint section track_mask.
+  bool active = schedule_defines_full_mask
+                    ? isTrackActiveAtBar(layer_events, bar_offset, track_mask)
+                    : isTrackActiveAtBar(layer_events, bar_offset, track_mask, section_base_mask);
+  return !active;
 }
 
 void deduplicatePitchOnsets(MidiTrack& track) {
@@ -1944,9 +1976,10 @@ void lowerTrackCrossingsUnderVocal(MidiTrack& track, const MidiTrack& vocal,
   }
 
   // High-severity crossing threshold: an accompaniment pitch this far above
-  // the vocal competes with the lead for register (mirrors the
-  // pitch-crossing gate).
+  // the vocal competes with the lead for register. Aux is stricter because it
+  // is a sub-melody/doubling layer and must not own the top register.
   constexpr int kHighCrossing = 5;
+  const int crossing_threshold = (role == TrackRole::Aux) ? 1 : kHighCrossing;
 
   std::vector<size_t> unresolvable;
   for (size_t note_idx = 0; note_idx < track_notes.size(); ++note_idx) {
@@ -1959,16 +1992,16 @@ void lowerTrackCrossingsUnderVocal(MidiTrack& track, const MidiTrack& vocal,
       vocal_min = std::min(vocal_min, static_cast<int>(v.note));
     }
     if (vocal_min >= 128) continue;  // No concurrent vocal
-    if (static_cast<int>(note.note) - vocal_min < kHighCrossing) continue;
+    if (static_cast<int>(note.note) - vocal_min < crossing_threshold) continue;
 
     uint8_t pre_pitch = note.note;
     int candidate = static_cast<int>(note.note);
-    while (candidate - vocal_min >= kHighCrossing &&
+    while (candidate - vocal_min >= crossing_threshold &&
            candidate - 12 >= static_cast<int>(CHORD_LOW)) {
       candidate -= 12;
     }
-    if (candidate == static_cast<int>(pre_pitch)) continue;  // No room to drop
-    if (candidate - vocal_min >= kHighCrossing) continue;    // Still high: keep voicing intact
+    if (candidate == static_cast<int>(pre_pitch)) continue;     // No room to drop
+    if (candidate - vocal_min >= crossing_threshold) continue;  // Still high: keep voicing intact
     // Pick the fold with the longest consonant span. A single fold can be
     // dissonant for the full duration of a long note (e.g. it lands a major
     // 2nd under a later vocal note, or a chord change mid-note clashes), yet
@@ -1994,8 +2027,10 @@ void lowerTrackCrossingsUnderVocal(MidiTrack& track, const MidiTrack& vocal,
       // No fold has even an eighth of consonant span from the onset. For a
       // sustained note this means it crosses far above the vocal AND clashes
       // everywhere underneath — removing it is musically better than either.
-      // Short notes are left as a brief crossing (warning < forced clash).
-      if (note.duration >= TICK_HALF) {
+      // Short non-aux notes are left as a brief crossing (warning < forced
+      // clash), but aux is a non-essential support layer and should never own
+      // the top register.
+      if (role == TrackRole::Aux || note.duration >= TICK_HALF) {
         unresolvable.push_back(note_idx);
       }
       continue;
@@ -2051,10 +2086,10 @@ void tameStandaloneMotifSections(MidiTrack& motif, const MidiTrack& vocal,
       while (folded_pitch > 67) {
         folded_pitch -= 12;
       }
-      while (folded_pitch < 52) {
+      while (folded_pitch < 55) {
         folded_pitch += 12;
       }
-      note.note = clampScalePitchAvoidingChord(folded_pitch, note.start_tick, harmony, 52, 67);
+      note.note = clampScalePitchAvoidingChord(folded_pitch, note.start_tick, harmony, 55, 67);
       if (note.note != pre_pitch) {
 #ifdef MIDISKETCH_NOTE_PROVENANCE
         note.prov_source = static_cast<uint8_t>(NoteSource::PostProcess);
@@ -2123,15 +2158,15 @@ void separateMotifFromBass(MidiTrack& motif, const MidiTrack& vocal, const MidiT
       }
       ceiling = std::min(ceiling, static_cast<int>(vocal_note.note) - 5);
     }
-    ceiling = std::clamp(ceiling, 52, 76);
+    ceiling = std::clamp(ceiling, 55, 76);
 
     static constexpr int kOffsets[] = {12, 7, 5, -5, -7, -12};
     for (int offset : kOffsets) {
       int target = static_cast<int>(motif_note.note) + offset;
-      if (target < 48 || target > ceiling) {
+      if (target < 55 || target > ceiling) {
         continue;
       }
-      uint8_t candidate = clampScalePitchAvoidingChord(target, motif_note.start_tick, harmony, 48,
+      uint8_t candidate = clampScalePitchAvoidingChord(target, motif_note.start_tick, harmony, 55,
                                                        static_cast<uint8_t>(ceiling));
       if (!bassClashesWithMotifPitch(candidate, motif_note, bass) &&
           !vocalClashesWithMotifPitch(candidate, motif_note, vocal)) {
@@ -2406,6 +2441,12 @@ bool isRhythmSyncLeadSetting(const GeneratorParams& params, uint8_t resolved_blu
   // The RhythmLock blueprint is where the RhythmSync-style lead structure lives.
   return params.paradigm == GenerationParadigm::RhythmSync && resolved_blueprint_id == 1 &&
          params.mood == Mood::AnimeHighEnergy;
+}
+
+bool shouldRestoreLockedMotifRiff(const GeneratorParams& params) {
+  return params.riff_policy == RiffPolicy::LockedContour ||
+         params.riff_policy == RiffPolicy::LockedPitch ||
+         params.riff_policy == RiffPolicy::LockedAll;
 }
 
 uint8_t clampScalePitch(int pitch, uint8_t low, uint8_t high) {
@@ -2865,6 +2906,8 @@ void restoreMotifRiffFromReference(MidiTrack& motif, const MidiTrack& vocal, con
   // respecting the vocal ceiling and consonance per note. Bars where neither
   // shift verifies fall back to per-note restore at shift 0, which can only
   // reduce the divergence.
+  constexpr int kMotifRestoreLow = 55;
+  constexpr int kMotifRestoreHigh = 84;
   constexpr int kBarShifts[] = {0, -12};
   std::map<size_t, uint8_t> stamps;
   for (auto& [bar, candidates] : bars) {
@@ -2878,7 +2921,7 @@ void restoreMotifRiffFromReference(MidiTrack& motif, const MidiTrack& vocal, con
       bool all_ok = true;
       for (const auto& cand : candidates) {
         int target = static_cast<int>(cand.reference_pitch) + shift;
-        if (shift != 0 && (target < 48 || target > 84)) {
+        if (shift != 0 && (target < kMotifRestoreLow || target > kMotifRestoreHigh)) {
           all_ok = false;
           break;
         }
@@ -2912,7 +2955,7 @@ void restoreMotifRiffFromReference(MidiTrack& motif, const MidiTrack& vocal, con
       size_t passes = 0;
       for (const auto& cand : candidates) {
         int target = static_cast<int>(cand.reference_pitch) + shift;
-        if (shift != 0 && (target < 48 || target > 84)) continue;
+        if (shift != 0 && (target < kMotifRestoreLow || target > kMotifRestoreHigh)) continue;
         const NoteEvent& note = motif_notes[cand.idx];
         if (note.note == target || isSafeTarget(note, static_cast<uint8_t>(target))) {
           ++passes;
@@ -2926,19 +2969,21 @@ void restoreMotifRiffFromReference(MidiTrack& motif, const MidiTrack& vocal, con
     for (const auto& cand : candidates) {
       const NoteEvent& note = motif_notes[cand.idx];
       int shifted = static_cast<int>(cand.reference_pitch) + best_shift;
-      bool in_range = best_shift == 0 || (shifted >= 48 && shifted <= 84);
+      bool in_range =
+          best_shift == 0 || (shifted >= kMotifRestoreLow && shifted <= kMotifRestoreHigh);
       if (in_range && note.note == shifted) continue;
       if (in_range && isSafeTarget(note, static_cast<uint8_t>(shifted))) {
         stamps[cand.idx] = static_cast<uint8_t>(shifted);
         continue;
       }
       uint8_t vocal_floor = vocalFloorFor(note);
-      uint8_t ceiling = (vocal_floor > 0 && vocal_floor < 84) ? vocal_floor : 84;
-      if (ceiling < 48) continue;
+      uint8_t ceiling =
+          (vocal_floor > 0 && vocal_floor < kMotifRestoreHigh) ? vocal_floor : kMotifRestoreHigh;
+      if (ceiling < kMotifRestoreLow) continue;
       ChordToneHelper helper(harmony.getChordDegreeAt(note.start_tick));
       uint8_t reference_shifted =
-          static_cast<uint8_t>(std::clamp(shifted, 48, static_cast<int>(ceiling)));
-      uint8_t chord_tone = helper.nearestInRange(reference_shifted, 48, ceiling);
+          static_cast<uint8_t>(std::clamp(shifted, kMotifRestoreLow, static_cast<int>(ceiling)));
+      uint8_t chord_tone = helper.nearestInRange(reference_shifted, kMotifRestoreLow, ceiling);
       if (chord_tone != note.note && isSafeTarget(note, chord_tone)) {
         stamps[cand.idx] = chord_tone;
       }
@@ -3036,7 +3081,7 @@ void Generator::applyLayerSchedule() {
                                  [&](const NoteEvent& note) {
                                    return shouldRemoveNoteForLayerSchedule(
                                        note, section_start, section_end, section.layer_events,
-                                       mapping.mask);
+                                       mapping.mask, section.track_mask);
                                  }),
                   notes.end());
     }

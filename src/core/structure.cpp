@@ -161,6 +161,9 @@ void applyEnergyCurve(std::vector<Section>& sections, EnergyCurve curve) {
       if (section.type == SectionType::Bridge || section.type == SectionType::Interlude) {
         section.energy = SectionEnergy::Medium;
         section.base_velocity = std::min(section.base_velocity, static_cast<uint8_t>(75));
+      } else if (section.type == SectionType::Chorus) {
+        section.energy = SectionEnergy::Peak;
+        section.base_velocity = std::max(section.base_velocity, static_cast<uint8_t>(90));
       } else if (section.type != SectionType::Outro) {
         // Everything else stays high or goes higher
         if (section.energy == SectionEnergy::Low) {
@@ -184,6 +187,8 @@ void applyEnergyCurve(std::vector<Section>& sections, EnergyCurve curve) {
       // Toggle wave on major section changes
       if (section.type == SectionType::Chorus) {
         is_high_wave = true;  // Chorus always high
+      } else if (section.type == SectionType::Bridge || section.type == SectionType::Interlude) {
+        is_high_wave = false;  // Breakdown sections reset the wave
       } else if (section.type == SectionType::A && prev_type == SectionType::Chorus) {
         is_high_wave = false;  // Drop after chorus
       }
@@ -224,6 +229,9 @@ std::vector<Section> buildStructure(StructurePattern pattern) {
     section.backing_density = getBackingDensityForType(type);
     section.deviation_allowed = getAllowDeviationForType(type);
     section.se_allowed = true;
+    if (type == SectionType::Intro) {
+      section.entry_pattern = EntryPattern::Stagger;
+    }
     sections.push_back(section);
     current_bar += bars;
     current_tick += bars * TICKS_PER_BAR;
@@ -591,6 +599,7 @@ void insertCallSections(std::vector<Section>& sections, IntroChant intro_chant,
     chant.name = (intro_chant == IntroChant::Gachikoi) ? "Gachikoi" : "Shout";
     chant.vocal_density = getVocalDensityForType(SectionType::Chant);
     chant.backing_density = getBackingDensityForType(SectionType::Chant);
+    chant.density_percent = getSectionProperties(SectionType::Chant).default_density_percent;
     chant.deviation_allowed = false;
     chant.se_allowed = true;
 
@@ -613,6 +622,7 @@ void insertCallSections(std::vector<Section>& sections, IntroChant intro_chant,
     mix.name = (mix_pattern == MixPattern::Tiger) ? "TigerMix" : "Mix";
     mix.vocal_density = getVocalDensityForType(SectionType::MixBreak);
     mix.backing_density = getBackingDensityForType(SectionType::MixBreak);
+    mix.density_percent = getSectionProperties(SectionType::MixBreak).default_density_percent;
     mix.deviation_allowed = false;
     mix.se_allowed = true;
 
@@ -631,8 +641,8 @@ void insertCallSections(std::vector<Section>& sections, IntroChant intro_chant,
   // Recalculate ticks
   recalculateSectionTicks(sections);
 
-  // Re-assign density gradient and exit patterns after call section insertion
-  assignDensityGradient(sections);
+  // Re-assign exit patterns after call section insertion. Existing density_percent
+  // values may come from blueprint slots and must survive call toggles.
   assignExitPatterns(sections);
 }
 
@@ -925,16 +935,7 @@ std::vector<LayerEvent> generateDefaultLayerEvents(const Section& section, size_
     }
 
     case SectionType::A: {
-      // First verse: Vocal + minimal -> add layers at bar 2
-      // Only stagger if this is the first A section
-      bool is_first_a = true;
-      for (size_t idx = 0; idx < section_index; ++idx) {
-        // We cannot check other sections here without the full list,
-        // so we use section_index == 0 or the first section being Intro
-        // as a heuristic. For simplicity, stagger if section_index <= 1.
-      }
-      (void)is_first_a;  // Use section_index heuristic below
-
+      // First verse heuristic: section 0, or section 1 when preceded by Intro.
       if (section_index <= 1 && section.bars >= 4) {
         // First A section: gradual build
         events.emplace_back(
@@ -966,7 +967,9 @@ std::vector<LayerEvent> generateDefaultLayerEvents(const Section& section, size_
         events.emplace_back(wind_down_bar, TrackMask::None,
                             TrackMask::Arpeggio | TrackMask::Motif | TrackMask::Aux);
         uint8_t final_bar = static_cast<uint8_t>(section.bars - 1);
-        events.emplace_back(final_bar, TrackMask::None, TrackMask::Chord | TrackMask::Bass);
+        events.emplace_back(final_bar, TrackMask::None,
+                            TrackMask::Drums | TrackMask::Bass | TrackMask::Vocal | TrackMask::SE |
+                                TrackMask::Guitar);
       }
       break;
     }
@@ -1012,6 +1015,9 @@ void applyDefaultLayerSchedule(std::vector<Section>& sections) {
     auto& section = sections[idx];
     // Only apply if no existing layer events and section has 4+ bars
     if (section.layer_events.empty() && section.bars >= 4) {
+      if (section.type == SectionType::Intro && section.entry_pattern != EntryPattern::Stagger) {
+        continue;
+      }
       section.layer_events = generateDefaultLayerEvents(section, idx, sections.size());
     }
   }
