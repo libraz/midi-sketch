@@ -3,7 +3,7 @@
 [![CI](https://github.com/libraz/midi-sketch/actions/workflows/ci.yml/badge.svg)](https://github.com/libraz/midi-sketch/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/libraz/midi-sketch/branch/main/graph/badge.svg)](https://codecov.io/gh/libraz/midi-sketch)
 [![Version](https://img.shields.io/badge/version-0.2.0-blue.svg)](https://github.com/libraz/midi-sketch)
-[![License](https://img.shields.io/badge/license-Apache--2.0-blue)](https://github.com/libraz/midi-sketch/blob/main/LICENSE)
+[![License](https://img.shields.io/badge/license-AGPL--3.0%20%2F%20Commercial-green)](LICENSE)
 [![C++17](https://img.shields.io/badge/C%2B%2B-17-blue?logo=c%2B%2B)](https://en.cppreference.com/w/cpp/17)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20WebAssembly-lightgrey)](https://github.com/libraz/midi-sketch)
 
@@ -97,7 +97,7 @@ sketch.destroy();
 
 ## License
 
-[Apache-2.0](LICENSE) / [Commercial](LICENSE-COMMERCIAL) dual license. For commercial inquiries: libraz@libraz.net
+[AGPL-3.0](LICENSE) / [Commercial](LICENSE-COMMERCIAL) dual license. Free to use, modify, and redistribute under AGPL-3.0; embedding in closed-source products or proprietary SaaS requires a commercial license. For commercial inquiries: libraz@libraz.net
 
 ### Scope Notice
 
