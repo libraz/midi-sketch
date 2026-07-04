@@ -165,6 +165,18 @@ void generateFill(MidiTrack& track, Tick beat_tick, uint8_t beat, FillType fill_
   uint8_t fill_vel = static_cast<uint8_t>(velocity * 0.9f);
   uint8_t accent_vel = static_cast<uint8_t>(velocity * 0.95f);
 
+  if (beat == 0) {
+    addDrumNote(track, beat_tick, EIGHTH, BD, fill_vel);
+    addDrumNote(track, beat_tick + EIGHTH, EIGHTH, SD, static_cast<uint8_t>(fill_vel - 5));
+    return;
+  }
+
+  if (beat == 1) {
+    addDrumNote(track, beat_tick, EIGHTH, SD, fill_vel);
+    addDrumNote(track, beat_tick + EIGHTH, EIGHTH, TOM_H, static_cast<uint8_t>(fill_vel - 3));
+    return;
+  }
+
   switch (fill_type) {
     case FillType::SnareRoll:
       if (beat == 2) {
@@ -227,6 +239,7 @@ void generateFill(MidiTrack& track, Tick beat_tick, uint8_t beat, FillType fill_
     case FillType::SimpleCrash:
       if (beat == 3) {
         addDrumNote(track, beat_tick + EIGHTH + SIXTEENTH, SIXTEENTH, BD, accent_vel);
+        addDrumNote(track, beat_tick + EIGHTH + SIXTEENTH, EIGHTH, CRASH, accent_vel);
       }
       break;
 

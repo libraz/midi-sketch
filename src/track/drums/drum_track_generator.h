@@ -46,6 +46,7 @@ struct DrumGenerationParams {
   CompositionStyle composition_style;
   GenerationParadigm paradigm;
   MotifDrumParams motif_drum;
+  uint8_t drum_style_hint = 0;   ///< 0=auto, otherwise DrumStyle enum + 1
   bool humanize = false;         ///< Master humanize switch
   float humanize_timing = 1.0f;  ///< Global humanization scaling (0.0-1.0)
 };

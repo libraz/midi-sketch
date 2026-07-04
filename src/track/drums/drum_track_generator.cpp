@@ -47,6 +47,78 @@ inline bool isAuxiliaryPercussion(uint8_t note) {
   return note == TAMBOURINE || note == SHAKER || note == HANDCLAP;
 }
 
+void addCrashIfAbsent(MidiTrack& track, Tick start, Tick duration, uint8_t velocity) {
+  if (hasCrashAtTick(track, start)) {
+    return;
+  }
+  addDrumNote(track, start, duration, CRASH, velocity);
+}
+
+bool hasKickNearTick(const MidiTrack& track, Tick target) {
+  constexpr Tick kTolerance = 12;
+  for (const auto& note : track.notes()) {
+    if (note.note != BD) continue;
+    Tick delta =
+        (note.start_tick >= target) ? (note.start_tick - target) : (target - note.start_tick);
+    if (delta <= kTolerance) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool hasDrumAtTick(const MidiTrack& track, Tick target, uint8_t drum_note) {
+  for (const auto& note : track.notes()) {
+    if (note.note == drum_note && note.start_tick == target) {
+      return true;
+    }
+  }
+  return false;
+}
+
+void addKickAnchorIfAbsent(MidiTrack& track, Tick start, Tick duration, uint8_t velocity) {
+  if (hasKickNearTick(track, start)) {
+    return;
+  }
+  addDrumNote(track, start, duration, BD, velocity);
+}
+
+bool shouldThinRhythmSyncTexture(const NoteEvent& note) {
+  Tick pos = positionInBar(note.start_tick);
+  int sixteenth = static_cast<int>(pos / SIXTEENTH);
+
+  if (note.note == SHAKER) {
+    // Fixed per-beat 16th slot: keep the hole in the same place every bar.
+    return sixteenth % 4 == 3;
+  }
+
+  if (note.note == RIDE) {
+    // Keep downbeats stable, thin a fixed light offbeat and the last 16th of each beat.
+    bool last_sixteenth_in_beat = (sixteenth % 4 == 3);
+    bool light_off_eighth = (pos % EIGHTH == 0) && ((pos / EIGHTH) % 4 == 3);
+    return last_sixteenth_in_beat || light_off_eighth;
+  }
+
+  return false;
+}
+
+bool shouldReuseSectionKickPattern(SectionType section, DrumStyle style) {
+  if (section != SectionType::B && section != SectionType::Chorus) {
+    return false;
+  }
+  return style != DrumStyle::Sparse;
+}
+
+DrumStyle resolveDrumStyle(Mood mood, uint8_t drum_style_hint) {
+  if (drum_style_hint > 0) {
+    uint8_t style_index = drum_style_hint - 1;
+    if (style_index <= static_cast<uint8_t>(DrumStyle::Latin)) {
+      return static_cast<DrumStyle>(style_index);
+    }
+  }
+  return getMoodDrumStyle(mood);
+}
+
 /// @brief Wrapper for drum playability checking.
 ///
 /// Uses DrumPerformer to validate and adjust drum patterns for physical
@@ -156,9 +228,11 @@ DrumSectionContext computeSectionContext(const Section& section, const DrumGener
     ctx.style = DrumStyle::Standard;
   }
 
-  // RhythmSync: use straight timing
-  if (params.paradigm == GenerationParadigm::RhythmSync) {
-    ctx.groove = DrumGrooveFeel::Straight;
+  // RhythmSync locks the pattern grid, but blueprint/mood swing should still
+  // shape off-beats when a section asks for it.
+  if (params.paradigm == GenerationParadigm::RhythmSync && ctx.groove == DrumGrooveFeel::Straight &&
+      section.swing_amount > 0.0f) {
+    ctx.groove = DrumGrooveFeel::Swing;
   }
 
   // Section-specific density
@@ -239,7 +313,7 @@ DrumSectionContext computeSectionContext(const Section& section, const DrumGener
 
 void generateDrumsTrackImpl(MidiTrack& track, const Song& song, const DrumGenerationParams& params,
                             std::mt19937& rng, VocalSyncCallback vocal_sync_callback) {
-  DrumStyle style = getMoodDrumStyle(params.mood);
+  DrumStyle style = resolveDrumStyle(params.mood, params.drum_style_hint);
   const auto& all_sections = song.arrangement().sections();
 
   // Euclidean rhythm settings
@@ -295,8 +369,12 @@ void generateDrumsTrackImpl(MidiTrack& track, const Song& song, const DrumGenera
     if (ctx.add_crash_accent && sec_idx > 0) {
       uint8_t crash_vel =
           static_cast<uint8_t>(std::min(127, static_cast<int>(105 * ctx.density_mult)));
-      addDrumNote(track, section.start_tick, TICKS_PER_BEAT / 2, 49, crash_vel);
+      addCrashIfAbsent(track, section.start_tick, TICKS_PER_BEAT / 2, crash_vel);
     }
+
+    bool reuse_section_kick = shouldReuseSectionKickPattern(section.type, ctx.style);
+    bool has_section_kick_pattern = false;
+    KickPattern section_kick_pattern{};
 
     for (uint8_t bar = 0; bar < section.bars; ++bar) {
       Tick bar_start = section.start_tick + bar * TICKS_PER_BAR;
@@ -313,7 +391,7 @@ void generateDrumsTrackImpl(MidiTrack& track, const Song& song, const DrumGenera
         }
         if (add_crash) {
           uint8_t crash_vel = calculateVelocity(section.type, 0, params.mood);
-          addDrumNote(track, bar_start, EIGHTH, CRASH, crash_vel);
+          addCrashIfAbsent(track, bar_start, EIGHTH, crash_vel);
         }
       }
 
@@ -321,7 +399,7 @@ void generateDrumsTrackImpl(MidiTrack& track, const Song& song, const DrumGenera
       if (section.peak_level == PeakLevel::Max && bar > 0 && bar % 4 == 0) {
         uint8_t crash_vel =
             static_cast<uint8_t>(calculateVelocity(section.type, 0, params.mood) * 0.9f);
-        addDrumNote(track, bar_start, EIGHTH, CRASH, crash_vel);
+        addCrashIfAbsent(track, bar_start, EIGHTH, crash_vel);
       }
 
       if (section.peak_level == PeakLevel::Max &&
@@ -357,14 +435,33 @@ void generateDrumsTrackImpl(MidiTrack& track, const Song& song, const DrumGenera
         }
         kick = euclideanToKickPattern(eucl_kick);
       } else {
-        kick = getKickPattern(section.type, ctx.style, bar, rng);
+        if (reuse_section_kick) {
+          if (!has_section_kick_pattern) {
+            section_kick_pattern = getKickPattern(section.type, ctx.style, 0, rng);
+            has_section_kick_pattern = true;
+          }
+          kick = section_kick_pattern;
+        } else {
+          kick = getKickPattern(section.type, ctx.style, bar, rng);
+        }
       }
 
-      // Vocal-synced kicks (if callback provided)
-      bool kicks_added = false;
+      // Vocal-synced kicks are additive syncopations. They must not replace the
+      // base kick pattern, because RhythmSync still needs a stable beat anchor.
       if (vocal_sync_callback) {
         uint8_t kick_velocity = calculateVelocity(section.type, 0, params.mood);
-        kicks_added = vocal_sync_callback(track, bar_start, bar_end, section, kick_velocity, rng);
+        vocal_sync_callback(track, bar_start, bar_end, section, kick_velocity, rng);
+      }
+
+      bool intro_kick_disabled =
+          (section.type == SectionType::Intro && !blueprint.intro_kick_enabled);
+      if (params.paradigm == GenerationParadigm::RhythmSync && !intro_kick_disabled &&
+          getDrumRoleKickProbability(section.getEffectiveDrumRole()) > 0.0f) {
+        uint8_t anchor_velocity = calculateVelocity(section.type, 0, params.mood);
+        addKickAnchorIfAbsent(track, bar_start, EIGHTH, anchor_velocity);
+        addKickAnchorIfAbsent(track, bar_start + TICKS_PER_BEAT * 2, EIGHTH, anchor_velocity);
+        kick.beat1 = false;
+        kick.beat3 = false;
       }
 
       // Fill type for this bar (scoped per bar, not static)
@@ -390,7 +487,7 @@ void generateDrumsTrackImpl(MidiTrack& track, const Song& song, const DrumGenera
         bool did_buildup = false;
         if (in_prechorus_lift) {
           did_buildup = generatePreChorusBuildup(track, beat_tick, beat, velocity, bar,
-                                                 section.bars, is_section_last_bar);
+                                                 section.bars, is_section_last_bar, ctx.style);
         }
 
         // Fill handling
@@ -409,16 +506,18 @@ void generateDrumsTrackImpl(MidiTrack& track, const Song& song, const DrumGenera
         // Common beat context (shared across all beat processors)
         BeatContext beat_ctx{beat_tick,  beat, velocity,     section.type,      params.mood,
                              params.bpm, bar,  section.bars, in_prechorus_lift, rng};
+        float swing_amount =
+            calculateSwingAmount(section.type, bar, section.bars, section.swing_amount);
 
         // Kick drum
         // Check intro_kick_enabled from blueprint
-        bool intro_kick_disabled =
-            (section.type == SectionType::Intro && !blueprint.intro_kick_enabled);
-        if (!kicks_added && !intro_kick_disabled) {
+        if (!intro_kick_disabled) {
           float kick_prob = getDrumRoleKickProbability(section.getEffectiveDrumRole());
           Tick adjusted_beat_tick = applyTimeFeel(beat_tick, time_feel, params.bpm);
-          KickBeatParams kick_params{adjusted_beat_tick, kick, kick_prob,
-                                     params.humanize ? params.humanize_timing : 0.0f};
+          KickBeatParams kick_params{
+              adjusted_beat_tick, kick,
+              kick_prob,          params.humanize ? params.humanize_timing : 0.0f,
+              swing_amount,       ctx.groove};
           generateKickForBeat(track, beat_ctx, kick_params);
         }
 
@@ -427,21 +526,26 @@ void generateDrumsTrackImpl(MidiTrack& track, const Song& song, const DrumGenera
         bool is_intro_first = (section.type == SectionType::Intro && bar == 0);
         bool use_groove_snare = use_euclidean && (groove_template == GrooveTemplate::HalfTime ||
                                                   groove_template == GrooveTemplate::Trap);
-        SnareBeatParams snare_params{
-            ctx.style,        section.getEffectiveDrumRole(), snare_prob,
-            use_groove_snare, groove_pattern.snare,           is_intro_first};
+        bool bridge_crossstick_timekeeping =
+            ctx.use_ride && shouldUseBridgeCrossStick(section.type, beat);
+        SnareBeatParams snare_params{ctx.style,
+                                     section.getEffectiveDrumRole(),
+                                     snare_prob,
+                                     use_groove_snare,
+                                     groove_pattern.snare,
+                                     is_intro_first,
+                                     bridge_crossstick_timekeeping};
         generateSnareForBeat(track, beat_ctx, snare_params);
 
         // Ghost notes
         if (ctx.use_ghost_notes) {
           GhostBeatParams ghost_params{section.getEffectiveBackingDensity(), use_euclidean,
-                                       groove_pattern.ghost_density / 100.0f};
+                                       groove_pattern.ghost_density / 100.0f, swing_amount,
+                                       ctx.groove};
           generateGhostNotesForBeat(track, beat_ctx, ghost_params);
         }
 
         // Hi-hat
-        float swing_amount =
-            calculateSwingAmount(section.type, bar, section.bars, section.swing_amount);
         HiHatBeatParams hh_params{section.getEffectiveDrumRole(),
                                   ctx.density_mult,
                                   bar_has_open_hh,
@@ -456,6 +560,9 @@ void generateDrumsTrackImpl(MidiTrack& track, const Song& song, const DrumGenera
       if (ctx.use_foot_hh && shouldPlayHiHat(section.getEffectiveDrumRole())) {
         for (uint8_t fhh_beat = 0; fhh_beat < 4; fhh_beat += 2) {
           Tick fhh_tick = bar_start + fhh_beat * TICKS_PER_BEAT;
+          if (hasDrumAtTick(track, fhh_tick, FHH)) {
+            continue;
+          }
           addDrumNote(track, fhh_tick, EIGHTH, FHH, getFootHiHatVelocity(rng));
         }
       }
@@ -471,22 +578,11 @@ void generateDrumsTrackImpl(MidiTrack& track, const Song& song, const DrumGenera
   }
 
   if (params.paradigm == GenerationParadigm::RhythmSync) {
-    size_t ride_count = 0;
-    size_t shaker_count = 0;
     auto& notes = track.notes();
-    notes.erase(std::remove_if(notes.begin(), notes.end(),
-                               [&ride_count, &shaker_count](const NoteEvent& note) {
-                                 if (note.note == RIDE) {
-                                   ++ride_count;
-                                   return ride_count % 3 == 0;
-                                 }
-                                 if (note.note == SHAKER) {
-                                   ++shaker_count;
-                                   return shaker_count % 3 == 0;
-                                 }
-                                 return false;
-                               }),
-                notes.end());
+    notes.erase(
+        std::remove_if(notes.begin(), notes.end(),
+                       [](const NoteEvent& note) { return shouldThinRhythmSyncTexture(note); }),
+        notes.end());
   }
 
   // ============================================================================
@@ -550,12 +646,16 @@ VocalSyncCallback createVocalSyncCallback(const VocalAnalysis& vocal_analysis, u
           std::sort(onsets.begin(), onsets.end());
         }
 
-        // Add kicks at vocal onset positions
+        // Add kicks at vocal onset positions. Strong beats are owned by the base
+        // pattern so vocal sync remains a supporting syncopation layer.
         for (Tick onset : onsets) {
           // Quantize to 16th note grid
           Tick relative = onset - bar_start;
           Tick quantized = (relative / SIXTEENTH) * SIXTEENTH;
           Tick kick_tick = bar_start + quantized;
+          if (quantized == 0 || quantized == TICKS_PER_BEAT * 2) {
+            continue;
+          }
 
           // Apply DrumRole probability
           if (kick_prob < 1.0f && !rng_util::rollProbability(rng, kick_prob)) {

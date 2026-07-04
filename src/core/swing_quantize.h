@@ -19,6 +19,11 @@ namespace midisketch {
 
 struct Section;
 
+enum class SwingGridResolution {
+  Eighth,
+  Sixteenth,
+};
+
 /**
  * @brief Quantize a tick position to a swing grid by blending straight and triplet grids.
  *
@@ -39,6 +44,19 @@ struct Section;
  * @return Quantized tick position with swing applied
  */
 Tick quantizeToSwingGrid(Tick tick, float swing_amount);
+
+/**
+ * @brief Quantize a tick position to the requested swing grid resolution.
+ *
+ * This is the shared entry point for generated events that need to align on the
+ * same swing grid across instruments.
+ *
+ * @param tick Absolute tick position to quantize
+ * @param swing_amount Swing amount (0.0 = straight, 1.0 = full triplet)
+ * @param resolution Grid resolution for swing detection
+ * @return Quantized tick position with swing applied
+ */
+Tick quantizeToSwingGrid(Tick tick, float swing_amount, SwingGridResolution resolution);
 
 /**
  * @brief Quantize a tick position to a 16th-note swing grid.

@@ -50,16 +50,19 @@ struct KickBeatParams {
   const KickPattern& kick;  ///< Kick pattern flags
   float kick_prob;          ///< DrumRole-based kick probability
   float humanize_timing;    ///< Global humanization scaling (0.0-1.0)
+  float swing_amount;       ///< Current swing amount
+  DrumGrooveFeel groove;    ///< Groove feel
 };
 
 /// @brief Snare drum-specific beat parameters.
 struct SnareBeatParams {
-  DrumStyle style;                ///< Drum style
-  DrumRole role;                  ///< Drum role
-  float snare_prob;               ///< DrumRole-based snare probability
-  bool use_groove_snare;          ///< Whether to use groove template snare pattern
-  uint16_t groove_snare_pattern;  ///< Groove template snare bitmask
-  bool is_intro_first;            ///< Whether this is first bar of intro
+  DrumStyle style;                     ///< Drum style
+  DrumRole role;                       ///< Drum role
+  float snare_prob;                    ///< DrumRole-based snare probability
+  bool use_groove_snare;               ///< Whether to use groove template snare pattern
+  uint16_t groove_snare_pattern;       ///< Groove template snare bitmask
+  bool is_intro_first;                 ///< Whether this is first bar of intro
+  bool bridge_crossstick_timekeeping;  ///< Whether sidestick already carries this Bridge beat
 };
 
 /// @brief Ghost note-specific beat parameters.
@@ -67,6 +70,8 @@ struct GhostBeatParams {
   BackingDensity backing_density;  ///< Backing density setting
   bool use_euclidean;              ///< Whether using Euclidean rhythms
   float groove_ghost_density;      ///< Ghost density from groove template
+  float swing_amount;              ///< Current swing amount
+  DrumGrooveFeel groove;           ///< Groove feel
 };
 
 /// @brief Hi-hat-specific beat parameters.
@@ -113,9 +118,11 @@ void generateGhostNotesForBeat(MidiTrack& track, const BeatContext& beat_ctx,
 /// @param bar Current bar in section
 /// @param section_bars Total bars in section
 /// @param is_section_last_bar Whether this is the last bar
+/// @param style Drum style for genre-appropriate buildup
 /// @return true if buildup was generated
 bool generatePreChorusBuildup(MidiTrack& track, Tick beat_tick, uint8_t beat, uint8_t velocity,
-                              uint8_t bar, uint8_t section_bars, bool is_section_last_bar);
+                              uint8_t bar, uint8_t section_bars, bool is_section_last_bar,
+                              DrumStyle style);
 
 /// @brief Generate hi-hat for a single beat.
 /// @param track Target MIDI track

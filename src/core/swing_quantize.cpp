@@ -30,6 +30,10 @@ constexpr Tick kSixteenthSwingDelta = TICKS_PER_BEAT / 3 - TICKS_PER_BEAT / 4;  
 }  // namespace
 
 Tick quantizeToSwingGrid(Tick tick, float swing_amount) {
+  return quantizeToSwingGrid(tick, swing_amount, SwingGridResolution::Eighth);
+}
+
+Tick quantizeToSwingGrid(Tick tick, float swing_amount, SwingGridResolution resolution) {
   // Clamp swing_amount to valid range
   float clamped_swing = std::clamp(swing_amount, 0.0f, 1.0f);
   if (clamped_swing <= 0.0f) {
@@ -38,6 +42,43 @@ Tick quantizeToSwingGrid(Tick tick, float swing_amount) {
 
   // Find position within the current beat
   Tick beat_offset = tick % TICKS_PER_BEAT;
+
+  if (resolution == SwingGridResolution::Sixteenth) {
+    // 16th note positions within a beat:
+    // Position 0: 0     (on-beat) - no swing
+    // Position 1: 120   (off-beat 16th) - apply swing
+    // Position 2: 240   (off-beat 8th) - apply 8th-note swing
+    // Position 3: 360   (off-beat 16th) - apply swing
+
+    // Use half a 16th note as tolerance window
+    constexpr Tick kHalf16th = TICK_SIXTEENTH / 2;  // 60
+
+    // Position 1: around 120 ticks. Window [60, 180)
+    if (beat_offset >= kHalf16th && beat_offset < TICK_SIXTEENTH + kHalf16th) {
+      Tick beat_base = tick - beat_offset;
+      Tick swing_delta = static_cast<Tick>(kSixteenthSwingDelta * clamped_swing);
+      return beat_base + TICK_SIXTEENTH + swing_delta;
+    }
+
+    // Position 2: around 240 ticks (off-beat 8th). Window [180, 300)
+    if (beat_offset >= TICK_SIXTEENTH + kHalf16th && beat_offset < TICK_EIGHTH + kHalf16th) {
+      Tick beat_base = tick - beat_offset;
+      Tick swing_delta = static_cast<Tick>(kEighthSwingDelta * clamped_swing);
+      return beat_base + TICK_EIGHTH + swing_delta;
+    }
+
+    // Position 3: around 360 ticks. Window [300, 420)
+    if (beat_offset >= TICK_EIGHTH + kHalf16th && beat_offset < 3 * TICK_SIXTEENTH + kHalf16th) {
+      Tick beat_base = tick - beat_offset;
+      Tick swing_delta_8th = static_cast<Tick>(kEighthSwingDelta * clamped_swing);
+      Tick swing_delta_16th = static_cast<Tick>(kSixteenthSwingDelta * clamped_swing);
+      Tick result = beat_base + TICK_EIGHTH + swing_delta_8th + TICK_SIXTEENTH + swing_delta_16th;
+      Tick max_pos = beat_base + TICKS_PER_BEAT - 1;
+      return std::min(result, max_pos);
+    }
+
+    return tick;
+  }
 
   // Determine if this falls on the off-beat 8th note position.
   // The off-beat 8th is the second half of the beat (around tick 240 within a beat).
@@ -61,53 +102,7 @@ Tick quantizeToSwingGrid(Tick tick, float swing_amount) {
 }
 
 Tick quantizeToSwingGrid16th(Tick tick, float swing_amount) {
-  float clamped_swing = std::clamp(swing_amount, 0.0f, 1.0f);
-  if (clamped_swing <= 0.0f) {
-    return tick;
-  }
-
-  Tick beat_offset = tick % TICKS_PER_BEAT;
-
-  // 16th note positions within a beat:
-  // Position 0: 0     (on-beat) - no swing
-  // Position 1: 120   (off-beat 16th) - apply swing
-  // Position 2: 240   (off-beat 8th) - apply 8th-note swing
-  // Position 3: 360   (off-beat 16th) - apply swing
-
-  // Use half a 16th note as tolerance window
-  constexpr Tick kHalf16th = TICK_SIXTEENTH / 2;  // 60
-
-  // Position 1: around 120 ticks. Window [60, 180)
-  if (beat_offset >= kHalf16th && beat_offset < TICK_SIXTEENTH + kHalf16th) {
-    Tick beat_base = tick - beat_offset;
-    Tick swing_delta = static_cast<Tick>(kSixteenthSwingDelta * clamped_swing);
-    return beat_base + TICK_SIXTEENTH + swing_delta;
-  }
-
-  // Position 2: around 240 ticks (off-beat 8th). Window [180, 300)
-  if (beat_offset >= TICK_SIXTEENTH + kHalf16th && beat_offset < TICK_EIGHTH + kHalf16th) {
-    Tick beat_base = tick - beat_offset;
-    // Off-beat 8th uses the larger 8th-note swing delta
-    Tick swing_delta = static_cast<Tick>(kEighthSwingDelta * clamped_swing);
-    return beat_base + TICK_EIGHTH + swing_delta;
-  }
-
-  // Position 3: around 360 ticks. Window [300, 420)
-  if (beat_offset >= TICK_EIGHTH + kHalf16th && beat_offset < 3 * TICK_SIXTEENTH + kHalf16th) {
-    Tick beat_base = tick - beat_offset;
-    // Position 3 = second 16th within the swung second-half of the beat.
-    // The swung 8th position is at TICK_EIGHTH + swing_delta_8th.
-    // Add a 16th offset with its own swing delta on top of that.
-    Tick swing_delta_8th = static_cast<Tick>(kEighthSwingDelta * clamped_swing);
-    Tick swing_delta_16th = static_cast<Tick>(kSixteenthSwingDelta * clamped_swing);
-    Tick result = beat_base + TICK_EIGHTH + swing_delta_8th + TICK_SIXTEENTH + swing_delta_16th;
-    // Clamp to stay within the beat (must not reach the next beat boundary)
-    Tick max_pos = beat_base + TICKS_PER_BEAT - 1;
-    return std::min(result, max_pos);
-  }
-
-  // On-beat (position 0): no swing
-  return tick;
+  return quantizeToSwingGrid(tick, swing_amount, SwingGridResolution::Sixteenth);
 }
 
 Tick swingOffsetForEighth(float swing_amount) {
@@ -153,7 +148,8 @@ void applySwingToTrackBySections(MidiTrack& track, const std::vector<Section>& s
     }
 
     if (swing_amt > 0.0f) {
-      note.start_tick = quantizeToSwingGrid(note.start_tick, swing_amt);
+      note.start_tick =
+          quantizeToSwingGrid(note.start_tick, swing_amt, SwingGridResolution::Sixteenth);
     }
   }
 }
@@ -209,7 +205,8 @@ void applySwingToTrackBySections(MidiTrack& track, const std::vector<Section>& s
     swing_amt = std::clamp(swing_amt, 0.0f, 1.0f);
 
     if (swing_amt > 0.0f) {
-      note.start_tick = quantizeToSwingGrid(note.start_tick, swing_amt);
+      note.start_tick =
+          quantizeToSwingGrid(note.start_tick, swing_amt, SwingGridResolution::Sixteenth);
     }
   }
 }

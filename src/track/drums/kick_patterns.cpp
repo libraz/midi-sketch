@@ -32,15 +32,21 @@ bool isInPreChorusLift(const Section& section, uint8_t bar, const std::vector<Se
 }
 
 KickPattern euclideanToKickPattern(uint16_t pattern) {
+  auto hasHitAtEighthSlot = [pattern](uint8_t step) {
+    uint8_t preceding_sixteenth = static_cast<uint8_t>((step + 15) % 16);
+    return EuclideanRhythm::hasHit(pattern, step) ||
+           EuclideanRhythm::hasHit(pattern, preceding_sixteenth);
+  };
+
   return {
-      EuclideanRhythm::hasHit(pattern, 0),   // beat1
-      EuclideanRhythm::hasHit(pattern, 2),   // beat1_and
-      EuclideanRhythm::hasHit(pattern, 4),   // beat2
-      EuclideanRhythm::hasHit(pattern, 6),   // beat2_and
-      EuclideanRhythm::hasHit(pattern, 8),   // beat3
-      EuclideanRhythm::hasHit(pattern, 10),  // beat3_and
-      EuclideanRhythm::hasHit(pattern, 12),  // beat4
-      EuclideanRhythm::hasHit(pattern, 14),  // beat4_and
+      hasHitAtEighthSlot(0),   // beat1
+      hasHitAtEighthSlot(2),   // beat1_and
+      hasHitAtEighthSlot(4),   // beat2
+      hasHitAtEighthSlot(6),   // beat2_and
+      hasHitAtEighthSlot(8),   // beat3
+      hasHitAtEighthSlot(10),  // beat3_and
+      hasHitAtEighthSlot(12),  // beat4
+      hasHitAtEighthSlot(14),  // beat4_and
   };
 }
 

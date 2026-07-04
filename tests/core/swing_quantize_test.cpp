@@ -135,6 +135,15 @@ TEST(QuantizeToSwingGrid16thTest, HalfSwingInterpolates) {
   EXPECT_EQ(quantizeToSwingGrid16th(240, 0.5f), 280u);
 }
 
+TEST(QuantizeToSwingGridSharedResolutionTest, SixteenthResolutionMatchesLegacy16thGrid) {
+  EXPECT_EQ(quantizeToSwingGrid(120, 1.0f, SwingGridResolution::Sixteenth),
+            quantizeToSwingGrid16th(120, 1.0f));
+  EXPECT_EQ(quantizeToSwingGrid(240, 1.0f, SwingGridResolution::Sixteenth),
+            quantizeToSwingGrid16th(240, 1.0f));
+  EXPECT_EQ(quantizeToSwingGrid(360, 0.5f, SwingGridResolution::Sixteenth),
+            quantizeToSwingGrid16th(360, 0.5f));
+}
+
 // ============================================================================
 // swingOffsetForEighth / swingOffsetFor16th
 // ============================================================================
@@ -297,6 +306,24 @@ TEST(SwingRoleScalingTest, RoleScalingAffectsSwingAmount) {
   EXPECT_GE(arp_track.notes()[0].start_tick, 240u);
   EXPECT_GT(arp_track.notes()[0].start_tick, bass_track.notes()[0].start_tick)
       << "Arpeggio (1.2x) should swing more than Bass (0.8x)";
+}
+
+TEST(SwingRoleScalingTest, BassSectionSwingUsesSharedSixteenthGrid) {
+  MidiTrack track;
+  track.addNote(NoteEventBuilder::create(120, 120, 48, 80));
+
+  Section section;
+  section.type = SectionType::Chorus;
+  section.start_tick = 0;
+  section.bars = 1;
+  section.swing_amount = 1.0f;
+  std::vector<Section> sections = {section};
+
+  applySwingToTrackBySections(track, sections, TrackRole::Bass);
+
+  EXPECT_EQ(track.notes()[0].start_tick,
+            quantizeToSwingGrid(120, 0.8f, SwingGridResolution::Sixteenth))
+      << "Bass swing should use the shared 16th-capable swing grid";
 }
 
 }  // namespace

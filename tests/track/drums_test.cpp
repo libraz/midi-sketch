@@ -3,14 +3,25 @@
  * @brief Tests for drum track generation.
  */
 
+#include "track/drums.h"
+
 #include <gtest/gtest.h>
 
+#include <map>
 #include <set>
+#include <vector>
 
+#include "core/euclidean_rhythm.h"
 #include "core/generator.h"
+#include "core/preset_data.h"
 #include "core/song.h"
+#include "core/timing_constants.h"
 #include "core/types.h"
 #include "test_support/generator_test_fixture.h"
+#include "track/drums/beat_processors.h"
+#include "track/drums/drum_constants.h"
+#include "track/drums/hihat_control.h"
+#include "track/drums/kick_patterns.h"
 
 namespace midisketch {
 namespace {
@@ -312,6 +323,44 @@ TEST_F(DrumsTest, FourOnFloorKickPattern) {
 
   // Four-on-the-floor should have many kicks on quarter beats
   EXPECT_GT(kicks_on_quarters, 10) << "FourOnFloor style should have kicks on quarter beats";
+}
+
+TEST_F(DrumsTest, IdolCoolPopUsesFourOnFloorForAllMoods) {
+  Section chorus;
+  chorus.type = SectionType::Chorus;
+  chorus.name = "Chorus";
+  chorus.start_tick = 0;
+  chorus.bars = 1;
+  chorus.track_mask = TrackMask::Drums;
+  chorus.backing_density = BackingDensity::Thick;
+  chorus.drum_role = DrumRole::Full;
+
+  Song song;
+  song.setArrangement(Arrangement({chorus}));
+
+  for (uint8_t mood_id = 0; mood_id < MOOD_COUNT; ++mood_id) {
+    GeneratorParams params;
+    params.blueprint_id = 7;  // IdolCoolPop
+    params.mood = static_cast<Mood>(mood_id);
+    params.seed = 2000 + mood_id;
+    params.paradigm = GenerationParadigm::RhythmSync;
+    params.humanize = false;
+
+    std::mt19937 rng(params.seed);
+    MidiTrack track;
+    generateDrumsTrack(track, song, params, rng);
+
+    int kicks_on_quarters = 0;
+    for (const auto& note : track.notes()) {
+      if (note.note == KICK && note.start_tick % TICKS_PER_BEAT == 0) {
+        ++kicks_on_quarters;
+      }
+    }
+
+    EXPECT_GE(kicks_on_quarters, 4)
+        << "IdolCoolPop should force FourOnFloor independently of mood_id="
+        << static_cast<int>(mood_id);
+  }
 }
 
 TEST_F(DrumsTest, RockStyleHasAccents) {
@@ -670,6 +719,33 @@ TEST_F(DrumsTest, KickPositionsNonNegative) {
 // Euclidean Rhythm Integration Tests
 // ============================================================================
 
+bool hasAnyKickSlot(const drums::KickPattern& kick) {
+  return kick.beat1 || kick.beat1_and || kick.beat2 || kick.beat2_and || kick.beat3 ||
+         kick.beat3_and || kick.beat4 || kick.beat4_and;
+}
+
+TEST_F(DrumsTest, EuclideanKickConversionPreservesOddSixteenthHits) {
+  uint16_t minimal_pattern = EuclideanRhythm::generate(2, 16);
+  ASSERT_TRUE(EuclideanRhythm::hasHit(minimal_pattern, 7));
+  ASSERT_TRUE(EuclideanRhythm::hasHit(minimal_pattern, 15));
+
+  auto kick = drums::euclideanToKickPattern(minimal_pattern);
+
+  EXPECT_TRUE(hasAnyKickSlot(kick));
+  EXPECT_TRUE(kick.beat1);
+  EXPECT_TRUE(kick.beat3);
+}
+
+TEST_F(DrumsTest, EuclideanIntroOutroKickPatternIsNotSilent) {
+  auto intro_kick = drums::euclideanToKickPattern(
+      DrumPatternFactory::getKickPattern(SectionType::Intro, DrumStyle::Standard));
+  auto outro_kick = drums::euclideanToKickPattern(
+      DrumPatternFactory::getKickPattern(SectionType::Outro, DrumStyle::Standard));
+
+  EXPECT_TRUE(hasAnyKickSlot(intro_kick));
+  EXPECT_TRUE(hasAnyKickSlot(outro_kick));
+}
+
 TEST_F(DrumsTest, EuclideanDrumsIntegration_HighProbabilityBlueprint) {
   // IdolCoolPop has 70% euclidean_drums_percent - test that drums are generated
   params_.blueprint_id = 7;  // IdolCoolPop
@@ -898,6 +974,36 @@ TEST_F(DrumsTest, DramaticHasCrashAccents) {
 
   // Rock style should have crashes at section boundaries and accents
   EXPECT_GT(crash_count, 2) << "Dramatic (Rock style) should have crash accents";
+}
+
+TEST_F(DrumsTest, CrashCymbalsDoNotDuplicateAtSameTick) {
+  const std::vector<uint8_t> blueprint_ids = {1, 2, 4, 5, 7, 8};
+  const std::vector<uint32_t> seeds = {42, 1234, 56789};
+
+  for (uint8_t blueprint_id : blueprint_ids) {
+    for (uint32_t seed : seeds) {
+      params_.blueprint_id = blueprint_id;
+      params_.mood = Mood::Dramatic;
+      params_.structure = StructurePattern::FullPop;
+      params_.seed = seed;
+
+      Generator gen;
+      gen.generate(params_);
+
+      std::map<Tick, int> crashes_by_tick;
+      for (const auto& note : gen.getSong().drums().notes()) {
+        if (note.note == CRASH) {
+          crashes_by_tick[note.start_tick]++;
+        }
+      }
+
+      for (const auto& [tick, count] : crashes_by_tick) {
+        EXPECT_LE(count, 1) << "Duplicate crash at tick " << tick
+                            << " for blueprint=" << static_cast<int>(blueprint_id)
+                            << " seed=" << seed;
+      }
+    }
+  }
 }
 
 TEST_F(DrumsTest, ChillHasSparserDrumsThanSentimental) {
@@ -1179,6 +1285,50 @@ TEST_F(DrumsTest, StandardStyleKickDensity) {
   }
 }
 
+TEST_F(DrumsTest, TrapKickPatternCacheUsesSyncopatedAnchors) {
+  Section chorus;
+  chorus.type = SectionType::Chorus;
+  chorus.start_tick = 0;
+  chorus.bars = 2;
+  chorus.name = "Chorus";
+
+  KickPatternCache cache = computeKickPattern({chorus}, Mood::Trap);
+
+  EXPECT_FALSE(cache.isEmpty());
+  EXPECT_EQ(cache.kick_count, 6u);
+  EXPECT_FLOAT_EQ(cache.kicks_per_bar, 2.5f);
+  EXPECT_EQ(cache.dominant_interval, TICKS_PER_BEAT * 2);
+
+  std::set<Tick> ticks(cache.kick_ticks.begin(), cache.kick_ticks.begin() + cache.kick_count);
+  for (Tick bar_start : {Tick{0}, TICKS_PER_BAR}) {
+    EXPECT_TRUE(ticks.count(bar_start));
+    EXPECT_TRUE(ticks.count(bar_start + TICKS_PER_BEAT + TICK_EIGHTH));
+    EXPECT_TRUE(ticks.count(bar_start + 3 * TICKS_PER_BEAT));
+  }
+}
+
+TEST_F(DrumsTest, LatinPopKickPatternCacheUsesDembowAnchors) {
+  Section chorus;
+  chorus.type = SectionType::Chorus;
+  chorus.start_tick = 0;
+  chorus.bars = 2;
+  chorus.name = "Chorus";
+
+  KickPatternCache cache = computeKickPattern({chorus}, Mood::LatinPop);
+
+  EXPECT_FALSE(cache.isEmpty());
+  EXPECT_EQ(cache.kick_count, 6u);
+  EXPECT_FLOAT_EQ(cache.kicks_per_bar, 3.0f);
+  EXPECT_EQ(cache.dominant_interval, TICKS_PER_BEAT * 2);
+
+  std::set<Tick> ticks(cache.kick_ticks.begin(), cache.kick_ticks.begin() + cache.kick_count);
+  for (Tick bar_start : {Tick{0}, TICKS_PER_BAR}) {
+    EXPECT_TRUE(ticks.count(bar_start));
+    EXPECT_TRUE(ticks.count(bar_start + TICKS_PER_BEAT + TICK_EIGHTH));
+    EXPECT_TRUE(ticks.count(bar_start + 2 * TICKS_PER_BEAT));
+  }
+}
+
 // ============================================================================
 // C6: getHiHatVelocityMultiplier - Hi-hat velocity metric hierarchy
 // ============================================================================
@@ -1430,6 +1580,49 @@ TEST_F(DrumsTest, HandClapVelocityRange) {
       EXPECT_LE(note.velocity, 115) << "Hand clap velocity too high: " << (int)note.velocity;
     }
   }
+}
+
+TEST_F(DrumsTest, BackbeatSnareStaysAboveLayeredHandClap) {
+  params_.mood = Mood::StraightPop;
+  params_.structure = StructurePattern::StandardPop;
+  params_.seed = 42;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& track = gen.getSong().drums();
+  const auto& sections = gen.getSong().arrangement().sections();
+
+  bool checked_pair = false;
+  for (const auto& sec : sections) {
+    if (sec.type != SectionType::Chorus) {
+      continue;
+    }
+
+    std::map<Tick, uint8_t> snare_by_tick;
+    std::map<Tick, uint8_t> clap_by_tick;
+    for (const auto& note : track.notes()) {
+      if (note.start_tick < sec.start_tick || note.start_tick >= sec.endTick()) {
+        continue;
+      }
+      if (note.note == SNARE) {
+        snare_by_tick[note.start_tick] = note.velocity;
+      } else if (note.note == HANDCLAP) {
+        clap_by_tick[note.start_tick] = note.velocity;
+      }
+    }
+
+    for (const auto& [tick, clap_velocity] : clap_by_tick) {
+      auto snare_it = snare_by_tick.find(tick);
+      ASSERT_NE(snare_it, snare_by_tick.end())
+          << "Layered hand clap should share a backbeat with snare at tick " << tick;
+      EXPECT_GT(snare_it->second, clap_velocity)
+          << "Backbeat snare should lead layered hand clap at tick " << tick;
+      checked_pair = true;
+    }
+  }
+
+  EXPECT_TRUE(checked_pair) << "StraightPop Chorus should layer hand clap with snare";
 }
 
 TEST_F(DrumsTest, CalmMoodsHaveMinimalExtraPercussion) {
@@ -1776,6 +1969,38 @@ TEST_F(DrumsTest, FootHiHatAppearsInQuietSections) {
   }
 }
 
+TEST_F(DrumsTest, FootHiHatDoesNotDuplicateInIntro) {
+  params_.mood = Mood::StraightPop;
+  params_.structure = StructurePattern::BuildUp;
+
+  for (uint32_t seed = 1; seed <= 12; ++seed) {
+    params_.seed = seed;
+    Generator gen;
+    gen.generate(params_);
+
+    const auto& track = gen.getSong().drums();
+    const auto& sections = gen.getSong().arrangement().sections();
+    for (const auto& sec : sections) {
+      if (sec.type != SectionType::Intro) {
+        continue;
+      }
+
+      std::map<Tick, int> fhh_by_tick;
+      for (const auto& note : track.notes()) {
+        if (note.note == FOOT_HH && note.start_tick >= sec.start_tick &&
+            note.start_tick < sec.endTick()) {
+          fhh_by_tick[note.start_tick]++;
+        }
+      }
+
+      for (const auto& [tick, count] : fhh_by_tick) {
+        EXPECT_LE(count, 1) << "Duplicate foot hi-hat in Intro at tick " << tick
+                            << " seed=" << seed;
+      }
+    }
+  }
+}
+
 TEST_F(DrumsTest, OpenHiHatReplacesClosedHiHatAtSamePosition) {
   params_.seed = 42;
   params_.mood = Mood::ElectroPop;
@@ -1908,6 +2133,24 @@ int countNotesInSection(const MidiTrack& track, uint8_t note_num, Tick section_s
   return count;
 }
 
+std::vector<std::set<Tick>> notePositionsByBar(const MidiTrack& track, uint8_t note_num,
+                                               const Section& section) {
+  std::vector<std::set<Tick>> positions;
+  positions.reserve(section.bars);
+  for (uint8_t bar = 0; bar < section.bars; ++bar) {
+    Tick bar_start = section.start_tick + bar * TICKS_PER_BAR;
+    Tick bar_end = bar_start + TICKS_PER_BAR;
+    std::set<Tick> bar_positions;
+    for (const auto& note : track.notes()) {
+      if (note.note == note_num && note.start_tick >= bar_start && note.start_tick < bar_end) {
+        bar_positions.insert(note.start_tick - bar_start);
+      }
+    }
+    positions.push_back(bar_positions);
+  }
+  return positions;
+}
+
 TEST_F(DrumsTest, VerseUsesClosedHiHat) {
   // Verse (A) sections should primarily use closed hi-hat (42) for timekeeping
   params_.structure = StructurePattern::StandardPop;  // A -> B -> Chorus
@@ -1985,6 +2228,43 @@ TEST_F(DrumsTest, BridgeUsesRideAndCrossStick) {
   EXPECT_TRUE(found_bridge) << "Test structure should contain a Bridge section";
 }
 
+TEST_F(DrumsTest, BridgeCrossStickDoesNotLayerFullSnare) {
+  MidiTrack track;
+  std::mt19937 rng(42);
+
+  drums::BeatContext beat_ctx{
+      TICKS_PER_BEAT, 1, 90, SectionType::Bridge, Mood::StraightPop, 120, 0, 8, false, rng};
+
+  drums::DrumSectionContext ctx;
+  ctx.use_ride = true;
+  ctx.hh_level = drums::HiHatLevel::Quarter;
+
+  drums::HiHatBeatParams hh_params{DrumRole::Full,          1.0f, false, 3, false, 0.0f,
+                                   DrumGrooveFeel::Straight};
+  drums::generateHiHatForBeat(track, beat_ctx, ctx, hh_params);
+
+  drums::SnareBeatParams snare_params{
+      DrumStyle::Standard, DrumRole::Full, 1.0f, false, 0, false, true};
+  drums::generateSnareForBeat(track, beat_ctx, snare_params);
+
+  int sidestick_at_backbeat = 0;
+  int snare_at_backbeat = 0;
+  for (const auto& note : track.notes()) {
+    if (note.start_tick != beat_ctx.beat_tick) {
+      continue;
+    }
+    if (note.note == SIDESTICK_NOTE) {
+      ++sidestick_at_backbeat;
+    } else if (note.note == SNARE) {
+      ++snare_at_backbeat;
+    }
+  }
+
+  EXPECT_EQ(sidestick_at_backbeat, 1);
+  EXPECT_EQ(snare_at_backbeat, 0)
+      << "Bridge cross-stick timekeeping should replace, not layer with, full snare";
+}
+
 TEST_F(DrumsTest, OutroUsesClosedHiHat) {
   // Outro sections should use closed HH (matching intro, bookend feel)
   params_.structure = StructurePattern::FullPop;  // Has Outro
@@ -2060,6 +2340,212 @@ TEST_F(DrumsTest, RhythmPatternMaintainedAcrossInstrumentChanges) {
                           << "/bar) should not be drastically denser than Verse ("
                           << verse_hits_per_bar << "/bar)";
   }
+}
+
+TEST_F(DrumsTest, RhythmSyncRideThinningKeepsSameSlotsEachBar) {
+  params_.blueprint_id = 1;  // RhythmLock
+  params_.paradigm = GenerationParadigm::RhythmSync;
+  params_.structure = StructurePattern::StandardPop;
+  params_.mood = Mood::StraightPop;
+  params_.bpm = 120;
+  params_.seed = 42;
+  params_.humanize = false;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& track = gen.getSong().drums();
+  const auto& sections = gen.getSong().arrangement().sections();
+
+  bool checked_chorus = false;
+  for (const auto& sec : sections) {
+    if (sec.type != SectionType::Chorus || sec.bars < 2) {
+      continue;
+    }
+
+    auto positions_by_bar = notePositionsByBar(track, RIDE, sec);
+    ASSERT_GE(positions_by_bar.size(), 2u);
+
+    int ride_bars = 0;
+    constexpr Tick kEighth = TICKS_PER_BEAT / 2;
+    for (const auto& positions : positions_by_bar) {
+      if (!positions.empty()) {
+        ++ride_bars;
+      }
+      EXPECT_EQ(positions.count(kEighth * 3), 0u)
+          << "RhythmSync ride thinning should always remove the same beat-2 offbeat slot";
+      EXPECT_EQ(positions.count(kEighth * 7), 0u)
+          << "RhythmSync ride thinning should always remove the same beat-4 offbeat slot";
+    }
+    EXPECT_GT(ride_bars, 0) << "RhythmSync Chorus should have ride notes";
+    checked_chorus = true;
+    break;
+  }
+
+  EXPECT_TRUE(checked_chorus) << "Test structure should contain a multi-bar Chorus section";
+}
+
+TEST_F(DrumsTest, IdolHyperRhythmSyncUsesBlueprintSwing) {
+  params_.blueprint_id = 5;  // IdolHyper: RhythmSync with section swing_amount > 0
+  params_.mood = Mood::IdolPop;
+  params_.bpm = 160;
+  params_.seed = 42;
+  params_.humanize = false;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& track = gen.getSong().drums();
+  const auto& sections = gen.getSong().arrangement().sections();
+
+  bool checked_chorus = false;
+  for (const auto& sec : sections) {
+    if (sec.type != SectionType::Chorus || sec.swing_amount <= 0.0f) {
+      continue;
+    }
+
+    bool found_swung_offbeat = false;
+    constexpr Tick kSixteenth = TICKS_PER_BEAT / 4;
+    constexpr Tick kExpectedSixteenthSwingOffset = 40;  // 16th-grid swing at amount 0.5
+    for (const auto& note : track.notes()) {
+      if (note.start_tick < sec.start_tick || note.start_tick >= sec.endTick()) {
+        continue;
+      }
+      Tick position = note.start_tick - sec.start_tick;
+      if (position % kSixteenth == kExpectedSixteenthSwingOffset) {
+        found_swung_offbeat = true;
+        break;
+      }
+    }
+
+    EXPECT_TRUE(found_swung_offbeat)
+        << "IdolHyper RhythmSync should preserve blueprint swing instead of forcing Straight";
+    checked_chorus = true;
+    break;
+  }
+
+  EXPECT_TRUE(checked_chorus) << "IdolHyper should contain a swung Chorus section";
+}
+
+TEST_F(DrumsTest, RhythmSyncHiHatLevelVariesBySection) {
+  std::mt19937 rng(42);
+
+  auto rhythmSyncLevel = [&rng](SectionType section, uint16_t bpm) {
+    return drums::getHiHatLevel(section, DrumStyle::Standard, BackingDensity::Normal, bpm, rng,
+                                GenerationParadigm::RhythmSync);
+  };
+
+  EXPECT_EQ(rhythmSyncLevel(SectionType::Intro, 120), drums::HiHatLevel::Eighth);
+  EXPECT_EQ(rhythmSyncLevel(SectionType::A, 120), drums::HiHatLevel::Eighth);
+  EXPECT_EQ(rhythmSyncLevel(SectionType::B, 120), drums::HiHatLevel::Eighth);
+  EXPECT_EQ(rhythmSyncLevel(SectionType::Bridge, 120), drums::HiHatLevel::Eighth);
+
+  EXPECT_EQ(rhythmSyncLevel(SectionType::Chorus, 120), drums::HiHatLevel::Sixteenth);
+  EXPECT_EQ(rhythmSyncLevel(SectionType::MixBreak, 120), drums::HiHatLevel::Sixteenth);
+  EXPECT_EQ(rhythmSyncLevel(SectionType::Drop, 120), drums::HiHatLevel::Sixteenth);
+
+  EXPECT_EQ(rhythmSyncLevel(SectionType::Chorus, 170), drums::HiHatLevel::Eighth);
+}
+
+TEST_F(DrumsTest, RhythmSyncShakerThinningKeepsSameSlotsEachBar) {
+  params_.blueprint_id = 1;  // RhythmLock
+  params_.paradigm = GenerationParadigm::RhythmSync;
+  params_.structure = StructurePattern::StandardPop;
+  params_.mood = Mood::EnergeticDance;
+  params_.bpm = 120;
+  params_.seed = 42;
+  params_.humanize = false;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& track = gen.getSong().drums();
+  const auto& sections = gen.getSong().arrangement().sections();
+
+  bool checked_section = false;
+  for (const auto& sec : sections) {
+    if (sec.type != SectionType::A || sec.bars < 2) {
+      continue;
+    }
+
+    auto positions = notePositionsByBar(track, SHAKER, sec);
+    ASSERT_GE(positions.size(), 2u);
+    ASSERT_FALSE(positions.front().empty()) << "Energetic RhythmSync A section should have shaker";
+    for (size_t idx = 1; idx < positions.size(); ++idx) {
+      EXPECT_EQ(positions[idx], positions.front())
+          << "RhythmSync shaker thinning should keep the same in-bar slots every bar";
+    }
+    checked_section = true;
+    break;
+  }
+
+  EXPECT_TRUE(checked_section) << "Test structure should contain a multi-bar A section";
+}
+
+TEST_F(DrumsTest, ChorusKickSyncopationRepeatsAcrossBars) {
+  for (uint32_t seed : {1u, 2u, 3u, 4u, 5u, 6u, 7u, 8u}) {
+    params_.structure = StructurePattern::StandardPop;
+    params_.mood = Mood::StraightPop;
+    params_.seed = seed;
+    params_.humanize = false;
+
+    Generator gen;
+    gen.generate(params_);
+
+    const auto& track = gen.getSong().drums();
+    const auto& sections = gen.getSong().arrangement().sections();
+
+    bool checked_chorus = false;
+    for (const auto& sec : sections) {
+      if (sec.type != SectionType::Chorus || sec.bars < 2) {
+        continue;
+      }
+
+      auto positions = notePositionsByBar(track, KICK, sec);
+      ASSERT_GE(positions.size(), 2u);
+      ASSERT_FALSE(positions.front().empty()) << "Chorus should have kick anchors";
+      for (size_t idx = 1; idx + 1 < positions.size(); ++idx) {
+        EXPECT_EQ(positions[idx], positions.front())
+            << "Chorus kick syncopation should repeat across bars for seed " << seed << " at bar "
+            << idx;
+      }
+      checked_chorus = true;
+      break;
+    }
+
+    EXPECT_TRUE(checked_chorus) << "StandardPop should contain a multi-bar Chorus";
+  }
+}
+
+TEST_F(DrumsTest, SparseBalladChorusPromotesBackbeatToSnare) {
+  params_.structure = StructurePattern::StandardPop;
+  params_.mood = Mood::Ballad;
+  params_.seed = 42;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& track = gen.getSong().drums();
+  const auto& sections = gen.getSong().arrangement().sections();
+
+  bool found_verse = false;
+  bool found_chorus = false;
+  for (const auto& sec : sections) {
+    Tick sec_end = sec.endTick();
+    if (sec.type == SectionType::A) {
+      found_verse = true;
+      EXPECT_GT(countNotesInSection(track, SIDESTICK_NOTE, sec.start_tick, sec_end), 0)
+          << "Sparse verse should keep cross-stick backbeats";
+    }
+    if (sec.type == SectionType::Chorus) {
+      found_chorus = true;
+      EXPECT_GT(countNotesInSection(track, SNARE, sec.start_tick, sec_end), 0)
+          << "Sparse chorus should promote backbeats to full snare";
+    }
+  }
+
+  EXPECT_TRUE(found_verse) << "Test structure should contain an A section";
+  EXPECT_TRUE(found_chorus) << "Test structure should contain a Chorus section";
 }
 
 TEST_F(DrumsTest, SparseStyleDoesNotUseRide) {
@@ -2227,6 +2713,66 @@ TEST_F(DrumsTest, PreChorusLiftReducesKickSnareInLastTwoBars) {
           << "due to 8th note buildup pattern";
     }
   }
+}
+
+TEST_F(DrumsTest, SparsePreChorusAvoidsEightNoteSnareBuildup) {
+  params_.structure = StructurePattern::StandardPop;
+  params_.mood = Mood::Ballad;
+  params_.seed = 42;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& track = gen.getSong().drums();
+  const auto& sections = gen.getSong().arrangement().sections();
+
+  bool checked_section = false;
+  for (size_t idx = 0; idx + 1 < sections.size(); ++idx) {
+    const auto& section = sections[idx];
+    const auto& next_section = sections[idx + 1];
+    if (section.type != SectionType::B || next_section.type != SectionType::Chorus ||
+        section.bars < 3) {
+      continue;
+    }
+
+    Tick section_end = section.endTick();
+    Tick buildup_start = section_end - 2 * TICKS_PER_BAR;
+    int snare_hits = 0;
+    int snares_on_8th = 0;
+
+    for (Tick bar_start = buildup_start; bar_start < section_end; bar_start += TICKS_PER_BAR) {
+      for (int eighth = 0; eighth < 8; ++eighth) {
+        Tick eighth_pos = bar_start + eighth * (TICKS_PER_BEAT / 2);
+        bool has_snare_here = false;
+        for (const auto& note : track.notes()) {
+          if ((note.note == SNARE || note.note == 40) && note.start_tick >= buildup_start &&
+              note.start_tick < section_end &&
+              std::abs(static_cast<int>(note.start_tick) - static_cast<int>(eighth_pos)) < 30) {
+            has_snare_here = true;
+            break;
+          }
+        }
+        if (has_snare_here) {
+          ++snares_on_8th;
+        }
+      }
+    }
+
+    for (const auto& note : track.notes()) {
+      if ((note.note == SNARE || note.note == 40) && note.start_tick >= buildup_start &&
+          note.start_tick < section_end) {
+        ++snare_hits;
+      }
+    }
+
+    EXPECT_LE(snare_hits, 2) << "Sparse/Ballad lift should avoid EDM-style snare roll";
+    EXPECT_LT(snares_on_8th, 4)
+        << "Sparse/Ballad lift should not cover most 8th-note snare positions";
+    checked_section = true;
+    break;
+  }
+
+  EXPECT_TRUE(checked_section) << "StandardPop should contain B -> Chorus";
 }
 
 TEST_F(DrumsTest, PreChorusLiftHiHatContinues) {
@@ -2811,6 +3357,52 @@ TEST_F(DrumsTest, VocalSyncKickLimitedAtHighBPM) {
   }
 }
 
+TEST_F(DrumsTest, RhythmLockVocalSyncKeepsKickAnchors) {
+  const std::vector<uint32_t> seeds = {42, 1234, 56789};
+
+  auto hasKickNear = [](const MidiTrack& track, Tick target) {
+    constexpr Tick kTolerance = 12;
+    for (const auto& note : track.notes()) {
+      if (note.note != KICK) continue;
+      Tick delta =
+          (note.start_tick >= target) ? (note.start_tick - target) : (target - note.start_tick);
+      if (delta <= kTolerance) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  for (uint32_t seed : seeds) {
+    params_.blueprint_id = 1;  // RhythmLock (RhythmSync with vocal sync)
+    params_.mood = Mood::EnergeticDance;
+    params_.bpm = 170;
+    params_.seed = seed;
+    params_.structure = StructurePattern::StandardPop;
+
+    Generator gen;
+    gen.generate(params_);
+
+    const auto& track = gen.getSong().drums();
+    const auto& sections = gen.getSong().arrangement().sections();
+
+    for (const auto& sec : sections) {
+      if (sec.type == SectionType::Intro || sec.type == SectionType::Outro) {
+        continue;
+      }
+      for (uint8_t bar = 0; bar < sec.bars; ++bar) {
+        Tick bar_start = sec.start_tick + bar * TICKS_PER_BAR;
+        EXPECT_TRUE(hasKickNear(track, bar_start))
+            << "RhythmLock seed " << seed << " missing downbeat kick at tick " << bar_start
+            << " in " << sec.name;
+        EXPECT_TRUE(hasKickNear(track, bar_start + TICKS_PER_BEAT * 2))
+            << "RhythmLock seed " << seed << " missing beat-3 kick at tick "
+            << (bar_start + TICKS_PER_BEAT * 2) << " in " << sec.name;
+      }
+    }
+  }
+}
+
 }  // namespace
 }  // namespace midisketch
 
@@ -2900,6 +3492,59 @@ TEST(FillTypeEnergyTest, HighEnergyUsesExistingSectionLogic) {
 
   // High energy with Rock style should produce varied fills from default logic
   EXPECT_GT(high_fills.size(), 1u) << "High energy should produce varied fills";
+}
+
+TEST(FillGeneratorContentTest, FullBarFillHasContentOnFirstTwoBeats) {
+  const std::vector<FillType> fill_types = {
+      FillType::SnareRoll,     FillType::TomDescend,       FillType::TomAscend,
+      FillType::SnareTomCombo, FillType::SimpleCrash,      FillType::LinearFill,
+      FillType::GhostToAccent, FillType::BDSnareAlternate, FillType::HiHatChoke,
+      FillType::TomShuffle,    FillType::BreakdownFill,    FillType::FlamsAndDrags,
+      FillType::HalfTimeFill,
+  };
+
+  for (FillType fill : fill_types) {
+    MidiTrack track;
+    generateFill(track, 0, 0, fill, 100);
+    generateFill(track, TICKS_PER_BEAT, 1, fill, 100);
+
+    int beat0_notes = 0;
+    int beat1_notes = 0;
+    for (const auto& note : track.notes()) {
+      if (note.start_tick >= 0 && note.start_tick < TICKS_PER_BEAT) {
+        beat0_notes++;
+      } else if (note.start_tick >= TICKS_PER_BEAT && note.start_tick < 2 * TICKS_PER_BEAT) {
+        beat1_notes++;
+      }
+    }
+
+    EXPECT_GT(beat0_notes, 0) << "Full-bar fill beat 1 is empty for fill type "
+                              << static_cast<int>(fill);
+    EXPECT_GT(beat1_notes, 0) << "Full-bar fill beat 2 is empty for fill type "
+                              << static_cast<int>(fill);
+  }
+}
+
+TEST(FillGeneratorContentTest, SimpleCrashIncludesCrashCymbal) {
+  MidiTrack track;
+  generateFill(track, 3 * TICKS_PER_BEAT, 3, FillType::SimpleCrash, 100);
+
+  bool has_kick = false;
+  bool has_crash = false;
+  Tick accent_tick = 3 * TICKS_PER_BEAT + TICK_EIGHTH + TICK_SIXTEENTH;
+  for (const auto& note : track.notes()) {
+    if (note.start_tick != accent_tick) {
+      continue;
+    }
+    if (note.note == BD) {
+      has_kick = true;
+    } else if (note.note == CRASH) {
+      has_crash = true;
+    }
+  }
+
+  EXPECT_TRUE(has_kick);
+  EXPECT_TRUE(has_crash) << "SimpleCrash fill should include an actual crash cymbal";
 }
 
 }  // namespace

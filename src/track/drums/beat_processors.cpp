@@ -27,6 +27,28 @@ uint8_t getTimekeepingInstrumentLocal(SectionType section, DrumRole role, bool u
   return getDrumRoleHiHatInstrument(role, use_ride);
 }
 
+float getEffectiveDrumSwing(DrumGrooveFeel groove, float swing_amount) {
+  if (groove == DrumGrooveFeel::Straight) {
+    return 0.0f;
+  }
+  if (groove == DrumGrooveFeel::Shuffle) {
+    return std::min(1.0f, swing_amount * 1.5f);
+  }
+  return swing_amount;
+}
+
+Tick quantizeDrumSwing(Tick tick, DrumGrooveFeel groove, float swing_amount) {
+  float actual_swing = getEffectiveDrumSwing(groove, swing_amount);
+  if (actual_swing <= 0.0f) {
+    return tick;
+  }
+  return quantizeToSwingGrid(tick, actual_swing, SwingGridResolution::Sixteenth);
+}
+
+uint8_t getBackbeatSnareVelocity(uint8_t base_velocity) {
+  return static_cast<uint8_t>(std::min(127, static_cast<int>(base_velocity) + 16));
+}
+
 }  // namespace
 
 float getHiHatSwingFactor(Mood mood) {
@@ -133,14 +155,15 @@ void generateKickForBeat(MidiTrack& track, const BeatContext& beat_ctx,
   }
   if (play_kick_and) {
     uint8_t and_vel = static_cast<uint8_t>(beat_ctx.velocity * 0.85f);
-    addKickWithHumanize(track, params.adjusted_beat_tick + EIGHTH, EIGHTH, and_vel, beat_ctx.rng,
-                        KICK_HUMANIZE_AMOUNT, params.humanize_timing);
+    Tick kick_and_tick =
+        quantizeDrumSwing(params.adjusted_beat_tick + EIGHTH, params.groove, params.swing_amount);
+    addKickWithHumanize(track, kick_and_tick, EIGHTH, and_vel, beat_ctx.rng, KICK_HUMANIZE_AMOUNT,
+                        params.humanize_timing);
   }
 }
 
 void generateSnareForBeat(MidiTrack& track, const BeatContext& beat_ctx,
                           const SnareBeatParams& params) {
-  (void)beat_ctx.section_type;
   if (beat_ctx.in_prechorus_lift) {
     return;
   }
@@ -151,13 +174,23 @@ void generateSnareForBeat(MidiTrack& track, const BeatContext& beat_ctx,
                                 : (beat_ctx.beat == 1 || beat_ctx.beat == 3);
 
   if (snare_on_this_beat && !params.is_intro_first) {
-    if (params.style == DrumStyle::Sparse || params.role == DrumRole::Ambient) {
+    if (params.bridge_crossstick_timekeeping) {
+      return;
+    }
+    bool promote_sparse_chorus = params.style == DrumStyle::Sparse &&
+                                 beat_ctx.section_type == SectionType::Chorus &&
+                                 params.role == DrumRole::Full;
+    if (promote_sparse_chorus) {
+      addDrumNote(track, beat_ctx.beat_tick, EIGHTH, SD,
+                  getBackbeatSnareVelocity(beat_ctx.velocity));
+    } else if (params.style == DrumStyle::Sparse || params.role == DrumRole::Ambient) {
       uint8_t snare_vel = static_cast<uint8_t>(beat_ctx.velocity * 0.8f);
       if (params.role != DrumRole::FXOnly && params.role != DrumRole::Minimal) {
         addDrumNote(track, beat_ctx.beat_tick, EIGHTH, SIDESTICK, snare_vel);
       }
     } else if (params.snare_prob >= 1.0f) {
-      addDrumNote(track, beat_ctx.beat_tick, EIGHTH, SD, beat_ctx.velocity);
+      addDrumNote(track, beat_ctx.beat_tick, EIGHTH, SD,
+                  getBackbeatSnareVelocity(beat_ctx.velocity));
     }
   }
 }
@@ -192,13 +225,26 @@ void generateGhostNotesForBeat(MidiTrack& track, const BeatContext& beat_ctx,
         ghost_vel = static_cast<uint8_t>(std::max(20, static_cast<int>(ghost_vel * 0.9f)));
       }
 
-      addDrumNote(track, beat_ctx.beat_tick + ghost_offset, SIXTEENTH, SD, ghost_vel);
+      Tick ghost_tick =
+          quantizeDrumSwing(beat_ctx.beat_tick + ghost_offset, params.groove, params.swing_amount);
+      addDrumNote(track, ghost_tick, SIXTEENTH, SD, ghost_vel);
     }
   }
 }
 
 bool generatePreChorusBuildup(MidiTrack& track, Tick beat_tick, uint8_t beat, uint8_t velocity,
-                              uint8_t bar, uint8_t section_bars, bool is_section_last_bar) {
+                              uint8_t bar, uint8_t section_bars, bool is_section_last_bar,
+                              DrumStyle style) {
+  if (style == DrumStyle::Sparse) {
+    if (is_section_last_bar && beat == 3) {
+      uint8_t snare_vel = static_cast<uint8_t>(std::max(45, static_cast<int>(velocity * 0.75f)));
+      addDrumNote(track, beat_tick, EIGHTH, SD, snare_vel);
+      uint8_t crash_vel = static_cast<uint8_t>(std::min(127, static_cast<int>(velocity * 0.9f)));
+      addDrumNote(track, beat_tick + EIGHTH + SIXTEENTH, SIXTEENTH, CRASH, crash_vel);
+    }
+    return true;
+  }
+
   uint8_t bars_in_lift = 2;
   uint8_t bar_in_lift = bar - (section_bars - bars_in_lift);
   float buildup_progress = (bar_in_lift * 4.0f + beat) / (bars_in_lift * 4.0f);
@@ -259,12 +305,8 @@ void generateHiHatForBeat(MidiTrack& track, const BeatContext& beat_ctx,
       for (int eighth = 0; eighth < 2; ++eighth) {
         Tick hh_tick = beat_ctx.beat_tick + eighth * EIGHTH;
 
-        if (eighth == 1 && params.groove != DrumGrooveFeel::Straight) {
-          float actual_swing = params.swing_amount;
-          if (params.groove == DrumGrooveFeel::Shuffle) {
-            actual_swing = std::min(1.0f, actual_swing * 1.5f);
-          }
-          hh_tick = quantizeToSwingGrid(hh_tick, actual_swing);
+        if (eighth == 1) {
+          hh_tick = quantizeDrumSwing(hh_tick, params.groove, params.swing_amount);
         }
 
         if (beat_ctx.section_type == SectionType::Intro && eighth == 1) {
@@ -315,14 +357,11 @@ void generateHiHatForBeat(MidiTrack& track, const BeatContext& beat_ctx,
       for (int sixteenth = 0; sixteenth < 4; ++sixteenth) {
         Tick hh_tick = beat_ctx.beat_tick + sixteenth * SIXTEENTH;
 
-        if ((sixteenth == 1 || sixteenth == 3) && params.groove != DrumGrooveFeel::Straight) {
-          float actual_swing = params.swing_amount;
-          if (params.groove == DrumGrooveFeel::Shuffle) {
-            actual_swing = std::min(1.0f, actual_swing * 1.5f);
-          }
+        if (sixteenth == 1 || sixteenth == 3) {
+          float actual_swing = getEffectiveDrumSwing(params.groove, params.swing_amount);
           float swing_factor = getHiHatSwingFactor(beat_ctx.mood);
           actual_swing *= swing_factor;
-          hh_tick = quantizeToSwingGrid16th(hh_tick, actual_swing);
+          hh_tick = quantizeToSwingGrid(hh_tick, actual_swing, SwingGridResolution::Sixteenth);
         }
 
         float metric_vel = getHiHatVelocityMultiplier(sixteenth, beat_ctx.rng);

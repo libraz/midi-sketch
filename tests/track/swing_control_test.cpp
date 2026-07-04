@@ -175,14 +175,15 @@ TEST(CalculateSwingAmountTest, ChorusHasConsistentSwing) {
   EXPECT_FLOAT_EQ(calculateSwingAmount(SectionType::Chorus, 7, 8), 0.5f);
 }
 
-TEST(CalculateSwingAmountTest, ASectionProgressiveSwing) {
-  // A section: 0.3 at start, 0.5 at end
+TEST(CalculateSwingAmountTest, ASectionHasStableSwing) {
+  // A section should keep a stable pocket instead of drifting bar-by-bar.
   float start = calculateSwingAmount(SectionType::A, 0, 8);
+  float mid = calculateSwingAmount(SectionType::A, 4, 8);
   float end = calculateSwingAmount(SectionType::A, 7, 8);
 
-  EXPECT_NEAR(start, 0.3f, 0.01f) << "A section should start at 0.3";
-  EXPECT_NEAR(end, 0.5f, 0.01f) << "A section should end at 0.5";
-  EXPECT_GT(end, start) << "A section swing should increase";
+  EXPECT_FLOAT_EQ(start, 0.35f) << "A section should use steady light-medium swing";
+  EXPECT_FLOAT_EQ(mid, start) << "A section swing should not drift within the section";
+  EXPECT_FLOAT_EQ(end, start) << "A section swing should not drift within the section";
 }
 
 TEST(CalculateSwingAmountTest, OutroDecreasesSwing) {
@@ -196,9 +197,10 @@ TEST(CalculateSwingAmountTest, OutroDecreasesSwing) {
 }
 
 TEST(CalculateSwingAmountTest, BridgeHasLighterSwing) {
-  // Bridge has lighter swing (0.2) for contrast
+  // Bridge is lighter than Chorus but does not reset to an unrelated low swing amount.
   float swing = calculateSwingAmount(SectionType::Bridge, 4, 8);
-  EXPECT_FLOAT_EQ(swing, 0.2f);
+  EXPECT_FLOAT_EQ(swing, 0.35f);
+  EXPECT_LT(swing, calculateSwingAmount(SectionType::Chorus, 4, 8));
 }
 
 TEST(CalculateSwingAmountTest, BSectionSteadySwing) {
@@ -261,14 +263,27 @@ TEST(GetSwingOffsetContinuousTest, SixteenthNoteHasSmallerOffset) {
   EXPECT_EQ(sixteenth_offset, eighth_offset / 2) << "16th note offset should be half of 8th";
 }
 
-TEST(GetSwingOffsetContinuousTest, ProgressiveSwingInASection) {
-  // A section first bar (swing ~0.3) vs last bar (swing ~0.5)
+TEST(GetSwingOffsetContinuousTest, StableSwingInASection) {
+  // A section uses the same swing offset throughout the section.
   Tick first_bar_offset =
       getSwingOffsetContinuous(DrumGrooveFeel::Swing, TICKS_PER_BEAT / 2, SectionType::A, 0, 8);
   Tick last_bar_offset =
       getSwingOffsetContinuous(DrumGrooveFeel::Swing, TICKS_PER_BEAT / 2, SectionType::A, 7, 8);
-  EXPECT_LT(first_bar_offset, last_bar_offset)
-      << "A section first bar should have less swing than last bar";
+  EXPECT_EQ(first_bar_offset, last_bar_offset)
+      << "A section swing offset should not drift between first and last bars";
+}
+
+TEST(GetSwingOffsetContinuousTest, BridgeDoesNotResetSwingBelowVerse) {
+  Tick verse_offset =
+      getSwingOffsetContinuous(DrumGrooveFeel::Swing, TICKS_PER_BEAT / 2, SectionType::A, 0, 8);
+  Tick bridge_offset = getSwingOffsetContinuous(DrumGrooveFeel::Swing, TICKS_PER_BEAT / 2,
+                                                SectionType::Bridge, 0, 8);
+  Tick chorus_offset = getSwingOffsetContinuous(DrumGrooveFeel::Swing, TICKS_PER_BEAT / 2,
+                                                SectionType::Chorus, 0, 8);
+
+  EXPECT_EQ(bridge_offset, verse_offset)
+      << "Bridge should preserve the established light-medium swing pocket";
+  EXPECT_LT(bridge_offset, chorus_offset) << "Bridge should remain lighter than Chorus";
 }
 
 // ============================================================================
@@ -308,11 +323,11 @@ TEST(GetSwingOffsetContinuousTest, OverridePassedToSwingCalculation) {
   Tick offset_section_default = getSwingOffsetContinuous(DrumGrooveFeel::Swing, TICKS_PER_BEAT / 2,
                                                          SectionType::A, 0, 8, -1.0f);
 
-  // A section default at bar 0 is ~0.3, override is 0.5
-  // Triplet-grid offset = 80 * swing_amount: 80 * 0.5 = 40 vs 80 * 0.3 = 24
+  // A section default is 0.35, override is 0.5
+  // Triplet-grid offset = 80 * swing_amount: 80 * 0.5 = 40 vs 80 * 0.35 = 28
   EXPECT_EQ(offset_with_override, 40) << "Override 0.5 should give 40 ticks (triplet grid)";
-  EXPECT_NEAR(offset_section_default, 24, 2)
-      << "Section default should give ~24 ticks (triplet grid)";
+  EXPECT_NEAR(offset_section_default, 28, 2)
+      << "Section default should give ~28 ticks (triplet grid)";
 }
 
 // ============================================================================

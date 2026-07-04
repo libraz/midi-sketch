@@ -63,14 +63,15 @@ float calculateSwingAmount(SectionType section, int bar_in_section, int total_ba
     return std::clamp(swing_override, 0.0f, 0.7f);
   }
 
-  // Default section-based swing calculation
+  // Default section-based swing calculation. Keep the swing amount stable
+  // within normal song sections; bar-to-bar drift makes grooves feel unstable.
   float base_swing = 0.0f;
   float progress = (total_bars > 1) ? static_cast<float>(bar_in_section) / (total_bars - 1) : 0.0f;
 
   switch (section) {
     case SectionType::A:
-      // A section: gradually increase swing (0.3 -> 0.5)
-      base_swing = 0.3f + progress * 0.2f;
+      // A section: steady light-medium swing
+      base_swing = 0.35f;
       break;
     case SectionType::B:
       // B section: steady moderate swing
@@ -81,13 +82,14 @@ float calculateSwingAmount(SectionType section, int bar_in_section, int total_ba
       base_swing = 0.5f;
       break;
     case SectionType::Bridge:
-      // Bridge: lighter swing for contrast
-      base_swing = 0.2f;
+      // Bridge: lighter than Chorus without abruptly resetting the groove
+      base_swing = 0.35f;
       break;
     case SectionType::Intro:
+      base_swing = 0.25f;
+      break;
     case SectionType::Interlude:
-      // Intro/Interlude: start lighter, gradually increase
-      base_swing = 0.2f + progress * 0.15f;
+      base_swing = 0.35f;
       break;
     case SectionType::Outro:
       // Outro: gradually reduce swing with quadratic curve (0.4 -> 0.2)
@@ -204,6 +206,10 @@ void generateDrumsTrack(MidiTrack& track, const Song& song, const GeneratorParam
   drum_params.composition_style = params.composition_style;
   drum_params.paradigm = params.paradigm;
   drum_params.motif_drum = params.motif_drum;
+  const auto& blueprint = params.blueprint_ref != nullptr
+                              ? *params.blueprint_ref
+                              : getProductionBlueprint(params.blueprint_id);
+  drum_params.drum_style_hint = blueprint.constraints.drum_style_hint;
   drum_params.humanize = params.humanize;
   drum_params.humanize_timing = params.humanize_timing;
 
@@ -220,6 +226,10 @@ void generateDrumsTrackWithVocal(MidiTrack& track, const Song& song, const Gener
   drum_params.composition_style = params.composition_style;
   drum_params.paradigm = params.paradigm;
   drum_params.motif_drum = params.motif_drum;
+  const auto& blueprint = params.blueprint_ref != nullptr
+                              ? *params.blueprint_ref
+                              : getProductionBlueprint(params.blueprint_id);
+  drum_params.drum_style_hint = blueprint.constraints.drum_style_hint;
   drum_params.humanize = params.humanize;
   drum_params.humanize_timing = params.humanize_timing;
 
@@ -238,6 +248,10 @@ void generateDrumsTrackMelodyDriven(MidiTrack& track, const Song& song,
   drum_params.composition_style = params.composition_style;
   drum_params.paradigm = params.paradigm;
   drum_params.motif_drum = params.motif_drum;
+  const auto& blueprint = params.blueprint_ref != nullptr
+                              ? *params.blueprint_ref
+                              : getProductionBlueprint(params.blueprint_id);
+  drum_params.drum_style_hint = blueprint.constraints.drum_style_hint;
   drum_params.humanize = params.humanize;
   drum_params.humanize_timing = params.humanize_timing;
 
@@ -344,6 +358,28 @@ KickPatternCache computeKickPattern(const std::vector<Section>& sections, Mood m
         }
         if (cache.kick_count < KickPatternCache::MAX_KICKS) {
           cache.kick_ticks[cache.kick_count++] = bar_start + 3 * TICKS_PER_BEAT;
+        }
+      } else if (style == DrumStyle::Trap) {
+        // Trap: downbeat anchor plus syncopated 808-style kick.
+        if (cache.kick_count < KickPatternCache::MAX_KICKS) {
+          cache.kick_ticks[cache.kick_count++] = bar_start;
+        }
+        if (cache.kick_count < KickPatternCache::MAX_KICKS) {
+          cache.kick_ticks[cache.kick_count++] = bar_start + TICKS_PER_BEAT + TICK_EIGHTH;
+        }
+        if (section.type == SectionType::Chorus && cache.kick_count < KickPatternCache::MAX_KICKS) {
+          cache.kick_ticks[cache.kick_count++] = bar_start + 3 * TICKS_PER_BEAT;
+        }
+      } else if (style == DrumStyle::Latin) {
+        // LatinPop dembow/tresillo anchor: 1, 2&, 3.
+        if (cache.kick_count < KickPatternCache::MAX_KICKS) {
+          cache.kick_ticks[cache.kick_count++] = bar_start;
+        }
+        if (cache.kick_count < KickPatternCache::MAX_KICKS) {
+          cache.kick_ticks[cache.kick_count++] = bar_start + TICKS_PER_BEAT + TICK_EIGHTH;
+        }
+        if (cache.kick_count < KickPatternCache::MAX_KICKS) {
+          cache.kick_ticks[cache.kick_count++] = bar_start + 2 * TICKS_PER_BEAT;
         }
       }
     }
