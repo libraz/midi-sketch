@@ -19,6 +19,8 @@ namespace cli {
 struct ParsedArgs {
   bool analyze = false;
   bool skip_vocal = false;
+  std::string config_file;
+  std::string output_file;
   std::string input_file;
   std::string validate_file;
   std::string regenerate_file;
@@ -33,6 +35,7 @@ struct ParsedArgs {
   int chord_id = -1;
   uint8_t vocal_style = 0;
   uint16_t bpm = 0;
+  bool bpm_explicit = false;
   uint16_t duration = 0;
   int form_id = -1;
   int key_id = -1;
@@ -46,10 +49,12 @@ struct ParsedArgs {
   bool arpeggio_enabled = false;
   uint8_t modulation = 0;
   uint8_t composition_style = 0;
+  bool composition_style_explicit = false;
   bool enable_sus = false;
   bool enable_9th = false;
   bool syncopation = false;
   midisketch::Tick dump_collisions_tick = 0;
+  bool dump_collisions_requested = false;
 
   // Generation parameters
   int drive_feel = -1;          // -1 = not set (use default 50)
@@ -58,6 +63,7 @@ struct ParsedArgs {
   int hook_intensity = -1;      // -1 = not set
   int melody_template = -1;     // -1 = not set
   bool no_drums = false;
+  bool no_guitar = false;
 
   // Humanization
   bool humanize = false;
@@ -107,6 +113,7 @@ struct ParsedArgs {
 
   bool show_help = false;
   bool parse_error = false;
+  bool generation_options_specified = false;
 };
 
 // Parse command-line arguments

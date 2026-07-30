@@ -5,6 +5,7 @@
 
 #include "cli/input_mode.h"
 
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 
@@ -15,7 +16,30 @@
 
 namespace cli {
 
+namespace {
+
+bool writeOutputFile(const char* path, const char* data, std::streamsize size) {
+  std::ofstream file(path, std::ios::binary);
+  if (!file) {
+    std::cerr << "Error: Failed to open output file: " << path << "\n";
+    return false;
+  }
+  file.write(data, size);
+  if (!file) {
+    std::cerr << "Error: Failed to write output file: " << path << "\n";
+    return false;
+  }
+  return true;
+}
+
+std::string absoluteOutputPath(const std::string& path) {
+  return std::filesystem::absolute(path).string();
+}
+
+}  // namespace
+
 int runInputMode(const ParsedArgs& args) {
+  const std::string analysis_output = args.output_file.empty() ? "analysis.json" : args.output_file;
   if (!args.json_output) {
     std::cout << "midi-sketch v" << midisketch::MidiSketch::version() << "\n\n";
     std::cout << "Analyzing: " << args.input_file << "\n\n";
@@ -73,11 +97,11 @@ int runInputMode(const ParsedArgs& args) {
     } else {
       printDissonanceSummary(report);
 
-      std::ofstream analysis_file("analysis.json");
-      if (analysis_file) {
-        analysis_file << analysis_json;
-        std::cout << "\nSaved: analysis.json\n";
+      if (!writeOutputFile(analysis_output.c_str(), analysis_json.data(),
+                           static_cast<std::streamsize>(analysis_json.size()))) {
+        return 1;
       }
+      std::cout << "\nSaved: " << absoluteOutputPath(analysis_output) << "\n";
     }
 
     if (!args.json_output && args.bar_num > 0) {
@@ -100,7 +124,8 @@ int runInputMode(const ParsedArgs& args) {
                                                                          : "SMF2 (Container)";
 
     if (args.json_output) {
-      std::cout << "{\"error\":\"SMF2 dissonance analysis is not implemented\"}";
+      std::cerr << "Error: SMF2 dissonance analysis is not implemented. "
+                   "Use --format smf1 when generating.\n";
     } else {
       std::cout << "MIDI Info:\n";
       std::cout << "  Format: " << format_name << "\n";
@@ -122,6 +147,7 @@ int runInputMode(const ParsedArgs& args) {
         std::cout << "Bar/tick note inspection for SMF2 input is not implemented.\n";
       }
     }
+    return 1;
   } else {
     std::cerr << "Error: Unknown MIDI format\n";
     return 1;

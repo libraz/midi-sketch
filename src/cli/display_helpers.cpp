@@ -6,8 +6,16 @@
 #include "cli/display_helpers.h"
 
 #include <algorithm>
+#include <cstdio>
+#include <cstdlib>
 #include <iomanip>
 #include <iostream>
+
+#if defined(_WIN32)
+#include <io.h>
+#else
+#include <unistd.h>
+#endif
 
 namespace cli {
 
@@ -15,6 +23,15 @@ namespace {
 
 // Classify issue by actionability
 enum class ActionLevel { Critical, Warning, Info };
+
+bool colorOutputEnabled() {
+  if (std::getenv("NO_COLOR") != nullptr) return false;
+#if defined(_WIN32)
+  return _isatty(_fileno(stdout)) != 0;
+#else
+  return isatty(fileno(stdout)) != 0;
+#endif
+}
 
 ActionLevel getActionLevel(const midisketch::DissonanceIssue& issue) {
   using DT = midisketch::DissonanceType;
@@ -35,6 +52,8 @@ ActionLevel getActionLevel(const midisketch::DissonanceIssue& issue) {
 }
 
 const char* actionLevelColor(ActionLevel level) {
+  if (!colorOutputEnabled()) return "";
+
   switch (level) {
     case ActionLevel::Critical:
       return "\033[31m";  // Red
@@ -138,7 +157,7 @@ const char* songConfigErrorName(midisketch::SongConfigError error) {
     case midisketch::SongConfigError::InvalidBpm:
       return "Invalid BPM";
     case midisketch::SongConfigError::DurationTooShortForCall:
-      return "Duration too short for call settings";
+      return "Duration is below the minimum required length";
     case midisketch::SongConfigError::InvalidModulationAmount:
       return "Invalid modulation amount";
     case midisketch::SongConfigError::InvalidKey:
@@ -189,6 +208,8 @@ const char* songConfigErrorName(midisketch::SongConfigError error) {
       return "Invalid melody override";
     case midisketch::SongConfigError::InvalidMotifOverride:
       return "Invalid motif override";
+    case midisketch::SongConfigError::InvalidMood:
+      return "Invalid mood";
   }
   return "Unknown config error";
 }
@@ -247,7 +268,7 @@ std::vector<std::pair<std::string, uint8_t>> getAllNotesAtTick(const midisketch:
 
 void printDissonanceSummary(const midisketch::DissonanceReport& report,
                             const midisketch::Song* song) {
-  const char* reset = "\033[0m";
+  const char* reset = colorOutputEnabled() ? "\033[0m" : "";
 
   // Count by action level
   int critical = 0, warning = 0, info = 0;
@@ -313,8 +334,10 @@ void printDissonanceSummary(const midisketch::DissonanceReport& report,
 }
 
 void showBarNotes(const midisketch::ParsedMidi& midi, int bar_num) {
-  midisketch::Tick bar_start = midisketch::barToTick(static_cast<midisketch::Tick>(bar_num - 1));
-  midisketch::Tick bar_end = bar_start + midisketch::TICKS_PER_BAR;
+  const midisketch::Tick ticks_per_beat = midi.division;
+  const midisketch::Tick ticks_per_bar = ticks_per_beat * 4;
+  midisketch::Tick bar_start = static_cast<midisketch::Tick>(bar_num - 1) * ticks_per_bar;
+  midisketch::Tick bar_end = bar_start + ticks_per_bar;
 
   std::cout << "\n=== Bar " << bar_num << " (tick " << bar_start << "-" << bar_end << ") ===\n\n";
 
@@ -339,7 +362,7 @@ void showBarNotes(const midisketch::ParsedMidi& midi, int bar_num) {
       if (starts_in_bar || sustains_into_bar) {
         float beat = (note.start_tick >= bar_start)
                          ? (static_cast<float>(note.start_tick - bar_start) /
-                                static_cast<float>(midisketch::TICKS_PER_BEAT) +
+                                static_cast<float>(ticks_per_beat) +
                             1.0f)
                          : 0.0f;  // Sustained from previous bar
 
@@ -353,10 +376,10 @@ void showBarNotes(const midisketch::ParsedMidi& midi, int bar_num) {
           std::string dur_str;
           if (note.duration == 0) {
             dur_str = "dur=0 ⚠️";
-          } else if (note.duration >= 1920) {
-            dur_str = std::to_string(note.duration / midisketch::TICKS_PER_BAR) + " bar";
-          } else if (note.duration >= 480) {
-            dur_str = std::to_string(note.duration / midisketch::TICKS_PER_BEAT) + " beat";
+          } else if (note.duration >= ticks_per_bar) {
+            dur_str = std::to_string(note.duration / ticks_per_bar) + " bar";
+          } else if (note.duration >= ticks_per_beat) {
+            dur_str = std::to_string(note.duration / ticks_per_beat) + " beat";
           } else {
             dur_str = std::to_string(note.duration) + " tick";
           }

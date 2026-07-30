@@ -5,18 +5,74 @@
 
 #include "cli/regenerate_mode.h"
 
+#include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <sstream>
 
 #include "cli/display_helpers.h"
 #include "cli/generate_mode.h"
+#include "core/json_helpers.h"
 #include "midi/midi2_reader.h"
 #include "midi/midi_reader.h"
 #include "midisketch.h"
 
 namespace cli {
 
+namespace {
+
+class ScopedStdoutSuppression {
+ public:
+  explicit ScopedStdoutSuppression(bool enabled) {
+    if (enabled) {
+      original_ = std::cout.rdbuf(suppressed_.rdbuf());
+    }
+  }
+
+  ~ScopedStdoutSuppression() { restore(); }
+
+  void restore() {
+    if (original_) {
+      std::cout.rdbuf(original_);
+      original_ = nullptr;
+    }
+  }
+
+ private:
+  std::ostringstream suppressed_;
+  std::streambuf* original_ = nullptr;
+};
+
+bool writeOutputFile(const char* path, const char* data, std::streamsize size) {
+  std::ofstream file(path, std::ios::binary);
+  if (!file) {
+    std::cerr << "Error: Failed to open output file: " << path << "\n";
+    return false;
+  }
+  file.write(data, size);
+  if (!file) {
+    std::cerr << "Error: Failed to write output file: " << path << "\n";
+    return false;
+  }
+  return true;
+}
+
+std::string absoluteOutputPath(const std::string& path) {
+  return std::filesystem::absolute(path).string();
+}
+
+}  // namespace
+
 int runRegenerateMode(const ParsedArgs& args) {
+  ScopedStdoutSuppression stdout_suppression(args.analyze && args.json_output);
+
+  if (args.generation_options_specified) {
+    std::cerr << "Error: Generation options cannot be combined with --regenerate. "
+                 "Use --new-seed, --format, --output, --analyze, --json, --bar, or "
+                 "--dump-collisions-at instead.\n";
+    return 1;
+  }
+
   std::cout << "midi-sketch v" << midisketch::MidiSketch::version() << "\n\n";
   std::cout << "Regenerating from: " << args.regenerate_file << "\n\n";
 
@@ -74,6 +130,12 @@ int runRegenerateMode(const ParsedArgs& args) {
 
   std::cout << "Original metadata: " << metadata << "\n\n";
 
+  const midisketch::json::Parser metadata_parser(metadata);
+  if (metadata_parser.getInt("format_version", 2) < 4) {
+    std::cerr << "Warning: This MIDI uses legacy metadata; regeneration restores only the fields "
+                 "available in that format and may differ from the original.\n";
+  }
+
   midisketch::SongConfig config = configFromMetadata(metadata);
 
   if (args.use_new_seed) {
@@ -96,14 +158,21 @@ int runRegenerateMode(const ParsedArgs& args) {
   midisketch::MidiSketch sketch;
   sketch.setMidiFormat(output_format);
   sketch.generateFromConfig(config);
+  for (const auto& warning : sketch.getWarnings()) {
+    std::cerr << "Warning: " << warning << "\n";
+  }
+
+  const std::string midi_output = args.output_file.empty() ? "regenerated.mid" : args.output_file;
+  const std::string analysis_output =
+      args.output_file.empty() ? "analysis.json" : midi_output + ".analysis.json";
 
   auto midi_data = sketch.getMidi();
-  std::ofstream file("regenerated.mid", std::ios::binary);
-  if (file) {
-    file.write(reinterpret_cast<const char*>(midi_data.data()),
-               static_cast<std::streamsize>(midi_data.size()));
-    std::cout << "Saved: regenerated.mid (" << midi_data.size() << " bytes)\n";
+  if (!writeOutputFile(midi_output.c_str(), reinterpret_cast<const char*>(midi_data.data()),
+                       static_cast<std::streamsize>(midi_data.size()))) {
+    return 1;
   }
+  std::cout << "Saved: " << absoluteOutputPath(midi_output) << " (" << midi_data.size()
+            << " bytes)\n";
 
   const auto& song = sketch.getSong();
   std::cout << "\nRegeneration result:\n";
@@ -114,33 +183,34 @@ int runRegenerateMode(const ParsedArgs& args) {
 
   if (args.analyze) {
     const auto& params = sketch.getParams();
-    auto report = midisketch::analyzeDissonance(song, params);
+    auto report = midisketch::analyzeDissonance(song, params, sketch.getHarmonyContext());
 
     auto analysis_json = midisketch::dissonanceReportToJson(report);
     if (args.json_output) {
+      stdout_suppression.restore();
       std::cout << analysis_json;
     } else {
       printDissonanceSummary(report);
 
-      std::ofstream analysis_file("analysis.json");
-      if (analysis_file) {
-        analysis_file << analysis_json;
-        std::cout << "\nSaved: analysis.json\n";
+      if (!writeOutputFile(analysis_output.c_str(), analysis_json.data(),
+                           static_cast<std::streamsize>(analysis_json.size()))) {
+        return 1;
       }
+      std::cout << "\nSaved: " << absoluteOutputPath(analysis_output) << "\n";
     }
   }
 
-  if (args.dump_collisions_tick > 0) {
+  if (args.dump_collisions_requested) {
     std::cout << "\n" << sketch.getHarmonyContext().dumpNotesAt(args.dump_collisions_tick) << "\n";
   }
 
   if (args.bar_num > 0) {
     if (output_format == midisketch::MidiFormat::SMF1) {
       midisketch::MidiReader reader;
-      if (reader.read("regenerated.mid")) {
+      if (reader.read(midi_output)) {
         showBarNotes(reader.getParsedMidi(), args.bar_num);
       } else {
-        std::cerr << "Error reading regenerated.mid for bar inspection\n";
+        std::cerr << "Error reading " << midi_output << " for bar inspection\n";
       }
     } else {
       std::cout << "Bar note inspection is only available for SMF1 output.\n";

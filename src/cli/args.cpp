@@ -132,6 +132,9 @@ bool parsePresetOrRangeArg(const char* option, const char* arg, int preset_value
 
 bool optionRequiresValue(const char* option) {
   static const char* kOptions[] = {"--input",
+                                   "--config",
+                                   "--output",
+                                   "-o",
                                    "--seed",
                                    "--style",
                                    "--blueprint",
@@ -183,6 +186,74 @@ bool optionRequiresValue(const char* option) {
                                    "--melody-chorus-register-shift",
                                    "--melody-hook-repetition",
                                    "--melody-use-leading-tone"};
+  for (const char* known : kOptions) {
+    if (std::strcmp(option, known) == 0) return true;
+  }
+  return false;
+}
+
+bool isGenerationOption(const char* option) {
+  static const char* kOptions[] = {
+      "--config",
+      "--seed",
+      "--style",
+      "--blueprint",
+      "--mood",
+      "--chord",
+      "--vocal-style",
+      "--bpm",
+      "--duration",
+      "--form",
+      "--key",
+      "--skip-vocal",
+      "--vocal-attitude",
+      "--vocal-low",
+      "--vocal-high",
+      "--addictive",
+      "--arpeggio",
+      "--modulation",
+      "--composition",
+      "--enable-sus",
+      "--enable-9th",
+      "--syncopation",
+      "--drive",
+      "--no-drums",
+      "--no-guitar",
+      "--vocal-groove",
+      "--melodic-complexity",
+      "--hook-intensity",
+      "--melody-template",
+      "--humanize",
+      "--humanize-timing",
+      "--humanize-velocity",
+      "--arpeggio-pattern",
+      "--arpeggio-speed",
+      "--arpeggio-octave",
+      "--arpeggio-gate",
+      "--no-se",
+      "--call",
+      "--no-call-notes",
+      "--intro-chant",
+      "--mix-pattern",
+      "--call-density",
+      "--enable-7th",
+      "--enable-tritone-sub",
+      "--modulation-semitones",
+      "--arrangement",
+      "--motif-repeat-scope",
+      "--motif-length",
+      "--motif-note-count",
+      "--motif-motion",
+      "--motif-register-high",
+      "--motif-rhythm-density",
+      "--energy-curve",
+      "--melody-max-leap",
+      "--melody-phrase-length",
+      "--melody-long-note-ratio",
+      "--melody-chorus-register-shift",
+      "--melody-hook-repetition",
+      "--melody-use-leading-tone",
+  };
   for (const char* known : kOptions) {
     if (std::strcmp(option, known) == 0) return true;
   }
@@ -265,7 +336,7 @@ bool parseChordArg(const char* arg, int& out) {
   }
   std::cerr << "Unknown chord progression: " << arg << "\n";
   std::cerr << "Use a number (0-" << (midisketch::CHORD_COUNT - 1)
-            << ") or common name (pop, jazz, royal_road, ballad, etc.)\n";
+            << "), canonical name, or common alias (pop, jazz, royal_road)\n";
   return false;
 }
 
@@ -324,16 +395,19 @@ void printUsage(const char* program) {
       << "  --chord N         Set chord progression (0-21 or name like pop, jazz, royal_road)\n";
   std::cout << "  --vocal-style N   Set vocal style (0=Auto, 1=Standard, 2=Vocaloid,\n";
   std::cout << "                    3=UltraVocaloid, 4=Idol, 5=Ballad, 6=Rock,\n";
-  std::cout << "                    7=CityPop, 8=Anime)\n";
-  std::cout << "  --bpm N           Set BPM (60-200, default: style preset)\n";
+  std::cout << "                    7=CityPop, 8=Anime, 9=BrightKira, 10=CoolSynth,\n";
+  std::cout << "                    11=CuteAffected, 12=PowerfulShout, 13=KPop)\n";
+  std::cout << "  --bpm N           Set BPM (40-240, 0/default: style preset)\n";
   std::cout << "  --duration N      Set target duration in seconds (0 = use pattern)\n";
   std::cout << "  --form N          Set form/structure pattern (0-17 or name like StandardPop)\n";
   std::cout << "  --key N           Set key (0-11: C, C#, D, Eb, E, F, F#, G, Ab, A, Bb, B)\n";
   std::cout << "  --input FILE      Analyze existing MIDI file for dissonance\n";
+  std::cout << "  --config FILE     Generate from a complete SongConfig JSON file\n";
+  std::cout << "  -o, --output FILE Write the primary output to FILE\n";
   std::cout << "  --analyze         Analyze generated MIDI for dissonance issues\n";
   std::cout << "  --skip-vocal      Skip vocal in initial generation (for BGM-first workflow)\n";
   std::cout << "  --vocal-attitude N  Vocal attitude (0-2)\n";
-  std::cout << "  --vocal-low N     Vocal range low (MIDI note, default 57)\n";
+  std::cout << "  --vocal-low N     Vocal range low (MIDI note, default 60)\n";
   std::cout << "  --vocal-high N    Vocal range high (MIDI note, default 79)\n";
   std::cout << "  --format FMT      Set MIDI format (smf1 or smf2, default: smf2)\n";
   std::cout << "  --validate FILE   Validate MIDI file structure\n";
@@ -344,7 +418,8 @@ void printUsage(const char* program) {
   std::cout << "  --addictive       Enable Behavioral Loop mode (fixed riff, maximum hook)\n";
   std::cout << "  --arpeggio        Enable arpeggio track\n";
   std::cout << "  --modulation N    Set modulation timing (0=None, 1=LastChorus,\n";
-  std::cout << "                    2=AfterBridge, 3=EachChorus, 4=Random)\n";
+  std::cout
+      << "                    2=AfterBridge, 3=EachChorus (final-chorus fallback), 4=Random)\n";
   std::cout << "  --composition N   Set composition style (0=MelodyLead,\n";
   std::cout << "                    1=BackgroundMotif, 2=SynthDriven)\n";
   std::cout << "  --enable-sus      Enable sus2/sus4 chord substitutions\n";
@@ -355,11 +430,12 @@ void printUsage(const char* program) {
   std::cout << "Generation parameters:\n";
   std::cout << "  --drive N              Drive feel (0=laid-back, 50=neutral, 100=aggressive)\n";
   std::cout << "  --no-drums             Disable drums track\n";
-  std::cout << "  --vocal-groove N       Vocal groove feel (0=Straight, 1=Swing, 2=Bouncy8th, "
-               "3=OffBeat, 4=Driving16th, 5=Syncopated)\n";
+  std::cout << "  --no-guitar            Disable guitar track\n";
+  std::cout << "  --vocal-groove N       Vocal groove feel (0=Straight, 1=OffBeat, 2=Swing, "
+               "3=Syncopated, 4=Driving16th, 5=Bouncy8th)\n";
   std::cout << "  --melodic-complexity N Melodic complexity (0=Simple, 1=Standard, 2=Complex)\n";
-  std::cout << "  --hook-intensity N     Hook intensity (0=Subtle, 1=Normal, 2=Strong, "
-               "3=Maximum)\n";
+  std::cout << "  --hook-intensity N     Hook intensity (0=Off, 1=Light, 2=Normal, "
+               "3=Strong, 4=Maximum)\n";
   std::cout << "  --melody-template N    Melody template (0=Auto, 1-7)\n";
   std::cout << "\n";
   std::cout << "Humanization:\n";
@@ -375,12 +451,12 @@ void printUsage(const char* program) {
   std::cout << "\n";
   std::cout << "SE/Call/MIX:\n";
   std::cout << "  --no-se                Disable SE track\n";
-  std::cout << "  --call N               Call setting (0=None, 1=Auto, 2=All)\n";
+  std::cout << "  --call N               Call setting (0=Auto, 1=Enabled, 2=Disabled)\n";
   std::cout << "  --no-call-notes        Disable call notes output\n";
-  std::cout << "  --intro-chant N        Intro chant (0=None, 1=Simple, 2=Full)\n";
+  std::cout << "  --intro-chant N        Intro chant (0=None, 1=Gachikoi, 2=Shouting)\n";
   std::cout << "  --mix-pattern N        MIX pattern (0=None, 1=Short, 2=Full)\n";
-  std::cout << "  --call-density N       Call density (0=Sparse, 1=Standard, 2=Dense, "
-               "3=Maximum)\n";
+  std::cout << "  --call-density N       Call density (0=None, 1=Minimal, 2=Standard, "
+               "3=Intense)\n";
   std::cout << "\n";
   std::cout << "Chord extensions:\n";
   std::cout << "  --enable-7th           Enable 7th chord extensions\n";
@@ -403,13 +479,13 @@ void printUsage(const char* program) {
   std::cout << "  --motif-length N       Motif length (0=auto, 1/2/4 bars)\n";
   std::cout << "  --motif-note-count N   Motif note count (0=auto, 3-8)\n";
   std::cout << "  --motif-motion N       Motif motion (255=preset, 0=Stepwise, 1=GentleLeap,\n";
-  std::cout << "                         2=WideLeap, 3=NarrowStep, 4=Disjunct)\n";
+  std::cout << "                         2=WideLeap, 3=NarrowStep, 4=Disjunct, 5=Ostinato)\n";
   std::cout << "  --motif-register-high N  Motif register (0=auto, 1=low, 2=high)\n";
   std::cout << "  --motif-rhythm-density N Motif rhythm density (255=preset, 0=Sparse,\n";
   std::cout << "                         1=Medium, 2=Driving)\n";
   std::cout << "\n";
   std::cout << "Other:\n";
-  std::cout << "  --arrangement N        Arrangement growth (0=LayerAdd, 1=IntensityGrowth)\n";
+  std::cout << "  --arrangement N        Arrangement growth (0=LayerAdd, 1=RegisterAdd)\n";
   std::cout << "  --motif-repeat-scope N Motif repeat scope (0=FullSong, 1=PerSection)\n";
   std::cout << "\n";
   std::cout << "  --help            Show this help message\n";
@@ -419,8 +495,16 @@ ParsedArgs parseArgs(int argc, char* argv[]) {
   ParsedArgs args;
 
   for (int i = 1; i < argc; ++i) {
+    if (isGenerationOption(argv[i])) {
+      args.generation_options_specified = true;
+    }
     if (std::strcmp(argv[i], "--analyze") == 0) {
       args.analyze = true;
+    } else if (std::strcmp(argv[i], "--config") == 0 && i + 1 < argc) {
+      args.config_file = argv[++i];
+    } else if ((std::strcmp(argv[i], "--output") == 0 || std::strcmp(argv[i], "-o") == 0) &&
+               i + 1 < argc) {
+      args.output_file = argv[++i];
     } else if (std::strcmp(argv[i], "--input") == 0 && i + 1 < argc) {
       args.input_file = argv[++i];
       args.analyze = true;
@@ -461,6 +545,7 @@ ParsedArgs parseArgs(int argc, char* argv[]) {
         args.parse_error = true;
         return args;
       }
+      args.bpm_explicit = true;
     } else if (std::strcmp(argv[i], "--duration") == 0 && i + 1 < argc) {
       if (!parseUint16InRange("--duration", argv[++i], 0, std::numeric_limits<uint16_t>::max(),
                               args.duration)) {
@@ -531,6 +616,7 @@ ParsedArgs parseArgs(int argc, char* argv[]) {
         args.parse_error = true;
         return args;
       }
+      args.composition_style_explicit = true;
     } else if (std::strcmp(argv[i], "--enable-sus") == 0) {
       args.enable_sus = true;
     } else if (std::strcmp(argv[i], "--enable-9th") == 0) {
@@ -542,6 +628,7 @@ ParsedArgs parseArgs(int argc, char* argv[]) {
         args.parse_error = true;
         return args;
       }
+      args.dump_collisions_requested = true;
     } else if (std::strcmp(argv[i], "--drive") == 0 && i + 1 < argc) {
       if (!parseIntInRange("--drive", argv[++i], 0, 100, args.drive_feel)) {
         args.parse_error = true;
@@ -549,6 +636,8 @@ ParsedArgs parseArgs(int argc, char* argv[]) {
       }
     } else if (std::strcmp(argv[i], "--no-drums") == 0) {
       args.no_drums = true;
+    } else if (std::strcmp(argv[i], "--no-guitar") == 0) {
+      args.no_guitar = true;
     } else if (std::strcmp(argv[i], "--vocal-groove") == 0 && i + 1 < argc) {
       if (!parseIntInRange("--vocal-groove", argv[++i], 0, 5, args.vocal_groove)) {
         args.parse_error = true;
