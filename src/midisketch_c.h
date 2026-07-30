@@ -13,6 +13,15 @@
 extern "C" {
 #endif
 
+/**
+ * @brief Thread-safety contract.
+ *
+ * The C API uses shared temporary buffers for selected query results. Callers
+ * must externally synchronize C API calls that share a MidiSketchHandle, or
+ * consume an API result backed by shared storage. Independent handles must
+ * likewise be externally synchronized when using pointer-returning query APIs.
+ */
+
 // ============================================================================
 // Handle and Error Definitions
 // ============================================================================
@@ -29,7 +38,18 @@ typedef enum {
   MIDISKETCH_ERROR_INVALID_CHORD = 4,      ///< @deprecated Unused. Kept for ABI stability.
   MIDISKETCH_ERROR_GENERATION_FAILED = 5,  ///< @deprecated Unused. Kept for ABI stability.
   MIDISKETCH_ERROR_OUT_OF_MEMORY = 6,      ///< @deprecated Unused. Kept for ABI stability.
+  MIDISKETCH_ERROR_UNSUPPORTED_FORMAT = 7,
 } MidiSketchError;
+
+/** @brief Get error message for a generation/API error. @param error Error code @return Message
+ * (static) */
+const char* midisketch_error_string(MidiSketchError error);
+
+/// @brief MIDI file format for output.
+typedef enum {
+  MIDISKETCH_MIDI_FORMAT_SMF1 = 1,
+  MIDISKETCH_MIDI_FORMAT_SMF2 = 2,
+} MidiSketchMidiFormat;
 
 // ============================================================================
 // Output Data Structures
@@ -46,6 +66,12 @@ typedef struct {
   char* json;     ///< JSON string
   size_t length;  ///< String length
 } MidiSketchEventData;
+
+/// @brief Dissonance analysis JSON output.
+typedef struct {
+  char* json;     ///< JSON string
+  size_t length;  ///< String length
+} MidiSketchDissonanceData;
 
 /// @brief Generation info.
 typedef struct {
@@ -70,6 +96,25 @@ MidiSketchHandle midisketch_create(void);
  * @param handle Handle to destroy
  */
 void midisketch_destroy(MidiSketchHandle handle);
+
+/**
+ * @brief Select the MIDI format used by subsequent generation calls.
+ *
+ * Native builds support SMF1 and SMF2. WASM builds return
+ * MIDISKETCH_ERROR_UNSUPPORTED_FORMAT for SMF2.
+ *
+ * @param handle MidiSketch handle
+ * @param format MIDI output format
+ * @return MIDISKETCH_OK on success
+ */
+MidiSketchError midisketch_set_midi_format(MidiSketchHandle handle, MidiSketchMidiFormat format);
+
+/**
+ * @brief Get the selected MIDI output format.
+ * @param handle MidiSketch handle
+ * @return Selected format, or MIDISKETCH_MIDI_FORMAT_SMF1 for an invalid handle
+ */
+MidiSketchMidiFormat midisketch_get_midi_format(MidiSketchHandle handle);
 
 // ============================================================================
 // Output Retrieval
@@ -111,6 +156,16 @@ MidiSketchEventData* midisketch_get_events(MidiSketchHandle handle);
  * @param data Pointer returned by midisketch_get_events
  */
 void midisketch_free_events(MidiSketchEventData* data);
+
+/**
+ * @brief Analyze the generated song for harmonic dissonance.
+ * @param handle MidiSketch handle
+ * @return DissonanceData (must be freed with midisketch_free_dissonance)
+ */
+MidiSketchDissonanceData* midisketch_get_dissonance(MidiSketchHandle handle);
+
+/** @brief Free data returned by midisketch_get_dissonance. */
+void midisketch_free_dissonance(MidiSketchDissonanceData* data);
 
 /**
  * @brief Get generation info.
@@ -185,11 +240,21 @@ uint8_t midisketch_blueprint_weight(uint8_t id);
  * otherwise */
 uint8_t midisketch_blueprint_drums_required(uint8_t id);
 
+/** @brief Get a blueprint's recommended minimum BPM, or 0 for an invalid ID. */
+uint16_t midisketch_blueprint_tempo_min(uint8_t id);
+
+/** @brief Get a blueprint's recommended maximum BPM, or 0 for an invalid ID. */
+uint16_t midisketch_blueprint_tempo_max(uint8_t id);
+
 /** @brief Get resolved blueprint ID after generation.
  *  @param handle MidiSketch handle
  *  @return Resolved blueprint ID (0-9), or 255 if not generated
  */
 uint8_t midisketch_get_resolved_blueprint_id(MidiSketchHandle handle);
+
+/** @brief Get generation warnings from the latest operation as a JSON string array.
+ *  @warning Returned storage is thread-local and is replaced by the next call on this thread. */
+const char* midisketch_get_warnings_json(MidiSketchHandle handle);
 
 // ============================================================================
 // StylePreset API
@@ -256,6 +321,7 @@ typedef enum {
   MIDISKETCH_CONFIG_INVALID_MELODY_OVERRIDE = 31,
   MIDISKETCH_CONFIG_INVALID_MOTIF_OVERRIDE = 32,
   MIDISKETCH_CONFIG_INVALID_JSON = 33,
+  MIDISKETCH_CONFIG_INVALID_MOOD = 34,
 } MidiSketchConfigError;
 
 /** @brief Get error message for config error. @param error Error code @return Message (static) */
@@ -379,7 +445,7 @@ typedef struct {
 /// @brief Batch result for multiple ticks.
 typedef struct {
   MidiSketchPianoRollInfo* data;  ///< Array of info structs
-  size_t count;                   ///< Number of entries
+  size_t count;                   ///< Encoded count; use midisketch_piano_roll_data_count()
 } MidiSketchPianoRollData;
 
 /**
@@ -388,7 +454,9 @@ typedef struct {
  * @param start_tick Start tick
  * @param end_tick End tick
  * @param step Step size in ticks (e.g., 120 for 16th notes)
- * @return Pointer to batch data (must be freed with midisketch_free_piano_roll_data)
+ * @return Pointer to batch data (must be freed with midisketch_free_piano_roll_data).
+ *         Use midisketch_piano_roll_data_was_truncated() to detect requests
+ *         for which only the first 100,000 samples were returned.
  */
 MidiSketchPianoRollData* midisketch_get_piano_roll_safety(MidiSketchHandle handle,
                                                           uint32_t start_tick, uint32_t end_tick,
@@ -416,6 +484,12 @@ MidiSketchPianoRollInfo* midisketch_get_piano_roll_safety_with_context(MidiSketc
 
 /** @brief Free piano roll batch data. @param data Pointer from midisketch_get_piano_roll_safety */
 void midisketch_free_piano_roll_data(MidiSketchPianoRollData* data);
+
+/** @brief Get the number of returned piano-roll samples. */
+size_t midisketch_piano_roll_data_count(const MidiSketchPianoRollData* data);
+
+/** @brief Whether a piano-roll request exceeded the 100,000-sample limit. */
+uint8_t midisketch_piano_roll_data_was_truncated(const MidiSketchPianoRollData* data);
 
 /** @brief Convert reason flags to string. @param reason Flags @return Static string (do not free)
  */
@@ -545,6 +619,29 @@ MidiSketchError midisketch_regenerate_accompaniment_from_json(MidiSketchHandle h
  */
 MidiSketchError midisketch_set_vocal_notes_from_json(MidiSketchHandle handle, const char* json,
                                                      size_t json_length);
+
+/**
+ * @brief Get the current vocal melody as JSON.
+ *
+ * JSON format: {"seed": N, "notes": [{...}, ...]}
+ * Each note: {"start_tick": N, "duration": N, "pitch": N, "velocity": N}
+ * The returned pointer remains valid until the next call on the same thread.
+ *
+ * @param handle MidiSketch handle
+ * @return JSON string, or null for an invalid handle
+ */
+const char* midisketch_get_melody_json(MidiSketchHandle handle);
+
+/**
+ * @brief Restore a vocal melody previously returned by midisketch_get_melody_json().
+ *
+ * @param handle MidiSketch handle with an initialized song
+ * @param json JSON string with seed and notes
+ * @param json_length Length of the JSON string
+ * @return MIDISKETCH_OK on success
+ */
+MidiSketchError midisketch_set_melody_from_json(MidiSketchHandle handle, const char* json,
+                                                size_t json_length);
 
 // ============================================================================
 // Utilities

@@ -72,8 +72,13 @@ void MidiSketch::rebuildMidiLegacy() {
 
 void MidiSketch::rebuildMidiWithConfig(const SongConfig& config) {
   const auto& params = generator_.getParams();
+  // SongConfig is serialized into v4 metadata and is later used verbatim by
+  // --regenerate. Preserve an auto-seed only until generation starts; the
+  // metadata must contain the concrete seed that was actually used.
+  SongConfig resolved_config = config;
+  resolved_config.seed = params.seed;
   midi_writer_.build(generator_.getSong(), config.key, params.mood,
-                     generateMetadata(params, config), midi_format_, params.blueprint_id);
+                     generateMetadata(params, resolved_config), midi_format_, params.blueprint_id);
 }
 
 void MidiSketch::generate(const GeneratorParams& params) {

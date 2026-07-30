@@ -12,8 +12,10 @@
 #include <sstream>
 #include <unordered_map>
 
+#include "analysis/dissonance.h"
 #include "core/chord.h"
 #include "core/chord_utils.h"
+#include "core/json_helpers.h"
 #include "core/piano_roll_safety.h"
 #include "core/pitch_utils.h"
 #include "core/preset_data.h"
@@ -25,9 +27,79 @@ namespace {
 // Thread-local storage for last config error per handle
 // Using void* as key to avoid issues with opaque handle
 std::unordered_map<void*, MidiSketchConfigError> g_last_config_errors;
+constexpr const char* kUnknownName = "unknown";
+
+bool parseNoteEvents(const std::string& json, std::vector<midisketch::NoteEvent>& notes) {
+  const size_t notes_pos = json.find("\"notes\"");
+  if (notes_pos == std::string::npos) return true;
+
+  const size_t array_start = json.find('[', notes_pos);
+  if (array_start == std::string::npos) return false;
+
+  size_t pos = array_start + 1;
+  while (pos < json.size()) {
+    while (pos < json.size() && (json[pos] == ' ' || json[pos] == '\n' || json[pos] == '\r' ||
+                                 json[pos] == '\t' || json[pos] == ',')) {
+      ++pos;
+    }
+    if (pos >= json.size()) return false;
+    if (json[pos] == ']') return true;
+    if (json[pos] != '{') return false;
+
+    const size_t object_start = pos;
+    int depth = 1;
+    ++pos;
+    while (pos < json.size() && depth > 0) {
+      if (json[pos] == '{')
+        ++depth;
+      else if (json[pos] == '}')
+        --depth;
+      ++pos;
+    }
+    if (depth != 0) return false;
+
+    midisketch::json::Parser parser(json.substr(object_start, pos - object_start));
+    if (!parser.isValid()) return false;
+
+    const uint32_t start_tick = parser.getUint("start_tick", 0);
+    const uint32_t duration = parser.getUint("duration", 0);
+    const int pitch = parser.getInt("pitch", 60);
+    const int velocity = parser.getInt("velocity", 100);
+    if (!parser.isValid() || duration == 0 || pitch < 0 || pitch > 127 || velocity < 0 ||
+        velocity > 127 || start_tick > UINT32_MAX - duration) {
+      return false;
+    }
+    notes.push_back(midisketch::NoteEventBuilder::create(
+        start_tick, duration, static_cast<uint8_t>(pitch), static_cast<uint8_t>(velocity)));
+  }
+  return false;
+}
 }  // namespace
 
 extern "C" {
+
+const char* midisketch_error_string(MidiSketchError error) {
+  switch (error) {
+    case MIDISKETCH_OK:
+      return "No error";
+    case MIDISKETCH_ERROR_INVALID_PARAM:
+      return "Invalid parameter or invalid handle";
+    case MIDISKETCH_ERROR_INVALID_STRUCTURE:
+      return "Invalid structure";
+    case MIDISKETCH_ERROR_INVALID_MOOD:
+      return "Invalid mood";
+    case MIDISKETCH_ERROR_INVALID_CHORD:
+      return "Invalid chord progression";
+    case MIDISKETCH_ERROR_GENERATION_FAILED:
+      return "Generation failed";
+    case MIDISKETCH_ERROR_OUT_OF_MEMORY:
+      return "Out of memory";
+    case MIDISKETCH_ERROR_UNSUPPORTED_FORMAT:
+      return "MIDI format is not supported by this build";
+    default:
+      return "Unknown MidiSketch error";
+  }
+}
 
 const char* midisketch_config_error_string(MidiSketchConfigError error) {
   switch (error) {
@@ -46,7 +118,7 @@ const char* midisketch_config_error_string(MidiSketchConfigError error) {
     case MIDISKETCH_CONFIG_INVALID_BPM:
       return "Invalid BPM (must be 40-240, or 0 for default)";
     case MIDISKETCH_CONFIG_DURATION_TOO_SHORT:
-      return "Target duration too short (minimum 10 seconds)";
+      return "Target duration is below the minimum required length";
     case MIDISKETCH_CONFIG_INVALID_MODULATION:
       return "Invalid modulation semitones (must be 1-4)";
     case MIDISKETCH_CONFIG_INVALID_KEY:
@@ -99,6 +171,8 @@ const char* midisketch_config_error_string(MidiSketchConfigError error) {
       return "Invalid motif override value";
     case MIDISKETCH_CONFIG_INVALID_JSON:
       return "Invalid JSON config input";
+    case MIDISKETCH_CONFIG_INVALID_MOOD:
+      return "Invalid mood ID";
     default:
       return "Unknown config error";
   }
@@ -122,6 +196,40 @@ void midisketch_destroy(MidiSketchHandle handle) {
     g_last_config_errors.erase(handle);
   }
   delete static_cast<midisketch::MidiSketch*>(handle);
+}
+
+MidiSketchError midisketch_set_midi_format(MidiSketchHandle handle, MidiSketchMidiFormat format) {
+  if (!handle) {
+    return MIDISKETCH_ERROR_INVALID_PARAM;
+  }
+
+  midisketch::MidiFormat native_format;
+  switch (format) {
+    case MIDISKETCH_MIDI_FORMAT_SMF1:
+      native_format = midisketch::MidiFormat::SMF1;
+      break;
+    case MIDISKETCH_MIDI_FORMAT_SMF2:
+#ifdef MIDISKETCH_WASM
+      return MIDISKETCH_ERROR_UNSUPPORTED_FORMAT;
+#else
+      native_format = midisketch::MidiFormat::SMF2;
+      break;
+#endif
+    default:
+      return MIDISKETCH_ERROR_INVALID_PARAM;
+  }
+
+  static_cast<midisketch::MidiSketch*>(handle)->setMidiFormat(native_format);
+  return MIDISKETCH_OK;
+}
+
+MidiSketchMidiFormat midisketch_get_midi_format(MidiSketchHandle handle) {
+  if (!handle) {
+    return MIDISKETCH_MIDI_FORMAT_SMF1;
+  }
+  const auto format = static_cast<midisketch::MidiSketch*>(handle)->getMidiFormat();
+  return format == midisketch::MidiFormat::SMF2 ? MIDISKETCH_MIDI_FORMAT_SMF2
+                                                : MIDISKETCH_MIDI_FORMAT_SMF1;
 }
 
 // ============================================================================
@@ -209,6 +317,34 @@ void midisketch_free_events(MidiSketchEventData* data) {
   }
 }
 
+MidiSketchDissonanceData* midisketch_get_dissonance(MidiSketchHandle handle) {
+  if (!handle) return nullptr;
+
+  auto* sketch = static_cast<midisketch::MidiSketch*>(handle);
+  const auto report = midisketch::analyzeDissonance(sketch->getSong(), sketch->getParams(),
+                                                    sketch->getHarmonyContext());
+  const std::string json = midisketch::dissonanceReportToJson(report);
+
+  auto* result = static_cast<MidiSketchDissonanceData*>(malloc(sizeof(MidiSketchDissonanceData)));
+  if (!result) return nullptr;
+
+  result->length = json.size();
+  result->json = static_cast<char*>(malloc(result->length + 1));
+  if (!result->json) {
+    free(result);
+    return nullptr;
+  }
+  memcpy(result->json, json.c_str(), result->length + 1);
+  return result;
+}
+
+void midisketch_free_dissonance(MidiSketchDissonanceData* data) {
+  if (data) {
+    free(data->json);
+    free(data);
+  }
+}
+
 MidiSketchInfo midisketch_get_info(MidiSketchHandle handle) {
   MidiSketchInfo info{};
   if (!handle) return info;
@@ -231,16 +367,22 @@ uint8_t midisketch_mood_count(void) { return midisketch::MOOD_COUNT; }
 uint8_t midisketch_chord_count(void) { return midisketch::CHORD_COUNT; }
 
 const char* midisketch_structure_name(uint8_t id) {
+  if (id >= midisketch::STRUCTURE_COUNT) return kUnknownName;
   return midisketch::getStructureName(static_cast<midisketch::StructurePattern>(id));
 }
 
 const char* midisketch_mood_name(uint8_t id) {
+  if (id >= midisketch::MOOD_COUNT) return kUnknownName;
   return midisketch::getMoodName(static_cast<midisketch::Mood>(id));
 }
 
-const char* midisketch_chord_name(uint8_t id) { return midisketch::getChordProgressionName(id); }
+const char* midisketch_chord_name(uint8_t id) {
+  if (id >= midisketch::CHORD_COUNT) return kUnknownName;
+  return midisketch::getChordProgressionName(id);
+}
 
 const char* midisketch_chord_display(uint8_t id) {
+  if (id >= midisketch::CHORD_COUNT) return kUnknownName;
   return midisketch::getChordProgressionDisplay(id);
 }
 
@@ -255,6 +397,7 @@ uint16_t midisketch_mood_default_bpm(uint8_t id) {
 uint8_t midisketch_blueprint_count(void) { return midisketch::getProductionBlueprintCount(); }
 
 const char* midisketch_blueprint_name(uint8_t id) {
+  if (id >= midisketch::getProductionBlueprintCount()) return kUnknownName;
   return midisketch::getProductionBlueprintName(id);
 }
 
@@ -278,10 +421,37 @@ uint8_t midisketch_blueprint_drums_required(uint8_t id) {
   return bp.drums_required ? 1 : 0;
 }
 
+uint16_t midisketch_blueprint_tempo_min(uint8_t id) {
+  if (id >= midisketch::getProductionBlueprintCount()) return 0;
+  return midisketch::getProductionBlueprint(id).tempo_min;
+}
+
+uint16_t midisketch_blueprint_tempo_max(uint8_t id) {
+  if (id >= midisketch::getProductionBlueprintCount()) return 0;
+  return midisketch::getProductionBlueprint(id).tempo_max;
+}
+
 uint8_t midisketch_get_resolved_blueprint_id(MidiSketchHandle handle) {
   if (!handle) return 255;
   auto* sketch = static_cast<midisketch::MidiSketch*>(handle);
   return sketch->resolvedBlueprintId();
+}
+
+const char* midisketch_get_warnings_json(MidiSketchHandle handle) {
+  static thread_local std::string warnings_json;
+  warnings_json = "[]";
+  if (!handle) return warnings_json.c_str();
+
+  auto* sketch = static_cast<midisketch::MidiSketch*>(handle);
+  std::ostringstream out;
+  midisketch::json::Writer writer(out);
+  writer.beginArray();
+  for (const auto& warning : sketch->getWarnings()) {
+    writer.value(warning);
+  }
+  writer.endArray();
+  warnings_json = out.str();
+  return warnings_json.c_str();
 }
 
 // ============================================================================
@@ -292,16 +462,19 @@ uint8_t midisketch_style_preset_count(void) { return midisketch::STYLE_PRESET_CO
 
 // Individual getters for StylePreset fields (WASM-friendly)
 const char* midisketch_style_preset_name(uint8_t id) {
+  if (id >= midisketch::STYLE_PRESET_COUNT) return kUnknownName;
   const midisketch::StylePreset& preset = midisketch::getStylePreset(id);
   return preset.name;
 }
 
 const char* midisketch_style_preset_display_name(uint8_t id) {
+  if (id >= midisketch::STYLE_PRESET_COUNT) return kUnknownName;
   const midisketch::StylePreset& preset = midisketch::getStylePreset(id);
   return preset.display_name;
 }
 
 const char* midisketch_style_preset_description(uint8_t id) {
+  if (id >= midisketch::STYLE_PRESET_COUNT) return kUnknownName;
   const midisketch::StylePreset& preset = midisketch::getStylePreset(id);
   return preset.description;
 }
@@ -385,9 +558,9 @@ MidiSketchConfigError mapConfigError(midisketch::SongConfigError error) {
   // C++ SongConfigError and C MidiSketchConfigError have identical numeric values
   static_assert(static_cast<int>(midisketch::SongConfigError::OK) == MIDISKETCH_CONFIG_OK,
                 "Enum value mismatch: OK");
-  static_assert(static_cast<int>(midisketch::SongConfigError::InvalidMotifOverride) ==
-                    MIDISKETCH_CONFIG_INVALID_MOTIF_OVERRIDE,
-                "Enum value mismatch: last entry");
+  static_assert(
+      static_cast<int>(midisketch::SongConfigError::InvalidMood) == MIDISKETCH_CONFIG_INVALID_MOOD,
+      "Enum value mismatch: last entry");
   return static_cast<MidiSketchConfigError>(error);
 }
 
@@ -399,8 +572,20 @@ midisketch::MidiSketch* parseAndValidateConfig(MidiSketchHandle handle, const ch
                                                size_t json_length, midisketch::SongConfig& out) {
   g_last_config_errors[handle] = MIDISKETCH_CONFIG_OK;
 
+  if (json_length == 0) {
+    g_last_config_errors[handle] = MIDISKETCH_CONFIG_INVALID_JSON;
+    return nullptr;
+  }
   midisketch::json::Parser p(std::string(config_json, json_length));
+  if (!p.isValid()) {
+    g_last_config_errors[handle] = MIDISKETCH_CONFIG_INVALID_JSON;
+    return nullptr;
+  }
   out.readFrom(p);
+  if (!p.isValid()) {
+    g_last_config_errors[handle] = MIDISKETCH_CONFIG_INVALID_JSON;
+    return nullptr;
+  }
 
   auto validation = midisketch::validateSongConfig(out);
   if (validation != midisketch::SongConfigError::OK) {
@@ -441,13 +626,19 @@ const char* midisketch_create_default_config_json(uint8_t style_id) {
 }
 
 MidiSketchConfigError midisketch_validate_config_json(const char* config_json, size_t json_length) {
-  if (!config_json) {
+  if (!config_json || json_length == 0) {
     return MIDISKETCH_CONFIG_INVALID_JSON;
   }
 
   midisketch::json::Parser p(std::string(config_json, json_length));
+  if (!p.isValid()) {
+    return MIDISKETCH_CONFIG_INVALID_JSON;
+  }
   midisketch::SongConfig config;
   config.readFrom(p);
+  if (!p.isValid()) {
+    return MIDISKETCH_CONFIG_INVALID_JSON;
+  }
 
   return mapConfigError(midisketch::validateSongConfig(config));
 }
@@ -494,8 +685,14 @@ MidiSketchError midisketch_regenerate_vocal_from_json(MidiSketchHandle handle,
     sketch->regenerateVocal(0);
   } else {
     midisketch::json::Parser p(std::string(config_json, json_length));
+    if (!p.isValid()) {
+      return MIDISKETCH_ERROR_INVALID_PARAM;
+    }
     midisketch::VocalConfig config;
     config.readFrom(p);
+    if (!p.isValid()) {
+      return MIDISKETCH_ERROR_INVALID_PARAM;
+    }
     sketch->regenerateVocal(config);
   }
   return MIDISKETCH_OK;
@@ -510,8 +707,14 @@ MidiSketchError midisketch_generate_accompaniment_from_json(MidiSketchHandle han
 
   auto* sketch = static_cast<midisketch::MidiSketch*>(handle);
   midisketch::json::Parser p(std::string(config_json, json_length));
+  if (!p.isValid()) {
+    return MIDISKETCH_ERROR_INVALID_PARAM;
+  }
   midisketch::AccompanimentConfig config;
   config.readFrom(p);
+  if (!p.isValid()) {
+    return MIDISKETCH_ERROR_INVALID_PARAM;
+  }
   sketch->generateAccompanimentForVocal(config);
   return MIDISKETCH_OK;
 }
@@ -525,8 +728,14 @@ MidiSketchError midisketch_regenerate_accompaniment_from_json(MidiSketchHandle h
 
   auto* sketch = static_cast<midisketch::MidiSketch*>(handle);
   midisketch::json::Parser p(std::string(config_json, json_length));
+  if (!p.isValid()) {
+    return MIDISKETCH_ERROR_INVALID_PARAM;
+  }
   midisketch::AccompanimentConfig config;
   config.readFrom(p);
+  if (!p.isValid()) {
+    return MIDISKETCH_ERROR_INVALID_PARAM;
+  }
   sketch->regenerateAccompaniment(config);
   return MIDISKETCH_OK;
 }
@@ -539,12 +748,21 @@ MidiSketchError midisketch_set_vocal_notes_from_json(MidiSketchHandle handle, co
 
   g_last_config_errors[handle] = MIDISKETCH_CONFIG_OK;
 
-  midisketch::json::Parser p(std::string(json, json_length));
+  const std::string json_string(json, json_length);
+  midisketch::json::Parser p(json_string);
+  if (!p.isValid()) {
+    return MIDISKETCH_ERROR_INVALID_PARAM;
+  }
 
   // Parse SongConfig from "config" nested object
   midisketch::SongConfig config;
   if (p.has("config")) {
-    config.readFrom(p.getObject("config"));
+    midisketch::json::Parser config_parser = p.getObject("config");
+    config.readFrom(config_parser);
+    if (!config_parser.isValid()) {
+      g_last_config_errors[handle] = MIDISKETCH_CONFIG_INVALID_JSON;
+      return MIDISKETCH_ERROR_INVALID_PARAM;
+    }
   }
 
   auto validation = midisketch::validateSongConfig(config);
@@ -553,62 +771,62 @@ MidiSketchError midisketch_set_vocal_notes_from_json(MidiSketchHandle handle, co
     return MIDISKETCH_ERROR_INVALID_PARAM;
   }
 
-  // Parse notes from "notes" array
-  // The JSON parser doesn't natively support arrays, so we parse manually
-  std::string json_str(json, json_length);
   std::vector<midisketch::NoteEvent> notes;
-
-  // Find the "notes" array in the JSON
-  std::string notes_key = "\"notes\"";
-  size_t notes_pos = json_str.find(notes_key);
-  if (notes_pos != std::string::npos) {
-    size_t arr_start = json_str.find('[', notes_pos);
-    if (arr_start != std::string::npos) {
-      size_t pos = arr_start + 1;
-      while (pos < json_str.size()) {
-        // Skip whitespace
-        while (pos < json_str.size() &&
-               (json_str[pos] == ' ' || json_str[pos] == '\n' || json_str[pos] == '\r' ||
-                json_str[pos] == '\t' || json_str[pos] == ',')) {
-          ++pos;
-        }
-        if (pos >= json_str.size() || json_str[pos] == ']') break;
-
-        if (json_str[pos] == '{') {
-          // Find matching closing brace
-          size_t obj_start = pos;
-          int depth = 1;
-          ++pos;
-          while (pos < json_str.size() && depth > 0) {
-            if (json_str[pos] == '{')
-              ++depth;
-            else if (json_str[pos] == '}')
-              --depth;
-            ++pos;
-          }
-          std::string note_json = json_str.substr(obj_start, pos - obj_start);
-          midisketch::json::Parser np(note_json);
-          uint32_t start_tick = np.getUint("start_tick", 0);
-          uint32_t duration = np.getUint("duration", 0);
-          int pitch_value = np.getInt("pitch", 60);
-          int velocity_value = np.getInt("velocity", 100);
-          if (duration == 0 || pitch_value < 0 || pitch_value > 127 || velocity_value < 0 ||
-              velocity_value > 127 || start_tick > UINT32_MAX - duration) {
-            return MIDISKETCH_ERROR_INVALID_PARAM;
-          }
-          uint8_t pitch = static_cast<uint8_t>(pitch_value);
-          uint8_t velocity = static_cast<uint8_t>(velocity_value);
-          notes.push_back(
-              midisketch::NoteEventBuilder::create(start_tick, duration, pitch, velocity));
-        } else {
-          ++pos;
-        }
-      }
-    }
+  if (!parseNoteEvents(json_string, notes)) {
+    return MIDISKETCH_ERROR_INVALID_PARAM;
   }
 
   auto* sketch = static_cast<midisketch::MidiSketch*>(handle);
   sketch->setVocalNotes(config, notes);
+  return MIDISKETCH_OK;
+}
+
+const char* midisketch_get_melody_json(MidiSketchHandle handle) {
+  if (!handle) return nullptr;
+
+  const auto* sketch = static_cast<const midisketch::MidiSketch*>(handle);
+  const midisketch::MelodyData melody = sketch->getMelody();
+  std::ostringstream out;
+  midisketch::json::Writer writer(out);
+  writer.beginObject().write("seed", melody.seed).beginArray("notes");
+  for (const auto& note : melody.notes) {
+    writer.beginObject()
+        .write("start_tick", note.start_tick)
+        .write("duration", note.duration)
+        .write("pitch", static_cast<unsigned>(note.note))
+        .write("velocity", static_cast<unsigned>(note.velocity))
+        .endObject();
+  }
+  writer.endArray().endObject();
+
+  static thread_local std::string melody_json;
+  melody_json = out.str();
+  return melody_json.c_str();
+}
+
+MidiSketchError midisketch_set_melody_from_json(MidiSketchHandle handle, const char* json,
+                                                size_t json_length) {
+  if (!handle || !json) {
+    return MIDISKETCH_ERROR_INVALID_PARAM;
+  }
+
+  const std::string json_string(json, json_length);
+  midisketch::json::Parser parser(json_string);
+  if (!parser.isValid()) {
+    return MIDISKETCH_ERROR_INVALID_PARAM;
+  }
+
+  midisketch::MelodyData melody;
+  melody.seed = parser.getUint("seed", 0);
+  if (!parser.isValid()) {
+    return MIDISKETCH_ERROR_INVALID_PARAM;
+  }
+  if (!parseNoteEvents(json_string, melody.notes)) {
+    return MIDISKETCH_ERROR_INVALID_PARAM;
+  }
+
+  auto* sketch = static_cast<midisketch::MidiSketch*>(handle);
+  sketch->setMelody(melody);
   return MIDISKETCH_OK;
 }
 
@@ -791,8 +1009,9 @@ MidiSketchPianoRollData* midisketch_get_piano_roll_safety(MidiSketchHandle handl
   }
 
   constexpr size_t kMaxPianoRollBatchCount = 100000;
-  size_t count = (end_tick - start_tick) / step + 1;
-  count = std::min(count, kMaxPianoRollBatchCount);
+  const size_t requested_count = (end_tick - start_tick) / step + 1;
+  const bool truncated = requested_count > kMaxPianoRollBatchCount;
+  const size_t count = std::min(requested_count, kMaxPianoRollBatchCount);
   if (count == 0 || count > std::numeric_limits<size_t>::max() / sizeof(MidiSketchPianoRollInfo)) {
     return nullptr;
   }
@@ -807,7 +1026,8 @@ MidiSketchPianoRollData* midisketch_get_piano_roll_safety(MidiSketchHandle handl
     free(result);
     return nullptr;
   }
-  result->count = count;
+  constexpr size_t kPianoRollTruncatedFlag = size_t{1} << (std::numeric_limits<size_t>::digits - 1);
+  result->count = count | (truncated ? kPianoRollTruncatedFlag : 0);
 
   // Fill each tick
   for (size_t i = 0; i < count; ++i) {
@@ -850,6 +1070,18 @@ void midisketch_free_piano_roll_data(MidiSketchPianoRollData* data) {
     free(data->data);
     free(data);
   }
+}
+
+size_t midisketch_piano_roll_data_count(const MidiSketchPianoRollData* data) {
+  if (!data) return 0;
+  constexpr size_t kPianoRollTruncatedFlag = size_t{1} << (std::numeric_limits<size_t>::digits - 1);
+  return data->count & ~kPianoRollTruncatedFlag;
+}
+
+uint8_t midisketch_piano_roll_data_was_truncated(const MidiSketchPianoRollData* data) {
+  if (!data) return 0;
+  constexpr size_t kPianoRollTruncatedFlag = size_t{1} << (std::numeric_limits<size_t>::digits - 1);
+  return (data->count & kPianoRollTruncatedFlag) != 0;
 }
 
 const char* midisketch_reason_to_string(uint16_t reason) {

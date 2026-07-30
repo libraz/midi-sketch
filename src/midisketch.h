@@ -174,6 +174,9 @@ class MidiSketch {
    */
   const GeneratorParams& getParams() const;
 
+  /** @brief Get non-fatal warnings from the latest generation operation. */
+  const std::vector<std::string>& getWarnings() const { return generator_.getWarnings(); }
+
   /**
    * @brief Get harmony context for piano roll safety API.
    * @return Reference to IHarmonyContext
