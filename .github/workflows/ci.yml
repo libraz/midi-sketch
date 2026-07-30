@@ -17,13 +17,13 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
 
     - name: Enable Corepack
       run: corepack enable
 
     - name: Setup Node.js
-      uses: actions/setup-node@v4
+      uses: actions/setup-node@v7
       with:
         node-version: 22
         cache: yarn
@@ -40,10 +40,10 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
 
     - name: Cache CMake dependencies
-      uses: actions/cache@v4
+      uses: actions/cache@v6
       with:
         path: build/_deps
         key: ${{ runner.os }}-cmake-deps-${{ hashFiles('CMakeLists.txt') }}
@@ -51,7 +51,7 @@ jobs:
           ${{ runner.os }}-cmake-deps-
 
     - name: Cache ccache
-      uses: actions/cache@v4
+      uses: actions/cache@v6
       with:
         path: ~/.cache/ccache
         key: ${{ runner.os }}-ccache-${{ github.sha }}
@@ -103,7 +103,7 @@ jobs:
         ./build/bin/midisketch_cli --seed 12345
 
     - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v4
+      uses: codecov/codecov-action@v7
       with:
         token: ${{ secrets.CODECOV_TOKEN }}
         files: ./build/coverage/coverage_filtered.info
@@ -113,14 +113,14 @@ jobs:
         verbose: true
 
     - name: Upload coverage HTML report
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: coverage-report
         path: build/coverage/html/
 
     - name: Upload build artifacts
       if: failure()
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: build-logs-linux
         path: |

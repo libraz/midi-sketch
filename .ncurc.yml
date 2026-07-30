@@ -1,0 +1,7 @@
+# npm-check-updates configuration.
+#
+# typescript: pinned to 6.x. Yarn 4's builtin `compat/typescript` patch expects
+# `lib/_tsc.js`, which the native 7.x package no longer ships, so `yarn install`
+# fails during the fetch step. Revisit once Yarn drops or updates that patch.
+reject:
+  - typescript

@@ -22,7 +22,7 @@
     "postinstall": "simple-git-hooks",
     "prepare": "simple-git-hooks",
     "build": "yarn build:wasm && yarn build:js",
-    "build:wasm": "cmake -E remove -f build-wasm/CMakeCache.txt && cmake -E remove_directory build-wasm/CMakeFiles && emcmake cmake -B build-wasm -DBUILD_WASM=ON && cmake --build build-wasm",
+    "build:wasm": "cmake -E remove -f build-wasm/CMakeCache.txt && cmake -E remove_directory build-wasm/CMakeFiles && cmake -E remove_directory build-wasm/bin && emcmake cmake -B build-wasm -DBUILD_WASM=ON && cmake --build build-wasm --parallel 1",
     "build:js": "node scripts/build-js.mjs",
     "clean": "rm -rf dist",
     "lint": "biome check js/ tests/wasm/",
@@ -54,12 +54,12 @@
     "node": ">=16.0.0"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.2",
+    "@biomejs/biome": "^2.5.6",
     "esbuild": "^0.28.1",
-    "lint-staged": "^17.0.8",
+    "lint-staged": "^17.2.0",
     "simple-git-hooks": "^2.13.1",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.9"
+    "vitest": "^4.1.10"
   },
   "volta": {
     "node": "22.22.3",
