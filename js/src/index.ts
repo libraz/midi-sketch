@@ -24,6 +24,7 @@ export {
   getBlueprintParadigm,
   getBlueprintRiffPolicy,
   getBlueprints,
+  getBlueprintTempoRange,
   getBlueprintWeight,
   RiffPolicy,
   type RiffPolicyType,
@@ -45,6 +46,7 @@ export {
 } from './config-fields';
 // Constants
 export {
+  ArpeggioPattern,
   ArrangementGrowth,
   ATTITUDE_CLEAN,
   ATTITUDE_EXPRESSIVE,
@@ -56,6 +58,8 @@ export {
   HookIntensity,
   IntroChant,
   MelodicComplexity,
+  MidiFormat,
+  type MidiFormatType,
   MidiSketchConfigError,
   MidiSketchGenerationError,
   MixPattern,
@@ -83,6 +87,7 @@ export type {
   AccompanimentConfig,
   CollisionInfo,
   EventData,
+  MelodyData,
   NoteInput,
   NoteReasonFlags,
   NoteSafetyLevel,

@@ -37,7 +37,7 @@ export interface SongConfig {
   arpeggioEnabled: boolean;
   /** Enable guitar track */
   guitarEnabled: boolean;
-  /** Arpeggio pattern: 0=Up, 1=Down, 2=UpDown, 3=Random */
+  /** Arpeggio pattern: 0=Up, 1=Down, 2=UpDown, 3=Random, 4=Pinwheel, 5=PedalRoot, 6=Alberti, 7=BrokenChord */
   arpeggioPattern: number;
   /** Arpeggio speed: 0=Eighth, 1=Sixteenth, 2=Triplet */
   arpeggioSpeed: number;
@@ -55,8 +55,7 @@ export interface SongConfig {
   skipVocal: boolean;
 
   // Humanization
-  // NOTE: SongConfig humanize amounts are floats 0.0-1.0 (defaults 0.4 / 0.3),
-  // unlike AccompanimentConfig which uses uint8 0-100.
+  // SongConfig and AccompanimentConfig both use float values in the 0.0-1.0 range.
   /** Enable humanization */
   humanize: boolean;
   /** Timing variation (0.0-1.0) */
@@ -65,9 +64,7 @@ export interface SongConfig {
   humanizeVelocity: number;
 
   // Chord extensions
-  // NOTE: SongConfig chord extension probabilities are floats 0.0-1.0 (maps to
-  // C++ ChordExtensionParams float fields). This differs from AccompanimentConfig,
-  // whose chordExt*Prob fields are uint8 0-100.
+  // SongConfig and AccompanimentConfig both use float probabilities in the 0.0-1.0 range.
   /** Enable sus2/sus4 chords */
   chordExtSus: boolean;
   /** Enable 7th chords */
@@ -88,6 +85,8 @@ export interface SongConfig {
   // Composition style
   /** Composition style: 0=MelodyLead, 1=BackgroundMotif, 2=SynthDriven */
   compositionStyle: number;
+  /** True when compositionStyle should override the style preset. */
+  compositionStyleExplicit: boolean;
 
   // Duration
   /** Target duration in seconds (0 = use formId) */
@@ -228,6 +227,16 @@ export interface NoteInput {
   velocity: number;
 }
 
+/**
+ * Serializable vocal melody returned by MidiSketch.getMelody().
+ */
+export interface MelodyData {
+  /** Random seed used to generate the melody */
+  seed: number;
+  /** Vocal notes in playback order */
+  notes: NoteInput[];
+}
+
 // ============================================================================
 // Vocal and Accompaniment Configuration Types
 // ============================================================================
@@ -276,7 +285,7 @@ export interface AccompanimentConfig {
   arpeggioEnabled?: boolean;
   /** Enable guitar track */
   guitarEnabled?: boolean;
-  /** Arpeggio pattern: 0=Up, 1=Down, 2=UpDown, 3=Random */
+  /** Arpeggio pattern: 0=Up, 1=Down, 2=UpDown, 3=Random, 4=Pinwheel, 5=PedalRoot, 6=Alberti, 7=BrokenChord */
   arpeggioPattern?: number;
   /** Arpeggio speed: 0=Eighth, 1=Sixteenth, 2=Triplet */
   arpeggioSpeed?: number;
@@ -296,21 +305,21 @@ export interface AccompanimentConfig {
   chordExt9th?: boolean;
   /** Enable tritone substitution (V7 -> bII7) */
   chordExtTritoneSub?: boolean;
-  /** Sus probability: 0-100 */
+  /** Sus probability: 0.0-1.0 */
   chordExtSusProb?: number;
-  /** 7th probability: 0-100 */
+  /** 7th probability: 0.0-1.0 */
   chordExt7thProb?: number;
-  /** 9th probability: 0-100 */
+  /** 9th probability: 0.0-1.0 */
   chordExt9thProb?: number;
-  /** Tritone substitution probability: 0-100 */
+  /** Tritone substitution probability: 0.0-1.0 */
   chordExtTritoneSubProb?: number;
 
   // Humanization
   /** Enable humanization */
   humanize?: boolean;
-  /** Timing variation: 0-100 */
+  /** Timing variation: 0.0-1.0 */
   humanizeTiming?: number;
-  /** Velocity variation: 0-100 */
+  /** Velocity variation: 0.0-1.0 */
   humanizeVelocity?: number;
 
   // SE
@@ -320,7 +329,7 @@ export interface AccompanimentConfig {
   // Call System
   /** Enable call system */
   callEnabled?: boolean;
-  /** Call density: 0=Sparse, 1=Light, 2=Standard, 3=Dense */
+  /** Call density: 0=None, 1=Minimal, 2=Standard, 3=Intense. None emits no calls. */
   callDensity?: number;
   /** Intro chant: 0=None, 1=Gachikoi, 2=Mix */
   introChant?: number;
@@ -457,11 +466,46 @@ export interface ChordEvent {
 /**
  * Event data from generation
  */
+/** Dissonance analysis result returned by MidiSketch.getDissonanceReport(). */
+export interface DissonanceReport {
+  summary: {
+    total_issues: number;
+    simultaneous_clashes: number;
+    non_chord_tones: number;
+    sustained_over_chord_change: number;
+    non_diatonic_notes: number;
+    high_severity: number;
+    medium_severity: number;
+    low_severity: number;
+    modulation_tick: number;
+    modulation_amount: number;
+    pre_modulation_issues: number;
+    post_modulation_issues: number;
+  };
+  issues: Array<{
+    type: string;
+    severity: 'low' | 'medium' | 'high';
+    tick: number;
+    bar: number;
+    beat: number;
+    [key: string]: unknown;
+  }>;
+}
+
 export interface EventData {
   bpm: number;
   division: number;
   duration_ticks: number;
   duration_seconds: number;
+  /** Resolved vocal style preset ID. */
+  vocal_style: number;
+  /** Generation inputs resolved by the core. */
+  metadata: {
+    blueprint: number;
+    style: number;
+    mood: number;
+    seed: number;
+  };
   tracks: Array<{
     name: string;
     channel: number;
@@ -473,6 +517,12 @@ export interface EventData {
       duration_ticks: number;
       start_seconds: number;
       duration_seconds: number;
+    }>;
+    /** Text/chant events, emitted for the SE track. */
+    textEvents?: Array<{
+      tick: number;
+      time_seconds: number;
+      text: string;
     }>;
   }>;
   sections: Array<{
@@ -487,4 +537,10 @@ export interface EventData {
   }>;
   /** Chord timeline with secondary dominant info */
   chords?: ChordEvent[];
+  /** Tempo changes, including the initial tempo event when present. */
+  tempo_map: Array<{
+    tick: number;
+    bpm: number;
+    seconds: number;
+  }>;
 }

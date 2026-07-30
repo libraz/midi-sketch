@@ -21,11 +21,15 @@ export interface EmscriptenModule {
 export interface Api {
   create: () => number;
   destroy: (handle: number) => void;
+  setMidiFormat: (handle: number, format: number) => number;
+  getMidiFormat: (handle: number) => number;
   getMidi: (handle: number) => number;
   getVocalPreviewMidi: (handle: number) => number;
   freeMidi: (ptr: number) => void;
   getEvents: (handle: number) => number;
   freeEvents: (ptr: number) => void;
+  getDissonance: (handle: number) => number;
+  freeDissonance: (ptr: number) => void;
   structureCount: () => number;
   moodCount: () => number;
   chordCount: () => number;
@@ -43,6 +47,7 @@ export interface Api {
   stylePresetAllowedAttitudes: (id: number) => number;
   getProgressionsByStylePtr: (styleId: number) => number;
   getFormsByStylePtr: (styleId: number) => number;
+  errorString: (error: number) => string;
   configErrorString: (error: number) => string;
   getLastConfigError: (handle: number) => number;
   // Vocal-first generation APIs (no-config versions)
@@ -53,6 +58,8 @@ export interface Api {
   getPianoRollSafetyAt: (handle: number, tick: number) => number;
   getPianoRollSafetyWithContext: (handle: number, tick: number, prevPitch: number) => number;
   freePianoRollData: (ptr: number) => void;
+  getPianoRollDataCount: (ptr: number) => number;
+  pianoRollDataWasTruncated: (ptr: number) => number;
   reasonToString: (reason: number) => string;
   // JSON Config API
   generateFromJson: (handle: number, json: string, length: number) => number;
@@ -64,6 +71,8 @@ export interface Api {
   generateAccompanimentFromJson: (handle: number, json: string, length: number) => number;
   regenerateAccompanimentFromJson: (handle: number, json: string, length: number) => number;
   setVocalNotesFromJson: (handle: number, json: string, length: number) => number;
+  getMelodyJson: (handle: number) => string;
+  setMelodyFromJson: (handle: number, json: string, length: number) => number;
   // Production Blueprint API
   blueprintCount: () => number;
   blueprintName: (id: number) => string;
@@ -71,7 +80,10 @@ export interface Api {
   blueprintRiffPolicy: (id: number) => number;
   blueprintWeight: (id: number) => number;
   blueprintDrumsRequired: (id: number) => number;
+  blueprintTempoMin: (id: number) => number;
+  blueprintTempoMax: (id: number) => number;
   getResolvedBlueprintId: (handle: number) => number;
+  getWarningsJson: (handle: number) => string;
 }
 
 // ============================================================================
@@ -80,6 +92,7 @@ export interface Api {
 
 let moduleInstance: EmscriptenModule | null = null;
 let api: Api | null = null;
+let initialization: Promise<void> | null = null;
 
 /**
  * Get the WASM module instance
@@ -112,11 +125,24 @@ export function getApi(): Api {
 /**
  * Initialize the WASM module
  */
-export async function init(options?: { wasmPath?: string }): Promise<void> {
+export function init(options?: { wasmPath?: string }): Promise<void> {
   if (moduleInstance) {
-    return;
+    return Promise.resolve();
   }
 
+  if (!initialization) {
+    initialization = initialize(options).catch((error: unknown) => {
+      moduleInstance = null;
+      api = null;
+      initialization = null;
+      throw error;
+    });
+  }
+
+  return initialization;
+}
+
+async function initialize(options?: { wasmPath?: string }): Promise<void> {
   const createModule = await import('../midisketch.js');
   moduleInstance = await createModule.default({
     locateFile: (path: string) => {
@@ -133,6 +159,13 @@ export async function init(options?: { wasmPath?: string }): Promise<void> {
   api = {
     create: m.cwrap('midisketch_create', 'number', []) as () => number,
     destroy: m.cwrap('midisketch_destroy', null, ['number']) as (handle: number) => void,
+    setMidiFormat: m.cwrap('midisketch_set_midi_format', 'number', ['number', 'number']) as (
+      handle: number,
+      format: number,
+    ) => number,
+    getMidiFormat: m.cwrap('midisketch_get_midi_format', 'number', ['number']) as (
+      handle: number,
+    ) => number,
     getMidi: m.cwrap('midisketch_get_midi', 'number', ['number']) as (handle: number) => number,
     getVocalPreviewMidi: m.cwrap('midisketch_get_vocal_preview_midi', 'number', ['number']) as (
       handle: number,
@@ -140,6 +173,12 @@ export async function init(options?: { wasmPath?: string }): Promise<void> {
     freeMidi: m.cwrap('midisketch_free_midi', null, ['number']) as (ptr: number) => void,
     getEvents: m.cwrap('midisketch_get_events', 'number', ['number']) as (handle: number) => number,
     freeEvents: m.cwrap('midisketch_free_events', null, ['number']) as (ptr: number) => void,
+    getDissonance: m.cwrap('midisketch_get_dissonance', 'number', ['number']) as (
+      handle: number,
+    ) => number,
+    freeDissonance: m.cwrap('midisketch_free_dissonance', null, ['number']) as (
+      ptr: number,
+    ) => void,
     structureCount: m.cwrap('midisketch_structure_count', 'number', []) as () => number,
     moodCount: m.cwrap('midisketch_mood_count', 'number', []) as () => number,
     chordCount: m.cwrap('midisketch_chord_count', 'number', []) as () => number,
@@ -177,6 +216,9 @@ export async function init(options?: { wasmPath?: string }): Promise<void> {
     getFormsByStylePtr: m.cwrap('midisketch_get_forms_by_style_ptr', 'number', ['number']) as (
       styleId: number,
     ) => number,
+    errorString: m.cwrap('midisketch_error_string', 'string', ['number']) as (
+      error: number,
+    ) => string,
     configErrorString: m.cwrap('midisketch_config_error_string', 'string', ['number']) as (
       error: number,
     ) => string,
@@ -210,6 +252,12 @@ export async function init(options?: { wasmPath?: string }): Promise<void> {
     freePianoRollData: m.cwrap('midisketch_free_piano_roll_data', null, ['number']) as (
       ptr: number,
     ) => void,
+    getPianoRollDataCount: m.cwrap('midisketch_piano_roll_data_count', 'number', ['number']) as (
+      ptr: number,
+    ) => number,
+    pianoRollDataWasTruncated: m.cwrap('midisketch_piano_roll_data_was_truncated', 'number', [
+      'number',
+    ]) as (ptr: number) => number,
     reasonToString: m.cwrap('midisketch_reason_to_string', 'string', ['number']) as (
       reason: number,
     ) => string,
@@ -256,6 +304,14 @@ export async function init(options?: { wasmPath?: string }): Promise<void> {
       'string',
       'number',
     ]) as (handle: number, json: string, length: number) => number,
+    getMelodyJson: m.cwrap('midisketch_get_melody_json', 'string', ['number']) as (
+      handle: number,
+    ) => string,
+    setMelodyFromJson: m.cwrap('midisketch_set_melody_from_json', 'number', [
+      'number',
+      'string',
+      'number',
+    ]) as (handle: number, json: string, length: number) => number,
     // Production Blueprint API
     blueprintCount: m.cwrap('midisketch_blueprint_count', 'number', []) as () => number,
     blueprintName: m.cwrap('midisketch_blueprint_name', 'string', ['number']) as (
@@ -273,8 +329,17 @@ export async function init(options?: { wasmPath?: string }): Promise<void> {
     blueprintDrumsRequired: m.cwrap('midisketch_blueprint_drums_required', 'number', [
       'number',
     ]) as (id: number) => number,
+    blueprintTempoMin: m.cwrap('midisketch_blueprint_tempo_min', 'number', ['number']) as (
+      id: number,
+    ) => number,
+    blueprintTempoMax: m.cwrap('midisketch_blueprint_tempo_max', 'number', ['number']) as (
+      id: number,
+    ) => number,
     getResolvedBlueprintId: m.cwrap('midisketch_get_resolved_blueprint_id', 'number', [
       'number',
     ]) as (handle: number) => number,
+    getWarningsJson: m.cwrap('midisketch_get_warnings_json', 'string', ['number']) as (
+      handle: number,
+    ) => string,
   };
 }

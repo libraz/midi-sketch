@@ -8,11 +8,16 @@ import {
   getBlueprintName,
   getBlueprintParadigm,
   getBlueprintRiffPolicy,
+  getBlueprintTempoRange,
   RiffPolicy,
 } from './blueprint';
 import { createDefaultConfig } from './config';
 import { CompositionStyle, HookIntensity } from './constants';
 import type { SongConfig } from './types';
+
+function clampUnitInterval(value: number): number {
+  return Math.max(0, Math.min(1, value));
+}
 
 // ============================================================================
 // Types for Change Tracking
@@ -239,10 +244,11 @@ export class SongConfigBuilder {
 
   /**
    * Set form/structure pattern
-   * @param id Form ID
+   * @param id Form ID. Marks the form as explicit, preventing automatic form selection.
    */
   setForm(id: number): this {
     this.setField('formId', id, 'basic');
+    this.setField('formExplicit', true, 'basic');
     return this;
   }
 
@@ -314,16 +320,16 @@ export class SongConfigBuilder {
   /**
    * Set humanization settings
    * @param enabled Enable humanization
-   * @param timing Timing variation (0-100)
-   * @param velocity Velocity variation (0-100)
+   * @param timing Timing variation (0.0-1.0; values outside the range are clamped)
+   * @param velocity Velocity variation (0.0-1.0; values outside the range are clamped)
    */
   setHumanize(enabled: boolean, timing?: number, velocity?: number): this {
     this.setField('humanize', enabled, 'basic');
     if (timing !== undefined) {
-      this.setField('humanizeTiming', timing, 'basic');
+      this.setField('humanizeTiming', clampUnitInterval(timing), 'basic');
     }
     if (velocity !== undefined) {
-      this.setField('humanizeVelocity', velocity, 'basic');
+      this.setField('humanizeVelocity', clampUnitInterval(velocity), 'basic');
     }
     return this;
   }
@@ -441,6 +447,7 @@ export class SongConfigBuilder {
       octaveRange?: number;
       gate?: number;
       syncChord?: boolean;
+      baseVelocity?: number;
     },
   ): this {
     this.setField('arpeggioEnabled', enabled, 'arpeggio');
@@ -460,6 +467,9 @@ export class SongConfigBuilder {
       if (opts.syncChord !== undefined) {
         this.setField('arpeggioSyncChord', opts.syncChord, 'arpeggio');
       }
+      if (opts.baseVelocity !== undefined) {
+        this.setField('arpeggioBaseVelocity', opts.baseVelocity, 'arpeggio');
+      }
     }
     return this;
   }
@@ -472,6 +482,11 @@ export class SongConfigBuilder {
     repeatScope?: number;
     fixedProgression?: boolean;
     maxChordCount?: number;
+    length?: number;
+    noteCount?: number;
+    motion?: number;
+    registerHigh?: number;
+    rhythmDensity?: number;
   }): this {
     if (opts.repeatScope !== undefined) {
       this.setField('motifRepeatScope', opts.repeatScope, 'motif');
@@ -481,6 +496,21 @@ export class SongConfigBuilder {
     }
     if (opts.maxChordCount !== undefined) {
       this.setField('motifMaxChordCount', opts.maxChordCount, 'motif');
+    }
+    if (opts.length !== undefined) {
+      this.setField('motifLength', opts.length, 'motif');
+    }
+    if (opts.noteCount !== undefined) {
+      this.setField('motifNoteCount', opts.noteCount, 'motif');
+    }
+    if (opts.motion !== undefined) {
+      this.setField('motifMotion', opts.motion, 'motif');
+    }
+    if (opts.registerHigh !== undefined) {
+      this.setField('motifRegisterHigh', opts.registerHigh, 'motif');
+    }
+    if (opts.rhythmDensity !== undefined) {
+      this.setField('motifRhythmDensity', opts.rhythmDensity, 'motif');
     }
     return this;
   }
@@ -616,6 +646,64 @@ export class SongConfigBuilder {
     return this;
   }
 
+  /** Set the syllabic subdivision rate (0 = style default, 1-100 = override). */
+  setSyllabicSubdivisionRate(rate: number): this {
+    this.setField('syllabicSubRate', rate, 'vocal');
+    return this;
+  }
+
+  /** Enable or disable melodic syncopation. */
+  setSyncopation(enabled: boolean): this {
+    this.setField('enableSyncopation', enabled, 'vocal');
+    return this;
+  }
+
+  /** Set the section energy curve (0=GradualBuild through 3=SteadyState). */
+  setEnergyCurve(curve: number): this {
+    this.setField('energyCurve', curve, 'basic');
+    return this;
+  }
+
+  /** Set the optional per-song melody overrides. */
+  setMelodyOverrides(opts: {
+    maxLeap?: number;
+    syncopationProb?: number;
+    phraseLength?: number;
+    longNoteRatio?: number;
+    chorusRegisterShift?: number;
+    hookRepetition?: number;
+    useLeadingTone?: number;
+  }): this {
+    if (opts.maxLeap !== undefined) {
+      this.setField('melodyMaxLeap', opts.maxLeap, 'vocal');
+    }
+    if (opts.syncopationProb !== undefined) {
+      this.setField('melodySyncopationProb', opts.syncopationProb, 'vocal');
+    }
+    if (opts.phraseLength !== undefined) {
+      this.setField('melodyPhraseLength', opts.phraseLength, 'vocal');
+    }
+    if (opts.longNoteRatio !== undefined) {
+      this.setField('melodyLongNoteRatio', opts.longNoteRatio, 'vocal');
+    }
+    if (opts.chorusRegisterShift !== undefined) {
+      this.setField('melodyChorusRegisterShift', opts.chorusRegisterShift, 'vocal');
+    }
+    if (opts.hookRepetition !== undefined) {
+      this.setField('melodyHookRepetition', opts.hookRepetition, 'vocal');
+    }
+    if (opts.useLeadingTone !== undefined) {
+      this.setField('melodyUseLeadingTone', opts.useLeadingTone, 'vocal');
+    }
+    return this;
+  }
+
+  /** Enable or disable the guitar accompaniment track. */
+  setGuitar(enabled: boolean): this {
+    this.setField('guitarEnabled', enabled, 'trackEnable');
+    return this;
+  }
+
   /**
    * Set mood override
    * @param mood Mood preset ID (0-23)
@@ -707,25 +795,30 @@ export class SongConfigBuilder {
         }
       }
 
-      // RhythmSync prefers BPM in 160-175 range
-      if (paradigm === GenerationParadigm.RhythmSync) {
+      const tempoRange = getBlueprintTempoRange(id);
+      if (tempoRange.min > 0 && tempoRange.max > 0) {
         if (
           this.config.bpm > 0 &&
-          (this.config.bpm < 160 || this.config.bpm > 175) &&
+          (this.config.bpm < tempoRange.min || this.config.bpm > tempoRange.max) &&
           !this.explicitFields.has('bpm')
         ) {
           const oldBpm = this.config.bpm;
-          const newBpm = Math.max(160, Math.min(175, this.config.bpm));
+          const newBpm = Math.max(tempoRange.min, Math.min(tempoRange.max, this.config.bpm));
           this.config.bpm = newBpm;
           tracker.addChange(
             'bpm',
             'bpm',
             oldBpm,
             newBpm,
-            'RhythmSync blueprint prefers BPM 160-175',
+            `${getBlueprintName(id)} blueprint prefers BPM ${tempoRange.min}-${tempoRange.max}`,
           );
-        } else if (this.config.bpm > 0 && (this.config.bpm < 160 || this.config.bpm > 175)) {
-          tracker.addWarning('RhythmSync blueprint works best with BPM 160-175');
+        } else if (
+          this.config.bpm > 0 &&
+          (this.config.bpm < tempoRange.min || this.config.bpm > tempoRange.max)
+        ) {
+          tracker.addWarning(
+            `${getBlueprintName(id)} blueprint works best with BPM ${tempoRange.min}-${tempoRange.max}`,
+          );
         }
       }
 
@@ -769,7 +862,7 @@ export class SongConfigBuilder {
   /**
    * Set BPM with cascade detection
    *
-   * For RhythmSync blueprints, warns if BPM is outside 160-175 range.
+   * Warns if BPM is outside the selected blueprint's declared tempo range.
    * C++ respects explicit BPM and skips clamping.
    *
    * @param bpm BPM value (0 = use style default)
@@ -779,12 +872,18 @@ export class SongConfigBuilder {
 
     const oldBpm = this.config.bpm;
 
-    // Check if we're using a RhythmSync blueprint and warn (but don't clamp)
-    // C++ will respect explicit BPM via bpm_explicit flag
+    // C++ will respect explicit BPM via bpm_explicit flag.
     if (this.config.blueprintId !== 255 && bpm > 0) {
-      const paradigm = getBlueprintParadigm(this.config.blueprintId);
-      if (paradigm === GenerationParadigm.RhythmSync && (bpm < 160 || bpm > 175)) {
-        tracker.addWarning(`RhythmSync blueprint works best with BPM 160-175 (set: ${bpm})`);
+      const tempoRange = getBlueprintTempoRange(this.config.blueprintId);
+      if (
+        tempoRange.min > 0 &&
+        tempoRange.max > 0 &&
+        (bpm < tempoRange.min || bpm > tempoRange.max)
+      ) {
+        tracker.addWarning(
+          `${getBlueprintName(this.config.blueprintId)} blueprint works best with BPM ` +
+            `${tempoRange.min}-${tempoRange.max} (set: ${bpm})`,
+        );
       }
     }
 
@@ -811,6 +910,7 @@ export class SongConfigBuilder {
     const oldStyle = this.config.compositionStyle;
 
     this.config.compositionStyle = style;
+    this.config.compositionStyleExplicit = true;
     this.explicitFields.add('compositionStyle');
     tracker.addChange('basic', 'compositionStyle', oldStyle, style, 'User set composition style');
 

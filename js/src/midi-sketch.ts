@@ -8,12 +8,14 @@ import {
   serializeConfig,
   serializeVocalConfig,
 } from './config-fields';
-import { MidiSketchConfigError, MidiSketchGenerationError } from './constants';
+import { type MidiFormatType, MidiSketchConfigError, MidiSketchGenerationError } from './constants';
 import { type EmscriptenModule, getApi, getModule } from './internal'; // getModule still needed for getMidi/getEvents/PianoRoll
 import type {
   AccompanimentConfig,
   CollisionInfo,
+  DissonanceReport,
   EventData,
+  MelodyData,
   NoteInput,
   NoteReasonFlags,
   NoteSafetyLevel,
@@ -24,6 +26,14 @@ import type {
 
 /** sizeof(MidiSketchPianoRollInfo) - must match C++ struct layout */
 const PIANO_ROLL_INFO_SIZE = 784;
+
+// Most piano-roll slots have no collision. Reuse this immutable value instead
+// of allocating 128 identical objects for every sampled tick.
+const NO_COLLISION: Readonly<CollisionInfo> = Object.freeze({
+  trackRole: 0,
+  collidingPitch: 0,
+  intervalSemitones: 0,
+});
 
 /**
  * MidiSketch instance for MIDI generation
@@ -41,21 +51,21 @@ export class MidiSketch {
 
   /**
    * Handle a generation result code, throwing appropriate errors.
-   * For methods that accept a full config JSON (result===1 triggers validation).
+   * For config-backed calls, result===1 is resolved through the handle's last config error.
    */
-  private handleGenerationResult(result: number, json: string, operation: string): void {
+  private handleGenerationResult(result: number, operation: string): void {
     if (result === 0) {
       return;
     }
     const a = getApi();
     if (result === 1) {
-      const validationResult = a.validateConfigJson(json, json.length);
-      if (validationResult !== 0) {
-        const msg = a.configErrorString(validationResult);
-        throw new MidiSketchConfigError(validationResult, msg);
+      const configError = a.getLastConfigError(this.handle);
+      if (configError !== 0) {
+        const message = a.configErrorString(configError);
+        throw new MidiSketchConfigError(configError, message);
       }
     }
-    const errorMessage = a.configErrorString(result);
+    const errorMessage = a.errorString(result);
     throw new MidiSketchGenerationError(result, `${operation} failed: ${errorMessage}`);
   }
 
@@ -65,7 +75,7 @@ export class MidiSketch {
    */
   private throwGenerationError(result: number, operation: string): void {
     const a = getApi();
-    const errorMessage = a.configErrorString(result);
+    const errorMessage = a.errorString(result);
     throw new MidiSketchGenerationError(result, `${operation} failed: ${errorMessage}`);
   }
 
@@ -78,7 +88,7 @@ export class MidiSketch {
     const a = getApi();
     const json = serializeConfig(config);
     const result = a.generateFromJson(this.handle, json, json.length);
-    this.handleGenerationResult(result, json, 'Generation');
+    this.handleGenerationResult(result, 'Generation');
   }
 
   /**
@@ -103,6 +113,24 @@ export class MidiSketch {
   }
 
   /**
+   * Select the MIDI format used by subsequent generation calls.
+   *
+   * The WebAssembly build currently supports SMF1 only. Selecting SMF2 throws
+   * MidiSketchGenerationError instead of silently producing SMF1.
+   */
+  setMidiFormat(format: MidiFormatType): void {
+    const result = getApi().setMidiFormat(this.handle, format);
+    if (result !== 0) {
+      this.throwGenerationError(result, 'Set MIDI format');
+    }
+  }
+
+  /** Get the selected MIDI output format. */
+  getMidiFormat(): MidiFormatType {
+    return getApi().getMidiFormat(this.handle) as MidiFormatType;
+  }
+
+  /**
    * Generate only the vocal track without accompaniment.
    * Use for trial-and-error workflow: generate vocal, listen, regenerate if needed.
    * Call generateAccompaniment() when satisfied with the vocal.
@@ -113,7 +141,7 @@ export class MidiSketch {
     const a = getApi();
     const json = serializeConfig(config);
     const result = a.generateVocalFromJson(this.handle, json, json.length);
-    this.handleGenerationResult(result, json, 'Vocal generation');
+    this.handleGenerationResult(result, 'Vocal generation');
   }
 
   /**
@@ -124,6 +152,14 @@ export class MidiSketch {
    */
   regenerateVocal(configOrSeed: VocalConfig | number = 0): void {
     const a = getApi();
+
+    if (typeof configOrSeed === 'number' && configOrSeed === 0) {
+      const result = a.regenerateVocalFromJson(this.handle, '', 0);
+      if (result !== 0) {
+        this.throwGenerationError(result, 'Vocal regeneration');
+      }
+      return;
+    }
 
     const vocalConfig: VocalConfig =
       typeof configOrSeed === 'number' ? { seed: configOrSeed } : configOrSeed;
@@ -193,7 +229,50 @@ export class MidiSketch {
     const a = getApi();
     const json = serializeConfig(config);
     const result = a.generateWithVocalFromJson(this.handle, json, json.length);
-    this.handleGenerationResult(result, json, 'Generation');
+    this.handleGenerationResult(result, 'Generation');
+  }
+
+  /**
+   * Get the current vocal melody for saving or comparing candidates.
+   *
+   * The returned value can be restored later with setMelody().
+   */
+  getMelody(): MelodyData {
+    const melody = JSON.parse(getApi().getMelodyJson(this.handle)) as {
+      seed: number;
+      notes: Array<{
+        start_tick: number;
+        duration: number;
+        pitch: number;
+        velocity: number;
+      }>;
+    };
+    return {
+      seed: melody.seed,
+      notes: melody.notes.map((note) => ({
+        startTick: note.start_tick,
+        duration: note.duration,
+        pitch: note.pitch,
+        velocity: note.velocity,
+      })),
+    };
+  }
+
+  /**
+   * Restore a vocal melody previously returned by getMelody().
+   */
+  setMelody(melody: MelodyData): void {
+    const json = JSON.stringify({
+      seed: melody.seed,
+      notes: melody.notes.map((note) => ({
+        start_tick: note.startTick,
+        duration: note.duration,
+        pitch: note.pitch,
+        velocity: note.velocity,
+      })),
+    });
+    const result = getApi().setMelodyFromJson(this.handle, json, json.length);
+    this.handleGenerationResult(result, 'Set melody');
   }
 
   /**
@@ -238,18 +317,15 @@ export class MidiSketch {
     const combined = `{"config":${configJson},"notes":${JSON.stringify(notesArray)}}`;
 
     const result = a.setVocalNotesFromJson(this.handle, combined, combined.length);
-    this.handleGenerationResult(result, configJson, 'Set vocal notes');
+    this.handleGenerationResult(result, 'Set vocal notes');
   }
 
-  /**
-   * Get the generated MIDI data
-   */
-  getMidi(): Uint8Array {
+  private readMidi(getMidiData: () => number, unavailableMessage: string): Uint8Array {
     const a = getApi();
     const m = getModule();
-    const midiDataPtr = a.getMidi(this.handle);
+    const midiDataPtr = getMidiData();
     if (!midiDataPtr) {
-      throw new Error('No MIDI data available');
+      throw new Error(unavailableMessage);
     }
 
     try {
@@ -262,6 +338,24 @@ export class MidiSketch {
     } finally {
       a.freeMidi(midiDataPtr);
     }
+  }
+
+  /** Get the generated MIDI data. */
+  getMidi(): Uint8Array {
+    const a = getApi();
+    return this.readMidi(() => a.getMidi(this.handle), 'No MIDI data available');
+  }
+
+  /**
+   * Get a compact vocal-practice preview containing the vocal melody and chord-root bass.
+   * Generate a vocal or full song before calling this method.
+   */
+  getVocalPreviewMidi(): Uint8Array {
+    const a = getApi();
+    return this.readMidi(
+      () => a.getVocalPreviewMidi(this.handle),
+      'No vocal preview MIDI data available',
+    );
   }
 
   /**
@@ -281,6 +375,25 @@ export class MidiSketch {
       return JSON.parse(json) as EventData;
     } finally {
       a.freeEvents(eventDataPtr);
+    }
+  }
+
+  /**
+   * Analyze the generated song for harmonic dissonance.
+   */
+  getDissonanceReport(): DissonanceReport {
+    const a = getApi();
+    const m = getModule();
+    const reportPtr = a.getDissonance(this.handle);
+    if (!reportPtr) {
+      throw new Error('No dissonance report available');
+    }
+
+    try {
+      const jsonPtr = m.HEAPU32[reportPtr >> 2];
+      return JSON.parse(m.UTF8ToString(jsonPtr)) as DissonanceReport;
+    } finally {
+      a.freeDissonance(reportPtr);
     }
   }
 
@@ -359,9 +472,16 @@ export class MidiSketch {
     }
 
     try {
-      // MidiSketchPianoRollData: { data: ptr, count: size_t }
+      // MidiSketchPianoRollData starts with the data pointer. Count and the
+      // truncation state are read through C helpers so this remains correct
+      // on both WASM32 and native-size_t builds.
       const infoArrayPtr = m.HEAPU32[dataPtr >> 2];
-      const count = m.HEAPU32[(dataPtr + 4) >> 2];
+      const count = a.getPianoRollDataCount(dataPtr);
+      if (a.pianoRollDataWasTruncated(dataPtr) !== 0) {
+        throw new RangeError(
+          'Piano roll safety requests are limited to 100,000 samples; increase the step size.',
+        );
+      }
 
       const results: PianoRollInfo[] = [];
 
@@ -414,14 +534,17 @@ export class MidiSketch {
     }
 
     // Parse collision array (128 * 3 bytes at offset 390)
-    const collision: CollisionInfo[] = [];
+    const collision: CollisionInfo[] = Array<CollisionInfo>(128).fill(NO_COLLISION);
     for (let idx = 0; idx < 128; idx++) {
       const collisionOffset = ptr + 390 + idx * 3;
-      collision.push({
-        trackRole: view.getUint8(collisionOffset),
-        collidingPitch: view.getUint8(collisionOffset + 1),
-        intervalSemitones: view.getUint8(collisionOffset + 2),
-      });
+      const intervalSemitones = view.getUint8(collisionOffset + 2);
+      if (intervalSemitones !== 0) {
+        collision[idx] = {
+          trackRole: view.getUint8(collisionOffset),
+          collidingPitch: view.getUint8(collisionOffset + 1),
+          intervalSemitones,
+        };
+      }
     }
 
     // Parse recommended array (up to 8 bytes at offset 774)
@@ -453,6 +576,12 @@ export class MidiSketch {
   getResolvedBlueprintId(): number {
     const a = getApi();
     return a.getResolvedBlueprintId(this.handle);
+  }
+
+  /** Get non-fatal warnings produced by the latest generation operation. */
+  getWarnings(): string[] {
+    const a = getApi();
+    return JSON.parse(a.getWarningsJson(this.handle)) as string[];
   }
 
   /**

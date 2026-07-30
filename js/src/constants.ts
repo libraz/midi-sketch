@@ -82,6 +82,14 @@ export class MidiSketchGenerationError extends Error {
   }
 }
 
+/** MIDI file formats accepted by MidiSketch.setMidiFormat(). */
+export const MidiFormat = {
+  SMF1: 1,
+  SMF2: 2,
+} as const;
+
+export type MidiFormatType = (typeof MidiFormat)[keyof typeof MidiFormat];
+
 // ============================================================================
 // Vocal and Composition Style Constants
 // ============================================================================
@@ -110,6 +118,7 @@ export const ModulationTiming = {
   None: 0,
   LastChorus: 1,
   AfterBridge: 2,
+  /** Falls back to a single final-chorus modulation. */
   EachChorus: 3,
   Random: 4,
 } as const;
@@ -134,6 +143,18 @@ export const CallDensity = {
   Minimal: 1,
   Standard: 2,
   Intense: 3,
+} as const;
+
+/** Arpeggio pattern IDs accepted by SongConfig and AccompanimentConfig. */
+export const ArpeggioPattern = {
+  Up: 0,
+  Down: 1,
+  UpDown: 2,
+  Random: 3,
+  Pinwheel: 4,
+  PedalRoot: 5,
+  Alberti: 6,
+  BrokenChord: 7,
 } as const;
 
 // Arrangement growth constants

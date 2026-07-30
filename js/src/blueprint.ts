@@ -56,6 +56,10 @@ export interface BlueprintInfo {
   riffPolicy: RiffPolicyType;
   /** Selection weight (0-100) */
   weight: number;
+  /** Recommended minimum BPM */
+  tempoMin: number;
+  /** Recommended maximum BPM */
+  tempoMax: number;
 }
 
 // ============================================================================
@@ -113,6 +117,12 @@ export function getBlueprintDrumsRequired(id: number): boolean {
   return getApi().blueprintDrumsRequired(id) !== 0;
 }
 
+/** Get the recommended BPM range for a blueprint. */
+export function getBlueprintTempoRange(id: number): Readonly<{ min: number; max: number }> {
+  const a = getApi();
+  return { min: a.blueprintTempoMin(id), max: a.blueprintTempoMax(id) };
+}
+
 /**
  * Get all blueprints as an array
  */
@@ -127,6 +137,8 @@ export function getBlueprints(): BlueprintInfo[] {
       paradigm: a.blueprintParadigm(i) as GenerationParadigmType,
       riffPolicy: a.blueprintRiffPolicy(i) as RiffPolicyType,
       weight: a.blueprintWeight(i),
+      tempoMin: a.blueprintTempoMin(i),
+      tempoMax: a.blueprintTempoMax(i),
     });
   }
   return result;

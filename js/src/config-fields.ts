@@ -43,6 +43,12 @@ export const CONFIG_FIELDS: readonly ConfigField[] = [
   { js: 'vocalLow', cpp: 'vocal_low', default: 60, type: 'number' },
   { js: 'vocalHigh', cpp: 'vocal_high', default: 79, type: 'number' },
   { js: 'compositionStyle', cpp: 'composition_style', default: 0, type: 'number' },
+  {
+    js: 'compositionStyleExplicit',
+    cpp: 'composition_style_explicit',
+    default: false,
+    type: 'boolean',
+  },
   { js: 'motifRepeatScope', cpp: 'motif_repeat_scope', default: 0, type: 'number' },
   { js: 'arrangementGrowth', cpp: 'arrangement_growth', default: 0, type: 'number' },
   { js: 'humanize', cpp: 'humanize', default: false, type: 'boolean' },
@@ -90,23 +96,23 @@ export const CONFIG_FIELDS: readonly ConfigField[] = [
 
 // Arpeggio nested struct fields
 const ARPEGGIO_FIELDS: readonly ConfigField[] = [
-  { js: 'arpeggioPattern' as keyof SongConfig, cpp: 'pattern', default: 0, type: 'number' },
-  { js: 'arpeggioSpeed' as keyof SongConfig, cpp: 'speed', default: 1, type: 'number' },
+  { js: 'arpeggioPattern', cpp: 'pattern', default: 0, type: 'number' },
+  { js: 'arpeggioSpeed', cpp: 'speed', default: 1, type: 'number' },
   {
-    js: 'arpeggioOctaveRange' as keyof SongConfig,
+    js: 'arpeggioOctaveRange',
     cpp: 'octave_range',
     default: 2,
     type: 'number',
   },
-  { js: 'arpeggioGate' as keyof SongConfig, cpp: 'gate', default: 0.8, type: 'number' },
+  { js: 'arpeggioGate', cpp: 'gate', default: 0.8, type: 'number' },
   {
-    js: 'arpeggioSyncChord' as keyof SongConfig,
+    js: 'arpeggioSyncChord',
     cpp: 'sync_chord',
     default: true,
     type: 'boolean',
   },
   {
-    js: 'arpeggioBaseVelocity' as keyof SongConfig,
+    js: 'arpeggioBaseVelocity',
     cpp: 'base_velocity',
     default: 90,
     type: 'number',
@@ -115,35 +121,35 @@ const ARPEGGIO_FIELDS: readonly ConfigField[] = [
 
 // ChordExtension nested struct fields
 const CHORD_EXT_FIELDS: readonly ConfigField[] = [
-  { js: 'chordExtSus' as keyof SongConfig, cpp: 'enable_sus', default: false, type: 'boolean' },
-  { js: 'chordExt7th' as keyof SongConfig, cpp: 'enable_7th', default: false, type: 'boolean' },
-  { js: 'chordExt9th' as keyof SongConfig, cpp: 'enable_9th', default: false, type: 'boolean' },
+  { js: 'chordExtSus', cpp: 'enable_sus', default: false, type: 'boolean' },
+  { js: 'chordExt7th', cpp: 'enable_7th', default: false, type: 'boolean' },
+  { js: 'chordExt9th', cpp: 'enable_9th', default: false, type: 'boolean' },
   {
-    js: 'chordExtTritoneSub' as keyof SongConfig,
+    js: 'chordExtTritoneSub',
     cpp: 'tritone_sub',
     default: false,
     type: 'boolean',
   },
   {
-    js: 'chordExtSusProb' as keyof SongConfig,
+    js: 'chordExtSusProb',
     cpp: 'sus_probability',
     default: 0.2,
     type: 'number',
   },
   {
-    js: 'chordExt7thProb' as keyof SongConfig,
+    js: 'chordExt7thProb',
     cpp: 'seventh_probability',
     default: 0.15,
     type: 'number',
   },
   {
-    js: 'chordExt9thProb' as keyof SongConfig,
+    js: 'chordExt9thProb',
     cpp: 'ninth_probability',
     default: 0.25,
     type: 'number',
   },
   {
-    js: 'chordExtTritoneSubProb' as keyof SongConfig,
+    js: 'chordExtTritoneSubProb',
     cpp: 'tritone_sub_probability',
     default: 0.5,
     type: 'number',
@@ -153,13 +159,13 @@ const CHORD_EXT_FIELDS: readonly ConfigField[] = [
 // MotifChord nested struct fields
 const MOTIF_CHORD_FIELDS: readonly ConfigField[] = [
   {
-    js: 'motifFixedProgression' as keyof SongConfig,
+    js: 'motifFixedProgression',
     cpp: 'fixed_progression',
     default: true,
     type: 'boolean',
   },
   {
-    js: 'motifMaxChordCount' as keyof SongConfig,
+    js: 'motifMaxChordCount',
     cpp: 'max_chord_count',
     default: 4,
     type: 'number',
@@ -219,13 +225,13 @@ export const ACCOMPANIMENT_FIELDS: readonly {
   { js: 'chordExt7th', cpp: 'chord_ext_7th', default: false, type: 'boolean' },
   { js: 'chordExt9th', cpp: 'chord_ext_9th', default: false, type: 'boolean' },
   { js: 'chordExtTritoneSub', cpp: 'chord_ext_tritone_sub', default: false, type: 'boolean' },
-  { js: 'chordExtSusProb', cpp: 'chord_ext_sus_prob', default: 20, type: 'number' },
-  { js: 'chordExt7thProb', cpp: 'chord_ext_7th_prob', default: 30, type: 'number' },
-  { js: 'chordExt9thProb', cpp: 'chord_ext_9th_prob', default: 25, type: 'number' },
-  { js: 'chordExtTritoneSubProb', cpp: 'chord_ext_tritone_sub_prob', default: 50, type: 'number' },
+  { js: 'chordExtSusProb', cpp: 'chord_ext_sus_prob', default: 0.2, type: 'number' },
+  { js: 'chordExt7thProb', cpp: 'chord_ext_7th_prob', default: 0.15, type: 'number' },
+  { js: 'chordExt9thProb', cpp: 'chord_ext_9th_prob', default: 0.25, type: 'number' },
+  { js: 'chordExtTritoneSubProb', cpp: 'chord_ext_tritone_sub_prob', default: 0.5, type: 'number' },
   { js: 'humanize', cpp: 'humanize', default: false, type: 'boolean' },
-  { js: 'humanizeTiming', cpp: 'humanize_timing', default: 50, type: 'number' },
-  { js: 'humanizeVelocity', cpp: 'humanize_velocity', default: 50, type: 'number' },
+  { js: 'humanizeTiming', cpp: 'humanize_timing', default: 0.4, type: 'number' },
+  { js: 'humanizeVelocity', cpp: 'humanize_velocity', default: 0.3, type: 'number' },
   { js: 'seEnabled', cpp: 'se_enabled', default: true, type: 'boolean' },
   { js: 'callEnabled', cpp: 'call_enabled', default: false, type: 'boolean' },
   { js: 'callDensity', cpp: 'call_density', default: 2, type: 'number' },
