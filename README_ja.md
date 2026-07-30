@@ -1,8 +1,8 @@
 # midi-sketch
 
-[![CI](https://github.com/libraz/midi-sketch/actions/workflows/ci.yml/badge.svg)](https://github.com/libraz/midi-sketch/actions/workflows/ci.yml)
+[![CI](https://img.shields.io/github/actions/workflow/status/libraz/midi-sketch/ci.yml?branch=main&label=CI)](https://github.com/libraz/midi-sketch/actions)
 [![codecov](https://codecov.io/gh/libraz/midi-sketch/branch/main/graph/badge.svg)](https://codecov.io/gh/libraz/midi-sketch)
-[![Version](https://img.shields.io/badge/version-0.2.0-blue.svg)](https://github.com/libraz/midi-sketch)
+[![Version](https://img.shields.io/badge/version-0.2.1-blue.svg)](https://github.com/libraz/midi-sketch)
 [![License](https://img.shields.io/badge/license-AGPL--3.0%20%2F%20Commercial-green)](LICENSE)
 [![C++17](https://img.shields.io/badge/C%2B%2B-17-blue?logo=c%2B%2B)](https://en.cppreference.com/w/cpp/17)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20WebAssembly-lightgrey)](https://github.com/libraz/midi-sketch)
@@ -18,8 +18,8 @@
 
 ## 特徴
 
-- **8トラック出力** — Vocal / Chord / Bass / Motif / Arpeggio / Aux / Drums / SE
-- **豊富なプリセット** — 曲構成(18) × スタイル(17) × ムード(20) × コード進行(22)
+- **9トラック出力** — Vocal / Chord / Bass / Motif / Arpeggio / Aux / Guitar / Drums / SE
+- **豊富なプリセット** — 曲構成(18) × スタイル(17) × ムード(24) × コード進行(22)
 - **高度なメロディ** — フレーズベース生成、HookIntensity、MelodicComplexity、VocalStyleProfile
 - **音楽理論** — ボイスリーディング、非和声音、テンションコード、セクション別ダイナミクス
 - **作曲スタイル** — MelodyLead、BackgroundMotif、SynthDriven
@@ -41,33 +41,31 @@ source ~/emsdk/emsdk_env.sh && make wasm
 ### C++ API
 
 ```cpp
+#include "core/preset_data.h"
 #include "midisketch.h"
 
-midisketch::MidiSketch sketch;
-midisketch::GeneratorParams params;
-params.structure_id = 1;   // BuildUp (0-17)
-params.mood_id = 0;        // StraightPop (0-19)
-params.chord_id = 0;       // カノン進行 (0-21)
-params.seed = 12345;
+int main() {
+  midisketch::MidiSketch sketch;
+  auto config = midisketch::createDefaultSongConfig(0);
+  config.seed = 12345;
 
-sketch.generate(params);
-auto midi = sketch.getMidi();       // SMFバイナリ
+  sketch.generateFromConfig(config);
+  const auto midi = sketch.getMidi();  // SMFバイナリ
+  return midi.empty() ? 1 : 0;
+}
 ```
 
 ### JavaScript / TypeScript (WASM)
 
 ```typescript
-import { init, MidiSketch } from '@libraz/midi-sketch';
+import { createDefaultConfig, init, MidiSketch } from '@libraz/midi-sketch';
 
 await init();
 const sketch = new MidiSketch();
+const config = createDefaultConfig(0);
+config.seed = 12345;
 
-sketch.generate({
-  structureId: 1,
-  moodId: 0,
-  chordId: 0,
-  seed: 12345
-});
+sketch.generateFromConfig(config);
 
 const midiData = sketch.getMidi();  // Uint8Array
 sketch.destroy();
@@ -83,6 +81,7 @@ sketch.destroy();
 | Motif | 3 | Synth Lead | 背景リフ |
 | Arpeggio | 4 | Saw Lead | アルペジオ |
 | Aux | 5 | Warm Pad | サブメロディ |
+| Guitar | 6 | Clean Guitar | 和声伴奏 |
 | Drums | 9 | — | GM準拠 |
 | SE | 15 | — | マーカー |
 

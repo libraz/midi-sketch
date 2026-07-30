@@ -1,8 +1,8 @@
 # midi-sketch
 
-[![CI](https://github.com/libraz/midi-sketch/actions/workflows/ci.yml/badge.svg)](https://github.com/libraz/midi-sketch/actions/workflows/ci.yml)
+[![CI](https://img.shields.io/github/actions/workflow/status/libraz/midi-sketch/ci.yml?branch=main&label=CI)](https://github.com/libraz/midi-sketch/actions)
 [![codecov](https://codecov.io/gh/libraz/midi-sketch/branch/main/graph/badge.svg)](https://codecov.io/gh/libraz/midi-sketch)
-[![Version](https://img.shields.io/badge/version-0.2.0-blue.svg)](https://github.com/libraz/midi-sketch)
+[![Version](https://img.shields.io/badge/version-0.2.1-blue.svg)](https://github.com/libraz/midi-sketch)
 [![License](https://img.shields.io/badge/license-AGPL--3.0%20%2F%20Commercial-green)](LICENSE)
 [![C++17](https://img.shields.io/badge/C%2B%2B-17-blue?logo=c%2B%2B)](https://en.cppreference.com/w/cpp/17)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20WebAssembly-lightgrey)](https://github.com/libraz/midi-sketch)
@@ -17,8 +17,8 @@ A C++17 library for auto-generating pop music MIDI sketches. Designed for WebAss
 
 ## Features
 
-- **8 Track Output**: Vocal, Chord, Bass, Motif, Arpeggio, Aux, Drums, SE
-- **Rich Presets**: Structure (18) × StylePreset (17) × Mood (20) × Chord Progression (22)
+- **9 Track Output**: Vocal, Chord, Bass, Motif, Arpeggio, Aux, Guitar, Drums, SE
+- **Rich Presets**: Structure (18) × StylePreset (17) × Mood (24) × Chord Progression (22)
 - **Advanced Melody**: Phrase-based generation, HookIntensity, MelodicComplexity, VocalStyleProfile
 - **Music Theory**: Voice leading, non-chord tones, chord extensions, dynamic velocity
 - **Composition Styles**: MelodyLead, BackgroundMotif, SynthDriven
@@ -40,33 +40,31 @@ source ~/emsdk/emsdk_env.sh && make wasm
 ### C++ API
 
 ```cpp
+#include "core/preset_data.h"
 #include "midisketch.h"
 
-midisketch::MidiSketch sketch;
-midisketch::GeneratorParams params;
-params.structure_id = 1;   // BuildUp (0-17)
-params.mood_id = 0;        // StraightPop (0-19)
-params.chord_id = 0;       // Canon progression (0-21)
-params.seed = 12345;
+int main() {
+  midisketch::MidiSketch sketch;
+  auto config = midisketch::createDefaultSongConfig(0);
+  config.seed = 12345;
 
-sketch.generate(params);
-auto midi = sketch.getMidi();       // SMF binary
+  sketch.generateFromConfig(config);
+  const auto midi = sketch.getMidi();  // SMF binary
+  return midi.empty() ? 1 : 0;
+}
 ```
 
 ### JavaScript / TypeScript (WASM)
 
 ```typescript
-import { init, MidiSketch } from '@libraz/midi-sketch';
+import { createDefaultConfig, init, MidiSketch } from '@libraz/midi-sketch';
 
 await init();
 const sketch = new MidiSketch();
+const config = createDefaultConfig(0);
+config.seed = 12345;
 
-sketch.generate({
-  structureId: 1,
-  moodId: 0,
-  chordId: 0,
-  seed: 12345
-});
+sketch.generateFromConfig(config);
 
 const midiData = sketch.getMidi();  // Uint8Array
 sketch.destroy();
@@ -82,6 +80,7 @@ sketch.destroy();
 | Motif | 3 | Synth Lead | Background |
 | Arpeggio | 4 | Saw Lead | Arpeggio |
 | Aux | 5 | Warm Pad | Sub-melody |
+| Guitar | 6 | Clean Guitar | Harmonic accompaniment |
 | Drums | 9 | - | GM Drums |
 | SE | 15 | - | Markers |
 
