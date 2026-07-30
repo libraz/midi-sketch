@@ -9,6 +9,7 @@
 #include "core/pitch_utils.h"
 #include "core/preset_data.h"
 #include "core/timing_constants.h"
+#include "midi/byte_order.h"
 #include "midi/track_config.h"
 #include "track/generators/arpeggio.h"
 
@@ -18,6 +19,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <map>
 
 namespace midisketch {
 
@@ -60,23 +62,11 @@ void MidiWriter::writeHeader(uint16_t num_tracks, uint16_t division) {
   data_.push_back('h');
   data_.push_back('d');
 
-  // Header length = 6
-  data_.push_back(0);
-  data_.push_back(0);
-  data_.push_back(0);
-  data_.push_back(6);
-
-  // Format = 1
-  data_.push_back(0);
-  data_.push_back(1);
-
-  // Number of tracks
-  data_.push_back((num_tracks >> 8) & 0xFF);
-  data_.push_back(num_tracks & 0xFF);
-
-  // Division (ticks per quarter note)
-  data_.push_back((division >> 8) & 0xFF);
-  data_.push_back(division & 0xFF);
+  // Header length = 6, format = 1, number of tracks, and division.
+  writeUint32BE(data_, 6);
+  writeUint16BE(data_, 1);
+  writeUint16BE(data_, num_tracks);
+  writeUint16BE(data_, division);
 }
 
 void MidiWriter::writeTrack(const MidiTrack& track, const std::string& name, uint8_t channel,
@@ -140,13 +130,38 @@ void MidiWriter::writeTrack(const MidiTrack& track, const std::string& name, uin
   events.reserve(track.notes().size() * 2 + track.ccEvents().size() +
                  track.pitchBendEvents().size());
 
+  struct OutputNote {
+    Tick start;
+    Tick end;
+    uint8_t pitch;
+    uint8_t velocity;
+  };
+  std::map<uint8_t, std::vector<OutputNote>> notes_by_pitch;
   for (const auto& note : track.notes()) {
     uint8_t pitch = note.note;
     if (channel != 9) {  // Not drums
       pitch = transposeAndModulate(pitch, key, note.start_tick, mod_tick, mod_amount);
     }
-    events.push_back({note.start_tick, 0x90, pitch, note.velocity});
-    events.push_back({note.start_tick + note.duration, 0x80, pitch, 0});
+    notes_by_pitch[pitch].push_back(
+        {note.start_tick, note.start_tick + note.duration, pitch, note.velocity});
+  }
+  for (auto& [pitch, notes] : notes_by_pitch) {
+    std::stable_sort(notes.begin(), notes.end(),
+                     [](const OutputNote& a, const OutputNote& b) { return a.start < b.start; });
+    std::vector<OutputNote> normalized;
+    normalized.reserve(notes.size());
+    for (const auto& note : notes) {
+      if (!normalized.empty() && note.start < normalized.back().end) {
+        normalized.back().end = std::max(normalized.back().end, note.end);
+        normalized.back().velocity = std::max(normalized.back().velocity, note.velocity);
+      } else {
+        normalized.push_back(note);
+      }
+    }
+    for (const auto& note : normalized) {
+      events.push_back({note.start, 0x90, pitch, note.velocity});
+      events.push_back({note.end, 0x80, pitch, 0});
+    }
   }
 
   // Add CC events to the unified stream
@@ -225,11 +240,7 @@ void MidiWriter::writeTrack(const MidiTrack& track, const std::string& name, uin
   data_.push_back('r');
   data_.push_back('k');
 
-  uint32_t track_length = static_cast<uint32_t>(track_data.size());
-  data_.push_back((track_length >> 24) & 0xFF);
-  data_.push_back((track_length >> 16) & 0xFF);
-  data_.push_back((track_length >> 8) & 0xFF);
-  data_.push_back(track_length & 0xFF);
+  writeUint32BE(data_, static_cast<uint32_t>(track_data.size()));
 
   data_.insert(data_.end(), track_data.begin(), track_data.end());
 }
@@ -283,29 +294,38 @@ void MidiWriter::writeMarkerTrack(const MidiTrack& track, uint16_t bpm,
   track_data.push_back(0x18);
   track_data.push_back(0x08);
 
-  // Merge marker events and tempo events by tick, then write in order
-  // Build a unified event list: each entry has (tick, type) for ordering
+  // Merge call notes, marker events, and tempo events by tick, then write in order.
   struct TimedEvent {
+    enum class Kind { Marker, Tempo, Note };
     Tick tick;
-    bool is_tempo;  // true = tempo event, false = marker event
-    size_t index;   // index into markers or tempo_map
+    Kind kind;
+    size_t index;
   };
   std::vector<TimedEvent> events;
-  events.reserve(track.textEvents().size() + tempo_map.size());
+  const auto note_events = track.toMidiEvents(SE_CH);
+  events.reserve(track.textEvents().size() + tempo_map.size() + note_events.size());
 
   for (size_t i = 0; i < track.textEvents().size(); ++i) {
-    events.push_back({track.textEvents()[i].time, false, i});
+    events.push_back({track.textEvents()[i].time, TimedEvent::Kind::Marker, i});
   }
   for (size_t i = 0; i < tempo_map.size(); ++i) {
-    events.push_back({tempo_map[i].tick, true, i});
+    events.push_back({tempo_map[i].tick, TimedEvent::Kind::Tempo, i});
+  }
+  for (size_t i = 0; i < note_events.size(); ++i) {
+    events.push_back({note_events[i].tick, TimedEvent::Kind::Note, i});
   }
 
-  // Sort by tick, with markers before tempo events at the same tick.
-  // stable_sort keeps the original order for same-tick same-kind events so the
-  // byte-level output is deterministic across platforms.
-  std::stable_sort(events.begin(), events.end(), [](const TimedEvent& a, const TimedEvent& b) {
+  // Stable ordering keeps byte output deterministic. At one tick, write
+  // metadata first, then note-off, then note-on so equal-pitch calls close
+  // before their replacement starts.
+  std::stable_sort(events.begin(), events.end(), [&](const TimedEvent& a, const TimedEvent& b) {
     if (a.tick != b.tick) return a.tick < b.tick;
-    return !a.is_tempo && b.is_tempo;  // markers first at same tick
+    const auto order = [&](const TimedEvent& event) {
+      if (event.kind == TimedEvent::Kind::Marker) return 0;
+      if (event.kind == TimedEvent::Kind::Tempo) return 1;
+      return (note_events[event.index].status & 0xF0) == 0x80 ? 2 : 3;
+    };
+    return order(a) < order(b);
   });
 
   Tick prev_time = 0;
@@ -313,7 +333,7 @@ void MidiWriter::writeMarkerTrack(const MidiTrack& track, uint16_t bpm,
     Tick delta = evt.tick - prev_time;
     prev_time = evt.tick;
 
-    if (evt.is_tempo) {
+    if (evt.kind == TimedEvent::Kind::Tempo) {
       uint16_t evt_bpm = tempo_map[evt.index].bpm;
       if (evt_bpm == 0) evt_bpm = 1;
       uint32_t us_per_beat = kMicrosecondsPerMinute / evt_bpm;
@@ -324,7 +344,7 @@ void MidiWriter::writeMarkerTrack(const MidiTrack& track, uint16_t bpm,
       track_data.push_back((us_per_beat >> 16) & 0xFF);
       track_data.push_back((us_per_beat >> 8) & 0xFF);
       track_data.push_back(us_per_beat & 0xFF);
-    } else {
+    } else if (evt.kind == TimedEvent::Kind::Marker) {
       const auto& marker = track.textEvents()[evt.index];
       std::string marker_text = marker.text.size() > kMaxMetaTextLength
                                     ? marker.text.substr(0, kMaxMetaTextLength)
@@ -336,6 +356,12 @@ void MidiWriter::writeMarkerTrack(const MidiTrack& track, uint16_t bpm,
       for (char c : marker_text) {
         track_data.push_back(static_cast<uint8_t>(c));
       }
+    } else {
+      const auto& note = note_events[evt.index];
+      writeVariableLength(track_data, delta);
+      track_data.push_back(note.status);
+      track_data.push_back(note.data1);
+      track_data.push_back((note.status & 0xF0) == 0x80 ? 0 : note.data2);
     }
   }
 
@@ -351,11 +377,7 @@ void MidiWriter::writeMarkerTrack(const MidiTrack& track, uint16_t bpm,
   data_.push_back('r');
   data_.push_back('k');
 
-  uint32_t track_length = static_cast<uint32_t>(track_data.size());
-  data_.push_back((track_length >> 24) & 0xFF);
-  data_.push_back((track_length >> 16) & 0xFF);
-  data_.push_back((track_length >> 8) & 0xFF);
-  data_.push_back(track_length & 0xFF);
+  writeUint32BE(data_, static_cast<uint32_t>(track_data.size()));
 
   data_.insert(data_.end(), track_data.begin(), track_data.end());
 }
@@ -381,10 +403,7 @@ void MidiWriter::buildSMF2(const Song& song, Key key, Mood mood, const std::stri
   if (!midi2_writer_) {
     midi2_writer_ = std::make_unique<Midi2Writer>();
   }
-  // TODO: Pass mood to buildContainer when MIDI 2.0 supports instrument mapping
-  (void)mood;
-  (void)blueprint_id;
-  midi2_writer_->buildContainer(song, key, metadata);
+  midi2_writer_->buildContainer(song, key, metadata, mood, blueprint_id);
   data_ = midi2_writer_->toBytes();
 }
 #endif
@@ -397,8 +416,7 @@ void MidiWriter::buildSMF1(const Song& song, Key key, Mood mood, const std::stri
   uint16_t bpm = song.bpm();
   if (bpm == 0) bpm = 120;  // Default BPM for safety
 
-  // Get mood-specific program numbers
-  const MoodProgramSet& progs = getMoodPrograms(mood);
+  const TrackProgramSet progs = resolveTrackPrograms(mood, blueprint_id);
 
   // Count non-empty tracks (SE track always included as marker track)
   uint16_t num_tracks = song.countNonEmptyTracks() + 1;  // +1 for SE marker track
@@ -428,19 +446,16 @@ void MidiWriter::buildSMF1(const Song& song, Key key, Mood mood, const std::stri
   }
 
   if (!song.arpeggio().empty()) {
-    uint8_t arp_program = getArpeggioStyleForMood(mood).gm_program;
-    writeTrack(song.arpeggio(), "Arpeggio", ARPEGGIO_CH, arp_program, bpm, key, false, mod_tick,
+    writeTrack(song.arpeggio(), "Arpeggio", ARPEGGIO_CH, progs.arpeggio, bpm, key, false, mod_tick,
                mod_amount);
   }
 
   if (!song.aux().empty()) {
-    uint8_t aux_prog = getEffectiveAuxProgram(mood, blueprint_id);
-    writeTrack(song.aux(), "Aux", AUX_CH, aux_prog, bpm, key, false, mod_tick, mod_amount);
+    writeTrack(song.aux(), "Aux", AUX_CH, progs.aux, bpm, key, false, mod_tick, mod_amount);
   }
 
   if (!song.guitar().empty()) {
-    uint8_t guitar_prog = progs.guitar != 0xFF ? progs.guitar : GUITAR_PROG;
-    writeTrack(song.guitar(), "Guitar", GUITAR_CH, guitar_prog, bpm, key, false, mod_tick,
+    writeTrack(song.guitar(), "Guitar", GUITAR_CH, progs.guitar, bpm, key, false, mod_tick,
                mod_amount);
   }
 

@@ -6,6 +6,7 @@
 #include "midi/midi_reader.h"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cstring>
 #include <fstream>
@@ -114,8 +115,14 @@ bool MidiReader::read(const std::vector<uint8_t>& data) {
   }
 
   // Parse tracks
-  size_t offset = 14;  // Skip header
-  while (offset < data.size() - 8) {
+  const size_t header_size = readUint32BE(data.data() + 4);
+  size_t offset = 8 + header_size;
+  for (uint16_t track_index = 0; track_index < midi_.num_tracks; ++track_index) {
+    if (offset + 8 > data.size()) {
+      error_ = "Truncated MTrk chunk header";
+      return false;
+    }
+
     // Check for MTrk chunk
     if (std::memcmp(data.data() + offset, "MTrk", 4) != 0) {
       error_ = "Expected MTrk chunk at offset " + std::to_string(offset);
@@ -137,13 +144,23 @@ bool MidiReader::read(const std::vector<uint8_t>& data) {
     offset += track_size;
   }
 
+  if (offset != data.size()) {
+    error_ = "Unexpected trailing data after MIDI tracks";
+    return false;
+  }
+
+  std::stable_sort(midi_.tempo_map.begin(), midi_.tempo_map.end(),
+                   [](const TempoEvent& a, const TempoEvent& b) { return a.tick < b.tick; });
+  if (!midi_.tempo_map.empty()) {
+    midi_.bpm = midi_.tempo_map.front().bpm;
+  }
+
   return true;
 }
 
-uint32_t MidiReader::readVariableLength(const uint8_t* data, size_t& offset, size_t max_size) {
-  uint32_t result = 0;
-  midisketch::readVariableLength(data, offset, max_size, result);
-  return result;
+bool MidiReader::readVariableLength(const uint8_t* data, size_t& offset, size_t max_size,
+                                    uint32_t& value) {
+  return midisketch::readVariableLength(data, offset, max_size, value);
 }
 
 bool MidiReader::parseHeader(const uint8_t* data, size_t size) {
@@ -159,7 +176,7 @@ bool MidiReader::parseHeader(const uint8_t* data, size_t size) {
   }
 
   uint32_t header_size = readUint32BE(data + 4);
-  if (header_size < 6) {
+  if (header_size < 6 || header_size > size - 8) {
     error_ = "Invalid header chunk size";
     return false;
   }
@@ -167,30 +184,58 @@ bool MidiReader::parseHeader(const uint8_t* data, size_t size) {
   midi_.format = readUint16BE(data + 8);
   midi_.num_tracks = readUint16BE(data + 10);
   midi_.division = readUint16BE(data + 12);
+  if (midi_.division == 0) {
+    error_ = "Invalid MIDI division: ticks per quarter note must be non-zero";
+    return false;
+  }
+  if ((midi_.division & 0x8000) != 0) {
+    error_ = "SMPTE time division is not supported";
+    return false;
+  }
 
   return true;
 }
 
 bool MidiReader::parseTrack(const uint8_t* data, size_t size) {
   ParsedTrack track;
+  std::array<std::vector<NoteEvent>, 16> channel_notes;
+  std::array<uint8_t, 16> channel_programs{};
   size_t offset = 0;
   uint32_t current_tick = 0;
   uint8_t running_status = 0;
 
   // Map of note-on events: key = (channel << 8) | pitch, value = (tick, velocity)
   std::map<uint16_t, std::pair<Tick, uint8_t>> active_notes;
+  const auto append_note = [&](NoteEvent note, uint8_t channel) {
+    if (midi_.format == 0) {
+      channel_notes[channel].push_back(note);
+    } else {
+      track.notes.push_back(note);
+    }
+  };
 
   while (offset < size) {
     // Read delta time
-    uint32_t delta = readVariableLength(data, offset, size);
+    uint32_t delta = 0;
+    if (!readVariableLength(data, offset, size, delta)) {
+      error_ = "Invalid or truncated variable-length delta time";
+      return false;
+    }
     current_tick += delta;
 
-    if (offset >= size) break;
+    if (offset >= size) {
+      error_ = "Truncated MIDI event after delta time";
+      return false;
+    }
 
     uint8_t status = data[offset];
 
     // Handle running status
     if (status < 0x80) {
+      if (running_status == 0) {
+        error_ = "Running status used before a channel status byte";
+        return false;
+      }
       status = running_status;
     } else {
       offset++;
@@ -204,7 +249,10 @@ bool MidiReader::parseTrack(const uint8_t* data, size_t size) {
 
     switch (type) {
       case 0x80: {  // Note Off
-        if (offset + 1 >= size) break;
+        if (size - offset < 2) {
+          error_ = "Truncated note-off event";
+          return false;
+        }
         uint8_t pitch = data[offset++];
         offset++;  // velocity (ignored)
 
@@ -216,7 +264,7 @@ bool MidiReader::parseTrack(const uint8_t* data, size_t size) {
           note.velocity = it->second.second;
           note.start_tick = it->second.first;
           note.duration = current_tick - note.start_tick;
-          track.notes.push_back(note);
+          append_note(note, channel);
           active_notes.erase(it);
         }
         track.channel = channel;
@@ -224,7 +272,10 @@ bool MidiReader::parseTrack(const uint8_t* data, size_t size) {
       }
 
       case 0x90: {  // Note On
-        if (offset + 1 >= size) break;
+        if (size - offset < 2) {
+          error_ = "Truncated note-on event";
+          return false;
+        }
         uint8_t pitch = data[offset++];
         uint8_t velocity = data[offset++];
 
@@ -239,7 +290,7 @@ bool MidiReader::parseTrack(const uint8_t* data, size_t size) {
             note.velocity = it->second.second;
             note.start_tick = it->second.first;
             note.duration = current_tick - note.start_tick;
-            track.notes.push_back(note);
+            append_note(note, channel);
             active_notes.erase(it);
           }
         } else {
@@ -251,7 +302,7 @@ bool MidiReader::parseTrack(const uint8_t* data, size_t size) {
             note.velocity = it->second.second;
             note.start_tick = it->second.first;
             note.duration = current_tick - note.start_tick;
-            track.notes.push_back(note);
+            append_note(note, channel);
           }
           active_notes[key] = {current_tick, velocity};
         }
@@ -260,52 +311,84 @@ bool MidiReader::parseTrack(const uint8_t* data, size_t size) {
       }
 
       case 0xA0:  // Polyphonic Key Pressure
+        if (size - offset < 2) {
+          error_ = "Truncated polyphonic key pressure event";
+          return false;
+        }
         offset += 2;
         break;
 
       case 0xB0:  // Control Change
+        if (size - offset < 2) {
+          error_ = "Truncated control change event";
+          return false;
+        }
         offset += 2;
         break;
 
       case 0xC0: {  // Program Change
-        if (offset >= size) break;
+        if (offset >= size) {
+          error_ = "Truncated program change event";
+          return false;
+        }
         track.program = data[offset++];
+        channel_programs[channel] = track.program;
         track.channel = channel;
         break;
       }
 
       case 0xD0:  // Channel Pressure
+        if (offset >= size) {
+          error_ = "Truncated channel pressure event";
+          return false;
+        }
         offset += 1;
         break;
 
       case 0xE0:  // Pitch Bend
+        if (size - offset < 2) {
+          error_ = "Truncated pitch bend event";
+          return false;
+        }
         offset += 2;
         break;
 
       case 0xF0: {  // System messages
         if (status == 0xFF) {
           // Meta event
-          if (offset + 1 >= size) break;
+          if (offset >= size) {
+            error_ = "Truncated meta event type";
+            return false;
+          }
           uint8_t meta_type = data[offset++];
-          uint32_t meta_len = readVariableLength(data, offset, size);
+          uint32_t meta_len = 0;
+          if (!readVariableLength(data, offset, size, meta_len)) {
+            error_ = "Invalid or truncated meta event length";
+            return false;
+          }
+          if (meta_len > size - offset) {
+            error_ = "Meta event data exceeds track size";
+            return false;
+          }
 
-          if (meta_type == 0x01 && meta_len > 0 && offset + meta_len <= size) {
+          if (meta_type == 0x01 && meta_len > 0) {
             // Text Event - check for MIDISKETCH metadata
             std::string text(reinterpret_cast<const char*>(data + offset), meta_len);
             const std::string prefix = "MIDISKETCH:";
             if (text.compare(0, prefix.size(), prefix) == 0) {
               midi_.metadata = text.substr(prefix.size());
             }
-          } else if (meta_type == 0x03 && meta_len > 0 && offset + meta_len <= size) {
+          } else if (meta_type == 0x03 && meta_len > 0) {
             // Track name
             track.name = std::string(reinterpret_cast<const char*>(data + offset), meta_len);
-          } else if (meta_type == 0x51 && meta_len == 3 && offset + 3 <= size) {
+          } else if (meta_type == 0x51 && meta_len == 3) {
             // Tempo
             uint32_t microseconds = (static_cast<uint32_t>(data[offset]) << 16) |
                                     (static_cast<uint32_t>(data[offset + 1]) << 8) |
                                     data[offset + 2];
             if (microseconds > 0) {
-              midi_.bpm = static_cast<uint16_t>(kMicrosecondsPerMinute / microseconds);
+              const uint16_t bpm = static_cast<uint16_t>(kMicrosecondsPerMinute / microseconds);
+              midi_.tempo_map.push_back({current_tick, bpm});
             }
           } else if (meta_type == 0x2F) {
             // End of track
@@ -315,8 +398,19 @@ bool MidiReader::parseTrack(const uint8_t* data, size_t size) {
           offset += meta_len;
         } else if (status == 0xF0 || status == 0xF7) {
           // SysEx
-          uint32_t sysex_len = readVariableLength(data, offset, size);
+          uint32_t sysex_len = 0;
+          if (!readVariableLength(data, offset, size, sysex_len)) {
+            error_ = "Invalid or truncated SysEx length";
+            return false;
+          }
+          if (sysex_len > size - offset) {
+            error_ = "SysEx data exceeds track size";
+            return false;
+          }
           offset += sysex_len;
+        } else {
+          error_ = "Unsupported system MIDI event";
+          return false;
         }
         break;
       }
@@ -333,12 +427,33 @@ bool MidiReader::parseTrack(const uint8_t* data, size_t size) {
     note.velocity = value.second;
     note.start_tick = value.first;
     note.duration = current_tick - note.start_tick;
-    track.notes.push_back(note);
+    append_note(note, static_cast<uint8_t>(key >> 8));
+  }
+
+  if (midi_.format == 0) {
+    // Format-0 stores every MIDI channel in one physical MTrk chunk. Expose
+    // logical per-channel tracks so analysis can compare simultaneous notes
+    // and exclude channel-10 percussion without discarding melodic channels.
+    for (size_t channel_index = 0; channel_index < channel_notes.size(); ++channel_index) {
+      const auto channel = static_cast<uint8_t>(channel_index);
+      if (channel_notes[channel].empty()) continue;
+      ParsedTrack channel_track;
+      channel_track.channel = channel;
+      channel_track.program = channel_programs[channel];
+      channel_track.name =
+          channel == 9 ? "Drums"
+          : track.name.empty()
+              ? "Channel " + std::to_string(static_cast<unsigned>(channel) + 1)
+              : track.name + " Ch " + std::to_string(static_cast<unsigned>(channel) + 1);
+      channel_track.notes = std::move(channel_notes[channel]);
+      NoteTimeline::sortByStartTick(channel_track.notes);
+      midi_.tracks.push_back(std::move(channel_track));
+    }
+    return true;
   }
 
   // Sort notes by start time
   NoteTimeline::sortByStartTick(track.notes);
-
   midi_.tracks.push_back(std::move(track));
   return true;
 }

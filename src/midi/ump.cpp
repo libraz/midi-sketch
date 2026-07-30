@@ -6,6 +6,7 @@
 #include "midi/ump.h"
 
 #include <algorithm>
+#include <limits>
 #include <string>
 
 namespace midisketch {
@@ -35,6 +36,14 @@ uint32_t makeControlChange(uint8_t group, uint8_t channel, uint8_t cc, uint8_t v
          (0xB << 20) | ((channel & 0x0F) << 16) | ((cc & 0x7F) << 8) | (value & 0x7F);
 }
 
+uint32_t makePitchBend(uint8_t group, uint8_t channel, uint16_t value) {
+  value = std::min<uint16_t>(value, 0x3FFF);
+  const uint8_t lsb = value & 0x7F;
+  const uint8_t msb = (value >> 7) & 0x7F;
+  return (static_cast<uint32_t>(MessageType::Midi1ChannelVoice) << 28) | ((group & 0x0F) << 24) |
+         (0xE << 20) | ((channel & 0x0F) << 16) | (static_cast<uint32_t>(lsb) << 8) | msb;
+}
+
 uint32_t makeDeltaClockstamp(uint8_t group, uint16_t ticks) {
   // [MT=0:4][Group:4][Status=4:4][0:4][Ticks:16]
   // Status 0x4 = Delta Clockstamp (JR Clock)
@@ -61,22 +70,11 @@ void writeDeltaClockstamp(std::vector<uint8_t>& buf, uint8_t group, uint32_t tic
 }
 
 void writeDCTPQ(std::vector<uint8_t>& buf, uint16_t ticksPerQuarter) {
-  // UMP Stream Message (MT=0xF), 128-bit
-  // Word 0: [MT=F:4][Format=0:2][Status=0:10][Form=0:2][0:14]
-  // Word 1: [TicksPerQuarter:16][0:16]
-  // Word 2: [0:32]
-  // Word 3: [0:32]
-
-  // Format 0 = complete message, Status 0x00 = DCTPQ
-  uint32_t word0 = (0xF << 28) | (0x0 << 26) | (0x00 << 16);
-  uint32_t word1 = (static_cast<uint32_t>(ticksPerQuarter) << 16);
-  uint32_t word2 = 0;
-  uint32_t word3 = 0;
-
-  writeUint32BE(buf, word0);
-  writeUint32BE(buf, word1);
-  writeUint32BE(buf, word2);
-  writeUint32BE(buf, word3);
+  // DCTPQ is a 32-bit Utility message, status 0x3. It is not an UMP Stream
+  // message; the low 16 bits carry the ticks-per-quarter value.
+  const uint32_t word = (static_cast<uint32_t>(MessageType::Utility) << 28) | (0x3u << 20) |
+                        static_cast<uint32_t>(ticksPerQuarter);
+  writeUint32BE(buf, word);
 }
 
 void writeStartOfClip(std::vector<uint8_t>& buf) {
@@ -110,7 +108,7 @@ void writeEndOfClip(std::vector<uint8_t>& buf) {
 void writeTempo(std::vector<uint8_t>& buf, uint8_t group, uint32_t microsPerQuarter) {
   // Flex Data Message (MT=0xD), 128-bit
   // Word 0: [MT=D:4][Group:4][Form=0:2][Addr=0:2][BankSelect=0:8][Status=0x00:8]
-  // Word 1: [TempoMicroseconds:32] (microseconds per quarter note)
+  // Word 1: number of 10-nanosecond units per quarter note.
   // Word 2-3: [0:32] each
 
   // Status 0x00 = Set Tempo, Bank 0, Address 0 (channel independent)
@@ -118,7 +116,9 @@ void writeTempo(std::vector<uint8_t>& buf, uint8_t group, uint32_t microsPerQuar
       (0xD << 28) | ((group & 0x0F) << 24) | (0x0 << 22) | (0x0 << 20) | (0x00 << 8) | 0x00;
 
   writeUint32BE(buf, word0);
-  writeUint32BE(buf, microsPerQuarter);
+  const uint64_t ten_ns_units = static_cast<uint64_t>(microsPerQuarter) * 100u;
+  writeUint32BE(buf, static_cast<uint32_t>(
+                         std::min<uint64_t>(ten_ns_units, std::numeric_limits<uint32_t>::max())));
   writeUint32BE(buf, 0);
   writeUint32BE(buf, 0);
 }
@@ -165,25 +165,17 @@ void writeMetadataText(std::vector<uint8_t>& buf, uint8_t group, const std::stri
   // Each packet can hold up to 13 bytes of data (14 bytes - 1 for status)
 
   const uint8_t META_TEXT_TYPE = 0x01;  // Text event
-  size_t textLen = text.size();
+  std::vector<uint8_t> payload = {0x00, 0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0xFF, META_TEXT_TYPE};
+  payload.insert(payload.end(), text.begin(), text.end());
+  const size_t textLen = payload.size();
   size_t offset = 0;
 
-  // First packet includes header bytes
-  // Word 0: [MT=5:4][Group:4][Status:4][NumBytes:4][StreamID:8][ManufID:8]
-  // Word 1: [ManufID2:8][DevID:8][SubID1:8][SubID2:8]
-  // Word 2: [0xFF:8][0xFF:8][0xFF:8][MetaType:8]
-  // Word 3: [Data bytes...]
-
   while (offset < textLen || offset == 0) {
-    // Calculate how many data bytes fit in this packet
-    size_t headerBytes = (offset == 0) ? 10 : 0;  // First packet has header
-    size_t maxDataBytes = 14 - headerBytes;
-    size_t dataBytes = std::min(maxDataBytes, textLen - offset);
-    size_t totalBytes = headerBytes + dataBytes;
+    const size_t dataBytes = std::min<size_t>(13, textLen - offset);
 
     // Status: 0x0 = start, 0x1 = continue, 0x2 = end, 0x3 = complete
     uint8_t status;
-    if (textLen <= maxDataBytes && offset == 0) {
+    if (textLen <= 13 && offset == 0) {
       status = 0x0;  // Complete in single message (start and end)
     } else if (offset == 0) {
       status = 0x1;  // Start
@@ -194,33 +186,16 @@ void writeMetadataText(std::vector<uint8_t>& buf, uint8_t group, const std::stri
     }
 
     uint32_t word0 = (0x5 << 28) | ((group & 0x0F) << 24) | (status << 20) |
-                     ((totalBytes & 0x0F) << 16) | (0x00 << 8) | 0x00;
-
+                     ((dataBytes & 0x0F) << 16);  // stream ID = 0
+    if (dataBytes > 0) word0 |= payload[offset++];
     writeUint32BE(buf, word0);
 
-    if (offset == 0) {
-      // First packet - write header
-      uint32_t word1 = (0x00 << 24) | (0x00 << 16) | (0x00 << 8) | 0x00;
-      uint32_t word2 = (0xFF << 24) | (0xFF << 16) | (0xFF << 8) | META_TEXT_TYPE;
-      writeUint32BE(buf, word1);
-      writeUint32BE(buf, word2);
-
-      // Word 3: up to 4 data bytes
-      uint32_t word3 = 0;
-      for (size_t i = 0; i < std::min(dataBytes, size_t(4)); i++) {
-        word3 |= (static_cast<uint32_t>(static_cast<uint8_t>(text[offset + i])) << (24 - i * 8));
+    for (int word_idx = 0; word_idx < 3; ++word_idx) {
+      uint32_t word = 0;
+      for (int byte_idx = 0; byte_idx < 4 && offset < textLen; ++byte_idx) {
+        word |= static_cast<uint32_t>(payload[offset++]) << (24 - byte_idx * 8);
       }
-      writeUint32BE(buf, word3);
-      offset += std::min(dataBytes, size_t(4));
-    } else {
-      // Continuation packets - up to 12 bytes of data across 3 words
-      for (int w = 0; w < 3; w++) {
-        uint32_t word = 0;
-        for (int b = 0; b < 4 && offset < textLen; b++) {
-          word |= (static_cast<uint32_t>(static_cast<uint8_t>(text[offset++])) << (24 - b * 8));
-        }
-        writeUint32BE(buf, word);
-      }
+      writeUint32BE(buf, word);
     }
 
     if (offset >= textLen) break;

@@ -30,7 +30,8 @@ class Midi2Writer {
 
   // Build a multi-track container file from Song
   // Output format: ktmidi container (AAAAAAAAEEEEEEEE header)
-  void buildContainer(const Song& song, Key key, const std::string& metadata = "");
+  void buildContainer(const Song& song, Key key, const std::string& metadata = "",
+                      Mood mood = Mood::StraightPop, uint8_t blueprint_id = 0);
 
   // Returns the MIDI 2.0 data as a byte vector
   std::vector<uint8_t> toBytes() const;

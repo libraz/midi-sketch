@@ -6,6 +6,7 @@
 #ifndef MIDISKETCH_MIDI_UMP_H
 #define MIDISKETCH_MIDI_UMP_H
 
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -26,6 +27,21 @@ enum class MessageType : uint8_t {
   FlexData = 0xD,           // 128-bit: Flex Data (tempo, time sig, metadata)
   UmpStream = 0xF           // 128-bit: UMP Stream (Start/End of Clip)
 };
+
+/// @brief Returns the encoded byte size for a UMP message type.
+inline size_t messageSize(uint8_t message_type) {
+  switch (message_type) {
+    case static_cast<uint8_t>(MessageType::Data64):
+    case static_cast<uint8_t>(MessageType::Midi2ChannelVoice):
+      return 8;
+    case static_cast<uint8_t>(MessageType::Data128):
+    case static_cast<uint8_t>(MessageType::FlexData):
+    case static_cast<uint8_t>(MessageType::UmpStream):
+      return 16;
+    default:
+      return 4;
+  }
+}
 
 // UMP Stream Status codes (for MT=0xF)
 enum class StreamStatus : uint8_t {
@@ -70,6 +86,9 @@ uint32_t makeProgramChange(uint8_t group, uint8_t channel, uint8_t program);
 // Returns: [MT=2][Group][Status=B][Channel][CC#][Value]
 uint32_t makeControlChange(uint8_t group, uint8_t channel, uint8_t cc, uint8_t value);
 
+// Build MIDI 1.0 Channel Voice Pitch Bend message (14-bit unsigned value).
+uint32_t makePitchBend(uint8_t group, uint8_t channel, uint16_t value);
+
 // Build Delta Clockstamp message (32-bit UMP, utility message)
 // Returns: [MT=0][Group][Status=4][0][Ticks:16]
 // For ticks > 0xFFFF, use writeDeltaClockstampLarge
@@ -80,7 +99,7 @@ uint32_t makeDeltaClockstamp(uint8_t group, uint16_t ticks);
 void writeDeltaClockstamp(std::vector<uint8_t>& buf, uint8_t group, uint32_t ticks);
 
 // Write DCTPQ (Delta Clockstamp Ticks Per Quarter Note) message
-// 128-bit UMP Stream message
+// 32-bit Utility message (status 0x3)
 void writeDCTPQ(std::vector<uint8_t>& buf, uint16_t ticksPerQuarter);
 
 // Write Start of Clip message (128-bit UMP Stream)
@@ -90,7 +109,7 @@ void writeStartOfClip(std::vector<uint8_t>& buf);
 void writeEndOfClip(std::vector<uint8_t>& buf);
 
 // Write Tempo message (Flex Data, 128-bit)
-// microsPerQuarter: microseconds per quarter note (60000000 / BPM)
+// microsPerQuarter is converted to the specified 10-nanosecond units.
 void writeTempo(std::vector<uint8_t>& buf, uint8_t group, uint32_t microsPerQuarter);
 
 // Write Time Signature message (Flex Data, 128-bit)

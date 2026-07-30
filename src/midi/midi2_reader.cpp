@@ -11,6 +11,7 @@
 #include "core/timing_constants.h"
 #include "midi/byte_order.h"
 #include "midi/midi2_format.h"
+#include "midi/ump.h"
 
 namespace midisketch {
 
@@ -114,27 +115,7 @@ void Midi2Reader::parseUmpMessages(const uint8_t* data, size_t size, size_t offs
     uint32_t word0 = readUint32BE(data + offset);
     uint8_t mt = (word0 >> 28) & 0x0F;  // Message Type
 
-    size_t msgSize = 0;
-    switch (mt) {
-      case 0x0:  // Utility (32-bit)
-      case 0x1:  // System (32-bit)
-      case 0x2:  // MIDI 1.0 CV (32-bit)
-        msgSize = 4;
-        break;
-      case 0x3:  // Data64 (64-bit)
-      case 0x4:  // MIDI 2.0 CV (64-bit)
-        msgSize = 8;
-        break;
-      case 0x5:  // Data128 - SysEx8 (128-bit)
-      case 0xD:  // Flex Data (128-bit)
-      case 0xF:  // UMP Stream (128-bit)
-        msgSize = 16;
-        break;
-      default:
-        // Unknown message type, skip 4 bytes
-        msgSize = 4;
-        break;
-    }
+    const size_t msgSize = ump::messageSize(mt);
 
     if (offset + msgSize > size) break;
 

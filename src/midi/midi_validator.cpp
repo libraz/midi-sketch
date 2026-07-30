@@ -9,7 +9,9 @@
 #include <fstream>
 #include <sstream>
 
+#include "core/json_helpers.h"
 #include "midi/byte_order.h"
+#include "midi/ump.h"
 
 namespace midisketch {
 
@@ -33,55 +35,41 @@ size_t MidiValidationReport::warningCount() const {
 
 std::string MidiValidationReport::toJson() const {
   std::ostringstream ss;
-  ss << "{\n";
-  ss << "  \"valid\": " << (valid ? "true" : "false") << ",\n";
-  ss << "  \"summary\": {\n";
-  ss << "    \"file_size\": " << summary.file_size << ",\n";
-  ss << "    \"format\": \"" << MidiValidator::formatName(summary.format) << "\",\n";
-  ss << "    \"midi_type\": " << summary.midi_type << ",\n";
-  ss << "    \"num_tracks\": " << summary.num_tracks << ",\n";
-  ss << "    \"division\": " << summary.division << ",\n";
-  ss << "    \"timing_type\": \"" << summary.timing_type << "\",\n";
-  ss << "    \"ticks_per_quarter\": " << summary.ticks_per_quarter << ",\n";
-  ss << "    \"error_count\": " << errorCount() << ",\n";
-  ss << "    \"warning_count\": " << warningCount() << "\n";
-  ss << "  },\n";
-
-  // Tracks
-  ss << "  \"tracks\": [\n";
-  for (size_t i = 0; i < tracks.size(); ++i) {
-    const auto& t = tracks[i];
-    ss << "    {\n";
-    ss << "      \"index\": " << t.index << ",\n";
-    ss << "      \"name\": \"" << t.name << "\",\n";
-    ss << "      \"length\": " << t.length << ",\n";
-    ss << "      \"event_count\": " << t.event_count << ",\n";
-    ss << "      \"has_end_of_track\": " << (t.has_end_of_track ? "true" : "false") << "\n";
-    ss << "    }" << (i + 1 < tracks.size() ? "," : "") << "\n";
+  json::Writer writer(ss, true);
+  writer.beginObject()
+      .write("valid", valid)
+      .beginObject("summary")
+      .write("file_size", summary.file_size)
+      .write("format", MidiValidator::formatName(summary.format))
+      .write("midi_type", summary.midi_type)
+      .write("num_tracks", summary.num_tracks)
+      .write("division", summary.division)
+      .write("timing_type", summary.timing_type)
+      .write("ticks_per_quarter", summary.ticks_per_quarter)
+      .write("error_count", errorCount())
+      .write("warning_count", warningCount())
+      .endObject()
+      .beginArray("tracks");
+  for (const auto& track : tracks) {
+    writer.beginObject()
+        .write("index", track.index)
+        .write("name", track.name)
+        .write("length", track.length)
+        .write("event_count", track.event_count)
+        .write("has_end_of_track", track.has_end_of_track)
+        .endObject();
   }
-  ss << "  ],\n";
-
-  // Issues
-  ss << "  \"issues\": [\n";
-  for (size_t i = 0; i < issues.size(); ++i) {
-    const auto& issue = issues[i];
-    ss << "    {\n";
-    ss << "      \"severity\": \""
-       << (issue.severity == ValidationSeverity::Error     ? "error"
-           : issue.severity == ValidationSeverity::Warning ? "warning"
-                                                           : "info")
-       << "\",\n";
-    ss << "      \"message\": \"" << issue.message << "\"";
-    if (issue.offset > 0) {
-      ss << ",\n      \"offset\": " << issue.offset;
-    }
-    if (issue.track_index >= 0) {
-      ss << ",\n      \"track\": " << issue.track_index;
-    }
-    ss << "\n    }" << (i + 1 < issues.size() ? "," : "") << "\n";
+  writer.endArray().beginArray("issues");
+  for (const auto& issue : issues) {
+    const char* severity = issue.severity == ValidationSeverity::Error     ? "error"
+                           : issue.severity == ValidationSeverity::Warning ? "warning"
+                                                                           : "info";
+    writer.beginObject().write("severity", severity).write("message", issue.message);
+    if (issue.offset > 0) writer.write("offset", issue.offset);
+    if (issue.track_index >= 0) writer.write("track", issue.track_index);
+    writer.endObject();
   }
-  ss << "  ]\n";
-  ss << "}\n";
+  writer.endArray().endObject();
 
   return ss.str();
 }
@@ -204,8 +192,7 @@ MidiValidationReport MidiValidator::validate(const uint8_t* data, size_t size) c
       report.valid = validateSMF2Clip(data, size, report);
       break;
     case DetectedMidiFormat::SMF2_Container:
-      addWarning(report, "SMF2 Container (SMF2CON1) validation not yet implemented");
-      report.valid = true;
+      addError(report, "SMF2 Container (SMF2CON1) validation is not implemented");
       break;
     case DetectedMidiFormat::SMF2_ktmidi:
       report.valid = validateSMF2Container(data, size, report);
@@ -284,8 +271,9 @@ bool MidiValidator::validateSMF1(const uint8_t* data, size_t size,
     report.tracks.push_back(track_info);
 
     if (!track_info.has_end_of_track) {
-      addWarning(report, "Track " + std::to_string(tracks_found) + " missing End of Track event", 0,
-                 tracks_found);
+      addError(report, "Track " + std::to_string(tracks_found) + " missing End of Track event", 0,
+               tracks_found);
+      return false;
     }
 
     offset = track_end;
@@ -431,6 +419,11 @@ bool MidiValidator::validateSMF1Track(const uint8_t* data, size_t size, int trac
                  track_index);
         return false;
       }
+      if (pos + sysex_len > size) {
+        addError(report, "SysEx data extends beyond track " + std::to_string(track_index), pos,
+                 track_index);
+        return false;
+      }
       pos += sysex_len;
     } else if (event_type == 0x80 || event_type == 0x90 || event_type == 0xA0 ||
                event_type == 0xB0 || event_type == 0xE0) {
@@ -464,11 +457,11 @@ bool MidiValidator::validateSMF1Track(const uint8_t* data, size_t size, int trac
                    pos - 1, track_index);
       }
     } else {
-      addWarning(report,
-                 "Unknown status byte 0x" + std::to_string(static_cast<int>(status)) +
-                     " at track " + std::to_string(track_index),
-                 pos, track_index);
-      break;
+      addError(report,
+               "Unknown status byte 0x" + std::to_string(static_cast<int>(status)) + " at track " +
+                   std::to_string(track_index),
+               pos, track_index);
+      return false;
     }
 
     event_count++;
@@ -514,13 +507,7 @@ bool MidiValidator::validateSMF2Clip(const uint8_t* data, size_t size,
     uint32_t word = readUint32BE(data + offset);
     uint8_t mt = (word >> 28) & 0x0F;
 
-    // Determine message size based on type
-    size_t msg_size = 4;  // Default: 32-bit
-    if (mt == 0x3 || mt == 0x4) {
-      msg_size = 8;  // 64-bit
-    } else if (mt == 0xD || mt == 0xF) {
-      msg_size = 16;  // 128-bit
-    }
+    const size_t msg_size = ump::messageSize(mt);
 
     // Count channel voice messages
     if (mt == 0x2 || mt == 0x4) {
@@ -538,6 +525,11 @@ bool MidiValidator::validateSMF2Clip(const uint8_t* data, size_t size,
     offset += msg_size;
   }
 
+  if (offset != size) {
+    addError(report, "Truncated UMP message in SMF2 Clip", offset);
+    return false;
+  }
+
   ValidatedTrack clip_track;
   clip_track.index = 0;
   clip_track.name = "Clip";
@@ -547,7 +539,8 @@ bool MidiValidator::validateSMF2Clip(const uint8_t* data, size_t size,
   report.tracks.push_back(clip_track);
 
   if (!has_end_of_clip) {
-    addWarning(report, "Clip missing End of Clip message");
+    addError(report, "Clip missing End of Clip message");
+    return false;
   }
 
   return true;
@@ -610,13 +603,7 @@ bool MidiValidator::validateSMF2Container(const uint8_t* data, size_t size,
       uint32_t word = readUint32BE(data + offset);
       uint8_t mt = (word >> 28) & 0x0F;
 
-      // Determine message size based on type
-      size_t msg_size = 4;  // Default: 32-bit
-      if (mt == 0x3 || mt == 0x4) {
-        msg_size = 8;  // 64-bit
-      } else if (mt == 0xD || mt == 0xF) {
-        msg_size = 16;  // 128-bit
-      }
+      const size_t msg_size = ump::messageSize(mt);
 
       // Count channel voice messages (Note On/Off, etc.)
       if (mt == 0x2 || mt == 0x4) {
@@ -634,6 +621,11 @@ bool MidiValidator::validateSMF2Container(const uint8_t* data, size_t size,
       offset += msg_size;
     }
 
+    if (offset != size && !(offset + 8 <= size && std::memcmp(data + offset, "SMF2CLIP", 8) == 0)) {
+      addError(report, "Truncated UMP message in clip " + std::to_string(i), offset, i);
+      return false;
+    }
+
     ValidatedTrack track_info;
     track_info.index = i;
     track_info.name = "Clip " + std::to_string(i);
@@ -643,8 +635,15 @@ bool MidiValidator::validateSMF2Container(const uint8_t* data, size_t size,
     report.tracks.push_back(track_info);
 
     if (!has_end_of_clip) {
-      addWarning(report, "Clip " + std::to_string(i) + " missing End of Clip", 0, i);
+      addError(report, "Clip " + std::to_string(i) + " missing End of Clip", 0, i);
+      return false;
     }
+  }
+
+  if (report.tracks.size() != static_cast<size_t>(num_tracks)) {
+    addError(report, "Expected " + std::to_string(num_tracks) + " clips, found " +
+                         std::to_string(report.tracks.size()));
+    return false;
   }
 
   return true;

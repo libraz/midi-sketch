@@ -71,7 +71,7 @@ inline bool readVariableLength(const uint8_t* data, size_t& offset, size_t max_s
   size_t count = 0;
 
   do {
-    if (offset >= max_size || count > 4) {  // NOLINT: 4 is max VLQ byte count
+    if (offset >= max_size || count >= 4) {  // NOLINT: 4 is max VLQ byte count
       return false;
     }
     uint8_t byte = data[offset++];

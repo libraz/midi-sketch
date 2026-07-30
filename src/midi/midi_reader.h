@@ -32,12 +32,13 @@ struct ParsedTrack {
 
 /// @brief Parsed MIDI file info.
 struct ParsedMidi {
-  uint16_t format = 0;              ///< SMF format (0, 1, or 2)
-  uint16_t num_tracks = 0;          ///< Number of tracks
-  uint16_t division = 480;          ///< Ticks per quarter note
-  uint16_t bpm = 120;               ///< Tempo
-  std::vector<ParsedTrack> tracks;  ///< Parsed tracks
-  std::string metadata;             ///< MIDISKETCH metadata (JSON) if present
+  uint16_t format = 0;                ///< SMF format (0, 1, or 2)
+  uint16_t num_tracks = 0;            ///< Number of tracks
+  uint16_t division = 480;            ///< Ticks per quarter note
+  uint16_t bpm = 120;                 ///< Initial tempo, or 120 when no tempo event is present
+  std::vector<TempoEvent> tempo_map;  ///< All Set Tempo events in tick order
+  std::vector<ParsedTrack> tracks;    ///< Parsed tracks
+  std::string metadata;               ///< MIDISKETCH metadata (JSON) if present
 
   /** @brief Get track by name (case-insensitive). @return Track or nullptr */
   const ParsedTrack* getTrack(const std::string& name) const;
@@ -85,7 +86,7 @@ class MidiReader {
   ParsedMidi midi_;
   std::string error_;
 
-  uint32_t readVariableLength(const uint8_t* data, size_t& offset, size_t max_size);
+  bool readVariableLength(const uint8_t* data, size_t& offset, size_t max_size, uint32_t& value);
   bool parseHeader(const uint8_t* data, size_t size);
   bool parseTrack(const uint8_t* data, size_t size);
 };
