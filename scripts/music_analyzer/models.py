@@ -100,8 +100,8 @@ class QualityScore:
         else:
             self.overall = (self.melodic * 0.25 +
                             self.harmonic * 0.25 +
-                            self.rhythm * 0.20 +
-                            self.arrangement * 0.20 +
+                            self.rhythm * 0.25 +
+                            self.arrangement * 0.15 +
                             self.structure * 0.10)
 
     @property

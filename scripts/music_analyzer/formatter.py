@@ -6,6 +6,7 @@ track-specific detail, full report, JSON, and score-only one-liner.
 
 import json
 from collections import defaultdict
+from dataclasses import replace
 
 from .constants import Severity, Category
 from .models import AnalysisResult
@@ -32,7 +33,8 @@ def apply_filters(result: AnalysisResult, filters: dict) -> AnalysisResult:
             - 'severity': Minimum severity level (error, warning, info).
 
     Returns:
-        The same AnalysisResult with issues list filtered in place.
+        A shallow AnalysisResult copy with filtered issues. The source analysis
+        remains authoritative for scoring and exit-code decisions.
     """
     filtered_issues = []
 
@@ -45,7 +47,8 @@ def apply_filters(result: AnalysisResult, filters: dict) -> AnalysisResult:
                 include = False
 
         # Bar range filter
-        if filters.get('bar_start') and filters.get('bar_end'):
+        if (filters.get('bar_start') is not None
+                and filters.get('bar_end') is not None):
             bar = tick_to_bar(issue.tick)
             if bar < filters['bar_start'] or bar > filters['bar_end']:
                 include = False
@@ -71,8 +74,7 @@ def apply_filters(result: AnalysisResult, filters: dict) -> AnalysisResult:
         if include:
             filtered_issues.append(issue)
 
-    result.issues = filtered_issues
-    return result
+    return replace(result, issues=filtered_issues)
 
 
 # =============================================================================

@@ -14,7 +14,7 @@ from .constants import (
 )
 from .models import Note, Issue, Bonus, QualityScore, HookPattern, AnalysisResult
 from .blueprints import BLUEPRINT_PROFILES
-from .helpers import tick_to_bar
+from .helpers import _pattern_similarity, tick_to_bar
 from .analyzers import (
     MelodicAnalyzer, VocalAnalyzer, HarmonicAnalyzer,
     RhythmAnalyzer, ArrangementAnalyzer, StructureAnalyzer,
@@ -35,9 +35,19 @@ class MusicAnalyzer:
         self.notes_by_channel = defaultdict(list)
         for note in self.notes:
             self.notes_by_channel[note.channel].append(note)
-        self.issues: List[Issue] = []
-        self.profile = BLUEPRINT_PROFILES.get(blueprint) if blueprint is not None else None
         self.metadata = metadata or {}
+        resolved_blueprint = (blueprint if blueprint is not None
+                              else self.metadata.get("blueprint", 0))
+        try:
+            resolved_blueprint = int(resolved_blueprint)
+        except (TypeError, ValueError):
+            resolved_blueprint = 0
+        self.issues: List[Issue] = []
+        # Metadata-free analysis is a Traditional analysis, not an unrelated
+        # sixth weighting profile.
+        self.profile = BLUEPRINT_PROFILES.get(
+            resolved_blueprint, BLUEPRINT_PROFILES[0]
+        )
 
     def analyze_all(self) -> AnalysisResult:
         """Run all analyses and return a complete result.
@@ -115,21 +125,16 @@ class MusicAnalyzer:
             return [p for bar_pitches in pattern for p in bar_pitches]
 
         def interval_similarity(a: list, b: list) -> float:
-            if len(a) != len(b) or len(a) < 2:
+            if len(a) < 2 or len(b) < 2:
                 return 0.0
             intervals_a = [a[idx] - a[idx - 1] for idx in range(1, len(a))]
             intervals_b = [b[idx] - b[idx - 1] for idx in range(1, len(b))]
-            if not intervals_a:
-                return 0.0
-            matches = sum(
-                1 for ia, ib in zip(intervals_a, intervals_b)
-                if abs(ia - ib) <= 1
-            )
-            return matches / len(intervals_a)
+            return _pattern_similarity(intervals_a, intervals_b)
 
+        covered_bars = set()
         for start in range(len(bars) - 7):
             pattern_bars = bars[start:start + 4]
-            if not is_contiguous(pattern_bars):
+            if not is_contiguous(pattern_bars) or any(bar in covered_bars for bar in pattern_bars):
                 continue
             pattern = tuple(tuple(pitches_by_bar[b]) for b in pattern_bars)
             flat_pitches = flatten(pattern)
@@ -163,7 +168,8 @@ class MusicAnalyzer:
                     occurrences=occurrences,
                     similarity=best_similarity,
                 ))
-                break
+                for occurrence in occurrences:
+                    covered_bars.update(range(occurrence, occurrence + 4))
 
         return hooks
 
@@ -560,23 +566,24 @@ class MusicAnalyzer:
 
         total_notes = len(self.notes)
         melodic_notes = sum(1 for n in self.notes if n.channel != 9)
-        note_factor = max(1, melodic_notes / 500)
 
-        # Calculate base scores (penalty only)
+        # Score issue severity/count, not the amount of generated material.
+        # Dividing by note count made dense arrangements artificially safer and
+        # punished sparse blueprints for precisely the same issue set.
         melodic_base = max(
-            0, 100 - category_penalties[Category.MELODIC] / note_factor * 5
+            0, 100 - category_penalties[Category.MELODIC] * 5
         )
         harmonic_base = max(
-            0, 100 - category_penalties[Category.HARMONIC] / note_factor * 5
+            0, 100 - category_penalties[Category.HARMONIC] * 5
         )
         rhythm_base = max(
-            0, 100 - category_penalties[Category.RHYTHM] / note_factor * 6
+            0, 100 - category_penalties[Category.RHYTHM] * 6
         )
         arrangement_base = max(
-            0, 100 - category_penalties[Category.ARRANGEMENT] / note_factor * 5
+            0, 100 - category_penalties[Category.ARRANGEMENT] * 5
         )
         structure_base = max(
-            0, 100 - category_penalties[Category.STRUCTURE] / note_factor * 9
+            0, 100 - category_penalties[Category.STRUCTURE] * 9
         )
 
         # Apply bonus layer
@@ -651,7 +658,7 @@ class MusicAnalyzer:
             'structure_base': round(structure_base, 2),
             'total_notes': total_notes,
             'melodic_notes': melodic_notes,
-            'note_factor': note_factor,
+            'penalty_normalization': 'none',
         }
         for key, count in subcategory_counts.items():
             score.details[f"count_{key}"] = count

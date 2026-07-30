@@ -109,6 +109,71 @@ class TestBaseAnalyzerSections(unittest.TestCase):
         self.assertEqual(resolved[1]['type'], 'chorus')
         self.assertEqual(resolved[1]['start_ticks'], 8 * TICKS_PER_BAR)
 
+    def test_generated_zero_based_start_bar_is_normalized_from_ticks(self):
+        """Generated start_bar must not shift analyzer section boundaries."""
+        sections = [
+            {
+                'name': 'A',
+                'type': 'A',
+                'startTick': 0,
+                'endTick': 4 * TICKS_PER_BAR,
+                'start_bar': 0,
+                'bars': 4,
+            },
+            {
+                'name': 'Chorus',
+                'type': 'Chorus',
+                'startTick': 4 * TICKS_PER_BAR,
+                'endTick': 8 * TICKS_PER_BAR,
+                'start_bar': 4,
+                'bars': 4,
+            },
+        ]
+        notes = _fill_notes(1, 8, 2, channels=[0])
+        analyzer = DummyAnalyzer(
+            notes=notes,
+            notes_by_channel={0: notes},
+            metadata={'sections': sections},
+        )
+
+        resolved = analyzer.sections
+
+        self.assertEqual(
+            [(section['start_bar'], section['end_bar']) for section in resolved],
+            [(1, 4), (5, 8)],
+        )
+
+    def test_generated_section_names_map_to_distinct_roles(self):
+        expected = {
+            'A': 'verse',
+            'B': 'bridge',
+            'Chorus': 'chorus',
+            'Drop': 'chorus',
+            'Intro': 'instrumental',
+            'Outro': 'instrumental',
+            'MixBreak': 'instrumental',
+            'Chant': 'instrumental',
+        }
+        for raw_type, normalized in expected.items():
+            with self.subTest(raw_type=raw_type):
+                self.assertEqual(DummyAnalyzer._normalize_section_type(raw_type), normalized)
+
+    def test_chord_timeline_overrides_nearest_note_provenance(self):
+        notes = [Note(start=0, duration=TICKS_PER_BAR, pitch=60, velocity=80,
+                      channel=1, provenance={"chord_degree": 0})]
+        analyzer = DummyAnalyzer(
+            notes=notes,
+            notes_by_channel={1: notes},
+            metadata={"chords": [
+                {"tick": 0, "endTick": TICKS_PER_BEAT, "degree": 4},
+                {"tick": TICKS_PER_BEAT, "endTick": TICKS_PER_BAR, "degree": 5},
+            ]},
+        )
+
+        self.assertEqual(analyzer.get_chord_degree_at(0), 4)
+        self.assertEqual(analyzer.get_chord_degree_at(TICKS_PER_BEAT), 5)
+        self.assertIsNone(analyzer.chord_at(TICKS_PER_BAR))
+
 
 class TestChorusDensityInversion(unittest.TestCase):
     """Test chorus density inversion detection."""

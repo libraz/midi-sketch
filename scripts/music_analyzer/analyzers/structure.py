@@ -441,6 +441,11 @@ class StructureAnalyzer(BaseAnalyzer):
             if start_tick <= 0:
                 continue
 
+            # A note that crosses the boundary means the arrangement is
+            # sounding continuously, even though it belongs to neither the
+            # "ended" nor the "next-started" set below.
+            if any(n.start < start_tick < n.end for n in musical_notes):
+                continue
             prior_notes = [n for n in musical_notes if n.end <= start_tick]
             next_notes = [n for n in musical_notes if n.start >= start_tick]
             if not prior_notes or not next_notes:

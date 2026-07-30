@@ -313,11 +313,18 @@ class RhythmAnalyzer(BaseAnalyzer):
         snare_notes = [n for n in drums if n.pitch == 38]
         if not snare_notes:
             return
+        average_velocity = sum(note.velocity for note in snare_notes) / len(snare_notes)
+        accent_threshold = average_velocity * 0.7
+        backbeat_snares = [
+            note for note in snare_notes if note.velocity >= accent_threshold
+        ]
+        if not backbeat_snares:
+            return
         on_backbeat = sum(
-            1 for n in snare_notes
+            1 for n in backbeat_snares
             if (n.start % TICKS_PER_BAR) // TICKS_PER_BEAT in (1, 3)
         )
-        ratio = on_backbeat / len(snare_notes)
+        ratio = on_backbeat / len(backbeat_snares)
         if ratio < 0.5:
             self.add_issue(
                 severity=Severity.INFO,
@@ -326,7 +333,9 @@ class RhythmAnalyzer(BaseAnalyzer):
                 message=f"Weak backbeat (only {ratio:.0%} snares on beats 2/4)",
                 tick=0,
                 track="Drums",
-                details={"backbeat_ratio": ratio},
+                details={"backbeat_ratio": ratio,
+                         "accent_threshold": round(accent_threshold, 2),
+                         "accent_snare_count": len(backbeat_snares)},
             )
 
     def _analyze_rhythm_variety(self):

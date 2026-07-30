@@ -3,10 +3,11 @@
 import unittest
 
 from conftest import (
-    Note, MusicAnalyzer, Severity,
+    Category, Issue, Note, MusicAnalyzer, Severity,
     TICKS_PER_BAR, TICKS_PER_BEAT,
     make_chord_notes, make_bass_note,
 )
+from music_analyzer.analyzers.harmonic import HarmonicAnalyzer
 
 
 class TestChordTrackAnalysis(unittest.TestCase):
@@ -88,6 +89,27 @@ class TestChordTrackAnalysis(unittest.TestCase):
         self.assertEqual(len(above_issues), 1)
         self.assertIn("exceeds vocal ceiling", above_issues[0].message)
 
+    def test_chord_uses_concurrent_not_songwide_vocal_ceiling(self):
+        notes = [
+            Note(start=0, duration=TICKS_PER_BEAT, pitch=60, velocity=100, channel=0),
+            Note(start=TICKS_PER_BAR, duration=TICKS_PER_BEAT, pitch=84, velocity=100, channel=0),
+            Note(start=0, duration=TICKS_PER_BEAT, pitch=68, velocity=80, channel=1),
+        ]
+        result = MusicAnalyzer(notes).analyze_all()
+        issues = [issue for issue in result.issues if issue.subcategory == "chord_above_vocal"]
+        self.assertEqual(len(issues), 1)
+        self.assertEqual(issues[0].details["vocal_ceiling"], 60)
+
+    def test_arpeggio_above_concurrent_vocal_is_checked(self):
+        notes = [
+            Note(start=0, duration=TICKS_PER_BEAT, pitch=60, velocity=100, channel=0),
+            Note(start=0, duration=TICKS_PER_BEAT, pitch=68, velocity=80, channel=4),
+        ]
+        result = MusicAnalyzer(notes).analyze_all()
+        issues = [issue for issue in result.issues
+                  if issue.subcategory == "chord_above_vocal" and issue.track == "Arpeggio"]
+        self.assertEqual(len(issues), 1)
+
     def test_consecutive_same_voicing(self):
         """4+ consecutive bars with same voicing should be flagged."""
         notes = []
@@ -135,14 +157,26 @@ class TestBassTrackAnalysis(unittest.TestCase):
     """Test bass track analysis."""
 
     def test_bass_monotony_detection(self):
-        """8+ consecutive same bass notes should be flagged."""
-        notes = [make_bass_note(i * TICKS_PER_BEAT, 36) for i in range(10)]
+        """A long same-note run outside a pedal window should be flagged."""
+        notes = [make_bass_note(i * TICKS_PER_BEAT, 36) for i in range(8)]
+        notes += [make_bass_note(i * TICKS_PER_BEAT, pitch)
+                  for i, pitch in enumerate((38, 40, 41, 43), start=8)]
 
         result = MusicAnalyzer(notes).analyze_all()
 
         mono_issues = [i for i in result.issues if i.subcategory == "bass_monotony"]
         self.assertEqual(len(mono_issues), 1)
         self.assertIn("consecutive", mono_issues[0].message)
+
+    def test_pedal_bass_is_not_reported_as_monotony(self):
+        notes = [make_bass_note(i * TICKS_PER_BEAT, 36) for i in range(10)]
+
+        result = MusicAnalyzer(notes).analyze_all()
+        mono_issues = [i for i in result.issues if i.subcategory == "bass_monotony"]
+        contour_issues = [i for i in result.issues if i.subcategory == "bass_contour"]
+
+        self.assertEqual(mono_issues, [])
+        self.assertEqual(contour_issues, [])
 
     def test_bass_range_normal(self):
         """Bass within E1-C4 should not be flagged."""
@@ -201,6 +235,38 @@ class TestDissonanceDetection(unittest.TestCase):
         self.assertGreater(len(dissonance_issues), 0)
         self.assertIn("major 7th", dissonance_issues[0].message)
 
+    def test_tonic_major_seventh_stays_warning_on_downbeat(self):
+        notes = [
+            Note(start=0, duration=TICKS_PER_BEAT, pitch=60, velocity=80, channel=0,
+                 provenance={"chord_degree": 0}),
+            Note(start=0, duration=TICKS_PER_BEAT, pitch=71, velocity=80, channel=1,
+                 provenance={"chord_degree": 0}),
+        ]
+
+        result = MusicAnalyzer(notes).analyze_all()
+        issues = [i for i in result.issues
+                  if i.subcategory == "dissonance"
+                  and i.details["interval"] == "major 7th"]
+        self.assertEqual(len(issues), 1)
+        self.assertEqual(issues[0].severity, Severity.WARNING)
+        self.assertTrue(issues[0].details["intentional_maj7"])
+
+    def test_dominant_major_seventh_remains_error_on_downbeat(self):
+        notes = [
+            Note(start=0, duration=TICKS_PER_BEAT, pitch=60, velocity=80, channel=0,
+                 provenance={"chord_degree": 4}),
+            Note(start=0, duration=TICKS_PER_BEAT, pitch=71, velocity=80, channel=1,
+                 provenance={"chord_degree": 4}),
+        ]
+
+        result = MusicAnalyzer(notes).analyze_all()
+        issues = [i for i in result.issues
+                  if i.subcategory == "dissonance"
+                  and i.details["interval"] == "major 7th"]
+        self.assertEqual(len(issues), 1)
+        self.assertEqual(issues[0].severity, Severity.ERROR)
+        self.assertFalse(issues[0].details["intentional_maj7"])
+
     def test_sixteenth_offbeat_overlap_detection(self):
         """Dissonance should be detected even when overlap starts off the 240-tick grid."""
         notes = [
@@ -228,6 +294,68 @@ class TestDissonanceDetection(unittest.TestCase):
         self.assertGreater(len(dissonance_issues), 0)
         self.assertIn("minor 9th", dissonance_issues[0].message)
         self.assertEqual(dissonance_issues[0].details["interval_semitones"], 13)
+
+    def test_tritone_outside_dominant_context_is_detected(self):
+        notes = [
+            Note(start=0, duration=TICKS_PER_BEAT, pitch=60, velocity=80, channel=0,
+                 provenance={"chord_degree": 0}),
+            Note(start=0, duration=TICKS_PER_BEAT, pitch=66, velocity=80, channel=1,
+                 provenance={"chord_degree": 0}),
+        ]
+
+        result = MusicAnalyzer(notes).analyze_all()
+        issues = [i for i in result.issues if i.subcategory == "dissonance"]
+        self.assertTrue(any(i.details["interval"] == "tritone" for i in issues))
+
+    def test_tritone_in_dominant_context_is_allowed(self):
+        notes = [
+            Note(start=0, duration=TICKS_PER_BEAT, pitch=60, velocity=80, channel=0,
+                 provenance={"chord_degree": 4}),
+            Note(start=0, duration=TICKS_PER_BEAT, pitch=66, velocity=80, channel=1,
+                 provenance={"chord_degree": 4}),
+        ]
+
+        result = MusicAnalyzer(notes).analyze_all()
+        issues = [i for i in result.issues
+                  if i.subcategory == "dissonance"
+                  and i.details["interval"] == "tritone"]
+        self.assertEqual(issues, [])
+
+    def test_compound_tritone_is_informational(self):
+        notes = [
+            Note(start=0, duration=TICKS_PER_BEAT, pitch=60, velocity=80, channel=0,
+                 provenance={"chord_degree": 0}),
+            Note(start=0, duration=TICKS_PER_BEAT, pitch=78, velocity=80, channel=1,
+                 provenance={"chord_degree": 0}),
+        ]
+
+        result = MusicAnalyzer(notes).analyze_all()
+        issues = [i for i in result.issues
+                  if i.subcategory == "dissonance"
+                  and i.details["interval"] == "tritone"]
+        self.assertEqual(len(issues), 1)
+        self.assertEqual(issues[0].severity, Severity.INFO)
+
+    def test_resolution_only_downgrades_the_resolved_pair(self):
+        resolving_note = Note(start=TICKS_PER_BEAT, duration=TICKS_PER_BEAT,
+                              pitch=61, velocity=80, channel=0)
+        analyzer = HarmonicAnalyzer([resolving_note], {0: [resolving_note]})
+        resolved = Issue(
+            Severity.WARNING, Category.HARMONIC, "dissonance", "first", 0,
+            details={"pitch1": 60, "pitch2": 67, "track1": "Vocal", "track2": "Chord"},
+        )
+        unrelated = Issue(
+            Severity.WARNING, Category.HARMONIC, "dissonance", "second", 0,
+            details={"pitch1": 48, "pitch2": 54, "track1": "Bass", "track2": "Aux"},
+        )
+        analyzer.issues = [resolved, unrelated]
+
+        analyzer._analyze_dissonance_resolution()
+
+        self.assertEqual(resolved.severity, Severity.INFO)
+        self.assertIn("resolved", resolved.message)
+        self.assertEqual(unrelated.severity, Severity.WARNING)
+        self.assertNotIn("resolved", unrelated.message)
 
     def test_sus4_not_flagged_as_error(self):
         """Sus4 chord (C-F-G) should not be flagged as error dissonance."""

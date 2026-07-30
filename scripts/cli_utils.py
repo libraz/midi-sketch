@@ -7,9 +7,19 @@ and music_analyzer/runner.py.
 """
 
 import subprocess
+import tempfile
 import threading
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Callable, Optional, Tuple
+from typing import Callable, Iterator, Optional, Tuple
+
+
+@contextmanager
+def isolated_work_dir(parent: Path, prefix: str = "worker_") -> Iterator[Path]:
+    """Create a worker-private directory for fixed-name CLI outputs."""
+    parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=prefix, dir=parent) as directory:
+        yield Path(directory)
 
 
 def run_cli(
@@ -41,6 +51,9 @@ def run_cli(
         None on timeout/exception. message is a stderr snippet (success
         or non-zero exit) or an error description (timeout/exception).
     """
+    executable = Path(cli_path)
+    if not executable.is_absolute() and executable.parent != Path("."):
+        cli_path = str(executable.resolve())
     cmd = [cli_path, *args_list]
     try:
         result = subprocess.run(

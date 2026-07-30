@@ -35,6 +35,7 @@ class HarmonicAnalyzer(BaseAnalyzer):
         """Run all harmonic analyses and return collected issues."""
         self._analyze_dissonance()
         self._analyze_chord_voicing()
+        self._analyze_arpeggio_above_vocal()
         self._analyze_bass_line()
         self._analyze_chord_function()
         self._analyze_dissonance_resolution()
@@ -83,13 +84,28 @@ class HarmonicAnalyzer(BaseAnalyzer):
 
                 if interval_key not in DISSONANT_INTERVALS:
                     continue
+                chord_degree = self.get_chord_degree_at(overlap_start)
+                normalized_degree = chord_degree % 7 if chord_degree >= 0 else -1
+                intentional_maj7 = False
 
+                # Tritones define V/vii harmony; elsewhere they are notable.
+                # Keep the register treatment in sync with C++ dissonance.cpp.
+                if interval_key == 6:
+                    if normalized_degree in (4, 6) or raw_interval > 24:
+                        continue
+                    severity = (Severity.INFO if raw_interval > 12
+                                else Severity.WARNING)
                 # Major 7th: wider voicings (24+ semitones) are less harsh
-                if interval_key == 11:
+                elif interval_key == 11:
                     if raw_interval >= 36:
                         continue  # 3+ octaves: not perceptually dissonant
                     elif raw_interval > 23:
                         severity = Severity.INFO  # 2-3 octaves: notable but acceptable
+                    elif normalized_degree in (0, 3):
+                        # I/IV Maj7 is a conventional color tone.  Mirror the
+                        # C++ Medium classification even on a downbeat.
+                        severity = Severity.WARNING
+                        intentional_maj7 = True
                     else:
                         is_bass_collision = (
                             (channel_a == 2 or channel_b == 2)
@@ -124,6 +140,8 @@ class HarmonicAnalyzer(BaseAnalyzer):
                         "track2": track_b,
                         "pitch1": pitch_a,
                         "pitch2": pitch_b,
+                        "chord_degree": chord_degree,
+                        "intentional_maj7": intentional_maj7,
                     },
                 )
 
@@ -136,11 +154,6 @@ class HarmonicAnalyzer(BaseAnalyzer):
         chord_notes = self.notes_by_channel.get(1, [])
         if not chord_notes:
             return
-
-        # Get vocal ceiling for comparison
-        vocal_notes = self.notes_by_channel.get(0, [])
-        vocal_ceiling = (max((note.pitch for note in vocal_notes), default=84)
-                         if vocal_notes else 84)
 
         chords_by_time = defaultdict(list)
         for note in chord_notes:
@@ -161,7 +174,7 @@ class HarmonicAnalyzer(BaseAnalyzer):
             local_pc_count = len({pitch % 12 for pitch in local_pitches})
             arpeggiated_context = (
                 self.profile is not None and
-                self.profile.name == "RhythmLock" and
+                self.profile.paradigm == "RhythmSync" and
                 (local_pc_count >= 3 or voicing_count == 1)
             )
 
@@ -224,7 +237,8 @@ class HarmonicAnalyzer(BaseAnalyzer):
                         details={"highest_pitch": highest},
                     )
 
-                if highest > vocal_ceiling + 2:
+                vocal_ceiling = self.vocal_ceiling_at(tick)
+                if vocal_ceiling is not None and highest > vocal_ceiling + 2:
                     self.add_issue(
                         severity=Severity.WARNING,
                         category=Category.HARMONIC,
@@ -292,15 +306,93 @@ class HarmonicAnalyzer(BaseAnalyzer):
                          if prev_bar_pitches else []},
             )
 
+    def _analyze_arpeggio_above_vocal(self):
+        """Flag arpeggio onsets that mask the concurrently sounding vocal."""
+        arpeggio_notes = self.notes_by_channel.get(4, [])
+        if not arpeggio_notes:
+            return
+        onsets = defaultdict(list)
+        for note in arpeggio_notes:
+            onsets[note.start].append(note)
+        checked = 0
+        above = 0
+        first_above_tick = 0
+        for tick, notes in onsets.items():
+            vocal_ceiling = self.vocal_ceiling_at(tick)
+            if vocal_ceiling is None:
+                continue
+            checked += 1
+            if max(note.pitch for note in notes) > vocal_ceiling + 2:
+                above += 1
+                if not first_above_tick:
+                    first_above_tick = tick
+        if not checked:
+            return
+        ratio = above / checked
+        if ratio > 0.15:
+            severity = Severity.WARNING
+        elif ratio > 0.05:
+            severity = Severity.INFO
+        else:
+            return
+        self.add_issue(
+            severity=severity,
+            category=Category.HARMONIC,
+            subcategory="chord_above_vocal",
+            message=f"Arpeggio exceeds concurrent vocal ceiling ({ratio:.0%} of onsets)",
+            tick=first_above_tick,
+            track="Arpeggio",
+            details={"above_ratio": ratio, "above_count": above,
+                     "vocal_comparison_count": checked},
+        )
+
     def _analyze_bass_line(self):
         """Analyze bass line for monotony, kick sync, empty bars, and stepwise rate."""
         bass_notes = self.notes_by_channel.get(2, [])
         if len(bass_notes) < 2:
             return
 
-        rhythmlock_profile = (
-            self.profile is not None and self.profile.name == "RhythmLock"
+        rhythmsync_profile = (
+            self.profile is not None and self.profile.paradigm == "RhythmSync"
         )
+
+        def is_pedal_run(run_start: int, run_end: int) -> bool:
+            """Return whether every covered 4-bar window is a pedal window."""
+            if run_end - run_start < TICKS_PER_BAR:
+                return False
+            first_window = (run_start // (TICKS_PER_BAR * 4)) * TICKS_PER_BAR * 4
+            for window_start in range(first_window, run_end, TICKS_PER_BAR * 4):
+                window_end = window_start + TICKS_PER_BAR * 4
+                window_notes = [
+                    note for note in bass_notes
+                    if window_start <= note.start < window_end
+                ]
+                if len(window_notes) < 2:
+                    return False
+                most_common = max(
+                    sum(note.pitch == pitch for note in window_notes)
+                    for pitch in {note.pitch for note in window_notes}
+                )
+                if most_common / len(window_notes) <= 0.75:
+                    return False
+            return True
+
+        def report_monotony(count: int, pitch: int, run_start: int, run_end: int):
+            if count < 8 or is_pedal_run(run_start, run_end):
+                return
+            severity = Severity.WARNING
+            if rhythmsync_profile and count < 12:
+                severity = Severity.INFO
+            self.add_issue(
+                severity=severity,
+                category=Category.HARMONIC,
+                subcategory="bass_monotony",
+                message=f"{count} consecutive {note_name(pitch)}",
+                tick=run_start,
+                track="Bass",
+                details={"pitch": pitch, "count": count,
+                         "run_ticks": run_end - run_start},
+            )
 
         # Consecutive same pitch detection
         consecutive_count = 1
@@ -311,36 +403,14 @@ class HarmonicAnalyzer(BaseAnalyzer):
             if bass_notes[idx].pitch == current_pitch:
                 consecutive_count += 1
             else:
-                if consecutive_count >= 8:
-                    severity = Severity.WARNING
-                    if rhythmlock_profile and consecutive_count < 12:
-                        severity = Severity.INFO
-                    self.add_issue(
-                        severity=severity,
-                        category=Category.HARMONIC,
-                        subcategory="bass_monotony",
-                        message=f"{consecutive_count} consecutive {note_name(current_pitch)}",
-                        tick=start_tick,
-                        track="Bass",
-                        details={"pitch": current_pitch, "count": consecutive_count},
-                    )
+                report_monotony(consecutive_count, current_pitch, start_tick,
+                                bass_notes[idx - 1].end)
                 consecutive_count = 1
                 current_pitch = bass_notes[idx].pitch
                 start_tick = bass_notes[idx].start
 
-        if consecutive_count >= 8:
-            severity = Severity.WARNING
-            if rhythmlock_profile and consecutive_count < 12:
-                severity = Severity.INFO
-            self.add_issue(
-                severity=severity,
-                category=Category.HARMONIC,
-                subcategory="bass_monotony",
-                message=f"{consecutive_count} consecutive {note_name(current_pitch)}",
-                tick=start_tick,
-                track="Bass",
-                details={"pitch": current_pitch, "count": consecutive_count},
-            )
+        report_monotony(consecutive_count, current_pitch, start_tick,
+                        bass_notes[-1].end)
 
         # Bass-kick sync
         drums = self.notes_by_channel.get(9, [])
@@ -482,7 +552,7 @@ class HarmonicAnalyzer(BaseAnalyzer):
         dissonance_issues = [
             issue for issue in self.issues if issue.subcategory == "dissonance"
         ]
-        resolved_ticks = set()
+        resolved_issues = set()
 
         for issue in dissonance_issues:
             tick = issue.tick
@@ -500,12 +570,12 @@ class HarmonicAnalyzer(BaseAnalyzer):
                 for note in notes:
                     if tick < note.start <= resolve_window:
                         if abs(note.pitch - pitch) in (1, 2):
-                            resolved_ticks.add(tick)
+                            resolved_issues.add(id(issue))
                             break
 
         for issue in self.issues:
             if (issue.subcategory == "dissonance"
-                    and issue.tick in resolved_ticks
+                    and id(issue) in resolved_issues
                     and issue.severity == Severity.WARNING):
                 issue.severity = Severity.INFO
                 issue.message += " (resolved)"
@@ -824,6 +894,8 @@ class HarmonicAnalyzer(BaseAnalyzer):
             beat, offset = self.get_beat_position(issue.tick)
 
             if beat == 1 and issue.severity == Severity.WARNING:
+                if issue.details.get("intentional_maj7"):
+                    continue
                 issue.severity = Severity.ERROR
             elif beat in (2, 4) and issue.severity == Severity.ERROR:
                 issue.severity = Severity.WARNING
@@ -918,11 +990,6 @@ class HarmonicAnalyzer(BaseAnalyzer):
         if not guitar_notes:
             return
 
-        # Get vocal ceiling for comparison
-        vocal_notes = self.notes_by_channel.get(0, [])
-        vocal_ceiling = (max((note.pitch for note in vocal_notes), default=84)
-                         if vocal_notes else 84)
-
         # Group notes by onset
         onsets = defaultdict(list)
         for note in guitar_notes:
@@ -938,6 +1005,7 @@ class HarmonicAnalyzer(BaseAnalyzer):
         three_plus_onsets = 0
         thin_strum_count = 0
         above_vocal_count = 0
+        vocal_comparison_count = 0
 
         for tick in sorted_ticks:
             chord = onsets[tick]
@@ -954,8 +1022,11 @@ class HarmonicAnalyzer(BaseAnalyzer):
                 thin_strum_count += 1
 
             # Above vocal ceiling check
-            if pitches and max(pitches) > vocal_ceiling + 2:
-                above_vocal_count += 1
+            vocal_ceiling = self.vocal_ceiling_at(tick)
+            if pitches and vocal_ceiling is not None:
+                vocal_comparison_count += 1
+                if max(pitches) > vocal_ceiling + 2:
+                    above_vocal_count += 1
 
         multi_ratio = multi_note_onsets / total_onsets if total_onsets > 0 else 0
 
@@ -983,8 +1054,8 @@ class HarmonicAnalyzer(BaseAnalyzer):
                 )
 
         # --- Above vocal ceiling ---
-        if total_onsets > 0:
-            above_ratio = above_vocal_count / total_onsets
+        if vocal_comparison_count > 0:
+            above_ratio = above_vocal_count / vocal_comparison_count
             if above_ratio > 0.15:
                 self.add_issue(
                     severity=Severity.WARNING,
@@ -996,7 +1067,7 @@ class HarmonicAnalyzer(BaseAnalyzer):
                     track="Guitar",
                     details={"above_ratio": above_ratio,
                              "above_count": above_vocal_count,
-                             "vocal_ceiling": vocal_ceiling},
+                             "vocal_comparison_count": vocal_comparison_count},
                 )
             elif above_ratio > 0.05:
                 self.add_issue(
@@ -1009,7 +1080,7 @@ class HarmonicAnalyzer(BaseAnalyzer):
                     track="Guitar",
                     details={"above_ratio": above_ratio,
                              "above_count": above_vocal_count,
-                             "vocal_ceiling": vocal_ceiling},
+                             "vocal_comparison_count": vocal_comparison_count},
                 )
 
         # --- Bar-level voicing repetition ---

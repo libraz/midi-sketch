@@ -83,6 +83,26 @@ class TestDriveMetricsBpmGate(unittest.TestCase):
         self.assertGreater(len(drive_issues), 0)
 
 
+class TestBackbeatAnalysis(unittest.TestCase):
+    def test_ghost_snares_do_not_dilute_accent_backbeat(self):
+        notes = []
+        for bar in range(4):
+            start = bar * TICKS_PER_BAR
+            notes.extend([
+                _make_snare(start + TICKS_PER_BEAT, velocity=100),
+                _make_snare(start + 3 * TICKS_PER_BEAT, velocity=100),
+            ])
+            notes.extend(
+                _make_snare(start + offset, velocity=20)
+                for offset in (0, 120, 240, 360, 2 * TICKS_PER_BEAT + 120)
+            )
+
+        result = MusicAnalyzer(notes).analyze_all()
+        issues = [issue for issue in result.issues if issue.subcategory == "backbeat"]
+
+        self.assertEqual(issues, [])
+
+
 class TestBassDriveDeficit(unittest.TestCase):
     """Bass drive analysis in chorus for uptempo songs."""
 

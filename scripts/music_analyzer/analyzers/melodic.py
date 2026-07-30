@@ -42,20 +42,9 @@ import melodic_metrics as mm  # noqa: E402  (shared measurement library)
 
 _TARGETS_PATH = _SCRIPTS_DIR.parent / "backup" / "reference" / "target_profiles.json"
 
-# Layer 2 metrics judged against category ranges (mirror of
-# compare_generation_to_targets.MELODY_COMPARED).
-MELODY_STYLE_METRICS = (
-    "step_ratio",
-    "leap_small_ratio",
-    "leap_large_ratio",
-    "run_conjunct_ratio",
-    "turns_per_100",
-    "flat_ratio",
-    "arch_ratio",
-    "range",
-    "max_streak",
-    "pitch_cell_consistency",
-)
+# A single reference can describe a song, not a genre.  Keep its measurements
+# in the target file for inspection, but do not let them penalize generation.
+MELODY_STYLE_MIN_SAMPLES = 3
 
 _SEVERITY_MAP = {"error": Severity.ERROR, "warning": Severity.WARNING}
 
@@ -161,7 +150,21 @@ class MelodicAnalyzer(BaseAnalyzer):
         ref = targets["categories"].get(category, {}).get("melody")
         if not ref:
             return
-        for metric in MELODY_STYLE_METRICS:
+        sample_count = ref.get("n", 0)
+        if sample_count < MELODY_STYLE_MIN_SAMPLES:
+            self.add_issue(
+                severity=Severity.INFO,
+                category=Category.MELODIC,
+                subcategory="melody_style",
+                message=(f"{category} melody reference has {sample_count} sample(s); "
+                         f"need {MELODY_STYLE_MIN_SAMPLES} for genre-style warnings"),
+                tick=0,
+                track="Vocal",
+                details={"category": category, "samples": sample_count,
+                         "min_samples": MELODY_STYLE_MIN_SAMPLES},
+            )
+            return
+        for metric in mm.MELODY_STYLE_METRICS:
             value = profile.get(metric)
             bounds = ref.get(metric)
             if value is None or not bounds:
@@ -207,7 +210,7 @@ class MelodicAnalyzer(BaseAnalyzer):
 
                 if gap_before >= isolation_threshold and gap_after >= isolation_threshold:
                     severity = Severity.WARNING
-                    if (self.profile is not None and self.profile.name == "RhythmLock"
+                    if (self.profile is not None and self.profile.paradigm == "RhythmSync"
                             and channel in (3, 5)):
                         severity = Severity.INFO
                     self.add_issue(
@@ -253,7 +256,7 @@ class MelodicAnalyzer(BaseAnalyzer):
                     if consecutive_count >= warn_threshold:
                         severity = (Severity.ERROR if consecutive_count >= error_threshold
                                     else Severity.WARNING)
-                        if (self.profile is not None and self.profile.name == "RhythmLock"
+                        if (self.profile is not None and self.profile.paradigm == "RhythmSync"
                                 and channel in (3, 5)):
                             severity = Severity.INFO
                         self.add_issue(
@@ -273,7 +276,7 @@ class MelodicAnalyzer(BaseAnalyzer):
             if consecutive_count >= warn_threshold:
                 severity = (Severity.ERROR if consecutive_count >= error_threshold
                             else Severity.WARNING)
-                if (self.profile is not None and self.profile.name == "RhythmLock"
+                if (self.profile is not None and self.profile.paradigm == "RhythmSync"
                         and channel in (3, 5)):
                     severity = Severity.INFO
                 self.add_issue(

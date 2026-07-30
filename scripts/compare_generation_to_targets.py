@@ -36,27 +36,22 @@ COMPARED_METRICS = (
     "notes_per_bar",
     "repeat_cell_consistency",
     "short_pulse_ratio",
-    "eighth_grid_ratio",
     "lead_overtake_ratio",
 )
+# Quantization makes this measurement useful for diagnosis, but it is not a
+# musical quality boundary.  Report it without emitting LOW/HIGH verdicts.
+ARTIFACT_METRICS = ("eighth_grid_ratio",)
 LOWER_IS_FINE = {"lead_overtake_ratio"}
 SKIP_TRACKS = {"Drums", "SE"}
 
-# Layer 2 melody metrics compared for the Vocal track (subset of
-# build_reference_targets.MELODY_METRICS that showed genre-discriminating
-# power in the corpus validation).
-MELODY_COMPARED = (
-    "step_ratio",
-    "leap_small_ratio",
-    "leap_large_ratio",
-    "run_conjunct_ratio",
-    "turns_per_100",
-    "flat_ratio",
-    "arch_ratio",
-    "range",
-    "max_streak",
-    "pitch_cell_consistency",
-)
+# Backward-compatible name for callers of this script; the canonical list
+# lives in melodic_metrics with the analyzer's measurement definitions.
+MELODY_COMPARED = mm.MELODY_STYLE_METRICS
+
+
+def category_blueprints(target: dict) -> list[int]:
+    """Return every configured blueprint for a reference category."""
+    return sorted({int(blueprint) for blueprint in target.get("blueprints", [])})
 
 
 def melody_profile_from_json(data: dict) -> dict | None:
@@ -115,31 +110,38 @@ def main() -> int:
     for cat, target in targets.items():
         if args.category and cat != args.category:
             continue
-        blueprint = target["blueprints"][0]
+        blueprints = category_blueprints(target)
+        if not blueprints:
+            continue
         by_role: dict[str, list] = defaultdict(list)
         melody_profiles: list[dict] = []
         with tempfile.TemporaryDirectory() as tmp:
-            for seed in range(1, args.seeds + 1):
-                profiles, mel = generate_profiles(blueprint, seed, Path(tmp))
-                for p in profiles:
-                    by_role[p.ms_role].append(p)
-                if mel:
-                    melody_profiles.append(mel)
+            for blueprint in blueprints:
+                for seed in range(1, args.seeds + 1):
+                    profiles, mel = generate_profiles(blueprint, seed, Path(tmp))
+                    for p in profiles:
+                        by_role[p.ms_role].append(p)
+                    if mel:
+                        melody_profiles.append(mel)
 
-        cat_report: dict = {"blueprint": blueprint, "roles": {}}
+        cat_report: dict = {"blueprints": blueprints, "roles": {}}
         for role, profiles in sorted(by_role.items()):
             ref = target["roles"].get(role)
             role_report: dict = {"n_gen": len(profiles), "metrics": {}, "in_reference": ref is not None}
-            for metric in COMPARED_METRICS:
+            for metric in (*COMPARED_METRICS, *ARTIFACT_METRICS):
                 values = [getattr(p, metric) for p in profiles if getattr(p, metric) is not None]
                 if not values:
                     continue
                 gen_med = round(median(values), 3)
                 entry: dict = {"gen_med": gen_med}
+                if metric in ARTIFACT_METRICS:
+                    entry["artifact"] = True
                 if ref and metric in ref:
                     lo, hi = ref[metric]["min"], ref[metric]["max"]
                     entry["ref"] = [lo, ref[metric]["med"], hi]
-                    if gen_med < lo and metric not in LOWER_IS_FINE:
+                    if metric in ARTIFACT_METRICS:
+                        pass
+                    elif gen_med < lo and metric not in LOWER_IS_FINE:
                         entry["verdict"] = "LOW"
                     elif gen_med > hi:
                         entry["verdict"] = "HIGH"
@@ -195,7 +197,8 @@ def main() -> int:
         return 0
 
     for cat, cat_report in report.items():
-        print(f"=== {cat} (blueprint {cat_report['blueprint']}, {args.seeds} seeds) ===")
+        print(f"=== {cat} (blueprints {cat_report['blueprints']}, "
+              f"{args.seeds} seeds each) ===")
         for role, rr in cat_report["roles"].items():
             if not rr["in_reference"]:
                 print(f"  {role:9s} (no reference data)")

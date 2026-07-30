@@ -219,6 +219,21 @@ class TestHookDetection(unittest.TestCase):
 
         self.assertEqual(hooks, [])
 
+    def test_returns_distinct_hooks_and_tolerates_one_missing_note(self):
+        first = [60, 62, 64, 65, 63, 62, 65, 63]
+        second = [67, 70, 69, 72, 70, 69, 67, 70]
+        notes = []
+        for start_bar, phrase in ((1, first), (5, [pitch + 2 for pitch in first[:-1]]),
+                                  (9, second), (13, [pitch + 3 for pitch in second])):
+            for index, pitch in enumerate(phrase):
+                notes.append(self._note(start_bar + index // 2, index % 2, pitch))
+
+        hooks = MusicAnalyzer(notes)._detect_hooks()
+
+        self.assertEqual(len(hooks), 2)
+        self.assertEqual([hook.occurrences for hook in hooks], [[1, 5], [9, 13]])
+        self.assertGreaterEqual(hooks[0].similarity, 0.75)
+
 
 class TestHarmonicCadenceBonus(unittest.TestCase):
     """Test cadence scoring with bass inversion context."""

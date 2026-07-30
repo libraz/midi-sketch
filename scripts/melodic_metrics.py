@@ -29,6 +29,22 @@ STEP_MAX = 2  # |interval| <= 2 semitones = stepwise (incl. minor/major 2nd)
 LEAP_SMALL_MAX = 4  # 3-4 semitones = small leap (3rds)
 LEAP_LARGE_MIN = 5  # >= 5 semitones = large leap
 
+# Layer-2 genre-coloring measures.  Both the generated-output comparator and
+# the in-process analyzer use this single list so reference evaluation cannot
+# silently diverge from score evaluation.
+MELODY_STYLE_METRICS = (
+    "step_ratio",
+    "leap_small_ratio",
+    "leap_large_ratio",
+    "run_conjunct_ratio",
+    "turns_per_100",
+    "flat_ratio",
+    "arch_ratio",
+    "range",
+    "max_streak",
+    "pitch_cell_consistency",
+)
+
 
 MelNote = tuple[int, int, int]  # (start_tick, duration_tick, pitch)
 

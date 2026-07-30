@@ -49,6 +49,11 @@ def parse_smf(path: Path) -> dict:
     division = int.from_bytes(data[pos + 4:pos + 6], "big")
     pos += header_len
 
+    if division == 0:
+        raise ValueError(f"{path} has invalid zero time division")
+    if division & 0x8000:
+        raise ValueError(f"{path} uses unsupported SMPTE time division")
+
     notes: list[Note] = []
     tempos: list[tuple[int, int]] = []
     track_names: dict[int, str] = {}
@@ -95,6 +100,8 @@ def parse_smf(path: Path) -> dict:
             if status in (0xF0, 0xF7):
                 length, pos = read_varlen(data, pos)
                 pos += length
+                # System exclusive events break channel-message running status.
+                running_status = None
                 continue
 
             event_type = status & 0xF0

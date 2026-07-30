@@ -54,6 +54,11 @@ BLUEPRINT_NAMES = {
     9: "BehavioralLoop",
 }
 
+# Keep batch coverage tied to the generator's public ID tables rather than
+# duplicated range endpoints in individual scripts.
+STYLE_PRESET_COUNT = 17
+PRODUCTION_BLUEPRINT_IDS = tuple(BLUEPRINT_NAMES)
+
 # Generation source -> primary C++ source file (for navigation in reports)
 SOURCE_FILES = {
     "melody_phrase": "src/track/vocal/melody_designer.cpp",
@@ -76,6 +81,7 @@ C_MAJOR_SCALE = {0, 2, 4, 5, 7, 9, 11}  # C, D, E, F, G, A, B
 DISSONANT_INTERVALS = {
     1: "minor 2nd",
     2: "major 2nd",
+    6: "tritone",
     11: "major 7th",
     13: "minor 9th",  # compound
 }

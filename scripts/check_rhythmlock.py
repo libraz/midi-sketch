@@ -25,7 +25,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 # Ensure scripts/ is importable so the music_analyzer package and
 # cli_utils module resolve whether run from repo root or scripts/.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from cli_utils import ProgressCounter, run_cli
+from cli_utils import ProgressCounter, isolated_work_dir, run_cli
 from music_analyzer import BLUEPRINT_NAMES, SOURCE_FILES
 from music_analyzer.issue_parser import Issue, parse_issues
 
@@ -86,6 +86,7 @@ def run_single_test(
     chord: int,
     blueprint: int,
     work_dir: Path,
+    output_dir: Path,
 ) -> TestResult:
     """Run a single generation test and return the result."""
     args = [
@@ -97,28 +98,29 @@ def run_single_test(
     ]
 
     try:
-        returncode, message = run_cli(cli_path, args, work_dir, timeout=60)
+        with isolated_work_dir(output_dir, "rhythmlock_") as worker_dir:
+            returncode, message = run_cli(cli_path, args, worker_dir, timeout=60)
 
-        if returncode is None:
-            return TestResult(
-                seed=seed, style=style, chord=chord, blueprint=blueprint,
-                error=message,
-            )
-        if returncode != 0:
-            return TestResult(
-                seed=seed, style=style, chord=chord, blueprint=blueprint,
-                error=f"CLI error: {message}",
-            )
+            if returncode is None:
+                return TestResult(
+                    seed=seed, style=style, chord=chord, blueprint=blueprint,
+                    error=message,
+                )
+            if returncode != 0:
+                return TestResult(
+                    seed=seed, style=style, chord=chord, blueprint=blueprint,
+                    error=f"CLI error: {message}",
+                )
 
-        std_analysis = work_dir / "analysis.json"
-        if not std_analysis.exists():
-            return TestResult(
-                seed=seed, style=style, chord=chord, blueprint=blueprint,
-                error="analysis.json not found",
-            )
+            std_analysis = worker_dir / "analysis.json"
+            if not std_analysis.exists():
+                return TestResult(
+                    seed=seed, style=style, chord=chord, blueprint=blueprint,
+                    error="analysis.json not found",
+                )
 
-        with open(std_analysis) as f:
-            analysis = json.load(f)
+            with open(std_analysis) as f:
+                analysis = json.load(f)
 
         summary = analysis.get("summary", {})
         all_issues = parse_issues(analysis)
@@ -152,6 +154,8 @@ def run_tests(
 ) -> list[TestResult]:
     """Run tests across all configurations."""
     work_dir = Path.cwd()
+    output_dir = work_dir / ".rhythmlock_check"
+    output_dir.mkdir(exist_ok=True)
     total = len(configs)
     label = "RhythmLock" if all(c[3] == RHYTHMLOCK_BLUEPRINT for c in configs) else "RhythmSync"
     print(f"Running {total} {label} tests"
@@ -165,7 +169,7 @@ def run_tests(
         with ThreadPoolExecutor(max_workers=parallel) as executor:
             futures = {
                 executor.submit(
-                    run_single_test, cli_path, s, st, ch, bp, work_dir
+                    run_single_test, cli_path, s, st, ch, bp, work_dir, output_dir
                 ): (s, st, ch, bp)
                 for s, st, ch, bp in configs
             }
@@ -200,7 +204,9 @@ def run_tests(
     else:
         results = []
         for i, (seed, style, chord, blueprint) in enumerate(configs, 1):
-            result = run_single_test(cli_path, seed, style, chord, blueprint, work_dir)
+            result = run_single_test(
+                cli_path, seed, style, chord, blueprint, work_dir, output_dir
+            )
             results.append(result)
 
             bp_name = BLUEPRINT_NAMES.get(blueprint, f"bp{blueprint}")

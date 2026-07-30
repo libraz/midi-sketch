@@ -193,7 +193,11 @@ def overlap_stats(track: list[Note], lead: list[Note]) -> tuple[float, float]:
 def profile_track(source: str, label: str, notes: list[Note], division: int,
                   lead: list[Note] | None, role: str | None = None,
                   ms_role: str | None = None) -> TrackProfile:
-    bars = max(end_tick(notes) / (division * 4), 1.0)
+    # Normalize to the audible span, not the song origin. A track that joins
+    # after an intro should not have its density diluted by preceding silence.
+    first_onset = min((note.start for note in notes), default=0)
+    sounding_span = max(end_tick(notes) - first_onset, 0)
+    bars = max(sounding_span / (division * 4), 1.0)
     short_pulse = sum(1 for n in notes if n.duration <= division / 4) / len(notes) if notes else 0.0
     overlap = overtake = None
     if lead:
@@ -236,15 +240,46 @@ def select_candidate_tracks(notes: list[Note], names: dict[int, str], division: 
     return [(label, track_notes) for _, label, track_notes in candidates[:top]]
 
 
-def generated_tracks(notes: list[Note], names: dict[int, str]) -> list[tuple[str, list[Note], list[Note] | None]]:
+GENERATED_TRACK_ROLES = {
+    "vocal": "vocal",
+    "chord": "chord",
+    "bass": "bass",
+    "motif": "riff",
+    "arpeggio": "arpeggio",
+    "aux": "aux",
+    "guitar": "guitar",
+    "drums": "drums",
+    "se": "se",
+}
+
+
+def generated_tracks(
+    notes: list[Note], names: dict[int, str], role_filter: set[str] | None
+) -> list[tuple[str, str, str, list[Note], list[Note] | None]]:
+    """Group generated JSON tracks using the same role filter as labeled MIDI.
+
+    JSON tracks are identified by their exported names instead of a fixed
+    channel list so Bass (channel 2) and later-added tracks cannot be skipped.
+    """
     by_channel: dict[int, list[Note]] = defaultdict(list)
     for note in notes:
         by_channel[note.channel].append(note)
-    lead = by_channel.get(0, [])
+
+    def role_for(channel: int) -> str:
+        label = names.get(channel, f"Ch{channel}")
+        return GENERATED_TRACK_ROLES.get(label.lower(), label.lower())
+
+    lead = next(
+        (track_notes for channel, track_notes in by_channel.items() if role_for(channel) == "vocal"),
+        [],
+    )
     result = []
-    for channel in (3, 5, 6, 4, 1):
-        if by_channel.get(channel):
-            result.append((names.get(channel, f"Ch{channel}"), by_channel[channel], lead))
+    for channel, track_notes in sorted(by_channel.items()):
+        role = role_for(channel)
+        if role in ("drums", "se") or (role_filter and role not in role_filter):
+            continue
+        label = names.get(channel, f"Ch{channel}")
+        result.append((label, role, label, track_notes, None if role == "vocal" else lead))
     return result
 
 
@@ -259,17 +294,21 @@ def main() -> int:
     parser.add_argument("--heuristic", action="store_true",
                         help="ignore track_roles.json and use heuristic track selection")
     args = parser.parse_args()
-    role_filter = set(args.role.split(",")) if args.role else None
+    role_filter = (
+        {role.strip().lower() for role in args.role.split(",") if role.strip()}
+        if args.role
+        else None
+    )
 
     report = []
     for path in args.sources:
         division, notes, names, _ = load_notes(path)
         if path.suffix.lower() == ".json":
-            tracks = generated_tracks(notes, names)
             profiles = [
                 profile_track(str(path), label, track_notes, division, lead,
-                              role=label.lower(), ms_role=label)
-                for label, track_notes, lead in tracks
+                              role=role, ms_role=ms_role)
+                for label, role, ms_role, track_notes, lead
+                in generated_tracks(notes, names, role_filter)
             ]
         else:
             roles = None if args.heuristic else load_track_roles(path)

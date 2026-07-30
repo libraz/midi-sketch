@@ -3,10 +3,12 @@
 import unittest
 
 from conftest import (
-    MusicAnalyzer, Severity,
+    MusicAnalyzer, Note, Severity,
     TICKS_PER_BAR, TICKS_PER_BEAT,
     make_vocal_note,
 )
+from music_analyzer.analyzers.melodic import MelodicAnalyzer
+from music_analyzer.blueprints import BLUEPRINT_PROFILES
 
 
 class TestMelodicAnalysis(unittest.TestCase):
@@ -68,6 +70,58 @@ class TestMelodicAnalysis(unittest.TestCase):
 
         leap_issues = [i for i in result.issues if i.subcategory == "large_leap"]
         self.assertGreater(len(leap_issues), 0)
+
+
+class TestMelodyStyleConfidence(unittest.TestCase):
+    @staticmethod
+    def _targets(samples):
+        return {
+            "categories": {
+                "ballad": {
+                    "blueprints": [3],
+                    "melody": {
+                        "n": samples,
+                        "step_ratio": {"min": 0.2, "med": 0.3, "max": 0.4},
+                    },
+                },
+            },
+        }
+
+    def _check(self, samples):
+        analyzer = MelodicAnalyzer([], {0: []}, metadata={"blueprint": 3})
+        analyzer._check_genre_coloring({"step_ratio": 0.9}, self._targets(samples))
+        return analyzer.issues
+
+    def test_single_reference_is_informational_only(self):
+        issues = self._check(samples=1)
+        self.assertEqual(len(issues), 1)
+        self.assertEqual(issues[0].severity, Severity.INFO)
+        self.assertEqual(issues[0].details["min_samples"], 3)
+
+    def test_three_references_enforce_style_warning(self):
+        issues = self._check(samples=3)
+        self.assertEqual(len(issues), 1)
+        self.assertEqual(issues[0].severity, Severity.WARNING)
+        self.assertEqual(issues[0].details["metric"], "step_ratio")
+
+
+class TestRhythmSyncMelodicTolerance(unittest.TestCase):
+    def test_every_rhythm_sync_profile_relaxes_repeated_aux_notes(self):
+        notes = [
+            Note(start=index * TICKS_PER_BEAT, duration=TICKS_PER_BEAT,
+                 pitch=72, velocity=80, channel=5)
+            for index in range(8)
+        ]
+        for blueprint in (1, 5, 7, 9):
+            with self.subTest(blueprint=blueprint):
+                analyzer = MelodicAnalyzer(
+                    notes, {5: notes}, profile=BLUEPRINT_PROFILES[blueprint]
+                )
+                analyzer._analyze_consecutive_same_pitch()
+                issues = [i for i in analyzer.issues
+                          if i.subcategory == "consecutive_same_pitch"]
+                self.assertEqual(len(issues), 1)
+                self.assertEqual(issues[0].severity, Severity.INFO)
 
 
 if __name__ == "__main__":

@@ -2,7 +2,7 @@
 """Profile midi-sketch generation to identify bottlenecks.
 
 Usage:
-  python3 scripts/profile_generation.py                    # Quick profile (50 seeds × 9 blueprints)
+  python3 scripts/profile_generation.py                    # Quick profile (50 seeds × 10 blueprints)
   python3 scripts/profile_generation.py --seeds 100        # More seeds
   python3 scripts/profile_generation.py --sample           # Attach macOS sample profiler
   python3 scripts/profile_generation.py --sample --duration 10  # Sample for 10 seconds
@@ -24,6 +24,7 @@ from statistics import mean, median, stdev
 SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parent
 CLI_PATH = PROJECT_ROOT / "build" / "bin" / "midisketch_cli"
+BENCH_PATH = PROJECT_ROOT / "build" / "bin" / "bench_generate"
 
 
 def time_single_generation(seed: int, blueprint: int, style: int = 0) -> dict:
@@ -54,10 +55,12 @@ def time_single_generation(seed: int, blueprint: int, style: int = 0) -> dict:
             "success": result.returncode == 0,
         }
 
-        # Parse output.json for note counts if available
-        if result.returncode == 0 and result.stdout:
+        # The CLI writes analysis JSON to output.json; --json only controls
+        # display output unless --analyze is also selected.
+        if result.returncode == 0 and os.path.exists(json_path):
             try:
-                data = json.loads(result.stdout)
+                with open(json_path) as f:
+                    data = json.load(f)
                 total_notes = sum(len(t.get("notes", [])) for t in data.get("tracks", []))
                 info["total_notes"] = total_notes
                 info["duration_ticks"] = data.get("duration_ticks", 0)
@@ -121,7 +124,7 @@ def print_timing_report(results: list[dict]):
     BP_NAMES = {
         0: "Traditional", 1: "RhythmLock", 2: "StoryPop", 3: "Ballad",
         4: "IdolStandard", 5: "IdolHyper", 6: "IdolKawaii",
-        7: "IdolCoolPop", 8: "IdolEmo",
+        7: "IdolCoolPop", 8: "IdolEmo", 9: "IdolRock",
     }
 
     print(f"\n{'Blueprint':<20} {'Mean':>8} {'Med':>8} {'Max':>8} {'P95':>8} {'Count':>6}")
@@ -178,13 +181,13 @@ def run_with_sample_profiler(seeds: int, blueprints: list[int], duration: int):
     """Run generation in a subprocess and attach macOS sample profiler."""
     print(f"Running sample profiler for {duration}s during batch generation...")
 
-    # Create a shell script that loops generating MIDI
+    # Repeat the dedicated in-process benchmark. Sampling a short-lived CLI
+    # process mostly captures process startup and file I/O instead of the
+    # generator's hot paths.
     loop_script = f"""#!/bin/bash
 while true; do
   for bp in {' '.join(str(b) for b in blueprints)}; do
-    for seed in $(seq 1 {seeds}); do
-      "{CLI_PATH}" --seed $seed --blueprint $bp --json > /dev/null 2>&1
-    done
+    "{BENCH_PATH}" --seeds {seeds} --bp $bp > /dev/null 2>&1
   done
 done
 """
@@ -204,16 +207,16 @@ done
         # Wait a moment for CLI to start
         time.sleep(0.5)
 
-        # Find the actual midisketch_cli processes
+        # Find the long-running benchmark process.
         sample_output = tempfile.mktemp(suffix=".txt")
 
         print(f"  Loop PID: {proc.pid}")
-        print(f"  Sampling midisketch_cli for {duration}s (interval: 1ms)...")
+        print(f"  Sampling bench_generate for {duration}s (interval: 1ms)...")
         print(f"  Output: {sample_output}")
 
-        # Sample the CLI process by name
+        # Sample the benchmark process by name
         sample_proc = subprocess.run(
-            ["sample", "midisketch_cli", str(duration), "1", "-file", sample_output, "-wait", "-mayDie"],
+            ["sample", "bench_generate", str(duration), "1", "-file", sample_output, "-wait", "-mayDie"],
             capture_output=True,
             text=True,
             timeout=duration + 30,
@@ -288,7 +291,7 @@ def parse_sample_output(filepath: str):
 def main():
     parser = argparse.ArgumentParser(description="Profile midi-sketch generation")
     parser.add_argument("--seeds", type=int, default=50, help="Number of seeds per blueprint (default: 50)")
-    parser.add_argument("--blueprints", type=str, default="0-8", help="Blueprint range (default: 0-8)")
+    parser.add_argument("--blueprints", type=str, default="0-9", help="Blueprint range (default: 0-9)")
     parser.add_argument("--styles", type=str, default="0", help="Style IDs (comma-separated, default: 0)")
     parser.add_argument("--sample", action="store_true", help="Attach macOS sample profiler")
     parser.add_argument("--duration", type=int, default=5, help="Sample profiler duration in seconds (default: 5)")
@@ -298,6 +301,9 @@ def main():
 
     if not CLI_PATH.exists():
         print(f"CLI not found at {CLI_PATH}. Run 'make build' first.")
+        sys.exit(1)
+    if args.sample and not BENCH_PATH.exists():
+        print(f"Benchmark not found at {BENCH_PATH}. Run 'make build' first.")
         sys.exit(1)
 
     # Parse blueprint range

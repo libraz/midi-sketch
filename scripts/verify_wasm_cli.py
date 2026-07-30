@@ -15,6 +15,7 @@ Usage:
 import argparse
 import hashlib
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -27,9 +28,6 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CLI_BIN = PROJECT_ROOT / "build" / "bin" / "midisketch_cli"
 WASM_HELPER = PROJECT_ROOT / "scripts" / "wasm_helper.mjs"
 
-TRACK_NAMES = ["Vocal", "Chord", "Bass", "Motif", "Arpeggio", "Aux", "Drums", "SE"]
-
-
 @dataclass
 class Config:
     """Config params that both CLI and WASM accept.
@@ -40,7 +38,7 @@ class Config:
     style: int = 0
     chord: int = 0
     form: int = 0
-    bpm: int = 120
+    bpm: Optional[int] = None
     blueprint: int = 0
     key: int = 0
     vocal_attitude: Optional[int] = None  # None = use style default
@@ -48,9 +46,10 @@ class Config:
     vocal_high: Optional[int] = None
 
     def label(self) -> str:
+        bpm = "default" if self.bpm is None else str(self.bpm)
         return (
             f"seed={self.seed} style={self.style} chord={self.chord} "
-            f"form={self.form} bpm={self.bpm} bp={self.blueprint} key={self.key}"
+            f"form={self.form} bpm={bpm} bp={self.blueprint} key={self.key}"
         )
 
 
@@ -97,7 +96,7 @@ def run_cli(cfg: Config, work_dir: Path) -> Optional[dict]:
     """Run native CLI and return events JSON.
 
     CLI writes output.mid and output.json to cwd, so we run it inside work_dir.
-    All config fields are passed explicitly to override CLI defaults.
+    Optional config fields are omitted so that the CLI's defaults are exercised.
     """
     cmd = [
         str(CLI_BIN),
@@ -105,10 +104,15 @@ def run_cli(cfg: Config, work_dir: Path) -> Optional[dict]:
         "--style", str(cfg.style),
         "--chord", str(cfg.chord),
         "--form", str(cfg.form),
-        "--bpm", str(cfg.bpm),
         "--blueprint", str(cfg.blueprint),
         "--key", str(cfg.key),
+        # WASM always emits SMF1. Normalize the native CLI to the same
+        # serialization format so that this check can compare the complete
+        # MIDI payload, not only the lossy events JSON projection.
+        "--format", "smf1",
     ]
+    if cfg.bpm is not None:
+        cmd += ["--bpm", str(cfg.bpm)]
     if cfg.vocal_attitude is not None:
         cmd += ["--vocal-attitude", str(cfg.vocal_attitude)]
     if cfg.vocal_low is not None:
@@ -139,7 +143,7 @@ def run_cli(cfg: Config, work_dir: Path) -> Optional[dict]:
 def run_wasm(cfg: Config, midi_path: Path) -> Optional[dict]:
     """Run WASM via Node.js helper and return events JSON.
 
-    All config fields are passed explicitly to match CLI invocation.
+    Optional config fields are omitted so that createDefaultConfig() is exercised.
     """
     cmd = [
         "node",
@@ -148,11 +152,12 @@ def run_wasm(cfg: Config, midi_path: Path) -> Optional[dict]:
         "--style", str(cfg.style),
         "--chord", str(cfg.chord),
         "--form", str(cfg.form),
-        "--bpm", str(cfg.bpm),
         "--blueprint", str(cfg.blueprint),
         "--key", str(cfg.key),
         "--midi", str(midi_path),
     ]
+    if cfg.bpm is not None:
+        cmd += ["--bpm", str(cfg.bpm)]
     if cfg.vocal_attitude is not None:
         cmd += ["--vocal-attitude", str(cfg.vocal_attitude)]
     if cfg.vocal_low is not None:
@@ -176,8 +181,20 @@ def run_wasm(cfg: Config, midi_path: Path) -> Optional[dict]:
         return None
 
 
-def md5(path: Path) -> str:
-    return hashlib.md5(path.read_bytes()).hexdigest()
+def normalized_midi_digest(path: Path) -> str:
+    """Hash MIDI bytes after masking the build timestamp in embedded metadata.
+
+    The CLI and WASM can be built at different times. That timestamp is the
+    only intentionally non-deterministic field in an otherwise identical SMF1
+    payload, so preserve its length while masking it before comparison.
+    """
+    data = path.read_bytes()
+    data = re.sub(
+        rb'("library_version":"[^"]*?\.)(\d{14})(")',
+        lambda match: match.group(1) + b"0" * 14 + match.group(3),
+        data,
+    )
+    return hashlib.sha256(data).hexdigest()
 
 
 def compare_notes(track_name: str, cli_notes: list, wasm_notes: list) -> list[DiffEntry]:
@@ -241,7 +258,7 @@ def compare(cfg: Config) -> CompareResult:
         # Compare MIDI binary
         cli_midi = cli_dir / "output.mid"
         if cli_midi.exists() and wasm_midi.exists():
-            res.midi_match = md5(cli_midi) == md5(wasm_midi)
+            res.midi_match = normalized_midi_digest(cli_midi) == normalized_midi_digest(wasm_midi)
         else:
             res.midi_match = None
             if not cli_midi.exists():
@@ -299,14 +316,15 @@ def compare(cfg: Config) -> CompareResult:
                             f"section[{i}].{key}: CLI={cs.get(key)} WASM={ws.get(key)}"
                         )
 
-        # MIDI binary difference alone is expected (SMF1 vs SMF2 format, timestamps).
-        # Only flag as failure if events (notes/sections/metadata) differ.
         has_event_diff = (
             res.meta_diffs
             or res.track_count_diffs
             or res.note_diffs
         )
-        if has_event_diff:
+        if res.midi_match is not True:
+            res.ok = False
+            res.events_match = False
+        elif has_event_diff:
             res.ok = False
             res.events_match = False
         else:
@@ -326,9 +344,9 @@ def print_result(res: CompareResult, verbose: bool = False):
         return
 
     if res.midi_match is False:
-        print("  MIDI binary: DIFFERENT")
+        print("  MIDI payload: DIFFERENT")
     elif res.midi_match is True and verbose:
-        print("  MIDI binary: identical")
+        print("  MIDI payload: identical")
 
     if res.meta_diffs:
         print("  Metadata diffs:")
@@ -360,7 +378,10 @@ def sweep_configs() -> list[Config]:
     configs = []
     seeds = [1, 42, 100, 999]
     styles = [0, 3, 5, 8, 12]
-    blueprints = [0, 1, 2, 3]
+    blueprints = [0, 1, 2, 3, 255]
+
+    # Omit BPM once so both entry points use their default-config path.
+    configs.append(Config(seed=1, style=0, bpm=None))
 
     # Basic sweep: fixed seed across styles
     for style in styles:
@@ -401,7 +422,8 @@ def main():
     parser.add_argument("--style", type=int, default=0)
     parser.add_argument("--chord", type=int, default=0)
     parser.add_argument("--form", type=int, default=0)
-    parser.add_argument("--bpm", type=int, default=120)
+    parser.add_argument("--bpm", type=int, default=None,
+                        help="Set BPM; omit to use the default configuration")
     parser.add_argument("--blueprint", type=int, default=0)
     parser.add_argument("--key", type=int, default=0)
     parser.add_argument("--vocal-attitude", type=int, default=None)

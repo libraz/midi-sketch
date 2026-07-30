@@ -120,6 +120,24 @@ class TestMultiDimensionalQuality(unittest.TestCase):
 
         self.assertTrue(any(i.severity.value == "warning" for i in issues))
 
+    def test_sustain_across_section_boundary_is_not_a_pause(self):
+        sections = [
+            _section("A", "A", 1, 4),
+            _section("Chorus", "Chorus", 5, 8),
+        ]
+        notes = [
+            _note(0, 0, TICKS_PER_BAR * 5, 64),
+            _note(1, TICKS_PER_BAR * 4, TICKS_PER_BAR, 60),
+        ]
+
+        result = MusicAnalyzer(notes, metadata={"sections": sections}).analyze_all()
+        issues = [
+            i for i in result.issues
+            if i.subcategory == "section_pause_balance"
+        ]
+
+        self.assertEqual(issues, [])
+
     def test_rhythmlock_chord_pulse_variation_is_not_motif_degradation(self):
         sections = [
             _section("A", "A1", 1, 4),

@@ -16,6 +16,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import melodic_metrics as mm
+from compare_generation_to_targets import MELODY_COMPARED
+from build_reference_targets import (
+    UNSINGABLE_RATE_SLACK,
+    build_common_melody_rules,
+)
 from music_analyzer.constants import SINGABILITY_SKIP_MAX, SINGABILITY_STEP_MAX
 
 TARGETS_PATH = (Path(__file__).resolve().parents[2]
@@ -48,6 +53,9 @@ class TestIntervalDistribution(unittest.TestCase):
     def test_music_analyzer_uses_shared_step_definition(self):
         self.assertEqual(SINGABILITY_STEP_MAX, mm.STEP_MAX)
         self.assertEqual(SINGABILITY_SKIP_MAX, mm.LEAP_SMALL_MAX)
+
+    def test_style_metric_consumers_share_the_canonical_list(self):
+        self.assertIs(MELODY_COMPARED, mm.MELODY_STYLE_METRICS)
 
 
 class TestLeapRecovery(unittest.TestCase):
@@ -148,6 +156,19 @@ class TestUnsingableMoves(unittest.TestCase):
     def test_slow_octave_jump_fine(self):
         r = mm.unsingable_moves(seq(60, 74), DIV, 120.0)
         self.assertEqual(r["unsingable"], 0)
+
+    def test_corpus_bound_includes_explicit_slack(self):
+        rules = build_common_melody_rules({
+            "pop": [{"chains_3plus_per_100_moves": 0.0,
+                     "leap12_contrary_rate": None,
+                     "leap12_leaps": 0,
+                     "unsingable_rate": 0.002}],
+        })
+        rule = rules["unsingable_moves"]
+        self.assertEqual(rule["corpus_worst"], 0.002)
+        self.assertEqual(rule["bound"], 0.003)
+        self.assertGreater(rule["bound"], rule["corpus_worst"])
+        self.assertEqual(UNSINGABLE_RATE_SLACK, 1.5)
 
 
 class TestPitchCellConsistency(unittest.TestCase):

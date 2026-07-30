@@ -29,6 +29,11 @@ from validate_melodic_rules import load_vocal_sequences
 
 REFERENCE_DIR = Path(__file__).resolve().parent.parent / "backup" / "reference"
 
+# Common melodic rules are corpus-derived but must leave room for normal
+# generator variation.  Keep this policy explicit rather than making an
+# observed maximum a binary ERROR threshold.
+UNSINGABLE_RATE_SLACK = 1.5
+
 METRICS = (
     "notes_per_bar",
     "short_pulse_ratio",
@@ -176,11 +181,12 @@ def build_common_melody_rules(grouped: dict[str, list[dict]]) -> dict:
         "unsingable_moves": {
             "metric": "unsingable_rate",
             "direction": "max",
-            "bound": round(max(unsingable_values), 3) if unsingable_values else 0.0,
+            "bound": (round(max(unsingable_values) * UNSINGABLE_RATE_SLACK, 3)
+                      if unsingable_values else 0.0),
             "corpus_worst": round(max(unsingable_values), 3) if unsingable_values else 0.0,
             "severity": "error",
-            "description": "Moves wider than an octave faster than 150ms do "
-                           "not occur even at 240 BPM in the corpus",
+            "description": "Moves wider than an octave faster than 150ms use "
+                           "a 1.5x corpus-derived rate allowance",
         },
     }
 

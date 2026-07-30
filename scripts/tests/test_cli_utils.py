@@ -1,12 +1,13 @@
 """Tests for cli_utils: run_cli and the shared ProgressCounter."""
 
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
 # conftest puts scripts/ on the path; import the shared utilities.
 import conftest  # noqa: F401  (ensures sys.path setup)
-from cli_utils import ProgressCounter, run_cli
+from cli_utils import ProgressCounter, isolated_work_dir, run_cli
 
 
 class _FakeResult:
@@ -71,6 +72,19 @@ class TestRunCli(unittest.TestCase):
             timeout=30,
         )
         self.assertEqual(rc, 0)
+
+
+class TestIsolatedWorkDir(unittest.TestCase):
+    def test_each_worker_gets_a_distinct_directory_and_cleanup(self):
+        with tempfile.TemporaryDirectory() as parent:
+            parent_path = Path(parent)
+            with isolated_work_dir(parent_path) as first:
+                with isolated_work_dir(parent_path) as second:
+                    self.assertNotEqual(first, second)
+                    self.assertTrue(first.is_dir())
+                    self.assertTrue(second.is_dir())
+                self.assertFalse(second.exists())
+            self.assertFalse(first.exists())
 
 
 class TestProgressCounter(unittest.TestCase):

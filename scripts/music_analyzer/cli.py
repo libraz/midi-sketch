@@ -11,12 +11,35 @@ import json
 import argparse
 import subprocess
 
-from .constants import Severity
+from .constants import (
+    Severity,
+    STYLE_PRESET_COUNT,
+    PRODUCTION_BLUEPRINT_IDS,
+)
 from .models import Note
 from .analyzer import MusicAnalyzer
 from .formatter import apply_filters, OutputFormatter
 from .loader import load_json_output, load_json_metadata
 from .runner import run_batch_tests, print_batch_summary
+
+
+def _batch_values(args):
+    """Resolve batch filters, keeping `all` in sync with public IDs."""
+    if args.quick:
+        return [0], [0], list(PRODUCTION_BLUEPRINT_IDS)
+    styles = (
+        list(range(STYLE_PRESET_COUNT)) if args.styles == "all"
+        else [int(val) for val in args.styles.split(",")]
+    )
+    chords = (
+        list(range(22)) if args.chords == "all"
+        else [int(val) for val in args.chords.split(",")]
+    )
+    blueprints = (
+        list(PRODUCTION_BLUEPRINT_IDS) if args.blueprints == "all"
+        else [int(val) for val in args.blueprints.split(",")]
+    )
+    return styles, chords, blueprints
 
 
 def main():
@@ -171,25 +194,7 @@ Examples:
     # Batch mode
     if args.batch:
         seeds = list(range(args.seed_start, args.seed_start + args.seeds))
-
-        if args.quick:
-            # Quick batch: 10 seeds x bp all
-            styles = [0]
-            chords = [0]
-            blueprints = list(range(9))
-        else:
-            styles = (
-                list(range(15)) if args.styles == "all"
-                else [int(val) for val in args.styles.split(",")]
-            )
-            chords = (
-                list(range(22)) if args.chords == "all"
-                else [int(val) for val in args.chords.split(",")]
-            )
-            blueprints = (
-                list(range(9)) if args.blueprints == "all"
-                else [int(val) for val in args.blueprints.split(",")]
-            )
+        styles, chords, blueprints = _batch_values(args)
 
         batch_results = run_batch_tests(
             args.cli, seeds, styles, chords, blueprints,
@@ -224,11 +229,14 @@ Examples:
     # Load notes
     try:
         notes = load_json_output(input_file)
-    except FileNotFoundError:
-        print(f"Error: File not found: {input_file}", file=sys.stderr)
-        sys.exit(1)
     except json.JSONDecodeError as exc:
         print(f"Error: Invalid JSON: {exc}", file=sys.stderr)
+        sys.exit(1)
+    except OSError as exc:
+        print(f"Error: Cannot read {input_file}: {exc}", file=sys.stderr)
+        sys.exit(1)
+    except (TypeError, ValueError) as exc:
+        print(f"Error: Invalid analyzer input {input_file}: {exc}", file=sys.stderr)
         sys.exit(1)
 
     # Determine blueprint and metadata for analysis
@@ -242,24 +250,24 @@ Examples:
     analyzer = MusicAnalyzer(notes, blueprint=bp_value, metadata=metadata)
 
     result = analyzer.analyze_all()
-
-    # Apply filters
-    result = apply_filters(result, filters)
-
-    # Format output
-    if args.score_only:
-        print(OutputFormatter.format_score_only(result))
-    elif args.json:
-        print(OutputFormatter.format_json(result, input_file))
-    elif args.track:
-        print(OutputFormatter.format_track(result, args.track))
-    elif args.quick:
-        print(OutputFormatter.format_quick(result, input_file))
-    else:
-        print(OutputFormatter.format_full(result, input_file))
-
-    # Exit code based on errors
     error_count = sum(
         1 for idx in result.issues if idx.severity == Severity.ERROR
     )
+
+    # Filters affect only presentation, never the analysis status.
+    display_result = apply_filters(result, filters)
+
+    # Format output
+    if args.score_only:
+        print(OutputFormatter.format_score_only(display_result))
+    elif args.json:
+        print(OutputFormatter.format_json(display_result, input_file))
+    elif args.track:
+        print(OutputFormatter.format_track(display_result, args.track))
+    elif args.quick:
+        print(OutputFormatter.format_quick(display_result, input_file))
+    else:
+        print(OutputFormatter.format_full(display_result, input_file))
+
+    # Exit code based on errors
     sys.exit(1 if error_count > 0 else 0)

@@ -11,6 +11,8 @@ from conftest import (
     TICKS_PER_BAR,
     TICKS_PER_BEAT,
 )
+from music_analyzer.blueprints import BLUEPRINT_PROFILES
+from music_analyzer.models import QualityScore
 
 
 class TestScoring(unittest.TestCase):
@@ -70,6 +72,36 @@ class TestScoring(unittest.TestCase):
         score = analyzer._calculate_scores([])
 
         self.assertEqual(score.details["structure_penalty"], 1.0)
+
+    def test_metadata_free_analysis_uses_traditional_profile(self):
+        analyzer = MusicAnalyzer([])
+        self.assertIs(analyzer.profile, BLUEPRINT_PROFILES[0])
+
+        score = QualityScore(melodic=100, harmonic=100, rhythm=0,
+                             arrangement=0, structure=100)
+        score.calculate_overall()
+        self.assertEqual(score.overall, 60.0)
+
+    def test_metadata_blueprint_selects_its_profile(self):
+        analyzer = MusicAnalyzer([], metadata={"blueprint": 1})
+        self.assertIs(analyzer.profile, BLUEPRINT_PROFILES[1])
+
+    def test_same_issue_set_has_same_score_at_any_note_density(self):
+        issue = Issue(Severity.WARNING, Category.HARMONIC, "dissonance", "", 0)
+        sparse = MusicAnalyzer([])
+        sparse.issues = [issue]
+        dense_notes = [
+            Note(start=index * TICKS_PER_BEAT, duration=TICKS_PER_BEAT,
+                 pitch=60, velocity=80, channel=0)
+            for index in range(2_500)
+        ]
+        dense = MusicAnalyzer(dense_notes)
+        dense.issues = [issue]
+
+        sparse_score = sparse._calculate_scores([])
+        dense_score = dense._calculate_scores([])
+        self.assertEqual(sparse_score.harmonic, dense_score.harmonic)
+        self.assertEqual(sparse_score.details["penalty_normalization"], "none")
 
 
 if __name__ == "__main__":

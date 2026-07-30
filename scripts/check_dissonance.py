@@ -12,8 +12,6 @@ import sys
 import argparse
 from pathlib import Path
 
-STYLE_PRESET_COUNT = 17
-PRODUCTION_BLUEPRINT_COUNT = 10
 from dataclasses import dataclass, field
 from typing import Optional
 from collections import defaultdict
@@ -22,9 +20,12 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 # Ensure scripts/ is importable so the music_analyzer package and
 # cli_utils module resolve whether run from repo root or scripts/.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from cli_utils import ProgressCounter, run_cli
+from cli_utils import ProgressCounter, isolated_work_dir, run_cli
 from music_analyzer import BLUEPRINT_NAMES, SOURCE_FILES
+from music_analyzer.constants import STYLE_PRESET_COUNT, PRODUCTION_BLUEPRINT_IDS
 from music_analyzer.issue_parser import Issue, parse_issues
+
+PRODUCTION_BLUEPRINT_COUNT = len(PRODUCTION_BLUEPRINT_IDS)
 
 # Track names for display
 TRACK_NAMES = ["vocal", "chord", "bass", "motif", "arpeggio", "aux"]
@@ -110,30 +111,29 @@ def run_single_test(
     ]
 
     try:
-        returncode, message = run_cli(cli_path, args, work_dir, timeout=60)
+        with isolated_work_dir(output_dir, "dissonance_") as worker_dir:
+            returncode, message = run_cli(cli_path, args, worker_dir, timeout=60)
 
-        if returncode is None:
-            return TestResult(
-                seed=seed, style=style, chord=chord, blueprint=blueprint,
-                error=message,
-            )
-        if returncode != 0:
-            return TestResult(
-                seed=seed, style=style, chord=chord, blueprint=blueprint,
-                error=f"CLI error: {message}",
-            )
+            if returncode is None:
+                return TestResult(
+                    seed=seed, style=style, chord=chord, blueprint=blueprint,
+                    error=message,
+                )
+            if returncode != 0:
+                return TestResult(
+                    seed=seed, style=style, chord=chord, blueprint=blueprint,
+                    error=f"CLI error: {message}",
+                )
 
-        # Read from the standard analysis.json location
-        std_analysis = work_dir / "analysis.json"
-        if std_analysis.exists():
-            # Copy to unique file for this test
-            with open(std_analysis) as f:
-                analysis = json.load(f)
-        else:
-            return TestResult(
-                seed=seed, style=style, chord=chord, blueprint=blueprint,
-                error="analysis.json not found",
-            )
+            std_analysis = worker_dir / "analysis.json"
+            if std_analysis.exists():
+                with open(std_analysis) as f:
+                    analysis = json.load(f)
+            else:
+                return TestResult(
+                    seed=seed, style=style, chord=chord, blueprint=blueprint,
+                    error="analysis.json not found",
+                )
 
         summary = analysis.get("summary", {})
         all_issues = parse_issues(analysis)

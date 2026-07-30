@@ -19,7 +19,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 # Ensure scripts/ is importable so the music_analyzer package and
 # cli_utils module resolve whether run from repo root or scripts/.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from cli_utils import ProgressCounter, run_cli
+from cli_utils import ProgressCounter, isolated_work_dir, run_cli
 from music_analyzer import BLUEPRINT_NAMES
 
 
@@ -30,7 +30,7 @@ TICKS_PER_BEAT = 480
 TICKS_PER_BAR = 1920
 
 # Default tracks to check (Bass, Drums, SE excluded)
-DEFAULT_CHECK_TRACKS = ["chord", "motif", "arpeggio", "aux"]
+DEFAULT_CHECK_TRACKS = ["chord", "motif", "arpeggio", "aux", "guitar"]
 
 
 def pitch_name(pitch: int) -> str:
@@ -232,29 +232,29 @@ def run_single_test(
     ]
 
     try:
-        returncode, message = run_cli(cli_path, args, work_dir, timeout=60)
+        with isolated_work_dir(output_dir, "pitch_crossing_") as worker_dir:
+            returncode, message = run_cli(cli_path, args, worker_dir, timeout=60)
 
-        if returncode is None:
-            return TestResult(
-                seed=seed, style=style, chord=chord, blueprint=blueprint,
-                error=message,
-            )
-        if returncode != 0:
-            return TestResult(
-                seed=seed, style=style, chord=chord, blueprint=blueprint,
-                error=f"CLI error: {message}",
-            )
+            if returncode is None:
+                return TestResult(
+                    seed=seed, style=style, chord=chord, blueprint=blueprint,
+                    error=message,
+                )
+            if returncode != 0:
+                return TestResult(
+                    seed=seed, style=style, chord=chord, blueprint=blueprint,
+                    error=f"CLI error: {message}",
+                )
 
-        # Read output.json
-        std_output = work_dir / "output.json"
-        if not std_output.exists():
-            return TestResult(
-                seed=seed, style=style, chord=chord, blueprint=blueprint,
-                error="output.json not found",
-            )
+            std_output = worker_dir / "output.json"
+            if not std_output.exists():
+                return TestResult(
+                    seed=seed, style=style, chord=chord, blueprint=blueprint,
+                    error="output.json not found",
+                )
 
-        with open(std_output) as f:
-            data = json.load(f)
+            with open(std_output) as f:
+                data = json.load(f)
 
         violations, track_summaries, vocal_count, acc_count = analyze_output_json(
             data, check_tracks, threshold

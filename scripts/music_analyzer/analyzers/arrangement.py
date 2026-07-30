@@ -119,7 +119,7 @@ class ArrangementAnalyzer(BaseAnalyzer):
                     sparse_layer = min(count_a, count_b) / max(count_a, count_b) < 0.25
                     rhythm_lock_support_pair = (
                         self.profile is not None
-                        and self.profile.name == "RhythmLock"
+                        and self.profile.paradigm == "RhythmSync"
                         and {ch_a, ch_b} <= {3, 5, 4, 6}
                         and dist >= 2.5
                     )
