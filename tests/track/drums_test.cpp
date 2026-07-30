@@ -7,6 +7,7 @@
 
 #include <gtest/gtest.h>
 
+#include <array>
 #include <map>
 #include <set>
 #include <vector>
@@ -17,11 +18,15 @@
 #include "core/song.h"
 #include "core/timing_constants.h"
 #include "core/types.h"
+#include "test_helpers/note_event_test_helper.h"
 #include "test_support/generator_test_fixture.h"
 #include "track/drums/beat_processors.h"
 #include "track/drums/drum_constants.h"
+#include "track/drums/drum_track_generator.h"
+#include "track/drums/ghost_notes.h"
 #include "track/drums/hihat_control.h"
 #include "track/drums/kick_patterns.h"
+#include "track/drums/percussion_generator.h"
 
 namespace midisketch {
 namespace {
@@ -126,6 +131,33 @@ TEST_F(DrumsTest, DrumsHaveKickAndSnare) {
 
   EXPECT_TRUE(has_kick) << "No kick drum found";
   EXPECT_TRUE(has_snare) << "No snare drum found";
+}
+
+TEST(DrumTrackRegressionTest, NoDuplicateKickAtSameTickAcrossParadigms) {
+  // Covers the five shipped MelodyDriven blueprints as well as the two other
+  // paradigms. MelodyDriven previously emitted its phrase-aware strong kicks
+  // and then emitted the base pattern at the same tick.
+  constexpr std::array<uint8_t, 7> kBlueprintIds = {0, 1, 2, 3, 4, 6, 8};
+  for (uint8_t blueprint_id : kBlueprintIds) {
+    SongConfig config = createDefaultSongConfig(3);
+    config.blueprint_id = blueprint_id;
+    config.form = StructurePattern::StandardPop;
+    config.form_explicit = true;
+    config.seed = 7;
+    config.humanize = false;
+
+    Generator generator;
+    generator.generateFromConfig(config);
+
+    std::map<Tick, size_t> kicks_per_tick;
+    for (const auto& note : generator.getSong().drums().notes()) {
+      if (note.note == KICK) ++kicks_per_tick[note.start_tick];
+    }
+    for (const auto& [tick, count] : kicks_per_tick) {
+      EXPECT_EQ(count, 1u) << "Blueprint " << static_cast<int>(blueprint_id) << " has " << count
+                           << " kick notes at tick " << tick;
+    }
+  }
 }
 
 TEST_F(DrumsTest, DrumsHaveTimekeepingElement) {
@@ -275,6 +307,35 @@ TEST_F(DrumsTest, DifferentMoodsProduceDifferentPatterns) {
   // Different moods may produce different patterns or densities
   EXPECT_FALSE(track1.notes().empty());
   EXPECT_FALSE(track2.notes().empty());
+}
+
+TEST(DrumBeatProcessorTest, GhostNotesCanFollowBackbeats) {
+  drums::GhostBeatParams params{BackingDensity::Normal, false, 1.0f, 0.0f,
+                                DrumGrooveFeel::Straight};
+
+  for (uint8_t beat : {1, 3}) {
+    int generated = 0;
+    for (uint32_t seed = 0; seed < 100; ++seed) {
+      std::mt19937 rng(seed);
+      MidiTrack track;
+      drums::BeatContext context{static_cast<Tick>(beat * TICKS_PER_BEAT),
+                                 beat,
+                                 100,
+                                 SectionType::Chorus,
+                                 Mood::EnergeticDance,
+                                 120,
+                                 0,
+                                 4,
+                                 false,
+                                 rng};
+
+      drums::generateGhostNotesForBeat(track, context, params);
+      generated += static_cast<int>(track.notes().size());
+    }
+
+    EXPECT_GT(generated, 0) << "Ghost notes should be possible after backbeat "
+                            << static_cast<int>(beat + 1);
+  }
 }
 
 // ============================================================================
@@ -494,10 +555,12 @@ TEST_F(DrumsTest, CrashOnSectionStart) {
   for (const auto& section : arrangement.sections()) {
     // Skip intro (may not have crash)
     if (section.type == SectionType::Intro) continue;
+    const Tick crash_window_start =
+        section.start_tick > TICK_SIXTEENTH ? section.start_tick - TICK_SIXTEENTH : 0;
 
     for (const auto& note : track.notes()) {
       if (note.note == CRASH || note.note == 49) {
-        if (note.start_tick >= section.start_tick &&
+        if (note.start_tick >= crash_window_start &&
             note.start_tick < section.start_tick + TICKS_PER_BEAT / 2) {
           crashes_at_section_start++;
           break;
@@ -595,25 +658,25 @@ TEST_F(DrumsTest, DrumsDurationValid) {
 
 TEST_F(DrumsTest, FillsAtSectionBoundaries) {
   params_.structure = StructurePattern::FullPop;  // Has multiple sections
-  params_.seed = 100;
+  int boundary_toms = 0;
+  for (uint32_t seed = 1; seed <= 32 && boundary_toms == 0; ++seed) {
+    params_.seed = seed;
+    Generator gen;
+    gen.generate(params_);
 
-  Generator gen;
-  gen.generate(params_);
-
-  const auto& track = gen.getSong().drums();
-
-  // Look for tom activity (fills typically use toms)
-  int tom_notes = 0;
-  for (const auto& note : track.notes()) {
-    if (note.note == TOM_H || note.note == TOM_M || note.note == TOM_L || note.note == 50 ||
-        note.note == 47 || note.note == 45) {
-      tom_notes++;
+    for (const auto& section : gen.getSong().arrangement().sections()) {
+      const Tick fill_start = section.endTick() - TICKS_PER_BAR;
+      for (const auto& note : gen.getSong().drums().notes()) {
+        if (note.start_tick < fill_start || note.start_tick >= section.endTick()) continue;
+        if (note.note == TOM_H || note.note == TOM_M || note.note == TOM_L || note.note == 50 ||
+            note.note == 47 || note.note == 45) {
+          boundary_toms++;
+        }
+      }
     }
   }
 
-  // Fills should use toms occasionally
-  // Note: not all styles have tom fills
-  EXPECT_GE(tom_notes, 0) << "Tom check completed";
+  EXPECT_GT(boundary_toms, 0) << "At least one deterministic seed should produce a boundary fill";
 }
 
 // ============================================================================
@@ -639,12 +702,8 @@ TEST_F(DrumsTest, GhostNotesHaveVelocityVariation) {
     }
   }
 
-  // If there are ghost notes, they should have some velocity variation
-  // (not all exactly the same velocity)
-  if (ghost_velocities.size() > 3) {
-    EXPECT_GT(ghost_velocities.size(), 1u)
-        << "Ghost notes should have velocity variation, not all identical";
-  }
+  EXPECT_GT(ghost_velocities.size(), 1u)
+      << "CityPop should produce ghost notes at more than one velocity";
 }
 
 TEST_F(DrumsTest, GhostNotesWithinValidRange) {
@@ -818,36 +877,26 @@ TEST_F(DrumsTest, BridgeSectionHasGhostNotes) {
   // This tests the GHOST_DENSITY_TABLE change from None to Light/Medium
   params_.structure = StructurePattern::ExtendedFull;  // Has Bridge section
   params_.mood = Mood::EnergeticDance;                 // Energetic = Medium ghosts
-  params_.seed = 42;
-
-  Generator gen;
-  gen.generate(params_);
-
-  const auto& track = gen.getSong().drums();
-  const auto& sections = gen.getSong().arrangement().sections();
-
-  // Find Bridge section and count low-velocity snares (ghosts)
   int ghost_notes_in_bridge = 0;
-  for (const auto& section : sections) {
-    if (section.type == SectionType::Bridge) {
-      Tick section_end = section.endTick();
-      for (const auto& note : track.notes()) {
-        if (note.start_tick >= section.start_tick && note.start_tick < section_end) {
-          // Ghost notes are snares (38, 40) with low velocity (< 60)
-          if ((note.note == 38 || note.note == 40) && note.velocity < 60) {
-            ghost_notes_in_bridge++;
+  for (uint32_t seed = 1; seed <= 32 && ghost_notes_in_bridge == 0; ++seed) {
+    params_.seed = seed;
+    Generator gen;
+    gen.generate(params_);
+
+    for (const auto& section : gen.getSong().arrangement().sections()) {
+      if (section.type == SectionType::Bridge) {
+        for (const auto& note : gen.getSong().drums().notes()) {
+          if (note.start_tick >= section.start_tick && note.start_tick < section.endTick() &&
+              (note.note == 38 || note.note == 40) && note.velocity < 60) {
+            ++ghost_notes_in_bridge;
           }
         }
       }
     }
   }
 
-  // With Light/Medium ghost density, Bridge should have some ghost notes.
-  // Chord boundary pipeline changes may alter track registration order,
-  // which can affect ghost note generation for certain seeds.
-  // Use GE 0 to allow seeds where ghost notes don't appear.
-  EXPECT_GE(ghost_notes_in_bridge, 0)
-      << "Bridge section ghost note check (0 acceptable after pipeline changes)";
+  EXPECT_GT(ghost_notes_in_bridge, 0)
+      << "Energetic Bridge should produce ghost notes for at least one deterministic seed";
 }
 
 TEST_F(DrumsTest, CityPopAndIdolPopHaveDifferentGroove) {
@@ -1002,8 +1051,31 @@ TEST_F(DrumsTest, CrashCymbalsDoNotDuplicateAtSameTick) {
                             << " for blueprint=" << static_cast<int>(blueprint_id)
                             << " seed=" << seed;
       }
+
+      Tick previous_tick = 0;
+      bool has_previous = false;
+      for (const auto& [tick, count] : crashes_by_tick) {
+        (void)count;
+        if (has_previous) {
+          EXPECT_GT(tick - previous_tick, TICK_SIXTEENTH)
+              << "Crash accents must share one +/-16th-note boundary window"
+              << " for blueprint=" << static_cast<int>(blueprint_id) << " seed=" << seed;
+        }
+        previous_tick = tick;
+        has_previous = true;
+      }
     }
   }
+}
+
+TEST(HiHatControlTest, CrashPresenceWindowIsSymmetricAroundRequestedTick) {
+  MidiTrack track;
+  constexpr Tick kCrashTick = TICK_SIXTEENTH * 2;
+  track.addNote(NoteEventTestHelper::create(kCrashTick, TICK_SIXTEENTH, CRASH, 100));
+
+  EXPECT_TRUE(drums::hasCrashAtTick(track, kCrashTick - TICK_SIXTEENTH));
+  EXPECT_TRUE(drums::hasCrashAtTick(track, kCrashTick + TICK_SIXTEENTH));
+  EXPECT_FALSE(drums::hasCrashAtTick(track, kCrashTick + TICK_SIXTEENTH + 1));
 }
 
 TEST_F(DrumsTest, ChillHasSparserDrumsThanSentimental) {
@@ -1184,55 +1256,68 @@ TEST_F(DrumsTest, TimeFeelDoesNotBreakGeneration) {
   }
 }
 
+TEST(DrumTrackRegressionTest, SectionTimeFeelOverridesMoodAndClampsPushedDownbeat) {
+  auto generate_kicks = [](TimeFeel time_feel) {
+    Section chorus;
+    chorus.type = SectionType::Chorus;
+    chorus.name = "Chorus";
+    chorus.start_tick = 0;
+    chorus.bars = 1;
+    chorus.track_mask = TrackMask::Drums;
+    chorus.time_feel = time_feel;
+
+    Song song;
+    song.setArrangement(Arrangement({chorus}));
+
+    GeneratorParams params;
+    params.mood = Mood::Ballad;  // Mood default is LaidBack, unlike two cases below.
+    params.bpm = 120;
+    params.blueprint_id = 0;
+    params.humanize = false;
+
+    std::mt19937 rng(42);
+    MidiTrack track;
+    generateDrumsTrack(track, song, params, rng);
+
+    std::vector<Tick> kicks;
+    for (const auto& note : track.notes()) {
+      if (note.note == KICK) kicks.push_back(note.start_tick);
+    }
+    return kicks;
+  };
+
+  const auto on_beat_kicks = generate_kicks(TimeFeel::OnBeat);
+  const auto laid_back_kicks = generate_kicks(TimeFeel::LaidBack);
+  const auto pushed_kicks = generate_kicks(TimeFeel::Pushed);
+
+  ASSERT_FALSE(on_beat_kicks.empty());
+  ASSERT_EQ(laid_back_kicks.size(), on_beat_kicks.size());
+  ASSERT_EQ(pushed_kicks.size(), on_beat_kicks.size());
+
+  constexpr uint16_t kBpm = 120;
+  const Tick laid_back_offset = applyTimeFeel(0, TimeFeel::LaidBack, kBpm);
+  const Tick pushed_offset = TICKS_PER_BEAT - applyTimeFeel(TICKS_PER_BEAT, TimeFeel::Pushed, kBpm);
+  ASSERT_GT(laid_back_offset, 0u);
+  ASSERT_GT(pushed_offset, 0u);
+
+  for (size_t i = 0; i < on_beat_kicks.size(); ++i) {
+    EXPECT_EQ(laid_back_kicks[i], on_beat_kicks[i] + laid_back_offset);
+    EXPECT_EQ(pushed_kicks[i],
+              on_beat_kicks[i] > pushed_offset ? on_beat_kicks[i] - pushed_offset : 0u);
+  }
+}
+
 // ============================================================================
 // C2: adjustGhostDensityForBPM - Ghost density adapts to tempo
 // ============================================================================
 
 TEST_F(DrumsTest, GhostDensitySparserAtHighBPM) {
-  // At BPM >= 160, ghost notes should be sparser to prevent cluttering.
-  // CityPop has ghost notes; average over multiple seeds for robustness.
-  params_.mood = Mood::CityPop;
-  params_.structure = StructurePattern::StandardPop;
-
-  int total_slow_ghosts = 0;
-  int total_fast_ghosts = 0;
-  constexpr int NUM_SEEDS = 5;
-
-  for (int seed = 1; seed <= NUM_SEEDS; ++seed) {
-    // Generate at slow tempo (80 BPM)
-    params_.bpm = 80;
-    params_.seed = seed * 100;
-    Generator gen_slow;
-    gen_slow.generate(params_);
-
-    // Generate at fast tempo (180 BPM)
-    params_.bpm = 180;
-    params_.seed = seed * 100;
-    Generator gen_fast;
-    gen_fast.generate(params_);
-
-    const auto& slow_track = gen_slow.getSong().drums();
-    const auto& fast_track = gen_fast.getSong().drums();
-
-    // Count low-velocity snare hits (ghost notes: velocity < 60)
-    for (const auto& note : slow_track.notes()) {
-      if ((note.note == SNARE || note.note == 40) && note.velocity < 60) {
-        total_slow_ghosts++;
-      }
-    }
-    for (const auto& note : fast_track.notes()) {
-      if ((note.note == SNARE || note.note == 40) && note.velocity < 60) {
-        total_fast_ghosts++;
-      }
-    }
-  }
-
-  // At fast BPM, ghost density should be reduced on average
-  // The adjustGhostDensityForBPM function reduces density by one level at BPM >= 160
-  EXPECT_GT(total_slow_ghosts, total_fast_ghosts)
-      << "Slow BPM total (" << total_slow_ghosts << " ghosts) should have more ghost notes "
-      << "than fast BPM total (" << total_fast_ghosts << " ghosts) across " << NUM_SEEDS
-      << " seeds";
+  // At BPM >= 160, ghost-note probability should be reduced to prevent
+  // cluttering. Whole-track low-velocity snare counts also include fills,
+  // which intentionally do not follow the groove-ghost density policy.
+  float slow = drums::getGhostDensity(Mood::CityPop, SectionType::B, BackingDensity::Normal, 80);
+  float fast = drums::getGhostDensity(Mood::CityPop, SectionType::B, BackingDensity::Normal, 180);
+  EXPECT_GT(slow, fast);
 }
 
 // ============================================================================
@@ -2427,6 +2512,62 @@ TEST_F(DrumsTest, IdolHyperRhythmSyncUsesBlueprintSwing) {
   EXPECT_TRUE(checked_chorus) << "IdolHyper should contain a swung Chorus section";
 }
 
+TEST(DrumSwingConsistencyTest, AuxiliaryShakerUsesSharedSwingGrid) {
+  MidiTrack track;
+  std::mt19937 rng(42);
+  const drums::PercussionConfig config{/*tambourine=*/false, /*shaker=*/true,
+                                       /*handclap=*/false, /*shaker_16th=*/true};
+
+  drums::generateAuxPercussionForBar(track, 0, config, DrumRole::Full, 1.0f, rng, 120,
+                                     DrumGrooveFeel::Swing, 0.5f);
+
+  bool found_first_swung_sixteenth = false;
+  bool found_swung_eighth = false;
+  for (const auto& note : track.notes()) {
+    if (note.note != drums::SHAKER) continue;
+    found_first_swung_sixteenth |= note.start_tick == TICK_SIXTEENTH + 20;
+    found_swung_eighth |= note.start_tick == TICK_EIGHTH + 40;
+  }
+  EXPECT_TRUE(found_first_swung_sixteenth);
+  EXPECT_TRUE(found_swung_eighth);
+}
+
+TEST(DrumSwingConsistencyTest, VocalSyncCallbackKicksUseSharedSwingGrid) {
+  Section chorus;
+  chorus.type = SectionType::Chorus;
+  chorus.start_tick = 0;
+  chorus.bars = 1;
+  chorus.swing_amount = 0.5f;
+  chorus.track_mask = TrackMask::All;
+
+  Song song;
+  song.setArrangement(Arrangement({chorus}));
+
+  drums::DrumGenerationParams params{};
+  params.mood = Mood::IdolPop;
+  params.bpm = 160;
+  params.blueprint_id = 5;
+  params.composition_style = CompositionStyle::MelodyLead;
+  params.paradigm = GenerationParadigm::RhythmSync;
+
+  MidiTrack track;
+  std::mt19937 rng(42);
+  auto callback = [](MidiTrack& target, Tick bar_start, Tick, const Section&, uint8_t velocity,
+                     std::mt19937&) {
+    drums::addDrumNote(target, bar_start + TICK_SIXTEENTH, TICK_EIGHTH, drums::BD, velocity);
+    return true;
+  };
+  drums::generateDrumsTrackImpl(track, song, params, rng, callback);
+
+  bool found_swung_callback_kick = false;
+  for (const auto& note : track.notes()) {
+    if (note.note == drums::BD && note.start_tick == TICK_SIXTEENTH + 20) {
+      found_swung_callback_kick = true;
+    }
+  }
+  EXPECT_TRUE(found_swung_callback_kick);
+}
+
 TEST_F(DrumsTest, RhythmSyncHiHatLevelVariesBySection) {
   std::mt19937 rng(42);
 
@@ -2859,25 +3000,18 @@ TEST_F(DrumsTest, GhostNotesHaveContextDependentVelocity) {
     }
   }
 
-  // Verify ghost notes exist and have valid velocities
-  if (!all_ghosts.empty()) {
-    uint8_t min_vel = *std::min_element(all_ghosts.begin(), all_ghosts.end());
-    uint8_t max_vel = *std::max_element(all_ghosts.begin(), all_ghosts.end());
+  ASSERT_FALSE(all_ghosts.empty()) << "CityPop should produce contextual ghost notes";
+  uint8_t min_vel = *std::min_element(all_ghosts.begin(), all_ghosts.end());
+  uint8_t max_vel = *std::max_element(all_ghosts.begin(), all_ghosts.end());
 
-    // Ghost velocities should be in reasonable range (20-65)
-    EXPECT_GE(min_vel, 20u) << "Ghost velocity too low";
-    EXPECT_LE(max_vel, 65u) << "Ghost velocity too high (should be softer than accents)";
-
-    // Should have some variation in ghost velocities
-    if (all_ghosts.size() > 5) {
-      EXPECT_GT(max_vel - min_vel, 5u) << "Ghost notes should have velocity variation";
-    }
+  EXPECT_GE(min_vel, 20u) << "Ghost velocity too low";
+  EXPECT_LE(max_vel, 65u) << "Ghost velocity too high (should be softer than accents)";
+  if (all_ghosts.size() > 5) {
+    EXPECT_GT(max_vel - min_vel, 5u) << "Ghost notes should have velocity variation";
   }
 
-  // Verify that ghost notes appear in multiple section types
-  // (context-dependent placement is working)
-  EXPECT_GE(ghosts_in_a + ghosts_in_chorus, 0)
-      << "Ghost notes should appear across different sections";
+  EXPECT_GT(ghosts_in_a + ghosts_in_chorus, 0)
+      << "Ghost notes should appear in A or Chorus sections";
 }
 
 // ============================================================================
@@ -2907,8 +3041,7 @@ TEST_F(DrumsTest, HighEnergyChorusAllowsLongerFills) {
     }
   }
 
-  // High energy styles should have fill activity
-  EXPECT_GE(tom_notes, 0) << "High energy style should allow fills with toms";
+  EXPECT_GT(tom_notes, 0) << "High energy style should produce tom fill activity";
 }
 
 // ============================================================================
@@ -3357,6 +3490,66 @@ TEST_F(DrumsTest, VocalSyncKickLimitedAtHighBPM) {
   }
 }
 
+TEST(DrumTrackRegressionTest, VocalSyncProbabilityDoesNotAlsoAttenuateVelocity) {
+  VocalAnalysis vocal_analysis{};
+  vocal_analysis.pitch_at_tick.emplace(TICKS_PER_BEAT, 60);  // Beat 2, not a protected anchor.
+  const auto callback = drums::createVocalSyncCallback(vocal_analysis, 120);
+
+  Section section;
+  section.type = SectionType::A;
+  section.drum_role = DrumRole::Ambient;  // 25% kick probability
+
+  bool observed_kick = false;
+  for (uint32_t seed = 1; seed <= 32 && !observed_kick; ++seed) {
+    MidiTrack track;
+    std::mt19937 rng(seed);
+    callback(track, 0, TICKS_PER_BAR, section, 100, rng);
+    for (const auto& note : track.notes()) {
+      if (note.note != KICK) continue;
+      observed_kick = true;
+      EXPECT_EQ(note.velocity, 85u)
+          << "The 25% probability must not be multiplied into an accepted kick velocity";
+    }
+  }
+  EXPECT_TRUE(observed_kick) << "At least one deterministic trial should pass the Ambient roll";
+}
+
+TEST(DrumTrackRegressionTest, RhythmSyncAnchorsRespectMinimalAndAmbientDrumRoles) {
+  auto generate_kick_ticks = [](DrumRole role, uint32_t seed) {
+    Section section;
+    section.type = SectionType::A;
+    section.bars = 1;
+    section.track_mask = TrackMask::Drums;
+    section.drum_role = role;
+
+    Song song;
+    song.setArrangement(Arrangement({section}));
+    drums::DrumGenerationParams params{Mood::StraightPop,
+                                       120,
+                                       1,
+                                       CompositionStyle::MelodyLead,
+                                       GenerationParadigm::RhythmSync,
+                                       {}};
+    std::mt19937 rng(seed);
+    MidiTrack track;
+    drums::generateDrumsTrackImpl(track, song, params, rng);
+
+    std::set<Tick> ticks;
+    for (const auto& note : track.notes()) {
+      if (note.note == KICK) ticks.insert(note.start_tick);
+    }
+    return ticks;
+  };
+
+  EXPECT_TRUE(generate_kick_ticks(DrumRole::Minimal, 1).empty());
+
+  for (uint32_t seed = 1; seed <= 64; ++seed) {
+    const auto ticks = generate_kick_ticks(DrumRole::Ambient, seed);
+    EXPECT_EQ(ticks.find(TICKS_PER_BEAT * 2), ticks.end())
+        << "Ambient RhythmSync should not force a beat-3 anchor for seed " << seed;
+  }
+}
+
 TEST_F(DrumsTest, RhythmLockVocalSyncKeepsKickAnchors) {
   const std::vector<uint32_t> seeds = {42, 1234, 56789};
 
@@ -3387,7 +3580,8 @@ TEST_F(DrumsTest, RhythmLockVocalSyncKeepsKickAnchors) {
     const auto& sections = gen.getSong().arrangement().sections();
 
     for (const auto& sec : sections) {
-      if (sec.type == SectionType::Intro || sec.type == SectionType::Outro) {
+      if (sec.type == SectionType::Intro || sec.type == SectionType::Outro ||
+          sec.getEffectiveDrumRole() != DrumRole::Full) {
         continue;
       }
       for (uint8_t bar = 0; bar < sec.bars; ++bar) {

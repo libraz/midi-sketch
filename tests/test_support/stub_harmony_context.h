@@ -6,6 +6,7 @@
 #ifndef MIDISKETCH_TEST_STUB_HARMONY_CONTEXT_H
 #define MIDISKETCH_TEST_STUB_HARMONY_CONTEXT_H
 
+#include <algorithm>
 #include <string>
 #include <vector>
 
@@ -46,7 +47,13 @@ class StubHarmonyContext : public IHarmonyCoordinator {
 
   int8_t getChordDegreeAt(Tick /*tick*/) const override { return chord_degree_; }
 
-  std::vector<int> getChordTonesAt(Tick /*tick*/) const override { return chord_tones_; }
+  ChordTones getChordTonesAt(Tick /*tick*/) const override {
+    ChordTones result{};
+    result.pitch_classes.fill(-1);
+    result.count = static_cast<uint8_t>(std::min<size_t>(chord_tones_.size(), 5));
+    std::copy_n(chord_tones_.begin(), result.count, result.pitch_classes.begin());
+    return result;
+  }
 
   void registerNote(Tick /*start*/, Tick /*duration*/, uint8_t /*pitch*/,
                     TrackRole /*track*/) override {
@@ -85,11 +92,6 @@ class StubHarmonyContext : public IHarmonyCoordinator {
 
   void clearPhantomNotes() override { ++clear_phantom_count_; }
 
-  bool hasBassCollision(uint8_t /*pitch*/, Tick /*start*/, Tick /*duration*/,
-                        int /*threshold*/) const override {
-    return false;  // No collisions
-  }
-
   std::vector<int> getPitchClassesFromTrackAt(Tick /*tick*/, TrackRole /*role*/) const override {
     return {};
   }
@@ -105,6 +107,9 @@ class StubHarmonyContext : public IHarmonyCoordinator {
 
   void registerChordExtension(Tick /*start*/, Tick /*end*/, ChordExtension /*extension*/) override {
   }
+
+  void registerChordReplacement(Tick /*start*/, Tick /*end*/, int8_t /*degree*/,
+                                ChordExtension /*extension*/) override {}
 
   bool isSecondaryDominantAt(Tick /*tick*/) const override { return false; }
 

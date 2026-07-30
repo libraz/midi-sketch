@@ -14,6 +14,7 @@
 #include "core/generator.h"
 #include "core/structure.h"
 #include "core/velocity.h"
+#include "test_support/generator_test_fixture.h"
 
 namespace midisketch {
 namespace {
@@ -22,17 +23,13 @@ namespace {
 // EmotionCurve Velocity Integration Tests
 // ============================================================================
 
-class EmotionCurveVelocityIntegrationTest : public ::testing::Test {
+class EmotionCurveVelocityIntegrationTest : public test::GeneratorTestFixture {
  protected:
   void SetUp() override {
-    params_.key = Key::C;
-    params_.bpm = 120;
+    GeneratorTestFixture::SetUp();
     params_.mood = Mood::ModernPop;
-    params_.chord_id = 0;
     params_.drums_enabled = true;
     params_.structure = StructurePattern::BuildUp;  // Intro -> A -> B -> Chorus
-    params_.seed = 42;
-    params_.vocal_low = 60;
     params_.vocal_high = 72;
   }
 
@@ -73,7 +70,6 @@ class EmotionCurveVelocityIntegrationTest : public ::testing::Test {
     return count;
   }
 
-  GeneratorParams params_;
   Generator generator_;
 };
 
@@ -88,14 +84,13 @@ TEST_F(EmotionCurveVelocityIntegrationTest, HighEnergySectionHasLouderVelocity) 
   const Section* a_section = findSectionByType(sections, SectionType::A);
   const Section* chorus = findSectionByType(sections, SectionType::Chorus);
 
-  if (!a_section || !chorus) {
-    GTEST_SKIP() << "Structure doesn't have both A section and Chorus";
-  }
+  ASSERT_NE(a_section, nullptr) << "Velocity fixture must contain an A section";
+  ASSERT_NE(chorus, nullptr) << "Velocity fixture must contain a Chorus section";
 
-  // Skip if either section has no notes
-  if (countNotesInSection(chord, *a_section) == 0 || countNotesInSection(chord, *chorus) == 0) {
-    GTEST_SKIP() << "Chord track doesn't have notes in both sections";
-  }
+  ASSERT_GT(countNotesInSection(chord, *a_section), 0)
+      << "Chord track must contain notes in the A section";
+  ASSERT_GT(countNotesInSection(chord, *chorus), 0)
+      << "Chord track must contain notes in the Chorus section";
 
   float a_avg = averageVelocityInSection(chord, *a_section);
   float chorus_avg = averageVelocityInSection(chord, *chorus);
@@ -116,13 +111,10 @@ TEST_F(EmotionCurveVelocityIntegrationTest, LowTensionCapsVelocity) {
   const auto& chord = generator_.getSong().chord();
 
   const Section* intro = findSectionByType(sections, SectionType::Intro);
-  if (!intro) {
-    GTEST_SKIP() << "Structure doesn't have Intro section";
-  }
+  ASSERT_NE(intro, nullptr) << "Velocity fixture must contain an Intro section";
 
-  if (countNotesInSection(chord, *intro) == 0) {
-    GTEST_SKIP() << "Chord track doesn't have notes in Intro";
-  }
+  ASSERT_GT(countNotesInSection(chord, *intro), 0)
+      << "Chord track must contain notes in the Intro section";
 
   Tick section_start = intro->start_tick;
   Tick section_end = section_start + intro->bars * TICKS_PER_BAR;
@@ -353,10 +345,8 @@ TEST_F(EmotionCurveVelocityIntegrationTest, EmotionCurveActuallyAffectsVelocity)
     }
   }
 
-  // Require significant energy difference to test
-  if (max_energy - min_energy < 0.3f) {
-    GTEST_SKIP() << "Not enough energy variation between sections";
-  }
+  ASSERT_GE(max_energy - min_energy, 0.3f)
+      << "Velocity fixture must provide meaningful energy variation";
 
   float high_energy_avg = averageVelocityInSection(chord, sections[max_energy_idx]);
   float low_energy_avg = averageVelocityInSection(chord, sections[min_energy_idx]);
@@ -384,9 +374,9 @@ TEST_F(EmotionCurveVelocityIntegrationTest, IntroHasReducedVelocityDueToLowEnerg
   const auto& chord = generator_.getSong().chord();
 
   const Section* intro = findSectionByType(sections, SectionType::Intro);
-  if (!intro || countNotesInSection(chord, *intro) == 0) {
-    GTEST_SKIP() << "No intro section with chord notes";
-  }
+  ASSERT_NE(intro, nullptr) << "Velocity fixture must contain an Intro section";
+  ASSERT_GT(countNotesInSection(chord, *intro), 0)
+      << "Chord track must contain notes in the Intro section";
 
   // Get Intro's emotion
   size_t intro_idx = 0;

@@ -12,6 +12,7 @@
 #include "core/harmony_context.h"
 #include "core/midi_track.h"
 #include "core/timing_constants.h"
+#include "test_support/stub_harmony_context.h"
 
 using namespace midisketch;
 
@@ -35,6 +36,20 @@ class NoteCreatorTest : public ::testing::Test {
   Arrangement arrangement_;
   ChordProgression progression_;
   HarmonyContext harmony_;
+};
+
+class SelectivePitchHarmony final : public test::StubHarmonyContext {
+ public:
+  explicit SelectivePitchHarmony(uint8_t safe_pitch) : safe_pitch_(safe_pitch) {}
+
+  bool isConsonantWithOtherTracks(uint8_t pitch, Tick /*start*/, Tick /*duration*/,
+                                  TrackRole /*exclude*/,
+                                  bool /*is_weak_beat*/ = false) const override {
+    return pitch == safe_pitch_;
+  }
+
+ private:
+  uint8_t safe_pitch_;
 };
 
 TEST_F(NoteCreatorTest, CreateNoteWithoutHarmony) {
@@ -92,6 +107,22 @@ TEST_F(NoteCreatorTest, GetMaxSafeEndUsesCurrentChordDegreeForTritoneContext) {
 
   EXPECT_EQ(dominant_harmony.getMaxSafeEnd(0, 71, TrackRole::Motif, TICK_HALF), TICK_HALF)
       << "B-F tritone is chord-defining in V7 context and must not over-trim";
+}
+
+TEST_F(NoteCreatorTest, MaxSafeEndPreservesRegisteredWideTonicMajorSeventhColour) {
+  Section section;
+  section.type = SectionType::A;
+  section.name = "A";
+  section.bars = 1;
+  section.start_tick = 0;
+  Arrangement arrangement({section});
+  HarmonyContext harmony;
+  harmony.initialize(arrangement, getChordProgression(0), Mood::StraightPop);
+  harmony.registerChordExtension(0, TICKS_PER_BAR, ChordExtension::Maj7);
+  harmony.registerNote(TICK_QUARTER, TICK_QUARTER, 71, TrackRole::Chord);  // B4
+
+  EXPECT_EQ(harmony.getMaxSafeEnd(0, 48, TrackRole::Motif, TICK_HALF), TICK_HALF)
+      << "C3-B4 is a registered Imaj7 root/seventh pair with wide separation";
 }
 
 TEST_F(NoteCreatorTest, CreateNoteAndAddWorksCorrectly) {
@@ -252,6 +283,28 @@ TEST_F(NoteCreatorTest, NoCollisionCheckNoClampWhenRangeUnset) {
   EXPECT_EQ(note->note, 90);  // No clamping when range is unset
 }
 
+TEST(NoteCreatorFallbackTest, FoldsBelowRangeUpwardWhenCandidateSearchHasNoMatch) {
+  // No candidate around MIDI 0 is in the requested register. The fallback
+  // must still preserve C by folding it upward to C4 instead of failing.
+  SelectivePitchHarmony harmony(60);
+  harmony.setChordTones({1, 5, 8});  // Keep the regular chord-tone search off C4.
+
+  NoteOptions opts;
+  opts.start = 0;
+  opts.duration = TICKS_PER_BEAT;
+  opts.desired_pitch = 0;
+  opts.velocity = 100;
+  opts.role = TrackRole::Motif;
+  opts.range_low = 60;
+  opts.range_high = 70;
+  opts.source = NoteSource::Motif;
+
+  const auto result = createNoteWithResult(harmony, opts);
+  ASSERT_TRUE(result.note.has_value());
+  EXPECT_EQ(result.note->note, 60);
+  EXPECT_EQ(result.final_pitch, 60);
+}
+
 TEST_F(NoteCreatorTest, RegisterToHarmony) {
   NoteOptions opts;
   opts.start = 0;
@@ -290,6 +343,23 @@ TEST_F(NoteCreatorTest, GetSafePitchCandidates) {
   for (const auto& c : candidates) {
     EXPECT_NE(c.pitch, 61);
     EXPECT_TRUE(harmony_.isConsonantWithOtherTracks(c.pitch, 0, 480, TrackRole::Bass));
+  }
+}
+
+TEST(NoteCreatorCandidateTest, VocalDiversityFallbackKeepsOnlyVerifiedConsonantPitches) {
+  SelectivePitchHarmony harmony(60);
+  harmony.setChordDegree(0);
+  harmony.setChordTones({0, 4, 7});
+
+  auto candidates = getSafePitchCandidates(harmony, 60, 0, TICK_QUARTER, TrackRole::Vocal, 48, 84,
+                                           PitchPreference::Default, 8, 60, 4);
+
+  ASSERT_FALSE(candidates.empty());
+  for (const auto& candidate : candidates) {
+    EXPECT_EQ(candidate.pitch, 60)
+        << "The diversity fallback must not admit an unverified wide M7/m9 candidate";
+    EXPECT_TRUE(
+        harmony.isConsonantWithOtherTracks(candidate.pitch, 0, TICK_QUARTER, TrackRole::Vocal));
   }
 }
 

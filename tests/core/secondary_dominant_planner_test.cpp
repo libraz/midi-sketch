@@ -10,6 +10,7 @@
 #include "core/chord.h"
 #include "core/chord_utils.h"
 #include "core/generator.h"
+#include "core/harmonic_rhythm.h"
 #include "core/harmony_context.h"
 #include "core/pitch_utils.h"
 #include "core/timing_constants.h"
@@ -225,6 +226,47 @@ TEST(SecondaryDominantPlannerTest, ChorusBoundaryTargetsNextSectionFirstChord) {
   EXPECT_EQ(harmony.getChordDegreeAt(boundary_tick), 0)
       << "Boundary SD should be V/IV (I7 in C), based on the Chorus first chord, "
          "not V/vi from the previous section tail.";
+}
+
+TEST(SecondaryDominantPlannerTest, BSectionUsesAdjacentTimelineEntriesForSecondaryDominants) {
+  Section prechorus{};
+  prechorus.type = SectionType::B;
+  prechorus.name = "B";
+  prechorus.bars = 8;
+  prechorus.start_tick = 0;
+  Arrangement arrangement({prechorus});
+
+  // The B section consumes two slots per bar: I→vi, IV→V, … .  The old
+  // planner used bar % length, incorrectly planning bar 1 as vi→IV instead
+  // of the timeline's IV→V and then replacing the target half.
+  ChordProgression progression{};
+  progression.degrees = {0, 5, 3, 4};
+  progression.length = 4;
+
+  bool found_secondary_dominant = false;
+  for (uint32_t seed = 1; seed <= 512 && !found_secondary_dominant; ++seed) {
+    HarmonyContext harmony;
+    harmony.initialize(arrangement, progression, Mood::AnimeHighEnergy);
+    std::mt19937 rng(seed);
+    planAndRegisterSecondaryDominants(arrangement, progression, Mood::AnimeHighEnergy, rng,
+                                      harmony);
+
+    for (uint8_t bar = 0; bar < prechorus.bars - 2; ++bar) {
+      Tick bar_start = bar * TICKS_PER_BAR;
+      if (!harmony.isSecondaryDominantAt(bar_start)) continue;
+
+      found_secondary_dominant = true;
+      int expected_target = progression.degrees[(bar * 2 + 1) % progression.length];
+      EXPECT_EQ(harmony.getChordDegreeAt(bar_start + TICK_HALF), expected_target)
+          << "A B-section secondary dominant must resolve to the adjacent "
+             "second-half timeline entry";
+      EXPECT_FALSE(harmony.isSecondaryDominantAt(bar_start + TICK_HALF));
+      break;
+    }
+  }
+
+  EXPECT_TRUE(found_secondary_dominant)
+      << "Expected at least one deterministic seed to plan a B-section secondary dominant";
 }
 
 }  // namespace

@@ -7,7 +7,9 @@
 
 #include <gtest/gtest.h>
 
+#include "analysis/dissonance.h"
 #include "core/song.h"
+#include "midi/byte_order.h"
 #include "midi/midi_writer.h"
 
 namespace midisketch {
@@ -40,6 +42,132 @@ TEST(MidiReaderTest, ReadInvalidHeader) {
 
   EXPECT_FALSE(reader.read(invalid_data));
   EXPECT_NE(reader.getError().find("MThd"), std::string::npos);
+}
+
+TEST(MidiReaderTest, RejectsZeroTimeDivision) {
+  const std::vector<uint8_t> data = {
+      'M', 'T', 'h', 'd', 0, 0, 0, 6, 0, 1, 0, 0, 0, 0,
+  };
+
+  MidiReader reader;
+  EXPECT_FALSE(reader.read(data));
+  EXPECT_NE(reader.getError().find("division"), std::string::npos);
+}
+
+TEST(MidiReaderTest, RejectsSmpteTimeDivision) {
+  const std::vector<uint8_t> data = {
+      'M', 'T', 'h', 'd', 0, 0, 0, 6, 0, 1, 0, 0, 0xE7, 0x28,
+  };
+
+  MidiReader reader;
+  EXPECT_FALSE(reader.read(data));
+  EXPECT_NE(reader.getError().find("SMPTE"), std::string::npos);
+}
+
+TEST(MidiReaderTest, ReadsExtendedHeaderChunkUsingDeclaredLength) {
+  // SMF permits header data beyond the six required bytes. The track begins
+  // at 8 + declared MThd length, not at the historical fixed offset 14.
+  const std::vector<uint8_t> data = {
+      'M', 'T',  'h',  'd', 0, 0,   0, 7,  // MThd, 7-byte payload
+      0,   1,    0,    1,   1, 224, 0,     // format 1, one track, PPQ 480, extension byte
+      'M', 'T',  'r',  'k', 0, 0,   0, 4,  // MTrk, 4-byte payload
+      0,   0xFF, 0x2F, 0,                  // delta 0, End-of-Track
+  };
+
+  MidiReader reader;
+  ASSERT_TRUE(reader.read(data)) << reader.getError();
+  EXPECT_EQ(reader.getParsedMidi().division, 480u);
+  ASSERT_EQ(reader.getParsedMidi().tracks.size(), 1u);
+}
+
+TEST(MidiReaderTest, Type0ChannelsBecomeLogicalTracksForDissonanceAnalysis) {
+  const std::vector<uint8_t> data = {
+      'M',  'T',  'h',  'd', 0,  0, 0,    6,  0,   0, 0,    1,  1,   0, 'M',  'T',  'r',
+      'k',  0,    0,    0,   29, 0, 0x90, 60, 100, 0, 0x91, 61, 100, 0, 0x99, 36,   100,
+      0x83, 0x60, 0x80, 60,  0,  0, 0x81, 61, 0,   0, 0x89, 36, 0,   0, 0xFF, 0x2F, 0,
+  };
+
+  MidiReader reader;
+  ASSERT_TRUE(reader.read(data)) << reader.getError();
+  const auto& parsed = reader.getParsedMidi();
+  ASSERT_EQ(parsed.format, 0);
+  ASSERT_EQ(parsed.tracks.size(), 3u);
+  EXPECT_EQ(parsed.tracks[0].channel, 0);
+  EXPECT_EQ(parsed.tracks[1].channel, 1);
+  EXPECT_EQ(parsed.tracks[2].channel, 9);
+  EXPECT_EQ(parsed.tracks[2].name, "Drums");
+
+  const auto report = analyzeDissonanceFromParsedMidi(parsed);
+  EXPECT_EQ(report.summary.simultaneous_clashes, 1u);
+  ASSERT_EQ(report.issues.size(), 1u);
+  EXPECT_EQ(report.issues[0].interval_semitones, 1);
+  for (const auto& note : report.issues[0].notes) {
+    EXPECT_NE(note.track_name, "Drums");
+  }
+}
+
+TEST(MidiReaderTest, RejectsEveryTruncationOfGeneratedMidi) {
+  Song song;
+  song.setBpm(120);
+  song.vocal().addNote(NoteEventBuilder::create(0, 480, 60, 100));
+
+  MidiWriter writer;
+  writer.build(song, Key::C, Mood::StraightPop, "", MidiFormat::SMF1);
+  const auto midi_data = writer.toBytes();
+  ASSERT_GT(midi_data.size(), 14u);
+
+  for (size_t length = 0; length < midi_data.size(); ++length) {
+    MidiReader reader;
+    std::vector<uint8_t> truncated(midi_data.begin(), midi_data.begin() + length);
+    EXPECT_FALSE(reader.read(truncated)) << "Accepted MIDI truncated to " << length << " bytes";
+  }
+}
+
+TEST(MidiReaderTest, RejectsMalformedTrackEventCorpus) {
+  const auto make_file = [](const std::vector<uint8_t>& track_data) {
+    std::vector<uint8_t> data = {
+        'M', 'T', 'h', 'd', 0,   0,   0,   6, 0, 0, 0,
+        1,   1,   0,   'M', 'T', 'r', 'k', 0, 0, 0, static_cast<uint8_t>(track_data.size()),
+    };
+    data.insert(data.end(), track_data.begin(), track_data.end());
+    return data;
+  };
+
+  const std::vector<std::vector<uint8_t>> malformed_tracks = {
+      {0x80},                    // Unterminated delta-time VLQ.
+      {0x00, 0x90, 60},          // Note-on missing velocity.
+      {0x00, 0xFF, 0x01},        // Meta event missing length.
+      {0x00, 0xF0, 0x02, 0x7D},  // SysEx payload shorter than declared length.
+  };
+
+  for (const auto& track_data : malformed_tracks) {
+    MidiReader reader;
+    EXPECT_FALSE(reader.read(make_file(track_data)));
+    EXPECT_FALSE(reader.getError().empty());
+  }
+}
+
+TEST(MidiReaderTest, PreservesAllTempoEvents) {
+  const std::vector<uint8_t>
+      midi_data =
+          {
+              'M',  'T',  'h',  'd',  0,    0,    0,    6,    0,    0,
+              0,    1,    1,    0,    'M',  'T',  'r',  'k',  0,    0,
+              0,    19,   0x00, 0xFF, 0x51, 0x03, 0x07, 0xA1, 0x20,  // 120 BPM at tick 0
+              0x83, 0x60, 0xFF, 0x51, 0x03, 0x0A, 0x2C, 0x2A,        // 90 BPM at tick 480
+              0x00, 0xFF, 0x2F, 0x00,
+          };
+
+  MidiReader reader;
+  ASSERT_TRUE(reader.read(midi_data)) << reader.getError();
+
+  const auto& parsed = reader.getParsedMidi();
+  ASSERT_EQ(parsed.tempo_map.size(), 2u);
+  EXPECT_EQ(parsed.bpm, 120);
+  EXPECT_EQ(parsed.tempo_map[0].tick, 0u);
+  EXPECT_EQ(parsed.tempo_map[0].bpm, 120);
+  EXPECT_EQ(parsed.tempo_map[1].tick, 480u);
+  EXPECT_EQ(parsed.tempo_map[1].bpm, 90);
 }
 
 // ============================================================================
@@ -333,6 +461,22 @@ TEST(MidiReaderTest, VariableLengthQuantityParsing) {
   }
   EXPECT_TRUE(found_first) << "First note not found";
   EXPECT_TRUE(found_second) << "Second note at tick 15360 not found";
+}
+
+TEST(MidiReaderTest, RejectsFiveByteVariableLengthQuantity) {
+  const std::vector<uint8_t> five_byte_vlq = {0x81, 0x80, 0x80, 0x80, 0x00};
+  size_t offset = 0;
+  uint32_t value = 0;
+  EXPECT_FALSE(readVariableLength(five_byte_vlq.data(), offset, five_byte_vlq.size(), value));
+
+  // A fifth delta-time byte must fail the actual MIDI reader as well.
+  const std::vector<uint8_t> data = {
+      'M', 'T', 'h', 'd', 0, 0, 0, 6,    0,    1,    0,    1,    1,    224,  'M',
+      'T', 'r', 'k', 0,   0, 0, 8, 0x81, 0x80, 0x80, 0x80, 0x00, 0xFF, 0x2F, 0,
+  };
+  MidiReader reader;
+  EXPECT_FALSE(reader.read(data));
+  EXPECT_NE(reader.getError().find("variable-length"), std::string::npos);
 }
 
 TEST(MidiReaderTest, RunningStatusHandling) {

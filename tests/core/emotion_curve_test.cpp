@@ -9,6 +9,7 @@
 
 #include "core/generator.h"
 #include "core/structure.h"
+#include "test_support/generator_test_fixture.h"
 
 namespace midisketch {
 namespace {
@@ -255,21 +256,15 @@ TEST(EmotionCurveTest, RepeatedChorusIncreasingEnergy) {
 // EmotionCurve Integration Tests (with Generator)
 // ============================================================================
 
-class EmotionCurveIntegrationTest : public ::testing::Test {
+class EmotionCurveIntegrationTest : public test::GeneratorTestFixture {
  protected:
   void SetUp() override {
-    params_.key = Key::C;
-    params_.bpm = 120;
+    GeneratorTestFixture::SetUp();
     params_.mood = Mood::ModernPop;
-    params_.chord_id = 0;
     params_.drums_enabled = true;
     params_.structure = StructurePattern::BuildUp;  // Intro -> A -> B -> Chorus
-    params_.seed = 42;
-    params_.vocal_low = 60;
     params_.vocal_high = 72;
   }
-
-  GeneratorParams params_;
   Generator generator_;
 };
 

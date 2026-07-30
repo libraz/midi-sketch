@@ -9,6 +9,7 @@
 
 #include "core/timing_constants.h"
 #include "core/types.h"
+#include "track/melody/melody_utils.h"
 #include "track/vocal/phrase_cache.h"
 #include "track/vocal/phrase_plan.h"
 
@@ -24,6 +25,18 @@ constexpr Tick k8BarEnd = 8 * TICKS_PER_BAR;  // 15360
 constexpr Tick k4BarEnd = 4 * TICKS_PER_BAR;  // 7680
 constexpr Tick k6BarEnd = 6 * TICKS_PER_BAR;  // 11520
 constexpr Tick k2BarEnd = 2 * TICKS_PER_BAR;  // 3840
+
+// ============================================================================
+
+TEST(PhrasePlannerTest, UsesPlanningBreathWithoutInventedPhraseData) {
+  PhrasePlan plan = PhrasePlanner::buildPlan(SectionType::A, kSectionStart, k4BarEnd, 4,
+                                             Mood::StraightPop, VocalStylePreset::Standard);
+
+  ASSERT_EQ(plan.phrases.size(), 2u);
+  EXPECT_EQ(plan.phrases.front().breath_after,
+            melody::getPlannedBreathDuration(SectionType::A, Mood::StraightPop,
+                                             VocalStylePreset::Standard, 120));
+}
 
 // ============================================================================
 // Step 1: Phrase structure tests

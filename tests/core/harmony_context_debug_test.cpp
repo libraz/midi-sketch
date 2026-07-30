@@ -4,13 +4,19 @@
 #include "core/chord.h"
 #include "core/harmony_context.h"
 #include "core/i_harmony_context.h"
+#include "core/pitch_utils.h"
 #include "core/types.h"
 
 using namespace midisketch;
 
 TEST(HarmonyContextDebug, ChordAtBar7) {
   // Create arrangement with 8-bar Chorus starting at bar 0
-  Section chorus{SectionType::Chorus, 0, 8, 0};
+  Section chorus;
+  chorus.type = SectionType::Chorus;
+  chorus.name = "CHORUS";
+  chorus.bars = 8;
+  chorus.start_bar = 0;
+  chorus.start_tick = 0;
   Arrangement arrangement({chorus});
 
   // Use chord progression 3: Pop2 = F-C-G-Am = [3, 0, 4, 5]
@@ -23,42 +29,17 @@ TEST(HarmonyContextDebug, ChordAtBar7) {
   Tick bar7_tick = 7 * TICKS_PER_BAR;  // 13440
   int8_t degree = harmony.getChordDegreeAt(bar7_tick);
 
-  std::cout << "Bar 7 tick: " << bar7_tick << "\n";
-  std::cout << "Chord degree at bar 7: " << (int)degree << "\n";
-  std::cout << "Expected: 5 (Am) for Pop2 progression at bar 7\n";
-
   // Pop2 = [3, 0, 4, 5], bar 7 % 4 = 3 -> degree 5
   EXPECT_EQ(degree, 5) << "Bar 7 should have Am (degree 5)";
 
-  // Also check a few other bars
-  for (int bar = 0; bar < 8; bar++) {
-    Tick tick = bar * TICKS_PER_BAR;
-    int8_t deg = harmony.getChordDegreeAt(tick);
-    std::cout << "Bar " << bar << " (tick " << tick << "): degree " << (int)deg << "\n";
-  }
+  EXPECT_EQ(harmony.getChordDegreeAt(0), 3);
+  EXPECT_EQ(harmony.getChordDegreeAt(TICKS_PER_BAR), 0);
+  EXPECT_EQ(harmony.getChordDegreeAt(2 * TICKS_PER_BAR), 4);
 }
 
 TEST(BassDebug, RootCalculation) {
   // Canon progression: I-V-vi-IV = {0, 4, 5, 3}
   const auto& progression = getChordProgression(0);
-
-  std::cout << "Canon progression degrees: ";
-  for (int i = 0; i < progression.length; i++) {
-    std::cout << (int)progression.degrees[i] << " ";
-  }
-  std::cout << "\n\n";
-
-  // Calculate expected roots for each degree
-  for (int i = 0; i < progression.length; i++) {
-    int8_t degree = progression.at(i);
-    uint8_t root_midi = degreeToRoot(degree, Key::C);
-    uint8_t bass_root = clampBass(root_midi - 12);
-
-    std::cout << "Bar " << i << ": degree=" << (int)degree << ", root_midi=" << (int)root_midi
-              << " (" << midiNoteToName(root_midi) << ")"
-              << ", bass_root=" << (int)bass_root << " (" << midiNoteToName(bass_root) << ")"
-              << "\n";
-  }
 
   // Verify expected values
   // Bar 0: I = C, degree 0, root C4=60, bass C3=48

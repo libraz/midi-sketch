@@ -2,10 +2,8 @@
  * CLI/WASM Parity Test
  *
  * Verifies that the WASM (JSON API) and CLI produce equivalent MIDI output
- * for the same logical configuration. Exact event equality is checked when
- * the generated streams match; otherwise the test falls back to structural
- * parity because C++ standard random distributions are not guaranteed to be
- * bit-identical across native and Emscripten standard libraries.
+ * for the same logical configuration. Generated event streams must be
+ * byte-for-byte equivalent at the JSON field level.
  *
  * Strategy:
  * 1. Get full default config JSON from WASM C API (createDefaultSongConfig)
@@ -113,8 +111,9 @@ describe('CLI/WASM Parity', () => {
 
   /**
    * Apply the same unconditional defaults that CLI's runGenerateMode applies
-   * from ParsedArgs defaults. This aligns the WASM config with CLI behavior
-   * when no explicit flags are passed. Returns a new config object.
+   * from ParsedArgs defaults. The CLI leaves BPM untouched unless --bpm is
+   * supplied, so the style default from createDefaultSongConfig is retained.
+   * Returns a new config object.
    */
   function withCliArgDefaults(config: Record<string, unknown>): Record<string, unknown> {
     return {
@@ -123,7 +122,6 @@ describe('CLI/WASM Parity', () => {
       mood: 0,
       mood_explicit: false,
       vocal_style: 0,
-      bpm: 0, // args.bpm defaults to 0 (= auto, resolved during generation)
       target_duration_seconds: 0,
       skip_vocal: false,
       addictive_mode: false,
@@ -245,38 +243,17 @@ describe('CLI/WASM Parity', () => {
 
       expect(wt.name).toBe(ct.name);
 
-      if (wt.notes.length !== ct.notes.length) {
-        expectStructurallySimilarTrack(wt, ct, label);
-        continue;
-      }
-
-      let exact = true;
-      for (let j = 0; j < wt.notes.length; j++) {
-        const wn = wt.notes[j];
-        const cn = ct.notes[j];
-
-        if (
-          wn.pitch !== cn.pitch ||
-          wn.velocity !== cn.velocity ||
-          wn.start_ticks !== cn.start_ticks ||
-          wn.duration_ticks !== cn.duration_ticks
-        ) {
-          exact = false;
-          break;
-        }
-      }
-
-      if (!exact) {
-        expectStructurallySimilarTrack(wt, ct, label);
-      }
+      const eventFields = (notes: NoteData[]) =>
+        notes.map(({ pitch, velocity, start_ticks, duration_ticks }) => ({
+          pitch,
+          velocity,
+          start_ticks,
+          duration_ticks,
+        }));
+      expect(eventFields(wt.notes), `[${label}] Track "${wt.name}" events differ`).toEqual(
+        eventFields(ct.notes),
+      );
     }
-  }
-
-  function expectStructurallySimilarTrack(wt: TrackData, ct: TrackData, label: string) {
-    expect(
-      wt.notes.length > 0,
-      `[${label}] Track "${wt.name}" should have matching empty/non-empty state`,
-    ).toBe(ct.notes.length > 0);
   }
 
   // =========================================================================
@@ -290,10 +267,24 @@ describe('CLI/WASM Parity', () => {
     testCases.push({ name: `style=${s}`, stylePresetId: s, seed: 42 });
   }
 
+  // Preserve the public default-config path: no BPM flag is passed to the
+  // CLI and createDefaultConfig() supplies the WASM-side setting.
+  testCases.push({
+    name: 'default-config: bpm omitted',
+    stylePresetId: 0,
+    seed: 42,
+  });
+
   // All 10 blueprints (with style=0 for consistency)
   for (let b = 0; b <= 9; b++) {
     testCases.push({ name: `blueprint=${b}`, stylePresetId: 0, seed: 42, blueprintId: b });
   }
+  testCases.push({
+    name: 'blueprint=255 (random)',
+    stylePresetId: 0,
+    seed: 42,
+    blueprintId: 255,
+  });
 
   // Selected chord progressions
   for (const chord of [0, 5, 10, 15, 19]) {

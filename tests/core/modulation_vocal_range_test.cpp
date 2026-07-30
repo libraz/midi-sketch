@@ -84,10 +84,7 @@ TEST_F(ModulationVocalRangeTest, VocalMaxPitchAdjustedForModulation) {
   const Song& song = gen.getSong();
   const MidiTrack& vocal = song.vocal();
 
-  // Skip if no vocal notes generated
-  if (vocal.notes().empty()) {
-    GTEST_SKIP() << "No vocal notes generated";
-  }
+  ASSERT_FALSE(vocal.notes().empty()) << "Modulation fixture must generate Vocal notes";
 
   // Get max pitch after modulation
   uint8_t max_after_mod = getMaxPitchAfterModulation(vocal, song);
@@ -120,9 +117,7 @@ TEST_F(ModulationVocalRangeTest, VocalStaysInRangeWith2SemitoneModulation) {
   const Song& song = gen.getSong();
   const MidiTrack& vocal = song.vocal();
 
-  if (vocal.notes().empty()) {
-    GTEST_SKIP() << "No vocal notes generated";
-  }
+  ASSERT_FALSE(vocal.notes().empty()) << "Modulation fixture must generate Vocal notes";
 
   uint8_t max_after_mod = getMaxPitchAfterModulation(vocal, song);
 
@@ -151,9 +146,7 @@ TEST_F(ModulationVocalRangeTest, MinimumRangePreserved) {
   const Song& song = gen.getSong();
   const MidiTrack& vocal = song.vocal();
 
-  if (vocal.notes().empty()) {
-    GTEST_SKIP() << "No vocal notes generated";
-  }
+  ASSERT_FALSE(vocal.notes().empty()) << "Modulation fixture must generate Vocal notes";
 
   uint8_t min_pitch = getMinPitch(vocal);
   uint8_t max_pitch = getMaxPitch(vocal);
@@ -183,9 +176,7 @@ TEST_F(ModulationVocalRangeTest, NoModulationNoAdjustment) {
   const Song& song = gen.getSong();
   const MidiTrack& vocal = song.vocal();
 
-  if (vocal.notes().empty()) {
-    GTEST_SKIP() << "No vocal notes generated";
-  }
+  ASSERT_FALSE(vocal.notes().empty()) << "Non-modulating fixture must generate Vocal notes";
 
   uint8_t max_pitch = getMaxPitch(vocal);
 
@@ -214,9 +205,7 @@ TEST_F(ModulationVocalRangeTest, BGMModeVocalRangeWithModulation) {
   const Song& song = gen.getSong();
   const MidiTrack& vocal = song.vocal();
 
-  if (vocal.notes().empty()) {
-    GTEST_SKIP() << "No vocal notes generated in BGM mode";
-  }
+  ASSERT_FALSE(vocal.notes().empty()) << "BGM modulation fixture must generate Vocal notes";
 
   uint8_t max_after_mod = getMaxPitchAfterModulation(vocal, song);
 

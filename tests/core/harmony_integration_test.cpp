@@ -8,10 +8,13 @@
 #include <set>
 
 #include "core/chord.h"
+#include "core/config_converter.h"
 #include "core/generator.h"
 #include "core/harmonic_rhythm.h"
 #include "core/harmony_context.h"
 #include "core/i_harmony_context.h"
+#include "core/midi_track.h"
+#include "core/pitch_utils.h"
 #include "core/preset_data.h"
 #include "core/song.h"
 #include "core/types.h"
@@ -21,6 +24,28 @@ namespace {
 
 // Helper: Get pitch class (0-11) from MIDI note
 int getPitchClass(uint8_t note) { return note % 12; }
+
+TEST(HarmonyContextRegistrationTest, CompletedTrackReplacesProvisionalNoteRegistrations) {
+  Section section;
+  section.type = SectionType::A;
+  section.bars = 1;
+  Arrangement arrangement({section});
+  HarmonyContext harmony;
+  harmony.initialize(arrangement, getChordProgression(0), Mood::StraightPop);
+
+  MidiTrack vocal;
+  vocal.addNote(NoteEventBuilder::create(0, TICKS_PER_BEAT, 60, 100));
+
+  // This mirrors normal track generation: createNote() registers each event,
+  // then Coordinator registers the finalized MidiTrack.
+  harmony.registerNote(0, TICKS_PER_BEAT, 60, TrackRole::Vocal);
+  harmony.registerTrack(vocal, TrackRole::Vocal);
+
+  const auto snapshot = harmony.getCollisionSnapshot(0, TICKS_PER_BEAT);
+  ASSERT_EQ(snapshot.sounding_notes.size(), 1u);
+  EXPECT_EQ(snapshot.sounding_notes[0].track, TrackRole::Vocal);
+  EXPECT_EQ(snapshot.sounding_notes[0].pitch, 60);
+}
 
 // Helper: Get chord tone pitch classes for a degree
 std::set<int> getChordTonePitchClasses(int8_t degree) {
@@ -183,7 +208,7 @@ TEST(StylePresetMappingTest, RockShoutUsesLightRockMood) {
   EXPECT_GE(song.bpm(), 120);  // Rock typically 120+ BPM
 }
 
-TEST(StylePresetMappingTest, AcousticPopUsesBallad) {
+TEST(StylePresetMappingTest, AcousticPopMapsToBalladWithBlueprintTempoPriority) {
   SongConfig config;
   config.style_preset_id = 10;  // Acoustic Pop
   config.form = StructurePattern::StandardPop;
@@ -192,12 +217,17 @@ TEST(StylePresetMappingTest, AcousticPopUsesBallad) {
   config.bpm = 0;
   config.seed = 42;
 
+  const GeneratorParams converted = ConfigConverter::convert(config);
+  EXPECT_EQ(converted.mood, Mood::Ballad);
+  EXPECT_EQ(converted.auto_bpm_fallback, 95);
+
   Generator gen;
   gen.generateFromConfig(config);
 
-  // Ballad should use slower BPM
+  // Auto tempo is resolved only after the production blueprint is known:
+  // explicit BPM > blueprint > mood/style fallback.
   const auto& song = gen.getSong();
-  EXPECT_LE(song.bpm(), 100);  // Ballad typically <= 100 BPM
+  EXPECT_EQ(song.bpm(), getProductionBlueprint(0).tempo_default);
 }
 
 // =============================================================================
@@ -696,9 +726,8 @@ TEST_F(HarmonyIntegrationTest, ArpeggioIncludedInTransitionDynamics) {
   const auto& arpeggio_notes = song.arpeggio().notes();
   const auto& sections = song.arrangement().sections();
 
-  if (arpeggio_notes.empty() || sections.size() < 2) {
-    GTEST_SKIP() << "Not enough data for transition test";
-  }
+  ASSERT_FALSE(arpeggio_notes.empty()) << "Transition fixture must generate Arpeggio notes";
+  ASSERT_GE(sections.size(), 2u) << "Transition fixture must contain multiple sections";
 
   // Find velocity distribution near section transitions
   // Check that velocities change near section boundaries
@@ -1130,36 +1159,6 @@ TEST_F(HarmonyIntegrationTest, VocalAvoidsBassByOctaveShift) {
   }
 }
 
-// Test: hasBassCollision returns correct result
-TEST_F(HarmonyIntegrationTest, HasBassCollisionFunction) {
-  // Generate a song to populate harmony context
-  SongConfig config{};
-  config.form = StructurePattern::StandardPop;
-  config.chord_progression_id = 0;
-  config.style_preset_id = 0;
-  config.seed = 99999;
-
-  Generator gen;
-  gen.generateFromConfig(config);
-
-  const auto& song = gen.getSong();
-  const auto& bass_notes = song.bass().notes();
-
-  ASSERT_FALSE(bass_notes.empty());
-
-  // Get first bass note for testing
-  const auto& first_bass = bass_notes[0];
-
-  // A pitch exactly at the bass note should report collision in low register
-  // if pitch < 60 (LOW_REGISTER_THRESHOLD)
-  if (first_bass.note < 60) {
-    // Same pitch in low register should collide
-    // Note: We can't directly call hasBassCollision without HarmonyContext reference
-    // This test verifies behavior through generation results
-    EXPECT_TRUE(true) << "Bass collision checking is handled during generation";
-  }
-}
-
 // =============================================================================
 // Integration Tests
 // =============================================================================
@@ -1298,7 +1297,8 @@ TEST_F(HarmonyIntegrationTest, BassChordPhraseEndSynchronization) {
   const auto& chord_notes = song.chord().notes();
   const auto& bass_notes = song.bass().notes();
 
-  // Check for minor 2nd (E-F) and major 7th (B-C) clashes between bass and chord
+  // Check for perceptually dissonant bass/chord intervals using the same
+  // compound-interval rules as generation and the dissonance analyzer.
   int critical_clashes = 0;
 
   for (const auto& chord_note : chord_notes) {
@@ -1309,11 +1309,9 @@ TEST_F(HarmonyIntegrationTest, BassChordPhraseEndSynchronization) {
 
       // Check if notes overlap
       if (chord_note.start_tick < bass_end && chord_end > bass_note.start_tick) {
-        int interval = std::abs((chord_note.note % 12) - (bass_note.note % 12));
-        if (interval > 6) interval = 12 - interval;
-
-        // Minor 2nd (1 semitone) is critical clash
-        if (interval == 1) {
+        const int actual_semitones =
+            std::abs(static_cast<int>(chord_note.note) - static_cast<int>(bass_note.note));
+        if (isDissonantActualInterval(actual_semitones, 0)) {
           critical_clashes++;
         }
       }

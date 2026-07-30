@@ -6,6 +6,7 @@
 #include <gtest/gtest.h>
 
 #include <cstring>
+#include <limits>
 #include <string>
 
 #include "core/json_helpers.h"
@@ -21,6 +22,89 @@ namespace {
 TEST(CApiTest, CreateDestroy) {
   MidiSketchHandle handle = midisketch_create();
   ASSERT_NE(handle, nullptr);
+  midisketch_destroy(handle);
+}
+
+TEST(CApiTest, MidiFormatSelectionProducesRequestedNativeFormat) {
+  MidiSketchHandle handle = midisketch_create();
+  ASSERT_NE(handle, nullptr);
+  EXPECT_EQ(midisketch_get_midi_format(handle), MIDISKETCH_MIDI_FORMAT_SMF1);
+  EXPECT_EQ(midisketch_set_midi_format(handle, MIDISKETCH_MIDI_FORMAT_SMF2), MIDISKETCH_OK);
+  EXPECT_EQ(midisketch_get_midi_format(handle), MIDISKETCH_MIDI_FORMAT_SMF2);
+
+  const char* config = R"({"style_preset_id":0,"seed":12345})";
+  ASSERT_EQ(midisketch_generate_from_json(handle, config, std::strlen(config)), MIDISKETCH_OK);
+  MidiSketchMidiData* smf2 = midisketch_get_midi(handle);
+  ASSERT_NE(smf2, nullptr);
+  ASSERT_GE(smf2->size, 16u);
+  EXPECT_EQ(std::memcmp(smf2->data, "AAAAAAAAEEEEEEEE", 16), 0);
+  midisketch_free_midi(smf2);
+
+  ASSERT_EQ(midisketch_set_midi_format(handle, MIDISKETCH_MIDI_FORMAT_SMF1), MIDISKETCH_OK);
+  ASSERT_EQ(midisketch_generate_from_json(handle, config, std::strlen(config)), MIDISKETCH_OK);
+  MidiSketchMidiData* smf1 = midisketch_get_midi(handle);
+  ASSERT_NE(smf1, nullptr);
+  ASSERT_GE(smf1->size, 4u);
+  EXPECT_EQ(std::memcmp(smf1->data, "MThd", 4), 0);
+  midisketch_free_midi(smf1);
+
+  midisketch_destroy(handle);
+}
+
+TEST(CApiTest, MidiFormatSelectionRejectsInvalidInputs) {
+  MidiSketchHandle handle = midisketch_create();
+  ASSERT_NE(handle, nullptr);
+
+  EXPECT_EQ(midisketch_set_midi_format(nullptr, MIDISKETCH_MIDI_FORMAT_SMF1),
+            MIDISKETCH_ERROR_INVALID_PARAM);
+  EXPECT_EQ(midisketch_set_midi_format(handle, static_cast<MidiSketchMidiFormat>(0)),
+            MIDISKETCH_ERROR_INVALID_PARAM);
+  EXPECT_EQ(midisketch_get_midi_format(nullptr), MIDISKETCH_MIDI_FORMAT_SMF1);
+  EXPECT_STREQ(midisketch_error_string(MIDISKETCH_ERROR_UNSUPPORTED_FORMAT),
+               "MIDI format is not supported by this build");
+
+  midisketch_destroy(handle);
+}
+
+TEST(CApiTest, PianoRollBatchLimitStatusIsInspectable) {
+  MidiSketchPianoRollData normal{nullptr, 3};
+  EXPECT_EQ(midisketch_piano_roll_data_count(&normal), 3u);
+  EXPECT_EQ(midisketch_piano_roll_data_was_truncated(&normal), 0);
+
+  constexpr size_t kTruncatedFlag = size_t{1} << (std::numeric_limits<size_t>::digits - 1);
+  MidiSketchPianoRollData truncated{nullptr, kTruncatedFlag | 100000u};
+  EXPECT_EQ(midisketch_piano_roll_data_count(&truncated), 100000u);
+  EXPECT_EQ(midisketch_piano_roll_data_was_truncated(&truncated), 1);
+}
+
+TEST(CApiTest, MelodyJsonRoundTripsSeedAndNotes) {
+  MidiSketchHandle handle = midisketch_create();
+  ASSERT_NE(handle, nullptr);
+
+  const char* config = R"({"style_preset_id":0,"seed":12345})";
+  ASSERT_EQ(midisketch_generate_from_json(handle, config, std::strlen(config)), MIDISKETCH_OK);
+
+  const char* melody =
+      R"({"seed":9876,"notes":[{"start_tick":0,"duration":480,"pitch":60,"velocity":100},{"start_tick":480,"duration":240,"pitch":64,"velocity":90}]})";
+  ASSERT_EQ(midisketch_set_melody_from_json(handle, melody, std::strlen(melody)), MIDISKETCH_OK);
+  EXPECT_STREQ(midisketch_get_melody_json(handle), melody);
+
+  midisketch_destroy(handle);
+}
+
+TEST(CApiTest, MelodyJsonRejectsInvalidNotes) {
+  MidiSketchHandle handle = midisketch_create();
+  ASSERT_NE(handle, nullptr);
+
+  const char* config = R"({"style_preset_id":0,"seed":12345})";
+  ASSERT_EQ(midisketch_generate_from_json(handle, config, std::strlen(config)), MIDISKETCH_OK);
+
+  const char* invalid =
+      R"({"seed":1,"notes":[{"start_tick":0,"duration":0,"pitch":60,"velocity":100}]})";
+  EXPECT_EQ(midisketch_set_melody_from_json(handle, invalid, std::strlen(invalid)),
+            MIDISKETCH_ERROR_INVALID_PARAM);
+  EXPECT_EQ(midisketch_get_melody_json(nullptr), nullptr);
+
   midisketch_destroy(handle);
 }
 
@@ -84,6 +168,62 @@ TEST(CApiTest, GetInfoNullHandleReturnsSafe) {
   EXPECT_EQ(info.track_count, 0u);
 }
 
+TEST(CApiTest, NameQueriesReturnUnknownForOutOfRangeIds) {
+  constexpr uint8_t kOutOfRangeId = 255;
+  EXPECT_STREQ(midisketch_structure_name(kOutOfRangeId), "unknown");
+  EXPECT_STREQ(midisketch_mood_name(kOutOfRangeId), "unknown");
+  EXPECT_STREQ(midisketch_chord_name(kOutOfRangeId), "unknown");
+  EXPECT_STREQ(midisketch_chord_display(kOutOfRangeId), "unknown");
+  EXPECT_STREQ(midisketch_blueprint_name(kOutOfRangeId), "unknown");
+  EXPECT_STREQ(midisketch_style_preset_name(kOutOfRangeId), "unknown");
+  EXPECT_STREQ(midisketch_style_preset_display_name(kOutOfRangeId), "unknown");
+  EXPECT_STREQ(midisketch_style_preset_description(kOutOfRangeId), "unknown");
+}
+
+TEST(CApiTest, BlueprintTempoRangeIsExposed) {
+  EXPECT_EQ(midisketch_blueprint_tempo_min(7), 160u);
+  EXPECT_EQ(midisketch_blueprint_tempo_max(7), 178u);
+  EXPECT_EQ(midisketch_blueprint_tempo_min(255), 0u);
+  EXPECT_EQ(midisketch_blueprint_tempo_max(255), 0u);
+}
+
+TEST(CApiTest, GenerationWarningsAreExposedAsJson) {
+  MidiSketchHandle handle = midisketch_create();
+  ASSERT_NE(handle, nullptr);
+  EXPECT_STREQ(midisketch_get_warnings_json(handle), "[]");
+
+  const char* config = R"({"style_preset_id":0,"blueprint_id":3,"mood":14,"seed":12345})";
+  ASSERT_EQ(midisketch_generate_from_json(handle, config, std::strlen(config)), MIDISKETCH_OK);
+
+  const std::string warnings = midisketch_get_warnings_json(handle);
+  EXPECT_NE(warnings.find("Mood"), std::string::npos);
+  EXPECT_EQ(warnings.front(), '[');
+  EXPECT_EQ(warnings.back(), ']');
+
+  midisketch_destroy(handle);
+}
+
+TEST(CApiTest, DissonanceReportIsAvailableForGeneratedSong) {
+  MidiSketchHandle handle = midisketch_create();
+  ASSERT_NE(handle, nullptr);
+
+  const char* json = R"({"style_preset_id":0,"seed":12345})";
+  ASSERT_EQ(midisketch_generate_from_json(handle, json, strlen(json)), MIDISKETCH_OK);
+
+  MidiSketchDissonanceData* report = midisketch_get_dissonance(handle);
+  ASSERT_NE(report, nullptr);
+  ASSERT_NE(report->json, nullptr);
+  EXPECT_GT(report->length, 0u);
+  EXPECT_NE(std::string(report->json, report->length).find("\"summary\""), std::string::npos);
+
+  midisketch_free_dissonance(report);
+  midisketch_destroy(handle);
+}
+
+TEST(CApiTest, DissonanceReportNullHandleReturnsNull) {
+  EXPECT_EQ(midisketch_get_dissonance(nullptr), nullptr);
+}
+
 // ============================================================================
 // Error Detail Tests
 // ============================================================================
@@ -102,9 +242,20 @@ TEST(CApiTest, ConfigErrorStringReturnsMessage) {
   EXPECT_NE(bpm_msg, nullptr);
   EXPECT_NE(strlen(bpm_msg), 0u);
 
+  const char* duration_msg = midisketch_config_error_string(MIDISKETCH_CONFIG_DURATION_TOO_SHORT);
+  EXPECT_NE(duration_msg, nullptr);
+  EXPECT_NE(std::string(duration_msg).find("minimum required length"), std::string::npos);
+  EXPECT_EQ(std::string(duration_msg).find("call"), std::string::npos);
+
   const char* json_msg = midisketch_config_error_string(MIDISKETCH_CONFIG_INVALID_JSON);
   EXPECT_NE(json_msg, nullptr);
   EXPECT_NE(strlen(json_msg), 0u);
+}
+
+TEST(CApiTest, ErrorStringReturnsGenerationMessages) {
+  EXPECT_STREQ(midisketch_error_string(MIDISKETCH_OK), "No error");
+  EXPECT_STREQ(midisketch_error_string(MIDISKETCH_ERROR_INVALID_PARAM),
+               "Invalid parameter or invalid handle");
 }
 
 TEST(CApiTest, GetLastConfigErrorAfterValidGeneration) {
@@ -118,6 +269,54 @@ TEST(CApiTest, GetLastConfigErrorAfterValidGeneration) {
   // After successful generation, last config error should be OK
   MidiSketchConfigError last_err = midisketch_get_last_config_error(handle);
   EXPECT_EQ(last_err, MIDISKETCH_CONFIG_OK);
+
+  midisketch_destroy(handle);
+}
+
+TEST(CApiTest, RejectsMalformedAndEmptyJsonConfig) {
+  MidiSketchHandle handle = midisketch_create();
+  ASSERT_NE(handle, nullptr);
+
+  const char* malformed = "totally not json {{{";
+  EXPECT_EQ(midisketch_generate_from_json(handle, malformed, strlen(malformed)),
+            MIDISKETCH_ERROR_INVALID_PARAM);
+  EXPECT_EQ(midisketch_get_last_config_error(handle), MIDISKETCH_CONFIG_INVALID_JSON);
+
+  EXPECT_EQ(midisketch_generate_from_json(handle, "", 0), MIDISKETCH_ERROR_INVALID_PARAM);
+  EXPECT_EQ(midisketch_get_last_config_error(handle), MIDISKETCH_CONFIG_INVALID_JSON);
+
+  EXPECT_EQ(midisketch_validate_config_json(malformed, strlen(malformed)),
+            MIDISKETCH_CONFIG_INVALID_JSON);
+  EXPECT_EQ(midisketch_validate_config_json("", 0), MIDISKETCH_CONFIG_INVALID_JSON);
+
+  const char* invalid_token = R"({"style_preset_id":not-a-number})";
+  EXPECT_EQ(midisketch_generate_from_json(handle, invalid_token, strlen(invalid_token)),
+            MIDISKETCH_ERROR_INVALID_PARAM);
+  EXPECT_EQ(midisketch_get_last_config_error(handle), MIDISKETCH_CONFIG_INVALID_JSON);
+
+  midisketch_destroy(handle);
+}
+
+TEST(CApiTest, RejectsInvalidBooleansAndIntegerNarrowingBeforeValidation) {
+  MidiSketchHandle handle = midisketch_create();
+  ASSERT_NE(handle, nullptr);
+
+  const char* invalid_configs[] = {
+      R"({"style_preset_id":0,"drums_enabled":1})",
+      R"({"style_preset_id":256})",
+      R"({"style_preset_id":0,"bpm":65656})",
+      R"({"style_preset_id":0,"seed":4294967296})",
+      R"({"style_preset_id":0,"arpeggio":{"base_velocity":256}})",
+  };
+  for (const char* json : invalid_configs) {
+    EXPECT_EQ(midisketch_validate_config_json(json, std::strlen(json)),
+              MIDISKETCH_CONFIG_INVALID_JSON)
+        << json;
+    EXPECT_EQ(midisketch_generate_from_json(handle, json, std::strlen(json)),
+              MIDISKETCH_ERROR_INVALID_PARAM)
+        << json;
+    EXPECT_EQ(midisketch_get_last_config_error(handle), MIDISKETCH_CONFIG_INVALID_JSON) << json;
+  }
 
   midisketch_destroy(handle);
 }

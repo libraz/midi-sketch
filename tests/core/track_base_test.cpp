@@ -8,6 +8,8 @@
 #include <gtest/gtest.h>
 
 #include "core/section_types.h"
+#include "core/song.h"
+#include "core/timing_constants.h"
 
 namespace midisketch {
 namespace {
@@ -73,6 +75,7 @@ class TestableTrack : public TrackBase {
   PhysicalModel getPhysicalModel() const override { return PhysicalModels::kVocal; }
 
   // Expose protected method for testing
+  using TrackBase::removeArrangementHoleNotes;
   using TrackBase::shouldSkipSection;
 
  protected:
@@ -141,6 +144,30 @@ TEST(ShouldSkipSectionTest, MinimalMaskOnlyDrums) {
 
   TestableTrack bass_gen(TrackRole::Bass);
   EXPECT_TRUE(bass_gen.shouldSkipSection(section));
+}
+
+TEST(ArrangementHoleTest, TrimsLeadInAndRemovesNotesStartedInsideHole) {
+  Section chorus;
+  chorus.type = SectionType::Chorus;
+  chorus.start_tick = 0;
+  chorus.bars = 1;
+  chorus.peak_level = PeakLevel::Max;
+  Song song;
+  song.setArrangement(Arrangement({chorus}));
+
+  MidiTrack track;
+  track.addNote(NoteEventBuilder::create(TICK_QUARTER, TICK_HALF + TICK_QUARTER, 60, 100));
+  track.addNote(NoteEventBuilder::create(TICK_HALF, TICK_QUARTER, 64, 100));
+
+  FullTrackContext ctx;
+  ctx.song = &song;
+  TestableTrack motif(TrackRole::Motif);
+  motif.removeArrangementHoleNotes(track, ctx);
+
+  ASSERT_EQ(track.noteCount(), 1u);
+  EXPECT_EQ(track.notes()[0].start_tick, TICK_QUARTER);
+  EXPECT_EQ(track.notes()[0].duration, TICK_QUARTER)
+      << "The note must end at the final-two-beat arrangement hole";
 }
 
 }  // namespace

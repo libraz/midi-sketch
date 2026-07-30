@@ -792,7 +792,7 @@ TEST_F(FrettedNoteFactoryTest, CreateSafeChecksHarmony) {
   // Set pitches to unsafe
   harmony_->setAllPitchesSafe(false);
 
-  // Now should still work because getBestAvailablePitch returns desired pitch in stub
+  // The configured stub accepts the desired pitch, so creation remains valid.
   auto note2 = factory.createIfNoDissonance(0, TICK_QUARTER, 33, 100, TrackRole::Bass,
                                             PlayingTechnique::Normal, NoteSource::BassPattern);
   EXPECT_TRUE(note2.has_value());

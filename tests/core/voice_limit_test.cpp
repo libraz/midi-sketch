@@ -17,6 +17,7 @@
 #include "core/coordinator.h"
 #include "core/harmony_coordinator.h"
 #include "core/i_harmony_coordinator.h"
+#include "core/i_track_base.h"
 #include "core/song.h"
 #include "core/timing_constants.h"
 #include "core/types.h"
@@ -386,6 +387,42 @@ std::vector<NoteEvent> applyVoiceLimitToFrozenMotif(Song& song) {
   return bar1_notes;
 }
 
+/// @brief Freeze a high-register target track while Motif remains moving.
+///
+/// Bar 1 of FourChordPop is G major, so B7 remains a valid chord tone.  This
+/// makes it possible to distinguish the generator's real high bound from a
+/// stale lower limit in the re-quantization path.
+std::vector<NoteEvent> applyVoiceLimitToFrozenHighTrack(Song& song, TrackRole role,
+                                                        uint8_t source_pitch) {
+  auto params = makeVoiceLimitParams();
+  auto sections = makeFrozenBarSections();
+  Arrangement arrangement(sections);
+
+  HarmonyCoordinator harmony;
+  harmony.initialize(arrangement, getChordProgression(params.chord_id), params.mood);
+
+  Coordinator coord;
+  std::mt19937 rng(params.seed);
+  coord.initialize(params, arrangement, rng, &harmony);
+
+  // Motif has higher freeze priority than Arpeggio and Guitar, keeping it
+  // moving ensures the requested lower-priority track is frozen.
+  song.motif().addNote(NoteEventTestHelper::create(0, TICKS_PER_BEAT, 60, 80));
+  song.motif().addNote(NoteEventTestHelper::create(TICKS_PER_BAR, TICKS_PER_BEAT, 62, 80));
+  song.track(role).addNote(NoteEventTestHelper::create(0, TICKS_PER_BEAT, source_pitch, 80));
+  song.track(role).addNote(NoteEventTestHelper::create(TICKS_PER_BAR, TICKS_PER_BEAT, 60, 80));
+
+  coord.applyVoiceLimit(song, sections);
+
+  std::vector<NoteEvent> bar1_notes;
+  for (const auto& note : song.track(role).notes()) {
+    if (note.start_tick >= TICKS_PER_BAR && note.start_tick < 2 * TICKS_PER_BAR) {
+      bar1_notes.push_back(note);
+    }
+  }
+  return bar1_notes;
+}
+
 }  // namespace
 
 TEST(VoiceLimitRequantizeTest, FrozenBarReplacesNotesWithPreviousBarCopy) {
@@ -465,6 +502,26 @@ TEST(VoiceLimitRequantizeTest, RequantizedPitchStaysBelowConcurrentVocal) {
     EXPECT_LT(note.note, 74) << "Backing note below the vocal must stay below it "
                              << "(tick " << note.start_tick << ")";
   }
+}
+
+TEST(VoiceLimitRequantizeTest, UsesArpeggioPhysicalModelRange) {
+  Song song;
+  const auto bar1_notes = applyVoiceLimitToFrozenHighTrack(song, TrackRole::Arpeggio, 107);
+
+  ASSERT_EQ(bar1_notes.size(), 1u);
+  EXPECT_EQ(bar1_notes.front().note, 107)
+      << "B7 is a G-major chord tone and must not be truncated to the old C7 ceiling";
+  EXPECT_LE(bar1_notes.front().note, PhysicalModels::kArpeggioSynth.pitch_high);
+}
+
+TEST(VoiceLimitRequantizeTest, UsesGuitarPhysicalModelRange) {
+  Song song;
+  const auto bar1_notes = applyVoiceLimitToFrozenHighTrack(song, TrackRole::Guitar, 83);
+
+  ASSERT_EQ(bar1_notes.size(), 1u);
+  EXPECT_EQ(bar1_notes.front().note, 83)
+      << "B5 is a G-major chord tone and must not be truncated to the old guitar ceiling";
+  EXPECT_LE(bar1_notes.front().note, PhysicalModels::kElectricGuitar.pitch_high);
 }
 
 }  // namespace test

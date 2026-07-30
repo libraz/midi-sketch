@@ -9,19 +9,24 @@
 
 #include <algorithm>
 #include <cmath>
+#include <random>
 #include <vector>
 
 #include "core/arrangement.h"
+#include "core/chord.h"
 #include "core/emotion_curve.h"
+#include "core/harmony_context.h"
 #include "core/midi_track.h"
 #include "core/note_source.h"
 #include "core/post_processing_pipeline.h"
 #include "core/preset_data.h"
 #include "core/section_types.h"
 #include "core/song.h"
+#include "core/timing_constants.h"
 #include "core/track_base.h"
 #include "core/types.h"
 #include "test_support/stub_harmony_context.h"
+#include "test_support/test_helpers.h"
 
 namespace midisketch {
 namespace {
@@ -926,7 +931,7 @@ TEST(MicroTimingTest, VocalTimingDisabled) {
 }
 
 TEST(MicroTimingTest, BassAlwaysLaysBack) {
-  // Bass should always get -4 offset regardless of sections
+  // Bass should always get +4 offset regardless of sections.
   MidiTrack vocal, bass, drums;
 
   std::vector<Section> sections;
@@ -943,8 +948,7 @@ TEST(MicroTimingTest, BassAlwaysLaysBack) {
 
   PostProcessor::applyMicroTimingOffsets(vocal, bass, drums, &sections);
 
-  // Bass should lay back (-4)
-  EXPECT_EQ(bass.notes()[0].start_tick, orig - 4) << "Bass should lay back by 4 ticks";
+  EXPECT_EQ(bass.notes()[0].start_tick, orig + 4) << "Bass should lay back by 4 ticks";
 }
 
 TEST(MicroTimingTest, DrumTimingByInstrument) {
@@ -965,14 +969,14 @@ TEST(MicroTimingTest, DrumTimingByInstrument) {
 
   // Find each drum note
   // At beat 0 (downbeat), timing offsets are:
-  // - Hi-hat: +8 (standard push)
-  // - Snare: -4 (not on beat 1 or 3, so standard layback)
+  // - Hi-hat: -8 (standard push)
+  // - Snare: +4 (not on beat 1 or 3, so standard layback)
   // - Kick: -1 (tight on downbeat for anchor)
   for (const auto& note : drums.notes()) {
     if (note.note == HH) {
-      EXPECT_EQ(note.start_tick, start + 8) << "Hi-hat should push ahead by 8";
+      EXPECT_EQ(note.start_tick, start - 8) << "Hi-hat should push ahead by 8";
     } else if (note.note == SD) {
-      EXPECT_EQ(note.start_tick, start - 4) << "Snare should lay back by 4 on downbeat";
+      EXPECT_EQ(note.start_tick, start + 4) << "Snare should lay back by 4 on downbeat";
     } else if (note.note == BD) {
       EXPECT_EQ(note.start_tick, start - 1) << "Kick should be tight (-1) on downbeat";
     }
@@ -1007,20 +1011,20 @@ TEST(MicroTimingTest, DriveFeelScalesTimingOffsets) {
   bass_agg.addNote(NoteEventBuilder::create(start, 60, 36, 80));
   PostProcessor::applyMicroTimingOffsets(vocal_agg, bass_agg, drums_agg, nullptr, 100);
 
-  // Hi-hat offsets: base=8, so laid-back=4, neutral=8, aggressive=12
-  EXPECT_EQ(drums_laid.notes()[0].start_tick, start + 4)
+  // Hi-hat offsets: base=-8, so laid-back=-4, neutral=-8, aggressive=-12
+  EXPECT_EQ(drums_laid.notes()[0].start_tick, start - 4)
       << "Laid-back hi-hat should push ahead by 4 (0.5x of 8)";
-  EXPECT_EQ(drums_neutral.notes()[0].start_tick, start + 8)
+  EXPECT_EQ(drums_neutral.notes()[0].start_tick, start - 8)
       << "Neutral hi-hat should push ahead by 8 (1.0x)";
-  EXPECT_EQ(drums_agg.notes()[0].start_tick, start + 12)
+  EXPECT_EQ(drums_agg.notes()[0].start_tick, start - 12)
       << "Aggressive hi-hat should push ahead by 12 (1.5x of 8)";
 
-  // Bass offsets: base=-4, so laid-back=-2, neutral=-4, aggressive=-6
-  EXPECT_EQ(bass_laid.notes()[0].start_tick, start - 2)
+  // Bass offsets: base=+4, so laid-back=+2, neutral=+4, aggressive=+6
+  EXPECT_EQ(bass_laid.notes()[0].start_tick, start + 2)
       << "Laid-back bass should lay back by 2 (0.5x of 4)";
-  EXPECT_EQ(bass_neutral.notes()[0].start_tick, start - 4)
+  EXPECT_EQ(bass_neutral.notes()[0].start_tick, start + 4)
       << "Neutral bass should lay back by 4 (1.0x)";
-  EXPECT_EQ(bass_agg.notes()[0].start_tick, start - 6)
+  EXPECT_EQ(bass_agg.notes()[0].start_tick, start + 6)
       << "Aggressive bass should lay back by 6 (1.5x of 4)";
 }
 
@@ -1202,6 +1206,32 @@ TEST(PostProcessorTest, HumanBodyTimingCombined) {
 // ============================================================================
 // Motif-Vocal Clash Resolution Tests
 // ============================================================================
+
+TEST(PostProcessorTest, FixMotifHarmonyClashesUsesFinalAccompanimentState) {
+  Section section;
+  section.type = SectionType::A;
+  section.start_tick = 0;
+  section.bars = 1;
+  Arrangement arrangement({section});
+
+  HarmonyContext harmony;
+  harmony.initialize(arrangement, getChordProgression(0), Mood::StraightPop);
+
+  MidiTrack chord;
+  chord.addNote(NoteEventBuilder::create(0, TICKS_PER_BEAT, 64, 80));  // E4
+  harmony.registerTrack(chord, TrackRole::Chord);
+
+  MidiTrack motif;
+  motif.addNote(NoteEventBuilder::create(0, TICKS_PER_BEAT, 62, 80));  // D4, M2 below E4
+  MidiTrack vocal;
+
+  PostProcessor::fixMotifHarmonyClashes(motif, vocal, harmony);
+
+  ASSERT_EQ(motif.noteCount(), 1u);
+  EXPECT_NE(motif.notes()[0].note, 62);
+  EXPECT_TRUE(harmony.isConsonantWithOtherTracks(motif.notes()[0].note, 0, TICKS_PER_BEAT,
+                                                 TrackRole::Motif));
+}
 
 TEST(PostProcessorTest, FixMotifVocalClashesResolveMinor2nd) {
   // Motif C4 (48) clashing with Vocal B3 (47) - minor 2nd below
@@ -1886,9 +1916,7 @@ TEST_F(PerSectionDropStyleTest, MultipleSectionsWithDifferentDropStyles) {
 // Phase 2 P2: DrumStyle-based Timing Profile Tests
 // ============================================================================
 
-TEST(DrumTimingProfileTest, StandardProfileMatchesOriginalHardcoded) {
-  // The Standard profile must produce identical offsets to the original
-  // hardcoded values to avoid behavioral regression.
+TEST(DrumTimingProfileTest, StandardProfileMatchesDocumentedPocketDirections) {
   constexpr uint8_t HH = 42;
   constexpr uint8_t SD = 38;
   constexpr uint8_t BD = 36;
@@ -1906,9 +1934,9 @@ TEST(DrumTimingProfileTest, StandardProfileMatchesOriginalHardcoded) {
 
   for (const auto& note : drums.notes()) {
     if (note.note == HH) {
-      EXPECT_EQ(note.start_tick, start + 8) << "Standard profile: HH downbeat should be +8";
+      EXPECT_EQ(note.start_tick, start - 8) << "Standard profile: HH should be 8 ticks early";
     } else if (note.note == SD) {
-      EXPECT_EQ(note.start_tick, start - 4) << "Standard profile: snare on beat 0 should be -4";
+      EXPECT_EQ(note.start_tick, start + 4) << "Standard profile: snare should be 4 ticks late";
     } else if (note.note == BD) {
       EXPECT_EQ(note.start_tick, start - 1) << "Standard profile: kick on downbeat should be -1";
     }
@@ -1989,7 +2017,7 @@ TEST(DrumTimingProfileTest, UpbeatProducesLargerHiHatPush) {
   int std_offset = static_cast<int>(drums_std.notes()[0].start_tick) - static_cast<int>(offbeat);
   int up_offset = static_cast<int>(drums_up.notes()[0].start_tick) - static_cast<int>(offbeat);
 
-  EXPECT_GT(up_offset, std_offset) << "Upbeat profile should have larger hi-hat push than Standard";
+  EXPECT_LT(up_offset, std_offset) << "Upbeat profile should have larger hi-hat push than Standard";
 }
 
 TEST(DrumTimingProfileTest, AllProfilesReturnValidProfiles) {
@@ -2048,7 +2076,7 @@ TEST(DrumTimingProfileTest, DriveFeelAppliesOnTopOfProfile) {
   int laid_offset = static_cast<int>(drums_laid.notes()[0].start_tick) - static_cast<int>(start);
 
   // Aggressive drive should produce larger absolute offsets than laid-back
-  EXPECT_GT(agg_offset, laid_offset)
+  EXPECT_LT(agg_offset, laid_offset)
       << "Aggressive drive should amplify Sparse hi-hat push more than laid-back";
 }
 
@@ -2184,6 +2212,28 @@ TEST_F(BassKickSyncTest, BassBeforeKickSnapsForward) {
 
   EXPECT_EQ(bass_.notes()[0].start_tick, 480u)
       << "Bass note slightly before kick should snap forward to kick";
+}
+
+TEST_F(BassKickSyncTest, DoesNotSnapForwardIntoNextBassNote) {
+  drums_.addNote(NoteEventBuilder::create(480, 60, KICK, 100));
+  bass_.addNote(NoteEventBuilder::create(460, 240, 36, 80));  // Ends exactly at next note.
+  bass_.addNote(NoteEventBuilder::create(700, 240, 38, 80));
+
+  PostProcessor::synchronizeBassKick(bass_, drums_, DrumStyle::Standard);
+
+  EXPECT_EQ(bass_.notes()[0].start_tick, 460u)
+      << "Forward snapping must not overlap the following bass note.";
+}
+
+TEST_F(BassKickSyncTest, DoesNotSnapBackwardIntoPreviousBassNote) {
+  drums_.addNote(NoteEventBuilder::create(460, 60, KICK, 100));
+  bass_.addNote(NoteEventBuilder::create(0, 480, 36, 80));
+  bass_.addNote(NoteEventBuilder::create(500, 240, 38, 80));  // Starts after the previous note.
+
+  PostProcessor::synchronizeBassKick(bass_, drums_, DrumStyle::Standard);
+
+  EXPECT_EQ(bass_.notes()[1].start_tick, 500u)
+      << "Backward snapping must not overlap the preceding bass note.";
 }
 
 // ============================================================================
@@ -2514,23 +2564,6 @@ TEST(PostProcessorTest, FixMotifVocalClashesPinchedRangeResolvesBelowVocal) {
 // Motif Repeated-Pitch Run Breaking Tests (fixMotifRepeatedPitches)
 // ============================================================================
 
-namespace {
-
-// Longest consecutive same-pitch run over a (sorted) note sequence.
-int longestSamePitchRun(const MidiTrack& track) {
-  int run = 0;
-  int best = 0;
-  int prev = -1;
-  for (const auto& note : track.notes()) {
-    run = (note.note == prev) ? run + 1 : 1;
-    prev = note.note;
-    best = std::max(best, run);
-  }
-  return best;
-}
-
-}  // namespace
-
 TEST(PostProcessorTest, FixMotifRepeatedPitchesBreaksLongRun) {
   // 8 consecutive E4 (64) quarter notes with no overlapping vocal.
   MidiTrack motif, vocal;
@@ -2543,7 +2576,8 @@ TEST(PostProcessorTest, FixMotifRepeatedPitchesBreaksLongRun) {
 
   PostProcessor::fixMotifRepeatedPitches(motif, vocal, harmony, 5);
 
-  EXPECT_LE(longestSamePitchRun(motif), 5) << "Run of 8 must be broken at the threshold";
+  EXPECT_LE(test::longestSamePitchRun(motif).length, 5)
+      << "Run of 8 must be broken at the threshold";
   for (const auto& note : motif.notes()) {
     int pc = note.note % 12;
     EXPECT_TRUE(pc == 0 || pc == 4 || pc == 7)
@@ -2584,7 +2618,7 @@ TEST(PostProcessorTest, FixMotifRepeatedPitchesRespectsVocalCeilingPinch) {
 
   PostProcessor::fixMotifRepeatedPitches(motif, vocal, harmony, 5);
 
-  EXPECT_LE(longestSamePitchRun(motif), 5) << "Pinched-range run must still be broken";
+  EXPECT_LE(test::longestSamePitchRun(motif).length, 5) << "Pinched-range run must still be broken";
   for (const auto& note : motif.notes()) {
     EXPECT_LE(note.note, 60) << "Run-breaking must not cross above the vocal";
     int pc = note.note % 12;
@@ -2612,6 +2646,59 @@ TEST(PostProcessorTest, FixMotifRepeatedPitchesSkipsOctaveStacks) {
     EXPECT_TRUE(note.note == 60 || note.note == 72)
         << "Stacked onsets must not be modified, got " << static_cast<int>(note.note);
   }
+}
+
+TEST(PostProcessorTest, FixMotifRepeatedPitchesRejectsCloseSecondsAgainstAux) {
+  MidiTrack motif, vocal, aux;
+  for (int i = 0; i < 8; ++i) {
+    motif.addNote(
+        NoteEventBuilder::create(static_cast<Tick>(i) * TICK_QUARTER, TICK_QUARTER, 64, 80));
+  }
+
+  // The collision detector only knows registered tracks in this unit test.
+  // Populate the separate Aux input with close seconds around every C-major
+  // replacement register, so accepting any replacement would prove the Aux
+  // guard was skipped.
+  for (uint8_t pitch = 36; pitch <= 96; ++pitch) {
+    const uint8_t pitch_class = pitch % 12;
+    if (pitch_class == 0 || pitch_class == 4 || pitch_class == 7) {
+      aux.addNote(NoteEventBuilder::create(0, 8 * TICK_QUARTER, pitch + 1, 80));
+      aux.addNote(NoteEventBuilder::create(0, 8 * TICK_QUARTER, pitch + 2, 80));
+    }
+  }
+
+  test::StubHarmonyContext harmony;
+  harmony.setChordDegree(0);
+  PostProcessor::fixMotifRepeatedPitches(motif, vocal, harmony, 5, &aux);
+
+  EXPECT_EQ(test::longestSamePitchRun(motif).length, 8)
+      << "All chord-tone replacements form a close second with Aux and must be rejected";
+}
+
+TEST(PostProcessorTest, SectionVelocityHumanizationUsesSingleCappedPass) {
+  Section chorus;
+  chorus.type = SectionType::Chorus;
+  chorus.start_tick = 0;
+  chorus.bars = 1;
+
+  MidiTrack capped_track;
+  capped_track.addNote(NoteEventBuilder::create(TICK_EIGHTH, TICK_EIGHTH, 60, 100));
+  std::vector<MidiTrack*> tracks = {&capped_track};
+  std::mt19937 capped_rng(42);
+  PostProcessor::applySectionAwareVelocityHumanization(tracks, {chorus}, 1.0f, capped_rng);
+
+  EXPECT_GE(capped_track.notes()[0].velocity, 94);
+  EXPECT_LE(capped_track.notes()[0].velocity, 106)
+      << "Chorus variation must remain within its single ±6% pass";
+
+  MidiTrack disabled_track;
+  disabled_track.addNote(NoteEventBuilder::create(TICK_EIGHTH, TICK_EIGHTH, 60, 100));
+  std::vector<MidiTrack*> disabled_tracks = {&disabled_track};
+  std::mt19937 disabled_rng(42);
+  PostProcessor::applySectionAwareVelocityHumanization(disabled_tracks, {chorus}, 0.0f,
+                                                       disabled_rng);
+
+  EXPECT_EQ(disabled_track.notes()[0].velocity, 100);
 }
 
 }  // namespace

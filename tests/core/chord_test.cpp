@@ -56,6 +56,18 @@ TEST(ChordTest, ChordQualityClassification) {
   EXPECT_EQ(getChordQuality(14), ChordQuality::Diminished);  // #IVdim
 }
 
+TEST(ChordTest, BorrowedMinorQualityDrivesChorusExtension) {
+  // All consumers must derive this from getChordQuality(), rather than
+  // maintaining separate diatonic-degree lists that omit borrowed iv.
+  const bool is_minor = getChordQuality(12) == ChordQuality::Minor;
+  const auto reharm = reharmonizeForSection(12, SectionType::Chorus, is_minor,
+                                            /*is_dominant=*/false,
+                                            /*enable_7th=*/true);
+
+  EXPECT_TRUE(reharm.extension_overridden);
+  EXPECT_EQ(reharm.extension, ChordExtension::Min7);
+}
+
 TEST(ChordTest, ProgressionNames) {
   EXPECT_STREQ(getChordProgressionName(0), "FourChordPop");
   EXPECT_STREQ(getChordProgressionName(1), "Pop1");

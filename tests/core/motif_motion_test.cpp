@@ -7,6 +7,7 @@
 
 #include "core/generator.h"
 #include "core/preset_types.h"
+#include "test_support/generator_test_fixture.h"
 
 namespace midisketch {
 namespace {
@@ -51,20 +52,15 @@ TEST(MotifMotionEnumTest, CanAssignToParams) {
 // Motif Generation with Different Motions Tests
 // ============================================================================
 
-class MotifMotionGenerationTest : public ::testing::Test {
+class MotifMotionGenerationTest : public test::GeneratorTestFixture {
  protected:
   void SetUp() override {
-    params_.key = Key::C;
-    params_.bpm = 120;
+    GeneratorTestFixture::SetUp();
     params_.mood = Mood::ModernPop;
-    params_.chord_id = 0;
-    params_.seed = 42;
-    params_.vocal_low = 60;
     params_.vocal_high = 72;
+    params_.drums_enabled = true;
     params_.composition_style = CompositionStyle::BackgroundMotif;
   }
-
-  GeneratorParams params_;
   Generator generator_;
 };
 

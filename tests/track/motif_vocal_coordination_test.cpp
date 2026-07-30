@@ -13,6 +13,7 @@
 #include "core/motif_types.h"
 #include "core/timing_constants.h"
 #include "core/types.h"
+#include "test_support/generator_test_fixture.h"
 #include "track/vocal/vocal_analysis.h"
 
 namespace midisketch {
@@ -175,24 +176,15 @@ TEST_F(MotifHelperTest, ApplyContraryMotionZeroStrength) {
 // Backward Compatibility Tests (Generator Integration)
 // =============================================================================
 
-class MotifVocalCoordinationTest : public ::testing::Test {
+class MotifVocalCoordinationTest : public test::GeneratorTestFixture {
  protected:
   void SetUp() override {
-    params_.structure = StructurePattern::StandardPop;
-    params_.mood = Mood::ElectroPop;
-    params_.chord_id = 0;
-    params_.key = Key::C;
+    GeneratorTestFixture::SetUp();
     params_.drums_enabled = true;
-    params_.vocal_low = 60;
     params_.vocal_high = 79;
-    params_.bpm = 120;
-    params_.seed = 42;
     params_.composition_style = CompositionStyle::BackgroundMotif;
     params_.skip_vocal = true;
-    params_.arpeggio_enabled = false;
   }
-
-  GeneratorParams params_;
 };
 
 TEST_F(MotifVocalCoordinationTest, BackwardCompatibilityNoVocal) {

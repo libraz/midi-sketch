@@ -7,6 +7,7 @@
 
 #include <gtest/gtest.h>
 
+#include <filesystem>
 #include <fstream>
 #include <random>
 #include <set>
@@ -17,6 +18,7 @@
 #include "core/generator.h"
 #include "core/song.h"
 #include "core/types.h"
+#include "test_support/generator_test_fixture.h"
 
 namespace midisketch {
 
@@ -24,23 +26,12 @@ uint8_t computeArpeggioRangeHigh(uint8_t vocal_at_onset);
 
 namespace {
 
-class ArpeggioTest : public ::testing::Test {
+class ArpeggioTest : public test::GeneratorTestFixture {
  protected:
   void SetUp() override {
-    // Create basic params for testing
-    params_.structure = StructurePattern::StandardPop;
-    params_.mood = Mood::ElectroPop;
-    params_.chord_id = 0;  // Canon progression
-    params_.key = Key::C;
-    params_.drums_enabled = false;
-    // modulation_timing defaults to None
-    params_.vocal_low = 60;
-    params_.vocal_high = 84;
+    GeneratorTestFixture::SetUp();
     params_.bpm = 140;
-    params_.seed = 42;
     params_.arpeggio_enabled = true;
-    // Disable humanization for deterministic timing tests
-    params_.humanize = false;
 
     // Arpeggio params
     params_.arpeggio.pattern = ArpeggioPattern::Up;
@@ -50,8 +41,6 @@ class ArpeggioTest : public ::testing::Test {
     params_.arpeggio.sync_chord = true;
     params_.arpeggio.base_velocity = 90;
   }
-
-  GeneratorParams params_;
 };
 
 TEST_F(ArpeggioTest, ArpeggioTrackGenerated) {
@@ -101,6 +90,27 @@ TEST_F(ArpeggioTest, RhythmSyncArpeggioAvoidsDuplicatePitchOnsets) {
   }
 }
 
+TEST_F(ArpeggioTest, RhythmSyncArpeggioAvoidsOverlappingDuplicatePitches) {
+  params_.blueprint_id = 1;  // RhythmLock
+  params_.mood = Mood::AnimeHighEnergy;
+  params_.bpm = 136;
+  params_.arpeggio_enabled = false;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& notes = gen.getSong().arpeggio().notes();
+  for (size_t i = 0; i < notes.size(); ++i) {
+    for (size_t j = i + 1; j < notes.size(); ++j) {
+      if (notes[i].note != notes[j].note) continue;
+      EXPECT_FALSE(notes[i].start_tick < notes[j].start_tick + notes[j].duration &&
+                   notes[j].start_tick < notes[i].start_tick + notes[i].duration)
+          << "Overlapping arpeggio pitch " << static_cast<int>(notes[i].note) << " at ticks "
+          << notes[i].start_tick << " and " << notes[j].start_tick;
+    }
+  }
+}
+
 TEST_F(ArpeggioTest, ArpeggioHasNotes) {
   Generator gen;
   gen.generate(params_);
@@ -124,6 +134,7 @@ TEST_F(ArpeggioTest, ArpeggioNotesInValidRange) {
 
 TEST_F(ArpeggioTest, SixteenthNoteSpeed) {
   params_.arpeggio.speed = ArpeggioSpeed::Sixteenth;
+  params_.mood = Mood::AnimeHighEnergy;  // Uses a straight 16th-note style.
   Generator gen;
   gen.generate(params_);
 
@@ -306,7 +317,10 @@ TEST_F(ArpeggioTest, LowVocalCeilingKeepsShimmerRegisterAvailable) {
 }
 
 TEST_F(ArpeggioTest, GeneratorDoesNotBypassCollisionChecks) {
-  std::ifstream source("../../src/track/generators/arpeggio.cpp");
+  const auto source_path =
+      std::filesystem::path(__FILE__).parent_path().parent_path().parent_path() /
+      "src/track/generators/arpeggio.cpp";
+  std::ifstream source(source_path);
   ASSERT_TRUE(source.is_open());
 
   std::stringstream buffer;
@@ -367,6 +381,30 @@ TEST_F(ArpeggioTest, UserPatternOverridesMoodDefault) {
   gen.generate(params_);
   const auto& track = gen.getSong().arpeggio();
   EXPECT_GT(track.notes().size(), 0u) << "User pattern override should still generate notes";
+}
+
+TEST_F(ArpeggioTest, ExplicitDefaultValuesOverrideMoodStyle) {
+  params_.mood = Mood::CityPop;  // Pinwheel / Triplet / gate 0.75 by style.
+  params_.arpeggio.pattern = ArpeggioPattern::Up;
+  params_.arpeggio.speed = ArpeggioSpeed::Sixteenth;
+  params_.arpeggio.gate = 0.8f;
+  Generator gen;
+  gen.generate(params_);
+  ASSERT_FALSE(gen.getSong().arpeggio().notes().empty());
+  EXPECT_EQ(gen.getSong().arpeggio().notes().front().duration, 96u)
+      << "Explicit Sixteenth + gate 0.8 must override CityPop's triplet style";
+}
+
+TEST_F(ArpeggioTest, AutoValuesUseMoodStyle) {
+  params_.mood = Mood::CityPop;
+  params_.arpeggio.pattern = ArpeggioPattern::Auto;
+  params_.arpeggio.speed = ArpeggioSpeed::Auto;
+  params_.arpeggio.gate = -1.0f;
+  Generator gen;
+  gen.generate(params_);
+  ASSERT_FALSE(gen.getSong().arpeggio().notes().empty());
+  EXPECT_EQ(gen.getSong().arpeggio().notes().front().duration, 120u)
+      << "Auto should preserve CityPop's triplet style gate";
 }
 
 TEST_F(ArpeggioTest, OctaveRange) {
@@ -972,6 +1010,7 @@ TEST_F(ArpeggioTest, SwingShiftsUpbeatNotes) {
   // The style speed overrides the default ArpeggioParams.speed.
   // Verify that odd-indexed notes are shifted forward from the grid.
   params_.mood = Mood::CityPop;
+  params_.arpeggio.speed = ArpeggioSpeed::Auto;
   params_.arpeggio.sync_chord = true;
   params_.seed = 100;
 
@@ -981,41 +1020,14 @@ TEST_F(ArpeggioTest, SwingShiftsUpbeatNotes) {
   const auto& track = gen.getSong().arpeggio();
   ASSERT_GT(track.notes().size(), 4u);
 
-  // CityPop style: speed=Triplet (160 ticks), swing_amount=0.5
-  // Swing offset = 0.5 * 160 = 80 ticks
-  //   Note 0 (on-beat): grid position (exact)
-  //   Note 1 (off-beat): grid + 80 (shifted)
-  //   Note 2 (on-beat): grid position (exact)
-  //   Note 3 (off-beat): grid + 80 (shifted)
+  // CityPop style uses a triplet grid. Swing applies to straight 8th/16th
+  // subdivisions only, so triplet events must keep their absolute grid.
   constexpr Tick TRIPLET = TICKS_PER_BEAT / 3;  // 160
-  constexpr Tick EXPECTED_SWING = 80;           // 0.5 * 160
-
-  // Collect spacings between consecutive notes in the first bar
-  std::vector<Tick> spacings;
-  size_t limit = std::min(track.notes().size(), static_cast<size_t>(8));
-  for (size_t i = 1; i < limit; ++i) {
-    spacings.push_back(track.notes()[i].start_tick - track.notes()[i - 1].start_tick);
+  for (const auto& note : track.notes()) {
+    if (note.start_tick >= TICKS_PER_BAR) break;
+    EXPECT_EQ(note.start_tick % TRIPLET, 0u)
+        << "Triplet arpeggio must not receive straight-grid swing at tick " << note.start_tick;
   }
-
-  // With swing, we expect an alternating long-short pattern:
-  //   even→odd: TRIPLET + SWING = 240
-  //   odd→even: TRIPLET - SWING = 80
-  bool found_long = false;
-  bool found_short = false;
-  for (size_t i = 0; i < spacings.size(); ++i) {
-    Tick expected = (i % 2 == 0) ? (TRIPLET + EXPECTED_SWING) : (TRIPLET - EXPECTED_SWING);
-    if (spacings[i] == expected) {
-      if (i % 2 == 0)
-        found_long = true;
-      else
-        found_short = true;
-    }
-  }
-
-  EXPECT_TRUE(found_long) << "Expected long gap (even→odd = " << (TRIPLET + EXPECTED_SWING)
-                          << ") from swing, but not found";
-  EXPECT_TRUE(found_short) << "Expected short gap (odd→even = " << (TRIPLET - EXPECTED_SWING)
-                           << ") from swing, but not found";
 }
 
 TEST_F(ArpeggioTest, IdolHyperRhythmSyncKeepsBlueprintSwing) {
@@ -1059,8 +1071,8 @@ TEST_F(ArpeggioTest, IdolHyperRhythmSyncKeepsBlueprintSwing) {
 }
 
 TEST_F(ArpeggioTest, NoSwingProducesExactGrid) {
-  // Ballad has swing_amount=0.0. All notes should be on exact grid positions.
-  params_.mood = Mood::Ballad;
+  // A straight-groove mood keeps explicitly requested eighth notes on-grid.
+  params_.mood = Mood::StraightPop;
   params_.arpeggio.speed = ArpeggioSpeed::Eighth;
   params_.arpeggio.sync_chord = true;
   params_.seed = 200;
@@ -1071,26 +1083,17 @@ TEST_F(ArpeggioTest, NoSwingProducesExactGrid) {
   const auto& track = gen.getSong().arpeggio();
   ASSERT_GT(track.notes().size(), 4u);
 
-  // With no swing and 8th note speed, every note spacing should be exactly 240 ticks
+  // With no swing and 8th-note speed, every emitted onset stays on the
+  // absolute eighth-note grid. Density filtering may legitimately skip a slot,
+  // so consecutive spacing need not always be exactly one eighth note.
   constexpr Tick EIGHTH = TICKS_PER_BEAT / 2;  // 240
-  int exact_count = 0;
-  int total_checked = 0;
-
-  for (size_t i = 1; i < track.notes().size() && i < 20; ++i) {
-    Tick spacing = track.notes()[i].start_tick - track.notes()[i - 1].start_tick;
-    // Skip bar boundaries where density skipping may cause gaps
-    if (spacing > EIGHTH * 2) continue;
-    total_checked++;
-    if (spacing == EIGHTH) {
-      exact_count++;
-    }
+  size_t checked = 0;
+  for (const auto& note : track.notes()) {
+    EXPECT_EQ(note.start_tick % EIGHTH, 0u)
+        << "Straight eighth-note arpeggio drifted off-grid at tick " << note.start_tick;
+    if (++checked == 20) break;
   }
-
-  ASSERT_GT(total_checked, 0) << "No consecutive note pairs found to check";
-  // With zero swing, all consecutive pairs should be exactly on grid
-  EXPECT_EQ(exact_count, total_checked)
-      << "With swing_amount=0, all note spacings should be exact 8th notes (" << EIGHTH
-      << " ticks), but only " << exact_count << "/" << total_checked << " were exact";
+  EXPECT_GT(checked, 0u);
 }
 
 TEST_F(ArpeggioTest, StraightMoodHasExactGrid) {

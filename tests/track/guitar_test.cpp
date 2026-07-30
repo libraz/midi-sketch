@@ -24,6 +24,7 @@
 #include "core/song.h"
 #include "core/structure.h"
 #include "core/timing_constants.h"
+#include "test_support/generator_test_fixture.h"
 
 using namespace midisketch;
 
@@ -190,22 +191,13 @@ TEST(GuitarTrackTest, StyleFromProgramOverdriven) {
 // Generation Integration Tests
 // ============================================================================
 
-class GuitarGenerationTest : public ::testing::Test {
+class GuitarGenerationTest : public test::GeneratorTestFixture {
  protected:
   void SetUp() override {
-    params_.structure = StructurePattern::StandardPop;
-    params_.chord_id = 0;
-    params_.key = Key::C;
-    params_.drums_enabled = false;
-    params_.arpeggio_enabled = false;
-    params_.humanize = false;
-    params_.vocal_low = 60;
+    GeneratorTestFixture::SetUp();
     params_.vocal_high = 79;
-    params_.bpm = 120;
     params_.guitar_enabled = true;
   }
-
-  GeneratorParams params_;
 };
 
 TEST_F(GuitarGenerationTest, AllGuitarMoodsGenerateNotes) {
@@ -335,16 +327,16 @@ TEST_F(GuitarGenerationTest, AnthemUsesPowerChordStyle) {
   const auto& guitar = gen.getSong().guitar();
   ASSERT_FALSE(guitar.notes().empty());
 
-  // Power chords have pairs of notes at same tick (root + 5th)
-  int same_tick_notes = 0;
+  // A physical power chord is a short root/fifth string rake.
+  int raked_notes = 0;
   for (size_t i = 1; i < guitar.notes().size(); ++i) {
-    if (guitar.notes()[i].start_tick == guitar.notes()[i - 1].start_tick) {
-      same_tick_notes++;
+    Tick delta = guitar.notes()[i].start_tick - guitar.notes()[i - 1].start_tick;
+    if (delta > 0 && delta <= 16) {
+      raked_notes++;
     }
   }
 
-  // At least some simultaneous notes expected
-  EXPECT_GT(same_tick_notes, 0) << "Power chords should have simultaneous notes";
+  EXPECT_GT(raked_notes, 0) << "Power chords should contain physical string rakes";
 }
 
 // ============================================================================
@@ -420,14 +412,12 @@ TEST_F(GuitarGenerationTest, FingerpickDensityHigherThanPowerChord) {
       << "than power chord (" << pc_notes.size() << " notes)";
 }
 
-TEST_F(GuitarGenerationTest, StrumAndPowerChordBothProduceSimultaneousNotes) {
-  // Verify both chordal styles produce simultaneous notes at some onsets
-  auto countSimultaneous = [](const std::vector<NoteEvent>& notes) -> int {
+TEST_F(GuitarGenerationTest, StrumAndPowerChordUsePhysicalStringRakes) {
+  auto countRakedStrings = [](const std::vector<NoteEvent>& notes) -> int {
     int count = 0;
     for (size_t idx = 1; idx < notes.size(); ++idx) {
-      if (notes[idx].start_tick == notes[idx - 1].start_tick) {
-        count++;
-      }
+      const Tick delta = notes[idx].start_tick - notes[idx - 1].start_tick;
+      if (delta > 0 && delta <= 24) count++;
     }
     return count;
   };
@@ -437,16 +427,16 @@ TEST_F(GuitarGenerationTest, StrumAndPowerChordBothProduceSimultaneousNotes) {
   params_.seed = 42;
   Generator gen_strum;
   gen_strum.generate(params_);
-  int strum_sim = countSimultaneous(gen_strum.getSong().guitar().notes());
+  int strum_rakes = countRakedStrings(gen_strum.getSong().guitar().notes());
 
   // PowerChord (Anthem, Overdriven GM 29)
   params_.mood = Mood::Anthem;
   Generator gen_pc;
   gen_pc.generate(params_);
-  int pc_sim = countSimultaneous(gen_pc.getSong().guitar().notes());
+  int pc_rakes = countRakedStrings(gen_pc.getSong().guitar().notes());
 
-  EXPECT_GT(strum_sim, 0) << "Strum should produce simultaneous notes";
-  EXPECT_GT(pc_sim, 0) << "PowerChord should produce simultaneous notes";
+  EXPECT_GT(strum_rakes, 0) << "Strum should rake across playable strings";
+  EXPECT_GT(pc_rakes, 0) << "PowerChord should rake across playable strings";
 }
 
 TEST_F(GuitarGenerationTest, FingerpickProducesMainlySingleNotes) {
@@ -485,7 +475,8 @@ TEST_F(GuitarGenerationTest, PowerChordIntervalsArePerfectFifths) {
   int power_chord_count = 0;
   int valid_intervals = 0;
   for (size_t idx = 1; idx < guitar.notes().size(); ++idx) {
-    if (guitar.notes()[idx].start_tick == guitar.notes()[idx - 1].start_tick) {
+    Tick delta = guitar.notes()[idx].start_tick - guitar.notes()[idx - 1].start_tick;
+    if (delta > 0 && delta <= 16) {
       int interval = std::abs(guitar.notes()[idx].note - guitar.notes()[idx - 1].note);
       // Perfect 5th or octave, including compound forms (e.g. 19 = octave+5th
       // when resolveSustainedChordPitch octave-displaces the 5th to keep
@@ -850,15 +841,13 @@ TEST_F(GuitarGenerationTest, LightRockProducesStrumPattern) {
   const auto& notes = gen.getSong().guitar().notes();
   ASSERT_FALSE(notes.empty());
 
-  // Strum: multiple simultaneous notes at some onsets
-  int simultaneous = 0;
+  int raked_strings = 0;
   for (size_t idx = 1; idx < notes.size(); ++idx) {
-    if (notes[idx].start_tick == notes[idx - 1].start_tick) {
-      simultaneous++;
-    }
+    const Tick delta = notes[idx].start_tick - notes[idx - 1].start_tick;
+    if (delta > 0 && delta <= 24) raked_strings++;
   }
 
-  EXPECT_GT(simultaneous, 0) << "LightRock guitar should use strum (multi-note onsets)";
+  EXPECT_GT(raked_strings, 0) << "LightRock guitar should use a physical strum rake";
 }
 
 TEST_F(GuitarGenerationTest, AnthemProducesPowerChordPattern) {
@@ -872,11 +861,12 @@ TEST_F(GuitarGenerationTest, AnthemProducesPowerChordPattern) {
   const auto& notes = gen.getSong().guitar().notes();
   ASSERT_FALSE(notes.empty());
 
-  // Power chords: pairs of notes, intervals of 7 semitones (perfect 5th)
+  // Power chords: physically raked pairs, intervals of a perfect 5th.
   int pair_count = 0;
   int fifth_count = 0;
   for (size_t idx = 1; idx < notes.size(); ++idx) {
-    if (notes[idx].start_tick == notes[idx - 1].start_tick) {
+    Tick delta = notes[idx].start_tick - notes[idx - 1].start_tick;
+    if (delta > 0 && delta <= 16) {
       pair_count++;
       int interval = std::abs(notes[idx].note - notes[idx - 1].note);
       if (interval == 7) {
@@ -1275,19 +1265,19 @@ TEST_F(GuitarGenerationTest, StyleHintZeroKeepsDefault) {
     EXPECT_EQ(section.guitar_style_hint, 0u) << "Default guitar_style_hint should be 0";
   }
 
-  // LightRock = Clean Guitar (27) = Strum style
-  // Strum produces chordal hits (multiple simultaneous notes)
+  // LightRock = Clean Guitar (27) = Strum style. Physical strums are rakes,
+  // not zero-time stacks.
   const auto& guitar = gen.getSong().guitar();
   ASSERT_FALSE(guitar.notes().empty());
 
-  int simultaneous = 0;
+  int raked = 0;
   for (size_t idx = 1; idx < guitar.notes().size(); ++idx) {
-    if (guitar.notes()[idx].start_tick == guitar.notes()[idx - 1].start_tick) {
-      simultaneous++;
+    Tick delta = guitar.notes()[idx].start_tick - guitar.notes()[idx - 1].start_tick;
+    if (delta > 0 && delta <= 24) {
+      raked++;
     }
   }
-  EXPECT_GT(simultaneous, 0)
-      << "With hint=0, LightRock should use default Strum style (simultaneous notes)";
+  EXPECT_GT(raked, 0) << "With hint=0, LightRock should use the default physical Strum style";
 }
 
 // ============================================================================
@@ -1378,6 +1368,36 @@ TEST_F(GuitarGenerationTest, TremoloPickNoteSpacing) {
           << "TremoloPick should have many 32nd-note intervals";
     }
   }
+}
+
+TEST_F(GuitarGenerationTest, TremoloPickUsesCMajorPassingTones) {
+  params_.blueprint_id = 1;  // RhythmLock final chorus uses TremoloPick.
+  params_.mood = Mood::LightRock;
+  params_.seed = 42;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const Section* tremolo_section = nullptr;
+  for (const auto& section : gen.getSong().arrangement().sections()) {
+    if (section.type == SectionType::Chorus && section.guitar_style_hint == 6) {
+      tremolo_section = &section;
+    }
+  }
+  ASSERT_NE(tremolo_section, nullptr);
+
+  const std::set<int> c_major_pitch_classes = {0, 2, 4, 5, 7, 9, 11};
+  int note_count = 0;
+  for (const auto& note : gen.getSong().guitar().notes()) {
+    if (note.start_tick < tremolo_section->start_tick ||
+        note.start_tick >= tremolo_section->endTick()) {
+      continue;
+    }
+    ++note_count;
+    EXPECT_TRUE(c_major_pitch_classes.count(note.note % 12) > 0)
+        << "TremoloPick passing tone must remain in C major";
+  }
+  EXPECT_GT(note_count, 0);
 }
 
 TEST_F(GuitarGenerationTest, SweepArpeggioHintProducesHighDensity) {

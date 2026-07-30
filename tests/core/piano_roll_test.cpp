@@ -35,6 +35,17 @@ class PianoRollTest : public ::testing::Test {
 // Basic API Tests
 // ============================================================================
 
+TEST(PianoRollCollisionTest, GuitarNotesParticipateInSafetyChecks) {
+  Song song;
+  song.guitar().addNote(NoteEventBuilder::create(0, 480, 64, 90));
+
+  const CollisionResult collision = checkBgmCollisionDetailed(song, 0, 65);
+  EXPECT_EQ(collision.type, CollisionType::Severe);
+  EXPECT_EQ(collision.track, TrackRole::Guitar);
+  EXPECT_EQ(collision.colliding_pitch, 64);
+  EXPECT_EQ(collision.interval, 1);
+}
+
 TEST_F(PianoRollTest, GetSafetyAtReturnsValidData) {
   MidiSketchPianoRollInfo* info = midisketch_get_piano_roll_safety_at(handle_, 0);
 

@@ -20,11 +20,13 @@
 #include "core/i_harmony_context.h"
 #include "core/pitch_utils.h"
 #include "core/production_blueprint.h"
+#include "core/secondary_dominant_planner.h"
 #include "core/song.h"
 #include "core/timing_constants.h"
 #include "core/types.h"
 #include "instrument/fretted/fingering.h"
 #include "instrument/fretted/playability.h"
+#include "test_support/generator_test_fixture.h"
 #include "track/generators/bass.h"
 #include "track/generators/vocal.h"
 #include "track/vocal/vocal_analysis.h"
@@ -36,22 +38,13 @@ namespace {
 // Part 1: Bass with Vocal Tests (from bass_with_vocal_test.cpp)
 // ============================================================================
 
-class BassWithVocalTest : public ::testing::Test {
+class BassWithVocalTest : public test::GeneratorTestFixture {
  protected:
   void SetUp() override {
-    params_.structure = StructurePattern::StandardPop;
-    params_.mood = Mood::ElectroPop;
-    params_.chord_id = 0;
-    params_.key = Key::C;
+    GeneratorTestFixture::SetUp();
     params_.drums_enabled = true;
-    params_.vocal_low = 60;
-    params_.vocal_high = 84;
-    params_.bpm = 120;
     params_.seed = 12345;
-    params_.arpeggio_enabled = false;
   }
-
-  GeneratorParams params_;
 };
 
 // --- Basic Generation Tests ---
@@ -409,6 +402,51 @@ TEST_F(BassWithVocalTest, DominantPreparationPreservesSelectedDensePattern) {
 
   EXPECT_GE(notes_in_dominant_half, 3u)
       << "Driving-style B->Chorus dominant preparation should keep an eighth-note pulse";
+}
+
+TEST_F(BassWithVocalTest, BoundarySecondaryDominantUsesTimelineRoot) {
+  Song song;
+  Section pre_chorus;
+  pre_chorus.type = SectionType::B;
+  pre_chorus.start_tick = 0;
+  pre_chorus.bars = 2;
+  pre_chorus.track_mask = TrackMask::Bass;
+
+  Section chorus;
+  chorus.type = SectionType::Chorus;
+  chorus.start_tick = 2 * TICKS_PER_BAR;
+  chorus.bars = 2;
+  chorus.track_mask = TrackMask::Bass;
+  song.setArrangement(Arrangement({pre_chorus, chorus}));
+
+  params_.mood = Mood::AnimeHighEnergy;
+  params_.paradigm = GenerationParadigm::Traditional;
+  ChordProgression progression{};
+  progression.degrees = {3, 0, 4, 5};  // Chorus starts on IV, so boundary is V/IV = I7.
+  progression.length = 4;
+
+  HarmonyContext harmony;
+  harmony.initialize(song.arrangement(), progression, params_.mood);
+  std::mt19937 planner_rng(12345);
+  planAndRegisterSecondaryDominants(song.arrangement(), progression, params_.mood, planner_rng,
+                                    harmony);
+
+  Tick boundary_tick = chorus.start_tick - TICK_HALF;
+  ASSERT_TRUE(harmony.isSecondaryDominantAt(boundary_tick));
+  int expected_pc = degreeToRoot(harmony.getChordDegreeAt(boundary_tick), Key::C) % 12;
+
+  MidiTrack bass_track;
+  std::mt19937 bass_rng(params_.seed);
+  generateBassTrack(bass_track, song, params_, bass_rng, harmony, nullptr, nullptr);
+
+  bool found_root = false;
+  for (const auto& note : bass_track.notes()) {
+    if (note.start_tick == boundary_tick && note.note % 12 == expected_pc) {
+      found_root = true;
+      break;
+    }
+  }
+  EXPECT_TRUE(found_root) << "Bass must use the pre-registered boundary secondary dominant root";
 }
 
 TEST_F(BassWithVocalTest, RootFifthUsesFifthWhenOnlyBeatOnePrecheckWouldClash) {
@@ -854,16 +892,13 @@ TEST_F(BlueprintConstraintsTest, TraditionalHasConstraintsOnlyMode) {
 
 // --- Bass Generation with Blueprint Constraints ---
 
-class BassPhysicalModelIntegrationTest : public ::testing::Test {
+class BassPhysicalModelIntegrationTest : public test::GeneratorTestFixture {
  protected:
   void SetUp() override {
-    params_.structure = StructurePattern::StandardPop;
+    GeneratorTestFixture::SetUp();
     params_.mood = Mood::StraightPop;
-    params_.chord_id = 0;
-    params_.key = Key::C;
     params_.bpm = 140;
     params_.seed = 12345;
-    params_.humanize = false;
   }
 
   int calculateMaxLeap(const MidiTrack& track) const {
@@ -890,8 +925,6 @@ class BassPhysicalModelIntegrationTest : public ::testing::Test {
     }
     return total_leap / (notes.size() - 1);
   }
-
-  GeneratorParams params_;
 };
 
 TEST_F(BassPhysicalModelIntegrationTest, BeginnerSkillProducesSmootherBasslines) {

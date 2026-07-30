@@ -27,6 +27,14 @@ describe('MidiSketch WASM - Piano Roll Safety API', () => {
       expect(info.recommended.length).toBeLessThanOrEqual(8);
     });
 
+    it('reuses the no-collision value across empty slots', () => {
+      const info = ctx.getPianoRollSafetyAt(0);
+      const emptySlots = info.collision.filter((entry) => entry.intervalSemitones === 0);
+
+      expect(emptySlots.length).toBeGreaterThan(0);
+      expect(new Set(emptySlots).size).toBe(1);
+    });
+
     it('should identify chord tones as safe', () => {
       const info = ctx.getPianoRollSafetyAt(0);
 

@@ -9,9 +9,11 @@
 #include <gtest/gtest.h>
 
 #include <map>
+#include <sstream>
 #include <string>
 #include <vector>
 
+#include "analysis/dissonance.h"
 #include "core/generator.h"
 #include "core/i_harmony_context.h"
 #include "core/timing_constants.h"
@@ -21,7 +23,6 @@
 namespace midisketch {
 namespace {
 
-using test::analyzeAllTrackPairs;
 using test::ClashInfo;
 using test::findClashes;
 
@@ -43,18 +44,27 @@ class TrackClashIntegrationTest : public ::testing::Test {
   GeneratorParams params_;
 };
 
+void expectNoSimultaneousClashes(const Generator& gen, const GeneratorParams& params,
+                                 const std::string& context) {
+  const auto report = analyzeDissonance(gen.getSong(), params, gen.getHarmonyContext());
+  std::ostringstream details;
+  for (const auto& issue : report.issues) {
+    if (issue.type != DissonanceType::SimultaneousClash || issue.notes.size() < 2) continue;
+    details << "\n  tick=" << issue.tick
+            << " interval=" << static_cast<int>(issue.interval_semitones)
+            << " overlap=" << issue.overlap_duration << " " << issue.notes[0].track_name << "("
+            << static_cast<int>(issue.notes[0].pitch) << ") vs " << issue.notes[1].track_name << "("
+            << static_cast<int>(issue.notes[1].pitch) << ")";
+  }
+  EXPECT_EQ(report.summary.simultaneous_clashes, 0u) << context << details.str();
+}
+
 // =============================================================================
 // Comprehensive dissonance tests for each composition style
 // =============================================================================
 
 TEST_F(TrackClashIntegrationTest, MelodyLeadMode_NoDissonantClashes) {
   params_.composition_style = CompositionStyle::MelodyLead;
-
-  // Phase 3 harmonic features (slash chords, B-section half-bar subdivision,
-  // tritone substitution, modal interchange) may introduce clashes at chord
-  // boundaries. Threshold increased from 15 to 25 to accommodate PeakLevel-based
-  // chord thickness (octave doubling at PeakLevel::Max).
-  constexpr size_t kMaxClashesPerSeed = 25;
 
   std::vector<uint32_t> seeds = {12345, 67890, 4130447576, 99999, 2802138756};
 
@@ -64,28 +74,12 @@ TEST_F(TrackClashIntegrationTest, MelodyLeadMode_NoDissonantClashes) {
     Generator gen;
     gen.generate(params_);
 
-    auto clashes = analyzeAllTrackPairs(gen.getSong(), gen.getHarmonyContext());
-
-    if (!clashes.empty()) {
-      std::cerr << "\n=== Seed " << seed << " clashes ===\n";
-      for (const auto& c : clashes) {
-        std::cerr << c.track_a << "(" << (int)c.pitch_a << ") vs " << c.track_b << "("
-                  << (int)c.pitch_b << ") "
-                  << "interval=" << c.interval << " tick=" << c.tick << "\n";
-      }
-    }
-
-    EXPECT_LE(clashes.size(), kMaxClashesPerSeed)
-        << "MelodyLead mode (seed " << seed << ") has " << clashes.size() << " dissonant clashes";
+    expectNoSimultaneousClashes(gen, params_, "MelodyLead mode, seed=" + std::to_string(seed));
   }
 }
 
 TEST_F(TrackClashIntegrationTest, BackgroundMotifMode_NoDissonantClashes) {
   params_.composition_style = CompositionStyle::BackgroundMotif;
-
-  // Phase 3 harmonic features may introduce a small number of clashes.
-  // Threshold increased to accommodate PeakLevel-based chord thickness.
-  constexpr size_t kMaxClashesPerSeed = 25;
 
   std::vector<uint32_t> seeds = {12345, 67890, 2802138756, 3054356854, 99999};
 
@@ -95,21 +89,13 @@ TEST_F(TrackClashIntegrationTest, BackgroundMotifMode_NoDissonantClashes) {
     Generator gen;
     gen.generate(params_);
 
-    auto clashes = analyzeAllTrackPairs(gen.getSong(), gen.getHarmonyContext());
-
-    EXPECT_LE(clashes.size(), kMaxClashesPerSeed)
-        << "BackgroundMotif mode (seed " << seed << ") has " << clashes.size()
-        << " dissonant clashes";
+    expectNoSimultaneousClashes(gen, params_, "BackgroundMotif mode, seed=" + std::to_string(seed));
   }
 }
 
 TEST_F(TrackClashIntegrationTest, SynthDrivenMode_NoDissonantClashes) {
   params_.composition_style = CompositionStyle::SynthDriven;
   params_.arpeggio_enabled = true;
-
-  // Phase 3 harmonic features may introduce a small number of clashes.
-  // Threshold increased to accommodate PeakLevel-based chord thickness.
-  constexpr size_t kMaxClashesPerSeed = 25;
 
   std::vector<uint32_t> seeds = {12345, 67890, 99999};
 
@@ -119,10 +105,7 @@ TEST_F(TrackClashIntegrationTest, SynthDrivenMode_NoDissonantClashes) {
     Generator gen;
     gen.generate(params_);
 
-    auto clashes = analyzeAllTrackPairs(gen.getSong(), gen.getHarmonyContext());
-
-    EXPECT_LE(clashes.size(), kMaxClashesPerSeed)
-        << "SynthDriven mode (seed " << seed << ") has " << clashes.size() << " dissonant clashes";
+    expectNoSimultaneousClashes(gen, params_, "SynthDriven mode, seed=" + std::to_string(seed));
   }
 }
 
@@ -134,22 +117,13 @@ TEST_F(TrackClashIntegrationTest, AllChordProgressions_NoDissonantClashes) {
   params_.composition_style = CompositionStyle::BackgroundMotif;
   params_.seed = 12345;
 
-  // Phase 3 harmonic features may introduce clashes, especially for
-  // progressions with chromatic movement. Allow up to 10 per progression.
-  // Threshold increased to accommodate PeakLevel-based chord thickness.
-  constexpr size_t kMaxClashesPerProgression = 25;
-
   for (uint8_t chord_id = 0; chord_id < 10; ++chord_id) {
     params_.chord_id = chord_id;
 
     Generator gen;
     gen.generate(params_);
 
-    auto clashes = analyzeAllTrackPairs(gen.getSong(), gen.getHarmonyContext());
-
-    EXPECT_LE(clashes.size(), kMaxClashesPerProgression)
-        << "Chord progression " << static_cast<int>(chord_id) << " has " << clashes.size()
-        << " dissonant clashes";
+    expectNoSimultaneousClashes(gen, params_, "Chord progression=" + std::to_string(chord_id));
   }
 }
 
@@ -157,31 +131,19 @@ TEST_F(TrackClashIntegrationTest, AllKeys_NoDissonantClashes) {
   params_.composition_style = CompositionStyle::BackgroundMotif;
   params_.seed = 12345;
 
-  // Phase 3 harmonic features may introduce a small number of clashes.
-  // Threshold increased to accommodate PeakLevel-based chord thickness.
-  constexpr size_t kMaxClashesPerKey = 25;
-
   for (int key = 0; key < 12; ++key) {
     params_.key = static_cast<Key>(key);
 
     Generator gen;
     gen.generate(params_);
 
-    auto clashes = analyzeAllTrackPairs(gen.getSong(), gen.getHarmonyContext());
-
-    EXPECT_LE(clashes.size(), kMaxClashesPerKey)
-        << "Key " << key << " has " << clashes.size() << " dissonant clashes";
+    expectNoSimultaneousClashes(gen, params_, "Key=" + std::to_string(key));
   }
 }
 
 TEST_F(TrackClashIntegrationTest, AllMoods_NoDissonantClashes) {
   params_.composition_style = CompositionStyle::BackgroundMotif;
   params_.seed = 12345;
-
-  // Phase 3 harmonic features may introduce a small number of clashes.
-  // Threshold increased from 10 to 25 to accommodate PeakLevel-based chord thickness
-  // (octave doubling at PeakLevel::Max can create additional close intervals)
-  constexpr size_t kMaxClashesPerMood = 25;
 
   std::vector<Mood> moods = {Mood::StraightPop,    Mood::BrightUpbeat, Mood::EnergeticDance,
                              Mood::LightRock,      Mood::Ballad,       Mood::CityPop,
@@ -193,10 +155,7 @@ TEST_F(TrackClashIntegrationTest, AllMoods_NoDissonantClashes) {
     Generator gen;
     gen.generate(params_);
 
-    auto clashes = analyzeAllTrackPairs(gen.getSong(), gen.getHarmonyContext());
-
-    EXPECT_LE(clashes.size(), kMaxClashesPerMood)
-        << "Mood " << static_cast<int>(mood) << " has " << clashes.size() << " dissonant clashes";
+    expectNoSimultaneousClashes(gen, params_, "Mood=" + std::to_string(static_cast<int>(mood)));
   }
 }
 
@@ -262,16 +221,7 @@ TEST_F(TrackClashIntegrationTest, AnticipationTritoneRegression_Seed464394633) {
   Generator gen;
   gen.generate(params_);
 
-  auto clashes = analyzeAllTrackPairs(gen.getSong(), gen.getHarmonyContext());
-
-  // This seed previously caused F-B tritone clashes at bar 53
-  // due to bass anticipation not checking for tritone interval.
-  // Phase 3 harmonic features (slash chords, modal interchange) may introduce
-  // new clashes at different locations. Additional melody improvements may
-  // also affect clash counts due to random sequence shifts.
-  // Allow up to 35 clashes which is still significantly better than original bug.
-  EXPECT_LE(clashes.size(), 35u) << "Anticipation tritone regression: " << clashes.size()
-                                 << " clashes found";
+  expectNoSimultaneousClashes(gen, params_, "Anticipation tritone regression, seed=464394633");
 }
 
 // Regression test for chord-bass tritone clash
@@ -284,13 +234,7 @@ TEST_F(TrackClashIntegrationTest, ChordBassAnticipationRegression_Seed3263424241
   Generator gen;
   gen.generate(params_);
 
-  auto clashes = analyzeAllTrackPairs(gen.getSong(), gen.getHarmonyContext());
-
-  // This seed previously caused Chord(B) vs Bass(F) tritone clashes
-  // at bars 17, 33, 41 due to phrase-end anticipation.
-  // Phase 3 harmonic features may introduce new clashes. Allow up to 15.
-  EXPECT_LE(clashes.size(), 15u) << "Chord-Bass anticipation regression: " << clashes.size()
-                                 << " clashes found";
+  expectNoSimultaneousClashes(gen, params_, "Chord-Bass anticipation regression, seed=3263424241");
 }
 
 // Note: Diagnostic tests moved to dissonance_diagnostic_test.cpp

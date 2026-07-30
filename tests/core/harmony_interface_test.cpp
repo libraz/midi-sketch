@@ -120,12 +120,6 @@ TEST_F(HarmonyInterfaceTest, IsConsonantWithWeakBeatParameter) {
   EXPECT_TRUE(stub_->isConsonantWithOtherTracks(60, 0, 480, TrackRole::Vocal, false));
 }
 
-TEST_F(HarmonyInterfaceTest, HasBassCollisionReturnsFalse) {
-  // Stub always returns false (no collisions)
-  EXPECT_FALSE(stub_->hasBassCollision(40, 0, 480, 3));
-  EXPECT_FALSE(stub_->hasBassCollision(36, 0, 480, 5));
-}
-
 // ============================================================================
 // Chord Lookup (inherited from IChordLookup)
 // ============================================================================

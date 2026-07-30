@@ -58,6 +58,21 @@ TEST_F(ChordProgressionTrackerTest, ChordDegreeAt_MidBar) {
   EXPECT_EQ(tracker_.getChordDegreeAt(2400), 4);
 }
 
+TEST_F(ChordProgressionTrackerTest, ChordReplacementKeepsTritoneSubstitutionInTimeline) {
+  // Bar 1 is V (G). Its tritone substitute is bII7 (Db7, degree 13).
+  tracker_.registerChordReplacement(TICKS_PER_BAR, 2 * TICKS_PER_BAR, 13, ChordExtension::Dom7);
+
+  EXPECT_EQ(tracker_.getChordDegreeAt(TICKS_PER_BAR), 13);
+  EXPECT_EQ(tracker_.getChordExtensionAt(TICKS_PER_BAR), ChordExtension::Dom7);
+  EXPECT_TRUE(tracker_.hasChordExtensionAt(TICKS_PER_BAR));
+
+  const auto tones = tracker_.getChordTonesAt(TICKS_PER_BAR);
+  EXPECT_EQ(std::vector<int>(tones.begin(), tones.end()), (std::vector<int>{1, 5, 8, 11}))
+      << "Db7 chord tones";
+  EXPECT_EQ(tracker_.getChordDegreeAt(2 * TICKS_PER_BAR), 5)
+      << "Replacement must not leak into the following chord entry";
+}
+
 TEST_F(ChordProgressionTrackerTest, ChordDegreeAt_JustBeforeChange) {
   // Tick 1919 is last tick of bar 0 (I chord)
   EXPECT_EQ(tracker_.getChordDegreeAt(1919), 0);
@@ -201,13 +216,26 @@ TEST_F(ChordProgressionTrackerTest, CollisionDetectorAllowsRegisteredSecondaryDo
       << "E-Bb tritone should be allowed inside a registered C7 secondary dominant";
 }
 
-TEST_F(ChordProgressionTrackerTest, CollisionDetectorAllowsRootMajorSeventhOnTonic) {
+TEST_F(ChordProgressionTrackerTest, CollisionDetectorAllowsOnlyRegisteredWideRootMajorSeventh) {
   TrackCollisionDetector detector;
-  detector.registerNote(0, TICKS_PER_BEAT, 60, TrackRole::Chord);  // C
+  detector.registerNote(0, TICKS_PER_BEAT, 36, TrackRole::Bass);  // C2
 
+  EXPECT_FALSE(
+      detector.isConsonantWithOtherTracks(59, 0, TICKS_PER_BEAT, TrackRole::Motif, &tracker_))
+      << "An unregistered I-major triad must not authorize a major seventh";
+
+  tracker_.registerChordExtension(0, TICKS_PER_BAR, ChordExtension::Maj7);
+
+  EXPECT_FALSE(
+      detector.isConsonantWithOtherTracks(47, 0, TICKS_PER_BEAT, TrackRole::Motif, &tracker_))
+      << "A registered Maj7 still needs at least an octave of separation";
   EXPECT_TRUE(
-      detector.isConsonantWithOtherTracks(71, 0, TICKS_PER_BEAT, TrackRole::Motif, &tracker_))
-      << "B over C should be allowed when treated as Imaj7 color";
+      detector.isConsonantWithOtherTracks(59, 0, TICKS_PER_BEAT, TrackRole::Motif, &tracker_))
+      << "B3 over C2 is a registered Imaj7 chord tone with wide separation";
+
+  CollisionInfo info =
+      detector.getCollisionInfo(59, 0, TICKS_PER_BEAT, TrackRole::Motif, &tracker_);
+  EXPECT_FALSE(info.has_collision) << "Diagnostic collision reporting must match generation";
 }
 
 // ============================================================================

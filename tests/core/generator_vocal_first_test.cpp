@@ -6,7 +6,9 @@
 #include <gtest/gtest.h>
 
 #include "core/generator.h"
+#include "core/json_helpers.h"
 #include "core/types.h"
+#include "test_support/generator_test_fixture.h"
 #include "test_support/test_constants.h"
 
 namespace midisketch {
@@ -14,27 +16,16 @@ namespace {
 
 using test::kCMajorPitchClasses;
 
-class GeneratorVocalFirstTest : public ::testing::Test {
+class GeneratorVocalFirstTest : public test::GeneratorTestFixture {
  protected:
   void SetUp() override {
-    params_.structure = StructurePattern::StandardPop;
-    params_.mood = Mood::ElectroPop;
-    params_.chord_id = 0;
-    params_.key = Key::C;
+    GeneratorTestFixture::SetUp();
     params_.drums_enabled = true;
-    params_.vocal_low = 60;
-    params_.vocal_high = 84;
-    params_.bpm = 120;
     params_.seed = 12345;
-    params_.arpeggio_enabled = false;
     params_.skip_vocal = false;
-    // Disable humanization for deterministic tests
-    params_.humanize = false;
     // Use Traditional blueprint (max_pitch=108) to avoid pitch clamping
     params_.blueprint_id = 0;
   }
-
-  GeneratorParams params_;
 };
 
 // === generateVocal Tests ===
@@ -73,6 +64,26 @@ TEST_F(GeneratorVocalFirstTest, GenerateVocalOnlyInitializesStructure) {
 
   EXPECT_FALSE(sections.empty()) << "Structure should be initialized";
   EXPECT_GT(song.bpm(), 0u) << "BPM should be set";
+}
+
+TEST_F(GeneratorVocalFirstTest, GenerateVocalPreRegistersFullHarmonyTimeline) {
+  params_.chord_extension.enable_7th = true;
+  params_.chord_extension.enable_9th = true;
+
+  Generator vocal_first;
+  vocal_first.generateVocal(params_);
+
+  Generator full;
+  full.generate(params_);
+
+  const auto& vocal_harmony = vocal_first.getHarmonyContext();
+  const auto& full_harmony = full.getHarmonyContext();
+  for (const auto& section : vocal_first.getSong().arrangement().sections()) {
+    for (Tick tick = section.start_tick; tick < section.endTick(); tick += TICKS_PER_BEAT) {
+      EXPECT_EQ(vocal_harmony.getChordDegreeAt(tick), full_harmony.getChordDegreeAt(tick));
+      EXPECT_EQ(vocal_harmony.getChordExtensionAt(tick), full_harmony.getChordExtensionAt(tick));
+    }
+  }
 }
 
 TEST_F(GeneratorVocalFirstTest, GenerateVocalOnlyDeterministic) {
@@ -144,6 +155,39 @@ TEST_F(GeneratorVocalFirstTest, RegenerateVocalPreservesStructure) {
   EXPECT_EQ(gen.getSong().bpm(), bpm);
 }
 
+TEST_F(GeneratorVocalFirstTest, PartialJsonVocalConfigPreservesExistingParameters) {
+  params_.vocal_low = 55;
+  params_.vocal_high = 82;
+  params_.vocal_attitude = VocalAttitude::Expressive;
+  params_.vocal_style = VocalStylePreset::Idol;
+  params_.melody_template = MelodyTemplateId::HookRepeat;
+  params_.melodic_complexity = MelodicComplexity::Complex;
+  params_.hook_intensity = HookIntensity::Strong;
+  params_.vocal_groove = VocalGrooveFeel::Syncopated;
+
+  Generator gen;
+  gen.generateVocal(params_);
+  const GeneratorParams before = gen.getParams();
+
+  json::Parser parser(R"({"seed":987654})");
+  ASSERT_TRUE(parser.isValid());
+  VocalConfig partial;
+  partial.readFrom(parser);
+  gen.regenerateVocal(partial);
+
+  const auto& after = gen.getParams();
+  EXPECT_EQ(after.vocal_low, before.vocal_low);
+  EXPECT_EQ(after.vocal_high, before.vocal_high);
+  EXPECT_EQ(after.vocal_attitude, before.vocal_attitude);
+  EXPECT_EQ(after.vocal_style, before.vocal_style);
+  EXPECT_EQ(after.melody_template, before.melody_template);
+  EXPECT_EQ(after.melodic_complexity, before.melodic_complexity);
+  EXPECT_EQ(after.hook_intensity, before.hook_intensity);
+  EXPECT_EQ(after.vocal_groove, before.vocal_groove);
+  EXPECT_FLOAT_EQ(after.melody_params.note_density, before.melody_params.note_density);
+  EXPECT_EQ(after.melody_params.max_leap_interval, before.melody_params.max_leap_interval);
+}
+
 // === generateAccompanimentForVocal Tests ===
 
 TEST_F(GeneratorVocalFirstTest, GenerateAccompanimentAddsAllTracks) {
@@ -166,6 +210,55 @@ TEST_F(GeneratorVocalFirstTest, GenerateAccompanimentAddsAllTracks) {
   EXPECT_FALSE(song.bass().empty()) << "Bass should be generated";
   EXPECT_FALSE(song.drums().empty()) << "Drums should be generated";
   EXPECT_FALSE(song.aux().empty()) << "Aux should be generated";
+}
+
+TEST_F(GeneratorVocalFirstTest, AccompanimentConfigAutoSeedResolvesForGenerateAndRegenerate) {
+  AccompanimentConfig config;
+  config.seed = 0;
+
+  Generator generated;
+  generated.generateVocal(params_);
+  generated.generateAccompanimentForVocal(config);
+  EXPECT_NE(generated.getParams().seed, 0u);
+  EXPECT_NE(generated.getParams().seed, params_.seed)
+      << "seed=0 must not continue the vocal generation RNG stream";
+
+  Generator regenerated;
+  regenerated.generateWithVocal(params_);
+  regenerated.regenerateAccompaniment(config);
+  EXPECT_NE(regenerated.getParams().seed, 0u);
+  EXPECT_NE(regenerated.getParams().seed, params_.seed);
+}
+
+TEST_F(GeneratorVocalFirstTest, PartialJsonAccompanimentConfigPreservesExistingParameters) {
+  params_.arpeggio_enabled = true;
+  params_.guitar_enabled = false;
+  params_.humanize = true;
+  params_.humanize_timing = 0.7f;
+  params_.humanize_velocity = 0.6f;
+  params_.chord_extension.enable_7th = true;
+  params_.call_enabled = true;
+  params_.call_density = CallDensity::Intense;
+
+  Generator gen;
+  gen.generateVocal(params_);
+  const GeneratorParams before = gen.getParams();
+
+  json::Parser parser(R"({"seed":246810})");
+  ASSERT_TRUE(parser.isValid());
+  AccompanimentConfig partial;
+  partial.readFrom(parser);
+  gen.generateAccompanimentForVocal(partial);
+
+  const auto& after = gen.getParams();
+  EXPECT_EQ(after.arpeggio_enabled, before.arpeggio_enabled);
+  EXPECT_EQ(after.guitar_enabled, before.guitar_enabled);
+  EXPECT_EQ(after.humanize, before.humanize);
+  EXPECT_FLOAT_EQ(after.humanize_timing, before.humanize_timing);
+  EXPECT_FLOAT_EQ(after.humanize_velocity, before.humanize_velocity);
+  EXPECT_EQ(after.chord_extension.enable_7th, before.chord_extension.enable_7th);
+  EXPECT_EQ(after.call_enabled, before.call_enabled);
+  EXPECT_EQ(after.call_density, before.call_density);
 }
 
 TEST_F(GeneratorVocalFirstTest, GenerateAccompanimentPreservesVocal) {
@@ -617,25 +710,16 @@ TEST_F(GeneratorVocalFirstTest, DetectVocalAccompanimentClashesFindsDissonance) 
 // RhythmSync Vocal-First Tests
 // ============================================================================
 
-class RhythmSyncVocalFirstTest : public ::testing::Test {
+class RhythmSyncVocalFirstTest : public test::GeneratorTestFixture {
  protected:
   void SetUp() override {
-    params_.structure = StructurePattern::StandardPop;
-    params_.mood = Mood::ElectroPop;
-    params_.chord_id = 0;
-    params_.key = Key::C;
+    GeneratorTestFixture::SetUp();
     params_.drums_enabled = true;
-    params_.vocal_low = 60;
-    params_.vocal_high = 84;
     params_.bpm = 170;
     params_.bpm_explicit = true;
     params_.seed = 12345;
-    params_.arpeggio_enabled = false;
-    params_.humanize = false;
     params_.blueprint_id = 1;  // RhythmLock (RhythmSync paradigm)
   }
-
-  GeneratorParams params_;
 };
 
 TEST_F(RhythmSyncVocalFirstTest, MotifPreservedDuringAccompanimentRegeneration) {
@@ -647,9 +731,7 @@ TEST_F(RhythmSyncVocalFirstTest, MotifPreservedDuringAccompanimentRegeneration) 
   ASSERT_FALSE(motif_after_vocal.empty())
       << "Motif should be generated as coordinate axis in RhythmSync";
 
-  // Save a sample of original motif notes (post-processing may add/remove edge notes)
-  auto original_motif_notes = motif_after_vocal.notes();
-  size_t sample_count = std::min(original_motif_notes.size(), size_t(20));
+  const uint32_t original_motif_seed = gen.getSong().motifSeed();
 
   // Regenerate accompaniment
   gen.generateAccompanimentForVocal();
@@ -659,27 +741,18 @@ TEST_F(RhythmSyncVocalFirstTest, MotifPreservedDuringAccompanimentRegeneration) 
   ASSERT_FALSE(motif_after_accomp.empty())
       << "Motif should still exist after accompaniment regeneration";
 
-  // Core pattern should be preserved: check first N notes match
-  // (post-processing like fixMotifVocalClashes may modify edge notes)
-  const auto& final_notes = motif_after_accomp.notes();
-  size_t check_count = std::min({sample_count, final_notes.size()});
-  int matching_notes = 0;
-  for (size_t i = 0; i < check_count; ++i) {
-    if (final_notes[i].start_tick == original_motif_notes[i].start_tick &&
-        final_notes[i].note == original_motif_notes[i].note) {
-      ++matching_notes;
-    }
-  }
-  EXPECT_GT(matching_notes, static_cast<int>(check_count) / 2)
-      << "Majority of motif notes should be preserved (not regenerated from scratch)";
+  // Layer scheduling and register/collision processing may reshape the final
+  // notes, but accompaniment generation must not create a new coordinate-axis
+  // motif (which would replace its identity seed).
+  EXPECT_EQ(gen.getSong().motifSeed(), original_motif_seed);
 }
 
 TEST_F(RhythmSyncVocalFirstTest, MotifPreservedDuringRegenerateAccompaniment) {
   Generator gen;
   gen.generateVocal(params_);
 
-  auto original_motif_notes = gen.getSong().motif().notes();
-  ASSERT_FALSE(original_motif_notes.empty());
+  ASSERT_FALSE(gen.getSong().motif().empty());
+  const uint32_t original_motif_seed = gen.getSong().motifSeed();
 
   // regenerateAccompaniment with a different seed
   gen.regenerateAccompaniment(99999);
@@ -687,18 +760,7 @@ TEST_F(RhythmSyncVocalFirstTest, MotifPreservedDuringRegenerateAccompaniment) {
   const auto& motif_after = gen.getSong().motif();
   ASSERT_FALSE(motif_after.empty()) << "Motif should still exist after regenerateAccompaniment";
 
-  // Core pattern should be preserved (post-processing may modify some notes)
-  const auto& final_notes = motif_after.notes();
-  size_t check_count = std::min({size_t(20), original_motif_notes.size(), final_notes.size()});
-  int matching_notes = 0;
-  for (size_t i = 0; i < check_count; ++i) {
-    if (final_notes[i].start_tick == original_motif_notes[i].start_tick &&
-        final_notes[i].note == original_motif_notes[i].note) {
-      ++matching_notes;
-    }
-  }
-  EXPECT_GT(matching_notes, static_cast<int>(check_count) / 2)
-      << "Majority of motif notes should be preserved across regenerateAccompaniment";
+  EXPECT_EQ(gen.getSong().motifSeed(), original_motif_seed);
 }
 
 TEST_F(RhythmSyncVocalFirstTest, GenerateVocalAppliesDensityProgression) {

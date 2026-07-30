@@ -112,7 +112,7 @@ describe('MidiSketch WASM - Vocal', () => {
         arpeggioEnabled: true,
         arpeggioPattern: 2, // UpDown
         chordExt7th: true,
-        chordExt7thProb: 50,
+        chordExt7thProb: 0.5,
       });
       expect(result).toBe(0);
 

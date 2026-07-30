@@ -7,8 +7,13 @@
 
 #include <gtest/gtest.h>
 
+#include <cstring>
+
+#include "core/json_helpers.h"
 #include "core/preset_data.h"
+#include "core/song.h"
 #include "midi/midi_writer.h"
+#include "midi/ump.h"
 #include "midisketch.h"
 
 namespace midisketch {
@@ -24,6 +29,17 @@ class MidiValidatorTest : public ::testing::Test {
     sketch_.generateFromConfig(config);
   }
 };
+
+TEST_F(MidiValidatorTest, DefaultOutputIsStandardSmf1) {
+  EXPECT_EQ(sketch_.getMidiFormat(), MidiFormat::SMF1);
+  generateSong();
+
+  const auto midi_data = sketch_.getMidi();
+  ASSERT_GE(midi_data.size(), 4u);
+  EXPECT_EQ(std::memcmp(midi_data.data(), "MThd", 4), 0);
+  EXPECT_EQ(MidiValidator::detectFormat(midi_data.data(), midi_data.size()),
+            DetectedMidiFormat::SMF1);
+}
 
 // Test MidiValidator with SMF1 output
 TEST_F(MidiValidatorTest, ValidateSMF1Output) {
@@ -151,6 +167,57 @@ TEST(MidiValidatorErrorTest, DetectInvalidHeader) {
   EXPECT_EQ(report.summary.format, DetectedMidiFormat::Unknown);
 }
 
+TEST(MidiValidatorErrorTest, RejectsEveryTruncationOfGeneratedMidi) {
+  Song song;
+  song.setBpm(120);
+  song.vocal().addNote(NoteEventBuilder::create(0, 480, 60, 100));
+
+  MidiWriter writer;
+  writer.build(song, Key::C, Mood::StraightPop, "", MidiFormat::SMF1);
+  const auto midi_data = writer.toBytes();
+  ASSERT_GT(midi_data.size(), 14u);
+
+  MidiValidator validator;
+  for (size_t length = 0; length < midi_data.size(); ++length) {
+    std::vector<uint8_t> truncated(midi_data.begin(), midi_data.begin() + length);
+    const auto report = validator.validate(truncated);
+    EXPECT_FALSE(report.valid) << "Accepted MIDI truncated to " << length << " bytes";
+    EXPECT_TRUE(report.hasErrors());
+  }
+}
+
+TEST(MidiValidatorErrorTest, RejectsMissingEotAndUnknownStatus) {
+  const std::vector<uint8_t> header = {
+      'M', 'T', 'h', 'd', 0, 0, 0, 6, 0, 1, 0, 1, 1, 224, 'M', 'T', 'r', 'k',
+  };
+  MidiValidator validator;
+
+  auto missing_eot = header;
+  missing_eot.insert(missing_eot.end(), {0, 0, 0, 4, 0, 0x90, 60, 100});
+  const auto missing_eot_report = validator.validate(missing_eot);
+  EXPECT_FALSE(missing_eot_report.valid);
+  EXPECT_TRUE(missing_eot_report.hasErrors());
+
+  auto unknown_status = header;
+  unknown_status.insert(unknown_status.end(), {0, 0, 0, 2, 0, 0xF4});
+  const auto unknown_status_report = validator.validate(unknown_status);
+  EXPECT_FALSE(unknown_status_report.valid);
+  EXPECT_TRUE(unknown_status_report.hasErrors());
+}
+
+TEST(MidiValidatorErrorTest, RejectsUnimplementedAndTruncatedSmf2) {
+  MidiValidator validator;
+  const std::vector<uint8_t> smf2_container = {'S', 'M', 'F', '2', 'C', 'O', 'N', '1'};
+  EXPECT_FALSE(validator.validate(smf2_container).valid);
+
+  const std::vector<uint8_t> truncated_clip = {
+      'S', 'M', 'F', '2', 'C', 'L', 'I', 'P', 0x40, 0, 0, 0,
+  };
+  const auto report = validator.validate(truncated_clip);
+  EXPECT_FALSE(report.valid);
+  EXPECT_TRUE(report.hasErrors());
+}
+
 // Test JSON output
 TEST_F(MidiValidatorTest, JsonOutput) {
   sketch_.setMidiFormat(MidiFormat::SMF1);
@@ -165,6 +232,39 @@ TEST_F(MidiValidatorTest, JsonOutput) {
   EXPECT_NE(json.find("\"valid\": true"), std::string::npos);
   EXPECT_NE(json.find("\"format\": \"SMF1\""), std::string::npos);
   EXPECT_NE(json.find("\"tracks\""), std::string::npos);
+}
+
+TEST(MidiValidatorJsonTest, EscapesTrackNamesAndIssueMessages) {
+  MidiValidationReport report;
+  report.valid = false;
+  report.summary.timing_type = "PPQN";
+  report.tracks.push_back({0, "Lead \"A\"\\B\n", 12, 3, true});
+  report.issues.push_back({ValidationSeverity::Error, "invalid \"event\"\nnext", 7, 0});
+
+  const std::string output = report.toJson();
+  json::Parser parser(output);
+  EXPECT_TRUE(parser.isValid());
+  EXPECT_NE(output.find("Lead \\\"A\\\"\\\\B\\n"), std::string::npos);
+  EXPECT_NE(output.find("invalid \\\"event\\\"\\nnext"), std::string::npos);
+}
+
+TEST(MidiValidatorUmpTest, CountsSysEx8AsOne128BitMessage) {
+  std::vector<uint8_t> clip;
+  clip.insert(clip.end(), {'S', 'M', 'F', '2', 'C', 'L', 'I', 'P'});
+  ump::writeStartOfClip(clip);
+  // SysEx8 is 128-bit. Its second word has MT=2 bits deliberately set; a
+  // 32-bit walker would incorrectly count it as a channel-voice event.
+  ump::writeUint32BE(clip, 0x50000000);
+  ump::writeUint32BE(clip, 0x20000000);
+  ump::writeUint32BE(clip, 0);
+  ump::writeUint32BE(clip, 0);
+  ump::writeEndOfClip(clip);
+
+  MidiValidator validator;
+  const auto report = validator.validate(clip);
+  ASSERT_TRUE(report.valid);
+  ASSERT_EQ(report.tracks.size(), 1u);
+  EXPECT_EQ(report.tracks[0].event_count, 0u);
 }
 
 // Test text report output

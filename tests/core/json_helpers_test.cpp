@@ -349,6 +349,29 @@ TEST(JsonParserTest, BooleanValues) {
   EXPECT_FALSE(p.getBool("no"));
 }
 
+TEST(JsonParserTest, InvalidBooleanPreservesDefaultAndInvalidatesTypedRead) {
+  Parser default_true(R"({"enabled":1})");
+  EXPECT_TRUE(default_true.isValid());
+  EXPECT_TRUE(default_true.getBool("enabled", true));
+  EXPECT_FALSE(default_true.isValid());
+
+  Parser default_false(R"({"enabled":null})");
+  EXPECT_FALSE(default_false.getBool("enabled", false));
+  EXPECT_FALSE(default_false.isValid());
+}
+
+TEST(JsonParserTest, TypedIntegerReadRejectsNarrowingAndPartialTokens) {
+  Parser narrowing(R"({"style_preset_id":256})");
+  uint8_t style_id = 7;
+  EXPECT_FALSE(narrowing.readInteger("style_preset_id", style_id));
+  EXPECT_EQ(style_id, 7);
+  EXPECT_FALSE(narrowing.isValid());
+
+  Parser partial(R"({"bpm":120.5})");
+  EXPECT_EQ(partial.getInt("bpm", 90), 90);
+  EXPECT_FALSE(partial.isValid());
+}
+
 TEST(JsonParserTest, StringWithEscapes) {
   Parser p(R"({"text":"hello\"world"})");
   EXPECT_EQ(p.getString("text"), "hello\"world");
@@ -399,6 +422,12 @@ TEST(JsonParserTest, InvalidJson) {
 
   Parser p3("");
   EXPECT_FALSE(p3.has("key"));
+
+  Parser p4(R"({"seed":not-a-number})");
+  EXPECT_FALSE(p4.isValid());
+
+  Parser p5(R"({"seed":12345)");
+  EXPECT_FALSE(p5.isValid());
 }
 
 TEST(JsonParserTest, NumericStringConversion) {
@@ -544,6 +573,25 @@ TEST(JsonRoundTripTest, ChordExtensionParams) {
   EXPECT_FLOAT_EQ(restored.seventh_probability, original.seventh_probability);
   EXPECT_FLOAT_EQ(restored.ninth_probability, original.ninth_probability);
   EXPECT_FLOAT_EQ(restored.tritone_sub_probability, original.tritone_sub_probability);
+}
+
+TEST(JsonRoundTripTest, HighPrecisionFloatValuesRoundTripExactly) {
+  ChordExtensionParams original;
+  original.sus_probability = 0.123456789f;
+  original.seventh_probability = 0.987654321f;
+
+  std::ostringstream oss;
+  Writer writer(oss);
+  writer.beginObject();
+  original.writeTo(writer);
+  writer.endObject();
+
+  ChordExtensionParams restored;
+  Parser parser(oss.str());
+  restored.readFrom(parser);
+
+  EXPECT_FLOAT_EQ(restored.sus_probability, original.sus_probability);
+  EXPECT_FLOAT_EQ(restored.seventh_probability, original.seventh_probability);
 }
 
 TEST(JsonRoundTripTest, MotifParams) {
@@ -754,8 +802,8 @@ TEST(JsonRoundTripTest, BackwardCompatibility) {
   EXPECT_FLOAT_EQ(restored.humanize_timing, 0.4f);
 
   // Nested structures should have defaults
-  EXPECT_EQ(restored.arpeggio.pattern, ArpeggioPattern::Up);
-  EXPECT_EQ(restored.arpeggio.speed, ArpeggioSpeed::Sixteenth);
+  EXPECT_EQ(restored.arpeggio.pattern, ArpeggioPattern::Auto);
+  EXPECT_EQ(restored.arpeggio.speed, ArpeggioSpeed::Auto);
   EXPECT_EQ(restored.chord_extension.enable_7th, false);
 }
 

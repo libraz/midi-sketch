@@ -42,18 +42,26 @@ std::unique_ptr<Generator> generateRhythmSync(uint16_t bpm, uint32_t seed = 1234
   return gen;
 }
 
-// Helper: count maximum consecutive short notes in a track.
-// A "short note" is defined as duration < threshold ticks.
+// Helper: count maximum consecutive short notes inside a phrase.
+// A "short note" is defined as duration < threshold ticks; an audible
+// sixteenth-note rest starts a new phrase and therefore breaks the run.
 int maxConsecutiveShort(const std::vector<NoteEvent>& notes, Tick threshold) {
   int max_run = 0;
   int current_run = 0;
+  Tick previous_end = 0;
+  bool has_previous = false;
   for (const auto& note : notes) {
+    if (has_previous && note.start_tick >= previous_end + TICK_SIXTEENTH) {
+      current_run = 0;
+    }
     if (note.duration < threshold) {
       current_run++;
       max_run = std::max(max_run, current_run);
     } else {
       current_run = 0;
     }
+    previous_end = std::max(previous_end, note.start_tick + note.duration);
+    has_previous = true;
   }
   return max_run;
 }

@@ -21,6 +21,8 @@
 #include "track/melody/contour_direction.h"
 #include "track/melody/melody_utils.h"
 #include "track/melody/motif_support.h"
+#include "track/melody/note_constraints.h"
+#include "track/melody/rhythm_generator.h"
 
 namespace midisketch {
 namespace {
@@ -266,6 +268,22 @@ TEST(MelodyDesignerTest, GenerateMelodyPhraseNotesInRange) {
   }
 }
 
+TEST(MelodyDesignerTest, MoraTimedPhraseUsesPlannedMoraCount) {
+  MelodyDesigner designer;
+  std::mt19937 rng(42);
+  std::mt19937 expected_rng(42);
+  const MelodyTemplate& tmpl = getTemplate(MelodyTemplateId::PlateauTalk);
+  auto ctx = createTestContext();
+  ctx.is_mora_timed = true;
+  HarmonyContext harmony;
+
+  auto result = designer.generateMelodyPhrase(tmpl, 0, 8, ctx, -1, 0, harmony, rng, 2);
+  const auto expected_rhythm = melody::generateMoraTimedRhythm(8, 2, 1.0f, expected_rng);
+
+  EXPECT_EQ(result.notes.size(), expected_rhythm.size())
+      << "MoraTimed must consume PhrasePlan's target_note_count rather than template rhythm";
+}
+
 TEST(MelodyDesignerTest, GenerateMelodyPhraseContinuity) {
   MelodyDesigner designer;
   std::mt19937 rng(42);
@@ -318,6 +336,39 @@ TEST(MelodyDesignerTest, GenerateHookRepeatsPattern) {
   // HookRepeat has hook_note_count=2, hook_repeat_count=4
   // So expect 2*4 = 8 notes minimum
   EXPECT_GE(result.notes.size(), 8u);
+}
+
+TEST(MelodyDesignerTest, GenerateHookHonorsConfiguredRepetitionMode) {
+  const MelodyTemplate& tmpl = getTemplate(MelodyTemplateId::HookRepeat);
+  auto repeated_ctx = createTestContext();
+  repeated_ctx.section_type = SectionType::Chorus;
+  repeated_ctx.hook_repetition = true;
+  auto varied_ctx = repeated_ctx;
+  varied_ctx.hook_repetition = false;
+
+  MelodyDesigner repeated_designer;
+  MelodyDesigner varied_designer;
+  HarmonyContext harmony;
+  std::mt19937 repeated_rng(42);
+  std::mt19937 varied_rng(42);
+
+  const auto repeated = repeated_designer.generateHook(tmpl, 0, repeated_ctx.section_end,
+                                                       repeated_ctx, -1, harmony, repeated_rng);
+  const auto varied = varied_designer.generateHook(tmpl, 0, varied_ctx.section_end, varied_ctx, -1,
+                                                   harmony, varied_rng);
+
+  ASSERT_FALSE(repeated.notes.empty());
+  bool differs = repeated.notes.size() != varied.notes.size();
+  if (!differs) {
+    for (size_t i = 0; i < repeated.notes.size(); ++i) {
+      if (repeated.notes[i].note != varied.notes[i].note ||
+          repeated.notes[i].duration != varied.notes[i].duration) {
+        differs = true;
+        break;
+      }
+    }
+  }
+  EXPECT_TRUE(differs) << "hook_repetition=false must not be forced to the fixed Type-0 hook";
 }
 
 // ============================================================================
@@ -1403,6 +1454,41 @@ TEST(MelodyDesignerTest, ChorusSectionGeneratesNotes) {
   EXPECT_GT(notes.size(), 0u) << "Chorus section should generate notes";
 }
 
+TEST(MelodyDesignerTest, EvaluatedWinnerDefinesCachedChorusHead) {
+  MelodyDesigner designer;
+  HarmonyContext harmony;
+
+  Section first;
+  first.type = SectionType::Chorus;
+  first.bars = 8;
+  first.start_tick = 0;
+  first.name = "CHORUS 1";
+  Section second = first;
+  second.start_tick = first.endTick();
+  second.name = "CHORUS 2";
+  harmony.initialize(Arrangement({first, second}), getChordProgression(0), Mood::StraightPop);
+
+  auto first_ctx = createTestContext();
+  first_ctx.section_type = SectionType::Chorus;
+  first_ctx.section_bars = 8;
+  first_ctx.section_end = first.endTick();
+  first_ctx.mood = Mood::StraightPop;
+  first_ctx.enable_embellishment = false;
+
+  const MelodyTemplate& tmpl = getTemplate(MelodyTemplateId::HookRepeat);
+  std::mt19937 rng(912345);
+  auto first_notes = designer.generateSectionWithEvaluation(
+      tmpl, first_ctx, harmony, rng, VocalStylePreset::Idol, MelodicComplexity::Standard, 8);
+  ASSERT_GE(first_notes.size(), 8u);
+  const auto cached_head = designer.cachedChorusHead();
+  ASSERT_TRUE(cached_head.has_value());
+
+  for (size_t i = 0; i < 8; ++i) {
+    EXPECT_EQ((*cached_head)[i], first_notes[i].note)
+        << "The cache must commit the evaluated winner's head at note " << i;
+  }
+}
+
 // ============================================================================
 // Motif Variant Tests
 // ============================================================================
@@ -2292,12 +2378,58 @@ TEST(ZombieParamTest, ConsecutiveSameNoteProbZeroReducesRepetition) {
     }
   }
 
-  // Zero prob should have fewer or equal repeats
+  // A zero probability is a hard style contract: repeated candidates must be
+  // moved, while the high-probability control still produces repetition.
   float ratio_high = (total_high > 0) ? static_cast<float>(repeats_high) / total_high : 0.0f;
   float ratio_low = (total_low > 0) ? static_cast<float>(repeats_low) / total_low : 0.0f;
-  EXPECT_LE(ratio_low, ratio_high + 0.1f)
-      << "consecutive_same_note_prob=0 should reduce or equal repetition rate"
+  EXPECT_GT(repeats_high, 0);
+  EXPECT_EQ(repeats_low, 0);
+  EXPECT_LT(ratio_low, ratio_high)
+      << "consecutive_same_note_prob=0 should eliminate generated repetition"
       << " (low=" << ratio_low << ", high=" << ratio_high << ")";
+}
+
+TEST(ZombieParamTest, ConsecutiveSameNoteProbabilityScalesRepetitionCurve) {
+  melody::ConsecutiveSameNoteTracker disabled{2, 0.0f};
+  melody::ConsecutiveSameNoteTracker half_strength{2, 0.5f};
+  melody::ConsecutiveSameNoteTracker full_strength{2, 1.0f};
+
+  EXPECT_FLOAT_EQ(disabled.getAllowProbability(), 0.0f);
+  EXPECT_FLOAT_EQ(half_strength.getAllowProbability(), 0.35f);
+  EXPECT_FLOAT_EQ(full_strength.getAllowProbability(), 0.70f);
+}
+
+TEST(ZombieParamTest, DisableBreathingGapsChangesSectionTiming) {
+  MelodyDesigner designer;
+  HarmonyContext harmony;
+  const MelodyTemplate& tmpl = getTemplate(MelodyTemplateId::PlateauTalk);
+  auto ctx = createTestContext();
+  ctx.section_bars = 8;
+  ctx.section_end = TICKS_PER_BAR * ctx.section_bars;
+
+  std::mt19937 breathing_rng(4242);
+  ctx.disable_breathing_gaps = false;
+  const auto with_breaths = designer.generateSection(tmpl, ctx, harmony, breathing_rng);
+
+  std::mt19937 continuous_rng(4242);
+  ctx.disable_breathing_gaps = true;
+  const auto continuous = designer.generateSection(tmpl, ctx, harmony, continuous_rng);
+
+  ASSERT_GE(with_breaths.size(), 2u);
+  ASSERT_GE(continuous.size(), 2u);
+  auto totalGapTicks = [](const std::vector<NoteEvent>& notes) {
+    Tick total = 0;
+    for (size_t idx = 0; idx + 1 < notes.size(); ++idx) {
+      Tick end = notes[idx].start_tick + notes[idx].duration;
+      if (notes[idx + 1].start_tick > end) {
+        total += notes[idx + 1].start_tick - end;
+      }
+    }
+    return total;
+  };
+
+  EXPECT_LT(totalGapTicks(continuous), totalGapTicks(with_breaths))
+      << "disable_breathing_gaps=true must remove planned inter-phrase breath time";
 }
 
 TEST(ZombieParamTest, DensityModifierAffectsNoteCount) {

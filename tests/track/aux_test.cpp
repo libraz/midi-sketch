@@ -21,13 +21,16 @@
 #include "core/chord_utils.h"
 #include "core/generator.h"
 #include "core/harmony_context.h"
+#include "core/harmony_coordinator.h"
 #include "core/i_harmony_context.h"
 #include "core/motif.h"
 #include "core/preset_data.h"
 #include "core/production_blueprint.h"
+#include "core/song.h"
 #include "core/timing_constants.h"
 #include "midisketch.h"
 #include "test_helpers/note_event_test_helper.h"
+#include "test_support/stub_harmony_context.h"
 
 namespace midisketch {
 namespace {
@@ -60,6 +63,19 @@ std::vector<NoteEvent> createTestMainMelody() {
   return melody;
 }
 
+class TimelineHarmony final : public test::StubHarmonyContext {
+ public:
+  int8_t getChordDegreeAt(Tick tick) const override {
+    return tick < TICKS_PER_BAR ? 0 : 1;  // I -> ii, with no shared pitch classes
+  }
+};
+
+bool isChordToneAt(const NoteEvent& note, const IHarmonyContext& harmony) {
+  const ChordTones tones = getChordTones(harmony.getChordDegreeAt(note.start_tick));
+  return std::any_of(tones.pitch_classes.begin(), tones.pitch_classes.begin() + tones.count,
+                     [&note](int pitch_class) { return pitch_class == note.note % 12; });
+}
+
 // Helper to create a section
 Section makeSection(SectionType type, uint8_t bars, Tick start_tick) {
   Section sec;
@@ -77,6 +93,79 @@ Section makeChorusSection(uint8_t bars, Tick start_tick) {
   sec.start_tick = start_tick;
   sec.vocal_density = VocalDensity::Full;
   return sec;
+}
+
+TEST(AuxSongContextTest, SongPhraseBoundariesReachPhraseTailGeneration) {
+  constexpr Tick kBreathTick = TICKS_PER_BAR;
+  bool generated_breath_response = false;
+
+  // StoryPop uses PhraseTail for verse sections. The vocal is continuous, so
+  // the response below can only be derived from Song::phraseBoundaries().
+  for (uint32_t seed = 1; seed <= 20 && !generated_breath_response; ++seed) {
+    Section verse = makeSection(SectionType::A, 2, 0);
+    verse.track_mask = TrackMask::Aux;
+
+    Song song;
+    song.setArrangement(Arrangement({verse}));
+    song.vocal().addNote(NoteEventTestHelper::create(0, verse.endTick(), 64, 100));
+    song.addPhraseBoundary({kBreathTick, true, false, CadenceType::None});
+
+    GeneratorParams params;
+    params.blueprint_id = 2;  // StoryPop
+    params.seed = seed;
+    params.vocal_low = 60;
+    params.vocal_high = 72;
+
+    const auto& progression = getChordProgression(params.chord_id);
+    HarmonyCoordinator harmony;
+    harmony.initialize(song.arrangement(), progression, params.mood);
+    std::mt19937 rng(seed);
+    FullTrackContext ctx;
+    ctx.song = &song;
+    ctx.params = &params;
+    ctx.rng = &rng;
+    ctx.harmony = &harmony;
+    ctx.chord_progression = &progression;
+
+    AuxGenerator generator;
+    generator.generateFullTrack(song.aux(), ctx);
+    generated_breath_response = std::any_of(
+        song.aux().notes().begin(), song.aux().notes().end(),
+        [](const NoteEvent& note) { return note.start_tick == kBreathTick + TICK_EIGHTH; });
+  }
+
+  EXPECT_TRUE(generated_breath_response)
+      << "PhraseTail should receive an explicit vocal breath boundary from SongContext";
+}
+
+TEST(AuxSongContextTest, RegistersOnlyFinalPostProcessedNotes) {
+  Section verse = makeSection(SectionType::A, 2, 0);
+  std::vector<Section> sections = {verse};
+  const auto& progression = getChordProgression(0);
+
+  MidiTrack vocal;
+  for (Tick tick = 0; tick < verse.endTick(); tick += TICK_QUARTER) {
+    vocal.addNote(NoteEventTestHelper::create(tick, TICK_EIGHTH, 64, 100));
+  }
+
+  std::vector<PhraseBoundary> phrase_boundaries;
+  AuxGenerator::SongContext song_ctx;
+  song_ctx.sections = &sections;
+  song_ctx.vocal_track = &vocal;
+  song_ctx.progression = &progression;
+  song_ctx.phrase_boundaries = &phrase_boundaries;
+  song_ctx.blueprint_id = 1;  // RhythmLock uses PulseLoop in verse sections.
+
+  test::StubHarmonyContext harmony;
+  harmony.setAllPitchesSafe(true);
+  std::mt19937 rng(42);
+  MidiTrack aux;
+
+  AuxGenerator generator;
+  generator.generateFromSongContext(aux, song_ctx, harmony, rng);
+
+  ASSERT_FALSE(aux.notes().empty());
+  EXPECT_EQ(harmony.getRegisteredNoteCount(), static_cast<int>(aux.noteCount()));
 }
 
 // Helper to create vocal melody in high register (typical pop chorus)
@@ -110,6 +199,38 @@ TEST(AuxTest, AuxFunctionEnumValues) {
 TEST(AuxTest, AuxFunctionEnumValuesExtended) {
   EXPECT_EQ(static_cast<uint8_t>(AuxFunction::Unison), 5);
   EXPECT_EQ(static_cast<uint8_t>(AuxFunction::MelodicHook), 6);
+}
+
+TEST(AuxTest, RhythmicPatternsFollowHarmonyAtEachOnset) {
+  AuxGenerator::AuxContext ctx = createTestContext();
+  ctx.section_end = TICKS_PER_BAR * 2;
+  TimelineHarmony harmony;
+  harmony.setAllPitchesSafe(true);
+
+  AuxConfig pulse;
+  pulse.function = AuxFunction::PulseLoop;
+  pulse.range_offset = -12;
+  pulse.range_width = 24;
+  pulse.velocity_ratio = 0.7f;
+  pulse.density_ratio = 1.0f;
+
+  AuxGenerator pulse_generator;
+  std::mt19937 pulse_rng(1);
+  auto pulse_notes = pulse_generator.generatePulseLoop(ctx, pulse, harmony, pulse_rng);
+  ASSERT_FALSE(pulse_notes.empty());
+  for (const auto& note : pulse_notes) {
+    EXPECT_TRUE(isChordToneAt(note, harmony)) << "PulseLoop tick=" << note.start_tick;
+  }
+
+  AuxConfig groove = pulse;
+  groove.function = AuxFunction::GrooveAccent;
+  AuxGenerator groove_generator;
+  std::mt19937 groove_rng(1);
+  auto groove_notes = groove_generator.generateGrooveAccent(ctx, groove, harmony, groove_rng);
+  ASSERT_FALSE(groove_notes.empty());
+  for (const auto& note : groove_notes) {
+    EXPECT_TRUE(isChordToneAt(note, harmony)) << "GrooveAccent tick=" << note.start_tick;
+  }
 }
 
 TEST(AuxTest, AuxHarmonicRoleUnisonValue) {
@@ -193,8 +314,19 @@ TEST(AuxTest, TargetHintWithMainMelody) {
   config.density_ratio = 0.8f;
   config.sync_phrase_boundary = true;
 
-  auto notes = generator.generateTargetHint(ctx, config, harmony, rng);
-  (void)notes;
+  std::vector<NoteEvent> notes;
+  for (uint32_t seed = 1; seed <= 32 && notes.empty(); ++seed) {
+    std::mt19937 seeded_rng(seed);
+    notes = generator.generateTargetHint(ctx, config, harmony, seeded_rng);
+  }
+
+  ASSERT_FALSE(notes.empty()) << "A melody phrase gap should produce a target hint";
+  for (const auto& note : notes) {
+    EXPECT_GE(note.start_tick, ctx.section_start);
+    EXPECT_LT(note.start_tick, ctx.section_end);
+    EXPECT_GE(note.note, AUX_LOW);
+    EXPECT_LE(note.note, AUX_HIGH);
+  }
 }
 
 TEST(AuxTest, TargetHintEmptyWithNoMelody) {
@@ -659,6 +791,27 @@ TEST(AuxTest, MelodicHookHasRepetition) {
   EXPECT_GT(notes.size(), 8u) << "MelodicHook should produce multiple phrases";
 }
 
+TEST(AuxTest, MelodicHookFillsOddBarSectionWithoutOverrun) {
+  AuxGenerator generator;
+  auto ctx = createTestContext();
+  ctx.section_end = TICKS_PER_BAR * 3;
+  HarmonyContext harmony;
+  std::mt19937 rng(42);
+
+  AuxConfig config;
+  config.function = AuxFunction::MelodicHook;
+  config.velocity_ratio = 0.8f;
+
+  auto notes = generator.generateMelodicHook(ctx, config, harmony, rng);
+
+  EXPECT_TRUE(std::any_of(notes.begin(), notes.end(), [](const NoteEvent& note) {
+    return note.start_tick >= TICKS_PER_BAR * 2;
+  })) << "The trailing odd bar should receive hook notes";
+  for (const auto& note : notes) {
+    EXPECT_LE(note.start_tick + note.duration, ctx.section_end);
+  }
+}
+
 TEST(AuxTest, MelodicHookUsesMinorThirdForMinorChord) {
   AuxGenerator generator;
   auto ctx = createTestContext();
@@ -758,6 +911,43 @@ TEST(AuxTest, MotifCounterUsesSeparateRegister) {
 
   for (const auto& note : notes) {
     EXPECT_LT(note.note, 72) << "Counter should use lower register for high vocal";
+  }
+}
+
+TEST(AuxTest, MotifCounterLowVocalUsesValidHigherRegister) {
+  AuxGenerator generator;
+  auto ctx = createTestContext();
+
+  std::vector<NoteEvent> low_melody;
+  Tick current = 0;
+  for (int idx = 0; idx < 16; ++idx) {
+    low_melody.push_back(NoteEventTestHelper::create(current, TICKS_PER_BEAT / 2,
+                                                     static_cast<uint8_t>(48 + (idx % 8)), 100));
+    current += TICKS_PER_BEAT;
+  }
+  ctx.main_melody = &low_melody;
+  ctx.main_tessitura = {48, 55, 52, 43, 60};
+
+  HarmonyContext harmony;
+  std::mt19937 rng(42);
+
+  MidiTrack vocal_track;
+  for (const auto& note : low_melody) {
+    vocal_track.addNote(note);
+  }
+  VocalAnalysis va = analyzeVocal(vocal_track);
+
+  AuxConfig config;
+  config.function = AuxFunction::MotifCounter;
+  config.velocity_ratio = 0.7f;
+  config.density_ratio = 1.0f;
+
+  auto notes = generator.generateMotifCounter(ctx, config, harmony, va, rng);
+
+  ASSERT_FALSE(notes.empty());
+  for (const auto& note : notes) {
+    EXPECT_GE(note.note, 72);
+    EXPECT_LE(note.note, 84);
   }
 }
 
@@ -904,6 +1094,58 @@ TEST(AuxIntegrationTest, ChorusHasUnisonAux) {
     }
     EXPECT_TRUE(found_nearby_vocal) << "Unison aux should follow vocal timing";
   }
+}
+
+TEST(AuxIntegrationTest, FullSongUnisonPreservesVocalPitches) {
+  Section chorus = makeChorusSection(4, 0);
+  chorus.track_mask = TrackMask::Aux;
+
+  Song song;
+  song.setArrangement(Arrangement({chorus}));
+  for (const auto& note : createChorusVocalMelody(0, chorus.endTick())) {
+    song.vocal().addNote(note);
+  }
+
+  GeneratorParams params;
+  params.mood = Mood::IdolPop;
+  params.blueprint_id = 4;  // IdolStandard uses Unison in chorus.
+  params.seed = 12345;
+  params.vocal_low = 60;
+  params.vocal_high = 88;
+
+  const auto& progression = getChordProgression(params.chord_id);
+  HarmonyCoordinator harmony;
+  harmony.initialize(song.arrangement(), progression, params.mood);
+  std::mt19937 rng(params.seed);
+  FullTrackContext ctx;
+  ctx.song = &song;
+  ctx.params = &params;
+  ctx.rng = &rng;
+  ctx.harmony = &harmony;
+  ctx.chord_progression = &progression;
+
+  AuxGenerator generator;
+  generator.generateFullTrack(song.aux(), ctx);
+
+  const auto& aux = song.aux().notes();
+  const auto& vocal = song.vocal().notes();
+  ASSERT_FALSE(aux.empty());
+  ASSERT_FALSE(vocal.empty());
+
+  int matched_doubles = 0;
+  for (const auto& vocal_note : vocal) {
+    for (const auto& aux_note : aux) {
+      if (aux_note.note == vocal_note.note && aux_note.duration == vocal_note.duration &&
+          std::abs(static_cast<int>(aux_note.start_tick) -
+                   static_cast<int>(vocal_note.start_tick)) <= 10) {
+        ++matched_doubles;
+        break;
+      }
+    }
+  }
+
+  EXPECT_EQ(matched_doubles, static_cast<int>(vocal.size()))
+      << "The full-song Unison path should preserve every vocal pitch, including passing tones";
 }
 
 TEST(AuxIntegrationTest, SecondChorusHasHarmonyAux) {

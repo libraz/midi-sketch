@@ -94,6 +94,7 @@ TEST(SongTest, ClearAll) {
   song.bass().addNote(NoteEventBuilder::create(0, 480, 48, 100));
   song.drums().addNote(NoteEventBuilder::create(0, 480, 36, 100));
   song.se().addText(0, "Test");
+  song.setTempoMap({{0, 120}, {1920, 108}});
 
   song.clearAll();
 
@@ -102,6 +103,7 @@ TEST(SongTest, ClearAll) {
   EXPECT_TRUE(song.bass().empty());
   EXPECT_TRUE(song.drums().empty());
   EXPECT_TRUE(song.se().empty());
+  EXPECT_TRUE(song.tempoMap().empty());
 }
 
 TEST(SongTest, SetArrangement) {

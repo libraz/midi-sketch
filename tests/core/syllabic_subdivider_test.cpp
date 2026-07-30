@@ -36,8 +36,8 @@ float calcEffectiveSubRatio(float base_ratio, uint16_t bpm, bool is_mora_timed) 
   } else {
     bpm_factor = 1.3f;
   }
-  float mora_factor = is_mora_timed ? 0.5f : 1.0f;
-  return std::min(0.5f, base_ratio * bpm_factor * mora_factor);
+  (void)is_mora_timed;
+  return std::min(0.5f, base_ratio * bpm_factor);
 }
 
 std::vector<NoteEvent> subdivideSyllabic(const std::vector<NoteEvent>& notes, float ratio,
@@ -152,9 +152,9 @@ TEST(SyllabicSubRatioTest, VeryHighBpmCapped) {
   EXPECT_FLOAT_EQ(result, 0.2f * 1.3f);  // Capped at 1.3
 }
 
-TEST(SyllabicSubRatioTest, MoraTimedHalves) {
+TEST(SyllabicSubRatioTest, MoraTimedUsesTheSamePostProcessRatio) {
   float result = calcEffectiveSubRatio(0.2f, 120, true);
-  EXPECT_FLOAT_EQ(result, 0.2f * 1.0f * 0.5f);  // 0.1
+  EXPECT_FLOAT_EQ(result, 0.2f);  // Mora rhythm is selected before this pass.
 }
 
 TEST(SyllabicSubRatioTest, OutputCappedAtHalf) {

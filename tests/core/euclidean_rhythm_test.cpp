@@ -235,14 +235,37 @@ TEST(DrumPatternFactoryTest, IntroHasNoOpenHiHat) {
 TEST(GrooveTemplateTest, GetGroovePatternReturnsValidPattern) {
   const auto& standard = getGroovePattern(GrooveTemplate::Standard);
 
-  // Standard pattern should have kick on beat 1 and 4
-  EXPECT_NE(standard.kick, 0);
+  // Standard pop anchors the bar on beats 1 and 3.
+  EXPECT_EQ(standard.kick, 0x0101);
+  EXPECT_TRUE(EuclideanRhythm::hasHit(standard.kick, 0));
+  EXPECT_TRUE(EuclideanRhythm::hasHit(standard.kick, 8));
+  EXPECT_FALSE(EuclideanRhythm::hasHit(standard.kick, 12));
   // Snare on 2 and 4
   EXPECT_NE(standard.snare, 0);
   // Hi-hat pattern
   EXPECT_NE(standard.hihat, 0);
   // Ghost density 0-100
   EXPECT_LE(standard.ghost_density, 100);
+}
+
+TEST(GrooveTemplateTest, SyncopatedTemplatesKeepBeatThreeKickAnchor) {
+  const auto& funk = getGroovePattern(GrooveTemplate::Funk);
+  const auto& breakbeat = getGroovePattern(GrooveTemplate::Breakbeat);
+
+  for (const auto* pattern : {&funk, &breakbeat}) {
+    EXPECT_TRUE(EuclideanRhythm::hasHit(pattern->kick, 0));
+    EXPECT_TRUE(EuclideanRhythm::hasHit(pattern->kick, 8));
+    EXPECT_FALSE(EuclideanRhythm::hasHit(pattern->kick, 12));
+  }
+}
+
+TEST(GrooveTemplateTest, BossaMaskUsesDocumentedStepOrientation) {
+  const auto& bossa = getGroovePattern(GrooveTemplate::Bossa);
+
+  EXPECT_EQ(bossa.kick, 0x2449);
+  for (uint8_t step : {0, 3, 6, 10, 13}) {
+    EXPECT_TRUE(EuclideanRhythm::hasHit(bossa.kick, step)) << "step=" << static_cast<int>(step);
+  }
 }
 
 TEST(GrooveTemplateTest, AllTemplatesHaveValidPatterns) {

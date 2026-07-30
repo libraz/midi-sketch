@@ -5,6 +5,8 @@
 
 #include <gtest/gtest.h>
 
+#include <set>
+
 #include "core/generator.h"
 #include "core/velocity.h"
 
@@ -255,6 +257,31 @@ TEST(GeneratorTest, CC11ExpressionGenerated) {
     }
   }
   EXPECT_TRUE(has_cc11) << "Bass track should have CC11 Expression events";
+}
+
+TEST(GeneratorTest, CC11ExpressionEventsHaveOneWriterPerTrackTick) {
+  Generator gen;
+  GeneratorParams params{};
+  params.structure = StructurePattern::FullWithBridge;
+  params.mood = Mood::StraightPop;
+  params.seed = 42;
+  gen.generate(params);
+
+  const auto assert_unique_expression_ticks = [](const MidiTrack& track, const char* name) {
+    std::set<Tick> ticks;
+    for (const auto& cc : track.ccEvents()) {
+      if (cc.cc != MidiCC::kExpression) continue;
+      EXPECT_TRUE(ticks.insert(cc.tick).second)
+          << name << " has more than one CC11 event at tick " << cc.tick;
+    }
+  };
+
+  const auto& song = gen.getSong();
+  assert_unique_expression_ticks(song.vocal(), "Vocal");
+  assert_unique_expression_ticks(song.bass(), "Bass");
+  assert_unique_expression_ticks(song.chord(), "Chord");
+  assert_unique_expression_ticks(song.aux(), "Aux");
+  assert_unique_expression_ticks(song.guitar(), "Guitar");
 }
 
 TEST(GeneratorTest, CC1ModulationForSynthTracks) {

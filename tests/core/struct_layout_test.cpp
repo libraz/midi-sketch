@@ -66,6 +66,23 @@ TEST(StructLayoutTest, PianoRollDataSize) {
 
 namespace midisketch {
 
+TEST(ConfigConverterCompositionStyleTest, ExplicitMelodyLeadOverridesSynthDrivenPreset) {
+  SongConfig config = createDefaultSongConfig(15);
+  EXPECT_EQ(ConfigConverter::convert(config).composition_style, CompositionStyle::SynthDriven);
+
+  json::Parser parser(R"({"composition_style":0})");
+  config.readFrom(parser);
+  EXPECT_TRUE(config.composition_style_explicit);
+  EXPECT_EQ(ConfigConverter::convert(config).composition_style, CompositionStyle::MelodyLead);
+}
+
+TEST(ConfigConverterCompositionStyleTest, LegacyNonDefaultOverrideRemainsSupported) {
+  SongConfig config = createDefaultSongConfig(0);
+  config.composition_style = CompositionStyle::BackgroundMotif;
+  EXPECT_FALSE(config.composition_style_explicit);
+  EXPECT_EQ(ConfigConverter::convert(config).composition_style, CompositionStyle::BackgroundMotif);
+}
+
 TEST(ConfigConverterMotifTest, MotifMotionSentinelPreservesPreset) {
   // 0xFF = sentinel → params.motif.motion stays at blueprint default (Stepwise)
   SongConfig config = createDefaultSongConfig(0);
@@ -178,6 +195,7 @@ TEST(SongConfigJsonTest, RoundtripDefaultConfig) {
   EXPECT_EQ(restored.vocal_low, original.vocal_low);
   EXPECT_EQ(restored.vocal_high, original.vocal_high);
   EXPECT_EQ(restored.composition_style, original.composition_style);
+  EXPECT_EQ(restored.composition_style_explicit, original.composition_style_explicit);
   EXPECT_EQ(restored.motif_repeat_scope, original.motif_repeat_scope);
   EXPECT_EQ(restored.arrangement_growth, original.arrangement_growth);
   EXPECT_EQ(restored.humanize, original.humanize);
@@ -331,6 +349,12 @@ TEST(AccompanimentConfigJsonTest, EmptyJsonUsesCppGuitarDefault) {
   restored.readFrom(p);
 
   EXPECT_TRUE(restored.guitar_enabled);
+  EXPECT_FLOAT_EQ(restored.chord_ext_sus_prob, kDefaultChordExtensionSusProbability);
+  EXPECT_FLOAT_EQ(restored.chord_ext_7th_prob, kDefaultChordExtensionSeventhProbability);
+  EXPECT_FLOAT_EQ(restored.chord_ext_9th_prob, kDefaultChordExtensionNinthProbability);
+  EXPECT_FLOAT_EQ(restored.chord_ext_tritone_sub_prob, kDefaultChordExtensionTritoneSubProbability);
+  EXPECT_FLOAT_EQ(restored.humanize_timing, kDefaultHumanizeTiming);
+  EXPECT_FLOAT_EQ(restored.humanize_velocity, kDefaultHumanizeVelocity);
 }
 
 TEST(AccompanimentConfigJsonTest, GuitarEnabledRoundtripPreservesExplicitFalse) {
@@ -348,6 +372,25 @@ TEST(AccompanimentConfigJsonTest, GuitarEnabledRoundtripPreservesExplicitFalse) 
   restored.readFrom(p);
 
   EXPECT_FALSE(restored.guitar_enabled);
+}
+
+TEST(AccompanimentConfigJsonTest, FloatParametersRoundTripWithoutPercentQuantization) {
+  AccompanimentConfig original;
+  original.chord_ext_7th_prob = 0.123456789f;
+  original.humanize_timing = 0.87654321f;
+
+  std::ostringstream oss;
+  json::Writer writer(oss);
+  writer.beginObject();
+  original.writeTo(writer);
+  writer.endObject();
+
+  json::Parser parser(oss.str());
+  AccompanimentConfig restored;
+  restored.readFrom(parser);
+
+  EXPECT_FLOAT_EQ(restored.chord_ext_7th_prob, original.chord_ext_7th_prob);
+  EXPECT_FLOAT_EQ(restored.humanize_timing, original.humanize_timing);
 }
 
 // ============================================================================
@@ -387,6 +430,12 @@ TEST(JsonApiTest, ValidateConfigJson) {
 
 TEST(JsonApiTest, ValidateConfigJsonNullInputReportsInvalidJson) {
   EXPECT_EQ(midisketch_validate_config_json(nullptr, 0), MIDISKETCH_CONFIG_INVALID_JSON);
+}
+
+TEST(JsonApiTest, ValidateConfigJsonRejectsMalformedObject) {
+  const char* malformed_json = R"({"style_preset_id":0)";
+  EXPECT_EQ(midisketch_validate_config_json(malformed_json, strlen(malformed_json)),
+            MIDISKETCH_CONFIG_INVALID_JSON);
 }
 
 TEST(JsonApiTest, GenerateVocalFromJson) {
@@ -465,6 +514,27 @@ TEST(JsonApiTest, RegenerateAccompanimentFromJson) {
   const char* accomp_json = R"({"seed":200,"drums_enabled":true})";
   result = midisketch_regenerate_accompaniment_from_json(handle, accomp_json, strlen(accomp_json));
   EXPECT_EQ(result, MIDISKETCH_OK);
+
+  midisketch_destroy(handle);
+}
+
+TEST(JsonApiTest, PartialRegenerationRejectsMalformedJsonWithoutChangingState) {
+  MidiSketchHandle handle = midisketch_create();
+  ASSERT_NE(handle, nullptr);
+
+  const char* config_json = R"({"style_preset_id":0,"seed":42,"bpm":120})";
+  ASSERT_EQ(midisketch_generate_with_vocal_from_json(handle, config_json, strlen(config_json)),
+            MIDISKETCH_OK);
+
+  const char* malformed_json = R"({"seed":999)";
+  EXPECT_EQ(midisketch_regenerate_vocal_from_json(handle, malformed_json, strlen(malformed_json)),
+            MIDISKETCH_ERROR_INVALID_PARAM);
+  EXPECT_EQ(
+      midisketch_regenerate_accompaniment_from_json(handle, malformed_json, strlen(malformed_json)),
+      MIDISKETCH_ERROR_INVALID_PARAM);
+  EXPECT_EQ(
+      midisketch_generate_accompaniment_from_json(handle, malformed_json, strlen(malformed_json)),
+      MIDISKETCH_ERROR_INVALID_PARAM);
 
   midisketch_destroy(handle);
 }

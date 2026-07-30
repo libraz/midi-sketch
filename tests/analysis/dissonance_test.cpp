@@ -8,8 +8,12 @@
 #include <gtest/gtest.h>
 
 #include <set>
+#include <sstream>
 #include <tuple>
 
+#include "core/arrangement.h"
+#include "core/chord.h"
+#include "core/chord_progression_tracker.h"
 #include "core/generator.h"
 #include "core/song.h"
 #include "test_helpers/note_event_test_helper.h"
@@ -54,7 +58,7 @@ TEST(DissonanceTest, AnalyzeGeneratedSong) {
   gen.generate(params);
   const auto& song = gen.getSong();
 
-  auto report = analyzeDissonance(song, params);
+  auto report = analyzeDissonance(song, params, gen.getHarmonyContext());
 
   // Basic sanity checks - total_issues includes all category counts.
   // Phase 3 added non_diatonic_notes from modal interchange/tritone substitution.
@@ -69,6 +73,172 @@ TEST(DissonanceTest, AnalyzeGeneratedSong) {
   for (size_t i = 1; i < report.issues.size(); ++i) {
     EXPECT_LE(report.issues[i - 1].tick, report.issues[i].tick);
   }
+}
+
+TEST(DissonanceTest, ExactHarmonyTimelinePreservesPlannedExtensions) {
+  Section chorus;
+  chorus.type = SectionType::Chorus;
+  chorus.start_tick = 0;
+  chorus.bars = 1;
+  chorus.name = "Chorus";
+  Arrangement arrangement({chorus});
+
+  Song song;
+  song.setArrangement(arrangement);
+  // B is a Cmaj7 chord tone, but not a C-major-triad tone or available tension.
+  song.vocal().addNote(NoteEventTestHelper::create(0, TICKS_PER_BEAT, 71, 100));
+
+  ChordProgression progression{};
+  progression.degrees = {0, -1, -1, -1, -1, -1, -1, -1};
+  progression.length = 1;
+  ChordProgressionTracker exact_timeline;
+  exact_timeline.initialize(arrangement, progression, Mood::StraightPop);
+  exact_timeline.registerChordExtension(0, TICKS_PER_BAR, ChordExtension::Maj7);
+
+  GeneratorParams params{};
+  params.chord_id = 0;
+  params.mood = Mood::StraightPop;
+  params.chord_extension.enable_7th = false;
+
+  const auto exact_report = analyzeDissonance(song, params, exact_timeline);
+  const auto reconstructed_report = analyzeDissonance(song, params);
+
+  EXPECT_EQ(exact_report.summary.non_chord_tones, 0u);
+  EXPECT_EQ(reconstructed_report.summary.non_chord_tones, 1u)
+      << "The compatibility overload intentionally lacks the planned Maj7 entry";
+}
+
+TEST(DissonanceTest, RegisteredWideBassMajorSeventhIsNotReportedAsClash) {
+  Section chorus;
+  chorus.type = SectionType::Chorus;
+  chorus.start_tick = 0;
+  chorus.bars = 1;
+  chorus.name = "Chorus";
+  Arrangement arrangement({chorus});
+
+  Song song;
+  song.setArrangement(arrangement);
+  song.bass().addNote(NoteEventTestHelper::create(0, TICKS_PER_BEAT, 36, 100));   // C2
+  song.chord().addNote(NoteEventTestHelper::create(0, TICKS_PER_BEAT, 59, 100));  // B3
+
+  ChordProgression progression{};
+  progression.degrees = {0, -1, -1, -1, -1, -1, -1, -1};
+  progression.length = 1;
+  ChordProgressionTracker timeline;
+  timeline.initialize(arrangement, progression, Mood::StraightPop);
+  timeline.registerChordExtension(0, TICKS_PER_BAR, ChordExtension::Maj7);
+
+  GeneratorParams params{};
+  params.chord_id = 0;
+  params.mood = Mood::StraightPop;
+  const auto report = analyzeDissonance(song, params, timeline);
+
+  EXPECT_EQ(report.summary.simultaneous_clashes, 0u)
+      << "Registered Imaj7 root/seventh voicings must not be reported as bass clashes";
+}
+
+TEST(DissonanceTest, RegisteredSecondaryDominantTritoneIsNotReportedAsClash) {
+  Section chorus;
+  chorus.type = SectionType::Chorus;
+  chorus.start_tick = 0;
+  chorus.bars = 1;
+  chorus.name = "Chorus";
+  Arrangement arrangement({chorus});
+
+  Song song;
+  song.setArrangement(arrangement);
+  song.bass().addNote(NoteEventTestHelper::create(0, TICKS_PER_BEAT, 50, 100));   // D3
+  song.chord().addNote(NoteEventTestHelper::create(0, TICKS_PER_BEAT, 68, 100));  // G#4
+
+  ChordProgression progression{};
+  progression.degrees = {2, -1, -1, -1, -1, -1, -1, -1};
+  progression.length = 1;
+  ChordProgressionTracker timeline;
+  timeline.initialize(arrangement, progression, Mood::StraightPop);
+  timeline.registerChordExtension(0, TICKS_PER_BAR, ChordExtension::Dom7);
+
+  GeneratorParams params{};
+  params.chord_id = 0;
+  params.mood = Mood::StraightPop;
+  const auto report = analyzeDissonance(song, params, timeline);
+
+  EXPECT_EQ(report.summary.simultaneous_clashes, 0u)
+      << "Both pitches belong to the registered E7 secondary dominant";
+}
+
+TEST(DissonanceTest, BriefVocalPassingToneUsesGenerationCollisionPolicy) {
+  Section verse;
+  verse.type = SectionType::A;
+  verse.start_tick = 0;
+  verse.bars = 1;
+  verse.name = "Verse";
+  Arrangement arrangement({verse});
+
+  Song song;
+  song.setArrangement(arrangement);
+  song.aux().addNote(NoteEventTestHelper::create(TICKS_PER_BEAT, TICKS_PER_BEAT, 60, 80));
+  song.vocal().addNote(NoteEventTestHelper::create(TICKS_PER_BEAT, TICK_SIXTEENTH, 61, 100));
+
+  GeneratorParams params{};
+  params.chord_id = 0;
+  params.mood = Mood::StraightPop;
+  const auto report = analyzeDissonance(song, params);
+
+  EXPECT_EQ(report.summary.simultaneous_clashes, 0u);
+}
+
+TEST(DissonanceTest, PreparedSuspensionResolvingDownIsNotReportedAsClash) {
+  Section verse;
+  verse.type = SectionType::A;
+  verse.start_tick = 0;
+  verse.bars = 2;
+  verse.name = "Verse";
+  Arrangement arrangement({verse});
+
+  Song song;
+  song.setArrangement(arrangement);
+  song.chord().addNote(NoteEventTestHelper::create(TICKS_PER_BAR, TICKS_PER_BEAT, 64, 80));  // E4
+  song.vocal().addNote(
+      NoteEventTestHelper::create(TICKS_PER_BAR - TICKS_PER_BEAT, TICKS_PER_BEAT, 65, 100));
+  song.vocal().addNote(
+      NoteEventTestHelper::create(TICKS_PER_BAR, TICK_EIGHTH, 65, 106));  // held F4
+  song.vocal().addNote(NoteEventTestHelper::create(TICKS_PER_BAR + TICK_EIGHTH, TICK_EIGHTH, 64,
+                                                   92));  // resolves to E4
+
+  GeneratorParams params{};
+  params.chord_id = 0;
+  params.mood = Mood::StraightPop;
+  const auto report = analyzeDissonance(song, params);
+
+  EXPECT_EQ(report.summary.simultaneous_clashes, 0u);
+}
+
+TEST(DissonanceTest, ExactHarmonyTimelinePreservesChordReplacement) {
+  Section chorus;
+  chorus.type = SectionType::Chorus;
+  chorus.start_tick = 0;
+  chorus.bars = 1;
+  chorus.name = "Chorus";
+  Arrangement arrangement({chorus});
+
+  Song song;
+  song.setArrangement(arrangement);
+  // F is a bII (Db major) chord tone but not a C major triad tone or I tension.
+  song.vocal().addNote(NoteEventTestHelper::create(0, TICKS_PER_BEAT, 65, 100));
+
+  ChordProgression progression{};
+  progression.degrees = {0, -1, -1, -1, -1, -1, -1, -1};
+  progression.length = 1;
+  ChordProgressionTracker exact_timeline;
+  exact_timeline.initialize(arrangement, progression, Mood::StraightPop);
+  exact_timeline.registerChordReplacement(0, TICKS_PER_BAR, 13, ChordExtension::None);
+
+  GeneratorParams params{};
+  params.chord_id = 0;
+  params.mood = Mood::StraightPop;
+
+  EXPECT_EQ(analyzeDissonance(song, params, exact_timeline).summary.non_chord_tones, 0u);
+  EXPECT_EQ(analyzeDissonance(song, params).summary.non_chord_tones, 1u);
 }
 
 TEST(DissonanceTest, JsonOutputFormat) {
@@ -125,6 +295,21 @@ TEST(DissonanceTest, EmptyReportJson) {
   // Compact JSON format
   EXPECT_NE(json.find("\"total_issues\":0"), std::string::npos);
   EXPECT_NE(json.find("\"issues\":[]"), std::string::npos);
+}
+
+TEST(DissonanceTest, InvalidMidiDivisionProducesFiniteJson) {
+  ParsedMidi midi;
+  midi.division = 0;
+  ParsedTrack vocal;
+  vocal.name = "Vocal";
+  vocal.notes.push_back(NoteEventBuilder::create(0, 480, 60, 100));
+  midi.tracks.push_back(vocal);
+
+  const DissonanceReport report = analyzeDissonanceFromParsedMidi(midi);
+  const std::string json = dissonanceReportToJson(report);
+  EXPECT_EQ(report.summary.total_issues, 0u);
+  EXPECT_EQ(json.find("nan"), std::string::npos);
+  EXPECT_EQ(json.find("inf"), std::string::npos);
 }
 
 TEST(DissonanceTest, DifferentChordProgressions) {
@@ -635,7 +820,7 @@ TEST(DissonanceIntegrationTest, BassChordPhraseEndSyncNoMediumIssues) {
   gen.generate(params);
   const auto& song = gen.getSong();
 
-  auto report = analyzeDissonance(song, params);
+  auto report = analyzeDissonance(song, params, gen.getHarmonyContext());
 
   // Should have zero medium severity bass-chord clashes after fix
   int bass_chord_medium = 0;
@@ -651,6 +836,18 @@ TEST(DissonanceIntegrationTest, BassChordPhraseEndSyncNoMediumIssues) {
       }
       if (has_bass && has_chord) {
         bass_chord_medium++;
+        std::ostringstream diagnostic;
+        for (const auto& note : issue.notes) {
+          diagnostic << " " << note.track_name << "=" << static_cast<int>(note.pitch);
+        }
+        const auto tones = gen.getHarmonyContext().getChordTonesAt(issue.tick);
+        diagnostic << " chord_tones=";
+        for (int tone : tones) {
+          diagnostic << tone << ",";
+        }
+        ADD_FAILURE() << "Bass/Chord medium clash at tick=" << issue.tick
+                      << " interval=" << static_cast<int>(issue.interval_semitones)
+                      << " overlap=" << issue.overlap_duration << diagnostic.str();
       }
     }
   }

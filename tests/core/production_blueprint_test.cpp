@@ -429,6 +429,27 @@ TEST_F(ProductionBlueprintTest, BlueprintsDeclareTempoIdentity) {
   }
 }
 
+TEST_F(ProductionBlueprintTest, BlueprintTempoRangeClampsOnlyImplicitBpm) {
+  const auto& cool_pop = getProductionBlueprint(7);  // IdolCoolPop: 160-178 BPM
+
+  EXPECT_EQ(clampBlueprintBpm(180, cool_pop, false).first, 178u);
+  EXPECT_EQ(clampBlueprintBpm(150, cool_pop, false).first, 160u);
+  EXPECT_EQ(clampBlueprintBpm(180, cool_pop, true).first, 180u);
+}
+
+TEST_F(ProductionBlueprintTest, GeneratorUsesTheBlueprintSpecificTempoRange) {
+  GeneratorParams params;
+  params.blueprint_id = 7;  // IdolCoolPop: max 178, not the old RhythmSync max 175.
+  params.seed = 42;
+  params.bpm = 180;
+  params.bpm_explicit = false;
+
+  Generator generator;
+  generator.generateVocal(params);
+
+  EXPECT_EQ(generator.getSong().bpm(), 178u);
+}
+
 // ============================================================================
 // Weight Sum Test
 // ============================================================================
@@ -528,6 +549,7 @@ TEST_F(ProductionBlueprintTest, SectionEnergyEnumValues) {
   EXPECT_EQ(static_cast<uint8_t>(SectionEnergy::Medium), 1);
   EXPECT_EQ(static_cast<uint8_t>(SectionEnergy::High), 2);
   EXPECT_EQ(static_cast<uint8_t>(SectionEnergy::Peak), 3);
+  EXPECT_EQ(static_cast<uint8_t>(SectionEnergy::Unset), 0xFF);
 }
 
 TEST_F(ProductionBlueprintTest, PeakLevelEnumValues) {
@@ -827,6 +849,38 @@ TEST_F(ProductionBlueprintTest, CachedRhythmPatternClear) {
   EXPECT_EQ(pattern.phrase_beats, 0);
   EXPECT_FALSE(pattern.is_locked);
   EXPECT_FALSE(pattern.isValid());
+}
+
+TEST_F(ProductionBlueprintTest, RunOnsetSelectionKeepsStrongDownbeatOverWeakPickup) {
+  CachedRhythmPattern pattern;
+  pattern.onset_beats = {0.0f, 3.75f, 4.0f};
+  pattern.phrase_beats = 8;
+  pattern.is_locked = true;
+
+  PhrasePlan plan;
+  plan.section_start = 0;
+  plan.section_end = 8 * TICKS_PER_BEAT;
+  PlannedPhrase phrase;
+  phrase.start_tick = 0;
+  phrase.end_tick = plan.section_end;
+  phrase.singable_end = plan.section_end;
+  phrase.target_note_count = 2;
+  plan.phrases.push_back(phrase);
+
+  motif_detail::MotifRhythmTemplateConfig template_config{};
+  template_config.beat_positions[0] = 0.0f;
+  template_config.accent_weights[0] = 0.1f;
+  template_config.beat_positions[1] = 3.75f;
+  template_config.accent_weights[1] = 0.0f;
+  template_config.note_count = 2;
+
+  const auto selected =
+      buildRunBasedOnsetMap(pattern, plan, template_config, /*bpm=*/120, /*section_start=*/0);
+
+  ASSERT_EQ(selected.onset_beats.size(), 2u);
+  EXPECT_FLOAT_EQ(selected.onset_beats[0], 0.0f);
+  EXPECT_FLOAT_EQ(selected.onset_beats[1], 4.0f)
+      << "A weak bar-end pickup must not exclude the next strong downbeat";
 }
 
 TEST_F(ProductionBlueprintTest, ExtractRhythmPattern) {

@@ -10,6 +10,10 @@
 namespace midisketch {
 namespace {
 
+TEST(BasicTypesTest, DefaultMidiFormatIsInteroperableSmf1) {
+  EXPECT_EQ(kDefaultMidiFormat, MidiFormat::SMF1);
+}
+
 // ============================================================================
 // tickToBar Tests
 // ============================================================================

@@ -27,6 +27,7 @@
 #include "core/timing_constants.h"
 #include "core/track_collision_detector.h"
 #include "test_support/collision_test_helper.h"
+#include "test_support/generator_test_fixture.h"
 
 namespace midisketch {
 namespace {
@@ -111,14 +112,10 @@ TEST(GuitarRoleAwareToleranceTest, DetectorRejectsSustainedGuitarM2) {
 // Generation-based tests
 // ============================================================================
 
-class GuitarCollisionGenTest : public ::testing::Test {
+class GuitarCollisionGenTest : public test::GeneratorTestFixture {
  protected:
   void SetUp() override {
-    params_.structure = StructurePattern::StandardPop;
-    params_.chord_id = 0;
-    params_.key = Key::C;
-    params_.bpm = 120;
-    params_.humanize = false;
+    GeneratorTestFixture::SetUp();
     params_.guitar_enabled = true;
     params_.drums_enabled = true;
     params_.arpeggio_enabled = true;
@@ -131,8 +128,6 @@ class GuitarCollisionGenTest : public ::testing::Test {
     }
     return total;
   }
-
-  GeneratorParams params_;
 };
 
 // Power-chord (and all guitar) notes must stay within the practical strum range,

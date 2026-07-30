@@ -11,24 +11,22 @@
 #include <memory>
 
 #include "core/generator.h"
+#include "test_support/generator_test_fixture.h"
 #include "test_support/stub_harmony_context.h"
 
 namespace midisketch {
 namespace {
 
-class GeneratorDITest : public ::testing::Test {
+class GeneratorDITest : public test::GeneratorTestFixture {
  protected:
   void SetUp() override {
-    params_.structure = StructurePattern::StandardPop;
+    GeneratorTestFixture::SetUp();
     params_.mood = Mood::StraightPop;
-    params_.chord_id = 0;
+    params_.drums_enabled = true;
+    params_.bpm = 0;
     params_.seed = 12345;
     params_.composition_style = CompositionStyle::MelodyLead;
-    params_.vocal_low = 60;
-    params_.vocal_high = 84;
   }
-
-  GeneratorParams params_;
 };
 
 // Test: Default constructor creates working Generator

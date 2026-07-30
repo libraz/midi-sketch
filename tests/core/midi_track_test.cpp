@@ -17,6 +17,11 @@ TEST(MidiTrackTest, EmptyTrack) {
   EXPECT_EQ(track.lastTick(), 0u);
 }
 
+TEST(MidiTrackTest, ReservesInitialNoteCapacity) {
+  MidiTrack track;
+  EXPECT_GE(track.notes().capacity(), MidiTrack::kInitialNoteCapacity);
+}
+
 TEST(MidiTrackTest, AddNote) {
   MidiTrack track;
   track.addNote(NoteEventBuilder::create(0, 480, 60, 100));
@@ -185,6 +190,20 @@ TEST(MidiTrackTest, ToMidiEventsSorted) {
   EXPECT_EQ(events[1].tick, 480u);
   EXPECT_EQ(events[2].tick, 480u);
   EXPECT_EQ(events[3].tick, 960u);
+}
+
+TEST(MidiTrackTest, ToMidiEventsClosesNotesBeforeSameTickStarts) {
+  MidiTrack track;
+  track.addNote(NoteEventBuilder::create(0, 480, 70, 100));
+  track.addNote(NoteEventBuilder::create(480, 480, 60, 100));
+
+  const auto events = track.toMidiEvents(0);
+
+  ASSERT_EQ(events.size(), 4u);
+  EXPECT_EQ(events[1].tick, 480u);
+  EXPECT_EQ(events[1].status, 0x80);
+  EXPECT_EQ(events[2].tick, 480u);
+  EXPECT_EQ(events[2].status, 0x90);
 }
 
 TEST(MidiTrackTest, AnalyzeRangeEmpty) {

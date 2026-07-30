@@ -16,9 +16,12 @@
 #include <unordered_map>
 
 #include "core/generator.h"
+#include "core/production_blueprint.h"
 #include "core/section_types.h"
 #include "core/song.h"
 #include "core/timing_constants.h"
+#include "test_support/generator_test_fixture.h"
+#include "test_support/test_helpers.h"
 #include "track/generators/motif.h"
 
 namespace midisketch {
@@ -64,18 +67,19 @@ int identifyMotifTemplate(const std::vector<NoteEvent>& pattern) {
   return 0;  // Unknown
 }
 
-class RhythmSyncTest : public ::testing::Test {
+class RhythmSyncTest : public test::GeneratorTestFixture {
  protected:
   void SetUp() override {
+    GeneratorTestFixture::SetUp();
     // Use Blueprint 1 (RhythmLock) which uses RhythmSync paradigm
     params_.blueprint_id = 1;
+    params_.mood = Mood::StraightPop;
+    params_.drums_enabled = true;
     params_.seed = 12345;  // Fixed seed for reproducibility
     params_.bpm = 140;
     params_.vocal_low = 60;   // C4
     params_.vocal_high = 84;  // C6
   }
-
-  GeneratorParams params_;
 };
 
 // Test: Vocal note start ticks should match Motif note start ticks
@@ -87,10 +91,8 @@ TEST_F(RhythmSyncTest, VocalOnsetsMatchMotifOnsets) {
   const auto& vocal_notes = gen.getSong().vocal().notes();
   const auto& motif_notes = gen.getSong().motif().notes();
 
-  // Skip test if either track is empty
-  if (vocal_notes.empty() || motif_notes.empty()) {
-    GTEST_SKIP() << "Vocal or Motif track is empty";
-  }
+  ASSERT_FALSE(vocal_notes.empty()) << "RhythmSync must generate Vocal notes";
+  ASSERT_FALSE(motif_notes.empty()) << "RhythmSync must generate Motif notes";
 
   // Build a set of all motif onset ticks
   std::set<Tick> motif_onsets;
@@ -123,9 +125,7 @@ TEST_F(RhythmSyncTest, NoOverlappingVocalNotes) {
 
   const auto& notes = gen.getSong().vocal().notes();
 
-  if (notes.size() < 2) {
-    GTEST_SKIP() << "Not enough vocal notes to check overlaps";
-  }
+  ASSERT_GE(notes.size(), 2u) << "RhythmSync must generate enough Vocal notes to check overlaps";
 
   // Notes should be sorted by start_tick
   std::vector<NoteEvent> sorted_notes = notes;
@@ -151,100 +151,49 @@ TEST_F(RhythmSyncTest, NoOverlappingVocalNotes) {
   EXPECT_EQ(overlap_count, 0) << "Found " << overlap_count << " overlapping note pairs";
 }
 
-// Test: Limited consecutive same pitch (no more than 6 in a row)
+// Test: RhythmSync allows chant-like repetition, but must not get stuck for
+// more than eight consecutive notes.
 TEST_F(RhythmSyncTest, LimitedConsecutiveSamePitch) {
   Generator gen;
   gen.generate(params_);
 
   const auto& notes = gen.getSong().vocal().notes();
 
-  if (notes.empty()) {
-    GTEST_SKIP() << "Vocal track is empty";
-  }
+  ASSERT_FALSE(notes.empty()) << "RhythmSync must generate Vocal notes";
 
-  // Sort by start_tick to ensure correct ordering
-  std::vector<NoteEvent> sorted_notes = notes;
-  std::sort(sorted_notes.begin(), sorted_notes.end(),
-            [](const NoteEvent& a, const NoteEvent& b) { return a.start_tick < b.start_tick; });
+  const test::PitchRun longest_run = test::longestSamePitchRun(notes);
 
-  int consecutive_count = 1;
-  uint8_t prev_pitch = sorted_notes[0].note;
-  int max_consecutive = 1;
-  Tick worst_streak_tick = sorted_notes[0].start_tick;
-
-  for (size_t i = 1; i < sorted_notes.size(); ++i) {
-    if (sorted_notes[i].note == prev_pitch) {
-      consecutive_count++;
-      if (consecutive_count > max_consecutive) {
-        max_consecutive = consecutive_count;
-        worst_streak_tick = sorted_notes[i].start_tick;
-      }
-    } else {
-      consecutive_count = 1;
-      prev_pitch = sorted_notes[i].note;
-    }
-  }
-
-  // Allow up to 4 consecutive same pitch:
-  // - 1-2 is natural (rhythmic figure)
-  // - 3-4 is OK for emphasis
-  // - 5+ is monotonous and should be avoided in pop vocals
-  EXPECT_LE(max_consecutive, 4) << "Found " << max_consecutive << " consecutive same pitch ("
-                                << static_cast<int>(prev_pitch) << ") near tick "
-                                << worst_streak_tick << ". Maximum allowed is 4.";
+  // Reference-inspired chant phrases can intentionally sustain 5-8 repeated
+  // pitches. Nine or more indicates a stuck-note regression.
+  EXPECT_LE(longest_run.length, 8) << "Found " << longest_run.length << " consecutive same pitch ("
+                                   << static_cast<int>(longest_run.pitch) << ") from tick "
+                                   << longest_run.start_tick << ". Maximum allowed is 8.";
 }
 
-// Test: Verify that the improvement reduces same-pitch streaks compared to baseline
-// This test uses multiple seeds to check statistical improvement
-TEST_F(RhythmSyncTest, ReducedSamePitchStreaksAcrossSeeds) {
-  constexpr int kNumSeeds = 5;
-  int total_max_streak = 0;
-  int seeds_with_long_streaks = 0;
+TEST_F(RhythmSyncTest, SamePitchRunLimitHoldsAcrossBlueprintsAndMoods) {
+  constexpr uint32_t kSeeds[] = {12345, 67890};
+  constexpr Mood kMoods[] = {Mood::StraightPop, Mood::CityPop, Mood::AnimeHighEnergy};
 
-  for (int seed_offset = 0; seed_offset < kNumSeeds; ++seed_offset) {
-    params_.seed = 12345 + seed_offset;
-    Generator gen;
-    gen.generate(params_);
+  for (uint8_t blueprint_id = 0; blueprint_id < getProductionBlueprintCount(); ++blueprint_id) {
+    for (Mood mood : kMoods) {
+      for (uint32_t seed : kSeeds) {
+        params_.blueprint_id = blueprint_id;
+        params_.mood = mood;
+        params_.seed = seed;
+        Generator gen;
+        gen.generate(params_);
 
-    const auto& notes = gen.getSong().vocal().notes();
-    if (notes.empty()) continue;
-
-    // Sort by start_tick
-    std::vector<NoteEvent> sorted_notes = notes;
-    std::sort(sorted_notes.begin(), sorted_notes.end(),
-              [](const NoteEvent& a, const NoteEvent& b) { return a.start_tick < b.start_tick; });
-
-    int consecutive_count = 1;
-    uint8_t prev_pitch = sorted_notes[0].note;
-    int max_consecutive = 1;
-
-    for (size_t i = 1; i < sorted_notes.size(); ++i) {
-      if (sorted_notes[i].note == prev_pitch) {
-        consecutive_count++;
-        max_consecutive = std::max(max_consecutive, consecutive_count);
-      } else {
-        consecutive_count = 1;
-        prev_pitch = sorted_notes[i].note;
+        const auto& notes = gen.getSong().vocal().notes();
+        ASSERT_FALSE(notes.empty()) << "blueprint=" << static_cast<int>(blueprint_id)
+                                    << " mood=" << static_cast<int>(mood) << " seed=" << seed;
+        const test::PitchRun longest_run = test::longestSamePitchRun(notes);
+        EXPECT_LE(longest_run.length, 8)
+            << "blueprint=" << static_cast<int>(blueprint_id) << " mood=" << static_cast<int>(mood)
+            << " seed=" << seed << " pitch=" << static_cast<int>(longest_run.pitch)
+            << " start_tick=" << longest_run.start_tick;
       }
     }
-
-    total_max_streak += max_consecutive;
-    if (max_consecutive > 8) {
-      seeds_with_long_streaks++;
-    }
   }
-
-  // RhythmSync references chant same-pitch runs (measured max streaks:
-  // henceforth 5, DAYBREAK 11, shoushitsu 48, surges 32), so moderate streaks
-  // are the style, not a defect. Guard only against degenerate stuck-note
-  // output: average max streak < 8 and no more than 1 seed above 8.
-  float avg_max_streak = static_cast<float>(total_max_streak) / kNumSeeds;
-  EXPECT_LT(avg_max_streak, 8.0f) << "Average max consecutive same pitch is " << avg_max_streak
-                                  << ", expected < 8.0";
-
-  // At most 1 out of 5 seeds should have streaks > 8
-  EXPECT_LE(seeds_with_long_streaks, 1)
-      << seeds_with_long_streaks << " out of " << kNumSeeds << " seeds had streaks > 8";
 }
 
 // Test: Breath insertion does not shift note onsets
@@ -256,9 +205,8 @@ TEST_F(RhythmSyncTest, BreathDoesNotShiftNoteOnsets) {
   const auto& vocal_notes = gen.getSong().vocal().notes();
   const auto& motif_notes = gen.getSong().motif().notes();
 
-  if (vocal_notes.empty() || motif_notes.empty()) {
-    GTEST_SKIP() << "Vocal or Motif track is empty";
-  }
+  ASSERT_FALSE(vocal_notes.empty()) << "RhythmSync must generate Vocal notes";
+  ASSERT_FALSE(motif_notes.empty()) << "RhythmSync must generate Motif notes";
 
   // Build motif onset set for this section
   std::set<Tick> motif_onsets;
@@ -312,9 +260,8 @@ TEST_F(RhythmSyncTest, MelodicVarietyInPitchDistribution) {
 
   const auto& notes = gen.getSong().vocal().notes();
 
-  if (notes.size() < 10) {
-    GTEST_SKIP() << "Not enough notes to analyze pitch distribution";
-  }
+  ASSERT_GE(notes.size(), 10u)
+      << "RhythmSync must generate enough Vocal notes to analyze pitch distribution";
 
   // Count occurrences of each pitch
   std::unordered_map<uint8_t, int> pitch_counts;
@@ -346,9 +293,8 @@ TEST_F(RhythmSyncTest, PhraseHasAdequatePitchMovement) {
 
   const auto& notes = gen.getSong().vocal().notes();
 
-  if (notes.size() < 16) {
-    GTEST_SKIP() << "Not enough notes to analyze phrase movement";
-  }
+  ASSERT_GE(notes.size(), 16u)
+      << "RhythmSync must generate enough Vocal notes to analyze phrase movement";
 
   // Sort by time
   std::vector<NoteEvent> sorted_notes = notes;
@@ -390,9 +336,8 @@ TEST_F(RhythmSyncTest, BalancedMelodicIntervals) {
 
   const auto& notes = gen.getSong().vocal().notes();
 
-  if (notes.size() < 20) {
-    GTEST_SKIP() << "Not enough notes to analyze interval distribution";
-  }
+  ASSERT_GE(notes.size(), 20u)
+      << "RhythmSync must generate enough Vocal notes to analyze interval distribution";
 
   // Sort by time
   std::vector<NoteEvent> sorted_notes = notes;
@@ -533,9 +478,8 @@ TEST_F(RhythmSyncTest, MotifAccentPatternApplied) {
   // Use the motif pattern (one cycle) which has template accent weights applied
   const auto& pattern = gen.getSong().motifPattern();
 
-  if (pattern.size() < 4) {
-    GTEST_SKIP() << "Not enough motif pattern notes to analyze accent pattern";
-  }
+  ASSERT_GE(pattern.size(), 4u)
+      << "RhythmSync must generate enough Motif pattern notes to analyze accents";
 
   // Collect unique velocities from the pattern
   std::set<uint8_t> unique_velocities;
@@ -567,9 +511,8 @@ TEST_F(RhythmSyncTest, RhythmSyncHumanizeKeepsVocalTimingStable) {
 
   const auto& vocal_h = gen_humanize.getSong().vocal().notes();
 
-  if (vocal_no_h.empty() || vocal_h.empty()) {
-    GTEST_SKIP() << "Vocal track empty";
-  }
+  ASSERT_FALSE(vocal_no_h.empty()) << "Baseline RhythmSync generation must produce Vocal notes";
+  ASSERT_FALSE(vocal_h.empty()) << "Humanized RhythmSync generation must produce Vocal notes";
 
   // Vocal timing should be identical (no timing humanization)
   size_t compare_count = std::min(vocal_no_h.size(), vocal_h.size());
@@ -596,9 +539,7 @@ TEST_F(RhythmSyncTest, MotifMinimumDensity) {
   gen.generate(params_);
 
   const auto& motif_notes = gen.getSong().motif().notes();
-  if (motif_notes.empty()) {
-    GTEST_SKIP() << "Motif track is empty";
-  }
+  ASSERT_FALSE(motif_notes.empty()) << "RhythmSync must generate Motif notes";
 
   // Determine minimum notes/bar from template. HalfNoteSparse has 4 notes over
   // 2 bars (= 2/bar), while most templates have 6-12 notes per bar.
@@ -675,9 +616,7 @@ TEST_F(RhythmSyncTest, MotifSurvivesLayerScheduleInRhythmSync) {
   const auto& motif_notes = song.motif().notes();
   const auto& arp_notes = song.arpeggio().notes();
 
-  if (motif_notes.empty()) {
-    GTEST_SKIP() << "Motif track is empty";
-  }
+  ASSERT_FALSE(motif_notes.empty()) << "RhythmSync must generate Motif notes";
 
   // Find sections with layer schedule where Motif should be active
   bool found_layer_section = false;
@@ -726,9 +665,8 @@ TEST_F(RhythmSyncTest, MotifSurvivesLayerScheduleInRhythmSync) {
     }
   }
 
-  if (!found_layer_section) {
-    GTEST_SKIP() << "No sections with layer schedule and active Motif found";
-  }
+  ASSERT_TRUE(found_layer_section)
+      << "RhythmSync fixture must include a layer-scheduled section with active Motif";
 }
 
 // Test: Per-section vocal-motif onset alignment >= 60%
@@ -742,9 +680,8 @@ TEST_F(RhythmSyncTest, PerSectionVocalMotifAlignment) {
   const auto& vocal_notes = song.vocal().notes();
   const auto& motif_notes = song.motif().notes();
 
-  if (vocal_notes.empty() || motif_notes.empty()) {
-    GTEST_SKIP() << "Vocal or Motif track is empty";
-  }
+  ASSERT_FALSE(vocal_notes.empty()) << "RhythmSync must generate Vocal notes";
+  ASSERT_FALSE(motif_notes.empty()) << "RhythmSync must generate Motif notes";
 
   int sections_checked = 0;
 
@@ -859,9 +796,7 @@ TEST_F(RhythmSyncTest, MotifBeatPositionDiversity) {
     }
   }
 
-  if (total_notes == 0) {
-    GTEST_SKIP() << "No motif pattern notes collected";
-  }
+  ASSERT_GT(total_notes, 0) << "RhythmSync seed sweep must produce Motif pattern notes";
 
   float onbeat_ratio = static_cast<float>(total_onbeat) / total_notes;
   float offbeat_ratio = static_cast<float>(total_offbeat) / total_notes;
@@ -890,9 +825,8 @@ TEST_F(RhythmSyncTest, MotifContinuityAcrossVocalSections) {
   const auto& vocal_notes = song.vocal().notes();
   const auto& motif_notes = song.motif().notes();
 
-  if (vocal_notes.empty() || motif_notes.empty()) {
-    GTEST_SKIP() << "Vocal or Motif track is empty";
-  }
+  ASSERT_FALSE(vocal_notes.empty()) << "RhythmSync must generate Vocal notes";
+  ASSERT_FALSE(motif_notes.empty()) << "RhythmSync must generate Motif notes";
 
   // Build bar-level presence maps
   std::set<int> vocal_bars;
@@ -1022,9 +956,7 @@ TEST_F(RhythmLockVocalQuality, PhraseStartOnStrongBeat) {
     }
   }
 
-  if (total_phrase_starts < 5) {
-    GTEST_SKIP() << "Not enough phrase starts detected";
-  }
+  ASSERT_GE(total_phrase_starts, 5) << "RhythmSync seed sweep must produce enough phrase starts";
 
   float ratio = static_cast<float>(strong_beat_starts) / total_phrase_starts;
   EXPECT_GE(ratio, 0.33f) << "Only " << (ratio * 100) << "% of phrase starts on strong beats. "
@@ -1062,9 +994,8 @@ TEST_F(RhythmLockVocalQuality, MinStrongBeatDuration) {
     }
   }
 
-  if (total_strong_beat_notes < 10) {
-    GTEST_SKIP() << "Not enough strong beat notes";
-  }
+  ASSERT_GE(total_strong_beat_notes, 10)
+      << "RhythmSync seed sweep must produce enough strong-beat notes";
 
   // Reference vocals measure 0%-86% short strong-beat notes (henceforth 0,
   // DAYBREAK 4%, shoushitsu 35%, surges 86%): dense chant styles routinely
@@ -1197,9 +1128,8 @@ TEST_F(RhythmLockVocalQuality, PhraseContourCoherence) {
     }
   }
 
-  if (total_phrases < 5) {
-    GTEST_SKIP() << "Not enough phrases to analyze contour coherence";
-  }
+  ASSERT_GE(total_phrases, 5)
+      << "RhythmSync seed sweep must produce enough phrases for contour analysis";
 
   float ratio = static_cast<float>(coherent_phrases) / total_phrases;
   EXPECT_GE(ratio, 0.50f) << "Only " << (ratio * 100) << "% of phrases have coherent contour. "
@@ -1312,9 +1242,8 @@ TEST_F(RhythmLockVocalQuality, VocalShortNoteRatio) {
     }
   }
 
-  if (total_notes < 50) {
-    GTEST_SKIP() << "Not enough vocal notes to analyze";
-  }
+  ASSERT_GE(total_notes, 50)
+      << "RhythmSync seed sweep must produce enough Vocal notes for ratio analysis";
 
   float short_ratio = static_cast<float>(short_notes) / total_notes;
   EXPECT_LE(short_ratio, 0.20f) << short_notes << " of " << total_notes << " vocal notes ("
@@ -1340,9 +1269,7 @@ TEST_F(RhythmLockVocalQuality, ChorusNoteDensityStable) {
     densities.push_back(density);
   }
 
-  if (densities.size() < 5) {
-    GTEST_SKIP() << "Not enough seeds with chorus sections";
-  }
+  ASSERT_GE(densities.size(), 5u) << "RhythmSync seed sweep must produce enough Chorus sections";
 
   // Calculate standard deviation
   float sum = 0.0f;
@@ -1379,9 +1306,8 @@ TEST_F(RhythmLockVocalQuality, ChorusPitchRangeStatistical) {
     ranges.push_back(max_pitch - min_pitch);
   }
 
-  if (ranges.size() < 5) {
-    GTEST_SKIP() << "Not enough seeds with chorus sections";
-  }
+  ASSERT_GE(ranges.size(), 5u)
+      << "RhythmSync seed sweep must produce enough populated Chorus sections";
 
   // Median range should be >= 5 semitones
   std::sort(ranges.begin(), ranges.end());

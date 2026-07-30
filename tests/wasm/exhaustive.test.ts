@@ -1,19 +1,18 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { ArpeggioPattern, VocalStylePreset } from '../../js/src/constants';
 import { type SongConfigOptions, WasmTestContext } from './test-helpers';
 
 // Parameter ranges based on midisketch_c.h and validation rules
 const PARAM_RANGES = {
-  stylePresetId: [0, 1, 2],
   key: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
   bpm: [0, 40, 60, 120, 180, 240], // 0 = use default, valid: 40-240
   chordProgressionId: Array.from({ length: 20 }, (_, i) => i),
-  formId: Array.from({ length: 10 }, (_, i) => i),
   vocalAttitude: [0, 1], // 2 (Raw) requires specific style support
   compositionStyle: [0, 1, 2],
-  arpeggioPattern: [0, 1, 2, 3],
+  arpeggioPattern: Object.values(ArpeggioPattern),
   arpeggioSpeed: [0, 1, 2],
   arpeggioOctaveRange: [1, 2, 3],
-  vocalStyle: [0, 1, 2, 3, 4, 5, 6, 7, 8],
+  vocalStyle: Object.values(VocalStylePreset),
   melodyTemplate: [0, 1, 2, 3, 4, 5, 6, 7],
   melodicComplexity: [0, 1, 2],
   hookIntensity: [0, 1, 2, 3],
@@ -30,16 +29,21 @@ const PARAM_RANGES = {
 // Vocal range limits (MIDI note)
 const VOCAL_RANGE = { min: 36, max: 96 } as const;
 
-// Style-specific allowed attitudes
-const STYLE_ALLOWED_ATTITUDES: Record<number, number[]> = {
-  0: [0, 1], // Style 0: Clean, Expressive
-  1: [0, 1], // Style 1: Clean, Expressive
-  2: [0], // Style 2: Clean only
-};
-
 // Generate random combinations for testing
-function* generateCombinations(count: number, baseSeed: number): Generator<SongConfigOptions> {
+function* generateCombinations(
+  count: number,
+  baseSeed: number,
+  allowedAttitudesByStyle: readonly number[][],
+  structureCount: number,
+  blueprintCount: number,
+): Generator<SongConfigOptions> {
   const rng = createRng(baseSeed);
+  const stylePresetIds = Array.from(
+    { length: allowedAttitudesByStyle.length },
+    (_, index) => index,
+  );
+  const formIds = Array.from({ length: structureCount }, (_, index) => index);
+  const blueprintIds = Array.from({ length: blueprintCount }, (_, index) => index);
 
   for (let i = 0; i < count; i++) {
     const callEnabled = rng() > 0.5;
@@ -57,8 +61,8 @@ function* generateCombinations(count: number, baseSeed: number): Generator<SongC
     }
 
     // Pick style first, then constrain vocalAttitude based on style
-    const stylePresetId = pick(PARAM_RANGES.stylePresetId, rng);
-    const allowedAttitudes = STYLE_ALLOWED_ATTITUDES[stylePresetId] ?? [0];
+    const stylePresetId = pick(stylePresetIds, rng);
+    const allowedAttitudes = allowedAttitudesByStyle[stylePresetId];
     const vocalAttitude = pick(allowedAttitudes, rng);
 
     yield {
@@ -67,7 +71,8 @@ function* generateCombinations(count: number, baseSeed: number): Generator<SongC
       key: pick(PARAM_RANGES.key, rng),
       bpm: pick(PARAM_RANGES.bpm, rng),
       chordProgressionId: pick(PARAM_RANGES.chordProgressionId, rng),
-      formId: pick(PARAM_RANGES.formId, rng),
+      formId: pick(formIds, rng),
+      blueprintId: pick(blueprintIds, rng),
       vocalAttitude,
       drumsEnabled: rng() > 0.2,
       arpeggioEnabled: rng() > 0.5,
@@ -138,11 +143,46 @@ describe('MidiSketch WASM - Exhaustive Parameter Tests', () => {
     ctx.destroy();
   });
 
+  interface GeneratedEvents {
+    duration_ticks: number;
+    vocal_style: number;
+    metadata: {
+      blueprint: number;
+      style: number;
+    };
+    tracks: Array<{ name: string; notes: Array<{ pitch: number; duration_ticks: number }> }>;
+    sections: Array<{ name: string; bars: number }>;
+  }
+
+  function expectGeneratedEvents(config: SongConfigOptions): GeneratedEvents {
+    expect(ctx.generateFromConfig(config)).toBe(0);
+    const { data, cleanup } = ctx.getEventsJson();
+    try {
+      const events = data as GeneratedEvents;
+      expect(events.duration_ticks).toBeGreaterThan(0);
+      expect(events.tracks.some((track) => track.notes.length > 0)).toBe(true);
+      expect(events.sections.length).toBeGreaterThan(0);
+      return events;
+    } finally {
+      cleanup();
+    }
+  }
+
   describe('Single parameter sweep', () => {
-    // Test each parameter independently at all values
-    it.each(PARAM_RANGES.stylePresetId)('stylePresetId=%i', (value) => {
-      const result = ctx.generateFromConfig({ seed: 1000 + value, stylePresetId: value });
-      expect(result).toBe(0);
+    it('covers every native style preset and observes the resolved style', () => {
+      const count = ctx.getStylePresetCount();
+      expect(count).toBeGreaterThan(0);
+
+      for (let value = 0; value < count; value++) {
+        const [vocalAttitude] = ctx.getStylePresetAllowedAttitudes(value);
+        expect(vocalAttitude).toBeDefined();
+        const events = expectGeneratedEvents({
+          seed: 1000 + value,
+          stylePresetId: value,
+          vocalAttitude,
+        });
+        expect(events.metadata.style).toBe(value);
+      }
     });
 
     it.each(PARAM_RANGES.key)('key=%i', (value) => {
@@ -155,9 +195,20 @@ describe('MidiSketch WASM - Exhaustive Parameter Tests', () => {
       expect(result).toBe(0);
     });
 
-    it.each(PARAM_RANGES.formId)('formId=%i', (value) => {
-      const result = ctx.generateFromConfig({ seed: 4000 + value, formId: value });
-      expect(result).toBe(0);
+    it('covers every native form and observes its section layout', () => {
+      const count = ctx.getStructureCount();
+      const layouts = new Set<string>();
+      expect(count).toBeGreaterThan(0);
+
+      for (let value = 0; value < count; value++) {
+        const events = expectGeneratedEvents({ seed: 4000, formId: value });
+        layouts.add(events.sections.map((section) => `${section.name}:${section.bars}`).join('|'));
+      }
+
+      // Two catalog forms intentionally share the same section sequence.
+      // Every native ID must still generate, and the expanded catalog must be
+      // represented beyond the legacy 10-form range.
+      expect(layouts.size).toBeGreaterThan(10);
     });
 
     it.each(PARAM_RANGES.vocalAttitude)('vocalAttitude=%i (Clean/Expressive)', (value) => {
@@ -176,9 +227,26 @@ describe('MidiSketch WASM - Exhaustive Parameter Tests', () => {
       expect(result).toBe(0);
     });
 
-    it.each(PARAM_RANGES.vocalStyle)('vocalStyle=%i', (value) => {
-      const result = ctx.generateFromConfig({ seed: 7000 + value, vocalStyle: value });
-      expect(result).toBe(0);
+    it('covers every exported vocal style and observes the resolved style', () => {
+      for (const value of PARAM_RANGES.vocalStyle) {
+        const events = expectGeneratedEvents({ seed: 7000 + value, vocalStyle: value });
+        if (value === VocalStylePreset.Auto) {
+          expect(events.vocal_style).toBeGreaterThan(VocalStylePreset.Auto);
+          expect(events.vocal_style).toBeLessThanOrEqual(VocalStylePreset.KPop);
+        } else {
+          expect(events.vocal_style).toBe(value);
+        }
+      }
+    });
+
+    it('covers every native blueprint and observes the resolved blueprint', () => {
+      const count = ctx.getBlueprintCount();
+      expect(count).toBeGreaterThan(0);
+
+      for (let value = 0; value < count; value++) {
+        const events = expectGeneratedEvents({ seed: 7500 + value, blueprintId: value });
+        expect(events.metadata.blueprint).toBe(value);
+      }
     });
 
     it.each(PARAM_RANGES.melodyTemplate)('melodyTemplate=%i', (value) => {
@@ -254,27 +322,47 @@ describe('MidiSketch WASM - Exhaustive Parameter Tests', () => {
 
   describe('Random combinations - generateFromConfig', () => {
     const COMBINATION_COUNT = 100;
-    const combinations = [...generateCombinations(COMBINATION_COUNT, 42)];
 
-    it.each(
-      combinations.map((c, i) => [i, c] as const),
-    )('combination #%i should generate without crash', (_index, config) => {
-      const result = ctx.generateFromConfig(config);
+    it('generates valid observable events for 100 catalog-derived combinations', () => {
+      const combinations = generateCombinations(
+        COMBINATION_COUNT,
+        42,
+        Array.from({ length: ctx.getStylePresetCount() }, (_, styleId) =>
+          ctx.getStylePresetAllowedAttitudes(styleId),
+        ),
+        ctx.getStructureCount(),
+        ctx.getBlueprintCount(),
+      );
 
-      // If failed, skip detailed error logging for now (known validation issues)
-      // The test will fail and show which combination index failed
-
-      expect(result).toBe(0);
-
-      // Also verify we can get events JSON without crash
-      const { cleanup } = ctx.getEventsJson();
-      cleanup();
+      let generated = 0;
+      for (const config of combinations) {
+        expectGeneratedEvents(config);
+        generated++;
+      }
+      expect(generated).toBe(COMBINATION_COUNT);
     });
   });
 
-  // regenerate_vocal tests removed - API deprecated
+  describe('regenerateVocal regressions', () => {
+    it('keeps producing valid vocal notes across repeated regenerations', () => {
+      expect(ctx.generateVocal({ seed: 17001 })).toBe(0);
 
-  // Regression tests for regenerateVocal removed - API deprecated
+      for (const seed of [17002, 17003]) {
+        expect(ctx.regenerateVocal(seed)).toBe(0);
+        const { data, cleanup } = ctx.getEventsJson();
+        const tracks = (
+          data as {
+            tracks: { name: string; notes: { duration_ticks: number }[] }[];
+          }
+        ).tracks;
+        const vocalNotes = tracks.find((track) => track.name === 'Vocal')?.notes ?? [];
+
+        expect(vocalNotes.length).toBeGreaterThan(0);
+        expect(vocalNotes.every((note) => note.duration_ticks > 0)).toBe(true);
+        cleanup();
+      }
+    });
+  });
 
   describe('Edge cases - vocal range (valid)', () => {
     const validEdgeCases = [
@@ -340,6 +428,7 @@ describe('MidiSketch WASM - Exhaustive Parameter Tests', () => {
       const result = ctx.generateFromConfig({
         seed: 40000 + duration,
         targetDurationSeconds: duration,
+        callEnabled: false,
       });
       expect(result).toBe(0);
     });
@@ -451,8 +540,6 @@ describe('MidiSketch WASM - Exhaustive Parameter Tests', () => {
       expect(note.duration_seconds).toBeGreaterThan(0);
     }
 
-    // regenerateVocal duration_ticks test removed - API deprecated
-
     it('should not produce negative duration_ticks with humanization enabled', () => {
       // Humanization can cause timing shifts that lead to overlaps
       const result = ctx.generateFromConfig({
@@ -474,8 +561,6 @@ describe('MidiSketch WASM - Exhaustive Parameter Tests', () => {
 
       cleanup();
     });
-
-    // multiple regenerateVocal calls test removed - API deprecated
   });
 
   // ============================================================================
@@ -570,8 +655,14 @@ describe('MidiSketch WASM - Exhaustive Parameter Tests', () => {
     }
 
     it('should produce valid data for all style presets', () => {
-      for (let styleId = 0; styleId < 3; styleId++) {
-        const result = ctx.generateFromConfig({ seed: 100000 + styleId, stylePresetId: styleId });
+      for (let styleId = 0; styleId < ctx.getStylePresetCount(); styleId++) {
+        const [vocalAttitude] = ctx.getStylePresetAllowedAttitudes(styleId);
+        expect(vocalAttitude).toBeDefined();
+        const result = ctx.generateFromConfig({
+          seed: 100000 + styleId,
+          stylePresetId: styleId,
+          vocalAttitude,
+        });
         expect(result).toBe(0);
 
         const { data, cleanup } = ctx.getEventsJson();
@@ -635,11 +726,14 @@ describe('MidiSketch WASM - Exhaustive Parameter Tests', () => {
       const rng = createTestRng(42);
 
       for (let i = 0; i < 20; i++) {
+        const stylePresetId = Math.floor(rng() * ctx.getStylePresetCount());
+        const vocalAttitude = pick(ctx.getStylePresetAllowedAttitudes(stylePresetId), rng);
         const config: SongConfigOptions = {
           seed: Math.floor(rng() * 1000000),
-          stylePresetId: Math.floor(rng() * 3),
+          stylePresetId,
+          vocalAttitude,
           compositionStyle: Math.floor(rng() * 3),
-          vocalStyle: Math.floor(rng() * 9),
+          vocalStyle: pick(PARAM_RANGES.vocalStyle, rng),
           vocalGroove: Math.floor(rng() * 6),
           melodicComplexity: Math.floor(rng() * 3),
           hookIntensity: Math.floor(rng() * 4),

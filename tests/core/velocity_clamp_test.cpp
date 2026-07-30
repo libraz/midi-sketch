@@ -134,13 +134,8 @@ TEST_F(AuxDynamicsTest, AuxVelocitiesAreNotFlat) {
     break;
   }
 
-  // If no blueprint produced a populated Aux track, do not fail spuriously;
-  // the dynamics behavior cannot be exercised. This keeps the test robust
-  // across generation changes while still catching the flat-velocity bug
-  // whenever Aux is active.
-  if (!found_populated_aux) {
-    GTEST_SKIP() << "No tried blueprint produced a populated Aux track to verify dynamics";
-  }
+  ASSERT_TRUE(found_populated_aux)
+      << "At least one production blueprint must generate enough Aux notes to verify dynamics";
 }
 
 }  // namespace

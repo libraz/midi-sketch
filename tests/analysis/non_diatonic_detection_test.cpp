@@ -12,25 +12,18 @@
 #include "core/generator.h"
 #include "core/song.h"
 #include "core/types.h"
+#include "test_support/generator_test_fixture.h"
 
 namespace midisketch {
 namespace {
 
-class NonDiatonicDetectionTest : public ::testing::Test {
+class NonDiatonicDetectionTest : public test::GeneratorTestFixture {
  protected:
   void SetUp() override {
-    params_.structure = StructurePattern::StandardPop;
-    params_.mood = Mood::ElectroPop;
-    params_.chord_id = 0;
-    params_.key = Key::C;
+    GeneratorTestFixture::SetUp();
     params_.drums_enabled = true;
-    params_.vocal_low = 60;
     params_.vocal_high = 79;
-    params_.bpm = 120;
-    params_.seed = 42;
   }
-
-  GeneratorParams params_;
 };
 
 // Test: Detection counts non-diatonic notes in summary

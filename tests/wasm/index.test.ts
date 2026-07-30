@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 import {
+  ArpeggioPattern,
   createDefaultConfig,
   GenerationParadigm,
   getBlueprintCount,
@@ -8,9 +9,11 @@ import {
   getBlueprintParadigm,
   getBlueprintRiffPolicy,
   getBlueprints,
+  getBlueprintTempoRange,
   getBlueprintWeight,
   getVersion,
   init,
+  MidiFormat,
   MidiSketch,
   RiffPolicy,
 } from '../../js/src/index';
@@ -18,7 +21,7 @@ import {
 describe('MidiSketch JS API', () => {
   beforeAll(async () => {
     const wasmPath = path.resolve(__dirname, '../../dist/midisketch.wasm');
-    await init({ wasmPath });
+    await Promise.all([init({ wasmPath }), init({ wasmPath })]);
   });
 
   describe('getVersion', () => {
@@ -31,6 +34,45 @@ describe('MidiSketch JS API', () => {
       const version1 = getVersion();
       const version2 = getVersion();
       expect(version1).toBe(version2);
+    });
+  });
+
+  describe('public constants', () => {
+    it('should expose every implemented arpeggio pattern', () => {
+      expect(ArpeggioPattern).toEqual({
+        Up: 0,
+        Down: 1,
+        UpDown: 2,
+        Random: 3,
+        Pinwheel: 4,
+        PedalRoot: 5,
+        Alberti: 6,
+        BrokenChord: 7,
+      });
+    });
+
+    it('should expose MIDI output format values', () => {
+      expect(MidiFormat).toEqual({
+        SMF1: 1,
+        SMF2: 2,
+      });
+    });
+  });
+
+  describe('MIDI output format', () => {
+    it('should expose SMF1 and reject unsupported SMF2 explicitly', () => {
+      const sketch = new MidiSketch();
+      try {
+        expect(sketch.getMidiFormat()).toBe(MidiFormat.SMF1);
+        sketch.setMidiFormat(MidiFormat.SMF1);
+        expect(sketch.getMidiFormat()).toBe(MidiFormat.SMF1);
+        expect(() => sketch.setMidiFormat(MidiFormat.SMF2)).toThrow(
+          'Set MIDI format failed: MIDI format is not supported by this build',
+        );
+        expect(sketch.getMidiFormat()).toBe(MidiFormat.SMF1);
+      } finally {
+        sketch.destroy();
+      }
     });
   });
 
@@ -59,8 +101,8 @@ describe('MidiSketch JS API', () => {
         expect(getBlueprintName(9)).toBe('BehavioralLoop');
       });
 
-      it('should return "Unknown" for invalid ID', () => {
-        expect(getBlueprintName(255)).toBe('Unknown');
+      it('should return "unknown" for invalid ID', () => {
+        expect(getBlueprintName(255)).toBe('unknown');
       });
     });
 
@@ -129,6 +171,8 @@ describe('MidiSketch JS API', () => {
           paradigm: GenerationParadigm.Traditional,
           riffPolicy: RiffPolicy.Free,
           weight: 42,
+          tempoMin: 96,
+          tempoMax: 150,
         });
 
         // Verify second blueprint (RhythmLock)
@@ -138,6 +182,8 @@ describe('MidiSketch JS API', () => {
           paradigm: GenerationParadigm.RhythmSync,
           riffPolicy: RiffPolicy.Locked,
           weight: 14,
+          tempoMin: 160,
+          tempoMax: 175,
         });
 
         expect(blueprints[9]).toEqual({
@@ -146,8 +192,14 @@ describe('MidiSketch JS API', () => {
           paradigm: GenerationParadigm.Traditional,
           riffPolicy: RiffPolicy.LockedPitch,
           weight: 0,
+          tempoMin: 100,
+          tempoMax: 170,
         });
       });
+    });
+
+    it('should expose each blueprint tempo range', () => {
+      expect(getBlueprintTempoRange(7)).toEqual({ min: 160, max: 178 });
     });
 
     describe('createDefaultConfig with blueprintId', () => {
@@ -199,6 +251,105 @@ describe('MidiSketch JS API', () => {
           sketch.destroy();
         }
       });
+    });
+
+    describe('MidiSketch.getWarnings', () => {
+      it('returns generator warnings instead of builder-only validation warnings', () => {
+        const sketch = new MidiSketch();
+        try {
+          const config = createDefaultConfig(0);
+          config.seed = 12345;
+          config.blueprintId = 3;
+          config.mood = 14;
+          sketch.generateFromConfig(config);
+
+          expect(sketch.getWarnings().some((warning) => warning.includes('Mood'))).toBe(true);
+        } finally {
+          sketch.destroy();
+        }
+      });
+    });
+  });
+
+  describe('MidiSketch melody persistence', () => {
+    it('round-trips a saved melody through the public JS API', () => {
+      const sketch = new MidiSketch();
+      try {
+        const config = createDefaultConfig(0);
+        config.seed = 12345;
+        sketch.generateFromConfig(config);
+
+        const original = sketch.getMelody();
+        expect(original.notes.length).toBeGreaterThan(0);
+
+        const replacement = {
+          seed: 9876,
+          notes: [
+            { startTick: 0, duration: 480, pitch: 60, velocity: 100 },
+            { startTick: 480, duration: 240, pitch: 64, velocity: 90 },
+          ],
+        };
+        sketch.setMelody(replacement);
+        expect(sketch.getMelody()).toEqual(replacement);
+
+        sketch.setMelody(original);
+        expect(sketch.getMelody()).toEqual(original);
+      } finally {
+        sketch.destroy();
+      }
+    });
+  });
+
+  describe('MidiSketch.getVocalPreviewMidi', () => {
+    it('should return a compact vocal-and-bass preview after generation', () => {
+      const sketch = new MidiSketch();
+      try {
+        const config = createDefaultConfig(0);
+        config.seed = 12345;
+        sketch.generateFromConfig(config);
+
+        const fullMidi = sketch.getMidi();
+        const previewMidi = sketch.getVocalPreviewMidi();
+        expect(previewMidi).toBeInstanceOf(Uint8Array);
+        expect(Array.from(previewMidi.subarray(0, 4))).toEqual([0x4d, 0x54, 0x68, 0x64]);
+        expect(previewMidi.length).toBeLessThan(fullMidi.length);
+      } finally {
+        sketch.destroy();
+      }
+    });
+  });
+
+  describe('MidiSketch.getEvents', () => {
+    it('should expose metadata, tempo changes, vocal style, and SE text events', () => {
+      const sketch = new MidiSketch();
+      try {
+        const config = createDefaultConfig(0);
+        config.seed = 12345;
+        config.vocalStyle = 3;
+        sketch.generateFromConfig(config);
+
+        const events = sketch.getEvents();
+        expect(events.metadata).toMatchObject({ style: 0, seed: 12345 });
+        expect(events.metadata.blueprint).toBeGreaterThanOrEqual(0);
+        expect(events.vocal_style).toBe(3);
+        expect(events.tempo_map.length).toBeGreaterThan(0);
+        expect(events.tracks.find((track) => track.name === 'SE')?.textEvents).toBeInstanceOf(
+          Array,
+        );
+      } finally {
+        sketch.destroy();
+      }
+    });
+  });
+
+  describe('generation errors', () => {
+    it('uses the generation error message for a destroyed handle', () => {
+      const sketch = new MidiSketch();
+      sketch.destroy();
+
+      expect(() => sketch.regenerateVocal(12345)).toThrow(
+        'Vocal regeneration failed: Invalid parameter or invalid handle',
+      );
     });
   });
 });

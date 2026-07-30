@@ -266,6 +266,23 @@ TEST(GenerateDefaultLayerEventsTest, IntroWith4Bars) {
   EXPECT_TRUE(hasTrack(events[2].tracks_add_mask, TrackMask::Chord));
 }
 
+TEST(GenerateDefaultLayerEventsTest, IntroScheduleMatchesStaggeredEntryConfig) {
+  for (uint8_t bars : {static_cast<uint8_t>(4), static_cast<uint8_t>(8)}) {
+    Section section;
+    section.type = SectionType::Intro;
+    section.bars = bars;
+
+    const auto events = generateDefaultLayerEvents(section, 0, 1);
+    const auto config = StaggeredEntryConfig::defaultIntro(bars);
+
+    ASSERT_EQ(events.size(), config.entry_count);
+    for (size_t idx = 0; idx < events.size(); ++idx) {
+      EXPECT_EQ(events[idx].bar_offset, config.entries[idx].entry_bar);
+      EXPECT_EQ(events[idx].tracks_add_mask, config.entries[idx].track);
+    }
+  }
+}
+
 TEST(GenerateDefaultLayerEventsTest, ShortSectionReturnsEmpty) {
   Section section;
   section.type = SectionType::Intro;
@@ -453,6 +470,30 @@ TEST(ApplyDefaultLayerScheduleTest, ImmediateIntroDoesNotForceStagger) {
       << "Immediate intro should not receive forced stagger layer events";
 }
 
+TEST(ApplyDefaultLayerScheduleTest, ImmediateFirstVerseDoesNotForceGradualBuild) {
+  std::vector<Section> sections(1);
+  sections[0].type = SectionType::A;
+  sections[0].bars = 8;
+  sections[0].entry_pattern = EntryPattern::Immediate;
+
+  applyDefaultLayerSchedule(sections);
+
+  EXPECT_TRUE(sections[0].layer_events.empty());
+}
+
+TEST(ApplyDefaultLayerScheduleTest, FirstVersePreservesBlueprintTrackMask) {
+  std::vector<Section> sections(1);
+  sections[0].type = SectionType::A;
+  sections[0].bars = 8;
+  sections[0].entry_pattern = EntryPattern::GradualBuild;
+  sections[0].track_mask = TrackMask::Vocal | TrackMask::Chord;
+
+  applyDefaultLayerSchedule(sections);
+
+  EXPECT_TRUE(sections[0].layer_events.empty())
+      << "The default first-verse schedule must not add tracks omitted by the blueprint";
+}
+
 TEST(ApplyDefaultLayerScheduleTest, ShortSectionsUnaffected) {
   // DirectChorus: A(8) -> Chorus(8) - no sections under 4 bars
   auto sections = buildStructure(StructurePattern::DirectChorus);
@@ -582,10 +623,8 @@ TEST_F(LayerScheduleGeneratorTest, IntroHasFewerEarlyBassNotes) {
   ASSERT_GT(sections.size(), 0u);
   ASSERT_EQ(sections[0].type, SectionType::Intro);
 
-  if (!sections[0].hasLayerSchedule()) {
-    // If layer schedule wasn't applied (e.g., blueprint overrides), skip
-    GTEST_SKIP() << "Layer schedule not applied to this intro";
-  }
+  ASSERT_TRUE(sections[0].hasLayerSchedule())
+      << "BuildUp Intro must retain its layer schedule after generation";
 
   // Count bass notes in the first bar of intro
   Tick intro_start = sections[0].start_tick;

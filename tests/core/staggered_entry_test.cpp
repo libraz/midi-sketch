@@ -8,6 +8,7 @@
 #include "core/generator.h"
 #include "core/section_types.h"
 #include "core/timing_constants.h"
+#include "test_support/generator_test_fixture.h"
 
 namespace midisketch {
 namespace {
@@ -19,8 +20,7 @@ namespace {
 TEST(StaggeredEntryConfigTest, DefaultIntro8Bars) {
   auto config = StaggeredEntryConfig::defaultIntro(8);
 
-  // Should have 5 entries for 8-bar intro
-  EXPECT_EQ(config.entry_count, 5);
+  EXPECT_EQ(config.entry_count, 4);
   EXPECT_FALSE(config.isEmpty());
 
   // Drums at bar 0
@@ -31,24 +31,19 @@ TEST(StaggeredEntryConfigTest, DefaultIntro8Bars) {
   EXPECT_EQ(config.entries[1].track, TrackMask::Bass);
   EXPECT_EQ(config.entries[1].entry_bar, 2);
 
-  // Chord at bar 4
-  EXPECT_EQ(config.entries[2].track, TrackMask::Chord);
+  // Chord and Motif at bar 4
+  EXPECT_EQ(config.entries[2].track, TrackMask::Chord | TrackMask::Motif);
   EXPECT_EQ(config.entries[2].entry_bar, 4);
 
-  // Motif at bar 4
-  EXPECT_EQ(config.entries[3].track, TrackMask::Motif);
-  EXPECT_EQ(config.entries[3].entry_bar, 4);
-
-  // Arpeggio at bar 6
-  EXPECT_EQ(config.entries[4].track, TrackMask::Arpeggio);
-  EXPECT_EQ(config.entries[4].entry_bar, 6);
+  // Arpeggio and Aux at bar 6
+  EXPECT_EQ(config.entries[3].track, TrackMask::Arpeggio | TrackMask::Aux);
+  EXPECT_EQ(config.entries[3].entry_bar, 6);
 }
 
 TEST(StaggeredEntryConfigTest, DefaultIntro4Bars) {
   auto config = StaggeredEntryConfig::defaultIntro(4);
 
-  // Should have 3 entries for 4-bar intro
-  EXPECT_EQ(config.entry_count, 3);
+  EXPECT_EQ(config.entry_count, 4);
   EXPECT_FALSE(config.isEmpty());
 
   // Drums at bar 0
@@ -84,22 +79,16 @@ TEST(StaggeredEntryConfigTest, DefaultIntro0BarsIsEmpty) {
 // Generator Staggered Entry Tests
 // ============================================================================
 
-class StaggeredEntryGeneratorTest : public ::testing::Test {
+class StaggeredEntryGeneratorTest : public test::GeneratorTestFixture {
  protected:
   void SetUp() override {
-    params_.key = Key::C;
-    params_.bpm = 120;
+    GeneratorTestFixture::SetUp();
     params_.mood = Mood::ModernPop;
-    params_.chord_id = 0;
     params_.drums_enabled = true;
     params_.arpeggio_enabled = true;
     params_.structure = StructurePattern::BuildUp;  // Intro(4) -> A(8) -> B(8) -> Chorus(8)
-    params_.seed = 42;
-    params_.vocal_low = 60;
     params_.vocal_high = 72;
   }
-
-  GeneratorParams params_;
   Generator generator_;
 };
 
@@ -117,7 +106,7 @@ TEST_F(StaggeredEntryGeneratorTest, StaggeredEntryRemovesEarlyNotes) {
 
   // Verify config is correct
   EXPECT_FALSE(config.isEmpty());
-  EXPECT_EQ(config.entry_count, 5);
+  EXPECT_EQ(config.entry_count, 4);
 
   // Bass should enter at bar 2, meaning notes in bars 0-1 should be removed
   EXPECT_EQ(config.entries[1].track, TrackMask::Bass);

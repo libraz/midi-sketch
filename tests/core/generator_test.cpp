@@ -7,6 +7,7 @@
 
 #include <gtest/gtest.h>
 
+#include "core/chord_extension_planner.h"
 #include "core/preset_data.h"
 #include "core/track_collision_detector.h"
 #include "midisketch.h"
@@ -273,10 +274,91 @@ TEST(GeneratorTest, ChordExtensionAffectsNoteCount) {
   EXPECT_GT(basic_note_count, 0u) << "Basic chords should produce notes";
   EXPECT_GT(seventh_note_count, 0u) << "7th chords should produce notes";
 
-  // Verify the generations are actually different (extension affects output)
-  // This confirms the extension parameter is being processed
-  EXPECT_NE(basic_note_count, seventh_note_count)
-      << "Different extension settings should produce different outputs";
+  // Extension choices may retain the same number of voices, so note count is
+  // not a valid proxy.  Confirm that the actual MIDI event sequence changes.
+  const auto& basic_notes = gen_basic.getSong().chord().notes();
+  const auto& seventh_notes = gen_7th.getSong().chord().notes();
+  bool output_differs = basic_notes.size() != seventh_notes.size();
+  for (size_t idx = 0; !output_differs && idx < basic_notes.size(); ++idx) {
+    const auto& basic = basic_notes[idx];
+    const auto& seventh = seventh_notes[idx];
+    output_differs = basic.start_tick != seventh.start_tick || basic.duration != seventh.duration ||
+                     basic.note != seventh.note || basic.velocity != seventh.velocity;
+  }
+  EXPECT_TRUE(output_differs) << "Different extension settings should change chord output";
+}
+
+TEST(GeneratorTest, TritoneSubstitutionIsPreRegisteredInHarmonyTimeline) {
+  GeneratorParams params{};
+  params.structure = StructurePattern::StandardPop;
+  params.mood = Mood::StraightPop;
+  params.chord_id = 0;  // I-V-vi-IV includes V entries.
+  params.seed = 42;
+  params.chord_extension.tritone_sub = true;
+  params.chord_extension.tritone_sub_probability = 1.0f;
+
+  Generator gen;
+  gen.generate(params);
+
+  const auto& harmony = gen.getHarmonyContext();
+  bool found_substitution = false;
+  for (const auto& section : gen.getSong().arrangement().sections()) {
+    for (uint8_t bar = 0; bar < section.bars; ++bar) {
+      Tick tick = section.start_tick + bar * TICKS_PER_BAR;
+      if (harmony.getChordDegreeAt(tick) != 13) continue;
+      found_substitution = true;
+      EXPECT_EQ(harmony.getChordExtensionAt(tick), ChordExtension::Dom7);
+      const ChordTones tones = harmony.getChordTonesAt(tick);
+      EXPECT_EQ(std::vector<int>(tones.begin(), tones.end()), (std::vector<int>{1, 5, 8, 11}));
+    }
+  }
+  EXPECT_TRUE(found_substitution) << "V chords must be planned as bII7 before track generation";
+}
+
+TEST(GeneratorTest, CadenceFixIsPreRegisteredInHarmonyTimeline) {
+  GeneratorParams params{};
+  params.structure = StructurePattern::StandardPop;
+  params.mood = Mood::StraightPop;
+  params.chord_id = 20;  // Five-chord progression needs a turnaround in an 8-bar section.
+  params.seed = 42;
+
+  Generator gen;
+  gen.generate(params);
+
+  const auto& sections = gen.getSong().arrangement().sections();
+  ASSERT_FALSE(sections.empty());
+  const Section& first = sections.front();
+  ASSERT_GE(first.bars, 2);
+  Tick ii_tick = first.start_tick + (first.bars - 2) * TICKS_PER_BAR;
+  Tick v_tick = ii_tick + TICKS_PER_BAR;
+  const auto& harmony = gen.getHarmonyContext();
+  EXPECT_EQ(harmony.getChordDegreeAt(ii_tick), 1);
+  EXPECT_EQ(harmony.getChordDegreeAt(v_tick), 4);
+}
+
+TEST(GeneratorTest, BorrowedIvUsesMinorSeventhInPlannedChorusHarmony) {
+  GeneratorParams params{};
+  params.structure = StructurePattern::DirectChorus;
+  params.mood = Mood::StraightPop;
+  params.chord_id = 21;  // NeapolitanPop: vi - iv - bII - V - I
+  params.seed = 42;
+  params.chord_extension.enable_7th = true;
+
+  Generator gen;
+  gen.generate(params);
+
+  const auto& harmony = gen.getHarmonyContext();
+  bool found_borrowed_iv = false;
+  for (const auto& section : gen.getSong().arrangement().sections()) {
+    if (section.type != SectionType::Chorus) continue;
+    for (uint8_t bar = 0; bar < section.bars; ++bar) {
+      Tick tick = section.start_tick + bar * TICKS_PER_BAR;
+      if (harmony.getChordDegreeAt(tick) != 12) continue;
+      found_borrowed_iv = true;
+      EXPECT_EQ(harmony.getChordExtensionAt(tick), ChordExtension::Min7);
+    }
+  }
+  EXPECT_TRUE(found_borrowed_iv);
 }
 
 TEST(GeneratorTest, ChordExtensionParameterRanges) {
@@ -308,6 +390,35 @@ TEST(GeneratorTest, ChordExtension9thGeneratesWithoutCrash) {
   // Should complete without crash (was crashing due to array overflow)
   gen.generate(params);
   EXPECT_GT(gen.getSong().chord().noteCount(), 0u);
+}
+
+TEST(GeneratorTest, ChordExtensionAvoidsMinorNineOnDiatonicThree) {
+  ChordExtensionParams extensions;
+  extensions.enable_9th = true;
+  extensions.ninth_probability = 1.0f;
+  std::mt19937 rng(42);
+
+  EXPECT_EQ(selectChordExtension(2, SectionType::Chorus, 0, 4, extensions, rng),
+            ChordExtension::Min7)
+      << "iii9 contains a scale-external flattened ninth; use iii7 instead";
+}
+
+TEST(GeneratorTest, EachChorusModulationWarnsAboutFinalChorusFallback) {
+  Generator gen;
+  GeneratorParams params{};
+  params.structure = StructurePattern::StandardPop;
+  params.mood = Mood::StraightPop;
+  params.seed = 42;
+  params.modulation_timing = ModulationTiming::EachChorus;
+  params.modulation_semitones = 2;
+
+  gen.generate(params);
+
+  EXPECT_GT(gen.getSong().modulationTick(), 0u);
+  EXPECT_TRUE(std::any_of(gen.getWarnings().begin(), gen.getWarnings().end(),
+                          [](const std::string& warning) {
+                            return warning.find("EachChorus modulation") != std::string::npos;
+                          }));
 }
 
 TEST(GeneratorTest, ChordExtension9thAndSusSimultaneous) {

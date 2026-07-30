@@ -33,6 +33,16 @@ TEST(CoordinatorTest, InitializeWithDefaultParams) {
   EXPECT_EQ(coord.getRiffPolicy(), RiffPolicy::Free);
 }
 
+TEST(CoordinatorTest, AutoSeedIsResolvedBeforeHarmonyPlanning) {
+  Coordinator coordinator;
+  GeneratorParams params{};
+  params.seed = 0;
+
+  coordinator.initialize(params);
+
+  EXPECT_NE(coordinator.getParams().seed, 0u);
+}
+
 TEST(CoordinatorTest, ValidateParams_ValidParams) {
   Coordinator coord;
   GeneratorParams params;
@@ -52,13 +62,26 @@ TEST(CoordinatorTest, ValidateParams_InvalidChordId) {
   Coordinator coord;
   GeneratorParams params;
   params.seed = 12345;
-  params.chord_id = 25;  // Invalid (must be 0-19)
+  params.chord_id = CHORD_COUNT;  // First invalid ID.
 
   coord.initialize(params);
   ValidationResult result = coord.validateParams();
 
   EXPECT_FALSE(result.valid);
   EXPECT_FALSE(result.errors.empty());
+}
+
+TEST(CoordinatorTest, ValidateParams_LastChordIdIsValid) {
+  Coordinator coord;
+  GeneratorParams params;
+  params.seed = 12345;
+  params.chord_id = CHORD_COUNT - 1;  // NeapolitanPop
+
+  coord.initialize(params);
+  ValidationResult result = coord.validateParams();
+
+  EXPECT_TRUE(result.valid);
+  EXPECT_TRUE(result.errors.empty());
 }
 
 TEST(CoordinatorTest, ValidateParams_LastBlueprintIdIsValid) {

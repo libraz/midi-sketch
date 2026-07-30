@@ -16,11 +16,14 @@
 #include "core/arrangement.h"
 #include "core/chord.h"
 #include "core/chord_utils.h"
+#include "core/collision_resolver.h"
 #include "core/generator.h"
 #include "core/harmony_context.h"
 #include "core/i_harmony_context.h"
 #include "core/pitch_utils.h"
+#include "core/sustain_trimmer.h"
 #include "core/timing_constants.h"
+#include "test_support/stub_harmony_context.h"
 #include "track/generators/aux.h"
 #include "track/generators/bass.h"
 #include "track/vocal/vocal_analysis.h"
@@ -37,6 +40,16 @@ Section makeSection(SectionType type, uint8_t bars, Tick start_tick) {
   s.start_bar = static_cast<uint16_t>(start_tick / TICKS_PER_BAR);
   return s;
 }
+
+class SustainedChromaticChangeHarmony final : public test::StubHarmonyContext {
+ public:
+  int8_t getChordDegreeAt(Tick tick) const override { return tick < TICK_QUARTER ? 0 : 4; }
+
+  ChordTones getChordTonesAt(Tick tick) const override {
+    return tick < TICK_QUARTER ? ChordTones{{0, 4, 7, -1, -1}, 3}
+                               : ChordTones{{4, 8, 11, -1, -1}, 3};  // E major: G# rubs G.
+  }
+};
 
 // ============================================================================
 // Test 1: MotifCounter chord-aware note selection
@@ -132,9 +145,7 @@ TEST_F(MotifCounterChordAwareTest, ChordDegreeLookedUpAtNotePosition) {
 
   auto notes = generator.generateMotifCounter(ctx_, config, harmony_, vocal_analysis_, rng);
 
-  if (notes.empty()) {
-    GTEST_SKIP() << "No notes generated with this seed";
-  }
+  ASSERT_FALSE(notes.empty()) << "MotifCounter fixture must generate notes";
 
   // For each note, verify the pitch is valid MIDI
   for (const auto& note : notes) {
@@ -309,9 +320,8 @@ TEST_F(BassWalkingSafeApproachTest, WalkingBassUsesSafeIntervals) {
   const auto& bass_notes = song.bass().notes();
   const auto& chord_notes = song.chord().notes();
 
-  if (bass_notes.empty() || chord_notes.empty()) {
-    GTEST_SKIP() << "No notes to compare";
-  }
+  ASSERT_FALSE(bass_notes.empty()) << "Walking-bass fixture must generate Bass notes";
+  ASSERT_FALSE(chord_notes.empty()) << "Walking-bass fixture must generate Chord notes";
 
   // Count minor 2nd clashes on beat 1
   int minor_2nd_clashes = 0;
@@ -581,6 +591,77 @@ TEST(BGMOnlyDissonanceTest, SynthDrivenModeZeroDissonance) {
     // Allow up to 5 clashes (previously 0).
     EXPECT_LE(clash_count, 5) << "SynthDriven mode should have minimal chord-arpeggio clashes, "
                               << "but seed " << seed << " has " << clash_count << " clashes";
+  }
+}
+
+TEST(CollisionResolverTest, KeepsDominantTritonesAndChecksAllRegisteredTracks) {
+  test::StubHarmonyContext harmony;
+  harmony.setChordDegree(4);  // V: a tritone is part of the dominant colour.
+  harmony.setChordTones({0, 4, 7});
+  harmony.setAllPitchesSafe(false);
+
+  MidiTrack chord;
+  chord.addNote(NoteEventBuilder::create(0, TICKS_PER_BEAT, 66, 100));
+  MidiTrack arpeggio;
+  arpeggio.addNote(NoteEventBuilder::create(0, TICKS_PER_BEAT, 72, 100));
+
+  CollisionResolver::resolveArpeggioChordClashes(arpeggio, chord, harmony);
+  ASSERT_EQ(arpeggio.notes().size(), 1u);
+  EXPECT_EQ(arpeggio.notes()[0].note, 72)
+      << "A dominant tritone must not be rewritten by the generic resolver";
+
+  harmony.setChordDegree(0);
+  MidiTrack clashing_chord;
+  clashing_chord.addNote(NoteEventBuilder::create(0, TICKS_PER_BEAT, 60, 100));
+  MidiTrack unsafe_arpeggio;
+  unsafe_arpeggio.addNote(NoteEventBuilder::create(0, TICKS_PER_BEAT, 61, 100));
+
+  CollisionResolver::resolveArpeggioChordClashes(unsafe_arpeggio, clashing_chord, harmony);
+  EXPECT_EQ(unsafe_arpeggio.notes()[0].note, 61)
+      << "A chord-safe replacement must still be rejected when another registered track clashes";
+}
+
+TEST(CollisionResolverTest, CanResolveIntoTheArpeggioHighRegister) {
+  test::StubHarmonyContext harmony;
+  harmony.setChordDegree(0);
+  harmony.setChordTones({0});
+  harmony.setAllPitchesSafe(true);
+
+  MidiTrack chord;
+  chord.addNote(NoteEventBuilder::create(0, TICKS_PER_BEAT, 108, 100));
+  MidiTrack arpeggio;
+  arpeggio.addNote(NoteEventBuilder::create(0, TICKS_PER_BEAT, 107, 100));
+
+  CollisionResolver::resolveArpeggioChordClashes(arpeggio, chord, harmony);
+  EXPECT_EQ(arpeggio.notes()[0].note, 108)
+      << "The resolver must retain the arpeggio synth's C8 upper range";
+}
+
+TEST(ResidualDissonanceRegressionTest, MotifSustainStopsBeforeChromaticChordChange) {
+  SustainedChromaticChangeHarmony harmony;
+  MidiTrack motif;
+  motif.addNote(NoteEventBuilder::create(0, TICK_HALF, 67, 100));  // G4, initially a C-chord tone.
+
+  trimSustainsAtDissonantChordChanges(motif, harmony);
+
+  ASSERT_EQ(motif.notes().size(), 1u);
+  EXPECT_EQ(motif.notes()[0].duration, TICK_QUARTER - 30)
+      << "G4 must release before the later E-major G# chromatic rub";
+}
+
+TEST(ResidualDissonanceRegressionTest, BassApproachUsesTheoreticalChordWhenChordTrackIsEmpty) {
+  test::StubHarmonyContext harmony;
+  harmony.setChordTones({5, 9, 0});  // F major; the chord track has not been generated yet.
+  harmony.setAllPitchesSafe(true);
+  MidiTrack bass;
+
+  addBassApproachNoteWithTritoneGuard(bass, harmony, 0, TICK_EIGHTH, 47, 41, 100);
+
+  ASSERT_EQ(bass.notes().size(), 1u);
+  const int bass_pc = bass.notes()[0].note % 12;
+  for (const int chord_pc : harmony.getChordTonesAt(0)) {
+    EXPECT_NE(std::abs(bass_pc - chord_pc) % 12, 6)
+        << "A B2 approach must not survive against the later-voiced F chord";
   }
 }
 

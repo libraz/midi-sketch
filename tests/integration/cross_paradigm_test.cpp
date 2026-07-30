@@ -134,7 +134,7 @@ TEST_P(BlueprintValidityTest, ProducesValidOutput) {
 }
 
 INSTANTIATE_TEST_SUITE_P(AllBlueprints, BlueprintValidityTest,
-                         ::testing::Range(static_cast<uint8_t>(0), static_cast<uint8_t>(9)),
+                         ::testing::Range(static_cast<uint8_t>(0), getProductionBlueprintCount()),
                          [](const ::testing::TestParamInfo<uint8_t>& info) {
                            return "Blueprint" + std::to_string(info.param);
                          });
@@ -643,10 +643,10 @@ TEST_P(FullPipelineSmokeTest, BlueprintMoodCombination_ProducesValidOutput) {
 }
 
 // Test a representative matrix of blueprint x mood combinations
-// (full cross-product would be 9 x 24 = 216 tests, so pick representative moods)
+// (full cross-product would be 10 x 24 = 240 tests, so pick representative moods)
 INSTANTIATE_TEST_SUITE_P(
     BlueprintMoodMatrix, FullPipelineSmokeTest,
-    ::testing::Combine(::testing::Range(static_cast<uint8_t>(0), static_cast<uint8_t>(9)),
+    ::testing::Combine(::testing::Range(static_cast<uint8_t>(0), getProductionBlueprintCount()),
                        ::testing::Values(static_cast<uint8_t>(Mood::StraightPop),
                                          static_cast<uint8_t>(Mood::Ballad),
                                          static_cast<uint8_t>(Mood::IdolPop),

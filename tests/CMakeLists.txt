@@ -30,6 +30,8 @@ set(TEST_SOURCES
   core/style_preset_test.cpp
   core/harmony_integration_test.cpp
   core/track_registration_guard_test.cpp
+  core/track_base_test.cpp
+  core/harmony_context_debug_test.cpp
   core/call_test.cpp
   core/randomness_test.cpp
   core/secondary_dominant_planner_test.cpp
@@ -46,7 +48,13 @@ set(TEST_SOURCES
   core/syllabic_subdivider_test.cpp
   core/piano_roll_test.cpp
   cli/args_test.cpp
+  cli/display_helpers_test.cpp
+  cli/generate_mode_test.cpp
   ../src/cli/args.cpp
+  ../src/cli/generate_mode.cpp
+  ../src/cli/regenerate_mode.cpp
+  ../src/cli/input_mode.cpp
+  ../src/cli/display_helpers.cpp
   core/music_theory_test.cpp
   core/velocity_test.cpp
   core/velocity_clamp_test.cpp

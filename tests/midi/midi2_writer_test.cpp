@@ -7,20 +7,48 @@
 
 #include <gtest/gtest.h>
 
-#include <cstdio>
+#include <atomic>
+#include <chrono>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 
 #include "core/midi_track.h"
 #include "core/song.h"
+#include "midi/track_config.h"
+#include "midi/ump.h"
 
 namespace midisketch {
 namespace {
+
+std::filesystem::path makeUniqueTempMidiPath() {
+  static std::atomic<uint64_t> sequence{0};
+  const auto timestamp = std::chrono::steady_clock::now().time_since_epoch().count();
+  return std::filesystem::temp_directory_path() /
+         ("midisketch-midi2-" + std::to_string(timestamp) + "-" +
+          std::to_string(sequence.fetch_add(1)) + ".mid");
+}
 
 class Midi2WriterTest : public ::testing::Test {
  protected:
   Midi2Writer writer_;
 };
+
+std::vector<uint8_t> collectSysEx8Payload(const std::vector<uint8_t>& data) {
+  std::vector<uint8_t> payload;
+  for (size_t offset = 8; offset + 15 < data.size();) {
+    const uint8_t message_type = data[offset] >> 4;
+    if (message_type == static_cast<uint8_t>(ump::MessageType::Data128)) {
+      const uint8_t count = data[offset + 1] & 0x0F;
+      if (count > 0) payload.push_back(data[offset + 3]);
+      for (size_t idx = 1; idx < count; ++idx) payload.push_back(data[offset + 3 + idx]);
+      offset += 16;
+    } else {
+      offset += ump::messageSize(message_type);
+    }
+  }
+  return payload;
+}
 
 TEST_F(Midi2WriterTest, BuildClipHasCorrectHeader) {
   MidiTrack track;
@@ -44,6 +72,59 @@ TEST_F(Midi2WriterTest, BuildClipContainsNoteEvents) {
 
   // File should contain data
   EXPECT_GT(data.size(), 100);
+}
+
+TEST_F(Midi2WriterTest, SameTickEventsWriteNoteOffThenCCThenNoteOn) {
+  MidiTrack track;
+  track.addNote(NoteEventBuilder::create(0, 480, 60, 100));
+  track.addNote(NoteEventBuilder::create(480, 480, 61, 100));
+  track.addCC(480, 1, 64);
+
+  writer_.buildClip(track, "Test", 0, 0, 120, Key::C);
+  const auto data = writer_.toBytes();
+
+  const auto find_word = [&data](uint32_t expected) {
+    for (size_t i = 8; i + 3 < data.size(); i += 4) {
+      const uint32_t word = (static_cast<uint32_t>(data[i]) << 24) |
+                            (static_cast<uint32_t>(data[i + 1]) << 16) |
+                            (static_cast<uint32_t>(data[i + 2]) << 8) | data[i + 3];
+      if (word == expected) return i;
+    }
+    return data.size();
+  };
+
+  const size_t note_off = find_word(ump::makeNoteOff(0, 0, 60));
+  const size_t cc = find_word(ump::makeControlChange(0, 0, 1, 64));
+  const size_t note_on = find_word(ump::makeNoteOn(0, 0, 61, 100));
+
+  ASSERT_LT(note_off, data.size());
+  ASSERT_LT(cc, data.size());
+  ASSERT_LT(note_on, data.size());
+  EXPECT_LT(note_off, cc);
+  EXPECT_LT(cc, note_on);
+}
+
+TEST_F(Midi2WriterTest, BuildClipPreservesPitchBendAndTrackName) {
+  MidiTrack track;
+  track.addNote(NoteEventBuilder::create(0, 480, 60, 100));
+  track.addPitchBend(120, 2048);
+
+  writer_.buildClip(track, "Lead", VOCAL_CH, VOCAL_PROG, 120, Key::C);
+  const auto data = writer_.toBytes();
+
+  const uint32_t expected_bend = ump::makePitchBend(0, VOCAL_CH, 10240);
+  bool found_bend = false;
+  for (size_t offset = 8; offset + 3 < data.size(); offset += 4) {
+    const uint32_t word = (static_cast<uint32_t>(data[offset]) << 24) |
+                          (static_cast<uint32_t>(data[offset + 1]) << 16) |
+                          (static_cast<uint32_t>(data[offset + 2]) << 8) | data[offset + 3];
+    if (word == expected_bend) found_bend = true;
+  }
+  EXPECT_TRUE(found_bend);
+
+  const auto payload = collectSysEx8Payload(data);
+  const std::string payload_text(payload.begin(), payload.end());
+  EXPECT_NE(payload_text.find("TRACK:Lead"), std::string::npos);
 }
 
 TEST_F(Midi2WriterTest, BuildClipTransposesByKey) {
@@ -100,6 +181,68 @@ TEST_F(Midi2WriterTest, BuildContainerWithAllTracks) {
   // Check numTracks (SE + 7 tracks = 8)
   uint32_t numTracks = (data[20] << 24) | (data[21] << 16) | (data[22] << 8) | data[23];
   EXPECT_EQ(numTracks, 8);
+}
+
+TEST_F(Midi2WriterTest, ContainerUsesSharedMoodProgramSelection) {
+  Song song;
+  song.setBpm(130);
+  song.vocal().addNote(NoteEventBuilder::create(0, 480, 60, 100));
+
+  writer_.buildContainer(song, Key::C, "", Mood::AnimeHighEnergy, 1);
+  const auto data = writer_.toBytes();
+  const uint32_t expected_program =
+      ump::makeProgramChange(0, VOCAL_CH, getMoodPrograms(Mood::AnimeHighEnergy).vocal);
+
+  bool found = false;
+  for (size_t offset = 24; offset + 3 < data.size(); offset += 4) {
+    const uint32_t word = (static_cast<uint32_t>(data[offset]) << 24) |
+                          (static_cast<uint32_t>(data[offset + 1]) << 16) |
+                          (static_cast<uint32_t>(data[offset + 2]) << 8) | data[offset + 3];
+    if (word == expected_program) found = true;
+  }
+  EXPECT_TRUE(found);
+}
+
+TEST_F(Midi2WriterTest, ContainerWritesSECallNotesOnChannel15) {
+  Song song;
+  song.setBpm(120);
+  song.se().addNote(NoteEventBuilder::create(480, 240, 48, 96));
+
+  writer_.buildContainer(song, Key::C, "");
+  const auto data = writer_.toBytes();
+
+  const uint32_t expected_note_on = ump::makeNoteOn(0, SE_CH, 48, 96);
+  bool found_note_on = false;
+  for (size_t i = 0; i + 3 < data.size(); ++i) {
+    const uint32_t word = (static_cast<uint32_t>(data[i]) << 24) |
+                          (static_cast<uint32_t>(data[i + 1]) << 16) |
+                          (static_cast<uint32_t>(data[i + 2]) << 8) | data[i + 3];
+    if (word == expected_note_on) {
+      found_note_on = true;
+      break;
+    }
+  }
+  EXPECT_TRUE(found_note_on);
+}
+
+TEST_F(Midi2WriterTest, ContainerMergesOverlappingSamePitchNotes) {
+  Song song;
+  song.setBpm(120);
+  song.vocal().addNote(NoteEventBuilder::create(0, 960, 60, 90));
+  song.vocal().addNote(NoteEventBuilder::create(480, 960, 60, 110));
+
+  writer_.buildContainer(song, Key::C, "");
+  const auto data = writer_.toBytes();
+
+  const uint32_t expected_note_on = ump::makeNoteOn(0, VOCAL_CH, 60, 110);
+  size_t note_on_count = 0;
+  for (size_t i = 0; i + 3 < data.size(); ++i) {
+    const uint32_t word = (static_cast<uint32_t>(data[i]) << 24) |
+                          (static_cast<uint32_t>(data[i + 1]) << 16) |
+                          (static_cast<uint32_t>(data[i + 2]) << 8) | data[i + 3];
+    if (word == expected_note_on) ++note_on_count;
+  }
+  EXPECT_EQ(note_on_count, 1u);
 }
 
 TEST_F(Midi2WriterTest, BuildContainerWithMetadata) {
@@ -164,19 +307,18 @@ TEST_F(Midi2WriterTest, WriteToFileCreatesFile) {
 
   writer_.buildClip(track, "Test", 0, 0, 120, Key::C);
 
-  // Write to temp file
-  std::string tempPath = "/tmp/midi2_test.mid";
-  bool result = writer_.writeToFile(tempPath);
+  const auto temp_path = makeUniqueTempMidiPath();
+  bool result = writer_.writeToFile(temp_path.string());
   EXPECT_TRUE(result);
 
   // Verify file exists and has content
-  std::ifstream file(tempPath, std::ios::binary | std::ios::ate);
+  std::ifstream file(temp_path, std::ios::binary | std::ios::ate);
   ASSERT_TRUE(file.is_open());
   auto size = file.tellg();
   EXPECT_GT(size, 0);
 
-  // Clean up
-  std::remove(tempPath.c_str());
+  file.close();
+  EXPECT_TRUE(std::filesystem::remove(temp_path));
 }
 
 TEST_F(Midi2WriterTest, EmptyTrackProducesValidClip) {

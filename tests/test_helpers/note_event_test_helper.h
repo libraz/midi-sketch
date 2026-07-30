@@ -2,7 +2,7 @@
  * @file note_event_test_helper.h
  * @brief Test helper for creating NoteEvent objects in unit tests.
  *
- * NoteEvent constructors are private to enforce use of NoteFactory for
+ * NoteEvent constructors are private to enforce use of note_creator for
  * dissonance checking. This helper class is a friend of NoteEvent and
  * provides test-only construction methods.
  */
@@ -14,13 +14,13 @@
 
 namespace midisketch {
 
-/// @brief Test helper for creating NoteEvent objects without NoteFactory.
+/// @brief Test helper for creating NoteEvent objects without note_creator.
 ///
 /// This class is a friend of NoteEvent and provides methods for creating
-/// NoteEvent objects in unit tests where NoteFactory is not appropriate.
+/// NoteEvent objects in unit tests where note_creator is not appropriate.
 ///
 /// @note This class should ONLY be used in tests. Production code should
-/// use NoteFactory to ensure proper dissonance checking.
+/// use note_creator to ensure proper dissonance checking.
 class NoteEventTestHelper {
  public:
   /// @brief Create a NoteEvent with specified parameters.

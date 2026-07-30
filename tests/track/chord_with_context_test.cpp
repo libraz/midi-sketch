@@ -15,6 +15,7 @@
 #include "core/song.h"
 #include "core/timing_constants.h"
 #include "core/types.h"
+#include "test_support/generator_test_fixture.h"
 #include "track/generators/bass.h"
 #include "track/generators/chord.h"
 #include "track/generators/motif.h"
@@ -24,24 +25,13 @@
 namespace midisketch {
 namespace {
 
-class ChordWithContextTest : public ::testing::Test {
+class ChordWithContextTest : public test::GeneratorTestFixture {
  protected:
   void SetUp() override {
-    params_.structure = StructurePattern::StandardPop;
-    params_.mood = Mood::ElectroPop;
-    params_.chord_id = 0;
-    params_.key = Key::C;
+    GeneratorTestFixture::SetUp();
     params_.drums_enabled = true;
-    params_.vocal_low = 60;
-    params_.vocal_high = 84;
-    params_.bpm = 120;
     params_.seed = 12345;
-    params_.arpeggio_enabled = false;
-    // Disable humanization for deterministic tests
-    params_.humanize = false;
   }
-
-  GeneratorParams params_;
 };
 
 // === Basic Generation Tests ===

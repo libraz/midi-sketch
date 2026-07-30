@@ -69,6 +69,33 @@ TEST(MelodicEmbellisherTest, GeneratesSuspensionAtChordBoundary) {
   EXPECT_EQ(result[1].start_tick + result[1].duration, result[2].start_tick);
 }
 
+TEST(MelodicEmbellisherTest, PassingToneDoesNotFillProtectedBreathRange) {
+  std::vector<NoteEvent> skeleton = {
+      NoteEventTestHelper::create(0, TICK_QUARTER, 60, 80),
+      NoteEventTestHelper::create(TICK_HALF, TICK_QUARTER, 67, 80),
+  };
+  EmbellishmentConfig config;
+  config.chord_tone_ratio = 0.0f;
+  config.passing_tone_ratio = 1.0f;
+  config.neighbor_tone_ratio = 0.0f;
+  config.appoggiatura_ratio = 0.0f;
+  config.anticipation_ratio = 0.0f;
+  config.suspension_ratio = 0.0f;
+
+  test::StubHarmonyContext harmony;
+  harmony.setAllPitchesSafe(true);
+  std::mt19937 rng(42);
+  const std::vector<std::pair<Tick, Tick>> breath_ranges = {{TICK_QUARTER, TICK_HALF}};
+
+  auto result = MelodicEmbellisher::embellish(skeleton, config, harmony, 0, rng, breath_ranges);
+
+  for (const auto& note : result) {
+    const Tick note_end = note.start_tick + note.duration;
+    EXPECT_FALSE(note.start_tick < TICK_HALF && note_end > TICK_QUARTER)
+        << "No ornament may enter the protected breath range";
+  }
+}
+
 // ============================================================================
 // EmbellishmentConfig Tests
 // ============================================================================

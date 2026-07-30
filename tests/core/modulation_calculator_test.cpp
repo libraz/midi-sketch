@@ -110,7 +110,7 @@ TEST(ModulationCalculatorTest, AfterBridgeFallbackToLastChorus) {
 // ModulationTiming::EachChorus Tests
 // ============================================================================
 
-TEST(ModulationCalculatorTest, EachChorusReturnsFirstChorus) {
+TEST(ModulationCalculatorTest, EachChorusFallsBackToLastChorus) {
   std::mt19937 rng(42);
 
   std::vector<Section> sections = {
@@ -123,8 +123,8 @@ TEST(ModulationCalculatorTest, EachChorusReturnsFirstChorus) {
   auto result = ModulationCalculator::calculate(ModulationTiming::EachChorus, 3,
                                                 StructurePattern::StandardPop, sections, rng);
 
-  // Currently only returns first chorus (noted limitation)
-  EXPECT_EQ(result.tick, 4u * TICKS_PER_BAR);
+  // Song has one modulation boundary, so EachChorus uses the final chorus.
+  EXPECT_EQ(result.tick, 20u * TICKS_PER_BAR);
   EXPECT_EQ(result.amount, 3);
 }
 

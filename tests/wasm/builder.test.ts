@@ -61,6 +61,10 @@ describe('SongConfigBuilder', () => {
       const builder = new SongConfigBuilder(0).setForm(2);
       const config = builder.build();
       expect(config.formId).toBe(2);
+      expect(config.formExplicit).toBe(true);
+      expect(builder.getExplicitFields()).toEqual(
+        expect.arrayContaining(['formId', 'formExplicit']),
+      );
     });
 
     it('should set vocal range and normalize', () => {
@@ -84,11 +88,17 @@ describe('SongConfigBuilder', () => {
     });
 
     it('should set humanize settings', () => {
-      const builder = new SongConfigBuilder(0).setHumanize(true, 30, 40);
+      const builder = new SongConfigBuilder(0).setHumanize(true, 0.3, 0.4);
       const config = builder.build();
       expect(config.humanize).toBe(true);
-      expect(config.humanizeTiming).toBe(30);
-      expect(config.humanizeVelocity).toBe(40);
+      expect(config.humanizeTiming).toBe(0.3);
+      expect(config.humanizeVelocity).toBe(0.4);
+    });
+
+    it('should clamp humanize settings to the unit interval', () => {
+      const config = new SongConfigBuilder(0).setHumanize(true, -0.2, 1.5).build();
+      expect(config.humanizeTiming).toBe(0);
+      expect(config.humanizeVelocity).toBe(1);
     });
 
     it('should set modulation settings', () => {
@@ -105,6 +115,7 @@ describe('SongConfigBuilder', () => {
         octaveRange: 2,
         gate: 70,
         syncChord: true,
+        baseVelocity: 84,
       });
       const config = builder.build();
       expect(config.arpeggioEnabled).toBe(true);
@@ -113,6 +124,7 @@ describe('SongConfigBuilder', () => {
       expect(config.arpeggioOctaveRange).toBe(2);
       expect(config.arpeggioGate).toBe(70);
       expect(config.arpeggioSyncChord).toBe(true);
+      expect(config.arpeggioBaseVelocity).toBe(84);
     });
 
     it('should set chord extensions', () => {
@@ -136,11 +148,51 @@ describe('SongConfigBuilder', () => {
         repeatScope: 1,
         fixedProgression: false,
         maxChordCount: 6,
+        length: 4,
+        noteCount: 5,
+        motion: 3,
+        registerHigh: 2,
+        rhythmDensity: 1,
       });
       const config = builder.build();
       expect(config.motifRepeatScope).toBe(1);
       expect(config.motifFixedProgression).toBe(false);
       expect(config.motifMaxChordCount).toBe(6);
+      expect(config.motifLength).toBe(4);
+      expect(config.motifNoteCount).toBe(5);
+      expect(config.motifMotion).toBe(3);
+      expect(config.motifRegisterHigh).toBe(2);
+      expect(config.motifRhythmDensity).toBe(1);
+    });
+
+    it('should set remaining SongConfig overrides through fluent setters', () => {
+      const config = new SongConfigBuilder(0)
+        .setGuitar(false)
+        .setSyllabicSubdivisionRate(35)
+        .setSyncopation(true)
+        .setEnergyCurve(2)
+        .setMelodyOverrides({
+          maxLeap: 7,
+          syncopationProb: 55,
+          phraseLength: 4,
+          longNoteRatio: 30,
+          chorusRegisterShift: 5,
+          hookRepetition: 2,
+          useLeadingTone: 1,
+        })
+        .build();
+
+      expect(config.guitarEnabled).toBe(false);
+      expect(config.syllabicSubRate).toBe(35);
+      expect(config.enableSyncopation).toBe(true);
+      expect(config.energyCurve).toBe(2);
+      expect(config.melodyMaxLeap).toBe(7);
+      expect(config.melodySyncopationProb).toBe(55);
+      expect(config.melodyPhraseLength).toBe(4);
+      expect(config.melodyLongNoteRatio).toBe(30);
+      expect(config.melodyChorusRegisterShift).toBe(5);
+      expect(config.melodyHookRepetition).toBe(2);
+      expect(config.melodyUseLeadingTone).toBe(1);
     });
 
     it('should set call settings', () => {
@@ -273,6 +325,15 @@ describe('SongConfigBuilder', () => {
   });
 
   describe('cascade detection - setCompositionStyle', () => {
+    it('should mark MelodyLead as an explicit preset override', () => {
+      const config = new SongConfigBuilder(15)
+        .setCompositionStyle(CompositionStyle.MelodyLead)
+        .build();
+
+      expect(config.compositionStyle).toBe(CompositionStyle.MelodyLead);
+      expect(config.compositionStyleExplicit).toBe(true);
+    });
+
     it('should set skipVocal for BackgroundMotif style', () => {
       const builder = new SongConfigBuilder(0);
       builder.setCompositionStyle(CompositionStyle.BackgroundMotif);

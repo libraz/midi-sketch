@@ -53,7 +53,7 @@ TEST(VelocityTest, SectionEnergyAllTypes) {
   EXPECT_EQ(getSectionEnergy(SectionType::Intro), 1);
   EXPECT_EQ(getSectionEnergy(SectionType::Interlude), 1);
   EXPECT_EQ(getSectionEnergy(SectionType::Chant), 1);
-  EXPECT_EQ(getSectionEnergy(SectionType::MixBreak), 1);
+  EXPECT_EQ(getSectionEnergy(SectionType::MixBreak), 4);
   EXPECT_EQ(getSectionEnergy(SectionType::Outro), 2);
   EXPECT_EQ(getSectionEnergy(SectionType::A), 2);
   EXPECT_EQ(getSectionEnergy(SectionType::Bridge), 2);
@@ -273,7 +273,7 @@ TEST(VelocityTest, GetEffectiveSectionEnergy) {
   Section section;
   section.type = SectionType::A;
 
-  // Default energy (Medium) should use SectionType fallback
+  // Explicit Medium must not be mistaken for an unset value.
   section.energy = SectionEnergy::Medium;
   EXPECT_EQ(getEffectiveSectionEnergy(section), SectionEnergy::Medium);
 
@@ -287,7 +287,7 @@ TEST(VelocityTest, GetEffectiveSectionEnergy) {
 
 TEST(VelocityTest, GetEffectiveSectionEnergyFallback) {
   Section section;
-  section.energy = SectionEnergy::Medium;  // Default
+  section.energy = SectionEnergy::Unset;
 
   // Chorus should fall back to Peak
   section.type = SectionType::Chorus;
@@ -347,6 +347,29 @@ TEST(VelocityTest, CalculateEffectiveVelocityEnergyEffect) {
   uint8_t vel_peak = calculateEffectiveVelocity(section, 0, Mood::StraightPop);
 
   EXPECT_GT(vel_peak, vel_low);
+}
+
+TEST(VelocityTest, SectionBaseVelocityScalesProductionNotes) {
+  Section quiet;
+  quiet.type = SectionType::A;
+  quiet.start_tick = 0;
+  quiet.bars = 1;
+  quiet.base_velocity = 60;
+  Section loud = quiet;
+  loud.type = SectionType::Chorus;
+  loud.start_tick = TICKS_PER_BAR;
+  loud.base_velocity = 100;
+
+  MidiTrack track;
+  track.addNote(NoteEventBuilder::create(0, TICKS_PER_BEAT, 60, 80));
+  track.addNote(NoteEventBuilder::create(TICKS_PER_BAR, TICKS_PER_BEAT, 60, 80));
+  std::vector<MidiTrack*> tracks = {&track};
+
+  applySectionBaseVelocity(tracks, {quiet, loud});
+
+  ASSERT_EQ(track.notes().size(), 2u);
+  EXPECT_EQ(track.notes()[0].velocity, 60);
+  EXPECT_EQ(track.notes()[1].velocity, 100);
 }
 
 // ============================================================================

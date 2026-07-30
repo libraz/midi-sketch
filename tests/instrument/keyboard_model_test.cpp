@@ -869,6 +869,19 @@ TEST_F(KeyboardNoteFactoryTest, TransitionFeasibleAfterPlaying) {
   EXPECT_TRUE(factory_->isTransitionFeasible({62, 66, 69}, 480));
 }
 
+TEST_F(KeyboardNoteFactoryTest, RevoicesUnreachableTransitionToClosestOctave) {
+  const std::vector<uint8_t> previous = {60, 64, 67};
+  const std::vector<uint8_t> distant = {84, 88, 91};
+  factory_->ensurePlayableVoicing(previous, 0, 0, 480);
+  ASSERT_FALSE(factory_->isTransitionFeasible(distant, 30));
+
+  auto result = factory_->ensurePlayableVoicing(distant, 0, 480, 30);
+
+  EXPECT_NE(result, distant);
+  EXPECT_TRUE(factory_->isTransitionFeasible(result, 30));
+  EXPECT_EQ(result, previous);
+}
+
 TEST_F(KeyboardNoteFactoryTest, ResetStateClearsPrevious) {
   // Play a voicing
   factory_->ensurePlayableVoicing({60, 64, 67}, 0, 0, 480);

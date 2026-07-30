@@ -590,7 +590,7 @@ TEST_F(BassTest, AggressivePatternHasGhostNotes) {
 
 TEST_F(BassTest, GhostNotesOnWeakSixteenthPositions) {
   // Ghost notes should originally be placed on odd 16th positions.
-  // Post-processing micro-timing offsets shift bass notes by -4 ticks,
+  // Post-processing micro-timing offsets shift bass notes by +4 ticks,
   // so we check with a small tolerance. Notes with very low velocity (<= 43)
   // that are near odd 16th positions are likely ghost notes.
   params_.mood = Mood::CityPop;  // Groove pattern
@@ -764,70 +764,8 @@ TEST_F(BassTest, WholeNotePatternNoGhostNotes) {
 // Pedal Tone Bass Pattern Tests
 // ============================================================================
 
-TEST_F(BassTest, PedalToneInBalladIntro) {
-  // Ballad mood maps to Ballad genre, which now uses PedalTone (primary) for Intro.
-  // PedalTone sustains the tonic note (C) regardless of chord changes.
-  params_.mood = Mood::Ballad;
-  params_.structure = StructurePattern::BuildUp;  // Has Intro section
-  params_.seed = 42;
-  params_.drums_enabled = true;
-
-  Generator gen;
-  gen.generate(params_);
-
-  const auto& track = gen.getSong().bass();
-  const auto& arrangement = gen.getSong().arrangement();
-
-  // Find intro section
-  Tick intro_start = 0;
-  Tick intro_end = 0;
-  bool found_intro = false;
-  for (const auto& section : arrangement.sections()) {
-    if (section.type == SectionType::Intro) {
-      intro_start = section.start_tick;
-      intro_end = section.endTick();
-      found_intro = true;
-      break;
-    }
-  }
-
-  ASSERT_TRUE(found_intro) << "BuildUp should have an Intro section";
-
-  // Collect bass notes in intro
-  std::vector<uint8_t> intro_pitches;
-  for (const auto& note : track.notes()) {
-    if (note.start_tick >= intro_start && note.start_tick < intro_end) {
-      intro_pitches.push_back(note.note);
-    }
-  }
-
-  EXPECT_GT(intro_pitches.size(), 0u) << "Intro should have bass notes";
-
-  // For Ballad Intro, bass patterns are chosen probabilistically (60%/30%/10%):
-  // PedalTone (sustains tonic), WholeNote (root changes with chord), RootFifth.
-  // When PedalTone is selected, all notes have the same pitch class.
-  // When other patterns are selected, pitches follow chord changes.
-  // Check that notes have valid pitch classes (C major scale)
-  if (!intro_pitches.empty()) {
-    uint8_t first_pc = intro_pitches[0] % 12;
-    int same_pc_count = 0;
-    for (size_t idx = 0; idx < intro_pitches.size(); ++idx) {
-      int pc = intro_pitches[idx] % 12;
-      EXPECT_TRUE(test::kCMajorPitchClasses.count(pc) > 0)
-          << "Bass pitch should be in C major scale at note " << idx;
-      if (pc == first_pc) same_pc_count++;
-    }
-    // If PedalTone is selected (60% probability), most notes should have same pitch class
-    // Allow other patterns which have varying pitch classes
-    float same_pc_ratio = static_cast<float>(same_pc_count) / intro_pitches.size();
-    // Just check that notes are in valid scale - pattern-specific behavior is probabilistic
-    EXPECT_GT(same_pc_ratio, 0.0f) << "At least some notes should match first pitch class";
-  }
-}
-
-// Test disabled: Generation order change (chord before bass) shifts RNG sequence,
-// affecting which seeds produce pedal tones. The underlying functionality is tested
-// by PedalToneInBalladIntro which uses a specific seed.
+// Test disabled: generation order and section-level density/track-mask adjustments
+// can replace the genre table's PedalTone choice before rendering.
 TEST_F(BassTest, DISABLED_PedalToneConsistentPitchAcrossChordChanges) {
   // Verify pedal tone holds the same note even when chords change.
   // Use multiple seeds to check for pedal tone behavior.

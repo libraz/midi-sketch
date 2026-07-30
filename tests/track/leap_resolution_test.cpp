@@ -18,7 +18,7 @@ using namespace midisketch::melody;
 namespace {
 
 // Chord tones for C major triad: C(0), E(4), G(7)
-const std::vector<int> kCMajChordTones = {0, 4, 7};
+const ChordTones kCMajChordTones = {{0, 4, 7, -1, -1}, 3};
 
 // Run multiple trials to estimate reversal probability.
 // Returns fraction of times reversal was applied (0.0-1.0).

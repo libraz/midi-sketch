@@ -8,6 +8,7 @@
 #include <gtest/gtest.h>
 
 #include <cmath>
+#include <string>
 
 #include "core/production_blueprint.h"
 
@@ -209,6 +210,27 @@ TEST(StructureTest, BuildForDurationMaximumBars) {
   uint16_t total_bars = calculateTotalBars(sections);
 
   EXPECT_LE(total_bars, 150) << "Maximum structure should be around 144 bars";
+}
+
+TEST(StructureTest, DurationOverlayReservesFinalChorusSlotForActualEnding) {
+  const auto& blueprint = getProductionBlueprint(1);  // RhythmLock has a terminal FinalHit chorus.
+  auto sections = buildStructureForDuration(180, blueprint.tempo_default);
+  applyBlueprintOverlay(sections, blueprint);
+
+  std::vector<const Section*> choruses;
+  for (const auto& section : sections) {
+    if (section.type == SectionType::Chorus) choruses.push_back(&section);
+  }
+
+  ASSERT_GT(choruses.size(), 4u) << "The duration path must extend beyond the blueprint flow";
+  EXPECT_EQ(choruses.back()->peak_level, PeakLevel::Max);
+  EXPECT_EQ(choruses.back()->exit_pattern, ExitPattern::FinalHit);
+  for (size_t i = 0; i + 1 < choruses.size(); ++i) {
+    EXPECT_NE(choruses[i]->peak_level, PeakLevel::Max)
+        << "Chorus " << i << ": only the final generated chorus may use the terminal peak slot";
+    EXPECT_NE(choruses[i]->exit_pattern, ExitPattern::FinalHit)
+        << "Chorus " << i << ": only the final generated chorus may use the terminal FinalHit slot";
+  }
 }
 
 TEST(StructureTest, BuildForDurationAnimeHighEnergyReferenceLengthAt130BPM) {
@@ -493,6 +515,68 @@ TEST(StructureTest, ChorusFirstChorusWithin15Seconds) {
 
   // Chorus is immediately available (no intro delay)
 }
+
+struct StructurePatternCase {
+  StructurePattern pattern;
+  const char* name;
+  SectionType first_section;
+  uint16_t total_bars;
+  size_t chorus_count;
+};
+
+class AllStructurePatternsTest : public ::testing::TestWithParam<StructurePatternCase> {};
+
+TEST_P(AllStructurePatternsTest, BuildsExpectedFormWithContiguousTicks) {
+  const auto& test_case = GetParam();
+  const auto sections = buildStructure(test_case.pattern);
+
+  ASSERT_FALSE(sections.empty()) << test_case.name;
+  EXPECT_EQ(sections.front().type, test_case.first_section) << test_case.name;
+  EXPECT_EQ(calculateTotalBars(sections), test_case.total_bars) << test_case.name;
+
+  size_t chorus_count = 0;
+  Tick expected_tick = 0;
+  for (const auto& section : sections) {
+    EXPECT_GT(section.bars, 0) << test_case.name;
+    EXPECT_EQ(section.start_tick, expected_tick) << test_case.name;
+    expected_tick += section.bars * TICKS_PER_BAR;
+    chorus_count += section.type == SectionType::Chorus;
+  }
+  EXPECT_EQ(chorus_count, test_case.chorus_count) << test_case.name;
+  EXPECT_EQ(calculateTotalTicks(sections), expected_tick) << test_case.name;
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    AllForms, AllStructurePatternsTest,
+    ::testing::Values(
+        StructurePatternCase{StructurePattern::StandardPop, "StandardPop", SectionType::A, 24, 1},
+        StructurePatternCase{StructurePattern::BuildUp, "BuildUp", SectionType::Intro, 28, 1},
+        StructurePatternCase{StructurePattern::DirectChorus, "DirectChorus", SectionType::A, 16, 1},
+        StructurePatternCase{StructurePattern::RepeatChorus, "RepeatChorus", SectionType::A, 32, 2},
+        StructurePatternCase{StructurePattern::ShortForm, "ShortForm", SectionType::Intro, 12, 1},
+        StructurePatternCase{StructurePattern::FullPop, "FullPop", SectionType::Intro, 56, 2},
+        StructurePatternCase{StructurePattern::FullWithBridge, "FullWithBridge", SectionType::Intro,
+                             48, 2},
+        StructurePatternCase{StructurePattern::DriveUpbeat, "DriveUpbeat", SectionType::Intro, 48,
+                             3},
+        StructurePatternCase{StructurePattern::Ballad, "Ballad", SectionType::Intro, 60, 2},
+        StructurePatternCase{StructurePattern::AnthemStyle, "AnthemStyle", SectionType::Intro, 56,
+                             3},
+        StructurePatternCase{StructurePattern::ExtendedFull, "ExtendedFull", SectionType::Intro, 88,
+                             4},
+        StructurePatternCase{StructurePattern::ChorusFirst, "ChorusFirst", SectionType::Chorus, 32,
+                             2},
+        StructurePatternCase{StructurePattern::ChorusFirstShort, "ChorusFirstShort",
+                             SectionType::Chorus, 24, 2},
+        StructurePatternCase{StructurePattern::ChorusFirstFull, "ChorusFirstFull",
+                             SectionType::Chorus, 56, 3},
+        StructurePatternCase{StructurePattern::ImmediateVocal, "ImmediateVocal", SectionType::A, 24,
+                             1},
+        StructurePatternCase{StructurePattern::ImmediateVocalFull, "ImmediateVocalFull",
+                             SectionType::A, 48, 2},
+        StructurePatternCase{StructurePattern::AChorusB, "AChorusB", SectionType::A, 32, 2},
+        StructurePatternCase{StructurePattern::DoubleVerse, "DoubleVerse", SectionType::A, 32, 1}),
+    [](const ::testing::TestParamInfo<StructurePatternCase>& info) { return info.param.name; });
 
 TEST(StructureTest, AllNewPatternsProduceValidSections) {
   // Test that all new patterns produce valid section structures

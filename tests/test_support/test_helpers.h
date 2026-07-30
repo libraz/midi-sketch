@@ -8,6 +8,7 @@
 #ifndef MIDISKETCH_TEST_TEST_HELPERS_H
 #define MIDISKETCH_TEST_TEST_HELPERS_H
 
+#include <algorithm>
 #include <cstdint>
 #include <vector>
 
@@ -53,6 +54,46 @@ inline size_t countNotesInRange(const std::vector<NoteEvent>& notes, Tick sectio
     }
   }
   return count;
+}
+
+/// Summary of the longest same-pitch onset run in chronological order.
+struct PitchRun {
+  int length = 0;
+  uint8_t pitch = 0;
+  Tick start_tick = 0;
+};
+
+/// Find the longest run of one pitch after sorting notes by onset then pitch.
+inline PitchRun longestSamePitchRun(const std::vector<NoteEvent>& notes) {
+  if (notes.empty()) return {};
+
+  std::vector<const NoteEvent*> sorted;
+  sorted.reserve(notes.size());
+  for (const auto& note : notes) sorted.push_back(&note);
+  std::sort(sorted.begin(), sorted.end(), [](const NoteEvent* a, const NoteEvent* b) {
+    if (a->start_tick != b->start_tick) return a->start_tick < b->start_tick;
+    return a->note < b->note;
+  });
+
+  PitchRun best{1, sorted.front()->note, sorted.front()->start_tick};
+  int current_length = 1;
+  Tick current_start = sorted.front()->start_tick;
+  for (size_t idx = 1; idx < sorted.size(); ++idx) {
+    if (sorted[idx]->note == sorted[idx - 1]->note) {
+      ++current_length;
+    } else {
+      current_length = 1;
+      current_start = sorted[idx]->start_tick;
+    }
+    if (current_length > best.length) {
+      best = {current_length, sorted[idx]->note, current_start};
+    }
+  }
+  return best;
+}
+
+inline PitchRun longestSamePitchRun(const MidiTrack& track) {
+  return longestSamePitchRun(track.notes());
 }
 
 }  // namespace test

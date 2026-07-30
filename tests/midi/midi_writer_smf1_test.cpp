@@ -8,6 +8,8 @@
 #include <cstring>
 
 #include "core/structure.h"
+#include "midi/byte_order.h"
+#include "midi/midi_reader.h"
 #include "midi/midi_writer.h"
 
 namespace midisketch {
@@ -67,8 +69,7 @@ TEST(MidiWriterSmf1Test, DivisionValue) {
   auto data = writer.toBytes();
 
   // Check division = 480
-  uint16_t division = (data[12] << 8) | data[13];
-  EXPECT_EQ(division, 480);
+  EXPECT_EQ(readUint16BE(data.data() + 12), 480);
 }
 
 TEST(MidiWriterSmf1Test, ContainsMTrkChunk) {
@@ -141,6 +142,45 @@ TEST(MidiWriterSmf1Test, SETrackIsFirstTrack) {
     }
   }
   EXPECT_TRUE(found_se);
+}
+
+TEST(MidiWriterSmf1Test, SECallNotesAreWrittenOnChannel15) {
+  MidiWriter writer;
+  Song song;
+  song.setBpm(120);
+  song.se().addNote(NoteEventBuilder::create(480, 240, 48, 96));
+
+  writer.build(song, Key::C, Mood::StraightPop, "", MidiFormat::SMF1);
+
+  MidiReader reader;
+  ASSERT_TRUE(reader.read(writer.toBytes())) << reader.getError();
+  const auto* se = reader.getParsedMidi().getTrack("SE");
+  ASSERT_NE(se, nullptr);
+  ASSERT_EQ(se->channel, 15);
+  ASSERT_EQ(se->notes.size(), 1u);
+  EXPECT_EQ(se->notes[0].note, 48);
+  EXPECT_EQ(se->notes[0].velocity, 96);
+  EXPECT_EQ(se->notes[0].start_tick, 480u);
+  EXPECT_EQ(se->notes[0].duration, 240u);
+}
+
+TEST(MidiWriterSmf1Test, OverlappingSamePitchNotesAreMerged) {
+  MidiWriter writer;
+  Song song;
+  song.setBpm(120);
+  song.vocal().addNote(NoteEventBuilder::create(0, 960, 60, 90));
+  song.vocal().addNote(NoteEventBuilder::create(480, 960, 60, 110));
+
+  writer.build(song, Key::C, Mood::StraightPop, "", MidiFormat::SMF1);
+
+  MidiReader reader;
+  ASSERT_TRUE(reader.read(writer.toBytes())) << reader.getError();
+  const auto* vocal = reader.getParsedMidi().getTrack("Vocal");
+  ASSERT_NE(vocal, nullptr);
+  ASSERT_EQ(vocal->notes.size(), 1u);
+  EXPECT_EQ(vocal->notes[0].start_tick, 0u);
+  EXPECT_EQ(vocal->notes[0].duration, 1440u);
+  EXPECT_EQ(vocal->notes[0].velocity, 110);
 }
 
 // Helper: Extract first Note On pitch from MIDI data for a given channel

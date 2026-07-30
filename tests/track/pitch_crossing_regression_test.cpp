@@ -3,7 +3,7 @@
  * @brief Regression tests for accompaniment-above-vocal pitch crossings.
  *
  * Mirrors scripts/check_pitch_crossing.py: an accompaniment note (Motif, Aux,
- * Chord, Arpeggio) that temporally overlaps a vocal note must not sound ABOVE
+ * Chord, Arpeggio, Guitar) that temporally overlaps a vocal note must not sound ABOVE
  * it (the vocal owns the top register in pop arrangement).
  *
  * The specific seeds below reproduced violations before the June 2026 fixes:
@@ -43,10 +43,8 @@ std::vector<Crossing> findCrossings(const Song& song) {
   if (vocal_notes.empty()) return crossings;
 
   const std::pair<const MidiTrack*, const char*> tracks[] = {
-      {&song.motif(), "Motif"},
-      {&song.aux(), "Aux"},
-      {&song.chord(), "Chord"},
-      {&song.arpeggio(), "Arpeggio"},
+      {&song.motif(), "Motif"},       {&song.aux(), "Aux"},       {&song.chord(), "Chord"},
+      {&song.arpeggio(), "Arpeggio"}, {&song.guitar(), "Guitar"},
   };
 
   for (const auto& [track, name] : tracks) {

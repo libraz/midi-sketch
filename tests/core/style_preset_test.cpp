@@ -5,6 +5,7 @@
 
 #include <gtest/gtest.h>
 
+#include <limits>
 #include <set>
 
 #include "core/chord.h"
@@ -96,7 +97,8 @@ TEST(StylePresetTest, AnimeHighEnergyMoodUsesReferenceTempoWhenBpmIsAuto) {
   config.mood_explicit = true;
 
   GeneratorParams params = ConfigConverter::convert(config);
-  EXPECT_EQ(params.bpm, 130);
+  EXPECT_EQ(params.bpm, 0);
+  EXPECT_EQ(params.auto_bpm_fallback, 130);
   EXPECT_FALSE(params.bpm_explicit);
 }
 
@@ -324,7 +326,7 @@ TEST(SongConfigTest, CreateDefaultConfig) {
   SongConfig config = createDefaultSongConfig(0);
   EXPECT_EQ(config.style_preset_id, 0);
   EXPECT_EQ(config.key, Key::C);
-  EXPECT_EQ(config.bpm, 122);  // Minimal Groove Pop default
+  EXPECT_EQ(config.bpm, 0);  // Auto tempo remains unresolved until blueprint selection
   EXPECT_EQ(config.seed, 0u);
   EXPECT_EQ(config.vocal_attitude, VocalAttitude::Clean);
   EXPECT_TRUE(config.drums_enabled);
@@ -337,8 +339,9 @@ TEST(SongConfigTest, CreateDefaultConfigDifferentStyles) {
   SongConfig idol = createDefaultSongConfig(2);
 
   // BPM should differ between styles
-  EXPECT_NE(minimal.bpm, dance.bpm);
-  EXPECT_NE(dance.bpm, idol.bpm);
+  EXPECT_EQ(minimal.bpm, 0);
+  EXPECT_EQ(dance.bpm, 0);
+  EXPECT_EQ(idol.bpm, 0);
 
   // Dance Pop Emotion has Expressive default
   EXPECT_EQ(dance.vocal_attitude, VocalAttitude::Expressive);
@@ -364,6 +367,12 @@ TEST(SongConfigTest, ValidateConfigInvalidChord) {
   config.chord_progression_id = 99;
   SongConfigError error = validateSongConfig(config);
   EXPECT_EQ(error, SongConfigError::InvalidChordProgression);
+}
+
+TEST(SongConfigTest, ValidateConfigInvalidMood) {
+  SongConfig config = createDefaultSongConfig(0);
+  config.mood = MOOD_COUNT;
+  EXPECT_EQ(validateSongConfig(config), SongConfigError::InvalidMood);
 }
 
 TEST(SongConfigTest, ValidateConfigInvalidForm) {
@@ -1338,6 +1347,16 @@ TEST(SongConfigValidationTest, InvalidProbabilityRejected) {
   EXPECT_EQ(error, SongConfigError::InvalidProbability);
 }
 
+TEST(SongConfigValidationTest, NaNHumanizeValuesRejected) {
+  SongConfig config = createDefaultSongConfig(0);
+  config.humanize_timing = std::numeric_limits<float>::quiet_NaN();
+  EXPECT_EQ(validateSongConfig(config), SongConfigError::InvalidProbability);
+
+  config = createDefaultSongConfig(0);
+  config.humanize_velocity = std::numeric_limits<float>::quiet_NaN();
+  EXPECT_EQ(validateSongConfig(config), SongConfigError::InvalidProbability);
+}
+
 TEST(SongConfigValidationTest, InvalidArpeggioRangeRejected) {
   SongConfig config = createDefaultSongConfig(0);
   config.arpeggio.octave_range = 4;
@@ -1470,11 +1489,11 @@ TEST(NameLookupTest, FindChordProgressionByName) {
 
   chord = findChordProgressionByName("royal_road");
   ASSERT_TRUE(chord.has_value());
-  EXPECT_EQ(*chord, 3);  // IV-V-iii-vi
+  EXPECT_EQ(*chord, 6);  // Oudou: IV-V-iii-vi
 
   chord = findChordProgressionByName("jazz");
   ASSERT_TRUE(chord.has_value());
-  EXPECT_EQ(*chord, 2);  // ii-V-I-vi
+  EXPECT_EQ(*chord, 17);  // JazzPop: ii-V-I-vi
 }
 
 TEST(NameLookupTest, FindChordProgressionByNameCaseInsensitive) {
@@ -1484,7 +1503,21 @@ TEST(NameLookupTest, FindChordProgressionByNameCaseInsensitive) {
 
   chord = findChordProgressionByName("Royal_Road");
   ASSERT_TRUE(chord.has_value());
-  EXPECT_EQ(*chord, 3);
+  EXPECT_EQ(*chord, 6);
+}
+
+TEST(NameLookupTest, AllCanonicalChordProgressionNamesRoundTrip) {
+  for (uint8_t id = 0; id < CHORD_COUNT; ++id) {
+    auto chord = findChordProgressionByName(getChordProgressionName(id));
+    ASSERT_TRUE(chord.has_value()) << "id=" << static_cast<int>(id);
+    EXPECT_EQ(*chord, id);
+  }
+}
+
+TEST(NameLookupTest, RejectsAliasesForNonexistentProgressions) {
+  EXPECT_FALSE(findChordProgressionByName("minor").has_value());
+  EXPECT_FALSE(findChordProgressionByName("ballad").has_value());
+  EXPECT_FALSE(findChordProgressionByName("blues").has_value());
 }
 
 TEST(NameLookupTest, FindChordProgressionByNameNotFound) {

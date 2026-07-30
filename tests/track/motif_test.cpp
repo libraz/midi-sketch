@@ -15,12 +15,15 @@
 
 #include "core/chord.h"
 #include "core/generator.h"
+#include "core/harmony_coordinator.h"
 #include "core/motif_types.h"
 #include "core/note_source.h"
 #include "core/pitch_utils.h"
 #include "core/timing_constants.h"
 #include "core/types.h"
+#include "test_support/generator_test_fixture.h"
 #include "test_support/stub_harmony_context.h"
+#include "test_support/test_helpers.h"
 
 namespace midisketch {
 
@@ -84,6 +87,94 @@ const Section* findFirstMotifSection(const Song& song, SectionType type) {
   return nullptr;
 }
 
+TEST(MotifSectionBoundaryTest, ClipsFinalCycleNotesToShortSection) {
+  GeneratorParams params;
+  params.mood = Mood::IdolPop;
+  params.seed = 42;
+  params.composition_style = CompositionStyle::BackgroundMotif;
+
+  Section section;
+  section.type = SectionType::A;
+  section.bars = 1;
+  section.start_tick = 0;
+  section.track_mask = TrackMask::Motif;
+
+  Song song;
+  song.setArrangement(Arrangement({section}));
+  HarmonyCoordinator harmony;
+  const auto& progression = getChordProgression(params.chord_id);
+  harmony.initialize(song.arrangement(), progression, params.mood);
+
+  std::mt19937 rng(params.seed);
+  FullTrackContext ctx;
+  ctx.song = &song;
+  ctx.params = &params;
+  ctx.rng = &rng;
+  ctx.harmony = &harmony;
+  ctx.chord_progression = &progression;
+
+  MotifGenerator generator;
+  generator.generateFullTrack(song.motif(), ctx);
+
+  ASSERT_FALSE(song.motif().notes().empty());
+  for (const auto& note : song.motif().notes()) {
+    EXPECT_LE(note.start_tick + note.duration, section.endTick());
+  }
+}
+
+TEST(MotifSectionBoundaryTest, FreePolicyRerollsFullSongPatternForEachSection) {
+  GeneratorParams params;
+  params.mood = Mood::IdolPop;
+  params.seed = 42;
+  params.composition_style = CompositionStyle::BackgroundMotif;
+  params.riff_policy = RiffPolicy::Free;
+  params.motif.repeat_scope = MotifRepeatScope::FullSong;
+
+  Section first;
+  first.type = SectionType::A;
+  first.name = "A1";
+  first.bars = 2;
+  first.start_tick = 0;
+  first.track_mask = TrackMask::Motif;
+  Section second = first;
+  second.name = "A2";
+  second.start_bar = first.bars;
+  second.start_tick = first.endTick();
+
+  Song song;
+  song.setArrangement(Arrangement({first, second}));
+  test::StubHarmonyContext harmony;
+  harmony.setAllPitchesSafe(true);
+  const auto& progression = getChordProgression(params.chord_id);
+  std::mt19937 rng(params.seed);
+  FullTrackContext ctx;
+  ctx.song = &song;
+  ctx.params = &params;
+  ctx.rng = &rng;
+  ctx.harmony = &harmony;
+  ctx.chord_progression = &progression;
+
+  MotifGenerator generator;
+  generator.generateFullTrack(song.motif(), ctx);
+
+  const auto signature = [&song](const Section& section) {
+    std::vector<std::pair<Tick, uint8_t>> notes;
+    for (const auto& note : song.motif().notes()) {
+      if (note.start_tick >= section.start_tick && note.start_tick < section.endTick()) {
+        notes.emplace_back(note.start_tick - section.start_tick, note.note);
+      }
+    }
+    return notes;
+  };
+
+  const auto first_signature = signature(first);
+  const auto second_signature = signature(second);
+  ASSERT_FALSE(first_signature.empty());
+  ASSERT_FALSE(second_signature.empty());
+  EXPECT_NE(first_signature, second_signature)
+      << "Free policy must not reuse a FullSong motif pattern in the next section";
+}
+
 double averageMotifPitch(const std::vector<const NoteEvent*>& notes) {
   if (notes.empty()) {
     return 0.0;
@@ -116,10 +207,8 @@ TEST_F(MotifDissonanceTest, AvoidsTritoneWithBassInBGMMode) {
   const auto& motif_notes = gen.getSong().motif().notes();
   const auto& bass_notes = gen.getSong().bass().notes();
 
-  // Skip if no motif notes (some configs might not generate motif)
-  if (motif_notes.empty()) {
-    GTEST_SKIP() << "No motif notes generated";
-  }
+  ASSERT_FALSE(motif_notes.empty()) << "BGM fixture must generate Motif notes";
+  ASSERT_FALSE(bass_notes.empty()) << "BGM fixture must generate Bass notes";
 
   int tritone_clashes = 0;
 
@@ -279,9 +368,7 @@ TEST_F(MotifDissonanceTest, AdjustsAvoidNotesToChordTones) {
 
   const auto& motif_notes = gen.getSong().motif().notes();
 
-  if (motif_notes.empty()) {
-    GTEST_SKIP() << "No motif notes generated";
-  }
+  ASSERT_FALSE(motif_notes.empty()) << "BGM fixture must generate Motif notes";
 
   // Verify motif notes exist and are in valid MIDI range
   for (const auto& note : motif_notes) {
@@ -315,9 +402,8 @@ TEST_F(MotifDissonanceTest, BGMGenerationOrderAllowsClashAvoidance) {
   const auto& motif_notes = gen.getSong().motif().notes();
   const auto& bass_notes = gen.getSong().bass().notes();
 
-  if (motif_notes.empty() || bass_notes.empty()) {
-    GTEST_SKIP() << "No motif or bass notes generated";
-  }
+  ASSERT_FALSE(motif_notes.empty()) << "BGM fixture must generate Motif notes";
+  ASSERT_FALSE(bass_notes.empty()) << "BGM fixture must generate Bass notes";
 
   int dissonant_clashes = 0;
 
@@ -366,9 +452,8 @@ TEST_F(MotifDissonanceTest, BGMGenerationOrderSecondFile) {
   const auto& motif_notes = gen.getSong().motif().notes();
   const auto& bass_notes = gen.getSong().bass().notes();
 
-  if (motif_notes.empty() || bass_notes.empty()) {
-    GTEST_SKIP() << "No motif or bass notes generated";
-  }
+  ASSERT_FALSE(motif_notes.empty()) << "BGM fixture must generate Motif notes";
+  ASSERT_FALSE(bass_notes.empty()) << "BGM fixture must generate Bass notes";
 
   int dissonant_clashes = 0;
 
@@ -431,9 +516,7 @@ TEST_F(MotifRhythmDistributionTest, NotesSpanFullMotifLength) {
   gen.generate(params_);
 
   const auto& motif_pattern = gen.getSong().motifPattern();
-  if (motif_pattern.empty()) {
-    GTEST_SKIP() << "No motif pattern generated";
-  }
+  ASSERT_FALSE(motif_pattern.empty()) << "Motif fixture must generate a pattern";
 
   // Find the maximum start tick in the pattern
   Tick max_tick = 0;
@@ -460,9 +543,8 @@ TEST_F(MotifRhythmDistributionTest, CallAndResponseDistribution) {
   gen.generate(params_);
 
   const auto& motif_pattern = gen.getSong().motifPattern();
-  if (motif_pattern.size() < 4) {
-    GTEST_SKIP() << "Not enough notes in motif pattern for distribution test";
-  }
+  ASSERT_GE(motif_pattern.size(), 4u)
+      << "Motif fixture must generate enough pattern notes for distribution analysis";
 
   // Count notes in first half vs second half
   constexpr Tick HALF_MOTIF = TICKS_PER_BAR;  // 1920 ticks for 2-bar motif
@@ -527,7 +609,7 @@ TEST_F(MotifRhythmDistributionTest, DistributionConsistentAcrossSeeds) {
 // =============================================================================
 // Bug: Density filter and collision avoidance could create full-bar silence,
 // making the motif track sound discontinuous and broken.
-// Fix: Added bar coverage guard and getBestAvailablePitch() instead of note deletion.
+// Fix: Added a bar coverage guard and collision-safe candidate selection instead of note deletion.
 
 class MotifMelodicContinuityTest : public ::testing::Test {
  protected:
@@ -1389,9 +1471,7 @@ TEST_F(MotifLockedCacheTest, SameSectionTypeHasConsistentNotes) {
   const auto& motif_notes = gen.getSong().motif().notes();
   const auto& sections = gen.getSong().arrangement().sections();
 
-  if (motif_notes.empty()) {
-    GTEST_SKIP() << "No motif notes generated";
-  }
+  ASSERT_FALSE(motif_notes.empty()) << "Locked-cache fixture must generate Motif notes";
 
   // Group motif-enabled sections by type, collecting notes per section instance
   struct RelativeNote {
@@ -2411,29 +2491,6 @@ TEST_F(MotifVocalCeilingTest, TraditionalMotifStaysAtOrBelowVocal) {
 
 namespace {
 
-// Longest run of identical consecutive pitches in start-tick order.
-int longestSamePitchRun(const std::vector<NoteEvent>& notes) {
-  if (notes.empty()) return 0;
-  std::vector<const NoteEvent*> sorted;
-  sorted.reserve(notes.size());
-  for (const auto& n : notes) sorted.push_back(&n);
-  std::sort(sorted.begin(), sorted.end(), [](const NoteEvent* a, const NoteEvent* b) {
-    if (a->start_tick != b->start_tick) return a->start_tick < b->start_tick;
-    return a->note < b->note;
-  });
-  int best = 1;
-  int cur = 1;
-  for (size_t i = 1; i < sorted.size(); ++i) {
-    if (sorted[i]->note == sorted[i - 1]->note) {
-      ++cur;
-      best = std::max(best, cur);
-    } else {
-      cur = 1;
-    }
-  }
-  return best;
-}
-
 int distinctPitchCount(const std::vector<NoteEvent>& notes) {
   std::set<uint8_t> pitches;
   for (const auto& n : notes) pitches.insert(n.note);
@@ -2442,9 +2499,10 @@ int distinctPitchCount(const std::vector<NoteEvent>& notes) {
 
 }  // namespace
 
-class MotifVarietyTest : public ::testing::Test {
+class MotifVarietyTest : public test::GeneratorTestFixture {
  protected:
   void SetUp() override {
+    GeneratorTestFixture::SetUp();
     params_.structure = StructurePattern::FullPop;
     params_.mood = Mood::IdolPop;
     params_.chord_id = 0;
@@ -2453,8 +2511,6 @@ class MotifVarietyTest : public ::testing::Test {
     params_.bpm = 132;
     params_.composition_style = CompositionStyle::BackgroundMotif;
   }
-
-  GeneratorParams params_;
 };
 
 // BP5 (IdolHyper, RhythmSync + Locked): the motif is the coordinate axis. Across
@@ -2472,7 +2528,7 @@ TEST_F(MotifVarietyTest, RhythmSyncMotifHasBoundedRunsAndVariety) {
     ASSERT_GE(motif_notes.size(), 8u) << "seed=" << seed << ": expected an active motif track";
 
     int distinct = distinctPitchCount(motif_notes);
-    int run = longestSamePitchRun(motif_notes);
+    int run = test::longestSamePitchRun(motif_notes).length;
 
     EXPECT_GE(distinct, 6) << "seed=" << seed << ": motif uses only " << distinct
                            << " distinct pitches (too concentrated)";
@@ -2502,7 +2558,7 @@ TEST_F(MotifVarietyTest, MelodyDrivenMotifHasBoundedRunsAndVariety) {
     ASSERT_GE(motif_notes.size(), 8u) << "seed=" << seed << ": expected an active motif track";
 
     int distinct = distinctPitchCount(motif_notes);
-    int run = longestSamePitchRun(motif_notes);
+    int run = test::longestSamePitchRun(motif_notes).length;
 
     EXPECT_GE(distinct, 6) << "seed=" << seed << ": motif uses only " << distinct
                            << " distinct pitches (too concentrated)";

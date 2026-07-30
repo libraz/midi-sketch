@@ -10,6 +10,7 @@
 
 #include <cstdlib>
 #include <map>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -151,9 +152,15 @@ TEST_F(ChordCollisionRegressionTest, TotalClashCountBelowThreshold) {
 
     auto all_clashes = test::analyzeAllTrackPairs(song, harmony);
 
+    std::ostringstream details;
+    for (const auto& clash : all_clashes) {
+      details << "\n  tick=" << clash.tick << " " << clash.track_a << "("
+              << static_cast<int>(clash.pitch_a) << ")-" << clash.track_b << "("
+              << static_cast<int>(clash.pitch_b) << ") interval=" << clash.interval;
+    }
     EXPECT_LE(all_clashes.size(), kMaxTotalClashes)
         << "Too many total clashes for blueprint=" << (int)blueprint << " (found "
-        << all_clashes.size() << ")";
+        << all_clashes.size() << ")" << details.str();
   }
 }
 

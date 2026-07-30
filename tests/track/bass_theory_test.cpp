@@ -30,6 +30,7 @@
 #include "core/timing_constants.h"
 #include "core/types.h"
 #include "test_support/collision_test_helper.h"
+#include "test_support/generator_test_fixture.h"
 #include "track/generators/bass.h"
 
 namespace midisketch {
@@ -161,21 +162,13 @@ std::vector<std::pair<Tick, uint8_t>> findNonDiatonicNotes(const MidiTrack& trac
   return non_diatonic;
 }
 
-class BassDiatonicTest : public ::testing::Test {
+class BassDiatonicTest : public test::GeneratorTestFixture {
  protected:
   void SetUp() override {
-    params_.structure = StructurePattern::StandardPop;
-    params_.mood = Mood::ElectroPop;
-    params_.chord_id = 0;
-    params_.key = Key::C;
+    GeneratorTestFixture::SetUp();
     params_.drums_enabled = true;
-    params_.vocal_low = 60;
     params_.vocal_high = 79;
-    params_.bpm = 120;
-    params_.arpeggio_enabled = false;
   }
-
-  GeneratorParams params_;
 };
 
 // Test: All bass notes must be diatonic to C major (strict)
@@ -817,14 +810,16 @@ struct NonChordToneInfo {
   bool is_strong_beat;
 };
 
-class BassChordToneTest : public ::testing::Test {
+class BassChordToneTest : public test::GeneratorTestFixture {
  protected:
   void SetUp() override {
+    GeneratorTestFixture::SetUp();
     params_.seed = 42;
     params_.blueprint_id = 1;  // RhythmLock (RhythmSync paradigm)
-    params_.key = Key::C;
-    params_.chord_id = 0;
-    params_.humanize = false;
+    params_.mood = Mood::StraightPop;
+    params_.drums_enabled = true;
+    params_.vocal_high = 79;
+    params_.bpm = 0;
   }
 
   bool isChordTone(int pitch_class, int8_t degree) {
@@ -909,8 +904,6 @@ class BassChordToneTest : public ::testing::Test {
     }
     return oss.str();
   }
-
-  GeneratorParams params_;
 };
 
 TEST_F(BassChordToneTest, DiagnoseRhythmLockSeed42NonChordTones) {

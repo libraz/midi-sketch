@@ -100,15 +100,10 @@ TEST_F(UmpTest, WriteDeltaClockstampLarge) {
 
 TEST_F(UmpTest, WriteDCTPQ) {
   writeDCTPQ(buf_, 480);
-  ASSERT_EQ(buf_.size(), 16);  // 128-bit = 4 words
+  ASSERT_EQ(buf_.size(), 4);
 
-  // Word 0: [MT=F][Format=0][Status=0][Form=0][0]
   uint32_t word0 = (buf_[0] << 24) | (buf_[1] << 16) | (buf_[2] << 8) | buf_[3];
-  EXPECT_EQ((word0 >> 28) & 0xF, 0xF);  // MT = F
-
-  // Word 1: [TPQN][0]
-  uint32_t word1 = (buf_[4] << 24) | (buf_[5] << 16) | (buf_[6] << 8) | buf_[7];
-  EXPECT_EQ((word1 >> 16) & 0xFFFF, 480);
+  EXPECT_EQ(word0, 0x003001E0u);
 }
 
 TEST_F(UmpTest, WriteStartOfClip) {
@@ -138,7 +133,27 @@ TEST_F(UmpTest, WriteTempo) {
   EXPECT_EQ((word0 >> 28) & 0xF, 0xD);  // MT = D (Flex Data)
 
   uint32_t word1 = (buf_[4] << 24) | (buf_[5] << 16) | (buf_[6] << 8) | buf_[7];
-  EXPECT_EQ(word1, 500000);
+  EXPECT_EQ(word1, 50000000u);
+}
+
+TEST_F(UmpTest, SysEx8ContinuationDoesNotInjectNullPayloadBytes) {
+  const std::string text = "abcdefghijklmnopqrstuvwxyz0123456789";
+  writeMetadataText(buf_, 0, text);
+  ASSERT_EQ(buf_.size() % 16, 0u);
+
+  std::vector<uint8_t> decoded;
+  for (size_t packet = 0; packet < buf_.size(); packet += 16) {
+    const uint8_t count = buf_[packet + 1] & 0x0F;
+    ASSERT_LE(count, 13u);
+    if (count > 0) decoded.push_back(buf_[packet + 3]);
+    for (size_t idx = 1; idx < count; ++idx) {
+      decoded.push_back(buf_[packet + 3 + idx]);
+    }
+  }
+  const std::vector<uint8_t> expected_header = {0, 0, 0, 0, 0, 0xFF, 0xFF, 0xFF, 0x01};
+  ASSERT_GE(decoded.size(), expected_header.size());
+  EXPECT_TRUE(std::equal(expected_header.begin(), expected_header.end(), decoded.begin()));
+  EXPECT_EQ(std::string(decoded.begin() + expected_header.size(), decoded.end()), text);
 }
 
 TEST_F(UmpTest, WriteTimeSignature) {
@@ -177,9 +192,7 @@ TEST_F(UmpTest, ClipFileStructure) {
   writeDeltaClockstamp(buf_, 0, 0);
   writeEndOfClip(buf_);
 
-  // Check total size
-  // 4 + 16 + 4 + 16 + 4 + 4 + 4 + 4 + 4 + 16 = 76 bytes
-  EXPECT_EQ(buf_.size(), 76);
+  EXPECT_EQ(buf_.size(), 64);
 }
 
 }  // namespace

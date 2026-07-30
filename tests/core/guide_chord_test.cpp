@@ -46,6 +46,23 @@ TEST(GuideChordTest, PhantomNoteRegistration) {
   EXPECT_TRUE(consonant) << "Phantom notes should be invisible to collision detection";
 }
 
+TEST(GuideChordTest, PhantomNotesAreExcludedFromSoundingQueries) {
+  TrackCollisionDetector detector;
+  detector.registerNote(0, TICKS_PER_BEAT, 60, TrackRole::Chord);         // C4, real
+  detector.registerPhantomNote(0, TICKS_PER_BEAT, 36, TrackRole::Chord);  // C2, guide
+  detector.registerPhantomNote(0, TICKS_PER_BEAT, 84, TrackRole::Vocal);  // C6, guide
+
+  EXPECT_EQ(detector.getPitchClassesFromTrackAt(0, TrackRole::Chord), (std::vector<int>{0}));
+  EXPECT_EQ(detector.getPitchClassesFromTrackInRange(0, TICKS_PER_BEAT, TrackRole::Chord),
+            (std::vector<int>{0}));
+  EXPECT_EQ(detector.getSoundingPitchClasses(0, TICKS_PER_BEAT, TrackRole::Bass),
+            (std::vector<int>{0}));
+  EXPECT_EQ(detector.getSoundingPitches(0, TICKS_PER_BEAT, TrackRole::Bass),
+            (std::vector<uint8_t>{60}));
+  EXPECT_EQ(detector.getHighestPitchForTrackInRange(0, TICKS_PER_BEAT, TrackRole::Vocal), 0);
+  EXPECT_EQ(detector.getLowestPitchForTrackInRange(0, TICKS_PER_BEAT, TrackRole::Chord), 60);
+}
+
 TEST(GuideChordTest, PhantomNoteClear) {
   TrackCollisionDetector detector;
 

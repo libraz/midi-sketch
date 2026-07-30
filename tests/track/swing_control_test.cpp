@@ -8,7 +8,9 @@
 #include "core/generator.h"
 #include "core/section_types.h"
 #include "core/timing_constants.h"
+#include "test_support/generator_test_fixture.h"
 #include "track/drums.h"
+#include "track/drums/drum_constants.h"
 
 namespace midisketch {
 namespace {
@@ -17,37 +19,30 @@ namespace {
 // Swing Control Integration Tests
 // ============================================================================
 
-class SwingControlTest : public ::testing::Test {
+class SwingControlTest : public test::GeneratorTestFixture {
  protected:
   void SetUp() override {
-    params_.key = Key::C;
-    params_.bpm = 120;
+    GeneratorTestFixture::SetUp();
     params_.mood = Mood::CityPop;  // CityPop has swing
-    params_.chord_id = 0;
     params_.drums_enabled = true;
     params_.structure = StructurePattern::BuildUp;
-    params_.seed = 42;
-    params_.vocal_low = 60;
     params_.vocal_high = 72;
   }
-
-  GeneratorParams params_;
-  Generator generator_;
 };
 
 TEST_F(SwingControlTest, SwingMoodGeneratesDrums) {
-  generator_.generate(params_);
+  generate();
 
-  const auto& drums = generator_.getSong().drums();
+  const auto& drums = song().drums();
   EXPECT_GT(drums.notes().size(), 0) << "Drums should have notes";
 }
 
 TEST_F(SwingControlTest, StraightMoodGeneratesDrums) {
   params_.mood = Mood::EnergeticDance;  // Dance is typically straight
 
-  generator_.generate(params_);
+  generate();
 
-  const auto& drums = generator_.getSong().drums();
+  const auto& drums = song().drums();
   EXPECT_GT(drums.notes().size(), 0) << "Drums should have notes";
 }
 
@@ -55,8 +50,8 @@ TEST_F(SwingControlTest, DifferentMoodsProduceDifferentTiming) {
   // Generate with swing mood
   params_.mood = Mood::CityPop;
   params_.seed = 100;
-  generator_.generate(params_);
-  const auto& swing_drums = generator_.getSong().drums();
+  generate();
+  const auto& swing_drums = song().drums();
 
   // Generate with straight mood using same seed
   Generator generator2;
@@ -72,21 +67,63 @@ TEST_F(SwingControlTest, DifferentMoodsProduceDifferentTiming) {
   // This test just ensures both generate successfully
 }
 
+TEST_F(SwingControlTest, SwingMoodsMoveHiHatsOffTheStraightSixteenthGrid) {
+  // This verifies emitted MIDI events rather than only the swing helper.  The
+  // selected moods cover both Swing and Shuffle groove mappings.
+  for (Mood mood : {Mood::CityPop, Mood::RnBNeoSoul, Mood::Lofi}) {
+    Generator generator;
+    params_.mood = mood;
+    params_.structure = StructurePattern::StandardPop;
+    params_.seed = 42;
+    generator.generate(params_);
+
+    bool found_hi_hat = false;
+    bool found_swung_hi_hat = false;
+    for (const auto& note : generator.getSong().drums().notes()) {
+      if (note.note != drums::CHH && note.note != drums::OHH && note.note != drums::FHH) continue;
+      found_hi_hat = true;
+      if (note.start_tick % TICK_SIXTEENTH != 0) {
+        found_swung_hi_hat = true;
+        break;
+      }
+    }
+
+    EXPECT_TRUE(found_hi_hat) << "Mood " << static_cast<int>(mood) << " generated no hi-hats";
+    EXPECT_TRUE(found_swung_hi_hat)
+        << "Mood " << static_cast<int>(mood) << " did not swing any emitted hi-hat tick";
+  }
+}
+
+TEST_F(SwingControlTest, StraightMoodKeepsHiHatsOnTheSixteenthGrid) {
+  params_.mood = Mood::StraightPop;
+  params_.structure = StructurePattern::StandardPop;
+  params_.seed = 42;
+  generate();
+
+  bool found_hi_hat = false;
+  for (const auto& note : song().drums().notes()) {
+    if (note.note != drums::CHH && note.note != drums::OHH && note.note != drums::FHH) continue;
+    found_hi_hat = true;
+    EXPECT_EQ(note.start_tick % TICK_SIXTEENTH, 0u) << "Unexpected swung tick " << note.start_tick;
+  }
+  EXPECT_TRUE(found_hi_hat);
+}
+
 TEST_F(SwingControlTest, BalladHasSwingFeel) {
   params_.mood = Mood::Ballad;
 
-  generator_.generate(params_);
+  generate();
 
-  const auto& drums = generator_.getSong().drums();
+  const auto& drums = song().drums();
   // Ballad should have drums (though sparse)
   EXPECT_GT(drums.notes().size(), 0) << "Ballad should have drums";
 }
 
 TEST_F(SwingControlTest, DrumsGeneratedForAllSections) {
-  generator_.generate(params_);
+  generate();
 
-  const auto& drums = generator_.getSong().drums();
-  const auto& sections = generator_.getSong().arrangement().sections();
+  const auto& drums = song().drums();
+  const auto& sections = song().arrangement().sections();
 
   // Check that we have drums in multiple sections
   size_t sections_with_drums = 0;
@@ -113,10 +150,10 @@ TEST_F(SwingControlTest, DrumsGeneratedForAllSections) {
 TEST_F(SwingControlTest, ChorusSectionHasDrums) {
   params_.structure = StructurePattern::StandardPop;  // A -> B -> Chorus
 
-  generator_.generate(params_);
+  generate();
 
-  const auto& drums = generator_.getSong().drums();
-  const auto& sections = generator_.getSong().arrangement().sections();
+  const auto& drums = song().drums();
+  const auto& sections = song().arrangement().sections();
 
   // Find chorus section
   for (const auto& section : sections) {
@@ -138,10 +175,10 @@ TEST_F(SwingControlTest, ChorusSectionHasDrums) {
 TEST_F(SwingControlTest, IntroSectionHasDrums) {
   params_.structure = StructurePattern::BuildUp;  // Intro -> A -> B -> Chorus
 
-  generator_.generate(params_);
+  generate();
 
-  const auto& drums = generator_.getSong().drums();
-  const auto& sections = generator_.getSong().arrangement().sections();
+  const auto& drums = song().drums();
+  const auto& sections = song().arrangement().sections();
 
   // Find intro section
   for (const auto& section : sections) {

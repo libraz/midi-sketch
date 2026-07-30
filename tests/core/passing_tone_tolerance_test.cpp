@@ -9,6 +9,7 @@
 #include <gtest/gtest.h>
 
 #include "core/basic_types.h"
+#include "core/timing_constants.h"
 #include "core/track_collision_detector.h"
 
 namespace midisketch {
@@ -150,8 +151,7 @@ class PassingToneCollisionTest : public ::testing::Test {
 
   // Register a long sustained note from a MELODIC track (Aux). The passing
   // tone tolerance only applies between melodic tracks: sustained harmony
-  // roles (Chord/Guitar) and the lead Vocal are excluded on either side,
-  // matching the dissonance analyzer which counts those overlaps.
+  // roles (Chord/Guitar) are excluded on either side.
   void registerLongMelodicNote(uint8_t pitch, Tick start = 0, Tick duration = 1920) {
     detector_.registerNote(start, duration, pitch, TrackRole::Aux);
   }
@@ -182,6 +182,20 @@ TEST_F(PassingToneCollisionTest, ShortM1WeakBeatIsConsonant) {
   EXPECT_TRUE(detector_.isConsonantWithOtherTracks(61, 480, 120, TrackRole::Motif));
 }
 
+TEST_F(PassingToneCollisionTest, LeadVocalUsesSameBriefPassingTonePolicy) {
+  registerLongMelodicNote(60, 0, 1920);
+
+  EXPECT_TRUE(detector_.isConsonantWithOtherTracks(61, 480, 120, TrackRole::Vocal));
+}
+
+TEST_F(PassingToneCollisionTest, AccentedSuspensionRequiresExplicitResolutionContext) {
+  detector_.registerNote(0, TICKS_PER_BEAT, 64, TrackRole::Chord);
+
+  EXPECT_FALSE(detector_.isConsonantWithOtherTracks(65, 0, TICK_EIGHTH, TrackRole::Vocal));
+  EXPECT_TRUE(
+      detector_.isConsonantWithOtherTracks(65, 0, TICK_EIGHTH, TrackRole::Vocal, nullptr, true));
+}
+
 TEST_F(PassingToneCollisionTest, ShortM1StrongBeatIsDissonant) {
   // Aux holds C4 for a whole bar
   registerLongMelodicNote(60, 0, 1920);
@@ -206,6 +220,28 @@ TEST_F(PassingToneCollisionTest, StrongBeatUsesOverlapStartNotCandidateStart) {
   auto snapshot = detector_.getCollisionSnapshot(kStrongBeat3, TICKS_PER_BEAT);
   ASSERT_EQ(snapshot.clashes.size(), 1u);
   EXPECT_EQ(snapshot.clashes[0].interval_semitones, 1);
+}
+
+TEST_F(PassingToneCollisionTest, DebugSnapshotUsesCanonicalActualIntervals) {
+  detector_.registerNote(0, 480, 60, TrackRole::Aux);
+  detector_.registerNote(0, 480, 74, TrackRole::Motif);  // Major 9th: acceptable
+
+  EXPECT_TRUE(detector_.getCollisionSnapshot(0, 480).clashes.empty());
+
+  detector_.registerNote(0, 480, 66, TrackRole::Chord);  // Tritone above C4
+  auto snapshot = detector_.getCollisionSnapshot(0, 480);
+
+  ASSERT_EQ(snapshot.clashes.size(), 1u);
+  EXPECT_EQ(snapshot.clashes[0].interval_semitones, 6);
+  EXPECT_EQ(snapshot.clashes[0].interval_name, "tritone");
+  EXPECT_NE(detector_.dumpNotesAt(0, 480).find("tritone"), std::string::npos);
+}
+
+TEST_F(PassingToneCollisionTest, MaxSafeEndPreservesBriefPassingSecond) {
+  detector_.registerNote(kWeakBeat, 120, 60, TrackRole::Aux);
+
+  EXPECT_EQ(detector_.getMaxSafeEnd(0, 62, TrackRole::Motif, TICKS_PER_BEAT * 2),
+            TICKS_PER_BEAT * 2);
 }
 
 TEST_F(PassingToneCollisionTest, LowRegisterNotTolerated) {

@@ -1,4 +1,12 @@
 import createModule from '../../dist/midisketch.js';
+import { serializeConfig } from '../../js/src/config-fields';
+import type { SongConfig } from '../../js/src/types';
+
+const NO_COLLISION: Readonly<CollisionInfo> = Object.freeze({
+  trackRole: 0,
+  collidingPitch: 0,
+  intervalSemitones: 0,
+});
 
 export interface WasmModule {
   cwrap: (
@@ -94,193 +102,34 @@ export interface AccompanimentConfigOptions {
 }
 
 /**
- * Serialize a SongConfigOptions object to a C++ SongConfig JSON string.
+ * Serialize test options through the public SongConfig serializer.
  *
- * Maps JS camelCase field names to C++ snake_case field names.
- * Handles nested structs (arpeggio, chord_extension, motif_chord) and
- * value conversions (gate/probability from 0-100 integer to 0-1 float,
- * humanize timing/velocity from 0-100 integer to 0-1 float).
+ * The legacy test inputs express the five fractional controls as percentages;
+ * normalize only those values before delegating every field mapping to the
+ * package code that users receive.
  */
 function serializeSongConfig(config: SongConfigOptions): string {
-  const obj: Record<string, unknown> = {};
-
-  // Top-level flat fields
-  if (config.stylePresetId !== undefined) {
-    obj.style_preset_id = config.stylePresetId;
-  }
-  if (config.key !== undefined) {
-    obj.key = config.key;
-  }
-  if (config.bpm !== undefined) {
-    obj.bpm = config.bpm;
-  }
-  if (config.seed !== undefined) {
-    obj.seed = config.seed;
-  }
-  if (config.chordProgressionId !== undefined) {
-    obj.chord_progression_id = config.chordProgressionId;
-  }
-  if (config.formId !== undefined) {
-    obj.form = config.formId;
-  }
-  if (config.vocalAttitude !== undefined) {
-    obj.vocal_attitude = config.vocalAttitude;
-  }
-  if (config.drumsEnabled !== undefined) {
-    obj.drums_enabled = config.drumsEnabled;
-  }
-  if (config.blueprintId !== undefined) {
-    obj.blueprint_id = config.blueprintId;
-  }
-  if (config.arpeggioEnabled !== undefined) {
-    obj.arpeggio_enabled = config.arpeggioEnabled;
-  }
-  if (config.vocalLow !== undefined) {
-    obj.vocal_low = config.vocalLow;
-  }
-  if (config.vocalHigh !== undefined) {
-    obj.vocal_high = config.vocalHigh;
-  }
-  if (config.skipVocal !== undefined) {
-    obj.skip_vocal = config.skipVocal;
-  }
-  if (config.humanize !== undefined) {
-    obj.humanize = config.humanize;
-  }
-  if (config.compositionStyle !== undefined) {
-    obj.composition_style = config.compositionStyle;
-  }
-  if (config.targetDurationSeconds !== undefined) {
-    obj.target_duration_seconds = config.targetDurationSeconds;
-  }
-  if (config.modulationTiming !== undefined) {
-    obj.modulation_timing = config.modulationTiming;
-  }
-  if (config.modulationSemitones !== undefined) {
-    obj.modulation_semitones = config.modulationSemitones;
-  }
-  if (config.seEnabled !== undefined) {
-    obj.se_enabled = config.seEnabled;
-  }
-  if (config.callNotesEnabled !== undefined) {
-    obj.call_notes_enabled = config.callNotesEnabled;
-  }
-  if (config.introChant !== undefined) {
-    obj.intro_chant = config.introChant;
-  }
-  if (config.mixPattern !== undefined) {
-    obj.mix_pattern = config.mixPattern;
-  }
-  if (config.callDensity !== undefined) {
-    obj.call_density = config.callDensity;
-  }
-  if (config.vocalStyle !== undefined) {
-    obj.vocal_style = config.vocalStyle;
-  }
-  if (config.melodyTemplate !== undefined) {
-    obj.melody_template = config.melodyTemplate;
-  }
-  if (config.arrangementGrowth !== undefined) {
-    obj.arrangement_growth = config.arrangementGrowth;
-  }
-  if (config.motifRepeatScope !== undefined) {
-    obj.motif_repeat_scope = config.motifRepeatScope;
-  }
-  if (config.melodicComplexity !== undefined) {
-    obj.melodic_complexity = config.melodicComplexity;
-  }
-  if (config.hookIntensity !== undefined) {
-    obj.hook_intensity = config.hookIntensity;
-  }
-  if (config.vocalGroove !== undefined) {
-    obj.vocal_groove = config.vocalGroove;
-  }
-
-  // Special mapping: callEnabled (bool) -> call_setting (enum)
-  // CallSetting: 0=Auto, 1=Enabled, 2=Disabled
-  // For predictable tests: true -> Enabled(1), false/undefined -> Disabled(2)
-  if (config.callEnabled !== undefined) {
-    obj.call_setting = config.callEnabled === true ? 1 : 2;
-  } else {
-    obj.call_setting = 2; // Disabled for predictable tests
-  }
-
-  // Humanize timing/velocity: test uses 0-100 integer, SongConfig uses 0-1 float
-  if (config.humanizeTiming !== undefined) {
-    obj.humanize_timing = config.humanizeTiming / 100;
-  }
-  if (config.humanizeVelocity !== undefined) {
-    obj.humanize_velocity = config.humanizeVelocity / 100;
-  }
-
-  // Nested struct: arpeggio
-  const arpeggio: Record<string, unknown> = {};
-  if (config.arpeggioPattern !== undefined) {
-    arpeggio.pattern = config.arpeggioPattern;
-  }
-  if (config.arpeggioSpeed !== undefined) {
-    arpeggio.speed = config.arpeggioSpeed;
-  }
-  if (config.arpeggioOctaveRange !== undefined) {
-    arpeggio.octave_range = config.arpeggioOctaveRange;
-  }
-  if (config.arpeggioSyncChord !== undefined) {
-    arpeggio.sync_chord = config.arpeggioSyncChord;
-  }
-  // Gate: test uses 0-100 integer, SongConfig arpeggio.gate is 0-1 float
-  if (config.arpeggioGate !== undefined) {
-    arpeggio.gate = config.arpeggioGate / 100;
-  }
-  if (Object.keys(arpeggio).length > 0) {
-    obj.arpeggio = arpeggio;
-  }
-
-  // Nested struct: chord_extension
-  const chordExt: Record<string, unknown> = {};
-  if (config.chordExtSus !== undefined) {
-    chordExt.enable_sus = config.chordExtSus;
-  }
-  if (config.chordExt7th !== undefined) {
-    chordExt.enable_7th = config.chordExt7th;
-  }
-  if (config.chordExt9th !== undefined) {
-    chordExt.enable_9th = config.chordExt9th;
-  }
-  // Probabilities: test uses 0-100 integer, SongConfig uses 0-1 float
-  if (config.chordExtSusProb !== undefined) {
-    chordExt.sus_probability = config.chordExtSusProb / 100;
-  }
-  if (config.chordExt7thProb !== undefined) {
-    chordExt.seventh_probability = config.chordExt7thProb / 100;
-  }
-  if (config.chordExt9thProb !== undefined) {
-    chordExt.ninth_probability = config.chordExt9thProb / 100;
-  }
-  if (Object.keys(chordExt).length > 0) {
-    obj.chord_extension = chordExt;
-  }
-
-  // Nested struct: motif_chord
-  const motifChord: Record<string, unknown> = {};
-  if (config.motifFixedProgression !== undefined) {
-    motifChord.fixed_progression = config.motifFixedProgression;
-  }
-  if (config.motifMaxChordCount !== undefined) {
-    motifChord.max_chord_count = config.motifMaxChordCount;
-  }
-  if (Object.keys(motifChord).length > 0) {
-    obj.motif_chord = motifChord;
-  }
-
-  return JSON.stringify(obj);
+  const normalized: SongConfigOptions = {
+    ...config,
+    arpeggioGate: config.arpeggioGate === undefined ? undefined : config.arpeggioGate / 100,
+    humanizeTiming: config.humanizeTiming === undefined ? undefined : config.humanizeTiming / 100,
+    humanizeVelocity:
+      config.humanizeVelocity === undefined ? undefined : config.humanizeVelocity / 100,
+    chordExtSusProb:
+      config.chordExtSusProb === undefined ? undefined : config.chordExtSusProb / 100,
+    chordExt7thProb:
+      config.chordExt7thProb === undefined ? undefined : config.chordExt7thProb / 100,
+    chordExt9thProb:
+      config.chordExt9thProb === undefined ? undefined : config.chordExt9thProb / 100,
+  };
+  return serializeConfig(normalized as SongConfig);
 }
 
 /**
  * Serialize an AccompanimentConfigOptions object to C++ AccompanimentConfig JSON string.
  *
  * Maps JS camelCase field names to C++ snake_case field names.
- * AccompanimentConfig uses uint8_t for timing/gate/probability values (0-100),
- * so no float conversion is needed.
+ * AccompanimentConfig uses float timing/probability values in the 0.0-1.0 range.
  */
 function serializeAccompanimentConfig(config: AccompanimentConfigOptions): string {
   const obj: Record<string, unknown> = {};
@@ -408,6 +257,33 @@ export class WasmTestContext {
 
     const json = JSON.stringify({ seed: newSeed });
     return regenerateFn(this.handle, json, json.length);
+  }
+
+  getStylePresetCount(): number {
+    const countFn = this.module.cwrap(
+      'midisketch_style_preset_count',
+      'number',
+      [],
+    ) as () => number;
+    return countFn();
+  }
+
+  getStylePresetAllowedAttitudes(styleId: number): number[] {
+    const allowedFn = this.module.cwrap('midisketch_style_preset_allowed_attitudes', 'number', [
+      'number',
+    ]) as (id: number) => number;
+    const flags = allowedFn(styleId);
+    return [0, 1, 2].filter((attitude) => (flags & (1 << attitude)) !== 0);
+  }
+
+  getStructureCount(): number {
+    const countFn = this.module.cwrap('midisketch_structure_count', 'number', []) as () => number;
+    return countFn();
+  }
+
+  getBlueprintCount(): number {
+    const countFn = this.module.cwrap('midisketch_blueprint_count', 'number', []) as () => number;
+    return countFn();
   }
 
   generateAccompaniment(config?: AccompanimentConfigOptions): number {
@@ -539,6 +415,14 @@ export class WasmTestContext {
     const freePianoRollData = this.module.cwrap('midisketch_free_piano_roll_data', null, [
       'number',
     ]) as (ptr: number) => void;
+    const getPianoRollDataCount = this.module.cwrap('midisketch_piano_roll_data_count', 'number', [
+      'number',
+    ]) as (ptr: number) => number;
+    const pianoRollDataWasTruncated = this.module.cwrap(
+      'midisketch_piano_roll_data_was_truncated',
+      'number',
+      ['number'],
+    ) as (ptr: number) => number;
 
     const dataPtr = getSafety(this.handle, startTick, endTick, step);
     if (!dataPtr) {
@@ -547,7 +431,12 @@ export class WasmTestContext {
 
     try {
       const infoArrayPtr = this.module.HEAPU32[dataPtr >> 2];
-      const count = this.module.HEAPU32[(dataPtr + 4) >> 2];
+      const count = getPianoRollDataCount(dataPtr);
+      if (pianoRollDataWasTruncated(dataPtr) !== 0) {
+        throw new RangeError(
+          'Piano roll safety requests are limited to 100,000 samples; increase the step size.',
+        );
+      }
 
       const results: PianoRollInfo[] = [];
       const infoSize = 784; // sizeof(MidiSketchPianoRollInfo)
@@ -580,14 +469,17 @@ export class WasmTestContext {
       reason.push(view.getUint16(ptr + 134 + idx * 2, true));
     }
 
-    const collision: CollisionInfo[] = [];
+    const collision: CollisionInfo[] = Array<CollisionInfo>(128).fill(NO_COLLISION);
     for (let idx = 0; idx < 128; idx++) {
       const offset = ptr + 390 + idx * 3;
-      collision.push({
-        trackRole: view.getUint8(offset),
-        collidingPitch: view.getUint8(offset + 1),
-        intervalSemitones: view.getUint8(offset + 2),
-      });
+      const intervalSemitones = view.getUint8(offset + 2);
+      if (intervalSemitones !== 0) {
+        collision[idx] = {
+          trackRole: view.getUint8(offset),
+          collidingPitch: view.getUint8(offset + 1),
+          intervalSemitones,
+        };
+      }
     }
 
     const recommendedCount = view.getUint8(ptr + 782);

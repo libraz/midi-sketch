@@ -8,6 +8,7 @@
 #include <gtest/gtest.h>
 
 #include "core/timing_constants.h"
+#include "track/drums/drum_constants.h"
 
 namespace midisketch {
 namespace {
@@ -179,13 +180,15 @@ TEST_F(DrumPerformerTest, PerformerType) { EXPECT_EQ(performer_->getType(), Perf
 
 TEST_F(DrumPerformerTest, PitchRange) {
   EXPECT_EQ(performer_->getMinPitch(), 35);
-  EXPECT_EQ(performer_->getMaxPitch(), 81);
+  EXPECT_EQ(performer_->getMaxPitch(), drums::SHAKER);
 }
 
 TEST_F(DrumPerformerTest, CanPerformValidDrumNote) {
   EXPECT_TRUE(performer_->canPerform(drums::BD, 0, TICK_SIXTEENTH));
   EXPECT_TRUE(performer_->canPerform(drums::SD, 0, TICK_SIXTEENTH));
   EXPECT_TRUE(performer_->canPerform(drums::CHH, 0, TICK_SIXTEENTH));
+  EXPECT_TRUE(performer_->canPerform(drums::SHAKER, 0, TICK_SIXTEENTH));
+  EXPECT_EQ(performer_->getMaxPitch(), drums::SHAKER);
 }
 
 TEST_F(DrumPerformerTest, CannotPerformOutOfRange) {

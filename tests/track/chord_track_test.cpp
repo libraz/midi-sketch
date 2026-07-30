@@ -12,6 +12,7 @@
 
 #include "core/chord.h"
 #include "core/generator.h"
+#include "core/harmony_context.h"
 #include "core/production_blueprint.h"
 #include "core/song.h"
 #include "core/structure.h"
@@ -92,6 +93,34 @@ TEST_F(ChordTrackTest, PassingDiminishedLimitedToPreChorusApproach) {
 
   EXPECT_LE(countDiminishedOnsetsInSection(gen.getSong().chord(), *prechorus), 1)
       << "Passing diminished should be an approach color, not a B-section default.";
+}
+
+TEST_F(ChordTrackTest, PassingDiminishedDoesNotOverrideBHalfBarTimeline) {
+  params_.mood = Mood::StraightPop;
+  params_.chord_id = 0;
+  params_.seed = 424242;
+  params_.humanize = false;
+
+  Section prechorus{};
+  prechorus.type = SectionType::B;
+  prechorus.name = "B";
+  prechorus.bars = 4;
+  prechorus.start_tick = 0;
+  prechorus.harmonic_rhythm = 0.5f;
+  prechorus.track_mask = TrackMask::Chord;
+
+  Song song;
+  song.setArrangement(Arrangement({prechorus}));
+  HarmonyContext harmony;
+  harmony.initialize(song.arrangement(), getChordProgression(params_.chord_id), params_.mood);
+
+  MidiTrack chord_track;
+  std::mt19937 rng(params_.seed);
+  TrackGenerationContext ctx{song, params_, rng, harmony};
+  generateChordTrack(chord_track, ctx);
+
+  EXPECT_EQ(countDiminishedOnsetsInSection(chord_track, prechorus), 0)
+      << "Half-bar B sections must retain their shared harmonic timeline";
 }
 
 TEST_F(ChordTrackTest, VocalCeilingUsesHighRegisterNotLowOrnament) {
@@ -495,6 +524,42 @@ TEST_F(ChordTrackTest, DramaticMoodUsesVariedVoicings) {
   EXPECT_GT(chord_track.notes().size(), 50u);
 }
 
+TEST_F(ChordTrackTest, OpenVoicingKeepsAllSeventhChordTones) {
+  auto voicings =
+      chord_voicing::generateOpenVoicings(MIDI_C4, getExtendedChord(0, ChordExtension::Maj7));
+
+  ASSERT_FALSE(voicings.empty());
+  for (const auto& voicing : voicings) {
+    EXPECT_EQ(voicing.count, 4);
+    EXPECT_EQ(voicing.type, chord_voicing::VoicingType::Open);
+    EXPECT_EQ(voicing.open_subtype, OpenVoicingType::Drop2);
+
+    std::set<int> pitch_classes;
+    for (uint8_t i = 0; i < voicing.count; ++i) {
+      pitch_classes.insert(voicing.pitches[i] % 12);
+    }
+    EXPECT_EQ(pitch_classes, (std::set<int>{0, 4, 7, 11}));
+  }
+}
+
+TEST_F(ChordTrackTest, OpenVoicingKeepsAllNinthChordTones) {
+  auto voicings =
+      chord_voicing::generateOpenVoicings(MIDI_C4, getExtendedChord(0, ChordExtension::Maj9));
+
+  ASSERT_FALSE(voicings.empty());
+  for (const auto& voicing : voicings) {
+    EXPECT_EQ(voicing.count, 5);
+    EXPECT_EQ(voicing.type, chord_voicing::VoicingType::Open);
+    EXPECT_EQ(voicing.open_subtype, OpenVoicingType::Drop2);
+
+    std::set<int> pitch_classes;
+    for (uint8_t i = 0; i < voicing.count; ++i) {
+      pitch_classes.insert(voicing.pitches[i] % 12);
+    }
+    EXPECT_EQ(pitch_classes, (std::set<int>{0, 2, 4, 7, 11}));
+  }
+}
+
 // ============================================================================
 // C4 Rootless 4-Voice Tests
 // ============================================================================
@@ -563,6 +628,27 @@ TEST_F(ChordTrackTest, BassTritoneClashStillRejectsNonChordTritone) {
 
   EXPECT_TRUE(chord_voicing::clashesWithBass(6, 0, root, tonic))
       << "F# over C is not a chord-defining tritone in C major";
+}
+
+TEST_F(ChordTrackTest, BassPitchMaskIgnoresWeakBeatApproachNotes) {
+  MidiTrack bass;
+  bass.addNote(NoteEventBuilder::create(0, TICK_WHOLE, 48, 90));                    // C on beat 1
+  bass.addNote(NoteEventBuilder::create(3 * TICKS_PER_BEAT, TICK_EIGHTH, 54, 90));  // F# approach
+
+  uint16_t mask = chord_voicing::buildBassPitchMask(&bass, 0, TICKS_PER_BAR);
+
+  EXPECT_NE(mask & (1u << 0), 0u) << "The downbeat bass pitch must constrain voicings.";
+  EXPECT_EQ(mask & (1u << 6), 0u)
+      << "A short beat-4 approach note must not constrain the full bar.";
+}
+
+TEST_F(ChordTrackTest, BassPitchMaskIncludesBeatThreeBass) {
+  MidiTrack bass;
+  bass.addNote(NoteEventBuilder::create(2 * TICKS_PER_BEAT, TICK_QUARTER, 55, 90));  // G on beat 3
+
+  uint16_t mask = chord_voicing::buildBassPitchMask(&bass, 0, TICKS_PER_BAR);
+
+  EXPECT_NE(mask & (1u << 7), 0u) << "Beat-3 bass notes are strong-beat constraints.";
 }
 
 TEST_F(ChordTrackTest, BassTritoneCleanupPreservesDominantSeventh) {
@@ -713,6 +799,119 @@ TEST_F(ChordTrackTest, SecondaryDominantIntegration_ConsistentWithSeed) {
     EXPECT_EQ(track1.notes()[i].note, track2.notes()[i].note)
         << "Note " << i << " should have same pitch";
   }
+}
+
+TEST_F(ChordTrackTest, WithContextRendersRegisteredMidBarSecondaryDominant) {
+  params_.chord_extension.enable_7th = false;
+
+  Section section{};
+  section.type = SectionType::A;
+  section.name = "A";
+  section.bars = 4;
+  section.start_bar = 0;
+  section.start_tick = 0;
+  section.track_mask = TrackMask::Chord;
+
+  Song song;
+  song.setArrangement(Arrangement({section}));
+
+  HarmonyContext harmony;
+  harmony.initialize(song.arrangement(), getChordProgression(params_.chord_id), params_.mood);
+  // In C major, G7's minor seventh (F) cannot be produced by the underlying
+  // C-major chord.  Register it exactly where a normal in-bar SD is placed.
+  harmony.registerSecondaryDominant(TICK_HALF, TICKS_PER_BAR, 4);
+
+  VocalAnalysis vocal_analysis;
+  MidiTrack chord_track;
+  std::mt19937 rng(params_.seed);
+  auto ctx = TrackGenerationContextBuilder(song, params_, rng, harmony)
+                 .withMutableHarmony(&harmony)
+                 .withVocalAnalysis(&vocal_analysis)
+                 .build();
+  generateChordTrackWithContext(chord_track, ctx);
+
+  bool has_dominant_seventh = false;
+  for (const auto& note : chord_track.notes()) {
+    if (note.start_tick == TICK_HALF && note.note % 12 == 5) {
+      has_dominant_seventh = true;
+      break;
+    }
+  }
+  EXPECT_TRUE(has_dominant_seventh)
+      << "WithContext generation must render the registered G7 at the mid-bar SD tick";
+}
+
+TEST_F(ChordTrackTest, HarmonicSubdivisionUsesPlannedSecondHalfExtension) {
+  params_.chord_extension.enable_7th = false;
+
+  Section section{};
+  section.type = SectionType::A;
+  section.name = "A";
+  section.bars = 4;
+  section.start_bar = 0;
+  section.start_tick = 0;
+  section.harmonic_rhythm = 0.5f;
+  section.track_mask = TrackMask::Chord;
+
+  Song song;
+  song.setArrangement(Arrangement({section}));
+
+  HarmonyContext harmony;
+  harmony.initialize(song.arrangement(), getChordProgression(params_.chord_id), params_.mood);
+  // The second chord is degree V.  Its planned Dom7 adds F, which cannot
+  // arise from its rerolled plain major-triad quality.
+  harmony.registerChordExtension(TICK_HALF, TICKS_PER_BAR, ChordExtension::Dom7);
+
+  VocalAnalysis vocal_analysis;
+  MidiTrack chord_track;
+  std::mt19937 rng(params_.seed);
+  auto ctx = TrackGenerationContextBuilder(song, params_, rng, harmony)
+                 .withMutableHarmony(&harmony)
+                 .withVocalAnalysis(&vocal_analysis)
+                 .build();
+  generateChordTrackWithContext(chord_track, ctx);
+
+  bool has_dominant_seventh = false;
+  for (const auto& note : chord_track.notes()) {
+    if (note.start_tick == TICK_HALF && note.note % 12 == 5) {
+      has_dominant_seventh = true;
+      break;
+    }
+  }
+  EXPECT_TRUE(has_dominant_seventh)
+      << "A subdivided bar must render the planner's second-half Dom7 extension";
+}
+
+TEST_F(ChordTrackTest, HarmonicSubdivisionPreservesRhythmInsideEachHalf) {
+  params_.paradigm = GenerationParadigm::RhythmSync;
+  params_.humanize = false;
+
+  Section section{};
+  section.type = SectionType::B;
+  section.name = "B";
+  section.bars = 1;
+  section.start_tick = 0;
+  section.harmonic_rhythm = 0.5f;
+  section.track_mask = TrackMask::Chord;
+
+  Song song;
+  song.setArrangement(Arrangement({section}));
+  HarmonyContext harmony;
+  harmony.initialize(song.arrangement(), getChordProgression(params_.chord_id), params_.mood);
+
+  MidiTrack chord_track;
+  std::mt19937 rng(params_.seed);
+  TrackGenerationContext ctx{song, params_, rng, harmony};
+  generateChordTrack(chord_track, ctx);
+
+  std::set<Tick> onsets;
+  for (const auto& note : chord_track.notes()) {
+    onsets.insert(note.start_tick);
+  }
+  EXPECT_NE(onsets.count(TICK_QUARTER), 0u);
+  EXPECT_NE(onsets.count(TICK_HALF + TICK_QUARTER), 0u);
+  EXPECT_GT(onsets.size(), 2u)
+      << "Half-bar chord changes must retain Quarter/Eighth pulses inside both segments";
 }
 
 TEST_F(ChordTrackTest, SecondaryDominantIntegration_HighTensionSections) {
@@ -939,6 +1138,7 @@ TEST_F(ChordTrackTest, SusChordFirstHalfHasSus4Interval) {
   const auto& chord_track = gen.getSong().chord();
   const auto& sections = gen.getSong().arrangement().sections();
 
+  bool found_sus_resolution = false;
   // Collect pitch classes at bar_start and bar_start+HALF for split bars
   for (const auto& sec : sections) {
     for (uint8_t bar = 0; bar < sec.bars; ++bar) {
@@ -964,17 +1164,14 @@ TEST_F(ChordTrackTest, SusChordFirstHalfHasSus4Interval) {
         // We check that the two halves are not identical
         bool halves_differ = (first_half_pcs != second_half_pcs);
         if (halves_differ) {
-          // Found a sus resolution split with different pitch content
-          SUCCEED();
-          return;
+          found_sus_resolution = true;
         }
       }
     }
   }
 
-  // If we get here, we didn't find a clear sus resolution split
-  // This can happen if no sus context was triggered (still a valid test path)
-  SUCCEED();
+  EXPECT_TRUE(found_sus_resolution)
+      << "A 100% sus configuration should produce a split bar with different pitch content";
 }
 
 TEST_F(ChordTrackTest, NonSusExtensionDoesNotSplitBar) {
@@ -1337,19 +1534,14 @@ TEST_F(ChordTrackTest, UpdateConsecutiveVoicingCount_InitOnFirstVoicing) {
 // Keyboard Playability Integration Tests
 // ============================================================================
 
-class ChordKeyboardPlayabilityTest : public ::testing::Test {
+class ChordKeyboardPlayabilityTest : public test::GeneratorTestFixture {
  protected:
   void SetUp() override {
-    params_.structure = StructurePattern::StandardPop;
+    GeneratorTestFixture::SetUp();
     params_.mood = Mood::StraightPop;
-    params_.chord_id = 0;
-    params_.key = Key::C;
-    params_.bpm = 120;
-    params_.seed = 42;
-    params_.humanize = false;
+    params_.drums_enabled = true;
+    params_.vocal_high = 79;
   }
-
-  GeneratorParams params_;
 };
 
 TEST_F(ChordKeyboardPlayabilityTest, AllBlueprintsGenerateValidChords) {
@@ -1543,6 +1735,12 @@ TEST_F(ChordTrackTest, RegisterAddAddsUpperOctaveLayer) {
       }
 
       for (uint8_t extra_pitch : extras) {
+        const bool is_octave_layer =
+            std::any_of(base_by_tick[tick].begin(), base_by_tick[tick].end(),
+                        [extra_pitch](uint8_t base_pitch) {
+                          return static_cast<int>(extra_pitch) == static_cast<int>(base_pitch) + 12;
+                        });
+        if (!is_octave_layer) continue;
         EXPECT_GE(extra_pitch, 60) << "RegisterAdd should not add bass-register lower octaves";
         saw_upper_octave_add = true;
       }
@@ -1615,6 +1813,33 @@ TEST_F(ChordTrackTest, RhythmSyncChordRhythmAppliesBackingDensity) {
         << "RhythmSync must honor Thin backing density for section " << static_cast<int>(section);
     EXPECT_EQ(thick, chord_voicing::adjustDenser(normal))
         << "RhythmSync must honor Thick backing density for section " << static_cast<int>(section);
+  }
+}
+
+TEST_F(ChordTrackTest, RhythmSyncKeepsVerseAndBridgeSparserThanChorus) {
+  auto countEighths = [](SectionType section) {
+    int eighths = 0;
+    constexpr int kTrials = 1000;
+    for (int seed = 0; seed < kTrials; ++seed) {
+      std::mt19937 rng(seed);
+      if (chord_voicing::selectRhythm(section, Mood::StraightPop, BackingDensity::Normal,
+                                      GenerationParadigm::RhythmSync,
+                                      rng) == chord_voicing::ChordRhythm::Eighth) {
+        ++eighths;
+      }
+    }
+    return eighths;
+  };
+
+  int chorus_eighths = countEighths(SectionType::Chorus);
+  EXPECT_LT(countEighths(SectionType::A), chorus_eighths);
+  EXPECT_LT(countEighths(SectionType::Bridge), chorus_eighths);
+
+  for (SectionType section : {SectionType::Intro, SectionType::Interlude, SectionType::Chant}) {
+    std::mt19937 rng(42);
+    EXPECT_EQ(chord_voicing::selectRhythm(section, Mood::StraightPop, BackingDensity::Normal,
+                                          GenerationParadigm::RhythmSync, rng),
+              chord_voicing::ChordRhythm::Quarter);
   }
 }
 

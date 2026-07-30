@@ -143,6 +143,17 @@ TEST(SETest, InsertPPPHNoTransition) {
   EXPECT_EQ(track.noteCount(), 0u) << "PPPH should not add notes without B→Chorus";
 }
 
+TEST(SETest, InsertPPPHRespectsTrackMask) {
+  MidiTrack track;
+  auto sections = createTestSections();
+  sections[2].track_mask = TrackMask::All & ~TrackMask::SE;
+
+  insertPPPHAtBtoChorus(track, sections, true);
+
+  EXPECT_EQ(track.noteCount(), 0u);
+  EXPECT_TRUE(track.textEvents().empty());
+}
+
 // ============================================================================
 // insertMIXAtIntro Tests
 // ============================================================================
@@ -199,6 +210,17 @@ TEST(SETest, InsertMIXNoIntro) {
 
   // Should not have added notes (no Intro section)
   EXPECT_EQ(track.noteCount(), 0u) << "IntroMix should not add notes without Intro";
+}
+
+TEST(SETest, InsertMIXRespectsTrackMask) {
+  MidiTrack track;
+  auto sections = createTestSections();
+  sections[0].track_mask = TrackMask::All & ~TrackMask::SE;
+
+  insertMIXAtIntro(track, sections, true);
+
+  EXPECT_EQ(track.noteCount(), 0u);
+  EXPECT_TRUE(track.textEvents().empty());
 }
 
 // ============================================================================

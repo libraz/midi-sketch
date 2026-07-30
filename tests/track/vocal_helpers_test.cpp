@@ -67,6 +67,26 @@ TEST(VocalPostProcessTest, BreakSameDirectionLeapChainsFoldsThirdLeap) {
       << "The third same-direction leap should be folded into step/repeat motion.";
 }
 
+TEST(VocalPostProcessTest, SamePitchRunDoesNotCrossLongRest) {
+  test::StubHarmonyContext harmony;
+  harmony.setAllPitchesSafe(true);
+  harmony.setChordDegree(0);
+
+  std::vector<NoteEvent> notes = {
+      NoteEventTestHelper::create(0, TICK_SIXTEENTH, 60, 90),
+      NoteEventTestHelper::create(TICK_SIXTEENTH, TICK_SIXTEENTH, 60, 90),
+      NoteEventTestHelper::create(TICK_SIXTEENTH * 2, TICK_SIXTEENTH, 60, 90),
+      NoteEventTestHelper::create(TICKS_PER_BAR, TICK_SIXTEENTH, 60, 90),
+  };
+
+  breakConsecutiveSamePitch(notes, harmony, 57, 86, 3);
+
+  for (const auto& note : notes) {
+    EXPECT_EQ(note.note, 60)
+        << "A same-pitch note after a rest longer than one beat starts a new streak.";
+  }
+}
+
 // ============================================================================
 // removeOverlaps Tests
 // ============================================================================

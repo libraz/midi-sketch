@@ -94,6 +94,20 @@ inline std::vector<ClashInfo> findClashes(const MidiTrack& track_a, const std::s
         continue;
       }
 
+      // Registered extensions and replacements are authoritative: a tritone
+      // or major seventh between two exact chord tones is structural harmony,
+      // not an inter-track clash.
+      const ChordTones chord_tones = harmony.getChordTonesAt(overlap_start);
+      const int pitch_class_a = note_a.note % 12;
+      const int pitch_class_b = note_b.note % 12;
+      const bool a_is_chord_tone =
+          std::find(chord_tones.begin(), chord_tones.end(), pitch_class_a) != chord_tones.end();
+      const bool b_is_chord_tone =
+          std::find(chord_tones.begin(), chord_tones.end(), pitch_class_b) != chord_tones.end();
+      if (a_is_chord_tone && b_is_chord_tone) {
+        continue;
+      }
+
       // Check dissonance using unified logic from pitch_utils
       int8_t chord_degree = harmony.getChordDegreeAt(overlap_start);
 

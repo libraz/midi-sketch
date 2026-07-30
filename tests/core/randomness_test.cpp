@@ -8,7 +8,9 @@
 #include <set>
 
 #include "core/generator.h"
+#include "core/json_helpers.h"
 #include "core/preset_data.h"
+#include "midi/midi_reader.h"
 #include "midisketch.h"
 
 namespace midisketch {
@@ -226,6 +228,32 @@ TEST(RandomnessTest, FullGenerationReproducibility) {
       << "Same seed should produce identical MIDI output";
 }
 
+TEST(RandomnessTest, AutoSeedIsPersistedForByteIdenticalRegeneration) {
+  SongConfig initial_config = createDefaultSongConfig(1);
+  initial_config.seed = 0;
+  initial_config.form = StructurePattern::StandardPop;
+
+  MidiSketch original;
+  original.generateFromConfig(initial_config);
+  const uint32_t resolved_seed = original.getParams().seed;
+  EXPECT_NE(resolved_seed, 0u);
+
+  MidiReader reader;
+  ASSERT_TRUE(reader.read(original.getMidi()));
+  const auto& metadata = reader.getParsedMidi().metadata;
+  ASSERT_FALSE(metadata.empty());
+
+  json::Parser metadata_parser(metadata);
+  ASSERT_TRUE(metadata_parser.has("config"));
+  SongConfig restored_config;
+  restored_config.readFrom(metadata_parser.getObject("config"));
+  EXPECT_EQ(restored_config.seed, resolved_seed);
+
+  MidiSketch regenerated;
+  regenerated.generateFromConfig(restored_config);
+  EXPECT_EQ(regenerated.getMidi(), original.getMidi());
+}
+
 TEST(RandomnessTest, FullGenerationVariation) {
   std::set<std::vector<uint8_t>> midi_outputs;
 
@@ -250,12 +278,12 @@ TEST(RandomnessTest, AllStylesHaveRandomFormSelection) {
   for (uint8_t style_id = 0; style_id < STYLE_PRESET_COUNT; ++style_id) {
     std::set<StructurePattern> forms;
 
-    for (uint32_t seed : {1u, 100u, 10000u}) {
+    for (uint32_t seed = 1; seed <= 256; ++seed) {
       forms.insert(selectRandomForm(style_id, seed));
     }
 
     // Each style should have at least 2 different forms available
-    EXPECT_GE(forms.size(), 1u) << "Style " << static_cast<int>(style_id)
+    EXPECT_GE(forms.size(), 2u) << "Style " << static_cast<int>(style_id)
                                 << " should have form selection";
   }
 }

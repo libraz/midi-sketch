@@ -768,9 +768,8 @@ TEST_F(VocalTest, SimpleMelodicComplexityReducesLeaps) {
   gen.generate(simple_params);
 
   const auto& notes = gen.getSong().vocal().notes();
-  if (notes.size() < 2) {
-    GTEST_SKIP() << "Not enough notes to analyze intervals";
-  }
+  ASSERT_GE(notes.size(), 2u)
+      << "Simple melodic complexity must generate enough Vocal notes to analyze intervals";
 
   int large_leaps = 0;
   for (size_t i = 1; i < notes.size(); ++i) {
@@ -1017,10 +1016,8 @@ TEST_F(VocalTest, BridgeHasLowerDensityThanChorus) {
     }
   }
 
-  // Skip test if no bridge section
-  if (bridge_bars == 0) {
-    GTEST_SKIP() << "No bridge section in this structure";
-  }
+  ASSERT_GT(bridge_bars, 0) << "FullWithBridge must contain a Bridge section";
+  ASSERT_GT(chorus_bars, 0) << "FullWithBridge must contain a Chorus section";
 
   float bridge_density = static_cast<float>(bridge_notes) / bridge_bars;
   float chorus_density = chorus_bars > 0 ? static_cast<float>(chorus_notes) / chorus_bars : 0.0f;
@@ -1059,10 +1056,7 @@ TEST_F(VocalTest, LastChorusHasHigherIntensity) {
     }
   }
 
-  // Skip if only one chorus
-  if (chorus_count < 2) {
-    GTEST_SKIP() << "Structure has only one chorus";
-  }
+  ASSERT_GE(chorus_count, 2) << "RepeatChorus must contain multiple Chorus sections";
 
   // Count notes in first and last chorus
   int first_notes = 0, last_notes = 0;
@@ -1292,16 +1286,11 @@ TEST_F(VocalTest, ExtremeLeapOnlyInChorusAndBridge) {
   // Verse (A) should have few or no large leaps since extreme_leap is section-limited
   // Use 25% threshold to accommodate phrase contour templates and cross-platform variation
   // Contour templates (Ascending for A section) can encourage more melodic movement
-  if (note_counts[SectionType::A] > 0) {
-    float verse_leap_ratio =
-        static_cast<float>(large_leap_counts[SectionType::A]) / note_counts[SectionType::A];
-    EXPECT_LT(verse_leap_ratio, 0.25f)
-        << "Verse should have minimal large leaps. Got: " << verse_leap_ratio;
-  }
-
-  // This test validates the section-specific extreme leap behavior
-  // The implementation limits octave jumps to Chorus/Bridge for musical contrast
-  EXPECT_TRUE(true) << "RangeProfile implementation verified";
+  ASSERT_GT(note_counts[SectionType::A], 0) << "The tested structure must contain a sung A section";
+  float verse_leap_ratio =
+      static_cast<float>(large_leap_counts[SectionType::A]) / note_counts[SectionType::A];
+  EXPECT_LT(verse_leap_ratio, 0.25f)
+      << "Verse should have minimal large leaps. Got: " << verse_leap_ratio;
 }
 
 // ============================================================================
@@ -1873,6 +1862,38 @@ TEST_F(VocalTest, PhraseCacheReuseWithExtendedKey) {
                              << chorus_note_counts[i];
     }
   }
+}
+
+TEST_F(VocalTest, CachedChorusReceivesOccurrenceDevelopment) {
+  params_.structure = StructurePattern::RepeatChorus;
+  params_.seed = 641903;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& song = gen.getSong();
+  std::vector<const Section*> choruses;
+  for (const auto& section : song.arrangement().sections()) {
+    if (section.type == SectionType::Chorus) choruses.push_back(&section);
+  }
+  ASSERT_GE(choruses.size(), 2u);
+
+  auto relativeFingerprint = [&](const Section& section) {
+    std::vector<std::tuple<Tick, Tick, uint8_t>> fingerprint;
+    for (const auto& note : song.vocal().notes()) {
+      if (note.start_tick >= section.start_tick && note.start_tick < section.endTick()) {
+        fingerprint.emplace_back(note.start_tick - section.start_tick, note.duration, note.note);
+      }
+    }
+    return fingerprint;
+  };
+
+  const auto first = relativeFingerprint(*choruses[0]);
+  const auto later = relativeFingerprint(*choruses[1]);
+  ASSERT_FALSE(first.empty());
+  ASSERT_FALSE(later.empty());
+  EXPECT_NE(later, first)
+      << "A cached later chorus must still pass through occurrence-aware development";
 }
 
 TEST_F(VocalTest, PhraseVariationAppliedAfterMultipleReuse) {
@@ -3151,11 +3172,11 @@ TEST_F(VocalTest, RhythmSyncMelodyHasMelodicContour) {
 }
 
 TEST_F(VocalTest, RhythmSyncSameSectionTypeRepeats) {
-  // Verify that same section types (e.g., two Choruses) have similar melodies
-  // due to PhraseCache integration
-  params_.paradigm = GenerationParadigm::RhythmSync;
-  params_.riff_policy = RiffPolicy::LockedContour;
-  params_.structure = StructurePattern::StandardPop;  // Has multiple choruses
+  // PhraseCache preserves the rhythmic hook across repeated section types,
+  // while later occurrences deliberately develop the pitch contour.
+  params_.blueprint_id = 1;  // RhythmLock supplies RhythmSync + locked riff policy
+  params_.structure = StructurePattern::RepeatChorus;
+  params_.form_explicit = true;
   params_.seed = 42;
 
   Generator gen;
@@ -3173,10 +3194,7 @@ TEST_F(VocalTest, RhythmSyncSameSectionTypeRepeats) {
     }
   }
 
-  // Need at least 2 choruses to test repetition
-  if (choruses.size() < 2) {
-    GTEST_SKIP() << "Structure doesn't have multiple choruses";
-  }
+  ASSERT_GE(choruses.size(), 2u) << "RepeatChorus must contain multiple Chorus sections";
 
   // Extract notes from first two choruses
   auto getNotesInSection = [&vocal_notes](const Section* sec) {
@@ -3192,42 +3210,43 @@ TEST_F(VocalTest, RhythmSyncSameSectionTypeRepeats) {
   auto chorus1_notes = getNotesInSection(choruses[0]);
   auto chorus2_notes = getNotesInSection(choruses[1]);
 
-  // Both choruses should have notes
-  EXPECT_FALSE(chorus1_notes.empty()) << "First chorus should have notes";
-  EXPECT_FALSE(chorus2_notes.empty()) << "Second chorus should have notes";
+  ASSERT_GE(chorus1_notes.size(), 4u) << "First Chorus must contain enough notes for comparison";
+  ASSERT_GE(chorus2_notes.size(), 4u) << "Second Chorus must contain enough notes for comparison";
 
-  // Compare interval patterns (pitch relative motion)
-  // PhraseCache with variation means pitches may differ but contour should be similar
-  if (chorus1_notes.size() >= 4 && chorus2_notes.size() >= 4) {
-    // Extract first 4 intervals from each
-    std::vector<int> intervals1, intervals2;
-    for (size_t i = 1; i < std::min(static_cast<size_t>(5), chorus1_notes.size()); ++i) {
-      intervals1.push_back(static_cast<int>(chorus1_notes[i]->note) -
-                           static_cast<int>(chorus1_notes[i - 1]->note));
+  auto relativeOnsets = [](const std::vector<const NoteEvent*>& notes, Tick section_start) {
+    std::set<Tick> result;
+    for (const NoteEvent* note : notes) {
+      result.insert(note->start_tick - section_start);
     }
-    for (size_t i = 1; i < std::min(static_cast<size_t>(5), chorus2_notes.size()); ++i) {
-      intervals2.push_back(static_cast<int>(chorus2_notes[i]->note) -
-                           static_cast<int>(chorus2_notes[i - 1]->note));
-    }
+    return result;
+  };
+  const auto onsets1 = relativeOnsets(chorus1_notes, choruses[0]->start_tick);
+  const auto onsets2 = relativeOnsets(chorus2_notes, choruses[1]->start_tick);
 
-    // Check direction similarity (not exact interval match due to variation)
-    int same_direction = 0;
-    size_t compare_count = std::min(intervals1.size(), intervals2.size());
-    for (size_t i = 0; i < compare_count; ++i) {
-      int dir1 = (intervals1[i] > 0) ? 1 : (intervals1[i] < 0) ? -1 : 0;
-      int dir2 = (intervals2[i] > 0) ? 1 : (intervals2[i] < 0) ? -1 : 0;
-      if (dir1 == dir2) same_direction++;
-    }
+  size_t shared_onsets = 0;
+  for (Tick onset : onsets1) {
+    if (onsets2.find(onset) != onsets2.end()) ++shared_onsets;
+  }
+  const size_t smaller_pattern = std::min(onsets1.size(), onsets2.size());
+  ASSERT_GT(smaller_pattern, 0u);
+  const float rhythmic_similarity = static_cast<float>(shared_onsets) / smaller_pattern;
+  EXPECT_GE(rhythmic_similarity, 0.4f)
+      << "Repeated choruses should retain the cached rhythmic hook. Shared onsets: "
+      << shared_onsets << "/" << smaller_pattern;
 
-    // Allow some variation but expect general contour similarity
-    // At least 50% of directions should match (accounting for PhraseVariation)
-    if (compare_count >= 3) {
-      float similarity = static_cast<float>(same_direction) / compare_count;
-      EXPECT_GE(similarity, 0.4f)
-          << "Repeated choruses should have similar melodic contour due to PhraseCache. "
-          << "Direction match: " << same_direction << "/" << compare_count;
+  bool identical_realization = chorus1_notes.size() == chorus2_notes.size();
+  if (identical_realization) {
+    for (size_t i = 0; i < chorus1_notes.size(); ++i) {
+      if (chorus1_notes[i]->start_tick - choruses[0]->start_tick !=
+              chorus2_notes[i]->start_tick - choruses[1]->start_tick ||
+          chorus1_notes[i]->note != chorus2_notes[i]->note) {
+        identical_realization = false;
+        break;
+      }
     }
   }
+  EXPECT_FALSE(identical_realization)
+      << "A later chorus should develop the cached phrase rather than copy it verbatim";
 }
 
 TEST_F(VocalTest, RhythmSyncMultipleSeedsAllGenerateMelodies) {
