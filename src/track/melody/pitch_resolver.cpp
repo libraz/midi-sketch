@@ -29,7 +29,7 @@ int applyPitchChoice(PitchChoice choice, int current_pitch, int target_pitch, in
   //   Long notes (>= 4 eighths): Allow tensions if attitude permits
 
   // Get chord tones for current chord
-  std::vector<int> chord_tones = getChordTonePitchClasses(chord_degree);
+  const ChordTones chord_tones = getChordTones(chord_degree);
 
   // Determine effective attitude based on note duration
   // Short notes should be more consonant (chord tones preferred)
@@ -44,12 +44,12 @@ int applyPitchChoice(PitchChoice choice, int current_pitch, int target_pitch, in
   switch (effective_attitude) {
     case VocalAttitude::Clean:
       // Chord tones only (safe, consonant)
-      candidate_pcs = chord_tones;
+      candidate_pcs.assign(chord_tones.begin(), chord_tones.end());
       break;
 
     case VocalAttitude::Expressive:
       // Chord tones + tensions (7th, 9th = 2nd, 11th = 4th)
-      candidate_pcs = chord_tones;
+      candidate_pcs.assign(chord_tones.begin(), chord_tones.end());
       // Add color tones gated by tension_usage and note duration.
       // Deterministic: longer notes are more likely to receive tensions.
       // tension_usage=0.0 → Expressive behaves like Clean (chord tones only)
@@ -326,7 +326,7 @@ int applyPitchChoice(PitchChoice choice, int current_pitch, int target_pitch, in
 int calculateTargetPitch(int tessitura_center, int tessitura_range, uint8_t vocal_low,
                          uint8_t vocal_high, Tick section_start, const IHarmonyContext& harmony) {
   // Target is typically a chord tone in the upper part of tessitura
-  std::vector<int> chord_tones = harmony.getChordTonesAt(section_start);
+  ChordTones chord_tones = harmony.getChordTonesAt(section_start);
 
   if (chord_tones.empty()) {
     return tessitura_center;

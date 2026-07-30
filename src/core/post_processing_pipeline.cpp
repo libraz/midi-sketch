@@ -89,6 +89,13 @@ void PostProcessingPipeline::applyVelocityShaping(const Context& ctx,
                                                   std::vector<MidiTrack*>& tracks) {
   const auto& sections = ctx.song.arrangement().sections();
 
+  // Route ProductionBlueprint SectionSlot::base_velocity into every sounding
+  // track before phrase and beat dynamics. A fixed-velocity motif intentionally
+  // opts out, while the drum kit receives the same section-level energy ratio.
+  std::vector<MidiTrack*> base_velocity_tracks = tracks;
+  base_velocity_tracks.push_back(&ctx.song.drums());
+  midisketch::applySectionBaseVelocity(base_velocity_tracks, sections);
+
   // Apply melody contour-following velocity to vocal track
   midisketch::applyMelodyContourVelocity(ctx.song.vocal(), sections);
 
@@ -146,7 +153,8 @@ void PostProcessingPipeline::applyTransitionEffects(const Context& ctx,
   if (ctx.params.guitar_enabled) {
     backing_tracks.push_back(&ctx.song.guitar());
   }
-  PostProcessor::applyChorusDrop(backing_tracks, sections, &ctx.song.drums());
+  MidiTrack* drum_track = ctx.params.drums_enabled ? &ctx.song.drums() : nullptr;
+  PostProcessor::applyChorusDrop(backing_tracks, sections, drum_track);
 
   // Apply velocity decrescendo to outro sections
   PostProcessor::applyRitDecrescendo(tracks, sections);
@@ -161,7 +169,7 @@ void PostProcessingPipeline::applyTransitionEffects(const Context& ctx,
   // Apply enhanced FinalHit for sections with that exit pattern
   for (const auto& section : sections) {
     if (section.exit_pattern == ExitPattern::FinalHit) {
-      PostProcessor::applyEnhancedFinalHit(&ctx.song.bass(), &ctx.song.drums(), &ctx.song.chord(),
+      PostProcessor::applyEnhancedFinalHit(&ctx.song.bass(), drum_track, &ctx.song.chord(),
                                            &ctx.song.vocal(), section, &ctx.harmony);
     }
   }
@@ -198,8 +206,6 @@ void PostProcessingPipeline::applyTransitionEffects(const Context& ctx,
 }
 
 void PostProcessingPipeline::applyFinalAdjustments(const Context& ctx) {
-  const auto& sections = ctx.song.arrangement().sections();
-
   // Clip vocal notes that sustain over chord changes with non-chord-tone pitches.
   // Must run AFTER all post-processing that may extend note durations
   // (applyExitSustain, etc.).
@@ -229,10 +235,6 @@ void PostProcessingPipeline::applyFinalAdjustments(const Context& ctx) {
   PostProcessor::applyTrackPanning(ctx.song.vocal(), ctx.song.chord(), ctx.song.bass(),
                                    ctx.song.motif(), ctx.song.arpeggio(), ctx.song.aux(),
                                    ctx.song.guitar());
-
-  // Apply expression curves (CC#11) for dynamic shaping
-  PostProcessor::applyExpressionCurves(ctx.song.vocal(), ctx.song.chord(), ctx.song.aux(),
-                                       sections);
 }
 
 // ============================================================================
@@ -329,14 +331,10 @@ void PostProcessingPipeline::applyHumanization(const Context& ctx) {
                                     &ctx.song.motif(), &ctx.song.arpeggio(), &ctx.song.aux(),
                                     &ctx.song.guitar()};
 
-  PostProcessor::HumanizeParams humanize_params;
-  humanize_params.velocity = ctx.params.humanize_velocity;
-
-  PostProcessor::applyHumanization(tracks, humanize_params, ctx.rng);
-
-  // Apply section-aware velocity humanization for more natural dynamics
+  // Apply exactly one section-aware velocity humanization pass.
   const auto& sections = ctx.song.arrangement().sections();
-  PostProcessor::applySectionAwareVelocityHumanization(tracks, sections, ctx.rng);
+  PostProcessor::applySectionAwareVelocityHumanization(tracks, sections,
+                                                       ctx.params.humanize_velocity, ctx.rng);
 
   // Apply per-instrument micro-timing offsets for groove pocket
   // Pass sections for phrase-aware vocal timing (Start: +8, Middle: +4, End: 0)
@@ -402,7 +400,11 @@ void PostProcessingPipeline::applyStaggeredEntry(const Context& ctx, const Secti
                 notes.end());
 
     // Apply fade-in if configured
-    if (entry.fade_in_bars > 0) {
+    // A fixed-velocity motif is a metronomic pulse.  It may enter late, but
+    // its attack velocity must not be faded with the other backing layers.
+    const bool preserve_fixed_motif_velocity =
+        track == &ctx.song.motif() && ctx.params.motif.velocity_fixed;
+    if (entry.fade_in_bars > 0 && !preserve_fixed_motif_velocity) {
       Tick fade_end = entry_tick + entry.fade_in_bars * TICKS_PER_BAR;
       Tick fade_duration = fade_end - entry_tick;
 

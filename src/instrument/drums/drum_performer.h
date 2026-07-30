@@ -53,7 +53,7 @@ class DrumPerformer : public IPhysicalPerformer {
   std::unique_ptr<PerformerState> createInitialState() const override;
 
   uint8_t getMinPitch() const override { return 35; }  // GM drum range start
-  uint8_t getMaxPitch() const override { return 81; }  // GM drum range end
+  uint8_t getMaxPitch() const override { return 82; }  // Includes GM2 shaker
 
   // Drum-specific methods
 

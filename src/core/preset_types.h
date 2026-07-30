@@ -61,29 +61,31 @@ enum class CompositionStyle : uint8_t {
 
 /// @brief Arpeggio pattern direction.
 enum class ArpeggioPattern : uint8_t {
-  Up,          ///< Ascending notes
-  Down,        ///< Descending notes
-  UpDown,      ///< Ascending then descending
-  Random,      ///< Random order
-  Pinwheel,    ///< 1-5-3-5 center alternating expansion
-  PedalRoot,   ///< 1-3-1-5-1-7 root repetition
-  Alberti,     ///< 1-5-3-5 classical broken chord
-  BrokenChord  ///< 1-3-5-8-5-3 ascending then descending
+  Up,           ///< Ascending notes
+  Down,         ///< Descending notes
+  UpDown,       ///< Ascending then descending
+  Random,       ///< Random order
+  Pinwheel,     ///< 1-5-3-5 center alternating expansion
+  PedalRoot,    ///< 1-3-1-5-1-7 root repetition
+  Alberti,      ///< 1-5-3-5 classical broken chord
+  BrokenChord,  ///< 1-3-5-8-5-3 ascending then descending
+  Auto = 255    ///< Use the mood/blueprint style default
 };
 
 /// @brief Arpeggio note speed.
 enum class ArpeggioSpeed : uint8_t {
   Eighth,     ///< 8th notes
   Sixteenth,  ///< 16th notes (default, AnimeHighEnergy-style)
-  Triplet     ///< Triplet feel
+  Triplet,    ///< Triplet feel
+  Auto = 255  ///< Use the mood/blueprint style default
 };
 
 /// @brief Arpeggio track configuration.
 struct ArpeggioParams {
-  ArpeggioPattern pattern = ArpeggioPattern::Up;
-  ArpeggioSpeed speed = ArpeggioSpeed::Sixteenth;
+  ArpeggioPattern pattern = ArpeggioPattern::Auto;
+  ArpeggioSpeed speed = ArpeggioSpeed::Auto;
   uint8_t octave_range = 2;    ///< 1-3 octaves
-  float gate = 0.8f;           ///< Gate length (0.0-1.0)
+  float gate = -1.0f;          ///< Gate length (0.0-1.0), -1 = style default
   bool sync_chord = true;      ///< Sync with chord changes
   uint8_t base_velocity = 90;  ///< Base velocity for arpeggio notes
 
@@ -97,12 +99,13 @@ struct ArpeggioParams {
   }
 
   void readFrom(const json::Parser& p) {
-    pattern = static_cast<ArpeggioPattern>(p.getInt("pattern", 0));
-    speed = static_cast<ArpeggioSpeed>(p.getInt("speed", 1));
-    octave_range = static_cast<uint8_t>(p.getInt("octave_range", 2));
-    gate = p.getFloat("gate", 0.8f);
-    sync_chord = p.getBool("sync_chord", true);
-    base_velocity = static_cast<uint8_t>(p.getInt("base_velocity", 90));
+    json::ReadVisitor v{p};
+    v("pattern", pattern);
+    v("speed", speed);
+    v("octave_range", octave_range);
+    v("gate", gate);
+    v("sync_chord", sync_chord);
+    v("base_velocity", base_velocity);
   }
 };
 
@@ -124,16 +127,24 @@ struct ArpeggioStyle {
 
 // Note: MotifParams, MotifChordParams, MotifDrumParams are defined in motif_types.h
 
+/// @brief Shared defaults for song and accompaniment configuration.
+inline constexpr float kDefaultChordExtensionSusProbability = 0.2f;
+inline constexpr float kDefaultChordExtensionSeventhProbability = 0.15f;
+inline constexpr float kDefaultChordExtensionNinthProbability = 0.25f;
+inline constexpr float kDefaultChordExtensionTritoneSubProbability = 0.5f;
+inline constexpr float kDefaultHumanizeTiming = 0.4f;
+inline constexpr float kDefaultHumanizeVelocity = 0.3f;
+
 /// @brief Chord extension configuration.
 struct ChordExtensionParams {
-  bool enable_sus = false;               ///< Enable sus2/sus4 substitutions
-  bool enable_7th = false;               ///< Enable 7th chord extensions
-  bool enable_9th = false;               ///< Enable 9th chord extensions
-  bool tritone_sub = false;              ///< Enable tritone substitution (V7 -> bII7)
-  float sus_probability = 0.2f;          ///< Probability of sus chord (0.0-1.0)
-  float seventh_probability = 0.15f;     ///< Probability of 7th extension (0.0-1.0)
-  float ninth_probability = 0.25f;       ///< Probability of 9th extension (0.0-1.0)
-  float tritone_sub_probability = 0.5f;  ///< Probability of tritone sub (0.0-1.0)
+  bool enable_sus = false;   ///< Enable sus2/sus4 substitutions
+  bool enable_7th = false;   ///< Enable 7th chord extensions
+  bool enable_9th = false;   ///< Enable 9th chord extensions
+  bool tritone_sub = false;  ///< Enable tritone substitution (V7 -> bII7)
+  float sus_probability = kDefaultChordExtensionSusProbability;
+  float seventh_probability = kDefaultChordExtensionSeventhProbability;
+  float ninth_probability = kDefaultChordExtensionNinthProbability;
+  float tritone_sub_probability = kDefaultChordExtensionTritoneSubProbability;
 
   void writeTo(json::Writer& w) const {
     w.write("enable_sus", enable_sus)
@@ -151,10 +162,12 @@ struct ChordExtensionParams {
     enable_7th = p.getBool("enable_7th", false);
     enable_9th = p.getBool("enable_9th", false);
     tritone_sub = p.getBool("tritone_sub", false);
-    sus_probability = p.getFloat("sus_probability", 0.2f);
-    seventh_probability = p.getFloat("seventh_probability", 0.15f);
-    ninth_probability = p.getFloat("ninth_probability", 0.25f);
-    tritone_sub_probability = p.getFloat("tritone_sub_probability", 0.5f);
+    sus_probability = p.getFloat("sus_probability", kDefaultChordExtensionSusProbability);
+    seventh_probability =
+        p.getFloat("seventh_probability", kDefaultChordExtensionSeventhProbability);
+    ninth_probability = p.getFloat("ninth_probability", kDefaultChordExtensionNinthProbability);
+    tritone_sub_probability =
+        p.getFloat("tritone_sub_probability", kDefaultChordExtensionTritoneSubProbability);
   }
 };
 
@@ -237,6 +250,7 @@ struct SongConfig {
 
   /// Composition style
   CompositionStyle composition_style = CompositionStyle::MelodyLead;
+  bool composition_style_explicit = false;  ///< True if composition_style was explicitly set
 
   /// Motif chord parameters (for BackgroundMotif style)
   MotifChordParams motif_chord;
@@ -247,8 +261,8 @@ struct SongConfig {
 
   /// Humanization
   bool humanize = false;
-  float humanize_timing = 0.4f;
-  float humanize_velocity = 0.3f;
+  float humanize_timing = kDefaultHumanizeTiming;
+  float humanize_velocity = kDefaultHumanizeVelocity;
 
   /// Modulation options (extended)
   ModulationTiming modulation_timing = ModulationTiming::None;
@@ -329,6 +343,7 @@ struct SongConfig {
     v("vocal_low", self.vocal_low);
     v("vocal_high", self.vocal_high);
     v("composition_style", self.composition_style);
+    v("composition_style_explicit", self.composition_style_explicit);
     v("motif_repeat_scope", self.motif_repeat_scope);
     v("arrangement_growth", self.arrangement_growth);
     v("humanize", self.humanize);
@@ -380,31 +395,13 @@ struct SongConfig {
   void readFrom(const json::Parser& p) {
     json::ReadVisitor v{p};
     visitFields(*this, v);
+    // Before composition_style_explicit existed, providing composition_style
+    // itself meant an explicit override. Preserve that JSON/C API behavior.
+    if (p.has("composition_style") && !p.has("composition_style_explicit")) {
+      composition_style_explicit = true;
+    }
   }
 };
-
-/// @brief Clamp BPM for RhythmSync paradigm (optimal: 160-175).
-/// Only clamps when paradigm is RhythmSync and BPM was not explicitly set by user.
-/// @return {clamped_bpm, warning_message_if_changed}
-inline std::pair<uint16_t, std::optional<std::string>> clampRhythmSyncBpm(
-    uint16_t bpm, GenerationParadigm paradigm, bool bpm_explicit) {
-  constexpr uint16_t kRhythmSyncBpmMin = 160;
-  constexpr uint16_t kRhythmSyncBpmMax = 175;
-  if (paradigm != GenerationParadigm::RhythmSync || bpm_explicit) {
-    return {bpm, std::nullopt};
-  }
-  uint16_t clamped = bpm;
-  if (clamped < kRhythmSyncBpmMin) {
-    clamped = kRhythmSyncBpmMin;
-  } else if (clamped > kRhythmSyncBpmMax) {
-    clamped = kRhythmSyncBpmMax;
-  }
-  if (clamped != bpm) {
-    return {clamped, "BPM adjusted from " + std::to_string(bpm) + " to " + std::to_string(clamped) +
-                         " for RhythmSync paradigm (optimal: 160-175)"};
-  }
-  return {clamped, std::nullopt};
-}
 
 /// @brief Input parameters for MIDI generation.
 struct GeneratorParams {
@@ -460,9 +457,9 @@ struct GeneratorParams {
   bool guitar_enabled = true;  ///< Enable guitar track
 
   /// Humanization options
-  bool humanize = false;           ///< Enable timing/velocity humanization
-  float humanize_timing = 0.4f;    ///< Timing variation amount (0.0-1.0)
-  float humanize_velocity = 0.3f;  ///< Velocity variation amount (0.0-1.0)
+  bool humanize = false;                               ///< Enable timing/velocity humanization
+  float humanize_timing = kDefaultHumanizeTiming;      ///< Timing variation amount (0.0-1.0)
+  float humanize_velocity = kDefaultHumanizeVelocity;  ///< Velocity variation amount (0.0-1.0)
 
   /// Vocal expression parameters
   VocalAttitude vocal_attitude = VocalAttitude::Clean;
@@ -490,6 +487,7 @@ struct GeneratorParams {
 
   /// Explicit parameter flags (true = user explicitly set the value)
   bool bpm_explicit = false;           ///< True if BPM was explicitly set (skip RhythmSync clamp)
+  uint16_t auto_bpm_fallback = 120;    ///< Mood/style fallback when blueprint has no tempo
   bool motif_length_explicit = false;  ///< True if motif length was explicitly set
   bool motif_note_count_explicit = false;      ///< True if motif note_count was explicitly set
   bool motif_rhythm_density_explicit = false;  ///< True if motif rhythm_density was explicitly set
@@ -618,8 +616,8 @@ struct GeneratorParams {
     arpeggio_enabled = p.getBool("arpeggio_enabled", false);
     guitar_enabled = p.getBool("guitar_enabled", true);
     humanize = p.getBool("humanize", false);
-    humanize_timing = p.getFloat("humanize_timing", 0.4f);
-    humanize_velocity = p.getFloat("humanize_velocity", 0.3f);
+    humanize_timing = p.getFloat("humanize_timing", kDefaultHumanizeTiming);
+    humanize_velocity = p.getFloat("humanize_velocity", kDefaultHumanizeVelocity);
     vocal_attitude = static_cast<VocalAttitude>(p.getInt("vocal_attitude", 0));
     vocal_style = static_cast<VocalStylePreset>(p.getInt("vocal_style", 0));
     melody_template = static_cast<MelodyTemplateId>(p.getInt("melody_template", 0));
@@ -667,9 +665,24 @@ struct GeneratorParams {
 /// @brief Configuration for vocal regeneration.
 /// Contains all vocal-related parameters that can be changed during regeneration.
 struct VocalConfig {
-  uint32_t seed = 0;        ///< Random seed (0 = new random)
-  uint8_t vocal_low = 60;   ///< Vocal range lower bound (MIDI note)
-  uint8_t vocal_high = 79;  ///< Vocal range upper bound (MIDI note)
+  enum Field : uint32_t {
+    Seed = 1u << 0,
+    VocalLow = 1u << 1,
+    VocalHigh = 1u << 2,
+    VocalAttitudeField = 1u << 3,
+    VocalStyleField = 1u << 4,
+    MelodyTemplateField = 1u << 5,
+    MelodicComplexityField = 1u << 6,
+    HookIntensityField = 1u << 7,
+    VocalGrooveField = 1u << 8,
+    CompositionStyleField = 1u << 9,
+    KeepMotif = 1u << 10,
+  };
+
+  uint32_t present_fields = 0;  ///< JSON presence mask; 0 means native/full config.
+  uint32_t seed = 0;            ///< Random seed (0 = new random)
+  uint8_t vocal_low = 60;       ///< Vocal range lower bound (MIDI note)
+  uint8_t vocal_high = 79;      ///< Vocal range upper bound (MIDI note)
   VocalAttitude vocal_attitude = VocalAttitude::Clean;
   VocalStylePreset vocal_style = VocalStylePreset::Auto;
   MelodyTemplateId melody_template = MelodyTemplateId::Auto;
@@ -703,13 +716,55 @@ struct VocalConfig {
   void readFrom(const json::Parser& p) {
     json::ReadVisitor v{p};
     visitFields(*this, v);
+    const char* names[] = {
+        "seed",         "vocal_low",         "vocal_high",         "vocal_attitude",
+        "vocal_style",  "melody_template",   "melodic_complexity", "hook_intensity",
+        "vocal_groove", "composition_style", "keep_motif"};
+    present_fields = 0;
+    for (uint32_t idx = 0; idx < 11; ++idx) {
+      if (p.has(names[idx])) present_fields |= (1u << idx);
+    }
+  }
+
+  bool has(Field field) const {
+    return present_fields == 0 || (present_fields & static_cast<uint32_t>(field)) != 0;
   }
 };
 
 /// @brief Configuration for accompaniment generation/regeneration.
 /// Contains all accompaniment-related parameters (drums, arpeggio, chord, humanize, SE, call).
 struct AccompanimentConfig {
-  uint32_t seed = 0;  ///< Random seed for BGM (0 = auto-generate)
+  enum Field : uint32_t {
+    Seed = 1u << 0,
+    DrumsEnabled = 1u << 1,
+    ArpeggioEnabled = 1u << 2,
+    GuitarEnabled = 1u << 3,
+    ArpeggioPatternField = 1u << 4,
+    ArpeggioSpeedField = 1u << 5,
+    ArpeggioOctaveRange = 1u << 6,
+    ArpeggioGate = 1u << 7,
+    ArpeggioSyncChord = 1u << 8,
+    ChordExtSus = 1u << 9,
+    ChordExt7th = 1u << 10,
+    ChordExt9th = 1u << 11,
+    ChordExtTritoneSub = 1u << 12,
+    ChordExtSusProb = 1u << 13,
+    ChordExt7thProb = 1u << 14,
+    ChordExt9thProb = 1u << 15,
+    ChordExtTritoneSubProb = 1u << 16,
+    Humanize = 1u << 17,
+    HumanizeTiming = 1u << 18,
+    HumanizeVelocity = 1u << 19,
+    SeEnabled = 1u << 20,
+    CallEnabled = 1u << 21,
+    CallDensity = 1u << 22,
+    IntroChant = 1u << 23,
+    MixPattern = 1u << 24,
+    CallNotesEnabled = 1u << 25,
+  };
+
+  uint32_t present_fields = 0;  ///< JSON presence mask; 0 means native/full config.
+  uint32_t seed = 0;            ///< Random seed for BGM (0 = auto-generate)
 
   /// Drums
   bool drums_enabled = true;
@@ -731,16 +786,16 @@ struct AccompanimentConfig {
   bool chord_ext_sus = false;
   bool chord_ext_7th = false;
   bool chord_ext_9th = false;
-  bool chord_ext_tritone_sub = false;       ///< Enable tritone substitution (V7 -> bII7)
-  uint8_t chord_ext_sus_prob = 20;          ///< Sus probability (0-100)
-  uint8_t chord_ext_7th_prob = 30;          ///< 7th probability (0-100)
-  uint8_t chord_ext_9th_prob = 25;          ///< 9th probability (0-100)
-  uint8_t chord_ext_tritone_sub_prob = 50;  ///< Tritone sub probability (0-100)
+  bool chord_ext_tritone_sub = false;  ///< Enable tritone substitution (V7 -> bII7)
+  float chord_ext_sus_prob = kDefaultChordExtensionSusProbability;
+  float chord_ext_7th_prob = kDefaultChordExtensionSeventhProbability;
+  float chord_ext_9th_prob = kDefaultChordExtensionNinthProbability;
+  float chord_ext_tritone_sub_prob = kDefaultChordExtensionTritoneSubProbability;
 
   /// Humanization
   bool humanize = false;
-  uint8_t humanize_timing = 50;    ///< Timing variation (0-100)
-  uint8_t humanize_velocity = 50;  ///< Velocity variation (0-100)
+  float humanize_timing = kDefaultHumanizeTiming;      ///< Timing variation (0.0-1.0)
+  float humanize_velocity = kDefaultHumanizeVelocity;  ///< Velocity variation (0.0-1.0)
 
   /// SE
   bool se_enabled = true;
@@ -790,6 +845,40 @@ struct AccompanimentConfig {
   void readFrom(const json::Parser& p) {
     json::ReadVisitor v{p};
     visitFields(*this, v);
+    const char* names[] = {"seed",
+                           "drums_enabled",
+                           "arpeggio_enabled",
+                           "guitar_enabled",
+                           "arpeggio_pattern",
+                           "arpeggio_speed",
+                           "arpeggio_octave_range",
+                           "arpeggio_gate",
+                           "arpeggio_sync_chord",
+                           "chord_ext_sus",
+                           "chord_ext_7th",
+                           "chord_ext_9th",
+                           "chord_ext_tritone_sub",
+                           "chord_ext_sus_prob",
+                           "chord_ext_7th_prob",
+                           "chord_ext_9th_prob",
+                           "chord_ext_tritone_sub_prob",
+                           "humanize",
+                           "humanize_timing",
+                           "humanize_velocity",
+                           "se_enabled",
+                           "call_enabled",
+                           "call_density",
+                           "intro_chant",
+                           "mix_pattern",
+                           "call_notes_enabled"};
+    present_fields = 0;
+    for (uint32_t idx = 0; idx < 26; ++idx) {
+      if (p.has(names[idx])) present_fields |= (1u << idx);
+    }
+  }
+
+  bool has(Field field) const {
+    return present_fields == 0 || (present_fields & static_cast<uint32_t>(field)) != 0;
   }
 };
 

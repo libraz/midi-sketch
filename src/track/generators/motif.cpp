@@ -38,9 +38,7 @@ namespace midisketch {
 struct MotifRiffCache {
   std::vector<NoteEvent> pattern;
   std::vector<NoteEvent> original_pattern;
-  std::vector<uint8_t> adjusted_pitches;  // Pitches after adjustment (for Locked mode)
   bool cached = false;
-  bool pitches_adjusted = false;  // True after first section processes pitches
 };
 
 // =============================================================================
@@ -445,7 +443,12 @@ std::vector<int> generatePitchSequence(uint8_t note_count, MotifMotion motion, s
   }
 
   auto constrainedStep = [max_leap_degrees, prefer_stepwise](int step) {
-    int limit = prefer_stepwise ? std::min(2, max_leap_degrees) : max_leap_degrees;
+    // `prefer_stepwise` is a melodic contract, not merely a weaker leap
+    // ceiling: retain only adjacent scale-degree motion.  The previous
+    // two-degree allowance still produced frequent third/fourth jumps once
+    // rendered to semitones, especially across the antecedent/consequent
+    // boundary of lyrical (Ballad) motifs.
+    int limit = prefer_stepwise ? std::min(1, max_leap_degrees) : max_leap_degrees;
     return std::clamp(step, -limit, limit);
   };
 
@@ -942,6 +945,13 @@ uint8_t calculateMotifVelocity(uint8_t base_vel, bool is_chorus, SectionType sec
                                bool is_phrase_end = false) {
   int vel = static_cast<int>(base_vel);
 
+  // Fixed velocity means the motif supplies a stable pulse while the drums
+  // carry the groove. Do not reintroduce phrase or section dynamics here;
+  // the post-processing pipeline intentionally excludes this track as well.
+  if (velocity_fixed) {
+    return static_cast<uint8_t>(std::clamp(vel, 30, 127));
+  }
+
   if (!velocity_fixed) {
     if (is_chorus) {
       vel += 10;
@@ -950,7 +960,7 @@ uint8_t calculateMotifVelocity(uint8_t base_vel, bool is_chorus, SectionType sec
     }
   }
 
-  // Phrase-shaped micro-variation (applied even when velocity_fixed)
+  // Phrase-shaped micro-variation for expressive motifs.
   if (is_phrase_start) {
     vel += 3;  // Attack feel at phrase head
   } else if (is_phrase_end) {
@@ -1377,7 +1387,16 @@ bool replayCachedNotesCoordinateAxis(MidiTrack& track, const Section& section,
       uint8_t replay_root = degreeToRoot(replay_degree, Key::C);
       Chord replay_chord = getChordNotes(replay_degree);
       bool replay_minor = (replay_chord.intervals[1] == 3);
-      if (isAvoidNoteWithContext(replay_pitch, replay_root, replay_minor, replay_degree)) {
+      // The tracker can carry a secondary dominant or planned extension whose
+      // colour tones are not present in the degree's plain diatonic triad.
+      // Do not "correct" a cached note that is already a tone of that shared
+      // timeline chord: doing so changes individual notes in a locked riff
+      // and destroys its contour on replay.
+      const auto active_tones = harmony->getChordTonesAt(absolute_tick);
+      bool is_active_chord_tone = std::find(active_tones.begin(), active_tones.end(),
+                                            replay_pitch % 12) != active_tones.end();
+      if (!is_active_chord_tone &&
+          isAvoidNoteWithContext(replay_pitch, replay_root, replay_minor, replay_degree)) {
         ChordToneHelper ct_helper(replay_degree);
         replay_pitch = ct_helper.nearestInRange(static_cast<uint8_t>(replay_pitch), motif_range_low,
                                                 motif_range_high);
@@ -1460,7 +1479,13 @@ std::vector<NoteEvent>* resolveCurrentPattern(
     evolveRiffPattern(state.riff_cache.pattern, cycle_length, rng);
     current_pattern = &state.riff_cache.pattern;
   } else if (policy == RiffPolicy::Free) {
-    if (motif_params.repeat_scope == MotifRepeatScope::Section) {
+    if (motif_params.repeat_scope == MotifRepeatScope::FullSong) {
+      // Free takes precedence over the otherwise song-wide repeat scope: it
+      // must supply a fresh motif identity for every section rather than
+      // silently falling through to the original global pattern.
+      section_pattern = generateMotifPattern(params, rng);
+      current_pattern = &section_pattern;
+    } else {
       auto iter = state.section_patterns.find(section.type);
       if (iter == state.section_patterns.end()) {
         if (rng_util::rollProbability(rng, role_meta.exact_repeat_prob)) {
@@ -1907,6 +1932,16 @@ void generateMotifForSection(MidiTrack& track, const Section& section, const Ful
         continue;
       }
 
+      // A partial final cycle is valid for short sections. Keep its onsets,
+      // but never let a note (or its octave/stab layer) bleed into the next
+      // section.
+      NoteEvent section_note = note;
+      section_note.duration = std::min(note.duration, section_end - absolute_tick);
+      if (section_note.duration == 0) {
+        ++onset_idx;
+        continue;
+      }
+
       uint8_t current_bar = static_cast<uint8_t>(tickToBar(absolute_tick - pos));
 
       // Check all skip conditions
@@ -1938,7 +1973,7 @@ void generateMotifForSection(MidiTrack& track, const Section& section, const Ful
       // vocal. Skipped for RhythmSync (motif is generated before the vocal).
       uint8_t eff_range_high =
           computeVocalCeilingForNote(motif_range_high, enforce_vocal_ceiling, harmony,
-                                     absolute_tick, note.duration, motif_range_low);
+                                     absolute_tick, section_note.duration, motif_range_low);
 
       // Build note context for pitch calculation
       MotifNoteContext note_ctx;
@@ -1955,8 +1990,9 @@ void generateMotifForSection(MidiTrack& track, const Section& section, const Ful
       note_ctx.motif_range_low = motif_range_low;
 
       // Calculate adjusted pitch
-      MotifPitchResult pitch_result = calculateMotifPitch(
-          note, note_ctx, params, motif_params, harmony, vocal_ctx, base_note_override, rng);
+      MotifPitchResult pitch_result =
+          calculateMotifPitch(section_note, note_ctx, params, motif_params, harmony, vocal_ctx,
+                              base_note_override, rng);
 
       // Clamp to vocal ceiling
       int adjusted_pitch = std::min(pitch_result.pitch, static_cast<int>(eff_range_high));
@@ -1982,11 +2018,12 @@ void generateMotifForSection(MidiTrack& track, const Section& section, const Ful
       if (is_rhythm_lock_global) {
         bool add_stab_voice =
             (motif_params.rhythm_template == MotifRhythmTemplate::ChordPulseStabs);
-        emitMotifNoteCoordAxis(track, *harmony, note, absolute_tick, final_pitch, vel, pitch_result,
-                               add_octave, add_stab_voice, motif_range_low, eff_range_high);
+        emitMotifNoteCoordAxis(track, *harmony, section_note, absolute_tick, final_pitch, vel,
+                               pitch_result, add_octave, add_stab_voice, motif_range_low,
+                               eff_range_high);
         bar_note_count[current_bar]++;
       } else {
-        if (!emitMotifNoteStandard(track, *harmony, note, absolute_tick, final_pitch, vel,
+        if (!emitMotifNoteStandard(track, *harmony, section_note, absolute_tick, final_pitch, vel,
                                    add_octave, motif_range_low, eff_range_high, state)) {
           ++onset_idx;
           continue;

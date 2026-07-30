@@ -15,10 +15,12 @@
 #include "core/midi_track.h"
 #include "core/pitch_utils.h"
 #include "core/preset_data.h"
+#include "core/rng_util.h"
 #include "core/secondary_dominant_planner.h"
 #include "core/song.h"
 #include "core/structure.h"
 #include "core/timing_constants.h"
+#include "track/chord/voice_leading.h"
 #include "track/drums.h"
 #include "track/generators/arpeggio.h"
 #include "track/generators/aux.h"
@@ -38,6 +40,64 @@ Coordinator::Coordinator() : harmony_(std::make_unique<HarmonyCoordinator>()), r
 Coordinator::~Coordinator() = default;
 
 namespace {
+
+void planAndRegisterCadenceFixes(const Arrangement& arrangement, const GeneratorParams& params,
+                                 const ChordProgression& progression,
+                                 IHarmonyCoordinator& harmony) {
+  const auto& sections = arrangement.sections();
+  for (size_t index = 0; index < sections.size(); ++index) {
+    const Section& section = sections[index];
+    SectionType next = index + 1 < sections.size() ? sections[index + 1].type : SectionType::Outro;
+    if (section.bars < 2 ||
+        !chord_voicing::needsCadenceFix(section.bars, progression.length, section.type, next)) {
+      continue;
+    }
+
+    Tick ii_start = section.start_tick + (section.bars - 2) * TICKS_PER_BAR;
+    Tick v_start = ii_start + TICKS_PER_BAR;
+    ChordExtension ii_extension =
+        params.chord_extension.enable_7th ? ChordExtension::Min7 : ChordExtension::None;
+    ChordExtension v_extension =
+        params.chord_extension.enable_7th ? ChordExtension::Dom7 : ChordExtension::None;
+    harmony.registerChordReplacement(ii_start, v_start, 1, ii_extension);
+    harmony.registerChordReplacement(v_start, v_start + TICKS_PER_BAR, 4, v_extension);
+  }
+}
+
+void planAndRegisterTritoneSubstitutions(const Arrangement& arrangement,
+                                         const GeneratorParams& params,
+                                         IHarmonyCoordinator& harmony) {
+  if (!params.chord_extension.tritone_sub ||
+      params.chord_extension.tritone_sub_probability <= 0.0f) {
+    return;
+  }
+
+  constexpr uint32_t kTritoneSubSalt = 0x7A170E5U;
+  uint32_t substitution_seed = params.seed ^ kTritoneSubSalt;
+  if (substitution_seed == 0) substitution_seed = kTritoneSubSalt;
+  std::mt19937 rng(substitution_seed);
+
+  for (const auto& section : arrangement.sections()) {
+    for (uint8_t bar = 0; bar < section.bars; ++bar) {
+      Tick entry_start = section.start_tick + bar * TICKS_PER_BAR;
+      Tick bar_end = entry_start + TICKS_PER_BAR;
+      while (entry_start < bar_end) {
+        Tick entry_end = harmony.getNextChordEntryTick(entry_start);
+        if (entry_end <= entry_start || entry_end > bar_end) entry_end = bar_end;
+
+        int8_t degree = harmony.getChordDegreeAt(entry_start);
+        TritoneSubInfo substitution = checkTritoneSubstitution(
+            degree, degree == 4, params.chord_extension.tritone_sub_probability,
+            rng_util::rollFloat(rng, 0.0f, 1.0f));
+        if (substitution.should_substitute) {
+          // bII is the tritone substitute for V in the supported degree table.
+          harmony.registerChordReplacement(entry_start, entry_end, 13, ChordExtension::Dom7);
+        }
+        entry_start = entry_end;
+      }
+    }
+  }
+}
 
 void planAndRegisterChordExtensions(const Arrangement& arrangement, const GeneratorParams& params,
                                     IHarmonyCoordinator& harmony) {
@@ -67,13 +127,18 @@ void planAndRegisterChordExtensions(const Arrangement& arrangement, const Genera
           entry_start = entry_end;
           continue;
         }
+        if (harmony.hasChordExtensionAt(entry_start)) {
+          prev_extension = harmony.getChordExtensionAt(entry_start);
+          entry_start = entry_end;
+          continue;
+        }
 
         int8_t degree = harmony.getChordDegreeAt(entry_start);
         int8_t next_degree = harmony.getChordDegreeAt(entry_end);
         int8_t prev_degree =
             (entry_start >= TICKS_PER_BAR) ? harmony.getChordDegreeAt(entry_start - 1) : -1;
 
-        bool is_minor_chord = (degree == 1 || degree == 2 || degree == 5);
+        bool is_minor_chord = (getChordQuality(degree) == ChordQuality::Minor);
         bool is_dominant_chord = (degree == 4);
         ReharmonizationResult reharm =
             reharmonizeForSection(degree, section.type, is_minor_chord, is_dominant_chord,
@@ -100,6 +165,19 @@ void planAndRegisterChordExtensions(const Arrangement& arrangement, const Genera
 
 }  // namespace
 
+void registerPlannedHarmonyTimeline(const Arrangement& arrangement, const GeneratorParams& params,
+                                    const ChordProgression& progression,
+                                    IHarmonyCoordinator& harmony) {
+  constexpr uint32_t kSecDomSalt = 0x5ECD0A17;
+  uint32_t sec_dom_seed = params.seed ^ kSecDomSalt;
+  if (sec_dom_seed == 0) sec_dom_seed = kSecDomSalt;
+  std::mt19937 sec_dom_rng(sec_dom_seed);
+  planAndRegisterSecondaryDominants(arrangement, progression, params.mood, sec_dom_rng, harmony);
+  planAndRegisterCadenceFixes(arrangement, params, progression, harmony);
+  planAndRegisterTritoneSubstitutions(arrangement, params, harmony);
+  planAndRegisterChordExtensions(arrangement, params, harmony);
+}
+
 // ============================================================================
 // Initialization
 // ============================================================================
@@ -113,6 +191,10 @@ void Coordinator::initialize(const GeneratorParams& params) {
   if (seed == 0) {
     seed = static_cast<uint32_t>(std::chrono::steady_clock::now().time_since_epoch().count());
   }
+  // Harmony planning derives independent RNG streams from params_.seed. Keep
+  // the resolved value here so direct Coordinator users do not collapse every
+  // auto-seeded plan onto the same salt-only sequence.
+  params_.seed = seed;
   rng_.seed(seed);
 
   // Initialize blueprint
@@ -138,17 +220,7 @@ void Coordinator::initialize(const GeneratorParams& params) {
   const auto& progression = midisketch::getChordProgression(chord_id_);
   harmony_->initialize(arrangement_, progression, params.mood);
 
-  // Pre-register secondary dominants before track generation.
-  // Uses a dedicated sub-RNG to avoid disturbing the main RNG stream.
-  {
-    constexpr uint32_t kSecDomSalt = 0x5ECD0A17;
-    uint32_t sec_dom_seed = params.seed ^ kSecDomSalt;
-    if (sec_dom_seed == 0) sec_dom_seed = kSecDomSalt;
-    std::mt19937 sec_dom_rng(sec_dom_seed);
-    planAndRegisterSecondaryDominants(arrangement_, progression, params.mood, sec_dom_rng,
-                                      *harmony_);
-  }
-  planAndRegisterChordExtensions(arrangement_, params_, *harmony_);
+  registerPlannedHarmonyTimeline(arrangement_, params_, progression, *harmony_);
 
   // Set track priorities in harmony coordinator
   auto* harmony_coord = dynamic_cast<HarmonyCoordinator*>(harmony_.get());
@@ -210,8 +282,7 @@ void Coordinator::initialize(const GeneratorParams& params, const Arrangement& a
   // Use external harmony coordinator (shared with Generator)
   external_harmony_ = harmony;
 
-  // Pre-register secondary dominants before track generation.
-  // Uses a dedicated sub-RNG to avoid disturbing the main RNG stream.
+  // Pre-register the same harmony timeline as full generation.
   //
   // Contract: the supplied harmony coordinator's chord tracker must NOT already
   // contain secondary-dominant splits. registerSecondaryDominant() mutates the
@@ -222,16 +293,8 @@ void Coordinator::initialize(const GeneratorParams& params, const Arrangement& a
   // generateVocal path) must reset the chord tracker before this overload runs.
   // The standard full-generation path re-initializes the tracker in
   // initializeGenerationState(), so it is registered exactly once.
-  {
-    const auto& progression = midisketch::getChordProgression(chord_id_);
-    constexpr uint32_t kSecDomSalt = 0x5ECD0A17;
-    uint32_t sec_dom_seed = params.seed ^ kSecDomSalt;
-    if (sec_dom_seed == 0) sec_dom_seed = kSecDomSalt;
-    std::mt19937 sec_dom_rng(sec_dom_seed);
-    planAndRegisterSecondaryDominants(arrangement_, progression, params.mood, sec_dom_rng,
-                                      *harmony);
-  }
-  planAndRegisterChordExtensions(arrangement_, params_, *harmony);
+  const auto& progression = midisketch::getChordProgression(chord_id_);
+  registerPlannedHarmonyTimeline(arrangement_, params_, progression, *harmony);
 
   // Set track priorities in external harmony coordinator
   auto* harmony_coord = dynamic_cast<HarmonyCoordinator*>(harmony);
@@ -263,16 +326,18 @@ ValidationResult Coordinator::validateParams() const {
     result.addWarning("Vocal range extends beyond typical range (C2-C7)");
   }
 
-  // Validate BPM for paradigm
-  if (paradigm_ == GenerationParadigm::RhythmSync) {
-    if (bpm_ < 160 || bpm_ > 175) {
-      result.addWarning("RhythmSync works best at 160-175 BPM");
-    }
+  // Validate BPM against the resolved blueprint's declared tempo identity.
+  if (blueprint_ && blueprint_->tempo_min > 0 && blueprint_->tempo_max > 0 &&
+      (bpm_ < blueprint_->tempo_min || bpm_ > blueprint_->tempo_max)) {
+    result.addWarning(std::string(blueprint_->name) + " works best at " +
+                      std::to_string(blueprint_->tempo_min) + "-" +
+                      std::to_string(blueprint_->tempo_max) + " BPM");
   }
 
   // Validate chord progression
-  if (params_.chord_id >= 20) {
-    result.addError("Invalid chord progression ID (must be 0-19)");
+  if (params_.chord_id >= CHORD_COUNT) {
+    result.addError("Invalid chord progression ID (must be 0-" +
+                    std::to_string(static_cast<int>(CHORD_COUNT - 1)) + ")");
   }
 
   // Validate blueprint
@@ -668,7 +733,7 @@ void Coordinator::buildArrangement() {
 }
 
 void Coordinator::validateBpm() {
-  auto [clamped, warn] = clampRhythmSyncBpm(bpm_, paradigm_, params_.bpm_explicit);
+  auto [clamped, warn] = clampBlueprintBpm(bpm_, *blueprint_, params_.bpm_explicit);
   bpm_ = clamped;
   if (warn) warnings_.push_back(*warn);
 }
@@ -938,45 +1003,6 @@ void copyNotesFromBar(std::vector<NoteEvent>& notes, const std::vector<NoteEvent
   }
 }
 
-/// @brief Check if a pitch is consonant with all other tracks' notes in the song.
-///
-/// Used after voice-limit re-quantization to avoid creating new dissonances.
-/// Uses the same interval threshold (24 semitones) as the clash analysis tests.
-///
-/// @param song The Song containing all tracks
-/// @param pitch Pitch to check
-/// @param start Start tick of the note
-/// @param duration Duration of the note
-/// @param exclude_role Track to exclude from checking
-/// @param chord_degree Chord degree at this tick (for context-dependent dissonance)
-/// @return true if the pitch is consonant with all other tracks
-bool isConsonantWithSongTracks(const Song& song, uint8_t pitch, Tick start, Tick duration,
-                               TrackRole exclude_role, int8_t chord_degree) {
-  constexpr int kMaxClashSeparation = 24;
-  Tick end = start + duration;
-
-  for (size_t t = 0; t < kTrackCount; ++t) {
-    auto role = static_cast<TrackRole>(t);
-    if (role == exclude_role) continue;
-    if (role == TrackRole::Drums || role == TrackRole::SE) continue;
-
-    const auto& notes = song.track(role).notes();
-    for (const auto& note : notes) {
-      Tick note_end = note.start_tick + note.duration;
-      if (note.start_tick >= end) continue;
-      if (note_end <= start) continue;
-
-      int actual_semitones = std::abs(static_cast<int>(pitch) - static_cast<int>(note.note));
-      if (actual_semitones >= kMaxClashSeparation) continue;
-
-      if (isDissonantActualInterval(actual_semitones, chord_degree)) {
-        return false;
-      }
-    }
-  }
-  return true;
-}
-
 /// @brief Find a consonant chord tone for a voice-limited note.
 ///
 /// Tries all chord tones in nearby octaves, sorted by distance from the
@@ -1000,24 +1026,18 @@ bool isConsonantWithSongTracks(const Song& song, uint8_t pitch, Tick start, Tick
 /// Backing tracks re-quantized by the voice limiter should stay below the
 /// concurrently sounding vocal; pitches at or above it compete with the
 /// main melody.
-int getVocalCeiling(const Song& song, Tick start, Tick duration, TrackRole role) {
+int getVocalCeiling(const IHarmonyCoordinator& harmony, Tick start, Tick duration, TrackRole role) {
   if (role == TrackRole::Vocal) return 128;
-  int ceiling = 128;
-  for (const auto& v_note : song.vocal().notes()) {
-    if (v_note.start_tick < start + duration && v_note.start_tick + v_note.duration > start) {
-      ceiling = std::min(ceiling, static_cast<int>(v_note.note));
-    }
-  }
-  return ceiling;
+  uint8_t lowest = harmony.getLowestPitchForTrackInRange(start, start + duration, TrackRole::Vocal);
+  return lowest > 0 ? lowest : 128;
 }
 
-int findConsonantChordTone(IHarmonyCoordinator& harmony, const Song& song, uint8_t snapped,
-                           uint8_t original, Tick start, Tick duration, TrackRole role,
-                           uint8_t range_low = 0, uint8_t range_high = 127) {
-  int8_t chord_degree = harmony.getChordDegreeAt(start);
+int findConsonantChordTone(IHarmonyCoordinator& harmony, uint8_t snapped, uint8_t original,
+                           Tick start, Tick duration, TrackRole role, uint8_t range_low = 0,
+                           uint8_t range_high = 127) {
   auto chord_tones = harmony.getChordTonesAt(start);
   int orig_octave = original / 12;
-  int vocal_ceiling = getVocalCeiling(song, start, duration, role);
+  int vocal_ceiling = getVocalCeiling(harmony, start, duration, role);
 
   // Preserve which side of the vocal the original note was on: a note that
   // was below the vocal must not be pushed above it (it would compete with
@@ -1055,7 +1075,7 @@ int findConsonantChordTone(IHarmonyCoordinator& harmony, const Song& song, uint8
                    });
 
   for (const auto& c : candidates) {
-    if (isConsonantWithSongTracks(song, c.pitch, start, duration, role, chord_degree)) {
+    if (harmony.isConsonantWithOtherTracks(c.pitch, start, duration, role)) {
       return c.pitch;
     }
   }
@@ -1082,7 +1102,7 @@ int findConsonantChordTone(IHarmonyCoordinator& harmony, const Song& song, uint8
                      return a.distance < b.distance;
                    });
   for (const auto& c : scale_candidates) {
-    if (isConsonantWithSongTracks(song, c.pitch, start, duration, role, chord_degree)) {
+    if (harmony.isConsonantWithOtherTracks(c.pitch, start, duration, role)) {
       return c.pitch;
     }
   }
@@ -1107,17 +1127,15 @@ constexpr int kMaxFrozenSameRun = 3;
 /// Candidates are chord tones in nearby octaves sorted by distance from the
 /// note's pre-snap pitch (contour preservation). Returns candidate unchanged
 /// if no consonant alternative exists (clash avoidance wins over monotony).
-uint8_t diversifyRepeatedChordTone(IHarmonyCoordinator& harmony, const Song& song,
-                                   uint8_t candidate, uint8_t prev_pitch, uint8_t original,
-                                   Tick start, Tick duration, TrackRole role, uint8_t range_low,
-                                   uint8_t range_high) {
-  int8_t chord_degree = harmony.getChordDegreeAt(start);
+uint8_t diversifyRepeatedChordTone(IHarmonyCoordinator& harmony, uint8_t candidate,
+                                   uint8_t prev_pitch, uint8_t original, Tick start, Tick duration,
+                                   TrackRole role, uint8_t range_low, uint8_t range_high) {
   auto chord_tones = harmony.getChordTonesAt(start);
   int orig_octave = original / 12;
 
   // Preserve the original note's register relative to the vocal: a note that
   // was below the vocal must not be diversified to a pitch above it.
-  int vocal_ceiling = getVocalCeiling(song, start, duration, role);
+  int vocal_ceiling = getVocalCeiling(harmony, start, duration, role);
   bool orig_below_vocal = static_cast<int>(original) < vocal_ceiling;
 
   struct Candidate {
@@ -1153,7 +1171,7 @@ uint8_t diversifyRepeatedChordTone(IHarmonyCoordinator& harmony, const Song& son
       // better than a fresh pitch competing with the main melody.
       break;
     }
-    if (isConsonantWithSongTracks(song, c.pitch, start, duration, role, chord_degree)) {
+    if (harmony.isConsonantWithOtherTracks(c.pitch, start, duration, role)) {
       return c.pitch;
     }
   }
@@ -1239,46 +1257,23 @@ void Coordinator::applyVoiceLimit(Song& song, const std::vector<Section>& sectio
   // Use track-specific pitch ranges to avoid out-of-range notes.
   if (!frozen_bars.empty()) {
     IHarmonyCoordinator& harmony = getActiveHarmony();
+    // Pass 1 copied and removed notes directly on Song tracks. Refresh the
+    // collision registry once before candidate searches so every lookup below
+    // uses its beat index instead of re-scanning every Song track for every
+    // candidate pitch.
+    for (TrackRole role : kVoiceLimitPriority) {
+      harmony.clearNotesForTrack(role);
+      harmony.registerTrack(song.track(role), role);
+    }
     for (const auto& fb : frozen_bars) {
-      // Determine track-specific pitch range
-      uint8_t range_low = 0;
-      uint8_t range_high = 127;
-      switch (fb.role) {
-        case TrackRole::Bass:
-          range_low = BASS_LOW;
-          range_high = BASS_HIGH;
-          break;
-        case TrackRole::Chord:
-          range_low = CHORD_LOW;
-          range_high = CHORD_HIGH;
-          break;
-        case TrackRole::Motif:
-          range_low = MOTIF_LOW;
-          range_high = MOTIF_HIGH;
-          break;
-        case TrackRole::Aux:
-          // Aux physical model range (PhysicalModels::kAuxVocal = [55, 84]).
-          // Without this case the requantization snapped aux notes to chord
-          // tones across the full [0, 127] range, dropping them as low as G2.
-          range_low = 55;
-          range_high = 84;
-          break;
-        case TrackRole::Guitar:
-          // Electric guitar physical range (PhysicalModels::kElectricGuitar =
-          // [40, 76], matching kGuitarLow/kGuitarHigh in guitar.cpp). Without
-          // this case the requantization snapped guitar notes down to C2.
-          range_low = 40;
-          range_high = 76;
-          break;
-        case TrackRole::Arpeggio:
-          // Arpeggio generation range (range_low = 48 in arpeggio.cpp; the
-          // upper bound matches the synth-lead voicing ceiling).
-          range_low = 48;
-          range_high = 96;
-          break;
-        default:
-          break;
-      }
+      // Re-quantization must share the generator's physical model.  Keeping
+      // duplicate ranges here previously truncated valid high Arpeggio and
+      // Guitar notes whenever a bar was frozen.
+      const ITrackBase* track_generator = getTrackGenerator(fb.role);
+      const PhysicalModel model =
+          track_generator ? track_generator->getPhysicalModel() : PhysicalModel{};
+      const uint8_t range_low = model.pitch_low;
+      const uint8_t range_high = model.pitch_high;
 
       // Vocal ceiling: accompaniment tracks must not be re-quantized above the
       // concurrent vocal. The freeze copies a prior bar's notes into this bar
@@ -1374,12 +1369,10 @@ void Coordinator::applyVoiceLimit(Song& song, const std::vector<Section>& sectio
             static_cast<int>(note.note), note.start_tick, range_low, note_range_high);
         uint8_t candidate = static_cast<uint8_t>(std::clamp(snapped, 0, 127));
 
-        int8_t chord_degree = harmony.getChordDegreeAt(note.start_tick);
-        if (!isConsonantWithSongTracks(song, candidate, note.start_tick, note.duration, fb.role,
-                                       chord_degree)) {
-          int resolved =
-              findConsonantChordTone(harmony, song, candidate, note.note, note.start_tick,
-                                     note.duration, fb.role, range_low, note_range_high);
+        if (!harmony.isConsonantWithOtherTracks(candidate, note.start_tick, note.duration,
+                                                fb.role)) {
+          int resolved = findConsonantChordTone(harmony, candidate, note.note, note.start_tick,
+                                                note.duration, fb.role, range_low, note_range_high);
           if (resolved < 0 && note_range_high < range_high) {
             // No consonant pitch under the vocal ceiling (the ceiling can
             // pinch the range onto a single pitch that clashes with another
@@ -1389,7 +1382,7 @@ void Coordinator::applyVoiceLimit(Song& song, const std::vector<Section>& sectio
             // medium band (excess >= 5 is a high-severity gate failure).
             uint8_t lifted_high = static_cast<uint8_t>(
                 std::min<int>(range_high, static_cast<int>(note_range_high) + 4));
-            resolved = findConsonantChordTone(harmony, song, candidate, note.note, note.start_tick,
+            resolved = findConsonantChordTone(harmony, candidate, note.note, note.start_tick,
                                               note.duration, fb.role, range_low, lifted_high);
           }
           // A note crossing a mid-bar chord change may have no single pitch
@@ -1404,13 +1397,12 @@ void Coordinator::applyVoiceLimit(Song& song, const std::vector<Section>& sectio
             if (boundary > note.start_tick && boundary < note_end) {
               Tick head_dur = boundary - note.start_tick;
               int head_res =
-                  isConsonantWithSongTracks(song, candidate, note.start_tick, head_dur, fb.role,
-                                            chord_degree)
+                  harmony.isConsonantWithOtherTracks(candidate, note.start_tick, head_dur, fb.role)
                       ? candidate
-                      : findConsonantChordTone(harmony, song, candidate, note.note, note.start_tick,
+                      : findConsonantChordTone(harmony, candidate, note.note, note.start_tick,
                                                head_dur, fb.role, range_low, note_range_high);
               int tail_res =
-                  findConsonantChordTone(harmony, song, candidate, note.note, boundary,
+                  findConsonantChordTone(harmony, candidate, note.note, boundary,
                                          note_end - boundary, fb.role, range_low, note_range_high);
               if (head_res >= 0 && head_res == tail_res) {
                 // One pitch satisfies both contexts: keep the full duration.
@@ -1450,9 +1442,9 @@ void Coordinator::applyVoiceLimit(Song& song, const std::vector<Section>& sectio
         // contours onto the nearest chord tone, producing monotone lines.
         bool is_stack = (onset_note_count > 1);
         if (!is_stack && has_prev && candidate == prev_pitch && same_run >= kMaxFrozenSameRun) {
-          candidate = diversifyRepeatedChordTone(harmony, song, candidate, prev_pitch, note.note,
-                                                 note.start_tick, note.duration, fb.role, range_low,
-                                                 note_range_high);
+          candidate =
+              diversifyRepeatedChordTone(harmony, candidate, prev_pitch, note.note, note.start_tick,
+                                         note.duration, fb.role, range_low, note_range_high);
         }
 
 #ifdef MIDISKETCH_NOTE_PROVENANCE

@@ -71,7 +71,7 @@ constexpr std::array<SectionProperties, 10> kSectionProperties = {{
   // Chant: very subdued, no vocal, thin backing
   /* 7 */ { 0.55f,    1,      VocalDensity::None,   BackingDensity::Thin,   false,   50,     0.00f,  0.25f,   false,  false },
   // MixBreak: high energy, no vocal, thick backing
-  /* 8 */ { 1.10f,    1,      VocalDensity::None,   BackingDensity::Thick,  false,   100,    0.00f,  0.55f,   true,   true  },
+  /* 8 */ { 1.10f,    4,      VocalDensity::None,   BackingDensity::Thick,  false,   100,    0.00f,  0.55f,   true,   true  },
   // Drop: high energy, no vocal, thin backing (kick + sub-bass only initially)
   /* 9 */ { 1.10f,    4,      VocalDensity::None,   BackingDensity::Thin,   false,   100,    0.00f,  0.40f,   true,   true  },
 }};

@@ -138,6 +138,13 @@ BassPattern promoteBassPatternForPeakLevel(BassPattern pattern, PeakLevel peak_l
 uint8_t adjustPitchForMotion(uint8_t base_pitch, MotionType motion, int8_t vocal_direction,
                              uint8_t vocal_pitch, int8_t degree);
 
+/// Add a bass note while rejecting tritones against the sounding or theoretical chord.
+/// The theoretical fallback is needed because Bass is generated before Chord.
+/// Add a bass approach note after rejecting pitches that clash with the theoretical chord.
+void addBassApproachNoteWithTritoneGuard(MidiTrack& track, IHarmonyContext& harmony, Tick start,
+                                         Tick duration, uint8_t pitch, uint8_t root,
+                                         uint8_t velocity);
+
 // ============================================================================
 // Standalone Generation Functions
 // ============================================================================

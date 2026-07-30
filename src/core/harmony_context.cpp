@@ -32,7 +32,7 @@ Tick HarmonyContext::getNextChordEntryTick(Tick after) const {
   return chord_tracker_.getNextChordEntryTick(after);
 }
 
-std::vector<int> HarmonyContext::getChordTonesAt(Tick tick) const {
+ChordTones HarmonyContext::getChordTonesAt(Tick tick) const {
   return chord_tracker_.getChordTonesAt(tick);
 }
 
@@ -54,13 +54,18 @@ void HarmonyContext::registerNote(Tick start, Tick duration, uint8_t pitch, Trac
 }
 
 void HarmonyContext::registerTrack(const MidiTrack& track, TrackRole role) {
+  // Generators register notes incrementally so later notes in the same track
+  // can avoid them.  At the end of generation the Coordinator registers the
+  // completed track as the authoritative snapshot.  Replace the provisional
+  // entries instead of appending a second copy of every note.
+  collision_detector_.clearNotesForTrack(role);
   collision_detector_.registerTrack(track, role);
 }
 
 bool HarmonyContext::isConsonantWithOtherTracks(uint8_t pitch, Tick start, Tick duration,
-                                                TrackRole exclude, bool is_weak_beat) const {
+                                                TrackRole exclude, bool allow_accented_nct) const {
   return collision_detector_.isConsonantWithOtherTracks(pitch, start, duration, exclude,
-                                                        &chord_tracker_, is_weak_beat);
+                                                        &chord_tracker_, allow_accented_nct);
 }
 
 CollisionInfo HarmonyContext::getCollisionInfo(uint8_t pitch, Tick start, Tick duration,
@@ -72,11 +77,6 @@ void HarmonyContext::clearNotes() { collision_detector_.clearNotes(); }
 
 void HarmonyContext::clearNotesForTrack(TrackRole track) {
   collision_detector_.clearNotesForTrack(track);
-}
-
-bool HarmonyContext::hasBassCollision(uint8_t pitch, Tick start, Tick duration,
-                                      int threshold) const {
-  return collision_detector_.hasBassCollision(pitch, start, duration, threshold);
 }
 
 std::vector<int> HarmonyContext::getPitchClassesFromTrackAt(Tick tick, TrackRole role) const {
@@ -94,6 +94,11 @@ void HarmonyContext::registerSecondaryDominant(Tick start, Tick end, int8_t degr
 
 void HarmonyContext::registerChordExtension(Tick start, Tick end, ChordExtension extension) {
   chord_tracker_.registerChordExtension(start, end, extension);
+}
+
+void HarmonyContext::registerChordReplacement(Tick start, Tick end, int8_t degree,
+                                              ChordExtension extension) {
+  chord_tracker_.registerChordReplacement(start, end, degree, extension);
 }
 
 bool HarmonyContext::isSecondaryDominantAt(Tick tick) const {

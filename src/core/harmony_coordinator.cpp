@@ -75,7 +75,7 @@ void HarmonyCoordinator::clearNotesForTrack(TrackRole track) {
 // ============================================================================
 
 FORWARD_CONST(int8_t, getChordDegreeAt, Tick tick) { return base_context_.getChordDegreeAt(tick); }
-FORWARD_CONST(std::vector<int>, getChordTonesAt, Tick tick) {
+FORWARD_CONST(ChordTones, getChordTonesAt, Tick tick) {
   return base_context_.getChordTonesAt(tick);
 }
 FORWARD_CONST(ChordExtension, getChordExtensionAt, Tick tick) {
@@ -91,15 +91,13 @@ FORWARD_CONST(Tick, getNextChordEntryTick, Tick after) {
   return base_context_.getNextChordEntryTick(after);
 }
 FORWARD_CONST(bool, isConsonantWithOtherTracks, uint8_t pitch, Tick start, Tick duration,
-              TrackRole exclude, bool is_weak_beat) {
-  return base_context_.isConsonantWithOtherTracks(pitch, start, duration, exclude, is_weak_beat);
+              TrackRole exclude, bool allow_accented_nct) {
+  return base_context_.isConsonantWithOtherTracks(pitch, start, duration, exclude,
+                                                  allow_accented_nct);
 }
 FORWARD_CONST(CollisionInfo, getCollisionInfo, uint8_t pitch, Tick start, Tick duration,
               TrackRole exclude) {
   return base_context_.getCollisionInfo(pitch, start, duration, exclude);
-}
-FORWARD_CONST(bool, hasBassCollision, uint8_t pitch, Tick start, Tick duration, int threshold) {
-  return base_context_.hasBassCollision(pitch, start, duration, threshold);
 }
 FORWARD_CONST(std::vector<int>, getPitchClassesFromTrackAt, Tick tick, TrackRole role) {
   return base_context_.getPitchClassesFromTrackAt(tick, role);
@@ -141,6 +139,10 @@ FORWARD_VOID(registerSecondaryDominant, Tick start, Tick end, int8_t degree) {
 }
 FORWARD_VOID(registerChordExtension, Tick start, Tick end, ChordExtension extension) {
   base_context_.registerChordExtension(start, end, extension);
+}
+FORWARD_VOID(registerChordReplacement, Tick start, Tick end, int8_t degree,
+             ChordExtension extension) {
+  base_context_.registerChordReplacement(start, end, degree, extension);
 }
 FORWARD_CONST(bool, isSecondaryDominantAt, Tick tick) {
   return base_context_.isSecondaryDominantAt(tick);

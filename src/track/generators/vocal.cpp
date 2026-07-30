@@ -126,6 +126,7 @@ MelodyDesigner::SectionContext VocalGenerator::buildSectionContext(
   sctx.density_modifier *= params.melody_params.note_density;
   sctx.vocal_attitude = params.vocal_attitude;
   sctx.hook_intensity = params.hook_intensity;  // For HookSkeleton selection
+  sctx.hook_repetition = params.melody_params.hook_repetition;
   // RhythmSync support
   sctx.paradigm = params.paradigm;
   sctx.drum_grid = drum_grid;
@@ -133,8 +134,6 @@ MelodyDesigner::SectionContext VocalGenerator::buildSectionContext(
   if (params.paradigm == GenerationParadigm::RhythmSync) {
     sctx.motif_params = &params.motif;
   }
-  // Behavioral Loop support
-  sctx.addictive_mode = params.addictive_mode;
   // Vocal groove feel for syncopation control
   sctx.vocal_groove = params.vocal_groove;
   // Syncopation enable flag
@@ -407,6 +406,86 @@ void VocalGenerator::postProcessVocalNotes(
     }
   }
 
+  // Develop repeated Chorus heads after the global constraint passes. Cached
+  // and rhythm-locked material can otherwise absorb its occurrence register
+  // shift through range clamping, leaving a later climax at the same or even a
+  // lower average pitch. Raise the lowest safe scale tones in the first 12
+  // onsets until each later Chorus has an audible (> 0.5 semitone) head lift.
+  std::vector<const Section*> choruses;
+  for (const auto& section : song.arrangement().sections()) {
+    if (section.type == SectionType::Chorus) choruses.push_back(&section);
+  }
+  auto headIndices = [&all_notes](const Section& section) {
+    std::vector<size_t> indices;
+    for (size_t idx = 0; idx < all_notes.size(); ++idx) {
+      if (all_notes[idx].start_tick >= section.start_tick &&
+          all_notes[idx].start_tick < section.endTick()) {
+        indices.push_back(idx);
+        if (indices.size() == 12) break;
+      }
+    }
+    return indices;
+  };
+  auto pitchAverage = [&all_notes](const std::vector<size_t>& indices) {
+    if (indices.empty()) return 0.0;
+    int sum = 0;
+    for (size_t idx : indices) sum += all_notes[idx].note;
+    return static_cast<double>(sum) / static_cast<double>(indices.size());
+  };
+  if (choruses.size() > 1) {
+    const auto first_head = headIndices(*choruses.front());
+    const double first_average = pitchAverage(first_head);
+    for (size_t occurrence = 1; occurrence < choruses.size(); ++occurrence) {
+      auto head = headIndices(*choruses[occurrence]);
+      if (head.empty()) continue;
+      constexpr double kMinimumHeadLift = 0.5;
+      for (size_t attempt = 0;
+           attempt < head.size() * 2 && pitchAverage(head) <= first_average + kMinimumHeadLift;
+           ++attempt) {
+        size_t best_idx = all_notes.size();
+        uint8_t best_pitch = 127;
+        uint8_t best_candidate = 0;
+        for (size_t head_pos = 0; head_pos < head.size(); ++head_pos) {
+          const size_t note_idx = head[head_pos];
+          const auto& note = all_notes[note_idx];
+          int candidate = static_cast<int>(note.note) + 1;
+          while (candidate <= effective_vocal_high &&
+                 !isScaleTone(getPitchClass(static_cast<uint8_t>(candidate)), 0)) {
+            ++candidate;
+          }
+          if (candidate > effective_vocal_high) continue;
+          if (head_pos > 0 &&
+              std::abs(candidate - static_cast<int>(all_notes[head[head_pos - 1]].note)) >
+                  post_process_max_leap) {
+            continue;
+          }
+          if (head_pos + 1 < head.size() &&
+              std::abs(candidate - static_cast<int>(all_notes[head[head_pos + 1]].note)) >
+                  post_process_max_leap) {
+            continue;
+          }
+          if (!harmony.isConsonantWithOtherTracks(static_cast<uint8_t>(candidate), note.start_tick,
+                                                  note.duration, TrackRole::Vocal)) {
+            continue;
+          }
+          if (note.note < best_pitch) {
+            best_idx = note_idx;
+            best_pitch = note.note;
+            best_candidate = static_cast<uint8_t>(candidate);
+          }
+        }
+        if (best_idx == all_notes.size()) break;
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+        const uint8_t original = all_notes[best_idx].note;
+        all_notes[best_idx].prov_original_pitch = original;
+        all_notes[best_idx].addTransformStep(TransformStepType::ScaleSnap, original, best_candidate,
+                                             0, 0);
+#endif
+        all_notes[best_idx].note = best_candidate;
+      }
+    }
+  }
+
   // Final overlap check - ensures no overlaps after all processing
   NoteTimeline::fixOverlapsWithMinDuration(all_notes, min_note_duration);
 
@@ -592,6 +671,18 @@ void VocalGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContex
 
       // Apply subtle variation for interest while maintaining recognizability
       applyPhraseVariation(section_notes, variation, rng);
+
+      // A cached phrase already contains the first occurrence's embellishment.
+      // Later occurrences still need their own development pass; otherwise a
+      // cache hit bypasses the occurrence-aware NCT density and every repeated
+      // section becomes only a shifted copy. The embellisher preserves the
+      // existing skeleton while adding the later-occurrence detail.
+      if (occurrence > 1 && !section_notes.empty()) {
+        EmbellishmentConfig occurrence_config = MelodicEmbellisher::getConfigForMood(params.mood);
+        occurrence_config.adjustForOccurrence(occurrence);
+        section_notes =
+            MelodicEmbellisher::embellish(section_notes, occurrence_config, harmony, 0, rng);
+      }
 
       // Adjust pitch range if different
       section_notes = adjustPitchRange(section_notes, cached.vocal_low, cached.vocal_high,

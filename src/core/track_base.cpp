@@ -71,19 +71,29 @@ void TrackBase::removeArrangementHoleNotes(MidiTrack& track, const FullTrackCont
 
   if (holes.empty()) return;
 
-  // Remove notes that overlap with any hole range
+  // Preserve the audible lead-in of notes that cross into a hole. Only notes
+  // that begin inside a hole are removed; an earlier sustaining note is
+  // shortened to the hole boundary rather than disappearing in full.
   auto& notes = track.notes();
-  notes.erase(std::remove_if(notes.begin(), notes.end(),
-                             [&holes](const NoteEvent& n) {
-                               Tick note_end = n.start_tick + n.duration;
-                               for (const auto& hole : holes) {
-                                 if (n.start_tick < hole.end && note_end > hole.start) {
-                                   return true;
-                                 }
-                               }
-                               return false;
-                             }),
-              notes.end());
+  std::vector<NoteEvent> retained;
+  retained.reserve(notes.size());
+  for (auto note : notes) {
+    bool starts_in_hole = false;
+    for (const auto& hole : holes) {
+      if (note.start_tick >= hole.start && note.start_tick < hole.end) {
+        starts_in_hole = true;
+        break;
+      }
+      Tick note_end = note.start_tick + note.duration;
+      if (note.start_tick < hole.start && note_end > hole.start) {
+        note.duration = hole.start - note.start_tick;
+      }
+    }
+    if (!starts_in_hole && note.duration > 0) {
+      retained.push_back(note);
+    }
+  }
+  notes.swap(retained);
 }
 
 }  // namespace midisketch

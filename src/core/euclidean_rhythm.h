@@ -35,7 +35,7 @@ class EuclideanRhythm {
    * @param hits Number of hits (1-16)
    * @param steps Number of steps (1-16)
    * @param rotation Rotation offset (0 to steps-1)
-   * @return Bitmask pattern (bit i = step i has hit)
+   * @return Bitmask pattern (LSB/bit 0 = step 0; bit i = step i has hit)
    */
   static uint16_t generate(uint8_t hits, uint8_t steps, uint8_t rotation = 0);
 
@@ -51,7 +51,8 @@ class EuclideanRhythm {
    * @brief Common pre-computed patterns.
    *
    * Patterns are 16-step bitmasks (1 bar = 16 sixteenth notes).
-   * Bit 0 = step 0 (beat 1), Bit 4 = step 4 (beat 2), etc.
+   * The least-significant bit (LSB/bit 0) is step 0 (beat 1);
+   * bit 4 is step 4 (beat 2), etc.
    */
   struct CommonPatterns {
     // clang-format off
@@ -101,6 +102,7 @@ enum class GrooveTemplate : uint8_t {
  * @brief Full groove pattern with all drum elements.
  *
  * All patterns are 16-step bitmasks representing one bar.
+ * The least-significant bit (LSB/bit 0) is step 0.
  */
 struct FullGroovePattern {
   uint16_t kick;          ///< Kick drum pattern

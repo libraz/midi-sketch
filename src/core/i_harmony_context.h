@@ -61,6 +61,11 @@ class IHarmonyContext : public ICollisionDetector, public INoteRegistration {
    */
   virtual void registerChordExtension(Tick start, Tick end, ChordExtension extension) = 0;
 
+  /// Replace an existing timeline entry with a planned chord identity.
+  /// Used for non-diatonic reharmonizations such as a tritone substitution.
+  virtual void registerChordReplacement(Tick start, Tick end, int8_t degree,
+                                        ChordExtension extension) = 0;
+
   /**
    * @brief Check if a secondary dominant is active at a given tick.
    * @param tick Position in ticks

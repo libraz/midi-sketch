@@ -144,7 +144,13 @@ void breakConsecutiveSamePitch(std::vector<NoteEvent>& all_notes, const IHarmony
       continue;
     }
 #endif
-    bool streak_continues = (i < all_notes.size() && all_notes[i].note == streak_pitch);
+    bool streak_continues = false;
+    if (i < all_notes.size() && all_notes[i].note == streak_pitch) {
+      Tick previous_end = all_notes[i - 1].start_tick + all_notes[i - 1].duration;
+      Tick gap =
+          all_notes[i].start_tick > previous_end ? all_notes[i].start_tick - previous_end : 0;
+      streak_continues = gap <= TICKS_PER_BEAT;
+    }
 
     if (streak_continues) {
       streak_count++;

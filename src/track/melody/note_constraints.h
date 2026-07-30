@@ -24,7 +24,8 @@ namespace melody {
 ///   4 notes: 25% allow (occasional effect)
 ///   5+ notes: 5% allow (rare, intentional)
 struct ConsecutiveSameNoteTracker {
-  int count = 0;  ///< Number of consecutive same pitches
+  int count = 0;                     ///< Number of consecutive same pitches
+  float configured_probability = 1;  ///< Style/section probability multiplier (0.0-1.0)
 
   /// @brief Reset counter (call when pitch changes).
   void reset() { count = 0; }
@@ -32,7 +33,7 @@ struct ConsecutiveSameNoteTracker {
   /// @brief Increment counter (call when same pitch).
   void increment() { ++count; }
 
-  /// @brief Get allow probability based on current count.
+  /// @brief Get allow probability based on current count and configured style probability.
   /// @return Probability (0.0-1.0) of allowing another same note
   float getAllowProbability() const;
 

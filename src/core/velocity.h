@@ -62,7 +62,7 @@ float getSectionVelocityMultiplier(SectionType section);
  * @brief Get effective section energy from Section struct.
  *
  * Prioritizes Blueprint's explicit energy setting. Falls back to
- * estimating from SectionType if energy is Medium (default).
+ * estimating from SectionType only when energy is Unset.
  *
  * @param section Section struct with energy field
  * @return SectionEnergy value
@@ -239,6 +239,15 @@ void applyBarVelocityCurve(MidiTrack& track, const Section& section, const Secti
  */
 void applyAllBarVelocityCurves(std::vector<MidiTrack*>& tracks,
                                const std::vector<Section>& sections);
+
+/**
+ * @brief Scale note velocities by each SectionSlot's base velocity.
+ *
+ * A base velocity of 80 is neutral. Values declared by a production
+ * blueprint are applied as a ratio before the remaining phrase/beat dynamics.
+ */
+void applySectionBaseVelocity(std::vector<MidiTrack*>& tracks,
+                              const std::vector<Section>& sections);
 
 // ============================================================================
 // Melody Contour Velocity

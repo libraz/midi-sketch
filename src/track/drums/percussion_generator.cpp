@@ -10,6 +10,7 @@
 #include "core/production_blueprint.h"
 #include "core/rng_util.h"
 #include "core/timing_constants.h"
+#include "track/drums/beat_processors.h"
 #include "track/drums/drum_constants.h"
 #include "track/drums/ghost_notes.h"
 
@@ -95,7 +96,7 @@ PercussionConfig getPercussionConfig(Mood mood, SectionType section, PercussionP
 
 void generateAuxPercussionForBar(MidiTrack& track, Tick bar_start, const PercussionConfig& config,
                                  DrumRole drum_role, float density_mult, std::mt19937& rng,
-                                 uint16_t bpm) {
+                                 uint16_t bpm, DrumGrooveFeel groove, float swing_amount) {
   if (drum_role == DrumRole::Minimal || drum_role == DrumRole::FXOnly) {
     return;
   }
@@ -103,7 +104,7 @@ void generateAuxPercussionForBar(MidiTrack& track, Tick bar_start, const Percuss
   // Tambourine: backbeat on beats 2 and 4
   if (config.tambourine) {
     for (int beat = 1; beat <= 3; beat += 2) {
-      Tick beat_tick = bar_start + beat * TICKS_PER_BEAT;
+      Tick beat_tick = quantizeDrumSwing(bar_start + beat * TICKS_PER_BEAT, groove, swing_amount);
       float raw_vel = 70.0f * density_mult * rng_util::rollFloat(rng, 0.90f, 1.10f);
       uint8_t tam_vel = static_cast<uint8_t>(std::clamp(raw_vel, 40.0f, 90.0f));
       addDrumNote(track, beat_tick, EIGHTH, TAMBOURINE, tam_vel);
@@ -121,7 +122,8 @@ void generateAuxPercussionForBar(MidiTrack& track, Tick bar_start, const Percuss
       constexpr float SHAKER_16TH_VEL[4] = {0.75f, 0.45f, 0.60f, 0.45f};
       for (int beat = 0; beat < 4; ++beat) {
         for (int sub = 0; sub < 4; ++sub) {
-          Tick sub_tick = bar_start + beat * TICKS_PER_BEAT + sub * SIXTEENTH;
+          Tick sub_tick = quantizeDrumSwing(bar_start + beat * TICKS_PER_BEAT + sub * SIXTEENTH,
+                                            groove, swing_amount);
           float raw_vel =
               80.0f * SHAKER_16TH_VEL[sub] * density_mult * rng_util::rollFloat(rng, 0.90f, 1.10f);
           uint8_t shk_vel = static_cast<uint8_t>(std::clamp(raw_vel, 25.0f, 85.0f));
@@ -133,7 +135,8 @@ void generateAuxPercussionForBar(MidiTrack& track, Tick bar_start, const Percuss
       constexpr float SHAKER_8TH_VEL[2] = {0.75f, 0.55f};
       for (int beat = 0; beat < 4; ++beat) {
         for (int sub = 0; sub < 2; ++sub) {
-          Tick sub_tick = bar_start + beat * TICKS_PER_BEAT + sub * TICK_EIGHTH;
+          Tick sub_tick = quantizeDrumSwing(bar_start + beat * TICKS_PER_BEAT + sub * TICK_EIGHTH,
+                                            groove, swing_amount);
           float raw_vel =
               80.0f * SHAKER_8TH_VEL[sub] * density_mult * rng_util::rollFloat(rng, 0.90f, 1.10f);
           uint8_t shk_vel = static_cast<uint8_t>(std::clamp(raw_vel, 25.0f, 85.0f));

@@ -3,7 +3,7 @@
  * @brief PostProcessor polish and finalization methods.
  *
  * Contains: fixMotifVocalClashes, fixTrackVocalClashes, fixInterTrackClashes,
- * synchronizeBassKick, applyTrackPanning, applyExpressionCurves,
+ * synchronizeBassKick, applyTrackPanning,
  * smoothLargeLeaps, alignChordNoteDurations.
  */
 
@@ -17,6 +17,7 @@
 #include "core/i_harmony_context.h"
 #include "core/note_creator.h"
 #include "core/note_source.h"
+#include "core/overlap_note_filter.h"
 #include "core/pitch_utils.h"
 #include "core/post_processor.h"
 #include "core/timing_constants.h"
@@ -122,26 +123,11 @@ void removeClashingNotesAgainstReference(MidiTrack& track, const MidiTrack& refe
   const auto& reference_notes = reference.notes();
   if (notes.empty() || reference_notes.empty()) return;
 
-  std::vector<size_t> notes_to_remove;
-  for (size_t idx = 0; idx < notes.size(); ++idx) {
-    const auto& note = notes[idx];
-    Tick note_end = note.start_tick + note.duration;
-
-    for (const auto& ref_note : reference_notes) {
-      Tick ref_end = ref_note.start_tick + ref_note.duration;
-      if (note.start_tick < ref_end && note_end > ref_note.start_tick) {
+  eraseNotesMatchingOverlappingReference(
+      notes, reference_notes, [&](const NoteEvent& note, const NoteEvent& ref_note) {
         int interval = std::abs(static_cast<int>(note.note) - static_cast<int>(ref_note.note));
-        if (isDissonantSemitoneInterval(interval, opts)) {
-          notes_to_remove.push_back(idx);
-          break;
-        }
-      }
-    }
-  }
-
-  for (auto iter = notes_to_remove.rbegin(); iter != notes_to_remove.rend(); ++iter) {
-    notes.erase(notes.begin() + static_cast<std::ptrdiff_t>(*iter));
-  }
+        return isDissonantSemitoneInterval(interval, opts);
+      });
 }
 
 // Find the lowest vocal pitch overlapping [start, end). Returns 0 if no vocal
@@ -407,6 +393,47 @@ void PostProcessor::fixMotifVocalClashes(MidiTrack& motif, const MidiTrack& voca
   }
 }
 
+void PostProcessor::fixMotifHarmonyClashes(MidiTrack& motif, const MidiTrack& vocal,
+                                           const ICollisionDetector& harmony) {
+  auto& motif_notes = motif.notes();
+
+  motif_notes.erase(
+      std::remove_if(motif_notes.begin(), motif_notes.end(),
+                     [&](NoteEvent& note) {
+                       if (harmony.isConsonantWithOtherTracks(note.note, note.start_tick,
+                                                              note.duration, TrackRole::Motif)) {
+                         return false;
+                       }
+
+                       const uint8_t original_pitch = note.note;
+                       const int8_t degree = harmony.getChordDegreeAt(note.start_tick);
+                       const uint8_t vocal_ceiling = lowestOverlappingVocal(
+                           note.start_tick, note.start_tick + note.duration, vocal);
+                       const uint8_t new_pitch =
+                           findSafeChordTone(original_pitch, degree, note.start_tick, note.duration,
+                                             vocal, harmony, vocal_ceiling);
+
+                       if (new_pitch == original_pitch ||
+                           (vocal_ceiling > 0 && new_pitch > vocal_ceiling) ||
+                           !harmony.isConsonantWithOtherTracks(new_pitch, note.start_tick,
+                                                               note.duration, TrackRole::Motif)) {
+                         return true;
+                       }
+
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+                       note.addTransformStep(TransformStepType::CollisionAvoid, original_pitch,
+                                             new_pitch, 0, 0);
+                       note.prov_original_pitch = original_pitch;
+                       note.prov_source = static_cast<uint8_t>(NoteSource::CollisionAvoid);
+                       note.prov_lookup_tick = note.start_tick;
+                       note.prov_chord_degree = degree;
+#endif
+                       note.note = new_pitch;
+                       return false;
+                     }),
+      motif_notes.end());
+}
+
 void PostProcessor::fixMotifRepeatedPitches(MidiTrack& motif, const MidiTrack& vocal,
                                             const ICollisionDetector& harmony, int max_consecutive,
                                             const MidiTrack* aux) {
@@ -562,54 +589,30 @@ void PostProcessor::fixTrackReferenceClashes(MidiTrack& track, const MidiTrack& 
 }
 
 void PostProcessor::fixInterTrackClashes(MidiTrack& chord, const MidiTrack& bass,
-                                         const MidiTrack& motif) {
+                                         const MidiTrack& motif, const IChordLookup* chord_lookup) {
   auto& notes = chord.notes();
   if (notes.empty()) return;
 
-  // Close voicing check: m2, M7, and close-range M2 (no tritone)
-  auto close_opts = DissonanceCheckOptions::closeVoicing();
+  auto remove_clashes = [&](const MidiTrack& reference, const DissonanceCheckOptions& opts) {
+    eraseNotesMatchingOverlappingReference(
+        notes, reference.notes(), [&](const NoteEvent& note, const NoteEvent& ref_note) {
+          int interval = std::abs(static_cast<int>(note.note) - static_cast<int>(ref_note.note));
+          if (!isDissonantSemitoneInterval(interval, opts)) return false;
+          if (chord_lookup == nullptr) return true;
 
-  std::vector<size_t> notes_to_remove;
-
-  for (size_t idx = 0; idx < notes.size(); ++idx) {
-    const auto& note = notes[idx];
-    Tick note_end = note.start_tick + note.duration;
-    bool should_remove = false;
-
-    // Check against bass
-    for (const auto& b_note : bass.notes()) {
-      Tick b_end = b_note.start_tick + b_note.duration;
-      if (note.start_tick < b_end && note_end > b_note.start_tick) {
-        int interval = std::abs(static_cast<int>(note.note) - static_cast<int>(b_note.note));
-        if (isDissonantSemitoneInterval(interval, close_opts)) {
-          should_remove = true;
-          break;
-        }
-      }
-    }
-
-    // Check against motif (only if not already marked for removal)
-    if (!should_remove) {
-      for (const auto& m_note : motif.notes()) {
-        Tick m_end = m_note.start_tick + m_note.duration;
-        if (note.start_tick < m_end && note_end > m_note.start_tick) {
-          int interval = std::abs(static_cast<int>(note.note) - static_cast<int>(m_note.note));
-          if (isDissonantSemitoneInterval(interval, close_opts)) {
-            should_remove = true;
-            break;
-          }
-        }
-      }
-    }
-
-    if (should_remove) {
-      notes_to_remove.push_back(idx);
-    }
-  }
-
-  for (auto iter = notes_to_remove.rbegin(); iter != notes_to_remove.rend(); ++iter) {
-    notes.erase(notes.begin() + static_cast<std::ptrdiff_t>(*iter));
-  }
+          const Tick overlap_start = std::max(note.start_tick, ref_note.start_tick);
+          const ChordTones chord_tones = chord_lookup->getChordTonesAt(overlap_start);
+          const int note_pc = note.note % 12;
+          const int reference_pc = ref_note.note % 12;
+          const bool note_is_chord_tone =
+              std::find(chord_tones.begin(), chord_tones.end(), note_pc) != chord_tones.end();
+          const bool reference_is_chord_tone =
+              std::find(chord_tones.begin(), chord_tones.end(), reference_pc) != chord_tones.end();
+          return !(note_is_chord_tone && reference_is_chord_tone);
+        });
+  };
+  remove_clashes(bass, DissonanceCheckOptions::fullWithTritone());
+  remove_clashes(motif, DissonanceCheckOptions::closeVoicing());
 }
 
 void PostProcessor::synchronizeBassKick(MidiTrack& bass, const MidiTrack& drums,
@@ -646,8 +649,10 @@ void PostProcessor::synchronizeBassKick(MidiTrack& bass, const MidiTrack& drums,
       break;
   }
 
-  // Snap bass notes to nearest kick within tolerance
-  for (auto& note : bass.notes()) {
+  // Snap bass notes to nearest kick within tolerance.
+  auto& bass_notes = bass.notes();
+  for (size_t note_index = 0; note_index < bass_notes.size(); ++note_index) {
+    auto& note = bass_notes[note_index];
     // Binary search for nearest kick
     auto iter = std::lower_bound(kick_ticks.begin(), kick_ticks.end(), note.start_tick);
 
@@ -674,8 +679,22 @@ void PostProcessor::synchronizeBassKick(MidiTrack& bass, const MidiTrack& drums,
       }
     }
 
-    // Snap if within tolerance and not already aligned
+    // Snap if within tolerance and not already aligned. Do not move a note
+    // into an adjacent bass note; timing alignment must not create a MIDI
+    // overlap where the original articulation was gap-safe.
     if (best_diff <= tolerance && best_diff > 0) {
+      Tick proposed_end = best_kick + note.duration;
+      bool overlaps_neighbor = false;
+      for (size_t other_index = 0; other_index < bass_notes.size(); ++other_index) {
+        if (other_index == note_index) continue;
+        const auto& other = bass_notes[other_index];
+        Tick other_end = other.start_tick + other.duration;
+        if (best_kick < other_end && other.start_tick < proposed_end) {
+          overlaps_neighbor = true;
+          break;
+        }
+      }
+      if (overlaps_neighbor) continue;
 #ifdef MIDISKETCH_NOTE_PROVENANCE
       {
         int sync_offset = static_cast<int>(best_kick) - static_cast<int>(note.start_tick);
@@ -709,65 +728,6 @@ void PostProcessor::applyTrackPanning(MidiTrack& vocal, MidiTrack& chord, MidiTr
   for (const auto& entry : entries) {
     if (!entry.track->notes().empty()) {
       entry.track->addCC(0, MidiCC::kPan, entry.pan_value);
-    }
-  }
-}
-
-void PostProcessor::applyExpressionCurves(MidiTrack& vocal, MidiTrack& chord, MidiTrack& aux,
-                                          const std::vector<Section>& sections) {
-  constexpr uint8_t kExprDefault = 100;
-  constexpr Tick kResolution = TICKS_PER_BEAT / 2;  // 8th note resolution
-
-  // Vocal: crescendo-diminuendo on long notes (>= 2 beats)
-  constexpr Tick kLongNoteThreshold = TICKS_PER_BEAT * 2;
-  for (const auto& note : vocal.notes()) {
-    if (note.duration >= kLongNoteThreshold) {
-      Tick start = note.start_tick;
-      Tick end = start + note.duration;
-      Tick mid = start + note.duration / 2;
-
-      // Crescendo: 80 -> 110
-      for (Tick tick = start; tick < mid; tick += kResolution) {
-        float progress = static_cast<float>(tick - start) / static_cast<float>(mid - start);
-        uint8_t val = static_cast<uint8_t>(80 + 30 * progress);
-        vocal.addCC(tick, MidiCC::kExpression, val);
-      }
-      // Diminuendo: 110 -> 90
-      for (Tick tick = mid; tick < end; tick += kResolution) {
-        float progress = static_cast<float>(tick - mid) / static_cast<float>(end - mid);
-        uint8_t val = static_cast<uint8_t>(110 - 20 * progress);
-        vocal.addCC(tick, MidiCC::kExpression, val);
-      }
-      // Reset after note
-      vocal.addCC(end, MidiCC::kExpression, kExprDefault);
-    }
-  }
-
-  // Chord/Aux: section-level expression curve (80 -> 100 -> 90)
-  // Only apply to tracks that contain notes to avoid marking empty tracks as non-empty.
-  MidiTrack* section_tracks[] = {&chord, &aux};
-  for (MidiTrack* track : section_tracks) {
-    if (track->notes().empty()) continue;
-    for (const auto& section : sections) {
-      Tick sec_start = section.start_tick;
-      Tick sec_end = section.endTick();
-      Tick sec_mid = sec_start + (sec_end - sec_start) / 2;
-      Tick sec_duration = sec_end - sec_start;
-      if (sec_duration == 0) continue;
-
-      // First half: 80 -> 100
-      for (Tick tick = sec_start; tick < sec_mid; tick += kResolution) {
-        float progress =
-            static_cast<float>(tick - sec_start) / static_cast<float>(sec_mid - sec_start);
-        uint8_t val = static_cast<uint8_t>(80 + 20 * progress);
-        track->addCC(tick, MidiCC::kExpression, val);
-      }
-      // Second half: 100 -> 90
-      for (Tick tick = sec_mid; tick < sec_end; tick += kResolution) {
-        float progress = static_cast<float>(tick - sec_mid) / static_cast<float>(sec_end - sec_mid);
-        uint8_t val = static_cast<uint8_t>(100 - 10 * progress);
-        track->addCC(tick, MidiCC::kExpression, val);
-      }
     }
   }
 }

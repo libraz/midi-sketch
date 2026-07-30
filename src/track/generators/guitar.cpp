@@ -16,6 +16,7 @@
 #include "core/song.h"
 #include "core/timing_constants.h"
 #include "core/velocity.h"
+#include "instrument/fretted/guitar_model.h"
 
 namespace midisketch {
 
@@ -132,6 +133,30 @@ static uint8_t resolveSustainedChordPitch(IHarmonyContext& harmony, uint8_t desi
     }
   }
   return 0;  // No consonant octave available
+}
+
+static std::vector<uint8_t> orderPlayableStrum(const std::vector<uint8_t>& pitches, bool upstroke) {
+  GuitarModel guitar;
+  FretboardState state(guitar.getStringCount());
+  Fingering fingering = guitar.findChordFingering(pitches, state);
+  if (!fingering.isValid() || fingering.assignments.size() != pitches.size()) return {};
+
+  std::vector<std::pair<uint8_t, uint8_t>> by_string;
+  by_string.reserve(pitches.size());
+  for (size_t idx = 0; idx < pitches.size(); ++idx) {
+    by_string.emplace_back(fingering.assignments[idx].position.string, pitches[idx]);
+  }
+  std::sort(by_string.begin(), by_string.end(), [upstroke](const auto& lhs, const auto& rhs) {
+    return upstroke ? lhs.first > rhs.first : lhs.first < rhs.first;
+  });
+
+  std::vector<uint8_t> ordered;
+  ordered.reserve(by_string.size());
+  for (const auto& [string, pitch] : by_string) {
+    (void)string;
+    ordered.push_back(pitch);
+  }
+  return ordered;
 }
 
 // ============================================================================
@@ -302,7 +327,8 @@ static void generateStrumBar(MidiTrack& track, IHarmonyContext& harmony, Tick ba
     // Per-onset vocal ceiling
     uint8_t effective_high = getEffectiveHighForVocal(harmony, pos, pos + strum_dur);
 
-    // Strum all chord notes simultaneously.
+    // Resolve chord tones, then validate the voicing against the physical
+    // six-string model and emit them in string order with a short rake.
     // For chordal strums, pre-check each pitch against other tracks. Rather than
     // letting collision avoidance remap to an arbitrary pitch (which can cause
     // intra-chord dissonance, e.g. B3→C4 next to D4), try the original pitch
@@ -317,10 +343,15 @@ static void generateStrumBar(MidiTrack& track, IHarmonyContext& harmony, Tick ba
       // Avoid duplicate pitches within the same strum (octave fold may collide).
       if (std::find(placed.begin(), placed.end(), safe) != placed.end()) continue;
       placed.push_back(safe);
-
+    }
+    placed = orderPlayableStrum(placed, is_upstroke);
+    constexpr Tick kStringRakeTicks = 8;
+    for (size_t string_idx = 0; string_idx < placed.size(); ++string_idx) {
+      const uint8_t safe = placed[string_idx];
+      const Tick note_start = pos + static_cast<Tick>(string_idx) * kStringRakeTicks;
       NoteOptions opts;
-      opts.start = pos;
-      opts.duration = strum_dur;
+      opts.start = note_start;
+      opts.duration = std::max<Tick>(1, pos + strum_dur - note_start);
       opts.desired_pitch = safe;
       opts.velocity = vel;
       opts.role = TrackRole::Guitar;
@@ -363,10 +394,15 @@ static void generatePowerChordBar(MidiTrack& track, IHarmonyContext& harmony, Ti
 
       if (std::find(placed.begin(), placed.end(), safe) != placed.end()) continue;
       placed.push_back(safe);
-
+    }
+    placed = orderPlayableStrum(placed, false);
+    constexpr Tick kStringRakeTicks = 8;
+    for (size_t string_idx = 0; string_idx < placed.size(); ++string_idx) {
+      const uint8_t safe = placed[string_idx];
+      const Tick note_start = pos + static_cast<Tick>(string_idx) * kStringRakeTicks;
       NoteOptions opts;
-      opts.start = pos;
-      opts.duration = dur;
+      opts.start = note_start;
+      opts.duration = std::max<Tick>(1, pos + dur - note_start);
       opts.desired_pitch = safe;
       opts.velocity = vel;
       opts.role = TrackRole::Guitar;
@@ -529,7 +565,18 @@ static void generateTremoloPickBar(MidiTrack& track, IHarmonyContext& harmony, T
     bool ascending = (group % 2 == 0);
     int interval = ascending ? kScaleUp[within] : kScaleDown[within];
 
-    uint8_t pitch = static_cast<uint8_t>(std::clamp(static_cast<int>(base_root) + interval,
+    // Per-onset vocal ceiling
+    uint8_t effective_high = getEffectiveHighForVocal(harmony, pos, pos + note_dur);
+
+    // The run is diatonic to the song's C-major internal pitch space, not to
+    // a major scale transposed from the current chord root. In particular, a
+    // vi chord must not turn the C-major F/G into F#/G#.
+    const int scale_pitch = snapToNearestScaleTone(static_cast<int>(base_root) + interval, 0);
+    // Apply the vocal ceiling before snapping. Clamping after scale selection
+    // can turn a C-major tone into a chromatic range-edge pitch (for example,
+    // G4 into F#4 at a ceiling of 66).
+    const int ceiling_limited = std::min(scale_pitch, static_cast<int>(effective_high));
+    uint8_t pitch = static_cast<uint8_t>(std::clamp(snapToNearestScaleTone(ceiling_limited, 0),
                                                     static_cast<int>(kGuitarLow),
                                                     static_cast<int>(kGuitarHigh)));
 
@@ -540,16 +587,35 @@ static void generateTremoloPickBar(MidiTrack& track, IHarmonyContext& harmony, T
       vel = static_cast<uint8_t>(std::max(40, static_cast<int>(vel) - 10));
     }
 
-    // Per-onset vocal ceiling
-    uint8_t effective_high = getEffectiveHighForVocal(harmony, pos, pos + note_dur);
+    // Keep the run diatonic even when the desired tone clashes. Resolve only
+    // to another safe C-major tone; the generic resolver may pick a chromatic
+    // neighbor to satisfy collision constraints.
+    std::optional<uint8_t> safe_pitch;
+    for (int delta = 0; delta <= 12 && !safe_pitch; ++delta) {
+      for (int signed_delta : {delta == 0 ? 0 : -delta, delta}) {
+        int candidate = static_cast<int>(pitch) + signed_delta;
+        if (candidate < static_cast<int>(kGuitarLow) ||
+            candidate > static_cast<int>(effective_high) ||
+            snapToNearestScaleTone(candidate, 0) != candidate) {
+          continue;
+        }
+        if (harmony.isConsonantWithOtherTracks(static_cast<uint8_t>(candidate), pos, note_dur,
+                                               TrackRole::Guitar)) {
+          safe_pitch = static_cast<uint8_t>(candidate);
+          break;
+        }
+      }
+    }
+    if (!safe_pitch) continue;
 
     NoteOptions opts;
     opts.start = pos;
     opts.duration = note_dur;
-    opts.desired_pitch = pitch;
+    opts.desired_pitch = *safe_pitch;
     opts.velocity = vel;
     opts.role = TrackRole::Guitar;
-    opts.preference = PitchPreference::PreferChordTones;
+    // The candidate was pre-checked above, so preserve its C-major pitch.
+    opts.preference = PitchPreference::NoCollisionCheck;
     opts.range_low = kGuitarLow;
     opts.range_high = effective_high;
     opts.source = NoteSource::Guitar;

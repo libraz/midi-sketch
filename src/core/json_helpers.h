@@ -5,7 +5,12 @@
 
 #pragma once
 
+#include <charconv>
+#include <cmath>
 #include <cstdint>
+#include <cstdlib>
+#include <iomanip>
+#include <limits>
 #include <map>
 #include <sstream>
 #include <string>
@@ -184,6 +189,15 @@ class Writer {
     writeCommaIfNeeded();
     writeKey(key);
     os_ << value;
+    return *this;
+  }
+
+  /// Writes float values with enough significant digits for a lossless
+  /// float -> decimal -> float round trip.
+  Writer& write(const char* key, float value) {
+    writeCommaIfNeeded();
+    writeKey(key);
+    os_ << std::setprecision(std::numeric_limits<float>::max_digits10) << value;
     return *this;
   }
 
@@ -455,6 +469,37 @@ class Parser {
    */
   bool has(const std::string& key) const { return values_.find(key) != values_.end(); }
 
+  /// @brief Whether the input was a complete JSON object.
+  bool isValid() const { return valid_ && conversion_valid_; }
+
+  /**
+   * @brief Read an integer without narrowing or accepting a partial token.
+   * @return true when the key is absent or contains a value representable by T
+   */
+  template <typename T>
+  bool readInteger(const std::string& key, T& value) const {
+    static_assert(std::is_integral_v<T>, "readInteger requires an integral type");
+    auto it = values_.find(key);
+    if (it == values_.end()) return true;
+
+    long long parsed = 0;
+    const char* begin = it->second.data();
+    const char* end = begin + it->second.size();
+    const auto result = std::from_chars(begin, end, parsed);
+    if (result.ec != std::errc{} || result.ptr != end ||
+        parsed < static_cast<long long>(std::numeric_limits<T>::min()) ||
+        parsed > static_cast<long long>(std::numeric_limits<T>::max())) {
+      conversion_valid_ = false;
+      return false;
+    }
+
+    value = static_cast<T>(parsed);
+    return true;
+  }
+
+  /// @brief Mark a typed read from this object as invalid.
+  void markConversionInvalid() const { conversion_valid_ = false; }
+
   /**
    * @brief Get an integer value.
    * @param key The key to look up.
@@ -462,13 +507,9 @@ class Parser {
    * @return The integer value.
    */
   int getInt(const std::string& key, int default_val = 0) const {
-    auto it = values_.find(key);
-    if (it == values_.end()) return default_val;
-    try {
-      return std::stoi(it->second);
-    } catch (...) {
-      return default_val;
-    }
+    int value = default_val;
+    readInteger(key, value);
+    return value;
   }
 
   /**
@@ -478,13 +519,9 @@ class Parser {
    * @return The unsigned integer value.
    */
   uint32_t getUint(const std::string& key, uint32_t default_val = 0) const {
-    auto it = values_.find(key);
-    if (it == values_.end()) return default_val;
-    try {
-      return static_cast<uint32_t>(std::stoul(it->second));
-    } catch (...) {
-      return default_val;
-    }
+    uint32_t value = default_val;
+    readInteger(key, value);
+    return value;
   }
 
   /**
@@ -496,7 +533,10 @@ class Parser {
   bool getBool(const std::string& key, bool default_val = false) const {
     auto it = values_.find(key);
     if (it == values_.end()) return default_val;
-    return it->second == "true";
+    if (it->second == "true") return true;
+    if (it->second == "false") return false;
+    conversion_valid_ = false;
+    return default_val;
   }
 
   /**
@@ -534,13 +574,9 @@ class Parser {
    * @return The int8_t value.
    */
   int8_t getInt8(const std::string& key, int8_t default_val = 0) const {
-    auto it = values_.find(key);
-    if (it == values_.end()) return default_val;
-    try {
-      return static_cast<int8_t>(std::stoi(it->second));
-    } catch (...) {
-      return default_val;
-    }
+    int8_t value = default_val;
+    readInteger(key, value);
+    return value;
   }
 
   /**
@@ -652,13 +688,17 @@ class Parser {
     if (pos >= json_.size() || json_[pos] != '{') return;
     ++pos;
 
+    skipWhitespace(pos);
+    if (pos < json_.size() && json_[pos] == '}') {
+      ++pos;
+      skipWhitespace(pos);
+      valid_ = pos == json_.size();
+      return;
+    }
+
     while (pos < json_.size()) {
       skipWhitespace(pos);
-      if (json_[pos] == '}') break;
-      if (json_[pos] == ',') {
-        ++pos;
-        continue;
-      }
+      if (pos >= json_.size() || json_[pos] != '"') return;
 
       // Parse key
       std::string key = parseString(pos);
@@ -668,10 +708,24 @@ class Parser {
       if (pos >= json_.size() || json_[pos] != ':') break;
       ++pos;
       skipWhitespace(pos);
+      if (pos >= json_.size() || json_[pos] == '}' || json_[pos] == ',') return;
 
       // Parse value
+      const bool scalar = json_[pos] != '"' && json_[pos] != '{' && json_[pos] != '[';
       std::string value = parseValue(pos);
+      if (scalar && !isValidScalar(value)) return;
       values_[key] = value;
+
+      skipWhitespace(pos);
+      if (pos >= json_.size()) return;
+      if (json_[pos] == '}') {
+        ++pos;
+        skipWhitespace(pos);
+        valid_ = pos == json_.size();
+        return;
+      }
+      if (json_[pos] != ',') return;
+      ++pos;
     }
   }
 
@@ -680,6 +734,14 @@ class Parser {
            (json_[pos] == ' ' || json_[pos] == '\t' || json_[pos] == '\n' || json_[pos] == '\r')) {
       ++pos;
     }
+  }
+
+  static bool isValidScalar(const std::string& value) {
+    if (value == "true" || value == "false" || value == "null") return true;
+    if (value.empty()) return false;
+    char* end = nullptr;
+    const double number = std::strtod(value.c_str(), &end);
+    return end != value.c_str() && *end == '\0' && std::isfinite(number);
   }
 
   std::string parseString(size_t& pos) {
@@ -774,6 +836,8 @@ class Parser {
 
   std::string json_;
   std::map<std::string, std::string> values_;
+  bool valid_ = false;
+  mutable bool conversion_valid_ = true;
 };
 
 // ============================================================================
@@ -802,19 +866,28 @@ struct WriteVisitor {
 
 struct ReadVisitor {
   const Parser& p;
-  void operator()(const char* k, uint8_t& v) { v = static_cast<uint8_t>(p.getInt(k, v)); }
-  void operator()(const char* k, int8_t& v) { v = p.getInt8(k, v); }
-  void operator()(const char* k, uint16_t& v) { v = static_cast<uint16_t>(p.getInt(k, v)); }
-  void operator()(const char* k, uint32_t& v) { v = p.getUint(k, v); }
+  void operator()(const char* k, uint8_t& v) { p.readInteger(k, v); }
+  void operator()(const char* k, int8_t& v) { p.readInteger(k, v); }
+  void operator()(const char* k, uint16_t& v) { p.readInteger(k, v); }
+  void operator()(const char* k, uint32_t& v) { p.readInteger(k, v); }
   void operator()(const char* k, bool& v) { v = p.getBool(k, v); }
   void operator()(const char* k, float& v) { v = p.getFloat(k, v); }
   template <typename E, std::enable_if_t<std::is_enum_v<E>, int> = 0>
   void operator()(const char* k, E& v) {
-    v = static_cast<E>(p.getInt(k, static_cast<int>(v)));
+    using Underlying = std::underlying_type_t<E>;
+    Underlying value = static_cast<Underlying>(v);
+    if (p.readInteger(k, value)) {
+      v = static_cast<E>(value);
+    }
   }
   template <typename T>
   void nested(const char* k, T& obj) {
-    if (p.has(k)) obj.readFrom(p.getObject(k));
+    if (!p.has(k)) return;
+    Parser nested_parser = p.getObject(k);
+    obj.readFrom(nested_parser);
+    if (!nested_parser.isValid()) {
+      p.markConversionInvalid();
+    }
   }
 };
 

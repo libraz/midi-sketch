@@ -55,6 +55,13 @@ std::vector<NoteEvent> adjustPitchRange(const std::vector<NoteEvent>& notes, uin
   int orig_center = (orig_low + orig_high) / 2;
   int new_center = (new_low + new_high) / 2;
   int shift = new_center - orig_center;
+  // A later chorus commonly raises the floor while retaining the same ceiling.
+  // Shifting by midpoint alone halves that intentional lift and can make a
+  // cached chorus sag after scale snapping. In that asymmetric case, preserve
+  // the full floor movement; range clamping still protects the ceiling.
+  if (new_low > orig_low && new_high == orig_high) {
+    shift = static_cast<int>(new_low) - static_cast<int>(orig_low);
+  }
 
   for (const auto& note : notes) {
     NoteEvent adjusted = note;
@@ -497,7 +504,7 @@ void applyCollisionAvoidanceWithIntervalConstraint(std::vector<NoteEvent>& notes
     }
 #endif
 
-    // Re-enforce interval constraint (getBestAvailablePitch may have expanded interval)
+    // Re-enforce the interval constraint after collision-based adjustment.
     if (i > 0) {
       int prev_pitch = notes[i - 1].note;
       int interval = std::abs(static_cast<int>(note.note) - prev_pitch);
@@ -750,83 +757,6 @@ void applySectionEndSustain(std::vector<NoteEvent>& notes, const std::vector<Sec
       last_note.duration = desired_duration;
     }
   }
-}
-
-void mergeSamePitchNotesNearSectionEnds(std::vector<NoteEvent>& notes,
-                                        const std::vector<Section>& sections, Tick max_gap) {
-  if (notes.size() < 2 || sections.empty()) return;
-
-  // Sort by start tick
-  NoteTimeline::sortByStartTick(notes);
-
-  constexpr uint8_t kMergeBarsFromEnd = 2;  // Only merge in last 2 bars of each section
-
-  // Build a set of merge-eligible regions (last 2 bars of each section)
-  std::vector<std::pair<Tick, Tick>> merge_regions;
-  for (const auto& section : sections) {
-    Tick section_end = section.endTick();
-    Tick merge_start = section_end - std::min(static_cast<Tick>(kMergeBarsFromEnd * TICKS_PER_BAR),
-                                              static_cast<Tick>(section.bars * TICKS_PER_BAR));
-    merge_regions.push_back({merge_start, section_end});
-  }
-
-  auto isInMergeRegion = [&merge_regions](Tick tick) -> bool {
-    for (const auto& region : merge_regions) {
-      if (tick >= region.first && tick < region.second) return true;
-    }
-    return false;
-  };
-
-  // Merge same-pitch notes in merge regions
-  std::vector<NoteEvent> merged;
-  merged.reserve(notes.size());
-
-  size_t i = 0;
-  while (i < notes.size()) {
-    NoteEvent current = notes[i];
-
-    // Only merge if current note is in a merge region
-    if (isInMergeRegion(current.start_tick)) {
-      while (i + 1 < notes.size()) {
-        const NoteEvent& next = notes[i + 1];
-        Tick current_end = current.start_tick + current.duration;
-        Tick gap = (next.start_tick > current_end) ? (next.start_tick - current_end) : 0;
-
-        if (next.note == current.note && gap <= max_gap && isInMergeRegion(next.start_tick)) {
-          if (current.is_syllabic_subdivision || next.is_syllabic_subdivision) {
-            break;
-          }
-#ifdef MIDISKETCH_NOTE_PROVENANCE
-          if (current.prov_source == static_cast<uint8_t>(NoteSource::SyllabicSub) ||
-              next.prov_source == static_cast<uint8_t>(NoteSource::SyllabicSub)) {
-            break;
-          }
-#endif
-          Tick next_end = next.start_tick + next.duration;
-          current.duration = next_end - current.start_tick;
-          current.velocity = std::max(current.velocity, next.velocity);
-          i++;
-        } else {
-          break;
-        }
-      }
-    }
-
-    merged.push_back(current);
-    i++;
-  }
-
-  // Ensure no overlaps after merging
-  for (size_t j = 0; j + 1 < merged.size(); ++j) {
-    Tick end_tick = merged[j].start_tick + merged[j].duration;
-    if (end_tick > merged[j + 1].start_tick) {
-      if (merged[j + 1].start_tick > merged[j].start_tick) {
-        merged[j].duration = merged[j + 1].start_tick - merged[j].start_tick;
-      }
-    }
-  }
-
-  notes = std::move(merged);
 }
 
 }  // namespace midisketch

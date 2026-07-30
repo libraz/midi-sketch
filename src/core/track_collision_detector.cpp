@@ -47,6 +47,49 @@ bool isRootMajorSeventhContext(uint8_t a, uint8_t b, int8_t chord_degree) {
   return (a_pc == root_pc && b_pc == maj7_pc) || (b_pc == root_pc && a_pc == maj7_pc);
 }
 
+bool isRegisteredRootMajorSeventhContext(uint8_t a, uint8_t b, int actual_semitones,
+                                         int8_t chord_degree,
+                                         const ChordProgressionTracker* chord_tracker, Tick tick) {
+  if (actual_semitones < 23 || chord_tracker == nullptr ||
+      !isRootMajorSeventhContext(a, b, chord_degree)) {
+    return false;
+  }
+
+  ChordExtension extension = chord_tracker->getChordExtensionAt(tick);
+  return extension == ChordExtension::Maj7 || extension == ChordExtension::Maj9;
+}
+
+// Debug snapshots do not carry a chord timeline, so use the same conservative
+// actual-interval model as generation with its default tonic context. This
+// avoids treating a major 9th as a major 2nd while still surfacing tritones.
+bool isDebugDissonantInterval(int actual_semitones) {
+  return isDissonantActualInterval(actual_semitones, 0);
+}
+
+const char* debugIntervalName(int actual_semitones) {
+  switch (actual_semitones % 12) {
+    case 1:
+      return actual_semitones == 13 ? "minor 9th" : "minor 2nd";
+    case 2:
+      return "major 2nd";
+    case 6:
+      return "tritone";
+    case 11:
+      return "major 7th";
+    default:
+      return "dissonant interval";
+  }
+}
+
+// Collision queries are frequent during candidate ranking. Keep their index
+// workspace per-thread so consecutive queries do not allocate, while avoiding
+// mutable detector state shared by concurrent generators.
+std::vector<size_t>& noteIndexScratch() {
+  static thread_local std::vector<size_t> scratch;
+  scratch.clear();
+  return scratch;
+}
+
 }  // namespace
 
 void TrackCollisionDetector::registerNote(Tick start, Tick duration, uint8_t pitch,
@@ -74,9 +117,8 @@ void TrackCollisionDetector::registerTrack(const MidiTrack& track, TrackRole rol
 
 // NOTE: May return duplicate indices when a note spans multiple beats.
 // Callers that need uniqueness must sort+unique (e.g. dumpNotesAt).
-// Hot-path callers (isConsonantWithOtherTracks, hasBassCollision) tolerate
-// duplicates because they early-return on first dissonance, so the cost of
-// re-checking a note is negligible compared to the cost of deduplication.
+// Hot-path consonance checks tolerate duplicates because they early-return on
+// the first dissonance, so re-checking a note costs less than deduplication.
 void TrackCollisionDetector::collectNoteIndices(Tick start, Tick end,
                                                 std::vector<size_t>& out) const {
   if (beat_index_.empty()) return;
@@ -94,7 +136,7 @@ void TrackCollisionDetector::collectNoteIndices(Tick start, Tick end,
 
 bool TrackCollisionDetector::isConsonantWithOtherTracks(
     uint8_t pitch, Tick start, Tick duration, TrackRole exclude,
-    const ChordProgressionTracker* chord_tracker, bool is_weak_beat) const {
+    const ChordProgressionTracker* chord_tracker, bool allow_accented_nct) const {
   Tick end = start + duration;
 
   // Get chord context for smarter dissonance detection
@@ -107,8 +149,7 @@ bool TrackCollisionDetector::isConsonantWithOtherTracks(
   bool exclude_is_harmonic = isHarmonicTrack(exclude);
 
   // Use beat-indexed lookup
-  std::vector<size_t> indices;
-  indices.reserve(32);
+  auto& indices = noteIndexScratch();
   collectNoteIndices(start, end, indices);
 
   for (size_t idx : indices) {
@@ -127,29 +168,14 @@ bool TrackCollisionDetector::isConsonantWithOtherTracks(
     if (note.start < end && note.end > start) {
       int actual_semitones = std::abs(static_cast<int>(pitch) - static_cast<int>(note.pitch));
 
-      // On weak beats, allow major 2nd (2 semitones) as passing tone
-      if (is_weak_beat && actual_semitones == 2) {
+      // The exact same melodic-tension policy is used by analysis. The caller
+      // may prove an accented suspension/appoggiatura; ordinary notes only get
+      // the duration-aware passing-tone exemption.
+      Tick overlap_duration = std::min(end, note.end) - std::max(start, note.start);
+      Tick overlap_start = std::max(start, note.start);
+      if (isToleratedMelodicTension(actual_semitones, overlap_duration, pitch, note.pitch,
+                                    overlap_start, exclude, note.track, allow_accented_nct)) {
         continue;
-      }
-
-      // Duration-aware passing tone tolerance:
-      // Brief overlaps allow stepwise dissonances for contrapuntal movement.
-      // Both roles are passed so sustained harmony tracks (Guitar/Chord) are
-      // excluded from the melodic passing-tone exemption on EITHER side: a
-      // chord voicing is vertical harmony, and a stepwise clash against it is
-      // counted by the dissonance analyzer regardless of which side moved
-      // (observed: motif D4 placed against a sounding chord E4 at the same
-      // onset was tolerated here but flagged by the gate).
-      // The lead vocal gets no tolerance either: a brief second rubbing
-      // against the melody is what listeners notice first, and the dissonance
-      // gate counts every such overlap.
-      if (note.track != TrackRole::Vocal) {
-        Tick overlap_duration = std::min(end, note.end) - std::max(start, note.start);
-        Tick overlap_start = std::max(start, note.start);
-        if (isToleratedPassingTone(actual_semitones, overlap_duration, pitch, note.pitch,
-                                   overlap_start, exclude, note.track)) {
-          continue;
-        }
       }
 
       // Special case: tritone between harmonic tracks is dissonant except in
@@ -169,6 +195,10 @@ bool TrackCollisionDetector::isConsonantWithOtherTracks(
       // accepts an interval the dissonance gate counts as a clash:
       {
         int pc_interval = actual_semitones % 12;
+        bool registered_root_major_seventh =
+            pc_interval == 11 &&
+            isRegisteredRootMajorSeventhContext(pitch, note.pitch, actual_semitones, chord_degree,
+                                                chord_tracker, start);
         // Compound tritone (e.g. vocal B4 over bass F3 = aug 11th) is
         // dissonant on non-dominant chords for ANY track pair.
         if (pc_interval == 6 && actual_semitones <= 24) {
@@ -183,12 +213,12 @@ bool TrackCollisionDetector::isConsonantWithOtherTracks(
           uint8_t bass_side_pitch = 128;
           if (note.track == TrackRole::Bass) bass_side_pitch = note.pitch;
           if (exclude == TrackRole::Bass) bass_side_pitch = std::min(bass_side_pitch, pitch);
-          if (bass_side_pitch < 48) {
+          if (bass_side_pitch < 48 && !registered_root_major_seventh) {
             return false;
           }
         }
 
-        if (pc_interval == 11 && isRootMajorSeventhContext(pitch, note.pitch, chord_degree)) {
+        if (registered_root_major_seventh) {
           continue;
         }
 
@@ -218,8 +248,7 @@ CollisionInfo TrackCollisionDetector::getCollisionInfo(
 
   bool exclude_is_harmonic = isHarmonicTrack(exclude);
 
-  std::vector<size_t> indices;
-  indices.reserve(32);
+  auto& indices = noteIndexScratch();
   collectNoteIndices(start, end, indices);
 
   for (size_t idx : indices) {
@@ -230,15 +259,13 @@ CollisionInfo TrackCollisionDetector::getCollisionInfo(
 
     if (note.start < end && note.end > start) {
       int actual_semitones = std::abs(static_cast<int>(pitch) - static_cast<int>(note.pitch));
+      int pc_interval = actual_semitones % 12;
 
-      // Duration-aware passing tone tolerance (consistent with isConsonantWithOtherTracks)
-      if (note.track != TrackRole::Vocal) {
-        Tick overlap_duration = std::min(end, note.end) - std::max(start, note.start);
-        Tick overlap_start = std::max(start, note.start);
-        if (isToleratedPassingTone(actual_semitones, overlap_duration, pitch, note.pitch,
-                                   overlap_start, exclude, note.track)) {
-          continue;
-        }
+      Tick overlap_duration = std::min(end, note.end) - std::max(start, note.start);
+      Tick overlap_start = std::max(start, note.start);
+      if (isToleratedMelodicTension(actual_semitones, overlap_duration, pitch, note.pitch,
+                                    overlap_start, exclude, note.track)) {
+        continue;
       }
 
       if (exclude_is_harmonic) {
@@ -255,12 +282,26 @@ CollisionInfo TrackCollisionDetector::getCollisionInfo(
         }
       }
 
-      if ((actual_semitones % 12) == 11 &&
-          isRootMajorSeventhContext(pitch, note.pitch, chord_degree)) {
+      bool registered_root_major_seventh =
+          pc_interval == 11 &&
+          isRegisteredRootMajorSeventhContext(pitch, note.pitch, actual_semitones, chord_degree,
+                                              chord_tracker, start);
+      if (registered_root_major_seventh) {
         continue;
       }
-      if ((actual_semitones % 12) == 6 &&
-          isDominantFunctionContext(chord_degree, chord_tracker, start)) {
+      if (pc_interval == 11) {
+        uint8_t bass_side_pitch = 128;
+        if (note.track == TrackRole::Bass) bass_side_pitch = note.pitch;
+        if (exclude == TrackRole::Bass) bass_side_pitch = std::min(bass_side_pitch, pitch);
+        if (bass_side_pitch < 48) {
+          info.has_collision = true;
+          info.colliding_pitch = note.pitch;
+          info.colliding_track = note.track;
+          info.interval_semitones = actual_semitones;
+          return info;
+        }
+      }
+      if (pc_interval == 6 && isDominantFunctionContext(chord_degree, chord_tracker, start)) {
         continue;
       }
 
@@ -276,50 +317,19 @@ CollisionInfo TrackCollisionDetector::getCollisionInfo(
   return info;
 }
 
-bool TrackCollisionDetector::hasBassCollision(uint8_t pitch, Tick start, Tick duration,
-                                              int threshold) const {
-  if (pitch >= LOW_REGISTER_THRESHOLD) {
-    return false;
-  }
-
-  Tick end = start + duration;
-
-  std::vector<size_t> indices;
-  indices.reserve(16);
-  collectNoteIndices(start, end, indices);
-
-  for (size_t idx : indices) {
-    const auto& note = notes_[idx];
-    if (note.track != TrackRole::Bass) continue;
-
-    if (note.start < end && note.end > start) {
-      int interval = std::abs(static_cast<int>(pitch) - static_cast<int>(note.pitch));
-
-      if (interval <= threshold) {
-        return true;
-      }
-
-      if (interval > 0 && interval <= 12 && (interval % 12) == 0) {
-        return true;
-      }
-    }
-  }
-  return false;
-}
-
 std::vector<int> TrackCollisionDetector::getPitchClassesFromTrackAt(Tick tick,
                                                                     TrackRole role) const {
   std::vector<int> pitch_classes;
   pitch_classes.reserve(8);
 
   // For a single tick, query the beat containing that tick
-  std::vector<size_t> indices;
-  indices.reserve(16);
+  auto& indices = noteIndexScratch();
   collectNoteIndices(tick, tick + 1, indices);
 
   for (size_t idx : indices) {
     const auto& note = notes_[idx];
     if (note.track != role) continue;
+    if (note.is_phantom) continue;
 
     if (note.start <= tick && note.end > tick) {
       int pc = note.pitch % 12;
@@ -344,13 +354,13 @@ std::vector<int> TrackCollisionDetector::getPitchClassesFromTrackInRange(Tick st
   std::vector<int> pitch_classes;
   pitch_classes.reserve(8);
 
-  std::vector<size_t> indices;
-  indices.reserve(32);
+  auto& indices = noteIndexScratch();
   collectNoteIndices(start, end, indices);
 
   for (size_t idx : indices) {
     const auto& note = notes_[idx];
     if (note.track != role) continue;
+    if (note.is_phantom) continue;
 
     if (note.start < end && note.end > start) {
       int pc = note.pitch % 12;
@@ -375,14 +385,14 @@ std::vector<int> TrackCollisionDetector::getSoundingPitchClasses(Tick start, Tic
   std::vector<int> pitch_classes;
   pitch_classes.reserve(16);
 
-  std::vector<size_t> indices;
-  indices.reserve(32);
+  auto& indices = noteIndexScratch();
   collectNoteIndices(start, end, indices);
 
   for (size_t idx : indices) {
     const auto& note = notes_[idx];
     if (note.track == exclude) continue;
     if (note.track == TrackRole::Drums) continue;
+    if (note.is_phantom) continue;
 
     if (note.start < end && note.end > start) {
       int pc = note.pitch % 12;
@@ -407,14 +417,14 @@ std::vector<uint8_t> TrackCollisionDetector::getSoundingPitches(Tick start, Tick
   std::vector<uint8_t> pitches;
   pitches.reserve(16);
 
-  std::vector<size_t> indices;
-  indices.reserve(32);
+  auto& indices = noteIndexScratch();
   collectNoteIndices(start, end, indices);
 
   for (size_t idx : indices) {
     const auto& note = notes_[idx];
     if (note.track == exclude) continue;
     if (note.track == TrackRole::Drums) continue;
+    if (note.is_phantom) continue;
 
     if (note.start < end && note.end > start) {
       bool found = false;
@@ -437,13 +447,13 @@ uint8_t TrackCollisionDetector::getHighestPitchForTrackInRange(Tick start, Tick 
                                                                TrackRole role) const {
   uint8_t highest = 0;
 
-  std::vector<size_t> indices;
-  indices.reserve(16);
+  auto& indices = noteIndexScratch();
   collectNoteIndices(start, end, indices);
 
   for (size_t idx : indices) {
     const auto& note = notes_[idx];
     if (note.track != role) continue;
+    if (note.is_phantom) continue;
     if (note.start < end && note.end > start) {
       if (note.pitch > highest) {
         highest = note.pitch;
@@ -457,13 +467,13 @@ uint8_t TrackCollisionDetector::getLowestPitchForTrackInRange(Tick start, Tick e
                                                               TrackRole role) const {
   uint8_t lowest = 0;
 
-  std::vector<size_t> indices;
-  indices.reserve(16);
+  auto& indices = noteIndexScratch();
   collectNoteIndices(start, end, indices);
 
   for (size_t idx : indices) {
     const auto& note = notes_[idx];
     if (note.track != role) continue;
+    if (note.is_phantom) continue;
     if (note.start < end && note.end > start) {
       if (lowest == 0 || note.pitch < lowest) {
         lowest = note.pitch;
@@ -510,7 +520,13 @@ void TrackCollisionDetector::clearPhantomNotes() {
 }
 
 void TrackCollisionDetector::rebuildBeatIndex() {
-  beat_index_.clear();
+  // Keep the outer index and every bucket's capacity across the frequent
+  // clear/register cycles during one generation. Note indices are compacted
+  // by the erase above, so every bucket still needs to be repopulated, but
+  // discarding their allocations adds avoidable churn on full songs.
+  for (auto& bucket : beat_index_) {
+    bucket.clear();
+  }
   for (size_t idx = 0; idx < notes_.size(); ++idx) {
     const auto& note = notes_[idx];
     Tick first_beat = tickToBeat(note.start);
@@ -534,13 +550,13 @@ Tick TrackCollisionDetector::getMaxSafeEnd(Tick note_start, uint8_t pitch, Track
                                            const ChordProgressionTracker* chord_tracker) const {
   Tick safe_end = desired_end;
 
-  std::vector<size_t> indices;
-  indices.reserve(32);
+  auto& indices = noteIndexScratch();
   collectNoteIndices(note_start, desired_end, indices);
 
   for (size_t idx : indices) {
     const auto& note = notes_[idx];
     if (note.track == exclude) continue;
+    if (note.track == TrackRole::Drums) continue;
     if (note.is_phantom) continue;
     if (note.end <= note_start) continue;
     if (note.start >= desired_end) continue;
@@ -549,7 +565,35 @@ Tick TrackCollisionDetector::getMaxSafeEnd(Tick note_start, uint8_t pitch, Track
     Tick overlap_start = std::max(note_start, note.start);
     int8_t chord_degree =
         chord_tracker != nullptr ? chord_tracker->getChordDegreeAt(overlap_start) : 0;
-    bool is_dissonant = isDissonantActualInterval(actual_semitones, chord_degree);
+    int pc_interval = actual_semitones % 12;
+
+    // Keep duration extension consistent with candidate generation: brief
+    // melodic seconds, tonic/mediant root-M7 colour, and dominant/secondary-
+    // dominant tritones are intentional and must not be shortened away.
+    Tick overlap_duration = std::min(desired_end, note.end) - overlap_start;
+    if (isToleratedMelodicTension(actual_semitones, overlap_duration, pitch, note.pitch,
+                                  overlap_start, exclude, note.track)) {
+      continue;
+    }
+    bool registered_root_major_seventh =
+        pc_interval == 11 &&
+        isRegisteredRootMajorSeventhContext(pitch, note.pitch, actual_semitones, chord_degree,
+                                            chord_tracker, overlap_start);
+    if (registered_root_major_seventh) {
+      continue;
+    }
+    if (pc_interval == 6 && isDominantFunctionContext(chord_degree, chord_tracker, overlap_start)) {
+      continue;
+    }
+    bool low_bass_major_seventh = false;
+    if (pc_interval == 11) {
+      uint8_t bass_side_pitch = 128;
+      if (note.track == TrackRole::Bass) bass_side_pitch = note.pitch;
+      if (exclude == TrackRole::Bass) bass_side_pitch = std::min(bass_side_pitch, pitch);
+      low_bass_major_seventh = bass_side_pitch < 48;
+    }
+    bool is_dissonant =
+        low_bass_major_seventh || isDissonantActualInterval(actual_semitones, chord_degree);
 
     if (is_dissonant) {
       if (note.start > note_start && note.start < safe_end) {
@@ -575,8 +619,7 @@ std::string TrackCollisionDetector::dumpNotesAt(Tick tick, Tick range_ticks) con
 
   // Collect notes in range using beat index
   std::vector<const RegisteredNote*> notes_in_range;
-  std::vector<size_t> indices;
-  indices.reserve(64);
+  auto& indices = noteIndexScratch();
   collectNoteIndices(range_start, range_end, indices);
 
   // Deduplicate indices for display
@@ -635,10 +678,7 @@ std::string TrackCollisionDetector::dumpNotesAt(Tick tick, Tick range_ticks) con
         if (a->track == TrackRole::Drums || b->track == TrackRole::Drums) continue;
 
         int interval = std::abs(static_cast<int>(a->pitch) - static_cast<int>(b->pitch));
-        int pitch_class_interval = interval % 12;
-
-        bool is_clash =
-            (pitch_class_interval == 1 || pitch_class_interval == 11 || pitch_class_interval == 2);
+        bool is_clash = isDebugDissonantInterval(interval);
 
         if (is_clash) {
           // Duration-aware passing tone tolerance. Pass both roles so a
@@ -652,10 +692,7 @@ std::string TrackCollisionDetector::dumpNotesAt(Tick tick, Tick range_ticks) con
           }
 
           found_clash = true;
-          const char* interval_name = (pitch_class_interval == 1)    ? "minor 2nd"
-                                      : (pitch_class_interval == 11) ? "major 7th"
-                                      : (pitch_class_interval == 2)  ? "major 2nd"
-                                                                     : "?";
+          const char* interval_name = debugIntervalName(interval);
 
           result += "  CLASH: " + std::string(trackRoleToString(a->track));
           result += "(" + pitchToNoteName(a->pitch) + ")";
@@ -682,8 +719,7 @@ CollisionSnapshot TrackCollisionDetector::getCollisionSnapshot(Tick tick, Tick r
   snapshot.range_end = tick + range_ticks / 2;
 
   // Collect notes in range using beat index
-  std::vector<size_t> indices;
-  indices.reserve(64);
+  auto& indices = noteIndexScratch();
   collectNoteIndices(snapshot.range_start, snapshot.range_end, indices);
 
   // Deduplicate for snapshot
@@ -715,10 +751,7 @@ CollisionSnapshot TrackCollisionDetector::getCollisionSnapshot(Tick tick, Tick r
       if (a.track == TrackRole::Drums || b.track == TrackRole::Drums) continue;
 
       int interval = std::abs(static_cast<int>(a.pitch) - static_cast<int>(b.pitch));
-      int pitch_class_interval = interval % 12;
-
-      bool is_clash =
-          (pitch_class_interval == 1 || pitch_class_interval == 11 || pitch_class_interval == 2);
+      bool is_clash = isDebugDissonantInterval(interval);
 
       if (is_clash) {
         // Duration-aware passing tone tolerance (consistent with isConsonantWithOtherTracks).
@@ -734,10 +767,7 @@ CollisionSnapshot TrackCollisionDetector::getCollisionSnapshot(Tick tick, Tick r
         detail.note_a = a;
         detail.note_b = b;
         detail.interval_semitones = interval;
-        detail.interval_name = (pitch_class_interval == 1)    ? "minor 2nd"
-                               : (pitch_class_interval == 11) ? "major 7th"
-                               : (pitch_class_interval == 2)  ? "major 2nd"
-                                                              : "unknown";
+        detail.interval_name = debugIntervalName(interval);
         snapshot.clashes.push_back(detail);
       }
     }

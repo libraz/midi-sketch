@@ -15,7 +15,7 @@
 namespace midisketch {
 
 class Song;
-struct ParsedMidi;
+class IChordLookup;
 
 /// @brief Severity level for dissonance issues.
 enum class DissonanceSeverity : uint8_t {
@@ -108,6 +108,15 @@ struct DissonanceReport {
  * @return DissonanceReport with all issues
  */
 DissonanceReport analyzeDissonance(const Song& song, const GeneratorParams& params);
+
+/**
+ * @brief Analyze a generated song with its exact generation-time harmony timeline.
+ *
+ * Registered replacements and per-entry extensions are preserved instead of
+ * being reconstructed from the base progression.
+ */
+DissonanceReport analyzeDissonance(const Song& song, const GeneratorParams& params,
+                                   const IChordLookup& chord_lookup);
 
 /**
  * @brief Analyze parsed MIDI for dissonance (clash detection only).

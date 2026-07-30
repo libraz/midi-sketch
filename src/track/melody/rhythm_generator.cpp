@@ -362,7 +362,8 @@ uint8_t selectPitchForLockedRhythmEnhanced(uint8_t prev_pitch, int8_t chord_degr
     candidate_pcs = {0, 2, 4, 5, 7, 9, 11};  // C major diatonic
   } else {
     // Start with chord tones
-    candidate_pcs = getChordTonePitchClasses(chord_degree);
+    const ChordTones chord_tones = getChordTones(chord_degree);
+    candidate_pcs.assign(chord_tones.begin(), chord_tones.end());
 
     // Expressive: Add tensions (9th, 13th) for colorful harmonies
     // Only add tensions that are diatonic in C major to avoid chromatic pitches

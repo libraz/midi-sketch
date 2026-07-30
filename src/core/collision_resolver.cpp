@@ -8,27 +8,28 @@
 #include <algorithm>
 #include <cmath>
 
+#include "core/pitch_utils.h"
+
 namespace midisketch {
 
 void CollisionResolver::resolveArpeggioChordClashes(MidiTrack& arpeggio_track,
                                                     const MidiTrack& chord_track,
                                                     const IHarmonyContext& harmony) {
-  // Dissonant intervals to resolve (in semitones)
-  constexpr int MINOR_2ND = 1;
-  constexpr int MAJOR_7TH = 11;
-  constexpr int TRITONE = 6;
+  constexpr uint8_t kArpeggioLow = 48;
+  constexpr uint8_t kArpeggioHigh = 108;
 
   auto& arp_notes = arpeggio_track.notes();
   const auto& chord_notes = chord_track.notes();
 
   // Check if arpeggio pitch clashes with any chord note in the time range
   auto hasClashWithChord = [&](uint8_t pitch, Tick start, Tick end) {
+    const int8_t chord_degree = harmony.getChordDegreeAt(start);
     for (const auto& chord : chord_notes) {
       Tick chord_end = chord.start_tick + chord.duration;
       if (start >= chord_end || end <= chord.start_tick) continue;
 
-      int interval = std::abs(static_cast<int>(pitch) - static_cast<int>(chord.note)) % 12;
-      if (interval == MINOR_2ND || interval == MAJOR_7TH || interval == TRITONE) {
+      const int actual_semitones = std::abs(static_cast<int>(pitch) - static_cast<int>(chord.note));
+      if (isDissonantActualInterval(actual_semitones, chord_degree)) {
         return true;
       }
     }
@@ -51,10 +52,16 @@ void CollisionResolver::resolveArpeggioChordClashes(MidiTrack& arpeggio_track,
     for (int tone : chord_tones) {
       for (int oct_offset = -1; oct_offset <= 1; ++oct_offset) {
         int candidate = (octave + oct_offset) * 12 + tone;
-        if (candidate < 48 || candidate > 96) continue;
+        if (candidate < kArpeggioLow || candidate > kArpeggioHigh) continue;
 
-        // Check this candidate doesn't clash with any chord note
+        // The candidate must clear both the explicit chord voicing and every
+        // registered harmonic track (bass, motif, guitar, vocal, etc.).
+        // Checking only chord_track here could replace one rub with another.
         if (hasClashWithChord(static_cast<uint8_t>(candidate), arp.start_tick, arp_end)) {
+          continue;
+        }
+        if (!harmony.isConsonantWithOtherTracks(static_cast<uint8_t>(candidate), arp.start_tick,
+                                                arp.duration, TrackRole::Arpeggio)) {
           continue;
         }
 

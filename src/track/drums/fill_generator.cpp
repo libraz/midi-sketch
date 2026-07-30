@@ -16,6 +16,7 @@ uint8_t getFillStartBeat(SectionEnergy energy) {
     case SectionEnergy::Low:
       return 3;  // Beat 4 only (1 beat fill)
     case SectionEnergy::Medium:
+    case SectionEnergy::Unset:
       return 2;  // Beats 3-4 (2 beat fill)
     case SectionEnergy::High:
     case SectionEnergy::Peak:

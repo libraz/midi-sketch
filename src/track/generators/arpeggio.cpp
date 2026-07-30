@@ -23,6 +23,8 @@
 #include "core/timing_constants.h"
 #include "core/velocity.h"
 #include "core/velocity_helper.h"
+#include "track/drums.h"
+#include "track/drums/beat_processors.h"
 
 namespace midisketch {
 
@@ -144,6 +146,8 @@ Tick getNoteDuration(ArpeggioSpeed speed) {
       return TICKS_PER_BEAT / 4;  // 16th note = 120 ticks
     case ArpeggioSpeed::Triplet:
       return TICKS_PER_BEAT / 3;  // Triplet = 160 ticks
+    case ArpeggioSpeed::Auto:
+      break;
   }
   return TICKS_PER_BEAT / 4;  // Default to 16th
 }
@@ -253,6 +257,8 @@ std::vector<uint8_t> arrangeByPattern(const std::vector<uint8_t>& notes, Arpeggi
       result = pattern;
       break;
     }
+    case ArpeggioPattern::Auto:
+      break;
   }
 
   return result;
@@ -305,17 +311,21 @@ ArpeggioSectionParams calculateArpeggioSectionParams(const Section& section,
   // Start with style defaults
   result.speed = style.speed;
   result.gate = style.gate;
-  result.swing_amount = style.swing_amount;
+  const float section_swing =
+      calculateSwingAmount(section.type, 0, section.bars, section.swing_amount);
+  const DrumGrooveFeel groove =
+      drums::resolveSectionDrumGroove(params.mood, params.paradigm, section_swing);
+  result.swing_amount = drums::getEffectiveDrumSwing(groove, section_swing);
   result.pattern = style.pattern;
 
   // ArpeggioParams overrides style (user configuration takes priority)
-  if (arp.pattern != ArpeggioPattern::Up) {
+  if (arp.pattern != ArpeggioPattern::Auto) {
     result.pattern = arp.pattern;
   }
-  if (arp.speed != ArpeggioSpeed::Sixteenth) {
+  if (arp.speed != ArpeggioSpeed::Auto) {
     result.speed = arp.speed;
   }
-  if (arp.gate != 0.8f) {
+  if (arp.gate >= 0.0f) {
     result.gate = arp.gate;
   }
 
@@ -336,12 +346,11 @@ ArpeggioSectionParams calculateArpeggioSectionParams(const Section& section,
 
   if (params.paradigm == GenerationParadigm::RhythmSync) {
     result.speed = ArpeggioSpeed::Sixteenth;
-    result.swing_amount = std::max(0.0f, section.swing_amount);
     result.gate = std::max(result.gate, 0.95f);
   }
 
   // Promote to 16th if density > 90% and speed is 8th
-  bool user_set_speed = (arp.speed != ArpeggioSpeed::Sixteenth);
+  bool user_set_speed = (arp.speed != ArpeggioSpeed::Auto);
   bool style_has_special_speed = (style.speed != ArpeggioSpeed::Sixteenth);
   if (result.effective_density > 90 && result.speed == ArpeggioSpeed::Eighth && !user_set_speed &&
       !style_has_special_speed) {
@@ -507,9 +516,15 @@ void ArpeggioGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackCon
 
           if (add_note) {
             Tick note_pos = pos;
-            if (arp_swing_amount > 0.0f && (pattern_index % 2 == 1)) {
-              Tick swing_offset = static_cast<Tick>(section_note_duration * arp_swing_amount);
-              note_pos += swing_offset;
+            // Swing is defined from the absolute rhythmic grid, never the
+            // pattern index: skipped notes and pattern changes must not flip
+            // which subdivision is delayed. Triplet patterns already occupy
+            // their intended grid and therefore remain unswung.
+            if (arp_swing_amount > 0.0f && sec_params.speed != ArpeggioSpeed::Triplet) {
+              const SwingGridResolution resolution = sec_params.speed == ArpeggioSpeed::Eighth
+                                                         ? SwingGridResolution::Eighth
+                                                         : SwingGridResolution::Sixteenth;
+              note_pos = quantizeToSwingGrid(pos, arp_swing_amount, resolution);
             }
 
             uint8_t vocal_at_onset = harmony->getHighestPitchForTrackInRange(
@@ -535,8 +550,11 @@ void ArpeggioGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackCon
               }
               const auto duplicate = std::any_of(
                   track.notes().begin(), track.notes().end(), [&](const NoteEvent& existing) {
-                    return existing.start_tick == result.note->start_tick &&
-                           existing.note == result.note->note;
+                    const Tick candidate_end = result.note->start_tick + result.note->duration;
+                    const Tick existing_end = existing.start_tick + existing.duration;
+                    return existing.note == result.note->note &&
+                           existing.start_tick < candidate_end &&
+                           result.note->start_tick < existing_end;
                   });
               if (duplicate) {
                 return;

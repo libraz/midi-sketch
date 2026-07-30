@@ -19,17 +19,23 @@ float ConsecutiveSameNoteTracker::getAllowProbability() const {
   // J-POP style probability curve:
   // Rhythmic repetition is common but should taper off naturally
   // Music theory: 4+ consecutive same notes is monotonous and should be avoided
+  float curve_probability = 0.0f;
   switch (count) {
     case 0:
     case 1:
-      return 1.0f;  // First note always OK
+      curve_probability = 1.0f;
+      break;
     case 2:
-      return 0.70f;  // 2nd repetition: 70%
+      curve_probability = 0.70f;
+      break;
     case 3:
-      return 0.30f;  // 3rd repetition: 30%
+      curve_probability = 0.30f;
+      break;
     default:
-      return 0.0f;  // 4+: never allow (force movement)
+      curve_probability = 0.0f;
+      break;
   }
+  return curve_probability * std::clamp(configured_probability, 0.0f, 1.0f);
 }
 
 bool ConsecutiveSameNoteTracker::shouldForceMovement(std::mt19937& rng) const {
@@ -38,7 +44,7 @@ bool ConsecutiveSameNoteTracker::shouldForceMovement(std::mt19937& rng) const {
 }
 
 bool isChordTone(int pitch_pc, int8_t chord_degree) {
-  std::vector<int> chord_tones = getChordTonePitchClasses(chord_degree);
+  const ChordTones chord_tones = getChordTones(chord_degree);
   for (int ct : chord_tones) {
     if (pitch_pc == ct) {
       return true;
@@ -52,7 +58,7 @@ int findNearestDifferentChordTone(int current_pitch, int8_t chord_degree, uint8_
   std::vector<int> candidates;
 
   // First priority: chord tones (most harmonically stable)
-  std::vector<int> chord_tones = getChordTonePitchClasses(chord_degree);
+  const ChordTones chord_tones = getChordTones(chord_degree);
   for (int pc : chord_tones) {
     for (int oct = 3; oct <= 6; ++oct) {
       int candidate = oct * 12 + pc;

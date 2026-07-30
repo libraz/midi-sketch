@@ -22,7 +22,9 @@ namespace chord_voicing {
 /// @name Bass Pitch Mask Utilities
 /// @{
 
-/// Build a pitch class mask from bass notes in a bar.
+/// Build a pitch class mask from bass notes sounding on beats 1 or 3 of a bar.
+/// Short approach notes on weak beats do not constrain every chord voicing in
+/// the bar; they are handled by the time-local collision checks instead.
 /// @param bass_track Pointer to bass track (can be nullptr)
 /// @param bar_start Start tick of the bar
 /// @param bar_end End tick of the bar (exclusive)

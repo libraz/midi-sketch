@@ -22,6 +22,16 @@
 namespace midisketch {
 namespace drums {
 
+/// @brief Resolve a section swing amount against the active groove feel.
+float getEffectiveDrumSwing(DrumGrooveFeel groove, float swing_amount);
+
+/// @brief Resolve the groove used by every track for a section.
+DrumGrooveFeel resolveSectionDrumGroove(Mood mood, GenerationParadigm paradigm,
+                                        float section_swing);
+
+/// @brief Quantize a drum-grid tick using the shared effective swing.
+Tick quantizeDrumSwing(Tick tick, DrumGrooveFeel groove, float swing_amount);
+
 // ============================================================================
 // Parameter Structs
 // ============================================================================
@@ -136,18 +146,6 @@ void generateHiHatForBeat(MidiTrack& track, const BeatContext& beat_ctx,
 /// @param mood Current mood
 /// @return Swing factor (0.0-1.0)
 float getHiHatSwingFactor(Mood mood);
-
-/// @brief Apply time feel offset to tick position.
-/// @param base_tick Original tick position
-/// @param feel Time feel setting
-/// @param bpm Tempo in BPM
-/// @return Adjusted tick position
-Tick applyTimeFeel(Tick base_tick, TimeFeel feel, uint16_t bpm);
-
-/// @brief Get default time feel for a mood.
-/// @param mood Current mood
-/// @return Time feel setting
-TimeFeel getMoodTimeFeel(Mood mood);
 
 }  // namespace drums
 }  // namespace midisketch

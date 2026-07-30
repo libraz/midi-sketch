@@ -7,8 +7,8 @@
 #define MIDISKETCH_CORE_CHORD_UTILS_H
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
-#include <random>
 #include <vector>
 
 #include "core/pitch_utils.h"  // For TessituraRange
@@ -25,6 +25,14 @@ namespace midisketch {
 struct ChordTones {
   std::array<int, 5> pitch_classes;  // Pitch classes (0-11), -1 = unused
   uint8_t count;                     // Number of chord tones
+
+  /// Iteration over populated pitch classes only.  This lets generation hot
+  /// paths use the fixed-size representation without materialising a vector.
+  const int* begin() const { return pitch_classes.data(); }
+  const int* end() const { return pitch_classes.data() + count; }
+  bool empty() const { return count == 0; }
+  size_t size() const { return count; }
+  int operator[](size_t index) const { return pitch_classes[index]; }
 };
 
 // Get chord tones as pitch classes for a chord built on given scale degree.
@@ -176,14 +184,14 @@ class ChordToneHelper {
 
   /**
    * @brief Get the chord tones as pitch classes.
-   * @return Vector of pitch classes (0-11)
+   * @return Fixed-size chord-tone collection (0-11 pitch classes)
    */
-  const std::vector<int>& pitchClasses() const { return pitch_classes_; }
+  const ChordTones& pitchClasses() const { return pitch_classes_; }
 
  private:
   int8_t degree_;
   int root_pc_;
-  std::vector<int> pitch_classes_;
+  ChordTones pitch_classes_;
 };
 
 // ============================================================================
@@ -192,9 +200,10 @@ class ChordToneHelper {
 
 /// @brief Check if a pitch forms a tritone interval with any chord pitch class.
 /// @param pitch_pc Pitch class to check (0-11)
-/// @param chord_pcs Vector of chord pitch classes
+/// @param chord_pcs Chord pitch classes
 /// @return true if any interval is a tritone (6 semitones)
 bool hasTritoneWithChord(int pitch_pc, const std::vector<int>& chord_pcs);
+bool hasTritoneWithChord(int pitch_pc, const ChordTones& chord_pcs);
 
 // ============================================================================
 // Diatonic Fifth Utilities
@@ -225,25 +234,6 @@ uint8_t getDiatonicFifth(uint8_t root);
 /// @return Safe pitch that is a chord tone and consonant, or root as fallback
 uint8_t getSafeChordTone(uint8_t root, const IHarmonyContext& harmony, Tick start, Tick duration,
                          TrackRole role, uint8_t range_low, uint8_t range_high);
-
-// ============================================================================
-// Stepwise Motion Functions
-// ============================================================================
-
-// Move stepwise (1-2 semitones) toward target, preferring scale tones.
-// This creates more singable melodies by avoiding large chord-tone jumps.
-// @param prev_pitch Current pitch to move from
-// @param target_pitch Desired target pitch (direction indicator)
-// @param chord_degree Scale degree of current chord
-// @param range_low Minimum allowed pitch
-// @param range_high Maximum allowed pitch
-// @param key Current key (0-11, 0=C)
-// @param prefer_same_note Probability (0-100) to stay on same note
-// @param rng Random number generator for prefer_same_note
-// @returns New pitch moved stepwise toward target
-int stepwiseToTarget(int prev_pitch, int target_pitch, int8_t chord_degree, int range_low,
-                     int range_high, uint8_t key = 0, int prefer_same_note = 30,
-                     std::mt19937* rng = nullptr);
 
 }  // namespace midisketch
 

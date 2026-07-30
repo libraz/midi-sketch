@@ -72,8 +72,8 @@ struct PhysicalModel {
 /// @brief Default physical models for common instruments.
 namespace PhysicalModels {
 
-/// Electric Bass: E1 (28) to G4 (67)
-inline constexpr PhysicalModel kElectricBass = {28, 67, 40, 127, 120, true, 0};
+/// Electric Bass: E1 (28) to G3 (55), matching the production bass register.
+inline constexpr PhysicalModel kElectricBass = {28, 55, 40, 127, 120, true, 0};
 
 /// Synth Bass: C1 (24) to C4 (60)
 inline constexpr PhysicalModel kSynthBass = {24, 60, 50, 127, 60, true, 0};
@@ -105,8 +105,8 @@ inline constexpr PhysicalModel kVocal = {60, 79, 50, 127, 120, true, 0};
 /// Aux Vocal: Similar to main vocal
 inline constexpr PhysicalModel kAuxVocal = {55, 84, 40, 110, 120, true, 0};
 
-/// Motif Synth: C3 (48) to C6 (84)
-inline constexpr PhysicalModel kMotifSynth = {48, 84, 60, 100, 60, false, 0};
+/// Motif Synth: C4 (60) to C8 (108), matching the production motif register.
+inline constexpr PhysicalModel kMotifSynth = {60, 108, 60, 100, 60, false, 0};
 
 /// Arpeggio Synth: C3 (48) to C8 (108)
 inline constexpr PhysicalModel kArpeggioSynth = {48, 108, 60, 100, 30, false, 0};

@@ -46,6 +46,7 @@ set(MIDISKETCH_CORE_SOURCES
   core/post_processing_pipeline.cpp
   core/note_timeline_utils.cpp
   core/timing_offset_calculator.cpp
+  analysis/dissonance.cpp
   midi/midi_writer.cpp
   track/track.cpp
   track/vocal/phrase_variation.cpp
@@ -84,7 +85,6 @@ set(MIDISKETCH_CORE_SOURCES
   track/melody/constraint_pipeline.cpp
   track/melody/leap_resolution.cpp
   track/melody/isolated_note_resolver.cpp
-  track/melody/phrase_note_generator.cpp
   track/melody/skeleton.cpp
   track/generators/vocal.cpp
   track/generators/bass.cpp
@@ -111,7 +111,6 @@ set(MIDISKETCH_CLI_SOURCES
   midi/ump.cpp
   midi/midi2_writer.cpp
   midi/midi2_reader.cpp
-  analysis/dissonance.cpp
 )
 
 # Combined sources for full library

@@ -104,15 +104,20 @@ inline ChordRhythm selectRhythm(SectionType section, Mood mood, BackingDensity b
 
     // RhythmSync: keep chords rhythmically active so the harmony bed matches
     // the 16th-driven coordinate axis instead of sitting under it as pads.
-    if (isHighEnergySection(section)) {
+    if (section == SectionType::Chant || isInstrumentalBreak(section)) {
+      // Chant and introductions retain a sparse quarter-note pulse while
+      // still avoiding the long sustains that collide with RhythmSync motifs.
+      selected = ChordRhythm::Quarter;
+    } else if (isHighEnergySection(section)) {
       // High-energy sections: 70% Eighth, 30% Quarter
       selected = (roll < 0.70f) ? ChordRhythm::Eighth : ChordRhythm::Quarter;
     } else if (isInstrumentalBreak(section) || section == SectionType::Outro) {
       // Transition sections: keep some motion but leave more space
       selected = (roll < 0.70f) ? ChordRhythm::Eighth : ChordRhythm::Quarter;
     } else {
-      // A/Bridge sections: quarter pulse with frequent eighth-note push
-      selected = (roll < 0.80f) ? ChordRhythm::Eighth : ChordRhythm::Quarter;
+      // A/Bridge sections: primarily quarter pulse, with a restrained
+      // eighth-note push that keeps the Chorus rhythmically denser.
+      selected = (roll < 0.45f) ? ChordRhythm::Eighth : ChordRhythm::Quarter;
     }
 
     return applyBackingDensity(selected, backing_density);

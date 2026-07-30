@@ -25,21 +25,21 @@ constexpr int kPhraseBars = 4;
 // Standard (Pop) profile uses the original hardcoded values.
 constexpr DrumTimingProfile kDrumTimingProfiles[] = {
     // Sparse (Ballad): subtle offsets for a relaxed, airy feel
-    {-1, -2, 1, -3, -5, -2, -2, 3, 5, 6},
-    // Standard (Pop): original hardcoded values - natural pocket groove
-    {-1, -3, 2, -6, -8, -4, -3, 8, 12, 15},
+    {-1, -2, 1, 3, 5, 2, 2, -3, -5, -6},
+    // Standard (Pop): natural pocket groove
+    {-1, -3, 2, 6, 8, 4, 3, -8, -12, -15},
     // FourOnFloor (Dance/EDM): tight kick for metronomic pulse
-    {0, -1, 1, -5, -6, -3, -2, 8, 12, 15},
+    {0, -1, 1, 5, 6, 3, 2, -8, -12, -15},
     // Upbeat (Idol/Energetic): driving hi-hat push, snappy snare
-    {-1, -2, 3, -5, -7, -3, -2, 10, 14, 18},
+    {-1, -2, 3, 5, 7, 3, 2, -10, -14, -18},
     // Rock: tighter than pop, less hi-hat push for heavier feel
-    {-2, -4, 2, -4, -6, -3, -2, 5, 8, 10},
+    {-2, -4, 2, 4, 6, 3, 2, -5, -8, -10},
     // Synth: precision timing, near-zero kick, wide hi-hat push
-    {0, 0, 1, -2, -4, -1, -1, 10, 15, 20},
+    {0, 0, 1, 2, 4, 1, 1, -10, -15, -20},
     // Trap: laid-back snare, moderate hi-hat, tight kick
-    {0, -1, 2, -6, -10, -4, -2, 5, 8, 10},
+    {0, -1, 2, 6, 10, 4, 2, -5, -8, -10},
     // Latin: syncopated feel with moderate offsets
-    {-1, -2, 3, -5, -7, -3, -2, 7, 11, 14},
+    {-1, -2, 3, 5, 7, 3, 2, -7, -11, -14},
 };
 
 // Verify profile count matches DrumStyle enum count at compile time.

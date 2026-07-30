@@ -259,8 +259,8 @@ struct NoteEvent {
 #endif                                                     // MIDISKETCH_NOTE_PROVENANCE
 
  private:
-  // Constructors are private to enforce NoteFactory usage for dissonance checking.
-  // Use NoteFactory::create() or NoteFactory::createIfNoDissonance() for production code.
+  // Constructors are private to enforce the note_creator safety path.
+  // Use createNote() or createNoteAndAdd() for production code.
   // Copy/move constructors and assignment operators remain public (safe operations).
 
   /// @brief Default constructor.
@@ -315,13 +315,13 @@ struct NoteEvent {
 /// @brief Helper struct for creating NoteEvents in track generators.
 ///
 /// This struct provides static methods for creating NoteEvent objects
-/// without requiring NoteFactory. It is intended for use in contexts where:
+/// without requiring a harmony-aware note creator. It is intended for use in contexts where:
 /// - No harmony context is available (drums, SE)
 /// - The generation logic has its own harmony handling
 /// - Quick prototyping or testing
 ///
-/// For production code with melodic content, prefer NoteFactory::create()
-/// or NoteFactory::createIfNoDissonance() to ensure proper dissonance checking.
+/// For production code with melodic content, prefer createNote() or
+/// createNoteAndAdd() from note_creator.h to ensure proper dissonance checking.
 struct NoteEventBuilder {
   /// @brief Create a NoteEvent with specified parameters.
   static NoteEvent create(Tick start, Tick dur, uint8_t note, uint8_t vel) {
@@ -521,7 +521,6 @@ inline const char* pitchPreferenceToString(PitchPreference pref) {
 /// @brief A safe pitch candidate returned by getSafePitchCandidates().
 struct PitchCandidate {
   uint8_t pitch;                    ///< Candidate pitch (MIDI note number)
-  Tick max_safe_duration;           ///< Maximum duration before collision
   CollisionAvoidStrategy strategy;  ///< How this candidate was found
   int8_t interval_from_desired;     ///< Semitones from desired pitch
 
@@ -541,7 +540,6 @@ struct PitchCandidate {
 
   PitchCandidate()
       : pitch(0),
-        max_safe_duration(0),
         strategy(CollisionAvoidStrategy::None),
         interval_from_desired(0),
         is_chord_tone(false),
@@ -613,7 +611,11 @@ enum class MidiFormat : uint8_t {
 };
 
 /// Default MIDI format for new generations.
-constexpr MidiFormat kDefaultMidiFormat = MidiFormat::SMF2;
+///
+/// SMF1 is the interoperable default expected by DAWs and standard MIDI
+/// tooling.  The MIDI 2.0 container remains available through an explicit
+/// format selection.
+constexpr MidiFormat kDefaultMidiFormat = MidiFormat::SMF1;
 
 }  // namespace midisketch
 

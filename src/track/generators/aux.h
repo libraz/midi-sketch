@@ -161,9 +161,11 @@ class AuxGenerator : public TrackBase {
 
   /// Full song context for complete aux track generation.
   struct SongContext {
-    const std::vector<Section>* sections = nullptr;            ///< All sections in song
-    const MidiTrack* vocal_track = nullptr;                    ///< Vocal track for analysis
-    const ChordProgression* progression = nullptr;             ///< Chord progression
+    const std::vector<Section>* sections = nullptr;  ///< All sections in song
+    const MidiTrack* vocal_track = nullptr;          ///< Vocal track for analysis
+    const ChordProgression* progression = nullptr;   ///< Chord progression
+    const std::vector<PhraseBoundary>* phrase_boundaries =
+        nullptr;                                               ///< Vocal phrase/breath boundaries
     VocalStylePreset vocal_style = VocalStylePreset::CityPop;  ///< For template selection
     uint8_t vocal_low = 60;                                    ///< Vocal range low
     uint8_t vocal_high = 72;                                   ///< Vocal range high
@@ -200,8 +202,11 @@ class AuxGenerator : public TrackBase {
                                IHarmonyContext& harmony, std::mt19937& rng);
 
   /// Generate aux track based on config (single section).
+  /// @param register_to_harmony Register emitted notes immediately. Full-song
+  /// generation disables this for its provisional section pass and registers
+  /// only the final post-processed pitches.
   MidiTrack generate(const AuxConfig& config, const AuxContext& ctx, IHarmonyContext& harmony,
-                     std::mt19937& rng);
+                     std::mt19937& rng, bool register_to_harmony = true);
 
   /// A: Pulse Loop - hypnotic chord tone pattern (BLACKPINK "Ice Cream" style).
   std::vector<NoteEvent> generatePulseLoop(const AuxContext& ctx, const AuxConfig& config,

@@ -65,6 +65,13 @@ ChordExtension selectChordExtension(int8_t degree, SectionType section, int bar_
         return ChordExtension::Dom9;
       }
       if (is_minor) {
+        // In a major key, iii's natural 9th is the tonic pitch class, a
+        // flattened 9th above its root (Em(add b9) in C major). Keep the
+        // consonant minor seventh color instead of emitting a scale-external
+        // Min9; ii and vi retain their diatonic 9ths.
+        if (degree == 2) {
+          return ChordExtension::Min7;
+        }
         return ChordExtension::Min9;
       }
       if (is_tonic) {

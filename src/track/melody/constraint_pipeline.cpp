@@ -121,7 +121,7 @@ Tick clampToPhraseBoundary(Tick note_start, Tick note_duration, Tick phrase_end,
 
 int findChordToneInDirection(int current_pitch, int8_t chord_degree, int direction,
                              uint8_t vocal_low, uint8_t vocal_high, int max_interval) {
-  std::vector<int> chord_tones = getChordTonePitchClasses(chord_degree);
+  const ChordTones chord_tones = getChordTones(chord_degree);
 
   if (chord_tones.empty()) {
     return current_pitch;

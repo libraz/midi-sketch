@@ -237,7 +237,7 @@ enum class SongConfigError : uint8_t {
   InvalidVocalAttitude,
   InvalidVocalRange,
   InvalidBpm,
-  DurationTooShortForCall,   // Duration too short for call settings
+  DurationTooShortForCall,   // Target duration is below the minimum supported structure length
   InvalidModulationAmount,   // Modulation semitones out of range
   InvalidKey,                // Key out of range (0-11)
   InvalidCompositionStyle,   // CompositionStyle out of range (0-2)
@@ -262,7 +262,9 @@ enum class SongConfigError : uint8_t {
   InvalidProbability,        // Probability parameter out of range (0.0-1.0)
   InvalidArpeggioRange,      // Arpeggio octave/base velocity/gate out of range
   InvalidMelodyOverride,     // Melody override out of accepted range
-  InvalidMotifOverride       // Motif override out of accepted range
+  InvalidMotifOverride,      // Motif override out of accepted range
+  // Kept at 34 to preserve the C API's existing INVALID_JSON value (33).
+  InvalidMood = 34  // Mood preset ID out of range (0-MOOD_COUNT-1)
 };
 
 // Validates a SongConfig.

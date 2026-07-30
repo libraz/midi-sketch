@@ -47,7 +47,7 @@ class HarmonyContext : public IHarmonyContext {
 
   int8_t getChordDegreeAt(Tick tick) const override;
 
-  std::vector<int> getChordTonesAt(Tick tick) const override;
+  ChordTones getChordTonesAt(Tick tick) const override;
 
   ChordExtension getChordExtensionAt(Tick tick) const override;
 
@@ -58,7 +58,7 @@ class HarmonyContext : public IHarmonyContext {
   void registerTrack(const MidiTrack& track, TrackRole role) override;
 
   bool isConsonantWithOtherTracks(uint8_t pitch, Tick start, Tick duration, TrackRole exclude,
-                                  bool is_weak_beat = false) const override;
+                                  bool allow_accented_nct = false) const override;
 
   CollisionInfo getCollisionInfo(uint8_t pitch, Tick start, Tick duration,
                                  TrackRole exclude) const override;
@@ -73,8 +73,6 @@ class HarmonyContext : public IHarmonyContext {
 
   void clearNotesForTrack(TrackRole track) override;
 
-  bool hasBassCollision(uint8_t pitch, Tick start, Tick duration, int threshold = 3) const override;
-
   std::vector<int> getPitchClassesFromTrackAt(Tick tick, TrackRole role) const override;
 
   std::vector<int> getPitchClassesFromTrackInRange(Tick start, Tick end,
@@ -83,6 +81,9 @@ class HarmonyContext : public IHarmonyContext {
   void registerSecondaryDominant(Tick start, Tick end, int8_t degree) override;
 
   void registerChordExtension(Tick start, Tick end, ChordExtension extension) override;
+
+  void registerChordReplacement(Tick start, Tick end, int8_t degree,
+                                ChordExtension extension) override;
 
   bool isSecondaryDominantAt(Tick tick) const override;
 

@@ -208,6 +208,14 @@ void ConfigConverter::applyMelodicComplexity(GeneratorParams& params) {
 GeneratorParams ConfigConverter::convert(const SongConfig& config) {
   GeneratorParams params;
 
+  // Resolve an automatic seed before deriving any configuration. Form,
+  // progression, and vocal-style selection all depend on it, and the concrete
+  // value is serialized into v4 metadata for deterministic regeneration.
+  const uint32_t resolved_seed =
+      config.seed == 0
+          ? static_cast<uint32_t>(std::chrono::steady_clock::now().time_since_epoch().count())
+          : config.seed;
+
   // Get style preset for defaults
   const StylePreset& preset = getStylePreset(config.style_preset_id);
 
@@ -216,13 +224,8 @@ GeneratorParams ConfigConverter::convert(const SongConfig& config) {
   if (config.form_explicit) {
     params.structure = config.form;
     params.form_explicit = true;  // Pass through for Blueprint selection
-  } else if (config.form == preset.default_form && config.seed != 0) {
-    params.structure = selectRandomForm(config.style_preset_id, config.seed);
-  } else if (config.form == preset.default_form && config.seed == 0) {
-    // Seed 0 means auto-random, generate a seed first for form selection
-    uint32_t form_seed =
-        static_cast<uint32_t>(std::chrono::system_clock::now().time_since_epoch().count());
-    params.structure = selectRandomForm(config.style_preset_id, form_seed);
+  } else if (config.form == preset.default_form) {
+    params.structure = selectRandomForm(config.style_preset_id, resolved_seed);
   } else {
     // Form differs from preset default - treat as explicit selection
     params.structure = config.form;
@@ -230,11 +233,7 @@ GeneratorParams ConfigConverter::convert(const SongConfig& config) {
   }
 
   if (config.chord_progression_id == 255) {
-    params.chord_id = (config.seed != 0)
-                          ? selectRecommendedProgression(preset, config.seed)
-                          : (preset.recommended_progressions[0] >= 0
-                                 ? static_cast<uint8_t>(preset.recommended_progressions[0])
-                                 : 0);
+    params.chord_id = selectRecommendedProgression(preset, resolved_seed);
   } else {
     params.chord_id = config.chord_progression_id;
   }
@@ -243,7 +242,7 @@ GeneratorParams ConfigConverter::convert(const SongConfig& config) {
   params.drums_enabled_explicit = config.drums_enabled_explicit;
   params.vocal_low = config.vocal_low;
   params.vocal_high = config.vocal_high;
-  params.seed = config.seed;
+  params.seed = resolved_seed;
   params.style_preset_id = config.style_preset_id;
   params.blueprint_id = config.blueprint_id;
 
@@ -263,12 +262,13 @@ GeneratorParams ConfigConverter::convert(const SongConfig& config) {
     params.mood = static_cast<Mood>(config.mood);
   }
 
-  // Use config BPM if specified, otherwise prefer an explicitly selected mood's
-  // reference tempo over the style preset tempo.
-  params.bpm = (config.bpm != 0)
-                   ? config.bpm
-                   : (config.mood_explicit ? getMoodDefaultBpm(params.mood) : preset.tempo_default);
+  // Keep auto tempo unresolved until the Generator has selected a production
+  // blueprint. The fallback is retained only for blueprints without a tempo
+  // identity: explicit BPM > blueprint > explicit mood > style preset.
+  params.bpm = config.bpm;
   params.bpm_explicit = (config.bpm != 0);
+  params.auto_bpm_fallback =
+      config.mood_explicit ? getMoodDefaultBpm(params.mood) : preset.tempo_default;
 
   // Arpeggio settings
   params.arpeggio_enabled = config.arpeggio_enabled;
@@ -324,7 +324,8 @@ GeneratorParams ConfigConverter::convert(const SongConfig& config) {
   }
 
   // Composition style (override preset if explicitly set)
-  if (config.composition_style != CompositionStyle::MelodyLead) {
+  if (config.composition_style_explicit ||
+      config.composition_style != CompositionStyle::MelodyLead) {
     params.composition_style = config.composition_style;
   }
 
@@ -347,10 +348,7 @@ GeneratorParams ConfigConverter::convert(const SongConfig& config) {
   // If VocalStylePreset::Auto, select a random style based on StylePreset
   if (params.vocal_style == VocalStylePreset::Auto) {
     // Use a seed derived from the main seed for consistent selection
-    uint32_t vocal_style_seed =
-        config.seed != 0 ? config.seed ^ 0x56534C53 :  // "VSLS"
-            static_cast<uint32_t>(std::chrono::system_clock::now().time_since_epoch().count() ^
-                                  0x56534C53);
+    uint32_t vocal_style_seed = resolved_seed ^ 0x56534C53;  // "VSLS"
     params.vocal_style = selectRandomVocalStyle(config.style_preset_id, vocal_style_seed);
   }
 

@@ -16,7 +16,7 @@
 namespace midisketch {
 
 void planAndRegisterSecondaryDominants(const Arrangement& arrangement,
-                                       const ChordProgression& progression, Mood mood,
+                                       const ChordProgression& /*progression*/, Mood mood,
                                        std::mt19937& rng, IHarmonyContext& harmony) {
   const auto& sections = arrangement.sections();
 
@@ -32,7 +32,7 @@ void planAndRegisterSecondaryDominants(const Arrangement& arrangement,
   for (size_t sec_idx = 0; sec_idx < sections.size(); ++sec_idx) {
     const auto& section = sections[sec_idx];
 
-    HarmonicRhythmInfo harmonic = HarmonicRhythmInfo::forSection(section.type, mood);
+    HarmonicRhythmInfo harmonic = HarmonicRhythmInfo::forSection(section, mood);
 
     // --- Section boundary: prepare the actual first chord of the Chorus ---
     if (sec_idx > 0 && section.type == SectionType::Chorus) {
@@ -55,11 +55,6 @@ void planAndRegisterSecondaryDominants(const Arrangement& arrangement,
       }
     }
 
-    // Use same effective_prog_length as chord.cpp (no max_chord_count here
-    // since planner doesn't know about BackgroundMotif config, and the
-    // Basic mode check in chord.cpp ensures consistency).
-    int effective_prog_length = progression.length;
-
     // Per-section within-bar SD cap (proportional to section length).
     // 8 bars -> 1, 16 bars -> 2, 24 bars -> 3
     int max_sd_this_section = std::max(1, static_cast<int>(section.bars) / 8);
@@ -69,22 +64,27 @@ void planAndRegisterSecondaryDominants(const Arrangement& arrangement,
       Tick bar_start = section.start_tick + bar * TICKS_PER_BAR;
       int abs_bar = global_bar + bar;
 
-      // Calculate chord index (same logic as chord_progression_tracker.cpp)
-      int chord_idx;
-      if (harmonic.density == HarmonicDensity::Slow) {
-        chord_idx = (bar / 2) % effective_prog_length;
-      } else {
-        chord_idx = bar % effective_prog_length;
-      }
-
-      int8_t degree = progression.degrees[chord_idx];
-
       // --- Within-bar secondary dominant (RNG-dependent) ---
       // Only mid-section bars are eligible; final 2 bars are covered by
       // section-boundary logic.
       if (bar < section.bars - 2) {
-        int next_chord_idx = (chord_idx + 1) % effective_prog_length;
-        int8_t next_degree = progression.degrees[next_chord_idx];
+        // Derive both chords from the shared timeline rather than from the
+        // raw progression index.  In B sections the timeline has two chord
+        // entries per bar, so bar % progression.length names different
+        // chords from the ones the tracks actually render.
+        //
+        // The secondary dominant replaces the half-entry immediately before
+        // its target.  For subdivided bars this is the first half (resolving
+        // to the existing second-half entry); otherwise it is the latter
+        // half (resolving at the next bar entry).
+        Tick insert_start = bar_start + (harmonic.subdivision == 2 ? 0 : TICK_HALF);
+        Tick target_start = harmony.getNextChordEntryTick(insert_start);
+        if (target_start == 0 || target_start > section.endTick()) {
+          continue;
+        }
+
+        int8_t degree = harmony.getChordDegreeAt(insert_start);
+        int8_t next_degree = harmony.getChordDegreeAt(target_start);
         float tension = getSectionProperties(section.type).secondary_tension;
 
         SecondaryDominantInfo sec_dom = checkSecondaryDominant(degree, next_degree, tension);
@@ -97,8 +97,7 @@ void planAndRegisterSecondaryDominants(const Arrangement& arrangement,
           bool cooled_down = (abs_bar - last_sd_bar) >= kSDCooldownBars;
 
           if (random_check && within_limit && cooled_down) {
-            harmony.registerSecondaryDominant(bar_start + TICK_HALF, bar_start + TICKS_PER_BAR,
-                                              sec_dom.dominant_degree);
+            harmony.registerSecondaryDominant(insert_start, target_start, sec_dom.dominant_degree);
             section_sd_count++;
             last_sd_bar = abs_bar;
           }

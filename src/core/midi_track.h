@@ -19,13 +19,16 @@ namespace midisketch {
 /// All editing happens at NoteEvent level; converts to MidiEvent for output.
 class MidiTrack {
  public:
-  MidiTrack() = default;
+  /// Typical generated track size; reserving this avoids early reallocation.
+  static constexpr size_t kInitialNoteCapacity = 64;
+
+  MidiTrack();
 
   /// @name Generation Operations
   /// @{
 
   /// @brief Add a note.
-  /// @param event NoteEvent created via NoteFactory or NoteEventBuilder
+  /// @param event NoteEvent created via note_creator or NoteEventBuilder
   void addNote(const NoteEvent& event);
 
   void addText(Tick tick, const std::string& text);

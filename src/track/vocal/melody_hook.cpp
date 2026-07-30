@@ -66,7 +66,7 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& 
   // "Variation is the enemy, Exact is justice" - use the same hook throughout the song
   if (!hook_cache_.chorus_hook.has_value()) {
     StyleMelodyParams hook_params{};
-    hook_params.hook_repetition = true;  // Use catchy repetitive style
+    hook_params.hook_repetition = ctx.hook_repetition;
     hook_cache_.chorus_hook = designChorusHook(hook_params, rng);
   }
 
@@ -130,11 +130,11 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& 
   //   - threshold=4 (default): standard "3 times same, 4th different" rule
   //   - threshold=5 (ballad): late variation, more consistency
   //   - threshold=0: no betrayal (exact repetition)
-  ++hook_cache_.repetition_count;
   HookBetrayal betrayal = HookBetrayal::None;
   uint8_t threshold = tmpl.betrayal_threshold > 0 ? tmpl.betrayal_threshold : 4;
-  if (tmpl.betrayal_threshold > 0 && hook_cache_.repetition_count >= threshold &&
-      (hook_cache_.repetition_count % threshold) == 0) {
+  const uint8_t next_repetition = static_cast<uint8_t>(hook_cache_.repetition_count + 1);
+  if (tmpl.betrayal_threshold > 0 && next_repetition >= threshold &&
+      (next_repetition % threshold) == 0) {
     // Select betrayal type at threshold (and multiples thereof)
     betrayal = selectBetrayal(1, rng);  // 1 = non-first occurrence
   }
@@ -152,7 +152,8 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& 
   bool use_cached_sabi = (hook_cache_.pitches_cached && ctx.section_type == SectionType::Chorus);
 
   // Track consecutive same notes for J-POP style probability curve
-  melody::ConsecutiveSameNoteTracker consecutive_tracker;
+  melody::ConsecutiveSameNoteTracker consecutive_tracker{
+      0, std::clamp(ctx.consecutive_same_note_prob, 0.0f, 1.0f)};
 
   // Track previous note duration for leap preparation
   Tick prev_note_duration = TICKS_PER_BEAT;  // Default to quarter note
@@ -290,7 +291,6 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& 
                                                            static_cast<int>(ctx.vocal_high)));
           PitchCandidate fallback;
           fallback.pitch = fallback_pitch;
-          fallback.max_safe_duration = final_duration;
           fallback.is_chord_tone = true;
           candidates.push_back(fallback);
         } else {

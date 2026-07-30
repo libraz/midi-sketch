@@ -124,14 +124,10 @@ ModulationCalculator::ModulationResult ModulationCalculator::calculate(
       break;
 
     case ModulationTiming::EachChorus:
-      // For each chorus modulation, we only set the first one here
-      // (full implementation would require track-level handling)
-      for (const auto& section : sections) {
-        if (section.type == SectionType::Chorus) {
-          mod_tick = section.start_tick;
-          break;
-        }
-      }
+      // Song currently stores one modulation boundary, so represent this
+      // setting as the musically conventional final-chorus lift. Generator
+      // surfaces the fallback as a warning to callers.
+      mod_tick = findLastChorus(sections);
       break;
 
     case ModulationTiming::Random: {

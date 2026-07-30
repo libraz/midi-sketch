@@ -43,11 +43,12 @@ void generateChordTrack(MidiTrack& track, const TrackGenerationContext& ctx);
 /**
  * @brief Generate chord track with vocal context.
  *
- * Avoids doubling vocal pitch class and clashing with bass/aux.
- * Falls back to basic generation if ctx.vocal_analysis is not set.
+ * Avoids doubling vocal pitch class and clashing with registered tracks.
+ * The presence of ctx.vocal_analysis selects this collision-aware mode; live
+ * track data is read through the harmony context.
  *
  * @param track Target MidiTrack to populate with chord notes
- * @param ctx Generation context (should include vocal_analysis for best results)
+ * @param ctx Generation context (include vocal_analysis to select this mode)
  */
 void generateChordTrackWithContext(MidiTrack& track, const TrackGenerationContext& ctx);
 

@@ -28,7 +28,7 @@ void ChordProgressionTracker::initialize(const Arrangement& arrangement,
       int8_t next_degree = progression.degrees[(chord_idx + 1) % progression.length];
       int8_t prev_degree =
           progression.degrees[(chord_idx + progression.length - 1) % progression.length];
-      bool is_minor = (degree == 1 || degree == 2 || degree == 5);
+      bool is_minor = (getChordQuality(degree) == ChordQuality::Minor);
       bool is_dominant = (degree == 4);
       // Track only degree-level reharmonization here. Extension color remains a
       // voicing/generation concern until the timeline stores chord quality.
@@ -112,20 +112,23 @@ Tick ChordProgressionTracker::getNextChordChangeTick(Tick after) const {
     return 0;
   }
 
-  // Find the chord that contains 'after'
-  for (size_t i = 0; i < chords_.size(); ++i) {
-    if (after >= chords_[i].start && after < chords_[i].end) {
-      // Check if next chord exists and has different degree
-      if (i + 1 < chords_.size() && chords_[i + 1].degree != chords_[i].degree) {
-        return chords_[i + 1].start;
-      }
-      // Same degree continues, keep looking
-      for (size_t j = i + 1; j < chords_.size(); ++j) {
-        if (chords_[j].degree != chords_[i].degree) {
-          return chords_[j].start;
-        }
-      }
-      break;
+  // Locate the active entry with the same binary-search convention used by
+  // getChordDegreeAt(). This method is called for every note boundary during
+  // analysis, so scanning the timeline from tick 0 is prohibitively costly.
+  auto it = std::upper_bound(chords_.begin(), chords_.end(), after,
+                             [](Tick tick, const ChordInfo& chord) { return tick < chord.start; });
+  if (it == chords_.begin()) {
+    return 0;
+  }
+  --it;
+  if (after < it->start || after >= it->end) {
+    return 0;
+  }
+
+  const int8_t active_degree = it->degree;
+  for (++it; it != chords_.end(); ++it) {
+    if (it->degree != active_degree) {
+      return it->start;
     }
   }
 
@@ -142,23 +145,24 @@ Tick ChordProgressionTracker::getNextChordEntryTick(Tick after) const {
   return 0;
 }
 
-std::vector<int> ChordProgressionTracker::getChordTonesAt(Tick tick) const {
+ChordTones ChordProgressionTracker::getChordTonesAt(Tick tick) const {
   int8_t degree = getChordDegreeAt(tick);
   ChordExtension extension = getChordExtensionAt(tick);
   if (extension == ChordExtension::None) {
-    return getChordTonePitchClasses(degree);
+    return getChordTones(degree);
   }
 
   Chord chord = getExtendedChord(degree, extension);
   int root_pc = ((degreeToSemitone(degree) % 12) + 12) % 12;
-  std::vector<int> tones;
-  tones.reserve(chord.note_count);
+  ChordTones tones{};
+  tones.pitch_classes.fill(-1);
   for (uint8_t i = 0; i < chord.note_count; ++i) {
     int interval = chord.intervals[i];
     if (interval >= 0) {
       int pc = (root_pc + interval) % 12;
-      if (std::find(tones.begin(), tones.end(), pc) == tones.end()) {
-        tones.push_back(pc);
+      if (std::find(tones.begin(), tones.end(), pc) == tones.end() &&
+          tones.count < tones.pitch_classes.size()) {
+        tones.pitch_classes[tones.count++] = pc;
       }
     }
   }
@@ -293,6 +297,39 @@ void ChordProgressionTracker::registerChordExtension(Tick start, Tick end,
     }
   }
 
+  chords_ = std::move(updated);
+}
+
+void ChordProgressionTracker::registerChordReplacement(Tick start, Tick end, int8_t degree,
+                                                       ChordExtension extension) {
+  if (chords_.empty() || start >= end) return;
+
+  std::vector<ChordInfo> updated;
+  updated.reserve(chords_.size() + 2);
+  for (const auto& chord : chords_) {
+    if (end <= chord.start || start >= chord.end) {
+      updated.push_back(chord);
+      continue;
+    }
+    if (start > chord.start) {
+      ChordInfo before = chord;
+      before.end = start;
+      updated.push_back(before);
+    }
+    ChordInfo replacement = chord;
+    replacement.start = std::max(chord.start, start);
+    replacement.end = std::min(chord.end, end);
+    replacement.degree = degree;
+    replacement.extension = extension;
+    replacement.extension_planned = true;
+    replacement.is_secondary_dominant = false;
+    updated.push_back(replacement);
+    if (end < chord.end) {
+      ChordInfo after = chord;
+      after.start = end;
+      updated.push_back(after);
+    }
+  }
   chords_ = std::move(updated);
 }
 

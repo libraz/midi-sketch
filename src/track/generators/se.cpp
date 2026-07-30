@@ -276,7 +276,9 @@ bool isCallEnabled(VocalStylePreset style) {
 void insertPPPHAtBtoChorus(MidiTrack& track, const std::vector<Section>& sections,
                            bool notes_enabled) {
   for (size_t idx = 0; idx + 1 < sections.size(); ++idx) {
-    if (sections[idx].type == SectionType::B && sections[idx + 1].type == SectionType::Chorus) {
+    if (sections[idx].type == SectionType::B && sections[idx + 1].type == SectionType::Chorus &&
+        hasTrack(sections[idx].track_mask, TrackMask::SE) &&
+        hasTrack(sections[idx + 1].track_mask, TrackMask::SE)) {
       // Start PPPH at the last bar of B section
       Tick ppph_start = sections[idx].start_tick + (sections[idx].bars - 1) * TICKS_PER_BAR;
 
@@ -291,7 +293,7 @@ void insertPPPHAtBtoChorus(MidiTrack& track, const std::vector<Section>& section
 
 void insertMIXAtIntro(MidiTrack& track, const std::vector<Section>& sections, bool notes_enabled) {
   for (const auto& section : sections) {
-    if (section.type == SectionType::Intro) {
+    if (section.type == SectionType::Intro && hasTrack(section.track_mask, TrackMask::SE)) {
       // Add text marker
       track.addText(section.start_tick, "IntroMix");
 

@@ -19,6 +19,7 @@
 #include <chrono>
 #include <cmath>
 #include <initializer_list>
+#include <limits>
 #include <map>
 #include <vector>
 
@@ -32,17 +33,20 @@
 #include "core/mood_utils.h"
 #include "core/motif_types.h"
 #include "core/note_creator.h"
+#include "core/overlap_note_filter.h"
 #include "core/pitch_utils.h"
 #include "core/post_processor.h"
 #include "core/preset_data.h"
 #include "core/production_blueprint.h"
 #include "core/secondary_dominant_planner.h"
 #include "core/structure.h"
+#include "core/sustain_trimmer.h"
 #include "core/swing_quantize.h"
 #include "core/timing_constants.h"
 #include "core/track_registration_guard.h"
 #include "core/velocity_helper.h"
 #include "track/drums.h"
+#include "track/drums/beat_processors.h"
 #include "track/generators/arpeggio.h"
 #include "track/generators/aux.h"
 #include "track/generators/bass.h"
@@ -79,6 +83,8 @@ void separateMotifFromBass(MidiTrack& motif, const MidiTrack& vocal, const MidiT
                            const IHarmonyContext& harmony);
 void separateGuitarFromBass(MidiTrack& guitar, const MidiTrack& bass);
 void strengthenRhythmLockBassDrive(MidiTrack& bass, const std::vector<Section>& sections);
+void anchorBassStrongBeats(MidiTrack& bass, const std::vector<Section>& sections,
+                           const IHarmonyContext& harmony);
 
 void reregisterTrack(IHarmonyCoordinator& harmony, MidiTrack& track, TrackRole role) {
   harmony.clearNotesForTrack(role);
@@ -95,7 +101,6 @@ void breakLongPitchRuns(MidiTrack& track, const IHarmonyContext& harmony, uint8_
                         int max_run, TrackRole role);
 void trimBassBoundaryOverhangs(MidiTrack& bass, const IHarmonyContext& harmony);
 void trimVocalSustainsAtUnsafeChordChanges(MidiTrack& vocal, const IHarmonyContext& harmony);
-void trimSustainsAtDissonantChordChanges(MidiTrack& track, const IHarmonyContext& harmony);
 void trimClashingNoteTails(Song& song, const IHarmonyContext& harmony);
 void applyRhythmSyncLeadDna(MidiTrack& vocal, MidiTrack& motif,
                             const std::vector<Section>& sections, const GeneratorParams& params,
@@ -186,8 +191,9 @@ void Generator::initializeBlueprint(uint32_t seed) {
   // Store blueprint reference for constraint access during generation
   params_.blueprint_ref = blueprint_;
 
-  if (!params_.bpm_explicit && params_.bpm == 0 && blueprint_->tempo_default > 0) {
-    params_.bpm = blueprint_->tempo_default;
+  if (!params_.bpm_explicit && params_.bpm == 0) {
+    params_.bpm =
+        blueprint_->tempo_default > 0 ? blueprint_->tempo_default : params_.auto_bpm_fallback;
   }
 
   // Blueprint motif density override (idol riffs are busier than the default)
@@ -282,9 +288,10 @@ void Generator::validateVocalRange() {
 uint16_t Generator::resolveAndClampBpm() {
   uint16_t bpm = params_.bpm;
   if (bpm == 0) {
-    bpm = getMoodDefaultBpm(params_.mood);
+    bpm =
+        params_.auto_bpm_fallback > 0 ? params_.auto_bpm_fallback : getMoodDefaultBpm(params_.mood);
   }
-  auto [clamped, warn] = clampRhythmSyncBpm(bpm, params_.paradigm, params_.bpm_explicit);
+  auto [clamped, warn] = clampBlueprintBpm(bpm, *blueprint_, params_.bpm_explicit);
   bpm = clamped;
   if (warn) warnings_.push_back(*warn);
   song_.setBpm(bpm);
@@ -293,31 +300,52 @@ uint16_t Generator::resolveAndClampBpm() {
 }
 
 void Generator::applyAccompanimentConfig(const AccompanimentConfig& config) {
-  params_.drums_enabled = config.drums_enabled;
-  params_.arpeggio_enabled = config.arpeggio_enabled;
-  params_.guitar_enabled = config.guitar_enabled;
-  params_.arpeggio.pattern = static_cast<ArpeggioPattern>(config.arpeggio_pattern);
-  params_.arpeggio.speed = static_cast<ArpeggioSpeed>(config.arpeggio_speed);
-  params_.arpeggio.octave_range = config.arpeggio_octave_range;
-  params_.arpeggio.gate = config.arpeggio_gate / 100.0f;
-  params_.arpeggio.sync_chord = config.arpeggio_sync_chord;
-  params_.chord_extension.enable_sus = config.chord_ext_sus;
-  params_.chord_extension.enable_7th = config.chord_ext_7th;
-  params_.chord_extension.enable_9th = config.chord_ext_9th;
-  params_.chord_extension.tritone_sub = config.chord_ext_tritone_sub;
-  params_.chord_extension.sus_probability = config.chord_ext_sus_prob / 100.0f;
-  params_.chord_extension.seventh_probability = config.chord_ext_7th_prob / 100.0f;
-  params_.chord_extension.ninth_probability = config.chord_ext_9th_prob / 100.0f;
-  params_.chord_extension.tritone_sub_probability = config.chord_ext_tritone_sub_prob / 100.0f;
-  params_.humanize = config.humanize;
-  params_.humanize_timing = config.humanize_timing / 100.0f;
-  params_.humanize_velocity = config.humanize_velocity / 100.0f;
-  params_.se_enabled = config.se_enabled;
-  params_.call_enabled = config.call_enabled;
-  params_.call_density = static_cast<CallDensity>(config.call_density);
-  params_.intro_chant = static_cast<IntroChant>(config.intro_chant);
-  params_.mix_pattern = static_cast<MixPattern>(config.mix_pattern);
-  params_.call_notes_enabled = config.call_notes_enabled;
+  if (config.has(AccompanimentConfig::DrumsEnabled)) params_.drums_enabled = config.drums_enabled;
+  if (config.has(AccompanimentConfig::ArpeggioEnabled))
+    params_.arpeggio_enabled = config.arpeggio_enabled;
+  if (config.has(AccompanimentConfig::GuitarEnabled))
+    params_.guitar_enabled = config.guitar_enabled;
+  if (config.has(AccompanimentConfig::ArpeggioPatternField))
+    params_.arpeggio.pattern = static_cast<ArpeggioPattern>(config.arpeggio_pattern);
+  if (config.has(AccompanimentConfig::ArpeggioSpeedField))
+    params_.arpeggio.speed = static_cast<ArpeggioSpeed>(config.arpeggio_speed);
+  if (config.has(AccompanimentConfig::ArpeggioOctaveRange))
+    params_.arpeggio.octave_range = config.arpeggio_octave_range;
+  if (config.has(AccompanimentConfig::ArpeggioGate))
+    params_.arpeggio.gate = config.arpeggio_gate == 255 ? -1.0f : config.arpeggio_gate / 100.0f;
+  if (config.has(AccompanimentConfig::ArpeggioSyncChord))
+    params_.arpeggio.sync_chord = config.arpeggio_sync_chord;
+  if (config.has(AccompanimentConfig::ChordExtSus))
+    params_.chord_extension.enable_sus = config.chord_ext_sus;
+  if (config.has(AccompanimentConfig::ChordExt7th))
+    params_.chord_extension.enable_7th = config.chord_ext_7th;
+  if (config.has(AccompanimentConfig::ChordExt9th))
+    params_.chord_extension.enable_9th = config.chord_ext_9th;
+  if (config.has(AccompanimentConfig::ChordExtTritoneSub))
+    params_.chord_extension.tritone_sub = config.chord_ext_tritone_sub;
+  if (config.has(AccompanimentConfig::ChordExtSusProb))
+    params_.chord_extension.sus_probability = config.chord_ext_sus_prob;
+  if (config.has(AccompanimentConfig::ChordExt7thProb))
+    params_.chord_extension.seventh_probability = config.chord_ext_7th_prob;
+  if (config.has(AccompanimentConfig::ChordExt9thProb))
+    params_.chord_extension.ninth_probability = config.chord_ext_9th_prob;
+  if (config.has(AccompanimentConfig::ChordExtTritoneSubProb))
+    params_.chord_extension.tritone_sub_probability = config.chord_ext_tritone_sub_prob;
+  if (config.has(AccompanimentConfig::Humanize)) params_.humanize = config.humanize;
+  if (config.has(AccompanimentConfig::HumanizeTiming))
+    params_.humanize_timing = config.humanize_timing;
+  if (config.has(AccompanimentConfig::HumanizeVelocity))
+    params_.humanize_velocity = config.humanize_velocity;
+  if (config.has(AccompanimentConfig::SeEnabled)) params_.se_enabled = config.se_enabled;
+  if (config.has(AccompanimentConfig::CallEnabled)) params_.call_enabled = config.call_enabled;
+  if (config.has(AccompanimentConfig::CallDensity))
+    params_.call_density = static_cast<CallDensity>(config.call_density);
+  if (config.has(AccompanimentConfig::IntroChant))
+    params_.intro_chant = static_cast<IntroChant>(config.intro_chant);
+  if (config.has(AccompanimentConfig::MixPattern))
+    params_.mix_pattern = static_cast<MixPattern>(config.mix_pattern);
+  if (config.has(AccompanimentConfig::CallNotesEnabled))
+    params_.call_notes_enabled = config.call_notes_enabled;
 }
 
 void Generator::clearAccompanimentTracks() {
@@ -439,6 +467,10 @@ uint16_t Generator::initializeGenerationState() {
 
   // Initialize seed
   uint32_t seed = resolveSeed(params_.seed);
+  // Persist the resolved auto-seed so every consumer of GeneratorParams
+  // (metadata, CLI summaries, and subsequent regeneration) observes the seed
+  // that actually drove this generation.
+  params_.seed = seed;
   rng_.seed(seed);
   song_.setMelodySeed(seed);
   song_.setMotifSeed(seed);
@@ -596,8 +628,12 @@ void Generator::applyPostProcessingEffects() {
     PostProcessor::fixMotifVocalClashes(song_.motif(), song_.vocal(), *harmony_context_);
     tameStandaloneMotifSections(song_.motif(), song_.vocal(), song_.arrangement().sections(),
                                 *harmony_context_);
-    separateMotifFromBass(song_.motif(), song_.vocal(), song_.bass(), *harmony_context_);
-    breakLongPitchRuns(song_.motif(), *harmony_context_, 55, 84, 5, TrackRole::Motif);
+    // RhythmSync treats the motif as the coordinate axis.  Bass was generated
+    // against it already, so do not scatter the locked riff with a second,
+    // per-note motif-side bass repair at the end of the pipeline.
+    // Coordinate-axis generation already bounds monotone runs before this
+    // post-processing phase; avoid a second per-note rewrite of the locked
+    // riff here.
   } else {
     PostProcessor::fixMotifVocalClashes(song_.motif(), song_.vocal(), *harmony_context_);
   }
@@ -644,7 +680,18 @@ void Generator::applyPostProcessingEffects() {
   }
   PostProcessor::fixTrackReferenceClashes(song_.aux(), song_.motif(), TrackRole::Aux);
   PostProcessor::fixTrackReferenceClashes(song_.aux(), song_.chord(), TrackRole::Aux);
-  PostProcessor::fixInterTrackClashes(song_.chord(), song_.bass(), song_.motif());
+  PostProcessor::fixInterTrackClashes(song_.chord(), song_.bass(), song_.motif(),
+                                      harmony_context_.get());
+
+  // The generic chord cleanup above does not alter the motif.  Keep the
+  // BGM-only motif clear of close seconds and tritones against the final bass;
+  // RhythmSync keeps its motif as the coordinate axis instead.
+  if (!isRhythmSyncLeadSetting(params_, resolved_blueprint_id_) &&
+      params_.paradigm != GenerationParadigm::RhythmSync) {
+    separateMotifFromBass(song_.motif(), song_.vocal(), song_.bass(), *harmony_context_);
+    harmony_context_->clearNotesForTrack(TrackRole::Motif);
+    harmony_context_->registerTrack(song_.motif(), TrackRole::Motif);
+  }
 
   // Final cleanup: fix any remaining vocal overlaps
   PostProcessor::fixVocalOverlaps(song_.vocal());
@@ -743,10 +790,16 @@ void Generator::applyPostProcessingEffects() {
   // Threshold 5 matches the generation-side valves (kCoordAxisMonotonyThreshold
   // in motif.cpp, breakLongPitchRuns above).
   constexpr int kMaxMotifSamePitchRun = 5;
-  PostProcessor::fixMotifRepeatedPitches(song_.motif(), song_.vocal(), *harmony_context_,
-                                         kMaxMotifSamePitchRun, &song_.aux());
-  harmony_context_->clearNotesForTrack(TrackRole::Motif);
-  harmony_context_->registerTrack(song_.motif(), TrackRole::Motif);
+  // RhythmSync has already applied its bar-aware run guard above.  The
+  // generic fixer resolves each note independently and therefore destroys a
+  // locked coordinate riff's bar shape; applying it is only necessary for
+  // melody-led/background motifs.
+  if (params_.paradigm != GenerationParadigm::RhythmSync) {
+    PostProcessor::fixMotifRepeatedPitches(song_.motif(), song_.vocal(), *harmony_context_,
+                                           kMaxMotifSamePitchRun, &song_.aux());
+    harmony_context_->clearNotesForTrack(TrackRole::Motif);
+    harmony_context_->registerTrack(song_.motif(), TrackRole::Motif);
+  }
 
   // Final register-crossing resolution for every paradigm: the collision and
   // run-breaking passes above resolve pitches individually and can push an
@@ -758,7 +811,10 @@ void Generator::applyPostProcessingEffects() {
   // intentional (octave-dropping it collapses runs onto a single pitch).
   {
     std::vector<std::pair<MidiTrack*, TrackRole>> crossing_tracks = {
-        {&song_.chord(), TrackRole::Chord}, {&song_.aux(), TrackRole::Aux}};
+        {&song_.chord(), TrackRole::Chord},
+        {&song_.aux(), TrackRole::Aux},
+        {&song_.guitar(), TrackRole::Guitar},
+    };
     if (!isRhythmSyncLeadSetting(params_, resolved_blueprint_id_)) {
       crossing_tracks.emplace_back(&song_.motif(), TrackRole::Motif);
     }
@@ -768,6 +824,16 @@ void Generator::applyPostProcessingEffects() {
       harmony_context_->registerTrack(*tr.first, tr.second);
     }
   }
+
+  // The crossing pass above can octave-shift Guitar into a close second with
+  // Aux/Chord/Motif after the earlier reference-clash cleanup. Re-run the
+  // collision-safe reference pass against the final accompaniment pitches.
+  PostProcessor::fixTrackReferenceClashes(song_.guitar(), song_.vocal(), TrackRole::Guitar);
+  PostProcessor::fixTrackReferenceClashes(song_.guitar(), song_.motif(), TrackRole::Guitar);
+  PostProcessor::fixTrackReferenceClashes(song_.guitar(), song_.chord(), TrackRole::Guitar);
+  PostProcessor::fixTrackReferenceClashes(song_.guitar(), song_.aux(), TrackRole::Guitar);
+  harmony_context_->clearNotesForTrack(TrackRole::Guitar);
+  harmony_context_->registerTrack(song_.guitar(), TrackRole::Guitar);
 
   // Restore locked riff identity scattered by the per-note collision passes
   // above. Must run as the LAST pitch-mutating motif step so later passes
@@ -781,11 +847,34 @@ void Generator::applyPostProcessingEffects() {
     harmony_context_->registerTrack(song_.motif(), TrackRole::Motif);
   }
 
+  // Every motif pitch mutation is complete. Validate the final line against
+  // the final accompaniment registry so late rewrites cannot bypass the
+  // generation-time collision checks.
+  PostProcessor::fixMotifHarmonyClashes(song_.motif(), song_.vocal(), *harmony_context_);
+  harmony_context_->clearNotesForTrack(TrackRole::Motif);
+  harmony_context_->registerTrack(song_.motif(), TrackRole::Motif);
+
   // Post-generation pitch rewrites above resolve against the chord at each
   // note's start tick; a long motif note re-pitched there can sustain into a
   // chromatically different chord (deeper than the tail-trim window below).
   // Duration-only change, so no re-registration is required.
   trimSustainsAtDissonantChordChanges(song_.motif(), *harmony_context_);
+
+  // Bass synchronization and late chord-duration alignment can create a
+  // bass/chord overlap after the earlier inter-track pass. Preserve registered
+  // structural chord tones, but remove any newly exposed non-structural clash
+  // before the final duration-only tail trim.
+  PostProcessor::fixInterTrackClashes(song_.chord(), song_.bass(), song_.motif(),
+                                      harmony_context_.get());
+  harmony_context_->clearNotesForTrack(TrackRole::Chord);
+  harmony_context_->registerTrack(song_.chord(), TrackRole::Chord);
+
+  // Collision repair can move a bass anchor away from the active harmony.
+  // Restore strong-beat chord tones only after every pitch-mutating
+  // accompaniment pass, choosing among all playable consonant voicings.
+  anchorBassStrongBeats(song_.bass(), song_.arrangement().sections(), *harmony_context_);
+  harmony_context_->clearNotesForTrack(TrackRole::Bass);
+  harmony_context_->registerTrack(song_.bass(), TrackRole::Bass);
 
   // Very last note-mutating step: every pass above can leave a short
   // always-dissonant tail overlap (durations only are changed here, so no
@@ -820,18 +909,10 @@ void Generator::generateVocal(const GeneratorParams& params) {
   acceptParams(params);
   initializeGenerationState();
 
-  // Pre-register secondary dominants so vocal preview sees correct chords.
-  // Full generation path uses Coordinator::initialize() which does this,
-  // but generateVocal() bypasses the Coordinator.
-  {
-    const auto& progression = getChordProgression(params_.chord_id);
-    constexpr uint32_t kSecDomSalt = 0x5ECD0A17;
-    uint32_t sec_dom_seed = params_.seed ^ kSecDomSalt;
-    if (sec_dom_seed == 0) sec_dom_seed = kSecDomSalt;
-    std::mt19937 sec_dom_rng(sec_dom_seed);
-    planAndRegisterSecondaryDominants(song_.arrangement(), progression, params_.mood, sec_dom_rng,
-                                      *harmony_context_);
-  }
+  // Match full generation's exact planned harmonic timeline before designing
+  // the vocal, so its preview remains valid when accompaniment is added.
+  const auto& progression = getChordProgression(params_.chord_id);
+  registerPlannedHarmonyTimeline(song_.arrangement(), params_, progression, *harmony_context_);
 
   // RhythmSync: generate Motif first as coordinate axis
   // Vocal will use the Motif's rhythm pattern for quantization
@@ -861,8 +942,12 @@ void Generator::regenerateVocal(uint32_t new_seed) {
   rng_.seed(seed);
   song_.setMelodySeed(seed);
 
-  // Clear vocal track
+  // Replace the vocal atomically in both the song and collision registry.
+  // registerTrack() is additive, so clearing only the MIDI track would leave
+  // the previous take as a permanent phantom collision source.
+  harmony_context_->clearNotesForTrack(TrackRole::Vocal);
   song_.clearTrack(TrackRole::Vocal);
+  invalidateVocalAnalysisCache();
 
   // RhythmSync: regenerate Motif as new coordinate axis for the new Vocal
   if (params_.paradigm == GenerationParadigm::RhythmSync) {
@@ -884,44 +969,57 @@ void Generator::regenerateVocal(uint32_t new_seed) {
   }
 
   vocal_gen.generateFullTrack(song_.vocal(), ctx);
+  harmony_context_->registerTrack(song_.vocal(), TrackRole::Vocal);
 }
 
 void Generator::regenerateVocal(const VocalConfig& config) {
   // Apply vocal configuration to generator params
-  params_.vocal_low = config.vocal_low;
-  params_.vocal_high = config.vocal_high;
-  params_.vocal_attitude = config.vocal_attitude;
-  params_.composition_style = config.composition_style;
+  if (config.has(VocalConfig::VocalLow)) params_.vocal_low = config.vocal_low;
+  if (config.has(VocalConfig::VocalHigh)) params_.vocal_high = config.vocal_high;
+  if (config.has(VocalConfig::VocalAttitudeField)) params_.vocal_attitude = config.vocal_attitude;
+  if (config.has(VocalConfig::CompositionStyleField))
+    params_.composition_style = config.composition_style;
 
   // Apply vocal style if not Auto
-  if (config.vocal_style != VocalStylePreset::Auto) {
+  if (config.has(VocalConfig::VocalStyleField) && config.vocal_style != VocalStylePreset::Auto) {
     params_.vocal_style = config.vocal_style;
   }
 
   // Apply melody template if not Auto
-  if (config.melody_template != MelodyTemplateId::Auto) {
+  if (config.has(VocalConfig::MelodyTemplateField) &&
+      config.melody_template != MelodyTemplateId::Auto) {
     params_.melody_template = config.melody_template;
   }
 
   // Apply melodic complexity, hook intensity, and groove
-  params_.melodic_complexity = config.melodic_complexity;
-  params_.hook_intensity = config.hook_intensity;
-  params_.vocal_groove = config.vocal_groove;
+  if (config.has(VocalConfig::MelodicComplexityField))
+    params_.melodic_complexity = config.melodic_complexity;
+  if (config.has(VocalConfig::HookIntensityField)) params_.hook_intensity = config.hook_intensity;
+  if (config.has(VocalConfig::VocalGrooveField)) params_.vocal_groove = config.vocal_groove;
 
-  // Apply VocalStylePreset and MelodicComplexity settings
-  ConfigConverter::applyVocalStylePreset(params_);
-  ConfigConverter::applyMelodicComplexity(params_);
+  // Re-derive style internals only when those knobs were explicitly present.
+  // A seed-only/partial JSON update must preserve the existing seven
+  // StyleMelodyParams controls.
+  if (config.has(VocalConfig::VocalStyleField)) {
+    ConfigConverter::applyVocalStylePreset(params_);
+  }
+  if (config.has(VocalConfig::MelodicComplexityField)) {
+    ConfigConverter::applyMelodicComplexity(params_);
+  }
 
   // Resolve and apply seed
   uint32_t seed = resolveSeed(config.seed);
   rng_.seed(seed);
   song_.setMelodySeed(seed);
 
-  // Clear vocal track
+  // Replace the vocal atomically in both the song and collision registry.
+  harmony_context_->clearNotesForTrack(TrackRole::Vocal);
   song_.clearTrack(TrackRole::Vocal);
+  invalidateVocalAnalysisCache();
 
   // RhythmSync: regenerate Motif unless keep_motif is set
-  if (params_.paradigm == GenerationParadigm::RhythmSync && !config.keep_motif) {
+  if (params_.paradigm == GenerationParadigm::RhythmSync &&
+      !(config.has(VocalConfig::KeepMotif) && config.keep_motif)) {
     song_.setMotifSeed(seed);
     song_.clearTrack(TrackRole::Motif);
     harmony_context_->clearNotesForTrack(TrackRole::Motif);
@@ -941,6 +1039,7 @@ void Generator::regenerateVocal(const VocalConfig& config) {
   }
 
   vocal_gen.generateFullTrack(song_.vocal(), ctx);
+  harmony_context_->registerTrack(song_.vocal(), TrackRole::Vocal);
 }
 
 /**
@@ -1137,21 +1236,20 @@ void Generator::regenerateAccompaniment(uint32_t new_seed) {
   config.arpeggio_pattern = static_cast<uint8_t>(params_.arpeggio.pattern);
   config.arpeggio_speed = static_cast<uint8_t>(params_.arpeggio.speed);
   config.arpeggio_octave_range = params_.arpeggio.octave_range;
-  config.arpeggio_gate = static_cast<uint8_t>(params_.arpeggio.gate * 100);
+  config.arpeggio_gate =
+      params_.arpeggio.gate < 0.0f ? 255 : static_cast<uint8_t>(params_.arpeggio.gate * 100);
   config.arpeggio_sync_chord = params_.arpeggio.sync_chord;
   config.chord_ext_sus = params_.chord_extension.enable_sus;
   config.chord_ext_7th = params_.chord_extension.enable_7th;
   config.chord_ext_9th = params_.chord_extension.enable_9th;
   config.chord_ext_tritone_sub = params_.chord_extension.tritone_sub;
-  config.chord_ext_sus_prob = static_cast<uint8_t>(params_.chord_extension.sus_probability * 100);
-  config.chord_ext_7th_prob =
-      static_cast<uint8_t>(params_.chord_extension.seventh_probability * 100);
-  config.chord_ext_9th_prob = static_cast<uint8_t>(params_.chord_extension.ninth_probability * 100);
-  config.chord_ext_tritone_sub_prob =
-      static_cast<uint8_t>(params_.chord_extension.tritone_sub_probability * 100);
+  config.chord_ext_sus_prob = params_.chord_extension.sus_probability;
+  config.chord_ext_7th_prob = params_.chord_extension.seventh_probability;
+  config.chord_ext_9th_prob = params_.chord_extension.ninth_probability;
+  config.chord_ext_tritone_sub_prob = params_.chord_extension.tritone_sub_probability;
   config.humanize = params_.humanize;
-  config.humanize_timing = static_cast<uint8_t>(params_.humanize_timing * 100);
-  config.humanize_velocity = static_cast<uint8_t>(params_.humanize_velocity * 100);
+  config.humanize_timing = params_.humanize_timing;
+  config.humanize_velocity = params_.humanize_velocity;
   config.se_enabled = params_.se_enabled;
   config.call_enabled = params_.call_enabled;
   config.call_density = static_cast<uint8_t>(params_.call_density);
@@ -1165,8 +1263,12 @@ void Generator::regenerateAccompaniment(uint32_t new_seed) {
 void Generator::regenerateAccompaniment(const AccompanimentConfig& config) {
   applyAccompanimentConfig(config);
 
-  // Resolve seed (0 = auto-generate from clock)
+  // Resolve the auto seed once and propagate it to the shared generation
+  // parameters. Coordinator derives planned harmony sub-streams from
+  // params_.seed, so leaving the previous value here would make explicit and
+  // automatic accompaniment APIs disagree.
   uint32_t seed = resolveSeed(config.seed);
+  params_.seed = seed;
   rng_.seed(seed);
 
   clearAccompanimentTracks();
@@ -1176,21 +1278,27 @@ void Generator::regenerateAccompaniment(const AccompanimentConfig& config) {
 void Generator::generateAccompanimentForVocal(const AccompanimentConfig& config) {
   applyAccompanimentConfig(config);
 
-  // Seed RNG if specified
-  if (config.seed != 0) {
-    rng_.seed(config.seed);
-  }
+  // Keep the same contract as regenerateAccompaniment(): seed 0 means a new
+  // automatic seed, not continuation of whichever RNG stream happened to run
+  // during vocal generation.
+  uint32_t seed = resolveSeed(config.seed);
+  params_.seed = seed;
+  rng_.seed(seed);
 
   generateAccompanimentForVocal();
 }
 
 void Generator::setMelody(const MelodyData& melody) {
   song_.setMelodySeed(melody.seed);
+  harmony_context_->clearNotesForTrack(TrackRole::Vocal);
+  harmony_context_->clearNotesForTrack(TrackRole::Aux);
   song_.clearTrack(TrackRole::Vocal);
   song_.clearTrack(TrackRole::Aux);
+  invalidateVocalAnalysisCache();
   for (const auto& note : melody.notes) {
     song_.vocal().addNote(note);
   }
+  harmony_context_->registerTrack(song_.vocal(), TrackRole::Vocal);
   generateAux();  // Regenerate aux based on restored vocal
 }
 
@@ -1280,11 +1388,17 @@ void Generator::generateBass() {
 
   bass_gen.generateFullTrack(song_.bass(), ctx);
 
-  // Apply triplet-grid swing quantization to bass (only for non-straight grooves)
-  // Scale swing by humanize_timing for unified control of all timing variations
-  if (params_.humanize && getMoodDrumGrooveFeel(params_.mood) != DrumGrooveFeel::Straight) {
-    applySwingToTrackBySections(song_.bass(), song_.arrangement().sections(), TrackRole::Bass,
-                                params_.humanize_timing);
+  // Swing is a groove property, independent of whether random humanization is
+  // enabled. Straight moods remain on-grid; swung/shuffle moods share the
+  // section amount used by the drum kit.
+  const bool has_swung_section = std::any_of(
+      song_.arrangement().sections().begin(), song_.arrangement().sections().end(),
+      [this](const Section& section) {
+        return drums::resolveSectionDrumGroove(params_.mood, params_.paradigm,
+                                               section.swing_amount) != DrumGrooveFeel::Straight;
+      });
+  if (has_swung_section) {
+    applySwingToTrackBySections(song_.bass(), song_.arrangement().sections(), TrackRole::Bass);
   }
 }
 
@@ -1331,6 +1445,10 @@ void Generator::generateAux() {
 }
 
 void Generator::calculateModulation() {
+  if (params_.modulation_timing == ModulationTiming::EachChorus) {
+    warnings_.push_back(
+        "EachChorus modulation currently falls back to a single final-chorus modulation.");
+  }
   // Use ModulationCalculator for modulation calculation
   auto result =
       ModulationCalculator::calculate(params_.modulation_timing, params_.modulation_semitones,
@@ -1570,7 +1688,7 @@ void deduplicatePitchOnsets(MidiTrack& track) {
     return;
   }
 
-  std::sort(notes.begin(), notes.end(), [](const NoteEvent& a, const NoteEvent& b) {
+  std::stable_sort(notes.begin(), notes.end(), [](const NoteEvent& a, const NoteEvent& b) {
     if (a.start_tick != b.start_tick) return a.start_tick < b.start_tick;
     if (a.note != b.note) return a.note < b.note;
     if (a.velocity != b.velocity) return a.velocity > b.velocity;
@@ -1591,28 +1709,13 @@ void removeComfortClashesAgainstReference(MidiTrack& track, const MidiTrack& ref
     return;
   }
 
-  std::vector<size_t> remove_indices;
-  for (size_t idx = 0; idx < notes.size(); ++idx) {
-    const auto& note = notes[idx];
-    Tick note_end = note.start_tick + note.duration;
-    for (const auto& ref : reference_notes) {
-      Tick ref_end = ref.start_tick + ref.duration;
-      if (note.start_tick >= ref_end || note_end <= ref.start_tick) {
-        continue;
-      }
-      int interval = std::abs(static_cast<int>(note.note) - static_cast<int>(ref.note));
-      int pc_interval = interval % 12;
-      if (interval < Interval::THREE_OCTAVES &&
-          (pc_interval == 1 || pc_interval == 2 || pc_interval == 11)) {
-        remove_indices.push_back(idx);
-        break;
-      }
-    }
-  }
-
-  for (auto iter = remove_indices.rbegin(); iter != remove_indices.rend(); ++iter) {
-    notes.erase(notes.begin() + static_cast<std::ptrdiff_t>(*iter));
-  }
+  eraseNotesMatchingOverlappingReference(
+      notes, reference_notes, [](const NoteEvent& note, const NoteEvent& ref) {
+        int interval = std::abs(static_cast<int>(note.note) - static_cast<int>(ref.note));
+        int pc_interval = interval % 12;
+        return interval < Interval::THREE_OCTAVES &&
+               (pc_interval == 1 || pc_interval == 2 || pc_interval == 11);
+      });
 }
 
 // Trim bass tails that bleed past a chord boundary into a dissonant
@@ -1835,6 +1938,8 @@ void duckMotifUnderLead(MidiTrack& motif, const MidiTrack& vocal, const IHarmony
     if (drop_octaves == 0) {
       continue;
     }
+    // Preserve the section register arc when only a minority of the riff
+    // overlaps the lead. Sparse overlap is handled per note.
     if (competing * 10 < indices.size() * 3) {  // < 30% compete: per-note duck
       for (size_t idx : indices) {
         NoteEvent& note = motif_notes[idx];
@@ -1975,11 +2080,12 @@ void lowerTrackCrossingsUnderVocal(MidiTrack& track, const MidiTrack& vocal,
     return;
   }
 
-  // High-severity crossing threshold: an accompaniment pitch this far above
-  // the vocal competes with the lead for register. Aux is stricter because it
-  // is a sub-melody/doubling layer and must not own the top register.
-  constexpr int kHighCrossing = 5;
-  const int crossing_threshold = (role == TrackRole::Aux) ? 1 : kHighCrossing;
+  // The vocal owns the top register: any accompaniment pitch above a
+  // concurrent vocal note is a crossing. This post-processing pass runs
+  // after the harmony-aware generation phase, so it must close even the
+  // formerly tolerated 1–4-semitone crossings.
+  constexpr int kCrossingThreshold = 1;
+  const int crossing_threshold = kCrossingThreshold;
 
   std::vector<size_t> unresolvable;
   for (size_t note_idx = 0; note_idx < track_notes.size(); ++note_idx) {
@@ -2027,10 +2133,9 @@ void lowerTrackCrossingsUnderVocal(MidiTrack& track, const MidiTrack& vocal,
       // No fold has even an eighth of consonant span from the onset. For a
       // sustained note this means it crosses far above the vocal AND clashes
       // everywhere underneath — removing it is musically better than either.
-      // Short non-aux notes are left as a brief crossing (warning < forced
-      // clash), but aux is a non-essential support layer and should never own
-      // the top register.
-      if (role == TrackRole::Aux || note.duration >= TICK_HALF) {
+      // Short notes in non-essential support layers should never own the top
+      // register. Remove them when no consonant octave fold exists.
+      if (role == TrackRole::Aux || role == TrackRole::Guitar || note.duration >= TICK_HALF) {
         unresolvable.push_back(note_idx);
       }
       continue;
@@ -2255,10 +2360,59 @@ void strengthenRhythmLockBassDrive(MidiTrack& bass, const std::vector<Section>& 
   for (const auto& note : additions) {
     bass.addNote(note);
   }
-  std::sort(notes.begin(), notes.end(), [](const NoteEvent& a, const NoteEvent& b) {
+  std::stable_sort(notes.begin(), notes.end(), [](const NoteEvent& a, const NoteEvent& b) {
     if (a.start_tick != b.start_tick) return a.start_tick < b.start_tick;
     return a.note < b.note;
   });
+}
+
+void anchorBassStrongBeats(MidiTrack& bass, const std::vector<Section>& sections,
+                           const IHarmonyContext& harmony) {
+  for (auto& note : bass.notes()) {
+    const auto section_it =
+        std::find_if(sections.begin(), sections.end(), [&note](const Section& section) {
+          return note.start_tick >= section.start_tick && note.start_tick < section.endTick();
+        });
+    // Bridge pedal tones intentionally sustain a single pitch across chord
+    // changes; snapping them per chord would destroy the pedal identity.
+    if (section_it != sections.end() && section_it->type == SectionType::Bridge) {
+      continue;
+    }
+
+    const Tick position_in_bar = note.start_tick % TICKS_PER_BAR;
+    const bool is_strong_beat =
+        position_in_bar < TICKS_PER_BEAT ||
+        (position_in_bar >= 2 * TICKS_PER_BEAT && position_in_bar < 3 * TICKS_PER_BEAT);
+    if (!is_strong_beat) {
+      continue;
+    }
+
+    ChordToneHelper chord(harmony.getChordDegreeAt(note.start_tick));
+    if (chord.isChordTone(note.note)) {
+      continue;
+    }
+
+    std::vector<uint8_t> candidates = chord.allInRange(BASS_LOW, BASS_HIGH);
+    std::stable_sort(candidates.begin(), candidates.end(), [&note](uint8_t a, uint8_t b) {
+      const int distance_a = std::abs(static_cast<int>(a) - static_cast<int>(note.note));
+      const int distance_b = std::abs(static_cast<int>(b) - static_cast<int>(note.note));
+      return distance_a != distance_b ? distance_a < distance_b : a < b;
+    });
+    const auto target_it =
+        std::find_if(candidates.begin(), candidates.end(), [&harmony, &note](uint8_t candidate) {
+          return harmony.isConsonantWithOtherTracks(candidate, note.start_tick, note.duration,
+                                                    TrackRole::Bass);
+        });
+    if (target_it == candidates.end()) {
+      continue;
+    }
+    const uint8_t target = *target_it;
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+    note.addTransformStep(TransformStepType::ChordToneSnap, note.note, target, 0, 0);
+    note.prov_source = static_cast<uint8_t>(NoteSource::PostProcess);
+#endif
+    note.note = target;
+  }
 }
 
 void breakLongPitchRuns(MidiTrack& track, const IHarmonyContext& harmony, uint8_t low, uint8_t high,
@@ -2268,7 +2422,7 @@ void breakLongPitchRuns(MidiTrack& track, const IHarmonyContext& harmony, uint8_
     return;
   }
 
-  std::sort(notes.begin(), notes.end(), [](const NoteEvent& a, const NoteEvent& b) {
+  std::stable_sort(notes.begin(), notes.end(), [](const NoteEvent& a, const NoteEvent& b) {
     if (a.start_tick != b.start_tick) return a.start_tick < b.start_tick;
     return a.note < b.note;
   });
@@ -2276,7 +2430,9 @@ void breakLongPitchRuns(MidiTrack& track, const IHarmonyContext& harmony, uint8_
   uint8_t run_pitch = notes.front().note;
   int run_count = 1;
   for (size_t idx = 1; idx < notes.size(); ++idx) {
-    if (notes[idx].note == run_pitch) {
+    Tick previous_end = notes[idx - 1].start_tick + notes[idx - 1].duration;
+    Tick gap = notes[idx].start_tick > previous_end ? notes[idx].start_tick - previous_end : 0;
+    if (gap <= TICKS_PER_BEAT && notes[idx].note == run_pitch) {
       ++run_count;
     } else {
       run_pitch = notes[idx].note;
@@ -2376,60 +2532,6 @@ void trimVocalSustainsAtUnsafeChordChanges(MidiTrack& vocal, const IHarmonyConte
       constexpr Tick kMinRemaining = TICK_EIGHTH;
       if (tick > note.start_tick + kMinRemaining + kReleaseGap) {
         note.duration = tick - note.start_tick - kReleaseGap;
-      }
-      break;
-    }
-  }
-}
-
-/// Trim sustained notes whose pitch becomes a chromatic conflict after a
-/// mid-note chord change. Post-generation pitch rewrites (e.g. the
-/// motif-above-vocal resolution in fixMotifVocalClashes) pick a pitch from the
-/// chord at the note's START tick only; when the note crosses into a chord
-/// whose tones sit a half step away (observed: motif G4 sustained into a
-/// secondary-dominant E with G#), the result is an m2-class clash too deep
-/// inside the note for the tail-trim window to catch. Unlike the vocal
-/// variant above, this only trims on a real chromatic conflict — a benign
-/// non-chord tone (9th, 6th) over the new chord is kept.
-void trimSustainsAtDissonantChordChanges(MidiTrack& track, const IHarmonyContext& harmony) {
-  for (auto& note : track.notes()) {
-    if (note.duration <= TICK_QUARTER) {
-      continue;
-    }
-
-    Tick note_end = note.start_tick + note.duration;
-    int8_t start_degree = harmony.getChordDegreeAt(note.start_tick);
-    for (Tick tick = note.start_tick + TICK_SIXTEENTH; tick < note_end; tick += TICK_SIXTEENTH) {
-      int8_t degree = harmony.getChordDegreeAt(tick);
-      if (degree == start_degree) {
-        continue;
-      }
-      start_degree = degree;
-
-      int pitch_class = static_cast<int>(note.note % 12);
-      bool is_chord_tone = false;
-      bool half_step_conflict = false;
-      for (int ct_pc : harmony.getChordTonesAt(tick)) {
-        if (ct_pc == pitch_class) {
-          is_chord_tone = true;
-          break;
-        }
-        int dist = std::abs(ct_pc - pitch_class);
-        if (std::min(dist, 12 - dist) == 1) {
-          half_step_conflict = true;
-        }
-      }
-      if (is_chord_tone || !half_step_conflict) {
-        continue;
-      }
-
-      constexpr Tick kReleaseGap = 30;
-      constexpr Tick kMinRemaining = TICK_EIGHTH;
-      if (tick > note.start_tick + kMinRemaining + kReleaseGap) {
-        note.duration = tick - note.start_tick - kReleaseGap;
-#ifdef MIDISKETCH_NOTE_PROVENANCE
-        note.addTransformStep(TransformStepType::PostProcessDuration, 0, 0, -1, 0);
-#endif
       }
       break;
     }
@@ -2557,7 +2659,7 @@ std::vector<NoteEvent*> collectSectionNotes(MidiTrack& track, const Section& sec
       notes.push_back(&note);
     }
   }
-  std::sort(notes.begin(), notes.end(), [](const NoteEvent* a, const NoteEvent* b) {
+  std::stable_sort(notes.begin(), notes.end(), [](const NoteEvent* a, const NoteEvent* b) {
     if (a->start_tick != b->start_tick) return a->start_tick < b->start_tick;
     return a->note < b->note;
   });
@@ -2665,11 +2767,27 @@ void applyDnaPattern(std::vector<NoteEvent*>& notes, int base_pitch,
     return;
   }
 
+  int previous_interval = std::numeric_limits<int>::min();
+  uint8_t previous_pitch = 0;
   for (size_t idx = 0; idx < notes.size(); ++idx) {
     NoteEvent& note = *notes[idx];
-    int pitch = base_pitch + intervals[idx % intervals.size()];
-    note.note = harmony != nullptr ? pickShapedPitch(pitch, note, *harmony, low, high, role)
-                                   : clampScalePitch(pitch, low, high);
+    const int interval = intervals[idx % intervals.size()];
+    int pitch = base_pitch + interval;
+    // A repeated DNA degree is an intentional hook gesture.  Re-use the
+    // preceding realization when it is still valid over this note's chord
+    // span; resolving the two notes independently can turn a written unison
+    // into adjacent scale tones solely because the harmony changed mid-hook.
+    const bool may_repeat_previous =
+        harmony != nullptr && interval == previous_interval && previous_pitch >= low &&
+        previous_pitch <= high &&
+        !isAvoidNoteOverSpan(previous_pitch, note.start_tick, note.duration, *harmony) &&
+        harmony->isConsonantWithOtherTracks(previous_pitch, note.start_tick, note.duration, role);
+    note.note = may_repeat_previous
+                    ? previous_pitch
+                    : (harmony != nullptr ? pickShapedPitch(pitch, note, *harmony, low, high, role)
+                                          : clampScalePitch(pitch, low, high));
+    previous_interval = interval;
+    previous_pitch = note.note;
     // Section energy differentiation: boost velocity for DNA-rewritten notes.
     note.velocity = vel::withDelta(note.velocity, static_cast<int>(velocity_boost));
   }
@@ -2753,9 +2871,17 @@ void applyRhythmSyncLeadDna(MidiTrack& vocal, MidiTrack& motif,
     // different realizations (riff identity loss).
     auto all_motif_notes = collectSectionNotes(motif, section, 0);
     switch (section.type) {
-      case SectionType::A:
-        shiftMotifRegisterBarUniform(all_motif_notes, section, 59, 72, 55, 88, 0, 0, 1, harmony);
+      case SectionType::A: {
+        // Keep the verse riff clearly below the chorus. The later vocal-duck
+        // pass can lower a chorus by an octave, so a 59–72 verse target made
+        // the final section arc invert on long RhythmLock arrangements.
+        // In BGM-only RhythmLock there is no lead-driven duck, so a one-note
+        // wider verse register keeps the unaccompanied chorus lift moderate.
+        const int verse_high = vocal.empty() ? 60 : 59;
+        shiftMotifRegisterBarUniform(all_motif_notes, section, 55, verse_high, 55, 88, 0, 0, 1,
+                                     harmony);
         break;
+      }
       case SectionType::B:
         shiftMotifRegisterBarUniform(all_motif_notes, section, 62, 76, 55, 88, 0, 3, 2, harmony);
         break;
@@ -2821,7 +2947,7 @@ void restoreMotifRiffFromReference(MidiTrack& motif, const MidiTrack& vocal, con
   // (only pitches are mutated).
   std::vector<size_t> order(motif_notes.size());
   for (size_t i = 0; i < order.size(); ++i) order[i] = i;
-  std::sort(order.begin(), order.end(), [&motif_notes](size_t a, size_t b) {
+  std::stable_sort(order.begin(), order.end(), [&motif_notes](size_t a, size_t b) {
     if (motif_notes[a].start_tick != motif_notes[b].start_tick) {
       return motif_notes[a].start_tick < motif_notes[b].start_tick;
     }
@@ -2854,8 +2980,10 @@ void restoreMotifRiffFromReference(MidiTrack& motif, const MidiTrack& vocal, con
     // anchor notes should outline the harmony anyway.
     Tick in_bar = note.start_tick % TICKS_PER_BAR;
     if (in_bar % (TICKS_PER_BEAT * 2) == 0) {
-      ChordToneHelper ct(harmony.getChordDegreeAt(note.start_tick));
-      if (!ct.isChordTone(target)) return false;
+      const auto active_tones = harmony.getChordTonesAt(note.start_tick);
+      if (std::find(active_tones.begin(), active_tones.end(), target % 12) == active_tones.end()) {
+        return false;
+      }
     }
     // Reject close seconds against the aux pulse loop explicitly: the generic
     // consonance check tolerates a brief stepwise overlap as a passing tone,

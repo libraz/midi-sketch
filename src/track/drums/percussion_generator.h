@@ -9,6 +9,7 @@
 #include <random>
 
 #include "core/midi_track.h"
+#include "core/preset_data.h"
 #include "core/production_blueprint.h"
 #include "core/section_types.h"
 #include "core/types.h"
@@ -55,7 +56,8 @@ PercussionConfig getPercussionConfig(Mood mood, SectionType section,
 /// @param bpm Tempo in BPM (shaker switches to 8th notes at high tempos)
 void generateAuxPercussionForBar(MidiTrack& track, Tick bar_start, const PercussionConfig& config,
                                  DrumRole drum_role, float density_mult, std::mt19937& rng,
-                                 uint16_t bpm = 0);
+                                 uint16_t bpm = 0, DrumGrooveFeel groove = DrumGrooveFeel::Straight,
+                                 float swing_amount = 0.0f);
 
 }  // namespace drums
 }  // namespace midisketch

@@ -17,6 +17,7 @@
 #include "core/timing_constants.h"
 #include "core/velocity.h"
 #include "instrument/drums/drum_performer.h"
+#include "track/drums.h"
 #include "track/drums/beat_processors.h"
 #include "track/drums/drum_constants.h"
 #include "track/drums/fill_generator.h"
@@ -74,6 +75,30 @@ bool hasDrumAtTick(const MidiTrack& track, Tick target, uint8_t drum_note) {
     }
   }
   return false;
+}
+
+void deduplicateKicksAtSameTick(MidiTrack& track) {
+  std::map<Tick, size_t> retained_kick_index;
+  std::vector<NoteEvent> deduplicated;
+  deduplicated.reserve(track.notes().size());
+
+  for (const auto& note : track.notes()) {
+    if (note.note != BD) {
+      deduplicated.push_back(note);
+      continue;
+    }
+
+    const auto [it, inserted] = retained_kick_index.emplace(note.start_tick, deduplicated.size());
+    if (inserted) {
+      deduplicated.push_back(note);
+    } else if (note.velocity > deduplicated[it->second].velocity) {
+      // Preserve the most emphatic source when a fill and a pattern target the
+      // same kick slot, while retaining the original event order.
+      deduplicated[it->second] = note;
+    }
+  }
+
+  track.notes() = std::move(deduplicated);
 }
 
 void addKickAnchorIfAbsent(MidiTrack& track, Tick start, Tick duration, uint8_t velocity) {
@@ -220,19 +245,12 @@ DrumSectionContext computeSectionContext(const Section& section, const DrumGener
                                          DrumStyle style, std::mt19937& rng) {
   DrumSectionContext ctx;
   ctx.style = style;
-  ctx.groove = getMoodDrumGrooveFeel(params.mood);
+  ctx.groove = resolveSectionDrumGroove(params.mood, params.paradigm, section.swing_amount);
   ctx.is_background_motif = params.composition_style == CompositionStyle::BackgroundMotif;
 
   // Override style for BackgroundMotif
   if (ctx.is_background_motif && params.motif_drum.hihat_drive) {
     ctx.style = DrumStyle::Standard;
-  }
-
-  // RhythmSync locks the pattern grid, but blueprint/mood swing should still
-  // shape off-beats when a section asks for it.
-  if (params.paradigm == GenerationParadigm::RhythmSync && ctx.groove == DrumGrooveFeel::Straight &&
-      section.swing_amount > 0.0f) {
-    ctx.groove = DrumGrooveFeel::Swing;
   }
 
   // Section-specific density
@@ -325,7 +343,6 @@ void generateDrumsTrackImpl(MidiTrack& track, const Song& song, const DrumGenera
 
   const GrooveTemplate groove_template = getMoodGrooveTemplate(params.mood);
   const FullGroovePattern& groove_pattern = getGroovePattern(groove_template);
-  const TimeFeel time_feel = getMoodTimeFeel(params.mood);
 
   // Pre-scan: find max Chorus density_mult for B-section density cap.
   // B sections should not exceed Chorus density to maintain proper energy arc.
@@ -350,6 +367,10 @@ void generateDrumsTrackImpl(MidiTrack& track, const Song& song, const DrumGenera
 
   for (size_t sec_idx = 0; sec_idx < all_sections.size(); ++sec_idx) {
     const auto& section = all_sections[sec_idx];
+    // A blueprint can deliberately change its feel between sections (for
+    // example, a laid-back verse followed by a pushed final chorus).  The
+    // arrangement is therefore the source of truth, not the song-wide mood.
+    const TimeFeel time_feel = section.time_feel;
 
     if (!hasTrack(section.track_mask, TrackMask::Drums)) {
       continue;
@@ -380,6 +401,8 @@ void generateDrumsTrackImpl(MidiTrack& track, const Song& song, const DrumGenera
       Tick bar_start = section.start_tick + bar * TICKS_PER_BAR;
       Tick bar_end = bar_start + TICKS_PER_BAR;
       bool is_section_last_bar = (bar == section.bars - 1);
+      const float swing_amount =
+          calculateSwingAmount(section.type, bar, section.bars, section.swing_amount);
 
       // Crash on section starts
       if (bar == 0) {
@@ -409,7 +432,8 @@ void generateDrumsTrackImpl(MidiTrack& track, const Song& song, const DrumGenera
         bool minimal_tambourine = (blueprint.percussion_policy == PercussionPolicy::Minimal);
         for (uint8_t beat = 0; beat < 4; ++beat) {
           if (minimal_tambourine && beat % 2 == 0) continue;  // skip beats 1 & 3
-          Tick offbeat_tick = bar_start + beat * TICKS_PER_BEAT + EIGHTH;
+          Tick offbeat_tick = quantizeDrumSwing(bar_start + beat * TICKS_PER_BEAT + EIGHTH,
+                                                ctx.groove, swing_amount);
           uint8_t tam_vel = static_cast<uint8_t>(std::min(90.0f, 65.0f * ctx.density_mult));
           addDrumNote(track, offbeat_tick, EIGHTH, TAMBOURINE, tam_vel);
         }
@@ -446,21 +470,48 @@ void generateDrumsTrackImpl(MidiTrack& track, const Song& song, const DrumGenera
         }
       }
 
-      // Vocal-synced kicks are additive syncopations. They must not replace the
-      // base kick pattern, because RhythmSync still needs a stable beat anchor.
+      // MelodyDriven owns the kick pattern whenever vocal material is present;
+      // otherwise its phrase-aware kicks and the base pattern both emit the
+      // same strong beats. RhythmSync remains additive because its callback
+      // only contributes supporting syncopations around a stable anchor.
+      bool melody_driven_kicks_generated = false;
       if (vocal_sync_callback) {
         uint8_t kick_velocity = calculateVelocity(section.type, 0, params.mood);
-        vocal_sync_callback(track, bar_start, bar_end, section, kick_velocity, rng);
+        const size_t first_callback_note = track.notes().size();
+        const bool callback_generated_kicks =
+            vocal_sync_callback(track, bar_start, bar_end, section, kick_velocity, rng);
+        for (size_t note_idx = first_callback_note; note_idx < track.notes().size(); ++note_idx) {
+          NoteEvent& note = track.notes()[note_idx];
+          if (note.note == BD) {
+            note.start_tick = quantizeDrumSwing(note.start_tick, ctx.groove, swing_amount);
+          }
+        }
+        melody_driven_kicks_generated =
+            params.paradigm == GenerationParadigm::MelodyDriven && callback_generated_kicks;
       }
 
       bool intro_kick_disabled =
           (section.type == SectionType::Intro && !blueprint.intro_kick_enabled);
+      const DrumRole drum_role = section.getEffectiveDrumRole();
+      const float kick_probability = getDrumRoleKickProbability(drum_role);
       if (params.paradigm == GenerationParadigm::RhythmSync && !intro_kick_disabled &&
-          getDrumRoleKickProbability(section.getEffectiveDrumRole()) > 0.0f) {
+          kick_probability > 0.0f) {
         uint8_t anchor_velocity = calculateVelocity(section.type, 0, params.mood);
-        addKickAnchorIfAbsent(track, bar_start, EIGHTH, anchor_velocity);
-        addKickAnchorIfAbsent(track, bar_start + TICKS_PER_BEAT * 2, EIGHTH, anchor_velocity);
+        // Full drums own both grid anchors. Ambient sections use the same
+        // probability as ordinary kicks and retain only the downbeat, so an
+        // outro or MixBreak cannot regain a full kick pattern through sync.
+        const bool play_downbeat_anchor =
+            drum_role == DrumRole::Full || rng_util::rollProbability(rng, kick_probability);
+        if (play_downbeat_anchor) {
+          addKickAnchorIfAbsent(track, bar_start, EIGHTH, anchor_velocity);
+        }
+        // Ambient must make exactly one downbeat decision per bar; otherwise
+        // the regular pattern can reintroduce a beat-3 kick after the anchor
+        // path intentionally omitted it.
         kick.beat1 = false;
+        if (drum_role == DrumRole::Full) {
+          addKickAnchorIfAbsent(track, bar_start + TICKS_PER_BEAT * 2, EIGHTH, anchor_velocity);
+        }
         kick.beat3 = false;
       }
 
@@ -506,14 +557,11 @@ void generateDrumsTrackImpl(MidiTrack& track, const Song& song, const DrumGenera
         // Common beat context (shared across all beat processors)
         BeatContext beat_ctx{beat_tick,  beat, velocity,     section.type,      params.mood,
                              params.bpm, bar,  section.bars, in_prechorus_lift, rng};
-        float swing_amount =
-            calculateSwingAmount(section.type, bar, section.bars, section.swing_amount);
-
         // Kick drum
         // Check intro_kick_enabled from blueprint
-        if (!intro_kick_disabled) {
+        if (!intro_kick_disabled && !melody_driven_kicks_generated) {
           float kick_prob = getDrumRoleKickProbability(section.getEffectiveDrumRole());
-          Tick adjusted_beat_tick = applyTimeFeel(beat_tick, time_feel, params.bpm);
+          Tick adjusted_beat_tick = ::midisketch::applyTimeFeel(beat_tick, time_feel, params.bpm);
           KickBeatParams kick_params{
               adjusted_beat_tick, kick,
               kick_prob,          params.humanize ? params.humanize_timing : 0.0f,
@@ -572,7 +620,7 @@ void generateDrumsTrackImpl(MidiTrack& track, const Song& song, const DrumGenera
         PercussionConfig perc_config =
             getPercussionConfig(params.mood, section.type, blueprint.percussion_policy);
         generateAuxPercussionForBar(track, bar_start, perc_config, section.getEffectiveDrumRole(),
-                                    ctx.density_mult, rng, params.bpm);
+                                    ctx.density_mult, rng, params.bpm, ctx.groove, swing_amount);
       }
     }
   }
@@ -584,6 +632,10 @@ void generateDrumsTrackImpl(MidiTrack& track, const Song& song, const DrumGenera
                        [](const NoteEvent& note) { return shouldThinRhythmSyncTexture(note); }),
         notes.end());
   }
+
+  // Fill, anchor, and vocal-aware paths are intentionally composed
+  // independently. Their overlap must never create a doubled bass drum.
+  deduplicateKicksAtSameTick(track);
 
   // ============================================================================
   // Physical Playability Check (Post-Processing)
@@ -668,7 +720,10 @@ VocalSyncCallback createVocalSyncCallback(const VocalAnalysis& vocal_analysis, u
                                  ? velocity
                                  : static_cast<uint8_t>(velocity * 0.85f);
 
-          addDrumNote(track, kick_tick, EIGHTH, BD, static_cast<uint8_t>(kick_vel * kick_prob));
+          // kick_prob has already decided whether this kick exists. Applying
+          // it again to velocity turns valid Ambient kicks into near-silent
+          // ghost notes.
+          addDrumNote(track, kick_tick, EIGHTH, BD, kick_vel);
         }
 
         return true;

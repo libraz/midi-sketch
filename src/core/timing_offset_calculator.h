@@ -29,8 +29,8 @@ namespace midisketch {
 /// @brief Per-instrument timing offsets that define a drum groove profile.
 ///
 /// Each DrumStyle maps to a unique set of offsets (in ticks) that shape the
-/// rhythmic feel. Positive values push the note ahead of the grid (driving),
-/// negative values pull the note behind the grid (laid-back / layback).
+/// rhythmic feel. Offsets are added to the original tick: positive values
+/// delay the note behind the grid, while negative values move it ahead.
 struct DrumTimingProfile {
   int kick_downbeat;      ///< Kick on beats 0, 2 (downbeats)
   int kick_other;         ///< Kick on other beats
@@ -60,7 +60,7 @@ enum class PhrasePosition;
 ///
 /// Provides per-instrument timing adjustments:
 /// - Drums: beat-position-aware offsets (kick tight, snare layback, hi-hat push)
-/// - Bass: consistent layback (-4 ticks base)
+/// - Bass: consistent layback (+4 ticks base)
 /// - Vocal: phrase-position-aware with human body model
 ///
 /// All offsets are scaled by drive_feel (0-100):
@@ -75,7 +75,7 @@ class TimingOffsetCalculator {
   static constexpr uint8_t kHiHatClosed = 42;
   static constexpr uint8_t kHiHatOpen = 46;
   static constexpr uint8_t kHiHatFoot = 44;
-  static constexpr int kBassBaseOffset = -4;
+  static constexpr int kBassBaseOffset = 4;
 
   /// @brief Construct with drive feel, vocal style, drum style, humanize timing, and paradigm.
   /// @param drive_feel Drive intensity (0-100)
@@ -95,12 +95,12 @@ class TimingOffsetCalculator {
   ///
   /// Beat-position-aware timing:
   /// - Kick: -5~+3, tighter on downbeats, slightly ahead on offbeats
-  /// - Snare: -8~0, maximum layback on beat 4 for anticipation
-  /// - Hi-hat: +8~+15, stronger push on offbeats for drive
+  /// - Snare: 0~+8, maximum layback on beat 4 for anticipation
+  /// - Hi-hat: -15~-8, stronger push on offbeats for drive
   ///
   /// @param note_number GM drum note number
   /// @param tick Note start tick
-  /// @return Timing offset in ticks (negative = behind, positive = ahead)
+  /// @return Timing offset in ticks (positive = behind/later, negative = ahead/earlier)
   int getDrumTimingOffset(uint8_t note_number, Tick tick) const;
 
   /// @brief Apply timing offsets to all notes in a drum track.
@@ -112,7 +112,7 @@ class TimingOffsetCalculator {
   // ============================================================================
 
   /// @brief Get bass timing offset (constant layback).
-  /// @return Timing offset in ticks (always negative for layback)
+  /// @return Timing offset in ticks (always positive for layback)
   int getBassTimingOffset() const;
 
   /// @brief Apply timing offset to all notes in a bass track.

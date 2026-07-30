@@ -247,12 +247,13 @@ class MelodicEmbellisher {
    * @param harmony Harmony context for chord information
    * @param key_offset Key offset from C (0=C, 2=D, etc.)
    * @param rng Random number generator
+   * @param protected_ranges Time ranges where inserted ornaments are forbidden
    * @return Embellished melody
    */
-  static std::vector<NoteEvent> embellish(const std::vector<NoteEvent>& skeleton,
-                                          const EmbellishmentConfig& config,
-                                          const IHarmonyContext& harmony, int key_offset,
-                                          std::mt19937& rng);
+  static std::vector<NoteEvent> embellish(
+      const std::vector<NoteEvent>& skeleton, const EmbellishmentConfig& config,
+      const IHarmonyContext& harmony, int key_offset, std::mt19937& rng,
+      const std::vector<std::pair<Tick, Tick>>& protected_ranges = {});
 
   /**
    * @brief Get the beat strength at a given tick.

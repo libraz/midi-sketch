@@ -47,9 +47,9 @@ class ChordProgressionTracker : public IChordLookup {
   /**
    * @brief Get chord tones as pitch classes at a specific tick.
    * @param tick Position in ticks
-   * @return Vector of pitch classes (0-11) that are chord tones
+   * @return Fixed-size chord-tone collection (0-11 pitch classes)
    */
-  std::vector<int> getChordTonesAt(Tick tick) const override;
+  ChordTones getChordTonesAt(Tick tick) const override;
 
   /**
    * @brief Get explicit chord extension for the active chord entry.
@@ -93,6 +93,9 @@ class ChordProgressionTracker : public IChordLookup {
 
   /// @brief Register an extension for existing chord entries in a tick range.
   void registerChordExtension(Tick start, Tick end, ChordExtension extension);
+
+  /// Replace a timeline range while preserving its exact tick boundaries.
+  void registerChordReplacement(Tick start, Tick end, int8_t degree, ChordExtension extension);
 
   /// @brief Check if a secondary dominant is active at a given tick.
   /// @param tick Position in ticks

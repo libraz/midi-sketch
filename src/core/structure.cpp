@@ -297,7 +297,7 @@ std::vector<Section> buildStructure(StructurePattern pattern) {
       break;
 
     case StructurePattern::DriveUpbeat:
-      // 52 bars - chorus-first upbeat style (~104 sec @120BPM)
+      // 48 bars - chorus-first upbeat style (~96 sec @120BPM)
       addSection(SectionType::Intro, 4);
       addSection(SectionType::Chorus, 8);
       addSection(SectionType::A, 8);
@@ -320,7 +320,7 @@ std::vector<Section> buildStructure(StructurePattern pattern) {
       break;
 
     case StructurePattern::AnthemStyle:
-      // 52 bars - anthem style with early chorus (~104 sec @130BPM)
+      // 56 bars - anthem style with early chorus (~103 sec @130BPM)
       addSection(SectionType::Intro, 4);
       addSection(SectionType::A, 8);
       addSection(SectionType::Chorus, 8);
@@ -841,7 +841,17 @@ void applyBlueprintOverlay(std::vector<Section>& sections, const ProductionBluep
     slot_map[blueprint.section_flow[i].type].push_back(&blueprint.section_flow[i]);
   }
 
-  // Track occurrence index per section type across the generated sections
+  // Count occurrences first.  Duration-based structures can add or remove
+  // whole A-B-Chorus blocks, so matching each type only from the front makes
+  // a terminal blueprint slot (FinalHit/Peak::Max) leak into every surplus
+  // chorus.  Align shortened forms to the tail, and reserve a terminal slot
+  // for the last generated occurrence in extended forms.
+  std::map<SectionType, size_t> generated_count;
+  for (const auto& section : sections) {
+    ++generated_count[section.type];
+  }
+
+  // Track occurrence index per section type across the generated sections.
   std::map<SectionType, size_t> occurrence_index;
 
   for (auto& section : sections) {
@@ -853,9 +863,22 @@ void applyBlueprintOverlay(std::vector<Section>& sections, const ProductionBluep
 
     const auto& slots = it->second;
     size_t idx = occurrence_index[section.type]++;
-
-    // Slot shortage: repeat last matching slot
-    const SectionSlot& slot = *slots[std::min(idx, slots.size() - 1)];
+    const size_t slot_count = slots.size();
+    const size_t type_count = generated_count[section.type];
+    size_t slot_idx = 0;
+    if (type_count <= slot_count) {
+      // A shortened form must still receive the blueprint's ending settings.
+      slot_idx = slot_count - type_count + idx;
+    } else if (slot_count == 1) {
+      slot_idx = 0;
+    } else if (idx + 1 == type_count) {
+      // Reserve the terminal slot for the actual ending only.
+      slot_idx = slot_count - 1;
+    } else {
+      // Extend the normal penultimate material, not the terminal material.
+      slot_idx = std::min(idx, slot_count - 2);
+    }
+    const SectionSlot& slot = *slots[slot_idx];
 
     // --- Overlay fields (limited list) ---
     section.track_mask = slot.enabled_tracks;
@@ -874,10 +897,10 @@ void applyBlueprintOverlay(std::vector<Section>& sections, const ProductionBluep
     section.peak_level = slot.peak_level;
     section.entry_pattern = slot.entry_pattern;
 
-    // Override exit_pattern only if blueprint explicitly sets it
-    if (slot.exit_pattern != ExitPattern::None) {
-      section.exit_pattern = slot.exit_pattern;
-    }
+    // Reset inherited duration-builder exits before applying the blueprint.
+    // A previously terminal chorus can become an intermediate one after an
+    // extension; retaining its FinalHit here would create a false ending.
+    section.exit_pattern = slot.exit_pattern;
 
     // Apply swing amount from blueprint
     section.swing_amount = slot.swing_amount;
@@ -899,6 +922,10 @@ void applyBlueprintOverlay(std::vector<Section>& sections, const ProductionBluep
     // Derive fill_before from PeakLevel
     section.fill_before = (slot.peak_level != PeakLevel::None);
   }
+
+  // Restore contextual defaults (for example B->Chorus sustain) only after
+  // obsolete terminal exits have been cleared above.
+  assignExitPatterns(sections);
 }
 
 // ============================================================================
@@ -916,20 +943,10 @@ std::vector<LayerEvent> generateDefaultLayerEvents(const Section& section, size_
 
   switch (section.type) {
     case SectionType::Intro: {
-      // Staggered entry: Drums -> +Bass -> +Chord -> +All remaining
-      if (section.bars >= 8) {
-        // 8+ bar intro: full staged entry
-        events.emplace_back(0, TrackMask::Drums, TrackMask::None);
-        events.emplace_back(2, TrackMask::Bass, TrackMask::None);
-        events.emplace_back(4, TrackMask::Chord | TrackMask::Motif, TrackMask::None);
-        events.emplace_back(6, TrackMask::Arpeggio | TrackMask::Aux, TrackMask::None);
-      } else {
-        // 4-bar intro: condensed entry
-        events.emplace_back(0, TrackMask::Drums, TrackMask::None);
-        events.emplace_back(1, TrackMask::Bass, TrackMask::None);
-        events.emplace_back(2, TrackMask::Chord, TrackMask::None);
-        events.emplace_back(3, TrackMask::Motif | TrackMask::Arpeggio | TrackMask::Aux,
-                            TrackMask::None);
+      const auto config = StaggeredEntryConfig::defaultIntro(section.bars);
+      for (uint8_t entry_idx = 0; entry_idx < config.entry_count; ++entry_idx) {
+        const auto& entry = config.entries[entry_idx];
+        events.emplace_back(entry.entry_bar, entry.track, TrackMask::None);
       }
       break;
     }
@@ -1016,6 +1033,13 @@ void applyDefaultLayerSchedule(std::vector<Section>& sections) {
     // Only apply if no existing layer events and section has 4+ bars
     if (section.layer_events.empty() && section.bars >= 4) {
       if (section.type == SectionType::Intro && section.entry_pattern != EntryPattern::Stagger) {
+        continue;
+      }
+      const bool first_a = section.type == SectionType::A && idx <= 1;
+      if (first_a && (section.entry_pattern == EntryPattern::Immediate ||
+                      section.track_mask != TrackMask::All)) {
+        // A blueprint's explicit entry policy and track mask outrank the
+        // legacy "first verse gradual build" heuristic.
         continue;
       }
       section.layer_events = generateDefaultLayerEvents(section, idx, sections.size());

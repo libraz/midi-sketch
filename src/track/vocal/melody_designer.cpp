@@ -54,6 +54,7 @@ using melody::applyPitchChoice;
 using melody::calculateTargetPitch;
 using melody::evaluateWithGlobalMotif;
 using melody::extractGlobalMotif;
+using melody::generateMoraTimedRhythm;
 using melody::generatePhraseRhythm;
 using melody::getEffectivePlateauRatio;
 using melody::getMaxStepInVowelSection;
@@ -108,9 +109,8 @@ using melody::selectHookRhythmPatternIndex;
 ///   - High BPM (120-160): remaining long notes stand out → 1.0→1.3
 ///   - Very high (>160): cap → ×1.3
 ///
-/// Mora scaling:
-///   - MoraTimed active: rhythm generator already reflects mora density → ×0.5
-///   - Standard (stress-timed): stress timing leaves long notes → ×1.0
+/// MoraTimed phrases already use their own word-group rhythm generator; they
+/// need no post-hoc density scaling here.
 float calcEffectiveSubRatio(float base_ratio, uint16_t bpm, bool is_mora_timed) {
   float bpm_factor;
   if (bpm <= 80) {
@@ -123,9 +123,8 @@ float calcEffectiveSubRatio(float base_ratio, uint16_t bpm, bool is_mora_timed) 
     bpm_factor = 1.3f;
   }
 
-  float mora_factor = is_mora_timed ? 0.5f : 1.0f;
-
-  return std::min(0.5f, base_ratio * bpm_factor * mora_factor);
+  (void)is_mora_timed;
+  return std::min(0.5f, base_ratio * bpm_factor);
 }
 
 /// Syllabic subdivision: split long notes into repeated same-pitch notes.
@@ -242,7 +241,7 @@ void applyPhrasePairCadence(std::vector<NoteEvent>& notes, PhrasePairRole pair_r
 
   NoteEvent& last_note = notes.back();
   int8_t chord_degree = harmony.getChordDegreeAt(last_note.start_tick);
-  std::vector<int> chord_tones = getChordTonePitchClasses(chord_degree);
+  const ChordTones chord_tones = getChordTones(chord_degree);
   int pitch_class = getPitchClass(last_note.note);
 
   // Root pitch class for the current chord degree
@@ -302,16 +301,23 @@ void applyPhrasePairCadence(std::vector<NoteEvent>& notes, PhrasePairRole pair_r
 
 }  // namespace
 
-std::vector<NoteEvent> MelodyDesigner::generateSection(const MelodyTemplate& tmpl,
-                                                       const SectionContext& ctx,
-                                                       const IHarmonyContext& harmony,
-                                                       std::mt19937& rng) {
+std::vector<NoteEvent> MelodyDesigner::generateSection(
+    const MelodyTemplate& tmpl, const SectionContext& ctx, const IHarmonyContext& harmony,
+    std::mt19937& rng, bool commit_hook_repetition, bool* generated_hook_out) {
   std::vector<NoteEvent> result;
+  bool generated_hook = false;
 
   // Build phrase plan - replaces manual phrase count, timing, contour, and density calculation
   PhrasePlan plan = PhrasePlanner::buildPlan(
       ctx.section_type, ctx.section_start, ctx.section_end, ctx.section_bars, ctx.mood,
       ctx.vocal_style, nullptr, ctx.bpm, ctx.phrase_length_bars, ctx.anticipation_rest);
+  if (ctx.disable_breathing_gaps) {
+    for (auto& phrase : plan.phrases) {
+      phrase.breath_before = 0;
+      phrase.breath_after = 0;
+      phrase.singable_end = phrase.end_tick;
+    }
+  }
 
   int prev_pitch = -1;
   int direction_inertia = 0;
@@ -339,12 +345,14 @@ std::vector<NoteEvent> MelodyDesigner::generateSection(const MelodyTemplate& tmp
 
     PhraseResult phrase_result;
     if (use_hook) {
+      generated_hook = true;
       Tick phrase_end = planned.end_tick - planned.breath_after;
       phrase_result =
           generateHook(tmpl, phrase_start, phrase_end, phrase_ctx, prev_pitch, harmony, rng);
     } else {
-      phrase_result = generateMelodyPhrase(tmpl, phrase_start, actual_beats, phrase_ctx, prev_pitch,
-                                           direction_inertia, harmony, rng);
+      phrase_result =
+          generateMelodyPhrase(tmpl, phrase_start, actual_beats, phrase_ctx, prev_pitch,
+                               direction_inertia, harmony, rng, planned.target_note_count);
     }
 
     // Apply sequential transposition for B sections (Zekvenz effect)
@@ -492,7 +500,15 @@ std::vector<NoteEvent> MelodyDesigner::generateSection(const MelodyTemplate& tmp
     EmbellishmentConfig emb_config = MelodicEmbellisher::getConfigForMood(ctx.mood);
     // Scale NCT density for later occurrences (2nd chorus gets 1.2x, 3rd+ gets 1.4x)
     emb_config.adjustForOccurrence(ctx.section_occurrence);
-    result = MelodicEmbellisher::embellish(result, emb_config, harmony, ctx.key_offset, rng);
+    std::vector<std::pair<Tick, Tick>> breath_ranges;
+    breath_ranges.reserve(plan.phrases.size());
+    for (const auto& planned : plan.phrases) {
+      if (planned.breath_after > 0 && planned.end_tick > planned.breath_after) {
+        breath_ranges.emplace_back(planned.end_tick - planned.breath_after, planned.end_tick);
+      }
+    }
+    result = MelodicEmbellisher::embellish(result, emb_config, harmony, ctx.key_offset, rng,
+                                           breath_ranges);
   }
 
   // Final downbeat chord-tone enforcement with interval constraint.
@@ -510,7 +526,7 @@ std::vector<NoteEvent> MelodyDesigner::generateSection(const MelodyTemplate& tmp
     bool is_downbeat = bar_pos < TICKS_PER_BEAT / 4;
     if (is_downbeat) {
       int8_t chord_degree = harmony.getChordDegreeAt(note.start_tick);
-      std::vector<int> chord_tones = getChordTonePitchClasses(chord_degree);
+      const ChordTones chord_tones = getChordTones(chord_degree);
       int pitch_pc = getPitchClass(note.note);
       bool is_chord_tone = false;
       for (int ct : chord_tones) {
@@ -533,7 +549,7 @@ std::vector<NoteEvent> MelodyDesigner::generateSection(const MelodyTemplate& tmp
           if (resolution_interval >= 1 && resolution_interval <= 2) {
             // Verify next note is a chord tone (proper resolution target)
             int8_t next_chord_degree = harmony.getChordDegreeAt(result[note_idx + 1].start_tick);
-            std::vector<int> next_chord_tones = getChordTonePitchClasses(next_chord_degree);
+            const ChordTones next_chord_tones = getChordTones(next_chord_degree);
             int next_pc = next_pitch % 12;
             for (int ct : next_chord_tones) {
               if (next_pc == ct) {
@@ -629,6 +645,12 @@ std::vector<NoteEvent> MelodyDesigner::generateSection(const MelodyTemplate& tmp
     result = std::move(deduplicated);
   }
 
+  if (generated_hook_out != nullptr) {
+    *generated_hook_out = generated_hook;
+  }
+  if (commit_hook_repetition && generated_hook) {
+    ++hook_cache_.repetition_count;
+  }
   return result;
 }
 
@@ -636,8 +658,17 @@ std::vector<NoteEvent> MelodyDesigner::generateSectionWithEvaluation(
     const MelodyTemplate& tmpl, const SectionContext& ctx, const IHarmonyContext& harmony,
     std::mt19937& rng, VocalStylePreset vocal_style, MelodicComplexity melodic_complexity,
     int candidate_count) {
-  // Generate multiple candidates
-  std::vector<std::pair<std::vector<NoteEvent>, float>> candidates;
+  struct Candidate {
+    std::vector<NoteEvent> notes;
+    float score;
+    HookCache hook_cache;
+    bool generated_hook;
+  };
+  // Each candidate must start from the same hook state.  Otherwise the first
+  // generated candidate permanently fixes the chorus contour/rhythm before
+  // scoring can choose a winner.
+  const HookCache base_hook_cache = hook_cache_;
+  std::vector<Candidate> candidates;
   candidates.reserve(static_cast<size_t>(candidate_count));
 
   // Get unified style profile for consistent bias and evaluation
@@ -646,8 +677,11 @@ std::vector<NoteEvent> MelodyDesigner::generateSectionWithEvaluation(
   const EvaluatorConfig& config = profile.evaluator;
 
   for (int i = 0; i < candidate_count; ++i) {
+    hook_cache_ = base_hook_cache;
     // Generate a candidate melody
-    std::vector<NoteEvent> melody = generateSection(tmpl, ctx, harmony, rng);
+    bool generated_hook = false;
+    std::vector<NoteEvent> melody =
+        generateSection(tmpl, ctx, harmony, rng, false, &generated_hook);
 
     // Combine style-specific evaluation with penalty-based culling
     // Style evaluation: positive features (contour, pattern, surprise)
@@ -723,42 +757,71 @@ std::vector<NoteEvent> MelodyDesigner::generateSectionWithEvaluation(
       combined_score += motif_bonus;
     }
 
-    candidates.emplace_back(std::move(melody), combined_score);
+    candidates.push_back({std::move(melody), combined_score, hook_cache_, generated_hook});
   }
 
   // Sort by score (highest first). stable_sort keeps insertion order for
   // equal scores so tie-breaking is deterministic across platforms.
   std::stable_sort(candidates.begin(), candidates.end(),
-                   [](const auto& a, const auto& b) { return a.second > b.second; });
+                   [](const Candidate& a, const Candidate& b) { return a.score > b.score; });
 
   // Cull bottom 50%: only keep top half
   size_t keep_count = std::max(static_cast<size_t>(1), candidates.size() / 2);
 
   // Select probabilistically from top candidates (maintains diversity)
   // Use weighted selection: higher scores have higher probability
+  auto commitCandidate = [&](Candidate& candidate) {
+    hook_cache_ = candidate.hook_cache;
+    if (candidate.generated_hook) {
+      ++hook_cache_.repetition_count;
+    }
+
+    // The evaluated winner is the source of truth for the chorus head. Hook
+    // generation records a provisional head while building each candidate,
+    // but later constraints and embellishment can change it. Refreshing here
+    // prevents the first generated (or pre-transform) candidate from freezing
+    // the next chorus.
+    if (ctx.section_type == SectionType::Chorus && candidate.notes.size() >= 8) {
+      for (size_t note_idx = 0; note_idx < 8; ++note_idx) {
+        const NoteEvent& note = candidate.notes[note_idx];
+        hook_cache_.sabi_pitches[note_idx] = note.note;
+        hook_cache_.sabi_durations[note_idx] = note.duration;
+        hook_cache_.sabi_velocities[note_idx] = note.velocity;
+        hook_cache_.sabi_tick_advances[note_idx] =
+            (note_idx + 1 < 8) ? candidate.notes[note_idx + 1].start_tick - note.start_tick
+                               : note.duration;
+      }
+      hook_cache_.pitches_cached = true;
+      hook_cache_.rhythm_cached = true;
+    }
+  };
+
   float total_weight = 0.0f;
   for (size_t i = 0; i < keep_count; ++i) {
-    total_weight += candidates[i].second;
+    total_weight += candidates[i].score;
   }
 
   if (total_weight > 0.0f) {
     float roll = rng_util::rollFloat(rng, 0.0f, total_weight);
     float cumulative = 0.0f;
     for (size_t i = 0; i < keep_count; ++i) {
-      cumulative += candidates[i].second;
+      cumulative += candidates[i].score;
       if (roll <= cumulative) {
-        return std::move(candidates[i].first);
+        commitCandidate(candidates[i]);
+        return std::move(candidates[i].notes);
       }
     }
   }
 
   // Fallback: return best candidate
-  return std::move(candidates[0].first);
+  commitCandidate(candidates[0]);
+  return std::move(candidates[0].notes);
 }
 
 MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
     const MelodyTemplate& tmpl, Tick phrase_start, uint8_t phrase_beats, const SectionContext& ctx,
-    int prev_pitch, int direction_inertia, const IHarmonyContext& harmony, std::mt19937& rng) {
+    int prev_pitch, int direction_inertia, const IHarmonyContext& harmony, std::mt19937& rng,
+    uint8_t target_note_count) {
   PhraseResult result;
   result.notes.clear();
   result.direction_inertia = direction_inertia;
@@ -781,14 +844,25 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
   }
 
   // Generate rhythm pattern with section density modifier and 32nd note ratio
-  std::vector<RhythmNote> rhythm = generatePhraseRhythm(
-      effective_tmpl, phrase_beats, ctx.density_modifier, ctx.thirtysecond_ratio, rng, ctx.paradigm,
-      syncopation_weight, ctx.section_type, ctx.bpm, ctx.vocal_style);
+  std::vector<RhythmNote> rhythm;
+  if (ctx.is_mora_timed) {
+    // PhrasePlanner supplies a section/arc-aware mora target.  The dedicated
+    // generator preserves word-group articulation and phrase-final extension;
+    // using the generic template rhythm here made the public setting a no-op.
+    uint8_t target = target_note_count > 0
+                         ? target_note_count
+                         : std::max<uint8_t>(2, static_cast<uint8_t>(phrase_beats * 2));
+    rhythm = generateMoraTimedRhythm(phrase_beats, target, ctx.density_modifier, rng);
+  } else {
+    rhythm = generatePhraseRhythm(effective_tmpl, phrase_beats, ctx.density_modifier,
+                                  ctx.thirtysecond_ratio, rng, ctx.paradigm, syncopation_weight,
+                                  ctx.section_type, ctx.bpm, ctx.vocal_style);
+  }
 
   // RhythmSync density boost: if output is too sparse, regenerate with higher density
   // Target: at least 2 notes per beat (phrase_beats * 2) for RhythmSync paradigm
   // This ensures RhythmSync-style locked rhythms maintain their characteristic density
-  if (ctx.paradigm == GenerationParadigm::RhythmSync &&
+  if (!ctx.is_mora_timed && ctx.paradigm == GenerationParadigm::RhythmSync &&
       rhythm.size() < static_cast<size_t>(phrase_beats * 2)) {
     float boost = std::max(1.5f, static_cast<float>(phrase_beats * 2) / rhythm.size());
     float boosted_density = ctx.density_modifier * boost;
@@ -929,7 +1003,8 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
                                     harmony, ctx.vocal_low, ctx.vocal_high);
 
   // Track consecutive same notes for J-POP style probability curve
-  melody::ConsecutiveSameNoteTracker consecutive_tracker;
+  melody::ConsecutiveSameNoteTracker consecutive_tracker{
+      0, std::clamp(ctx.consecutive_same_note_prob, 0.0f, 1.0f)};
 
   // Track previous note duration for leap preparation principle
   // Pop vocal theory: large leaps need preparation time (longer preceding note)
@@ -1028,11 +1103,6 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
                                    ctx.vocal_attitude, ctx.disable_vowel_constraints, rn.eighths,
                                    ctx.tension_usage, max_interval);
     }
-    // Apply consecutive same note reduction with J-POP style probability curve
-    melody::applyConsecutiveSameNoteConstraint(new_pitch, consecutive_tracker, current_pitch,
-                                               note_chord_degree, ctx.key_offset, ctx.vocal_low,
-                                               ctx.vocal_high, 0, rng);
-
     // Enforce maximum interval constraint (section-adaptive + blueprint constraint)
     // Use nearestChordToneWithinInterval to stay on chord tones
     // getEffectiveMaxInterval considers both section type and blueprint limits
@@ -1051,7 +1121,7 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
       float step_probability = ctx.prefer_stepwise ? 1.0f : 0.80f;
 
       if (rng_util::rollProbability(rng, step_probability)) {
-        std::vector<int> chord_tones = getChordTonePitchClasses(note_chord_degree);
+        const ChordTones chord_tones = getChordTones(note_chord_degree);
         int best_step_pitch = melody::findStepwiseResolutionPitch(
             current_pitch, chord_tones, leap_state.direction, ctx.vocal_low, ctx.vocal_high);
         if (best_step_pitch >= 0) {
@@ -1107,7 +1177,7 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
     if (i > 0 && !result.notes.empty()) {
       int prev_note = result.notes.back().note;
       int prev_interval = current_pitch - prev_note;
-      std::vector<int> chord_tones = getChordTonePitchClasses(note_chord_degree);
+      const ChordTones chord_tones = getChordTones(note_chord_degree);
       float phrase_pos = static_cast<float>(i) / rhythm.size();
       new_pitch = melody::applyLeapReversalRule(
           new_pitch, current_pitch, prev_interval, chord_tones, ctx.vocal_low, ctx.vocal_high,
@@ -1190,7 +1260,7 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
     // This creates natural phrase endings that singers instinctively expect.
     if (is_phrase_end && tmpl.phrase_end_resolution > 0.0f) {
       if (rng_util::rollProbability(rng, tmpl.phrase_end_resolution)) {
-        std::vector<int> chord_tones = getChordTonePitchClasses(note_chord_degree);
+        const ChordTones chord_tones = getChordTones(note_chord_degree);
         int pitch_pc = new_pitch % 12;
         bool is_chord_tone = false;
         for (int ct : chord_tones) {
@@ -1290,6 +1360,26 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
     else if (result.direction_inertia < 0)
       hints.contour_direction = -1;
     new_pitch = selectBestCandidate(candidates, static_cast<uint8_t>(new_pitch), hints);
+
+    // Apply repetition policy after collision-safe candidate selection. Earlier
+    // pitch constraints and selectBestCandidate can both re-select the previous
+    // pitch, so enforcing it before this point made the configured probability
+    // ineffective.
+    int repetition_constrained_pitch = new_pitch;
+    if (melody::applyConsecutiveSameNoteConstraint(
+            repetition_constrained_pitch, consecutive_tracker, current_pitch, note_chord_degree,
+            ctx.key_offset, ctx.vocal_low, ctx.vocal_high, max_interval, rng)) {
+      std::vector<PitchCandidate> movement_candidates;
+      for (const auto& candidate : candidates) {
+        if (candidate.pitch != current_pitch) {
+          movement_candidates.push_back(candidate);
+        }
+      }
+      if (!movement_candidates.empty()) {
+        new_pitch = selectBestCandidate(movement_candidates,
+                                        static_cast<uint8_t>(repetition_constrained_pitch), hints);
+      }
+    }
 
     // Add note (registration handled by VocalGenerator)
     NoteEvent note = createNoteWithoutHarmony(note_start, note_duration,

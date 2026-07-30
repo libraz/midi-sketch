@@ -7,11 +7,9 @@
 
 #include <algorithm>
 #include <cmath>
-#include <random>
 
 #include "core/chord.h"
 #include "core/i_harmony_context.h"
-#include "core/rng_util.h"
 
 namespace midisketch {
 
@@ -41,23 +39,8 @@ ChordTones getChordTones(int8_t degree) {
 }
 
 std::vector<int> getChordTonePitchClasses(int8_t degree) {
-  std::vector<int> result;
-
-  // Get root pitch class from degree. Use degreeToSemitone() so borrowed
-  // degrees (8=bVI, 10=bVII, 11=bIII, 12=iv, 13=bII, 14=#IVdim) resolve to
-  // their correct chromatic root instead of collapsing into 0-6 via %7.
-  int root_pc = ((degreeToSemitone(degree) % 12) + 12) % 12;
-
-  // Get chord from chord.cpp for accurate intervals
-  Chord chord = getChordNotes(degree);
-
-  for (uint8_t i = 0; i < chord.note_count && i < 5; ++i) {
-    if (chord.intervals[i] >= 0) {
-      result.push_back((root_pc + chord.intervals[i]) % 12);
-    }
-  }
-
-  return result;
+  const ChordTones tones = getChordTones(degree);
+  return {tones.begin(), tones.end()};
 }
 
 std::vector<int> getGuideTonePitchClasses(int8_t degree) {
@@ -205,7 +188,7 @@ std::vector<int> getAvailableTensionPitchClasses(int8_t degree) {
 ChordToneHelper::ChordToneHelper(int8_t degree)
     : degree_(degree),
       root_pc_(((degreeToSemitone(degree) % 12) + 12) % 12),
-      pitch_classes_(getChordTonePitchClasses(degree)) {}
+      pitch_classes_(getChordTones(degree)) {}
 
 bool ChordToneHelper::isChordTone(uint8_t pitch) const {
   int pitch_class = pitch % 12;
@@ -358,110 +341,20 @@ int nearestChordToneWithinInterval(int target_pitch, int prev_pitch, int8_t chor
   return best_pitch;
 }
 
-int stepwiseToTarget(int prev_pitch, int target_pitch, int8_t chord_degree, int range_low,
-                     int range_high, uint8_t key, int prefer_same_note, std::mt19937* rng) {
-  // Determine direction toward target
-  int direction = 0;
-  if (target_pitch > prev_pitch) {
-    direction = 1;
-  } else if (target_pitch < prev_pitch) {
-    direction = -1;
-  }
-
-  // Random chance to stay on same note (increases same-note ratio)
-  if (rng != nullptr && direction == 0) {
-    // If target equals prev, very high chance to stay
-    return std::clamp(prev_pitch, range_low, range_high);
-  }
-  if (rng != nullptr && prefer_same_note > 0) {
-    if (rng_util::rollRange(*rng, 0, 99) < prefer_same_note) {
-      return std::clamp(prev_pitch, range_low, range_high);
-    }
-  }
-
-  // Get chord tones for avoid-note checking
-  std::vector<int> chord_tones = getChordTonePitchClasses(chord_degree);
-
-  // Determine step order: whole step (2) vs half step (1)
-  // Default: whole step first (more melodic)
-  // Exception 1: Leading tone resolution (7th degree ascending to tonic)
-  // Exception 2: 30% random chance for half step (adds variety)
-  int prev_pc = ((prev_pitch % 12) + 12) % 12;
-  int leading_tone = (11 + key) % 12;  // 7th degree in major scale
-  bool is_leading_tone_resolution = (prev_pc == leading_tone && direction > 0);
-
-  bool prefer_half_step = is_leading_tone_resolution;
-  if (!prefer_half_step && rng != nullptr) {
-    prefer_half_step = (rng_util::rollRange(*rng, 0, 99) < 30);  // 30% chance
-  }
-
-  // Try step motion (1-2 semitones in the direction)
-  const int step_first = prefer_half_step ? 1 : 2;
-  const int step_second = prefer_half_step ? 2 : 1;
-
-  for (int step : {step_first, step_second}) {
-    int candidate = prev_pitch + direction * step;
-
-    // Check range
-    if (candidate < range_low || candidate > range_high) {
-      continue;
-    }
-
-    // Check if it's a scale tone
-    int pc = ((candidate % 12) + 12) % 12;
-    if (!isScaleTone(pc, key)) {
-      continue;
-    }
-
-    // Check if it's not an avoid note (minor 2nd or tritone from root)
-    int root_pc = SCALE[((chord_degree % 7) + 7) % 7];
-    root_pc = (root_pc + key) % 12;
-    int interval = ((pc - root_pc) % 12 + 12) % 12;
-    // Avoid: minor 2nd (1), tritone (6) over root
-    if (interval == 1 || interval == 6) {
-      continue;
-    }
-
-    // Valid step motion found
-    return candidate;
-  }
-
-  // Step motion failed, try opposite direction step (might resolve better)
-  for (int step : {step_first, step_second}) {
-    int candidate = prev_pitch - direction * step;
-    if (direction == 0) {
-      candidate = prev_pitch + step;  // Default to up if no direction
-    }
-
-    if (candidate < range_low || candidate > range_high) {
-      continue;
-    }
-
-    int pc = ((candidate % 12) + 12) % 12;
-    if (!isScaleTone(pc, key)) {
-      continue;
-    }
-
-    int root_pc = SCALE[((chord_degree % 7) + 7) % 7];
-    root_pc = (root_pc + key) % 12;
-    int interval = ((pc - root_pc) % 12 + 12) % 12;
-    if (interval == 1 || interval == 6) {
-      continue;
-    }
-
-    return candidate;
-  }
-
-  // Step motion failed - stay on current pitch (better than jumping to chord tone)
-  // This prioritizes singability over harmonic "correctness"
-  return std::clamp(prev_pitch, range_low, range_high);
-}
-
 // ============================================================================
 // Tritone Detection
 // ============================================================================
 
 bool hasTritoneWithChord(int pitch_pc, const std::vector<int>& chord_pcs) {
+  for (int chord_pc : chord_pcs) {
+    int interval = std::abs(pitch_pc - chord_pc);
+    if (interval > 6) interval = 12 - interval;
+    if (interval == 6) return true;
+  }
+  return false;
+}
+
+bool hasTritoneWithChord(int pitch_pc, const ChordTones& chord_pcs) {
   for (int chord_pc : chord_pcs) {
     int interval = std::abs(pitch_pc - chord_pc);
     if (interval > 6) interval = 12 - interval;
@@ -492,7 +385,7 @@ uint8_t getDiatonicFifth(uint8_t root) {
 uint8_t getSafeChordTone(uint8_t root, const IHarmonyContext& harmony, Tick start, Tick duration,
                          TrackRole role, uint8_t range_low, uint8_t range_high) {
   int8_t degree = harmony.getChordDegreeAt(start);
-  auto chord_pcs = getChordTonePitchClasses(degree);
+  const ChordTones chord_pcs = getChordTones(degree);
 
   // Helper: check if pitch class is a chord tone
   auto isChordTone = [&](int pc) {

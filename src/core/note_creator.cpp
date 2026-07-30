@@ -24,7 +24,7 @@ bool isSafeBoundary(CrossBoundarySafety safety) {
 }
 
 // Helper to check if a pitch class is root or 5th of the chord
-bool isRootOrFifth(int pitch_class, const std::vector<int>& chord_tones) {
+bool isRootOrFifth(int pitch_class, const ChordTones& chord_tones) {
   if (chord_tones.empty()) return false;
   // Root is typically first chord tone, 5th is often third
   int root = chord_tones[0];
@@ -201,14 +201,14 @@ void recordProvenanceTransforms(NoteEvent& event, const ProvenanceParams& params
 
 // Try octave adjustments to find a consonant fallback pitch when no candidates
 // are available. Returns the resolved pitch, or nullopt if all attempts fail.
-// Handles: octave-down for out-of-range, octave sweep for dissonance, and
+// Handles: octave folding for out-of-range, octave sweep for dissonance, and
 // PreserveContour monotony check.
 std::optional<uint8_t> resolveWithOctaveFallback(const IHarmonyContext& harmony,
                                                  const NoteOptions& opts, Tick effective_duration) {
-  // Fold down by octaves if desired exceeds range_high (preserves pitch class,
-  // so a chord tone stays a chord tone), then clamp as last resort. A single
-  // hard clamp would land on range_high itself, which under a vocal-pitch
-  // ceiling means doubling the vocal on an arbitrary (possibly non-chord) tone.
+  // Fold into range by octaves (preserves pitch class, so a chord tone stays a
+  // chord tone), then clamp as last resort. A single hard clamp would land on
+  // a range edge, which under a vocal-pitch ceiling can double the vocal on an
+  // arbitrary (possibly non-chord) tone.
   uint8_t fallback_pitch = opts.desired_pitch;
   if (fallback_pitch > opts.range_high) {
     int folded = static_cast<int>(fallback_pitch);
@@ -218,6 +218,14 @@ std::optional<uint8_t> resolveWithOctaveFallback(const IHarmonyContext& harmony,
     }
     fallback_pitch = (folded <= static_cast<int>(opts.range_high)) ? static_cast<uint8_t>(folded)
                                                                    : opts.range_high;
+  } else if (fallback_pitch < opts.range_low) {
+    int folded = static_cast<int>(fallback_pitch);
+    while (folded < static_cast<int>(opts.range_low) &&
+           folded + 12 <= static_cast<int>(opts.range_high)) {
+      folded += 12;
+    }
+    fallback_pitch = (folded >= static_cast<int>(opts.range_low)) ? static_cast<uint8_t>(folded)
+                                                                  : opts.range_low;
   }
 
   // Final safety check: if fallback still causes dissonance, try octave shifts
@@ -632,6 +640,15 @@ std::vector<PitchCandidate> getSafePitchCandidates(const ICollisionDetector& har
   candidates.reserve(max_candidates * 2);  // May generate more, then trim
 
   auto chord_tones = harmony.getChordTonesAt(start);
+  auto guide_pcs = getGuideTonePitchClasses(harmony.getChordDegreeAt(start));
+  std::optional<CollisionInfo> desired_pitch_collision;
+
+  auto getDesiredPitchCollision = [&]() -> const CollisionInfo& {
+    if (!desired_pitch_collision) {
+      desired_pitch_collision = harmony.getCollisionInfo(desired_pitch, start, duration, role);
+    }
+    return *desired_pitch_collision;
+  };
 
   // Helper to add a candidate if safe
   auto tryAddCandidate = [&](uint8_t pitch, CollisionAvoidStrategy strategy) {
@@ -668,10 +685,6 @@ std::vector<PitchCandidate> getSafePitchCandidates(const ICollisionDetector& har
     candidate.interval_from_desired =
         static_cast<int8_t>(pitch) - static_cast<int8_t>(desired_pitch);
 
-    // Calculate max_safe_duration
-    candidate.max_safe_duration =
-        harmony.getMaxSafeEnd(start, pitch, role, start + duration) - start;
-
     // Musical attributes
     int pc = getPitchClass(pitch);
     candidate.is_chord_tone =
@@ -680,12 +693,7 @@ std::vector<PitchCandidate> getSafePitchCandidates(const ICollisionDetector& har
     candidate.is_root_or_fifth = isRootOrFifth(pc, chord_tones);
 
     // Guide tone annotation (3rd/7th)
-    {
-      int8_t degree = harmony.getChordDegreeAt(start);
-      auto guide_pcs = getGuideTonePitchClasses(degree);
-      candidate.is_guide_tone =
-          std::find(guide_pcs.begin(), guide_pcs.end(), pc) != guide_pcs.end();
-    }
+    candidate.is_guide_tone = std::find(guide_pcs.begin(), guide_pcs.end(), pc) != guide_pcs.end();
 
     // Annotate cross-boundary safety for notes with meaningful duration
     if (duration >= 240) {  // TICK_EIGHTH
@@ -696,7 +704,7 @@ std::vector<PitchCandidate> getSafePitchCandidates(const ICollisionDetector& har
 
     // Get collision info if there was a collision
     if (pitch != desired_pitch) {
-      auto collision_info = harmony.getCollisionInfo(desired_pitch, start, duration, role);
+      const auto& collision_info = getDesiredPitchCollision();
       if (collision_info.has_collision) {
         candidate.colliding_track = collision_info.colliding_track;
         candidate.colliding_pitch = collision_info.colliding_pitch;
@@ -887,9 +895,11 @@ std::vector<PitchCandidate> getSafePitchCandidates(const ICollisionDetector& har
   }
 
   // Strategy 5: Vocal diversity fallback
-  // In RhythmSync, Vocal often gets stuck on same pitch because Motif occupies
-  // nearby pitches. Add octave-separated chord tones without strict consonance check.
-  // This ensures selectBestCandidate has alternatives to penalize same-pitch streaks.
+  // In RhythmSync, Vocal can get stuck on one pitch because Motif occupies
+  // nearby pitches. Add octave-separated chord tones, but route them through
+  // the same consonance/provenance path as every other candidate. In
+  // particular, a wide M7/m9 is not automatically safe merely because its
+  // absolute distance is large.
   if (role == TrackRole::Vocal && candidates.size() <= 2) {
     // Check if all current candidates are the same pitch
     bool all_same_pitch = true;
@@ -906,6 +916,7 @@ std::vector<PitchCandidate> getSafePitchCandidates(const ICollisionDetector& har
     if (all_same_pitch || candidates.size() <= 1) {
       // Add chord tones at octave distance from desired_pitch
       // These are more likely to be safe even in RhythmSync
+      const auto sounding = harmony.getSoundingPitches(start, start + duration, role);
       for (int ct : chord_tones) {
         for (int oct_offset : {-2, 2, -1, 1}) {  // Try further octaves first
           int oct = octave + oct_offset;
@@ -914,7 +925,6 @@ std::vector<PitchCandidate> getSafePitchCandidates(const ICollisionDetector& har
           if (candidate_pitch < range_low || candidate_pitch > range_high) continue;
 
           // Check that this pitch is at least an octave away from any sounding note
-          auto sounding = harmony.getSoundingPitches(start, start + duration, role);
           bool octave_safe = true;
           for (uint8_t sp : sounding) {
             int dist = std::abs(static_cast<int>(candidate_pitch) - static_cast<int>(sp));
@@ -925,23 +935,7 @@ std::vector<PitchCandidate> getSafePitchCandidates(const ICollisionDetector& har
           }
 
           if (octave_safe) {
-            // Add without strict consonance check, but mark as fallback
-            PitchCandidate candidate;
-            candidate.pitch = candidate_pitch;
-            candidate.strategy = CollisionAvoidStrategy::ExhaustiveSearch;
-            candidate.interval_from_desired =
-                static_cast<int8_t>(candidate_pitch) - static_cast<int8_t>(desired_pitch);
-            candidate.max_safe_duration = duration;  // Assume safe for now
-            int pc = getPitchClass(candidate_pitch);
-            candidate.is_chord_tone = true;  // We know it's a chord tone
-            candidate.is_scale_tone = isScaleTone(pc);
-            candidate.is_root_or_fifth = isRootOrFifth(pc, chord_tones);
-            {
-              int8_t deg = harmony.getChordDegreeAt(start);
-              auto gpcs = getGuideTonePitchClasses(deg);
-              candidate.is_guide_tone = std::find(gpcs.begin(), gpcs.end(), pc) != gpcs.end();
-            }
-            candidates.push_back(candidate);
+            tryAddCandidate(candidate_pitch, CollisionAvoidStrategy::ExhaustiveSearch);
           }
         }
       }

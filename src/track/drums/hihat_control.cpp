@@ -321,7 +321,12 @@ uint8_t getFootHiHatVelocity(std::mt19937& rng) {
 
 bool hasCrashAtTick(const MidiTrack& track, Tick tick) {
   for (const auto& note : track.notes()) {
-    if (note.note == CRASH && note.start_tick >= tick && note.start_tick < tick + SIXTEENTH) {
+    if (note.note != CRASH) {
+      continue;
+    }
+    const Tick distance =
+        (note.start_tick >= tick) ? note.start_tick - tick : tick - note.start_tick;
+    if (distance <= SIXTEENTH) {
       return true;
     }
   }

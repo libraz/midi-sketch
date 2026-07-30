@@ -147,8 +147,7 @@ void PhrasePlanner::assignPhraseTiming(PhrasePlan& plan, Mood mood, VocalStylePr
                                        uint16_t bpm) {
   if (plan.phrases.empty()) return;
 
-  Tick breath =
-      melody::getBreathDuration(plan.section_type, mood, 0.5f, 60, nullptr, vocal_style, bpm);
+  Tick breath = melody::getPlannedBreathDuration(plan.section_type, mood, vocal_style, bpm);
   Tick anticipation_guard = getAnticipationGuard(plan.anticipation_rest);
 
   uint8_t phrase_count = static_cast<uint8_t>(plan.phrases.size());

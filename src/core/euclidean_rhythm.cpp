@@ -190,11 +190,11 @@ namespace {
 constexpr FullGroovePattern GROOVE_PATTERNS[] = {
     // Standard: kick on 1&3, snare on 2&4, 8th note hi-hats
     // Common pop/rock pattern
-    {0x1001, 0x1010, 0x5555, 20},
+    {0x0101, 0x1010, 0x5555, 20},
 
     // Funk: syncopated kick, dense ghost notes
     // Off-beat emphasis for groove
-    {0x1011, 0x1010, 0x5555, 60},
+    {0x0111, 0x1010, 0x5555, 60},
 
     // Shuffle: triplet-based pattern
     // Approximate triplet feel in 16th grid
@@ -202,7 +202,7 @@ constexpr FullGroovePattern GROOVE_PATTERNS[] = {
 
     // Bossa: bossa nova rhythm
     // Latin-influenced pattern
-    {0x2492, 0x0808, 0x5555, 10},
+    {0x2449, 0x0808, 0x5555, 10},
 
     // Trap: sparse kick, dense hi-hat rolls
     // Modern trap style
@@ -214,7 +214,7 @@ constexpr FullGroovePattern GROOVE_PATTERNS[] = {
 
     // Breakbeat: syncopated, energetic
     // Inspired by classic breakbeat patterns
-    {0x1221, 0x0808, 0x5555, 40}};
+    {0x0321, 0x0808, 0x5555, 40}};
 
 // Mood to groove template mapping (24 moods)
 // clang-format off

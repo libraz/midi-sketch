@@ -83,6 +83,13 @@ Tick getBreathDuration(SectionType section, Mood mood, float phrase_density = 0.
                        VocalStylePreset vocal_style = VocalStylePreset::Standard,
                        uint16_t bpm = 120);
 
+/// @brief Get a breath duration while planning, before phrase notes exist.
+///
+/// Planned breaths intentionally use no phrase-density or pitch adjustment;
+/// callers with generated notes must use getBreathDuration() instead.
+Tick getPlannedBreathDuration(SectionType section, Mood mood, VocalStylePreset vocal_style,
+                              uint16_t bpm);
+
 /// @brief Get rhythm unit based on grid type.
 /// @param grid Rhythm grid type
 /// @param is_eighth Whether to use 8th note base
@@ -99,7 +106,7 @@ int getBassRootPitchClass(int8_t chord_degree);
 /// @param chord_tones Chord tone pitch classes
 /// @param root_pc Root pitch class
 /// @return true if pitch should be avoided
-bool isAvoidNoteWithChord(int pitch_pc, const std::vector<int>& chord_tones, int root_pc);
+bool isAvoidNoteWithChord(int pitch_pc, const ChordTones& chord_tones, int root_pc);
 
 /// @brief Simplified avoid note check against root only.
 /// @param pitch_pc Pitch class (0-11)

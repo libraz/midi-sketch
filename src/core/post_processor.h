@@ -36,31 +36,21 @@ enum class PhrasePosition {
 // Handles humanization (timing/velocity variation) and transition dynamics.
 class PostProcessor {
  public:
-  // Humanization parameters.
-  struct HumanizeParams {
-    float velocity = 0.5f;  // Velocity variation amount (0.0-1.0)
-  };
-
-  // Applies humanization to melodic tracks.
-  // @param tracks Vector of track pointers to process
-  // @param params Humanization parameters
-  // @param rng Random number generator
-  static void applyHumanization(std::vector<MidiTrack*>& tracks, const HumanizeParams& params,
-                                std::mt19937& rng);
-
   // Applies section-aware velocity humanization to all tracks.
   // Chorus sections get tighter variation (±6%) for consistent energy,
   // while Verse/Bridge sections get looser variation (±12%) for relaxed feel.
+  // humanize_velocity caps the configured section variation (0.0-1.0).
   // @param tracks Vector of track pointers to process
   // @param sections Song sections for section-type lookup
   // @param rng Random number generator
   static void applySectionAwareVelocityHumanization(std::vector<MidiTrack*>& tracks,
                                                     const std::vector<Section>& sections,
-                                                    std::mt19937& rng);
+                                                    float humanize_velocity, std::mt19937& rng);
 
   // Applies per-instrument micro-timing offsets for groove feel.
-  // HH pushed slightly ahead (+8 ticks), Snare slightly behind (-8 ticks),
-  // Bass lays back slightly (-4 ticks), Vocal pushes ahead (+4 ticks).
+  // Offsets are added to start ticks: positive is later, negative is earlier.
+  // HH is pushed slightly ahead (-8 ticks), Snare slightly behind (+8 ticks),
+  // and Bass lays back slightly (+4 ticks).
   // These offsets create the "pocket" feel of a real rhythm section.
   //
   // When sections are provided, vocal timing varies by phrase position:
@@ -176,6 +166,14 @@ class PostProcessor {
   static void fixMotifVocalClashes(MidiTrack& motif, const MidiTrack& vocal,
                                    const ICollisionDetector& harmony);
 
+  /// @brief Resolve late motif clashes against final accompaniment state.
+  ///
+  /// Late pitch rewrites can invalidate generation-time collision checks.
+  /// Clashing notes are moved to a safe registered chord tone; an optional
+  /// motif note is removed when no safe realization exists.
+  static void fixMotifHarmonyClashes(MidiTrack& motif, const MidiTrack& vocal,
+                                     const ICollisionDetector& harmony);
+
   /// @brief Break excessive repeated motif pitches after RhythmSync generation.
   ///
   /// Keeps the motif rhythm intact while replacing every note beyond the
@@ -222,14 +220,16 @@ class PostProcessor {
 
   /// @brief Fix inter-track clashes between non-vocal tracks after humanization.
   ///
-  /// Removes dissonant notes (minor 2nd) from chord track that clash with bass
-  /// or motif tracks. This must run after humanization because timing shifts
-  /// can create new overlaps between tracks that were safe at generation time.
+  /// Removes dissonant notes from chord track that clash with bass or motif
+  /// tracks. Registered structural chord-tone intervals are preserved when an
+  /// exact chord lookup is supplied.
   ///
   /// @param chord Chord track to adjust (in-place)
   /// @param bass Bass track (read-only reference)
   /// @param motif Motif track (read-only reference)
-  static void fixInterTrackClashes(MidiTrack& chord, const MidiTrack& bass, const MidiTrack& motif);
+  /// @param chord_lookup Exact registered harmony timeline (optional)
+  static void fixInterTrackClashes(MidiTrack& chord, const MidiTrack& bass, const MidiTrack& motif,
+                                   const IChordLookup* chord_lookup = nullptr);
 
   /// @brief Synchronize bass note onsets with kick drum hits for tighter groove.
   ///
@@ -253,16 +253,6 @@ class PostProcessor {
   static void applyTrackPanning(MidiTrack& vocal, MidiTrack& chord, MidiTrack& bass,
                                 MidiTrack& motif, MidiTrack& arpeggio, MidiTrack& aux,
                                 MidiTrack& guitar);
-
-  /// @brief Apply CC#11 expression curves to tracks for dynamic shaping.
-  /// - Vocal long notes: crescendo->diminuendo envelope
-  /// - Chord/Aux: section-level dynamics curve
-  /// @param vocal Vocal track (long note expression envelopes)
-  /// @param chord Chord track (section-level expression curve)
-  /// @param aux Aux track (section-level expression curve)
-  /// @param sections Song sections for section-level curves
-  static void applyExpressionCurves(MidiTrack& vocal, MidiTrack& chord, MidiTrack& aux,
-                                    const std::vector<Section>& sections);
 
   /// @brief Remove notes that create large melodic leaps (> max_semitones).
   ///

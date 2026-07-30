@@ -50,6 +50,10 @@ class TrackCollisionDetector {
 
   /**
    * @brief Register all notes from a completed track.
+   *
+   * Callers that need to replace a track's provisional per-note registrations
+   * must clear that role first; HarmonyContext::registerTrack() provides that
+   * authoritative-snapshot behavior.
    * @param track The MidiTrack containing notes to register
    * @param role Which track role this represents
    */
@@ -59,20 +63,22 @@ class TrackCollisionDetector {
    * @brief Check if a pitch is safe from collisions.
    *
    * Detects minor 2nd (1 semitone) and major 7th (11 semitones) clashes.
-   * On weak beats (is_weak_beat=true), major 2nd (2 semitones) is allowed
-   * as a passing tone.
+   * Brief melodic passing tones use the canonical duration-aware model.
+   * Callers may explicitly allow an accented resolving non-chord tone such as
+   * a suspension or appoggiatura.
    *
    * @param pitch MIDI pitch to check
    * @param start Start tick
    * @param duration Duration in ticks
    * @param exclude Exclude notes from this track when checking
    * @param chord_tracker Optional chord tracker for context-aware detection
-   * @param is_weak_beat If true, allow major 2nd as passing tone (default: false)
+   * @param allow_accented_nct Allow a prepared/resolving accented stepwise
+   *        non-chord tone (default: false)
    * @return true if pitch doesn't clash with other tracks
    */
   bool isConsonantWithOtherTracks(uint8_t pitch, Tick start, Tick duration, TrackRole exclude,
                                   const ChordProgressionTracker* chord_tracker = nullptr,
-                                  bool is_weak_beat = false) const;
+                                  bool allow_accented_nct = false) const;
 
   /**
    * @brief Get detailed collision information for a pitch.
@@ -89,19 +95,6 @@ class TrackCollisionDetector {
    */
   CollisionInfo getCollisionInfo(uint8_t pitch, Tick start, Tick duration, TrackRole exclude,
                                  const ChordProgressionTracker* chord_tracker = nullptr) const;
-
-  /**
-   * @brief Check for low register collision with bass.
-   *
-   * Uses stricter thresholds below C4 (intervals sound muddy in low register).
-   *
-   * @param pitch MIDI pitch to check
-   * @param start Start tick
-   * @param duration Duration in ticks
-   * @param threshold Semitone threshold for collision (default: 3)
-   * @return true if collision detected (pitch is unsafe)
-   */
-  bool hasBassCollision(uint8_t pitch, Tick start, Tick duration, int threshold = 3) const;
 
   /**
    * @brief Get pitch classes from a specific track at a tick.
@@ -261,7 +254,7 @@ class TrackCollisionDetector {
   // Caller must handle potential duplicate indices (when notes span multiple beats).
   void collectNoteIndices(Tick start, Tick end, std::vector<size_t>& out) const;
 
-  // Rebuild beat_index_ from scratch (used after clearNotesForTrack).
+  // Rebuild beat_index_ after removing notes while retaining bucket capacity.
   void rebuildBeatIndex();
 
   std::vector<RegisteredNote> notes_;
@@ -334,6 +327,35 @@ inline bool isToleratedPassingTone(int actual_semitones, Tick overlap_duration,
 
   // M2 (2 semitones): diatonic passing tone, wider tolerance
   return overlap_duration <= threshold_8th;
+}
+
+/// @brief Canonical exemption shared by generation gates and analysis.
+///
+/// Besides brief passing tones, an explicitly identified accented non-chord
+/// tone may remain for up to one beat when it forms a stepwise dissonance and
+/// resolves. The caller is responsible for proving that melodic preparation
+/// and resolution; this function owns the common interval, register, role, and
+/// duration policy.
+inline bool isToleratedMelodicTension(int actual_semitones, Tick overlap_duration,
+                                      uint8_t candidate_pitch, uint8_t existing_pitch,
+                                      Tick overlap_start, TrackRole candidate_role,
+                                      TrackRole existing_role,
+                                      bool is_accented_resolution = false) {
+  if (isToleratedPassingTone(actual_semitones, overlap_duration, candidate_pitch, existing_pitch,
+                             overlap_start, candidate_role, existing_role)) {
+    return true;
+  }
+  if (!is_accented_resolution || (actual_semitones != 1 && actual_semitones != 2)) {
+    return false;
+  }
+  if (isSustainedHarmonicRole(candidate_role)) {
+    return false;
+  }
+  if (candidate_pitch < TrackCollisionDetector::LOW_REGISTER_THRESHOLD &&
+      existing_pitch < TrackCollisionDetector::LOW_REGISTER_THRESHOLD) {
+    return false;
+  }
+  return overlap_duration <= TICKS_PER_BEAT;
 }
 
 }  // namespace midisketch

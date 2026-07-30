@@ -33,18 +33,19 @@ class ICollisionDetector : public IChordLookup {
    * @brief Check if a pitch is safe from collisions.
    *
    * Detects minor 2nd (1 semitone) and major 7th (11 semitones) clashes.
-   * On weak beats (is_weak_beat=true), major 2nd (2 semitones) is allowed
-   * as a passing tone.
+   * Brief passing tones use the canonical duration-aware policy. Callers may
+   * explicitly allow an accented resolving non-chord tone.
    *
    * @param pitch MIDI pitch to check
    * @param start Start tick
    * @param duration Duration in ticks
    * @param exclude Exclude notes from this track when checking
-   * @param is_weak_beat If true, allow major 2nd as passing tone (default: false)
+   * @param allow_accented_nct Allow a prepared/resolving accented stepwise NCT
    * @return true if pitch doesn't clash with other tracks
    */
   virtual bool isConsonantWithOtherTracks(uint8_t pitch, Tick start, Tick duration,
-                                          TrackRole exclude, bool is_weak_beat = false) const = 0;
+                                          TrackRole exclude,
+                                          bool allow_accented_nct = false) const = 0;
 
   /**
    * @brief Get detailed collision information for a pitch.
@@ -65,20 +66,6 @@ class ICollisionDetector : public IChordLookup {
     info.has_collision = !isConsonantWithOtherTracks(pitch, start, duration, exclude);
     return info;
   }
-
-  /**
-   * @brief Check for low register collision with bass.
-   *
-   * Uses stricter thresholds below C4 (intervals sound muddy in low register).
-   *
-   * @param pitch MIDI pitch to check
-   * @param start Start tick
-   * @param duration Duration in ticks
-   * @param threshold Semitone threshold for collision (default: 3)
-   * @return true if collision detected (pitch is unsafe)
-   */
-  virtual bool hasBassCollision(uint8_t pitch, Tick start, Tick duration,
-                                int threshold = 3) const = 0;
 
   /**
    * @brief Get the maximum safe end tick for extending a note without creating clashes.

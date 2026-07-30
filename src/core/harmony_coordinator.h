@@ -38,7 +38,7 @@ class HarmonyCoordinator : public IHarmonyCoordinator {
 
   int8_t getChordDegreeAt(Tick tick) const override;
 
-  std::vector<int> getChordTonesAt(Tick tick) const override;
+  ChordTones getChordTonesAt(Tick tick) const override;
 
   ChordExtension getChordExtensionAt(Tick tick) const override;
 
@@ -62,8 +62,6 @@ class HarmonyCoordinator : public IHarmonyCoordinator {
 
   void clearNotesForTrack(TrackRole track) override;
 
-  bool hasBassCollision(uint8_t pitch, Tick start, Tick duration, int threshold = 3) const override;
-
   std::vector<int> getPitchClassesFromTrackAt(Tick tick, TrackRole role) const override;
 
   std::vector<int> getPitchClassesFromTrackInRange(Tick start, Tick end,
@@ -72,6 +70,9 @@ class HarmonyCoordinator : public IHarmonyCoordinator {
   void registerSecondaryDominant(Tick start, Tick end, int8_t degree) override;
 
   void registerChordExtension(Tick start, Tick end, ChordExtension extension) override;
+
+  void registerChordReplacement(Tick start, Tick end, int8_t degree,
+                                ChordExtension extension) override;
 
   bool isSecondaryDominantAt(Tick tick) const override;
 

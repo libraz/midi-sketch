@@ -13,6 +13,7 @@ void Song::clearAll() {
   }
   motif_pattern_.clear();
   phrase_boundaries_.clear();
+  tempo_map_.clear();
 }
 
 void Song::setArrangement(const Arrangement& arrangement) { arrangement_ = arrangement; }

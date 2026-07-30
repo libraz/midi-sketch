@@ -10,11 +10,40 @@
 #include "core/rng_util.h"
 #include "core/swing_quantize.h"
 #include "core/timing_constants.h"
+#include "track/drums.h"
 #include "track/drums/drum_constants.h"
 #include "track/drums/ghost_notes.h"
 
 namespace midisketch {
 namespace drums {
+
+float getEffectiveDrumSwing(DrumGrooveFeel groove, float swing_amount) {
+  if (groove == DrumGrooveFeel::Straight) {
+    return 0.0f;
+  }
+  if (groove == DrumGrooveFeel::Shuffle) {
+    return std::min(1.0f, swing_amount * 1.5f);
+  }
+  return swing_amount;
+}
+
+DrumGrooveFeel resolveSectionDrumGroove(Mood mood, GenerationParadigm paradigm,
+                                        float section_swing) {
+  DrumGrooveFeel groove = getMoodDrumGrooveFeel(mood);
+  if (paradigm == GenerationParadigm::RhythmSync && groove == DrumGrooveFeel::Straight &&
+      section_swing > 0.0f) {
+    return DrumGrooveFeel::Swing;
+  }
+  return groove;
+}
+
+Tick quantizeDrumSwing(Tick tick, DrumGrooveFeel groove, float swing_amount) {
+  float actual_swing = getEffectiveDrumSwing(groove, swing_amount);
+  if (actual_swing <= 0.0f) {
+    return tick;
+  }
+  return quantizeToSwingGrid(tick, actual_swing, SwingGridResolution::Sixteenth);
+}
 
 namespace {
 
@@ -27,90 +56,13 @@ uint8_t getTimekeepingInstrumentLocal(SectionType section, DrumRole role, bool u
   return getDrumRoleHiHatInstrument(role, use_ride);
 }
 
-float getEffectiveDrumSwing(DrumGrooveFeel groove, float swing_amount) {
-  if (groove == DrumGrooveFeel::Straight) {
-    return 0.0f;
-  }
-  if (groove == DrumGrooveFeel::Shuffle) {
-    return std::min(1.0f, swing_amount * 1.5f);
-  }
-  return swing_amount;
-}
-
-Tick quantizeDrumSwing(Tick tick, DrumGrooveFeel groove, float swing_amount) {
-  float actual_swing = getEffectiveDrumSwing(groove, swing_amount);
-  if (actual_swing <= 0.0f) {
-    return tick;
-  }
-  return quantizeToSwingGrid(tick, actual_swing, SwingGridResolution::Sixteenth);
-}
-
 uint8_t getBackbeatSnareVelocity(uint8_t base_velocity) {
   return static_cast<uint8_t>(std::min(127, static_cast<int>(base_velocity) + 16));
 }
 
 }  // namespace
 
-float getHiHatSwingFactor(Mood mood) {
-  switch (mood) {
-    case Mood::CityPop:
-    case Mood::RnBNeoSoul:
-    case Mood::Lofi:
-      return 0.7f;
-    case Mood::IdolPop:
-    case Mood::AnimeHighEnergy:
-      return 0.3f;
-    case Mood::Ballad:
-    case Mood::Sentimental:
-      return 0.4f;
-    case Mood::LatinPop:
-      return 0.35f;
-    case Mood::Trap:
-      return 0.0f;
-    default:
-      return 0.5f;
-  }
-}
-
-Tick applyTimeFeel(Tick base_tick, TimeFeel feel, uint16_t bpm) {
-  if (feel == TimeFeel::OnBeat) {
-    return base_tick;
-  }
-  int offset_ticks = 0;
-  switch (feel) {
-    case TimeFeel::LaidBack:
-      offset_ticks = static_cast<int>((10 * bpm) / 125);
-      break;
-    case TimeFeel::Pushed:
-      offset_ticks = -static_cast<int>((7 * bpm) / 125);
-      break;
-    case TimeFeel::Triplet:
-      return base_tick;
-    default:
-      break;
-  }
-  if (offset_ticks < 0 && static_cast<Tick>(-offset_ticks) > base_tick) {
-    return 0;
-  }
-  return base_tick + offset_ticks;
-}
-
-TimeFeel getMoodTimeFeel(Mood mood) {
-  switch (mood) {
-    case Mood::Ballad:
-    case Mood::Chill:
-    case Mood::Sentimental:
-    case Mood::CityPop:
-      return TimeFeel::LaidBack;
-    case Mood::EnergeticDance:
-    case Mood::AnimeHighEnergy:
-    case Mood::ElectroPop:
-    case Mood::FutureBass:
-      return TimeFeel::Pushed;
-    default:
-      return TimeFeel::OnBeat;
-  }
-}
+float getHiHatSwingFactor(Mood mood) { return ::midisketch::getHiHatSwingFactor(mood); }
 
 void generateKickForBeat(MidiTrack& track, const BeatContext& beat_ctx,
                          const KickBeatParams& params) {
@@ -150,7 +102,7 @@ void generateKickForBeat(MidiTrack& track, const BeatContext& beat_ctx,
   }
 
   if (play_kick_on) {
-    addKickWithHumanize(track, beat_ctx.beat_tick, EIGHTH, beat_ctx.velocity, beat_ctx.rng,
+    addKickWithHumanize(track, params.adjusted_beat_tick, EIGHTH, beat_ctx.velocity, beat_ctx.rng,
                         KICK_HUMANIZE_AMOUNT, params.humanize_timing);
   }
   if (play_kick_and) {
@@ -197,8 +149,6 @@ void generateSnareForBeat(MidiTrack& track, const BeatContext& beat_ctx,
 
 void generateGhostNotesForBeat(MidiTrack& track, const BeatContext& beat_ctx,
                                const GhostBeatParams& params) {
-  if (beat_ctx.beat != 0 && beat_ctx.beat != 2) return;
-
   auto ghost_positions = selectGhostPositions(beat_ctx.mood, beat_ctx.rng);
   float ghost_prob =
       getGhostDensity(beat_ctx.mood, beat_ctx.section_type, params.backing_density, beat_ctx.bpm);
@@ -359,7 +309,7 @@ void generateHiHatForBeat(MidiTrack& track, const BeatContext& beat_ctx,
 
         if (sixteenth == 1 || sixteenth == 3) {
           float actual_swing = getEffectiveDrumSwing(params.groove, params.swing_amount);
-          float swing_factor = getHiHatSwingFactor(beat_ctx.mood);
+          float swing_factor = drums::getHiHatSwingFactor(beat_ctx.mood);
           actual_swing *= swing_factor;
           hh_tick = quantizeToSwingGrid(hh_tick, actual_swing, SwingGridResolution::Sixteenth);
         }

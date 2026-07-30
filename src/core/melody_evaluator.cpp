@@ -6,7 +6,9 @@
 #include "core/melody_evaluator.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
+#include <tuple>
 #include <unordered_map>
 
 #include "core/i_harmony_context.h"
@@ -115,7 +117,7 @@ float MelodyEvaluator::calcChordToneRatio(const std::vector<NoteEvent>& notes,
       ++strong_beat_notes;
 
       // Check if note is a chord tone
-      std::vector<int> chord_tones = harmony.getChordTonesAt(note.start_tick);
+      ChordTones chord_tones = harmony.getChordTonesAt(note.start_tick);
       int pitch_class = getPitchClass(note.note);
 
       for (int tone : chord_tones) {
@@ -703,23 +705,15 @@ float MelodyEvaluator::calcPhraseCohesionBonus(const std::vector<NoteEvent>& not
   constexpr Tick kQuantize = TICKS_PER_BEAT / 2;  // 8th note
   constexpr Tick kBeatQuantize = TICKS_PER_BEAT;
 
-  // Create rhythm signature: (quantized_duration, beat_offset)
-  std::vector<std::pair<int, int>> rhythm_patterns;
-  rhythm_patterns.reserve(notes.size());
+  // The signature domain is fixed: 8 duration buckets × 4 beat offsets.
+  // Count directly instead of comparing every note pair.
+  std::array<int, 8 * 4> rhythm_counts{};
+  int max_pattern_count = 0;
   for (const auto& note : notes) {
     int dur_idx = static_cast<int>(std::min(note.duration / kQuantize, static_cast<Tick>(7)));
     int beat_offset = static_cast<int>((note.start_tick % kBeatQuantize) /
                                        (kBeatQuantize / 4));  // 0-3 within beat
-    rhythm_patterns.push_back({dur_idx, beat_offset});
-  }
-
-  // Count most frequent pattern
-  int max_pattern_count = 0;
-  for (size_t i = 0; i < rhythm_patterns.size(); ++i) {
-    int count = 0;
-    for (size_t j = 0; j < rhythm_patterns.size(); ++j) {
-      if (rhythm_patterns[i] == rhythm_patterns[j]) count++;
-    }
+    const int count = ++rhythm_counts[dur_idx * 4 + beat_offset];
     max_pattern_count = std::max(max_pattern_count, count);
   }
   rhythm_score = static_cast<float>(max_pattern_count) / static_cast<float>(notes.size());
@@ -733,6 +727,10 @@ float MelodyEvaluator::calcPhraseCohesionBonus(const std::vector<NoteEvent>& not
 
     bool operator==(const Cell& other) const {
       return int1 == other.int1 && int2 == other.int2 && dur1 == other.dur1 && dur2 == other.dur2;
+    }
+    bool operator<(const Cell& other) const {
+      return std::tie(int1, int2, dur1, dur2) <
+             std::tie(other.int1, other.int2, other.dur1, other.dur2);
     }
   };
 
@@ -748,12 +746,18 @@ float MelodyEvaluator::calcPhraseCohesionBonus(const std::vector<NoteEvent>& not
     cells.push_back(c);
   }
 
-  // Find most frequent 3-gram cell
+  // Find the most frequent 3-gram cell in one sort and one run scan.
   int max_cell_count = 0;
-  for (size_t i = 0; i < cells.size(); ++i) {
-    int count = 0;
-    for (size_t j = 0; j < cells.size(); ++j) {
-      if (cells[i] == cells[j]) count++;
+  if (!cells.empty()) {
+    std::sort(cells.begin(), cells.end());
+    int count = 1;
+    for (size_t idx = 1; idx < cells.size(); ++idx) {
+      if (cells[idx] == cells[idx - 1]) {
+        ++count;
+      } else {
+        max_cell_count = std::max(max_cell_count, count);
+        count = 1;
+      }
     }
     max_cell_count = std::max(max_cell_count, count);
   }

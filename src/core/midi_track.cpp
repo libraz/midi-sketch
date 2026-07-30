@@ -11,6 +11,8 @@
 
 namespace midisketch {
 
+MidiTrack::MidiTrack() { notes_.reserve(kInitialNoteCapacity); }
+
 void MidiTrack::addNote(const NoteEvent& event) { notes_.push_back(event); }
 
 void MidiTrack::addText(Tick tick, const std::string& text) { textEvents_.push_back({tick, text}); }
@@ -166,21 +168,56 @@ std::pair<uint8_t, uint8_t> MidiTrack::analyzeRange() const {
 std::vector<MidiEvent> MidiTrack::toMidiEvents(uint8_t channel) const {
   std::vector<MidiEvent> events;
 
-  // Convert NoteEvents to note-on/off MidiEvents
+  struct MergedNote {
+    Tick start;
+    Tick end;
+    uint8_t pitch;
+    uint8_t velocity;
+  };
+  std::vector<MergedNote> merged_notes;
+  merged_notes.reserve(notes_.size());
   for (const auto& note : notes_) {
-    // Note on: status = 0x90 | channel
-    events.push_back(
-        {note.start_tick, static_cast<uint8_t>(0x90 | channel), note.note, note.velocity});
-
-    // Note off: status = 0x80 | channel
-    events.push_back(
-        {note.start_tick + note.duration, static_cast<uint8_t>(0x80 | channel), note.note, 0});
+    merged_notes.push_back(
+        {note.start_tick, note.start_tick + note.duration, note.note, note.velocity});
   }
 
-  // Sort by tick time. stable_sort keeps the original order for simultaneous
-  // events so the byte-level output is deterministic across platforms.
-  std::stable_sort(events.begin(), events.end(),
-                   [](const MidiEvent& a, const MidiEvent& b) { return a.tick < b.tick; });
+  std::stable_sort(merged_notes.begin(), merged_notes.end(),
+                   [](const MergedNote& a, const MergedNote& b) {
+                     if (a.pitch != b.pitch) return a.pitch < b.pitch;
+                     return a.start < b.start;
+                   });
+
+  std::vector<MergedNote> normalized_notes;
+  normalized_notes.reserve(merged_notes.size());
+  for (const auto& note : merged_notes) {
+    if (!normalized_notes.empty() && normalized_notes.back().pitch == note.pitch &&
+        note.start < normalized_notes.back().end) {
+      normalized_notes.back().end = std::max(normalized_notes.back().end, note.end);
+      normalized_notes.back().velocity = std::max(normalized_notes.back().velocity, note.velocity);
+    } else {
+      normalized_notes.push_back(note);
+    }
+  }
+
+  // Convert normalized NoteEvents to note-on/off MidiEvents. MIDI 1.0 cannot
+  // represent overlapping notes of the same channel and pitch: either note-off
+  // would terminate both voices. Their union is the audible, stable result.
+  for (const auto& note : normalized_notes) {
+    // Note on: status = 0x90 | channel
+    events.push_back({note.start, static_cast<uint8_t>(0x90 | channel), note.pitch, note.velocity});
+
+    // Note off: status = 0x80 | channel
+    events.push_back({note.end, static_cast<uint8_t>(0x80 | channel), note.pitch, 0});
+  }
+
+  // Sort by tick time, closing notes before starting replacements at the same tick.
+  // stable_sort keeps the original order for same-time, same-type events deterministic.
+  std::stable_sort(events.begin(), events.end(), [](const MidiEvent& a, const MidiEvent& b) {
+    if (a.tick != b.tick) return a.tick < b.tick;
+    const bool a_is_note_off = (a.status & 0xF0) == 0x80;
+    const bool b_is_note_off = (b.status & 0xF0) == 0x80;
+    return a_is_note_off && !b_is_note_off;
+  });
 
   return events;
 }

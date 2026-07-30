@@ -103,6 +103,11 @@ Tick getBreathDuration(SectionType section, Mood mood, float phrase_density,
   return std::min(result, TICK_QUARTER);
 }
 
+Tick getPlannedBreathDuration(SectionType section, Mood mood, VocalStylePreset vocal_style,
+                              uint16_t bpm) {
+  return getBreathDuration(section, mood, 0.0f, 0, nullptr, vocal_style, bpm);
+}
+
 Tick getRhythmUnit(RhythmGrid grid, bool is_eighth) {
   switch (grid) {
     case RhythmGrid::Ternary:
@@ -120,7 +125,7 @@ int getBassRootPitchClass(int8_t chord_degree) {
   return DEGREE_TO_ROOT[normalized];
 }
 
-bool isAvoidNoteWithChord(int pitch_pc, const std::vector<int>& chord_tones, int root_pc) {
+bool isAvoidNoteWithChord(int pitch_pc, const ChordTones& chord_tones, int root_pc) {
   for (int ct : chord_tones) {
     int interval = std::abs(pitch_pc - ct);
     if (interval > 6) interval = 12 - interval;
@@ -146,7 +151,7 @@ bool isAvoidNoteWithRoot(int pitch_pc, int root_pc) {
 
 int getNearestSafeChordTone(int current_pitch, int8_t chord_degree, int root_pc, uint8_t vocal_low,
                             uint8_t vocal_high) {
-  std::vector<int> chord_tones = getChordTonePitchClasses(chord_degree);
+  const ChordTones chord_tones = getChordTones(chord_degree);
   if (chord_tones.empty()) {
     return std::clamp(current_pitch, static_cast<int>(vocal_low), static_cast<int>(vocal_high));
   }

@@ -93,9 +93,9 @@ int getSectionEnergy(SectionType section) { return getSectionProperties(section)
 // ============================================================================
 
 SectionEnergy getEffectiveSectionEnergy(const Section& section) {
-  // If Blueprint explicitly sets a non-default energy, use it
-  // Default is Medium, so we only use SectionType fallback when Medium
-  if (section.energy != SectionEnergy::Medium) {
+  // Blueprint sections always carry an explicit energy. Only hand-built
+  // legacy sections with no value use the SectionType-derived fallback.
+  if (section.energy != SectionEnergy::Unset) {
     return section.energy;
   }
 
@@ -152,6 +152,9 @@ uint8_t calculateEffectiveVelocity(const Section& section, uint8_t beat, Mood mo
       break;
     case SectionEnergy::Peak:
       energy_mult = velocity::kEnergyPeakMultiplier;
+      break;
+    case SectionEnergy::Unset:
+      energy_mult = velocity::kEnergyMediumMultiplier;
       break;
   }
 
@@ -449,6 +452,22 @@ void applyAllBarVelocityCurves(std::vector<MidiTrack*>& tracks,
     for (MidiTrack* track : tracks) {
       if (track != nullptr) {
         applyBarVelocityCurve(*track, section, prev_section);
+      }
+    }
+  }
+}
+
+void applySectionBaseVelocity(std::vector<MidiTrack*>& tracks,
+                              const std::vector<Section>& sections) {
+  for (const auto& section : sections) {
+    const float multiplier = static_cast<float>(section.base_velocity) / 80.0f;
+    const Tick section_end = section.endTick();
+    for (MidiTrack* track : tracks) {
+      if (track == nullptr) continue;
+      for (auto& note : track->notes()) {
+        if (note.start_tick < section.start_tick || note.start_tick >= section_end) continue;
+        note.velocity =
+            vel::clamp(static_cast<int>(std::lround(note.velocity * multiplier)), 1, 127);
       }
     }
   }

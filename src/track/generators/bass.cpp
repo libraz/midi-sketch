@@ -338,8 +338,7 @@ uint8_t getChromaticApproach(uint8_t target) {
 
 /// Check if pitch class clashes with the actual target triad in melodic approach context.
 /// On V (degree 4) and vii° (degree 6), tritone is acceptable.
-bool clashesWithAnyChordTone(int pitch_class, const std::vector<int>& chord_tones,
-                             int8_t target_degree) {
+bool clashesWithAnyChordTone(int pitch_class, const ChordTones& chord_tones, int8_t target_degree) {
   for (int tone : chord_tones) {
     if (isDissonantIntervalWithContext(pitch_class, tone, target_degree,
                                        /*simultaneous=*/false)) {
@@ -355,7 +354,7 @@ uint8_t getApproachNote(uint8_t current_root, uint8_t next_root, int8_t target_d
   int diff = static_cast<int>(next_root) - static_cast<int>(current_root);
   if (diff == 0) return current_root;
 
-  auto chord_tones = getChordTonePitchClasses(target_degree);
+  const ChordTones chord_tones = getChordTones(target_degree);
   ChordFunction func = getChordFunction(target_degree);
 
   auto candidateForOffset = [&](int offset) -> uint8_t {
@@ -680,8 +679,8 @@ BassPattern selectPatternWithPolicy(BassRiffCache& cache, const Section& section
   }
 
   // Avoid PedalTone when arpeggio is active - they conflict musically.
-  // PedalTone holds tonic while arpeggio plays chord tones, causing SafePitchResolver
-  // to double the bass note instead of playing proper chord tones.
+  // PedalTone holds tonic while arpeggio plays chord tones, producing an
+  // unhelpful doubled bass instead of the intended harmonic movement.
   if (base_pattern == BassPattern::PedalTone && hasTrack(section.track_mask, TrackMask::Arpeggio)) {
     base_pattern = BassPattern::WholeNote;
   }
@@ -732,7 +731,8 @@ void addBassNoteWithTritoneCheck(MidiTrack& track, IHarmonyContext& harmony, Tic
   // against the later-voiced F chord). Fall back to the theoretical chord
   // tones so the tritone test always has a harmonic reference.
   if (chord_pcs.empty()) {
-    chord_pcs = harmony.getChordTonesAt(start);
+    const ChordTones chord_tones = harmony.getChordTonesAt(start);
+    chord_pcs.assign(chord_tones.begin(), chord_tones.end());
   }
 
   // If the pitch forms a tritone with chord, try to find a safe alternative
@@ -1597,6 +1597,12 @@ void applyBassMicrovariation(MidiTrack& track, Tick bar_start, IHarmonyContext& 
 
 }  // namespace
 
+void addBassApproachNoteWithTritoneGuard(MidiTrack& track, IHarmonyContext& harmony, Tick start,
+                                         Tick duration, uint8_t pitch, uint8_t root,
+                                         uint8_t velocity) {
+  addBassNoteWithTritoneCheck(track, harmony, start, duration, pitch, root, velocity);
+}
+
 uint8_t selectBassApproachNote(uint8_t current_root, uint8_t next_root, int8_t target_degree) {
   return getApproachNote(current_root, next_root, target_degree);
 }
@@ -1881,18 +1887,29 @@ uint8_t resolveEffectiveRoot(BassTrackContext& ctx, uint8_t root, int8_t degree,
 bool tryDominantPreparation(BassTrackContext& ctx, Tick bar_start, uint8_t effective_root,
                             SectionType section_type, SectionType next_section_type, int8_t degree,
                             bool is_last_bar, BassPattern pattern) {
-  if (!is_last_bar ||
+  if (!is_last_bar) {
+    return false;
+  }
+
+  // A section-boundary secondary dominant is already in the shared harmonic
+  // timeline.  It takes precedence over the generic V preparation so bass
+  // uses the same root as chord, vocal, and collision analysis.
+  Tick preparation_start = bar_start + TICK_HALF;
+  bool has_planned_secondary = ctx.harmony.isSecondaryDominantAt(preparation_start);
+  if (!has_planned_secondary &&
       !shouldAddDominantPreparation(section_type, next_section_type, degree, ctx.params.mood)) {
     return false;
   }
+
   // Split bar: first half current chord, second half dominant (V)
-  int8_t dominant_degree = 4;  // V
+  int8_t dominant_degree =
+      has_planned_secondary ? ctx.harmony.getChordDegreeAt(preparation_start) : 4;  // V
   uint8_t dominant_root = getBassRoot(dominant_degree);
   bool steady = (ctx.params.paradigm == GenerationParadigm::RhythmSync);
   generateBassHalfBar(ctx.track, bar_start, effective_root, section_type, ctx.params.mood, true,
                       ctx.harmony, pattern, steady);
-  generateBassHalfBar(ctx.track, bar_start + TICK_HALF, dominant_root, section_type,
-                      ctx.params.mood, false, ctx.harmony, pattern, steady);
+  generateBassHalfBar(ctx.track, preparation_start, dominant_root, section_type, ctx.params.mood,
+                      false, ctx.harmony, pattern, steady);
   return true;
 }
 
@@ -2191,8 +2208,8 @@ BassPattern selectPatternWithPolicyForVocal(BassRiffCache& cache, const Section&
   }
 
   // Avoid PedalTone when arpeggio is active in high-energy sections.
-  // PedalTone holds tonic while arpeggio plays chord tones, causing SafePitchResolver
-  // to double the bass note instead of playing proper chord tones.
+  // PedalTone holds tonic while arpeggio plays chord tones, producing an
+  // unhelpful doubled bass instead of the intended harmonic movement.
   // Exception: Bridge sections use PedalTone for tension reduction, even with arpeggio.
   if (pattern == BassPattern::PedalTone && hasTrack(section.track_mask, TrackMask::Arpeggio) &&
       section.type != SectionType::Bridge) {
@@ -2229,7 +2246,7 @@ bool wouldClashWithVocal(int bass_pitch, int vocal_pitch) {
 // Check if a pitch is a chord tone of the given degree.
 // @param include_7th If true, includes 7th as chord tone (jazz style)
 bool isPitchChordTone(int pitch, int8_t degree, bool include_7th = false) {
-  auto chord_tones = getChordTonePitchClasses(degree);
+  const ChordTones chord_tones = getChordTones(degree);
   int pitch_class = ((pitch % 12) + 12) % 12;
   for (int ct : chord_tones) {
     if (ct == pitch_class) return true;

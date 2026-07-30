@@ -65,8 +65,8 @@ CollisionResult checkBgmCollisionDetailed(const Song& song, Tick tick, uint8_t p
 
   // Check tracks in order of typical musical importance
   // Chord and Bass are most important for harmonic foundation
-  const TrackRole tracks_to_check[] = {TrackRole::Chord, TrackRole::Bass, TrackRole::Arpeggio,
-                                       TrackRole::Aux, TrackRole::Motif};
+  const TrackRole tracks_to_check[] = {TrackRole::Chord, TrackRole::Bass,  TrackRole::Arpeggio,
+                                       TrackRole::Aux,   TrackRole::Motif, TrackRole::Guitar};
 
   for (TrackRole role : tracks_to_check) {
     const MidiTrack& track = song.track(role);

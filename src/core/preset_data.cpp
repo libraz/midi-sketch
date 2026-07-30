@@ -1275,7 +1275,7 @@ SongConfig createDefaultSongConfig(uint8_t style_id) {
   const StylePreset& preset = STYLE_PRESETS[style_id];
   config.style_preset_id = style_id;
   config.key = Key::C;
-  config.bpm = preset.tempo_default;
+  config.bpm = 0;   // Auto: Generator resolves blueprint -> mood/style fallback.
   config.seed = 0;  // random
   config.form = preset.default_form;
   config.vocal_attitude = preset.default_vocal_attitude;
@@ -1305,6 +1305,10 @@ SongConfigError validateSongConfig(const SongConfig& config) {
 
   if (config.blueprint_id != 255 && config.blueprint_id >= getProductionBlueprintCount()) {
     return SongConfigError::InvalidBlueprint;
+  }
+
+  if (config.mood >= MOOD_COUNT) {
+    return SongConfigError::InvalidMood;
   }
 
   // Validate form
@@ -1355,16 +1359,19 @@ SongConfigError validateSongConfig(const SongConfig& config) {
   }
 
   // Validate arpeggio pattern (0-7)
-  if (static_cast<uint8_t>(config.arpeggio.pattern) > 7) {
+  if (static_cast<uint8_t>(config.arpeggio.pattern) > 7 &&
+      config.arpeggio.pattern != ArpeggioPattern::Auto) {
     return SongConfigError::InvalidArpeggioPattern;
   }
 
   // Validate arpeggio speed (0-2)
-  if (static_cast<uint8_t>(config.arpeggio.speed) > 2) {
+  if (static_cast<uint8_t>(config.arpeggio.speed) > 2 &&
+      config.arpeggio.speed != ArpeggioSpeed::Auto) {
     return SongConfigError::InvalidArpeggioSpeed;
   }
   if (config.arpeggio.octave_range < 1 || config.arpeggio.octave_range > 3 ||
-      !isProbability(config.arpeggio.gate) || config.arpeggio.base_velocity > 127) {
+      (config.arpeggio.gate != -1.0f && !isProbability(config.arpeggio.gate)) ||
+      config.arpeggio.base_velocity > 127) {
     return SongConfigError::InvalidArpeggioRange;
   }
 
@@ -1440,8 +1447,7 @@ SongConfigError validateSongConfig(const SongConfig& config) {
   if (config.syllabic_sub_rate > 100) {
     return SongConfigError::InvalidMelodyOverride;
   }
-  if (config.humanize_timing < 0.0f || config.humanize_timing > 1.0f ||
-      config.humanize_velocity < 0.0f || config.humanize_velocity > 1.0f) {
+  if (!isProbability(config.humanize_timing) || !isProbability(config.humanize_velocity)) {
     return SongConfigError::InvalidProbability;
   }
   if (config.melody_max_leap > 12 ||
@@ -1617,31 +1623,20 @@ std::optional<StructurePattern> findStructurePatternByName(const std::string& na
 }
 
 std::optional<uint8_t> findChordProgressionByName(const std::string& name) {
-  // Chord progressions are referenced by their pattern string or common name
-  // For now, this is a basic implementation; extend as needed
-  // Common chord progression names
-  static const std::pair<const char*, uint8_t> CHORD_NAMES[] = {
-      {"canonical", 0},                    // common four-chord pop: I-V-vi-IV
-      {"pop", 0},         {"fifties", 1},  // I-vi-IV-V
-      {"doo_wop", 1},     {"jazz", 2},     // ii-V-I-vi
-      {"royal_road", 3},                   // IV-V-iii-vi ("oudou" / royal road progression)
-      {"strong_wish", 4},                  // I-IV-V-I
-      {"four_chord", 5},                   // vi-IV-I-V
-      {"emotional", 6},                    // I-iii-vi-IV
-      {"jpop", 7},                         // IV-iii-vi-V
-      {"tsubasa", 8},                      // I-V-vi-iii-IV
-      {"dramatic", 9},                     // vi-V-IV-V
-      {"minor", 10},                       // i-VII-VI-V
-      {"sad", 11},                         // vi-IV-V-I
-      {"anthem", 12},                      // I-IV-vi-V
-      {"ballad", 13},                      // I-V/VII-vi-IV
-      {"pachelbel", 14},                   // I-V-vi-iii-IV-I-IV-V
-      {"blues", 15},                       // I-I-I-I-IV-IV-I-I-V-IV-I-V
-      {"vamp", 16},                        // i-VII (2 chord)
-      {"hypnotic", 17},                    // vi-V (2 chord)
+  // Canonical names come from the same table as the actual progressions.
+  for (uint8_t id = 0; id < CHORD_COUNT; ++id) {
+    if (strcasecmpEqual(getChordProgressionName(id), name)) {
+      return id;
+    }
+  }
+
+  // Common aliases are kept only when they describe an existing progression exactly.
+  static constexpr std::pair<const char*, uint8_t> CHORD_ALIASES[] = {
+      {"canonical", 0},  {"pop", 0},   {"four_chord", 0}, {"fifties", 1},     {"doo_wop", 1},
+      {"royal_road", 6}, {"jazz", 17}, {"city_pop", 19},  {"neapolitan", 21},
   };
 
-  for (const auto& [chord_name, id] : CHORD_NAMES) {
+  for (const auto& [chord_name, id] : CHORD_ALIASES) {
     if (strcasecmpEqual(chord_name, name)) {
       return id;
     }

@@ -66,15 +66,13 @@ class MelodyDesigner {
     bool enable_embellishment = true;  ///< Enable melodic embellishment (NCT insertion)
     VocalAttitude vocal_attitude = VocalAttitude::Expressive;  ///< Vocal style attitude
     HookIntensity hook_intensity = HookIntensity::Normal;      ///< Hook pattern selection intensity
+    bool hook_repetition = false;  ///< Preserve the configured chorus-hook contour mode
     // BPM for tempo-aware duration and breath calculations
     uint16_t bpm = 120;  ///< Beats per minute
 
     // RhythmSync support
     GenerationParadigm paradigm = GenerationParadigm::Traditional;  ///< Generation paradigm
     const DrumGrid* drum_grid = nullptr;  ///< Drum grid for RhythmSync quantization
-
-    // Behavioral Loop support
-    bool addictive_mode = false;  ///< Enable Behavioral Loop mode (fixed patterns)
 
     // Vocal groove feel for syncopation control
     VocalGrooveFeel vocal_groove = VocalGrooveFeel::Straight;  ///< Affects syncopation weight
@@ -179,7 +177,9 @@ class MelodyDesigner {
    * @return Vector of note events for the section
    */
   std::vector<NoteEvent> generateSection(const MelodyTemplate& tmpl, const SectionContext& ctx,
-                                         const IHarmonyContext& harmony, std::mt19937& rng);
+                                         const IHarmonyContext& harmony, std::mt19937& rng,
+                                         bool commit_hook_repetition = true,
+                                         bool* generated_hook_out = nullptr);
 
   /**
    * @brief Generate melody with evaluation and candidate selection.
@@ -197,6 +197,12 @@ class MelodyDesigner {
       std::mt19937& rng, VocalStylePreset vocal_style = VocalStylePreset::Standard,
       MelodicComplexity melodic_complexity = MelodicComplexity::Standard,
       int candidate_count = 100);
+
+  /// @brief Return the evaluated chorus head currently retained for repetition.
+  std::optional<std::array<uint8_t, 8>> cachedChorusHead() const {
+    if (!hook_cache_.pitches_cached) return std::nullopt;
+    return hook_cache_.sabi_pitches;
+  }
 
   /**
    * @brief Get recommended candidate count for section type.
@@ -231,12 +237,13 @@ class MelodyDesigner {
    * @param direction_inertia Current direction momentum
    * @param harmony Harmony context for chord-aware generation
    * @param rng Random number generator
+   * @param target_note_count Planned mora/note-count target (0 = template-driven)
    * @return Phrase result with notes and updated state
    */
   PhraseResult generateMelodyPhrase(const MelodyTemplate& tmpl, Tick phrase_start,
                                     uint8_t phrase_beats, const SectionContext& ctx, int prev_pitch,
                                     int direction_inertia, const IHarmonyContext& harmony,
-                                    std::mt19937& rng);
+                                    std::mt19937& rng, uint8_t target_note_count = 0);
 
   /**
    * @brief Get cached GlobalMotif (if any).

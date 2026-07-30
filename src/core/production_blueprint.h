@@ -9,8 +9,12 @@
 #ifndef MIDISKETCH_CORE_PRODUCTION_BLUEPRINT_H
 #define MIDISKETCH_CORE_PRODUCTION_BLUEPRINT_H
 
+#include <algorithm>
 #include <cstdint>
+#include <optional>
 #include <random>
+#include <string>
+#include <utility>
 
 #include "core/melody_types.h"
 #include "core/section_types.h"
@@ -272,6 +276,25 @@ struct ProductionBlueprint {
   uint16_t tempo_min = 0;
   uint16_t tempo_max = 0;
 };
+
+/// @brief Clamp an implicit BPM to a blueprint's declared tempo range.
+/// Explicit user BPM values are preserved so callers can intentionally work outside the
+/// recommendation.
+inline std::pair<uint16_t, std::optional<std::string>> clampBlueprintBpm(
+    uint16_t bpm, const ProductionBlueprint& blueprint, bool bpm_explicit) {
+  if (bpm_explicit || blueprint.tempo_min == 0 || blueprint.tempo_max == 0) {
+    return {bpm, std::nullopt};
+  }
+
+  const uint16_t clamped = std::clamp(bpm, blueprint.tempo_min, blueprint.tempo_max);
+  if (clamped == bpm) {
+    return {bpm, std::nullopt};
+  }
+  return {clamped, "BPM adjusted from " + std::to_string(bpm) + " to " + std::to_string(clamped) +
+                       " for " + blueprint.name +
+                       " blueprint (recommended: " + std::to_string(blueprint.tempo_min) + "-" +
+                       std::to_string(blueprint.tempo_max) + ")"};
+}
 
 // ============================================================================
 // API Functions

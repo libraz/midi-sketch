@@ -52,8 +52,9 @@ class KeyboardNoteFactory {
   /// @brief Ensure a voicing is physically playable.
   ///
   /// If the voicing is not playable, uses PianoModel::suggestPlayableVoicing()
-  /// to find an alternative. Also checks transition feasibility from the
-  /// previous voicing.
+  /// to find an alternative. For a transition from the previous voicing, it
+  /// also evaluates octave-equivalent inversions and picks the lowest-cost
+  /// physically feasible candidate.
   ///
   /// @param pitches Desired voicing pitches
   /// @param root_pitch_class Root note pitch class (0-11)

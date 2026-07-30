@@ -13,7 +13,7 @@
 namespace midisketch {
 namespace melody {
 
-int findStepwiseResolutionPitch(int current_pitch, const std::vector<int>& chord_tones,
+int findStepwiseResolutionPitch(int current_pitch, const ChordTones& chord_tones,
                                 int resolution_direction, uint8_t vocal_low, uint8_t vocal_high) {
   int best_pitch = -1;
   int best_interval = 127;
@@ -78,9 +78,9 @@ static float getReversalProbability(int8_t section_type_int, float phrase_positi
 }
 
 int applyLeapReversalRule(int new_pitch, int current_pitch, int prev_interval,
-                          const std::vector<int>& chord_tones, uint8_t vocal_low,
-                          uint8_t vocal_high, bool prefer_stepwise, std::mt19937& rng,
-                          int8_t section_type_int, float phrase_position) {
+                          const ChordTones& chord_tones, uint8_t vocal_low, uint8_t vocal_high,
+                          bool prefer_stepwise, std::mt19937& rng, int8_t section_type_int,
+                          float phrase_position) {
   // Skip if no significant previous leap
   if (std::abs(prev_interval) < kLeapReversalThreshold) {
     return new_pitch;

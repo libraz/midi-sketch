@@ -176,7 +176,7 @@ enum class ExitPattern : uint8_t {
 enum class ChorusDropStyle : uint8_t {
   None = 0,      ///< No drop (continuous)
   Subtle = 1,    ///< Backing tracks only (current behavior)
-  Dramatic = 2,  ///< All tracks including vocal cut 1 beat before Chorus
+  Dramatic = 2,  ///< Backing tracks and drums cut 1 beat before Chorus; vocal continues
   DrumHit = 3,   ///< Dramatic drop + crash cymbal on Chorus entry
 };
 
@@ -293,10 +293,11 @@ struct KickPatternCache {
 
 /// @brief Energy level per section for A/B differentiation beyond TrackMask.
 enum class SectionEnergy : uint8_t {
-  Low = 0,     ///< Quiet (Intro, Interlude)
-  Medium = 1,  ///< Moderate (A melody)
-  High = 2,    ///< High (B melody, Bridge)
-  Peak = 3,    ///< Maximum (Chorus climax)
+  Low = 0,      ///< Quiet (Intro, Interlude)
+  Medium = 1,   ///< Moderate (A melody)
+  High = 2,     ///< High (B melody, Bridge)
+  Peak = 3,     ///< Maximum (Chorus climax)
+  Unset = 0xFF  ///< No explicit section energy; derive from SectionType
 };
 
 // ============================================================================
@@ -489,7 +490,7 @@ struct Section {
 
   /// @brief Section energy level (from ProductionBlueprint).
   /// Controls velocity and density beyond what TrackMask provides.
-  SectionEnergy energy = SectionEnergy::Medium;
+  SectionEnergy energy = SectionEnergy::Unset;
 
   /// @brief Peak level for intensity control (from ProductionBlueprint).
   /// Used for Chorus climax differentiation.
@@ -719,7 +720,7 @@ enum class ModulationTiming : uint8_t {
   None = 0,     ///< No modulation
   LastChorus,   ///< Before last chorus (most common)
   AfterBridge,  ///< After bridge
-  EachChorus,   ///< Every chorus (rare)
+  EachChorus,   ///< Falls back to one final-chorus modulation (Song has one boundary)
   Random        ///< Random based on seed
 };
 
@@ -763,16 +764,16 @@ struct StaggeredEntryConfig {
       // 8+ bar intro: full staged entry
       config.entries[0] = {TrackMask::Drums, 0, 0};
       config.entries[1] = {TrackMask::Bass, 2, 1};
-      config.entries[2] = {TrackMask::Chord, 4, 1};
-      config.entries[3] = {TrackMask::Motif, 4, 1};
-      config.entries[4] = {TrackMask::Arpeggio, 6, 1};
-      config.entry_count = 5;
+      config.entries[2] = {TrackMask::Chord | TrackMask::Motif, 4, 1};
+      config.entries[3] = {TrackMask::Arpeggio | TrackMask::Aux, 6, 1};
+      config.entry_count = 4;
     } else if (intro_bars >= 4) {
       // 4-bar intro: condensed entry
       config.entries[0] = {TrackMask::Drums, 0, 0};
       config.entries[1] = {TrackMask::Bass, 1, 0};
       config.entries[2] = {TrackMask::Chord, 2, 1};
-      config.entry_count = 3;
+      config.entries[3] = {TrackMask::Motif | TrackMask::Arpeggio | TrackMask::Aux, 3, 1};
+      config.entry_count = 4;
     }
     // Shorter intros: no staggered entry (immediate)
 

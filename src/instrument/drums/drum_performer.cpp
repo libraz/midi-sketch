@@ -14,7 +14,7 @@ DrumPerformer::DrumPerformer(const DrumSetup& setup) : setup_(setup) {}
 
 bool DrumPerformer::canPerform(uint8_t pitch, Tick /*start*/, Tick /*duration*/) const {
   // All GM drum notes in range are performable
-  return pitch >= 35 && pitch <= 81;
+  return pitch >= 35 && pitch <= 82;
 }
 
 float DrumPerformer::calculateCost(uint8_t pitch, Tick start, Tick /*duration*/,

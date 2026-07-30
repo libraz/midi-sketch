@@ -204,16 +204,25 @@ EmbellishmentConfig MelodicEmbellisher::getConfigForMood(Mood mood) {
 // Main Embellishment Logic
 // ============================================================================
 
-std::vector<NoteEvent> MelodicEmbellisher::embellish(const std::vector<NoteEvent>& skeleton,
-                                                     const EmbellishmentConfig& config,
-                                                     const IHarmonyContext& harmony, int key_offset,
-                                                     std::mt19937& rng) {
+std::vector<NoteEvent> MelodicEmbellisher::embellish(
+    const std::vector<NoteEvent>& skeleton, const EmbellishmentConfig& config,
+    const IHarmonyContext& harmony, int key_offset, std::mt19937& rng,
+    const std::vector<std::pair<Tick, Tick>>& protected_ranges) {
   if (skeleton.empty()) return {};
 
   std::vector<NoteEvent> result;
   result.reserve(skeleton.size() * 2);  // May add notes
 
   int consecutive_ncts = 0;
+  auto overlaps_protected_range = [&protected_ranges](const NoteEvent& note) {
+    const Tick note_end = note.start_tick + note.duration;
+    for (const auto& [range_start, range_end] : protected_ranges) {
+      if (note.start_tick < range_end && note_end > range_start) {
+        return true;
+      }
+    }
+    return false;
+  };
 
   for (size_t i = 0; i < skeleton.size(); ++i) {
     const NoteEvent& current = skeleton[i];
@@ -268,8 +277,9 @@ std::vector<NoteEvent> MelodicEmbellisher::embellish(const std::vector<NoteEvent
       int interval = std::abs(static_cast<int>(next->note) - static_cast<int>(current.note));
       if (interval >= MIN_PT_INTERVAL) {
         auto pt = tryInsertPassingTone(current, *next, key_offset, config.prefer_pentatonic, rng);
-        if (pt && harmony.isConsonantWithOtherTracks(pt->note, pt->start_tick, pt->duration,
-                                                     TrackRole::Vocal)) {
+        if (pt && !overlaps_protected_range(*pt) &&
+            harmony.isConsonantWithOtherTracks(pt->note, pt->start_tick, pt->duration,
+                                               TrackRole::Vocal)) {
           result.push_back(current);  // Original chord tone
           setEmbellishmentProv(*pt, chord_degree);
           result.push_back(*pt);  // Passing tone
@@ -328,7 +338,7 @@ std::vector<NoteEvent> MelodicEmbellisher::embellish(const std::vector<NoteEvent
       int8_t next_chord_degree = harmony.getChordDegreeAt(next->start_tick);
       if (next_chord_degree != chord_degree) {
         auto ant = tryAddAnticipation(current, *next, next->start_tick, next_chord_degree, rng);
-        if (ant && ant->start_tick > current.start_tick &&
+        if (ant && !overlaps_protected_range(*ant) && ant->start_tick > current.start_tick &&
             harmony.isConsonantWithOtherTracks(ant->note, ant->start_tick, ant->duration,
                                                TrackRole::Vocal)) {
           // Shorten current note (check for underflow)
@@ -673,7 +683,7 @@ std::optional<std::pair<NoteEvent, NoteEvent>> MelodicEmbellisher::tryAddSuspens
   if (resolution.duration < MIN_SPLIT_DURATION * 2) return std::nullopt;
   if (getBeatStrength(resolution.start_tick) != BeatStrength::Strong) return std::nullopt;
 
-  auto previous_chord_tones = getChordTonePitchClasses(previous_chord_degree);
+  const ChordTones previous_chord_tones = getChordTones(previous_chord_degree);
   if (previous_chord_tones.empty()) return std::nullopt;
 
   int sus_pitch = -1;
@@ -734,7 +744,7 @@ std::optional<NoteEvent> MelodicEmbellisher::tryAddAnticipation(const NoteEvent&
   if (ant_start >= next.start_tick) return std::nullopt;
 
   // Get a chord tone from next chord
-  auto chord_tones = getChordTonePitchClasses(next_chord_degree);
+  const ChordTones chord_tones = getChordTones(next_chord_degree);
   if (chord_tones.empty()) return std::nullopt;
 
   // Find chord tone nearest to current pitch

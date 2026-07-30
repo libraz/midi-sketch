@@ -11,9 +11,9 @@
 
 #include <algorithm>
 #include <cstdlib>
-#include <vector>
 
 #include "core/basic_types.h"
+#include "core/chord_utils.h"
 #include "core/section_types.h"
 
 namespace midisketch {
@@ -42,9 +42,9 @@ class IChordLookup {
   /**
    * @brief Get chord tones as pitch classes at a specific tick.
    * @param tick Position in ticks
-   * @return Vector of pitch classes (0-11) that are chord tones
+   * @return Fixed-size chord-tone collection (0-11 pitch classes)
    */
-  virtual std::vector<int> getChordTonesAt(Tick tick) const = 0;
+  virtual ChordTones getChordTonesAt(Tick tick) const = 0;
 
   /**
    * @brief Get the explicit chord extension active at a specific tick.

@@ -3,7 +3,7 @@
  * @brief Note source enum for provenance tracking.
  *
  * Extracted from note_factory.h for independent use by note_creator.h
- * and other modules without requiring the deprecated NoteFactory class.
+ * and other modules without requiring the generic note_creator path.
  */
 
 #ifndef MIDISKETCH_CORE_NOTE_SOURCE_H

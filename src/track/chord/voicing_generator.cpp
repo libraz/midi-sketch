@@ -119,17 +119,16 @@ std::vector<VoicedChord> generateOpenVoicings(uint8_t root, const Chord& chord) 
   std::vector<VoicedChord> voicings;
 
   for (uint8_t base_octave = CHORD_LOW; base_octave <= CHORD_HIGH - 24; base_octave += 12) {
-    // Drop 2 voicing: drop the second voice from top down an octave
-    // Result: bass-low-high pattern with wider spread
     VoicedChord v{};
-    v.count = chord.note_count;
+    v.count = std::min(chord.note_count, static_cast<uint8_t>(v.pitches.size()));
     v.type = VoicingType::Open;
+    v.open_subtype = OpenVoicingType::Drop2;
 
     bool valid = true;
-    std::array<int, 4> raw_pitches{};
+    std::array<int, 5> raw_pitches{};
 
-    // First, calculate close position
-    for (uint8_t i = 0; i < chord.note_count && i < 4; ++i) {
+    // First, calculate every voice in close position.
+    for (uint8_t i = 0; i < v.count; ++i) {
       if (chord.intervals[i] < 0) {
         v.count = i;
         break;
@@ -142,22 +141,25 @@ std::vector<VoicedChord> generateOpenVoicings(uint8_t root, const Chord& chord) 
       }
     }
 
-    // Drop the second voice down an octave for open voicing
-    if (v.count >= 3) {
-      // Original: [bass, 3rd, 5th] -> Open: [bass, 5th, 3rd+8va]
-      int bass = raw_pitches[0];
-      int dropped = raw_pitches[1];  // 3rd drops down
-      int top = raw_pitches[2];      // 5th stays
+    if (v.count == 3) {
+      // Preserve the existing triad spread: [root, 3rd+8va, 5th+8va].
+      v.pitches[0] = static_cast<uint8_t>(raw_pitches[0]);
+      v.pitches[1] = static_cast<uint8_t>(raw_pitches[1] + 12);
+      v.pitches[2] = static_cast<uint8_t>(raw_pitches[2] + 12);
+    } else if (v.count >= 4) {
+      // Drop the second voice from the top by an octave. Copy every voice so
+      // seventh and ninth chords remain genuine open voicings.
+      for (uint8_t i = 0; i < v.count; ++i) {
+        v.pitches[i] = static_cast<uint8_t>(raw_pitches[i]);
+      }
+      v.pitches[v.count - 2] = static_cast<uint8_t>(raw_pitches[v.count - 2] - 12);
+    } else {
+      valid = false;
+    }
 
-      // Reorder: bass, dropped-octave, top
-      v.pitches[0] = static_cast<uint8_t>(bass);
-      v.pitches[1] = static_cast<uint8_t>(dropped + 12);  // Move 3rd up instead
-      v.pitches[2] = static_cast<uint8_t>(top + 12);      // Move 5th up too
-
-      // Sort ascending
+    if (valid) {
       std::sort(v.pitches.begin(), v.pitches.begin() + v.count);
 
-      // Validate range
       for (uint8_t i = 0; i < v.count; ++i) {
         if (v.pitches[i] < CHORD_LOW || v.pitches[i] > CHORD_HIGH) {
           valid = false;

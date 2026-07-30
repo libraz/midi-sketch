@@ -30,7 +30,7 @@ bool isStrongBeat(Tick tick) {
 
 int findBestChordTonePreservingDirection(int target_pitch, int prev_pitch, int8_t chord_degree,
                                          uint8_t vocal_low, uint8_t vocal_high, int max_interval) {
-  std::vector<int> chord_tones = getChordTonePitchClasses(chord_degree);
+  const ChordTones chord_tones = getChordTones(chord_degree);
 
   // Determine intended direction
   bool intended_movement = (target_pitch != prev_pitch);
@@ -91,7 +91,7 @@ int enforceDownbeatChordTone(int pitch, Tick tick, int8_t chord_degree, int prev
     return pitch;
   }
 
-  std::vector<int> chord_tones = getChordTonePitchClasses(chord_degree);
+  const ChordTones chord_tones = getChordTones(chord_degree);
   int pitch_pc = pitch % 12;
 
   // Check if already a chord tone
@@ -190,7 +190,7 @@ int enforceAvoidNoteConstraint(int pitch, int8_t chord_degree, uint8_t vocal_low
   }
 
   int bass_root_pc = getBassRootPitchClass(chord_degree);
-  std::vector<int> chord_tones = getChordTonePitchClasses(chord_degree);
+  const ChordTones chord_tones = getChordTones(chord_degree);
   int pitch_pc = pitch % 12;
 
   if (isAvoidNoteWithChord(pitch_pc, chord_tones, bass_root_pc)) {
@@ -275,7 +275,7 @@ int encourageMovementAfterLongNote(int new_pitch, int prev_pitch, Tick prev_dura
   }
 
   // Fallback: small chord-tone move (minor/major 3rd at most)
-  std::vector<int> chord_tones = getChordTonePitchClasses(chord_degree);
+  const ChordTones chord_tones = getChordTones(chord_degree);
   std::vector<int> move_candidates;
   for (int pc : chord_tones) {
     for (int oct = 4; oct <= 6; ++oct) {

@@ -26,41 +26,6 @@ bool PostProcessor::isStrongBeat(Tick tick) {
           position_in_bar < TICKS_PER_BEAT * 2 + TICKS_PER_BEAT / 4);
 }
 
-void PostProcessor::applyHumanization(std::vector<MidiTrack*>& tracks, const HumanizeParams& params,
-                                      std::mt19937& rng) {
-  // Maximum velocity variation - more expressive dynamics
-  constexpr int MAX_VELOCITY_VARIATION = 12;  // Was 8
-
-  float velocity_scale = params.velocity;
-
-  for (MidiTrack* track : tracks) {
-    auto& notes = track->notes();
-    for (auto& note : notes) {
-      // Velocity humanization: less variation on strong beats
-      // Minimum velocity of 36 ensures non-ghost notes stay above ghost range (25-35)
-      // after humanization. Actual ghost notes (25-35) are intentionally created
-      // by addBassGhostNotes and should remain in that range.
-      float vel_factor = isStrongBeat(note.start_tick) ? 0.5f : 1.0f;
-      int vel_offset = static_cast<int>(
-          rng_util::rollRange(rng, -MAX_VELOCITY_VARIATION, MAX_VELOCITY_VARIATION) *
-          velocity_scale * vel_factor);
-      int new_velocity = static_cast<int>(note.velocity) + vel_offset;
-      // Preserve intentional ghost notes (25-35), but prevent non-ghost notes from
-      // falling into ghost range. Notes originally above 35 should stay above 35.
-      int min_velocity = (note.velocity <= 35) ? 1 : 36;
-#ifdef MIDISKETCH_NOTE_PROVENANCE
-      uint8_t old_vel = note.velocity;
-#endif
-      note.velocity = vel::clamp(new_velocity, min_velocity, 127);
-#ifdef MIDISKETCH_NOTE_PROVENANCE
-      if (note.velocity != old_vel) {
-        note.addTransformStep(TransformStepType::PostProcessVelocity, old_vel, note.velocity, 3, 0);
-      }
-#endif
-    }
-  }
-}
-
 void PostProcessor::fixVocalOverlaps(MidiTrack& vocal_track) {
   auto& vocal_notes = vocal_track.notes();
   if (vocal_notes.size() <= 1) {
@@ -84,6 +49,7 @@ SectionType PostProcessor::getSectionTypeAtTick(Tick tick, const std::vector<Sec
 
 void PostProcessor::applySectionAwareVelocityHumanization(std::vector<MidiTrack*>& tracks,
                                                           const std::vector<Section>& sections,
+                                                          float humanize_velocity,
                                                           std::mt19937& rng) {
   for (MidiTrack* track : tracks) {
     auto& notes = track->notes();
@@ -108,6 +74,8 @@ void PostProcessor::applySectionAwareVelocityHumanization(std::vector<MidiTrack*
           variation_pct = 0.12f;
           break;
       }
+
+      variation_pct = std::min(variation_pct, std::clamp(humanize_velocity, 0.0f, 1.0f));
 
       // Strong beats get half the variation
       float beat_factor = isStrongBeat(note.start_tick) ? 0.5f : 1.0f;

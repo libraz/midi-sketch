@@ -223,19 +223,6 @@ void mergeSamePitchNotes(std::vector<NoteEvent>& notes, Tick max_gap = 120);
 void applySectionEndSustain(std::vector<NoteEvent>& notes, const std::vector<Section>& sections,
                             IHarmonyContext& harmony);
 
-/**
- * @brief Merge same-pitch notes near section ends (last 2 bars) for RhythmSync.
- *
- * RhythmSync normally skips mergeSamePitchNotes() to preserve locked rhythm.
- * This variant only merges near section endings where sustain is desired.
- *
- * @param notes All vocal notes (modified in-place)
- * @param sections Song sections for boundary detection
- * @param max_gap Maximum gap in ticks to merge
- */
-void mergeSamePitchNotesNearSectionEnds(std::vector<NoteEvent>& notes,
-                                        const std::vector<Section>& sections, Tick max_gap);
-
 }  // namespace midisketch
 
 #endif  // MIDISKETCH_TRACK_VOCAL_VOCAL_HELPERS_H

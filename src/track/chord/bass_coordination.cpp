@@ -44,11 +44,17 @@ uint16_t buildBassPitchMask(const MidiTrack* bass_track, Tick bar_start, Tick ba
   if (bass_track == nullptr) return 0;
 
   uint16_t mask = 0;
+  const std::array<Tick, 2> strong_beats = {bar_start, bar_start + 2 * TICKS_PER_BEAT};
   for (const auto& note : bass_track->notes()) {
-    // Include notes that start within the bar or are still sounding at bar start
     Tick note_end = note.start_tick + note.duration;
-    if (note.start_tick < bar_end && note_end > bar_start) {
-      mask |= (1 << (note.note % 12));
+    for (Tick strong_beat : strong_beats) {
+      if (strong_beat >= bar_end) {
+        continue;
+      }
+      if (note.start_tick <= strong_beat && note_end > strong_beat) {
+        mask |= (1 << (note.note % 12));
+        break;
+      }
     }
   }
   return mask;
