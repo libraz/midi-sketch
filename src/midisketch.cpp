@@ -536,15 +536,23 @@ std::string MidiSketch::getEventsJson() const {
   while (current < total_ticks) {
     int8_t degree = harmony.getChordDegreeAt(current);
     bool is_sec_dom = harmony.isSecondaryDominantAt(current);
+    ChordExtension extension = harmony.hasChordExtensionAt(current)
+                                   ? harmony.getChordExtensionAt(current)
+                                   : ChordExtension::None;
     Tick next = harmony.getNextChordEntryTick(current);
     if (next == 0 || next <= current) next = total_ticks;
 
-    // Merge consecutive same-degree non-sec-dom entries
+    // Merge consecutive same-degree non-sec-dom entries. The extension has to
+    // match too: two spans on the same degree can carry different colours, and
+    // merging across that would report one of them and hide the other.
     if (!is_sec_dom) {
       while (next < total_ticks) {
         int8_t next_deg = harmony.getChordDegreeAt(next);
         bool next_sd = harmony.isSecondaryDominantAt(next);
-        if (next_deg != degree || next_sd) break;
+        ChordExtension next_ext = harmony.hasChordExtensionAt(next)
+                                      ? harmony.getChordExtensionAt(next)
+                                      : ChordExtension::None;
+        if (next_deg != degree || next_sd || next_ext != extension) break;
         Tick after = harmony.getNextChordEntryTick(next);
         if (after == 0 || after <= next) {
           next = total_ticks;
@@ -559,6 +567,7 @@ std::string MidiSketch::getEventsJson() const {
         .write("endTick", next)
         .write("degree", static_cast<int>(degree))
         .write("isSecondaryDominant", is_sec_dom)
+        .write("extension", chordExtensionToString(extension))
         .endObject();
     current = next;
   }

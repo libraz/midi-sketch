@@ -413,6 +413,39 @@ enum class ChordExtension : uint8_t {
   Dom9       ///< Dominant 9th (0, 4, 7, 10, 14)
 };
 
+/// @brief Name a chord extension for analysis output.
+///
+/// The colour a chord was planned with is not recoverable from the notes: a
+/// voicing that drops the added tone sounds like the plain triad it was never
+/// meant to be. Reporting the planned extension alongside the degree is what
+/// makes "the harmony asked for this and the notes did not deliver it"
+/// observable from the outside.
+inline const char* chordExtensionToString(ChordExtension extension) {
+  switch (extension) {
+    case ChordExtension::None:
+      return "none";
+    case ChordExtension::Sus2:
+      return "sus2";
+    case ChordExtension::Sus4:
+      return "sus4";
+    case ChordExtension::Maj7:
+      return "maj7";
+    case ChordExtension::Min7:
+      return "min7";
+    case ChordExtension::Dom7:
+      return "dom7";
+    case ChordExtension::Add9:
+      return "add9";
+    case ChordExtension::Maj9:
+      return "maj9";
+    case ChordExtension::Min9:
+      return "min9";
+    case ChordExtension::Dom9:
+      return "dom9";
+  }
+  return "unknown";
+}
+
 /// @brief Vocal density per section.
 enum class VocalDensity : uint8_t {
   None,    ///< No vocals
