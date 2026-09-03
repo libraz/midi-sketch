@@ -101,9 +101,10 @@ enum class TransformStepType : uint8_t {
   PostProcessTiming,    ///< PostProcessor timing modification (param1=offset, param2=reason)
 };
 
-#ifdef MIDISKETCH_NOTE_PROVENANCE
-
 /// @brief Strategy used to resolve a pitch collision.
+///
+/// Declared unconditionally: PitchCandidate and PitchResolutionResult carry it
+/// outside provenance tracking, so it has to exist in every build.
 enum class CollisionAvoidStrategy : uint8_t {
   None = 0,           ///< Pitch was already safe, no resolution needed
   ActualSounding,     ///< Doubled an existing note from another track
@@ -131,6 +132,8 @@ inline const char* collisionAvoidStrategyToString(CollisionAvoidStrategy strateg
   }
   return "unknown";
 }
+
+#ifdef MIDISKETCH_NOTE_PROVENANCE
 
 /// @brief Convert TransformStepType to string for JSON output.
 inline const char* transformStepTypeToString(TransformStepType type) {
@@ -189,40 +192,6 @@ struct TransformStep {
 constexpr size_t kMaxTransformSteps = 8;
 
 #endif  // MIDISKETCH_NOTE_PROVENANCE
-
-/// @brief Strategy used to resolve a pitch collision.
-///
-/// This enum is used outside provenance tracking (e.g., PitchCandidate,
-/// PitchResolutionResult), so it must be available regardless of the
-/// MIDISKETCH_NOTE_PROVENANCE setting.
-#ifndef MIDISKETCH_NOTE_PROVENANCE
-enum class CollisionAvoidStrategy : uint8_t {
-  None = 0,           ///< Pitch was already safe, no resolution needed
-  ActualSounding,     ///< Doubled an existing note from another track
-  ChordTones,         ///< Used theoretical chord tone
-  ConsonantInterval,  ///< Used consonant interval adjustment (+/-3,4,5,7,12,2,1)
-  ExhaustiveSearch,   ///< Found via exhaustive +/-1 to +/-24 search
-  Failed              ///< No safe pitch found, returned original
-};
-
-inline const char* collisionAvoidStrategyToString(CollisionAvoidStrategy strategy) {
-  switch (strategy) {
-    case CollisionAvoidStrategy::None:
-      return "none";
-    case CollisionAvoidStrategy::ActualSounding:
-      return "actual_sounding";
-    case CollisionAvoidStrategy::ChordTones:
-      return "chord_tones";
-    case CollisionAvoidStrategy::ConsonantInterval:
-      return "consonant_interval";
-    case CollisionAvoidStrategy::ExhaustiveSearch:
-      return "exhaustive_search";
-    case CollisionAvoidStrategy::Failed:
-      return "failed";
-  }
-  return "unknown";
-}
-#endif  // !MIDISKETCH_NOTE_PROVENANCE
 
 // Forward declarations for friend classes
 class FrettedNoteFactory;

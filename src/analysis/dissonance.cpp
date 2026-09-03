@@ -328,15 +328,20 @@ std::vector<TimedNote> collectPitchedNotes(const Song& song) {
   return notes;
 }
 
-// Beat strength classification for severity determination.
-enum class BeatStrength {
-  Strong,  // Beat 1 (downbeat) - most important
-  Medium,  // Beat 3 (secondary strong beat)
-  Weak,    // Beats 2, 4 (weak beats)
-  Offbeat  // Subdivisions (e.g., "and" of beats)
+// Where in the bar an event falls, used to grade how audible a clash is.
+//
+// Deliberately not called "beat strength": melodic rules elsewhere use that term
+// for a different partition, one that groups beats 1 and 3 together as strong.
+// Here beat 1 stands alone, because a clash on the downbeat is heard as a
+// mistake in a way the same clash on beat 3 is not.
+enum class MetricPosition {
+  Downbeat,       // Beat 1 - most exposed
+  SecondaryBeat,  // Beat 3
+  WeakBeat,       // Beats 2 and 4
+  Offbeat         // Subdivisions (e.g., the "and" of a beat)
 };
 
-BeatStrength getBeatStrength(Tick tick) {
+MetricPosition getMetricPosition(Tick tick) {
   Tick beat_pos = positionInBar(tick);
   Tick within_beat = beat_pos % TICKS_PER_BEAT;
 
@@ -344,19 +349,19 @@ BeatStrength getBeatStrength(Tick tick) {
   bool on_beat = within_beat < (TICKS_PER_BEAT / 4);  // Within first 16th
 
   if (!on_beat) {
-    return BeatStrength::Offbeat;
+    return MetricPosition::Offbeat;
   }
 
   // Beat 1: 0
   if (beat_pos < TICKS_PER_BEAT) {
-    return BeatStrength::Strong;
+    return MetricPosition::Downbeat;
   }
   // Beat 3: 960
   if (beat_pos >= TICKS_PER_BEAT * 2 && beat_pos < TICKS_PER_BEAT * 3) {
-    return BeatStrength::Medium;
+    return MetricPosition::SecondaryBeat;
   }
   // Beats 2 and 4
-  return BeatStrength::Weak;
+  return MetricPosition::WeakBeat;
 }
 
 // Section position context for severity adjustment.
@@ -395,10 +400,10 @@ SectionPosition getSectionPosition(Tick tick, const Song& song) {
   return SectionPosition::Normal;
 }
 
-// Adjust severity based on musical context (beat strength and section position).
+// Adjust severity based on musical context (metric position and section position).
 // This makes dissonance at section starts (like B section) more severe.
 DissonanceSeverity adjustSeverityForContext(DissonanceSeverity base_severity,
-                                            BeatStrength beat_strength,
+                                            MetricPosition metric_position,
                                             SectionPosition section_pos) {
   // Section start + beat 1 = most critical position
   // Any dissonance here should be elevated
@@ -414,7 +419,7 @@ DissonanceSeverity adjustSeverityForContext(DissonanceSeverity base_severity,
   }
 
   // Beat 1 of any bar is important
-  if (beat_strength == BeatStrength::Strong) {
+  if (metric_position == MetricPosition::Downbeat) {
     // Elevate Low -> Medium on strong beats
     if (base_severity == DissonanceSeverity::Low) {
       return DissonanceSeverity::Medium;
@@ -424,7 +429,7 @@ DissonanceSeverity adjustSeverityForContext(DissonanceSeverity base_severity,
 
   // Weak beats and offbeats: reduce severity slightly
   // Tritones on offbeats are often acceptable as passing tones
-  if (beat_strength == BeatStrength::Offbeat || beat_strength == BeatStrength::Weak) {
+  if (metric_position == MetricPosition::Offbeat || metric_position == MetricPosition::WeakBeat) {
     // Keep Low as Low, but don't reduce further
     return base_severity;
   }
@@ -499,7 +504,7 @@ DissonanceNoteInfo createNoteInfo(const TimedNote& note) {
 bool isPreparedResolvingSuspension(const std::vector<TimedNote>& notes, size_t note_index) {
   const auto& current = notes[note_index];
   if (isSustainedHarmonicRole(current.track) ||
-      getBeatStrength(current.start) != BeatStrength::Strong) {
+      getMetricPosition(current.start) != MetricPosition::Downbeat) {
     return false;
   }
 
@@ -617,10 +622,10 @@ void detectSimultaneousClashes(const std::vector<TimedNote>& all_notes, const De
         Tick overlap_end = std::min(note_a.end, note_b.end);
         Tick overlap_duration = overlap_end - overlap_start;
 
-        BeatStrength beat_strength = getBeatStrength(overlap_start);
+        MetricPosition metric_position = getMetricPosition(overlap_start);
         SectionPosition section_pos = getSectionPosition(overlap_start, ctx.song);
         DissonanceSeverity severity =
-            adjustSeverityForContext(base_severity, beat_strength, section_pos);
+            adjustSeverityForContext(base_severity, metric_position, section_pos);
 
         reported_clashes.insert(clash_key);
 
@@ -681,15 +686,15 @@ void detectNonChordTonesInTrack(const MidiTrack& track, TrackRole role, bool is_
     if (isPitchClassChordTone(pitch_class, note.start_tick, ctx.chord_lookup)) continue;
     if (isAvailableTension(pitch_class, degree)) continue;
 
-    BeatStrength beat_strength = getBeatStrength(note.start_tick);
+    MetricPosition metric_position = getMetricPosition(note.start_tick);
     DissonanceSeverity severity;
 
     if (is_bass) {
-      switch (beat_strength) {
-        case BeatStrength::Strong:
+      switch (metric_position) {
+        case MetricPosition::Downbeat:
           severity = DissonanceSeverity::High;
           break;
-        case BeatStrength::Medium:
+        case MetricPosition::SecondaryBeat:
           severity = DissonanceSeverity::Medium;
           break;
         default:
@@ -697,8 +702,8 @@ void detectNonChordTonesInTrack(const MidiTrack& track, TrackRole role, bool is_
           break;
       }
     } else {
-      switch (beat_strength) {
-        case BeatStrength::Strong:
+      switch (metric_position) {
+        case MetricPosition::Downbeat:
           severity = DissonanceSeverity::Medium;
           break;
         default:
@@ -714,7 +719,8 @@ void detectNonChordTonesInTrack(const MidiTrack& track, TrackRole role, bool is_
       if (interval_semitones == 1 || interval_semitones == 11) {
         severity = DissonanceSeverity::High;
       } else if (interval_semitones == 2 || interval_semitones == 10) {
-        if (beat_strength == BeatStrength::Strong || beat_strength == BeatStrength::Medium) {
+        if (metric_position == MetricPosition::Downbeat ||
+            metric_position == MetricPosition::SecondaryBeat) {
           severity = DissonanceSeverity::High;
         } else {
           severity = DissonanceSeverity::Medium;
@@ -809,14 +815,14 @@ void detectSustainedInTrack(const MidiTrack& track, TrackRole role,
       int8_t new_degree = change.degree;
       if (!isPitchClassChordTone(pitch_class, change.tick, ctx.chord_lookup) &&
           !isAvailableTension(pitch_class, new_degree)) {
-        BeatStrength beat_strength = getBeatStrength(change.tick);
+        MetricPosition metric_position = getMetricPosition(change.tick);
         DissonanceSeverity severity;
         if (role == TrackRole::Vocal) {
-          severity = (beat_strength == BeatStrength::Strong) ? DissonanceSeverity::High
-                                                             : DissonanceSeverity::Medium;
+          severity = (metric_position == MetricPosition::Downbeat) ? DissonanceSeverity::High
+                                                                   : DissonanceSeverity::Medium;
         } else {
-          severity = (beat_strength == BeatStrength::Strong) ? DissonanceSeverity::Medium
-                                                             : DissonanceSeverity::Low;
+          severity = (metric_position == MetricPosition::Downbeat) ? DissonanceSeverity::Medium
+                                                                   : DissonanceSeverity::Low;
         }
 
         uint32_t bar = tickToBar(change.tick);
@@ -898,13 +904,13 @@ void detectNonDiatonicInTrack(const MidiTrack& track, TrackRole role, Key key,
     if (is_borrowed_chord_tone) continue;
     if (isSecondaryDominantTone(pitch_class)) continue;
 
-    BeatStrength beat_strength = getBeatStrength(note.start_tick);
+    MetricPosition metric_position = getMetricPosition(note.start_tick);
     DissonanceSeverity severity;
-    switch (beat_strength) {
-      case BeatStrength::Strong:
+    switch (metric_position) {
+      case MetricPosition::Downbeat:
         severity = DissonanceSeverity::High;
         break;
-      case BeatStrength::Medium:
+      case MetricPosition::SecondaryBeat:
         severity = DissonanceSeverity::Medium;
         break;
       default:
@@ -1127,21 +1133,21 @@ DissonanceReport analyzeDissonanceFromParsedMidi(const ParsedMidi& midi) {
         float beat = 1.0f + static_cast<float>(overlap_start % ticks_per_bar) /
                                 static_cast<float>(midi.division);
 
-        // Apply beat strength adjustment (limited context without song structure)
+        // Apply metric-position adjustment (limited context without song structure)
         Tick beat_pos = overlap_start % ticks_per_bar;
-        BeatStrength beat_strength;
+        MetricPosition metric_position;
         if (beat_pos < static_cast<Tick>(midi.division)) {
-          beat_strength = BeatStrength::Strong;  // Beat 1
+          metric_position = MetricPosition::Downbeat;  // Beat 1
         } else if (beat_pos >= static_cast<Tick>(midi.division * 2) &&
                    beat_pos < static_cast<Tick>(midi.division * 3)) {
-          beat_strength = BeatStrength::Medium;  // Beat 3
+          metric_position = MetricPosition::SecondaryBeat;  // Beat 3
         } else {
-          beat_strength = BeatStrength::Weak;  // Beats 2 and 4
+          metric_position = MetricPosition::WeakBeat;  // Beats 2 and 4
         }
 
         // Adjust severity for strong beats (section context not available for external MIDI)
         DissonanceSeverity severity = base_severity;
-        if (beat_strength == BeatStrength::Strong) {
+        if (metric_position == MetricPosition::Downbeat) {
           if (base_severity == DissonanceSeverity::Low) {
             severity = DissonanceSeverity::Medium;
           }
@@ -1149,8 +1155,8 @@ DissonanceReport analyzeDissonanceFromParsedMidi(const ParsedMidi& midi) {
 
         // Elevate melodic-chord major 2nd clashes on strong/medium beats to High
         // These sound particularly harsh and are almost always unintentional
-        if (is_melodic_chord_clash &&
-            (beat_strength == BeatStrength::Strong || beat_strength == BeatStrength::Medium)) {
+        if (is_melodic_chord_clash && (metric_position == MetricPosition::Downbeat ||
+                                       metric_position == MetricPosition::SecondaryBeat)) {
           severity = DissonanceSeverity::High;
         }
 
