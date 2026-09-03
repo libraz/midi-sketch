@@ -26,6 +26,7 @@
 #include "core/production_blueprint.h"
 #include "core/rng_util.h"
 #include "core/timing_constants.h"
+#include "core/track_pitch_editor.h"
 #include "core/velocity.h"
 #include "core/velocity_helper.h"
 #include "instrument/fretted/bass_model.h"
@@ -43,6 +44,14 @@ namespace midisketch {
 // Forward declaration for density adjustment with collision checking
 void applyDensityAdjustmentWithHarmony(MidiTrack& track, const Section& section,
                                        const IHarmonyContext* harmony);
+
+/// @brief Motion adjustment against an explicit chord-tone set.
+///
+/// Which pitches count as chord tones comes from the caller, so a bar carrying
+/// a registered secondary dominant is voiced against that chord instead of the
+/// diatonic triad that shares its degree.
+uint8_t adjustPitchForMotion(uint8_t base_pitch, MotionType motion, int8_t vocal_direction,
+                             uint8_t vocal_pitch, const ChordTones& chord_tones);
 
 namespace {
 
@@ -350,11 +359,14 @@ bool clashesWithAnyChordTone(int pitch_class, const ChordTones& chord_tones, int
 
 /// Get approach note with chord function awareness.
 /// Uses ChordFunction from pitch_utils.h which properly handles borrowed chords (e.g., bVII).
-uint8_t getApproachNote(uint8_t current_root, uint8_t next_root, int8_t target_degree) {
+/// @param chord_tones Pitch classes the target chord actually sounds. A degree
+///        alone describes a diatonic triad, which is the wrong target for a
+///        secondary dominant: its third is raised and its seventh is lowered.
+uint8_t getApproachNote(uint8_t current_root, uint8_t next_root, int8_t target_degree,
+                        const ChordTones& chord_tones) {
   int diff = static_cast<int>(next_root) - static_cast<int>(current_root);
   if (diff == 0) return current_root;
 
-  const ChordTones chord_tones = getChordTones(target_degree);
   ChordFunction func = getChordFunction(target_degree);
 
   auto candidateForOffset = [&](int offset) -> uint8_t {
@@ -689,12 +701,92 @@ BassPattern selectPatternWithPolicy(BassRiffCache& cache, const Section& section
   return applyPeakLevelPromotion(base_pattern, section.peak_level);
 }
 
+/// Two octaves: below this, a shared pitch class reads as the bass doubling the
+/// vocal rather than supporting it, and the low end goes hollow.
+constexpr int kMinVocalOctaveSeparation = 24;
+
+/// @brief Drop a bass pitch that doubles a vocal pitch class too closely.
+///
+/// The vocal is scanned over the whole span the bass note sounds, not sampled
+/// at its onset: a vocal note that enters halfway through the bass note doubles
+/// it just as audibly as one that starts with it. The lowest vocal pitch in the
+/// span that could carry the bass note's pitch class is the one to clear, so a
+/// vocal note two octaves up does not push the bass down for nothing.
+uint8_t separateFromVocalDoubling(const IHarmonyContext& harmony, uint8_t pitch, Tick start,
+                                  Tick duration) {
+  Tick end = start + duration;
+  uint8_t vocal_low = harmony.getLowestPitchForTrackInRange(start, end, TrackRole::Vocal);
+  if (vocal_low == 0) {
+    return pitch;  // No vocal sounding across this span
+  }
+  uint8_t vocal_high = harmony.getHighestPitchForTrackInRange(start, end, TrackRole::Vocal);
+
+  int pitch_class = pitch % 12;
+  int nearest_double = static_cast<int>(vocal_low);
+  nearest_double += ((pitch_class - nearest_double) % 12 + 12) % 12;
+  if (nearest_double > static_cast<int>(vocal_high)) {
+    return pitch;  // No vocal note in the span can carry this pitch class
+  }
+  if (nearest_double - static_cast<int>(pitch) >= kMinVocalOctaveSeparation) {
+    return pitch;
+  }
+
+  int lowered = static_cast<int>(pitch) - 12;
+  return (lowered >= BASS_LOW) ? static_cast<uint8_t>(lowered) : pitch;
+}
+
+/// @brief Pull a bass pitch off a clash with the chord sounding at its position.
+///
+/// Approach and passing pitches are chosen against the chord they lead into,
+/// which says nothing about the chord they sound over. That gap is audible
+/// wherever the timeline reharmonizes mid-bar: over a secondary dominant, the
+/// unaltered third of the degree it replaced is a semitone from the raised one
+/// the chord track voices. Chord generation runs after bass, so the collision
+/// registry cannot answer this yet and the theoretical chord tones stand in.
+uint8_t avoidChordClashAtTick(const IHarmonyContext& harmony, uint8_t pitch, Tick start) {
+  const ChordTones tones = harmony.getChordTonesAt(start);
+  if (tones.count == 0) {
+    return pitch;
+  }
+  int8_t degree = harmony.getChordDegreeAt(start);
+  if (!clashesWithAnyChordTone(pitch % 12, tones, degree)) {
+    return pitch;
+  }
+
+  // Nearest pitch of the chord that actually sounds here, searched over the
+  // registered tones rather than the degree's diatonic triad.
+  int best = -1;
+  int best_distance = 128;
+  for (int candidate = BASS_LOW; candidate <= BASS_HIGH; ++candidate) {
+    bool is_chord_tone = false;
+    for (int tone : tones) {
+      if (tone >= 0 && candidate % 12 == tone) is_chord_tone = true;
+    }
+    if (!is_chord_tone) continue;
+    int distance = std::abs(candidate - static_cast<int>(pitch));
+    if (distance < best_distance) {
+      best_distance = distance;
+      best = candidate;
+    }
+  }
+  return (best >= 0) ? static_cast<uint8_t>(best) : pitch;
+}
+
 // Helper to add a bass note with safety check against vocal
 // If the desired pitch clashes, uses harmony context to find safe alternative
 // IMPORTANT: For bass, the result must always be a chord tone to define harmony
 // VOCAL PRIORITY: If all chord tones clash with vocal, skip the note entirely
+// @param hold_through_chord_changes Keep the requested pitch class even where the
+//        chord at that tick clashes with it. A pedal tone is defined by holding
+//        one pitch under changing harmony, so retreating to the local chord is
+//        exactly what it must not do.
 void addBassNotePreferRoot(MidiTrack& track, Tick start, Tick duration, uint8_t pitch,
-                           uint8_t velocity, IHarmonyContext& harmony) {
+                           uint8_t velocity, IHarmonyContext& harmony,
+                           bool hold_through_chord_changes = false) {
+  if (!hold_through_chord_changes) {
+    pitch = avoidChordClashAtTick(harmony, pitch, start);
+  }
+  pitch = separateFromVocalDoubling(harmony, pitch, start, duration);
   // Use createNote() with PreferRootFifth preference for bass
   // This ensures bass always plays chord tones while respecting vocal priority
   NoteOptions opts;
@@ -771,10 +863,12 @@ void addBassNoteWithTritoneCheck(MidiTrack& track, IHarmonyContext& harmony, Tic
 
   if (all_fallbacks_have_tritone) {
     // When all fallback options form tritones, skip note on collision
-    opts.desired_pitch = root;
+    opts.desired_pitch = separateFromVocalDoubling(
+        harmony, avoidChordClashAtTick(harmony, root, start), start, duration);
     opts.preference = PitchPreference::SkipIfUnsafe;
   } else {
-    opts.desired_pitch = pitch;
+    opts.desired_pitch = separateFromVocalDoubling(
+        harmony, avoidChordClashAtTick(harmony, pitch, start), start, duration);
     opts.preference = PitchPreference::PreferRootFifth;
   }
 
@@ -817,7 +911,8 @@ void addBassGhostNotes(MidiTrack& track, IHarmonyContext& harmony, Tick bar_star
     NoteOptions opts;
     opts.start = tick;
     opts.duration = SIXTEENTH;
-    opts.desired_pitch = root;
+    opts.desired_pitch = separateFromVocalDoubling(
+        harmony, avoidChordClashAtTick(harmony, root, tick), tick, SIXTEENTH);
     opts.velocity = ghost_vel;
     opts.role = TrackRole::Bass;
     opts.preference = PitchPreference::SkipIfUnsafe;
@@ -860,6 +955,17 @@ bool hasApproachTarget(const BassBarContext& ctx) {
   return hasApproachTarget(ctx.root, ctx.next_root);
 }
 
+/// @brief Approach note into the chord the shared timeline holds at the next bar.
+///
+/// ctx.next_degree was looked up at the next bar's start, so the chord tones
+/// are read from the same tick rather than rebuilt from the degree; a secondary
+/// dominant registered there sounds a raised third that its degree's diatonic
+/// triad does not contain.
+uint8_t getApproachNote(const BassBarContext& ctx) {
+  return getApproachNote(ctx.root, ctx.next_root, ctx.next_degree,
+                         ctx.harmony.getChordTonesAt(ctx.bar_start + TICKS_PER_BAR));
+}
+
 // ============================================================================
 // Bass Pattern Implementations
 // ============================================================================
@@ -883,7 +989,7 @@ int bassBarVariant(Tick bar_start, bool steady_cell = false) {
 void generateWholeNotePattern(const BassBarContext& ctx) {
   addBassNotePreferRoot(ctx.track, ctx.bar_start, TICK_HALF, ctx.root, ctx.vel, ctx.harmony);
   if (hasApproachTarget(ctx)) {
-    uint8_t approach = getApproachNote(ctx.root, ctx.next_root, ctx.next_degree);
+    uint8_t approach = getApproachNote(ctx);
     bool half_bar_harmony_change = ctx.harmony.getChordDegreeAt(ctx.bar_start + TICK_HALF) !=
                                    ctx.harmony.getChordDegreeAt(ctx.bar_start);
     uint8_t middle_root = half_bar_harmony_change ? ctx.next_root : ctx.root;
@@ -925,7 +1031,7 @@ void generateRootFifthPattern(const BassBarContext& ctx) {
   if (hasApproachTarget(ctx)) {
     addBassNotePreferRoot(ctx.track, ctx.bar_start + 3 * TICK_QUARTER, TICK_EIGHTH, ctx.root,
                           ctx.vel_weak, ctx.harmony);
-    uint8_t approach = getApproachNote(ctx.root, ctx.next_root, ctx.next_degree);
+    uint8_t approach = getApproachNote(ctx);
     addBassNoteWithTritoneCheck(ctx.track, ctx.harmony,
                                 ctx.bar_start + 3 * TICK_QUARTER + TICK_EIGHTH, TICK_EIGHTH,
                                 approach, ctx.root, ctx.vel_weak);
@@ -944,7 +1050,7 @@ void generateSyncopatedPattern(const BassBarContext& ctx) {
   addBassNotePreferRoot(ctx.track, ctx.bar_start + 2 * TICK_QUARTER, TICK_QUARTER, ctx.root,
                         ctx.vel, ctx.harmony);
   if (hasApproachTarget(ctx)) {
-    uint8_t approach = getApproachNote(ctx.root, ctx.next_root, ctx.next_degree);
+    uint8_t approach = getApproachNote(ctx);
     addBassNoteWithTritoneCheck(ctx.track, ctx.harmony,
                                 ctx.bar_start + 3 * TICK_QUARTER + TICK_EIGHTH, TICK_EIGHTH,
                                 approach, ctx.root, ctx.vel_weak);
@@ -970,7 +1076,7 @@ void generateDrivingPattern(const BassBarContext& ctx) {
                                   ctx.fifth, ctx.root, ctx.vel_weak);
     } else if (beat == 3 && hasApproachTarget(ctx)) {
       addBassNotePreferRoot(ctx.track, beat_tick, TICK_EIGHTH, ctx.root, beat_vel, ctx.harmony);
-      uint8_t approach = getApproachNote(ctx.root, ctx.next_root, ctx.next_degree);
+      uint8_t approach = getApproachNote(ctx);
       addBassNoteWithTritoneCheck(ctx.track, ctx.harmony, beat_tick + TICK_EIGHTH, TICK_EIGHTH,
                                   approach, ctx.root, ctx.vel_weak);
     } else if (variant == 2 && beat == 1) {
@@ -1010,7 +1116,7 @@ void generateRhythmicDrivePattern(const BassBarContext& ctx) {
     } else if (eighth == 4) {
       addBassNotePreferRoot(ctx.track, tick, TICK_EIGHTH, ctx.root, ctx.vel, ctx.harmony);
     } else if (eighth == 7 && hasApproachTarget(ctx)) {
-      uint8_t approach = getApproachNote(ctx.root, ctx.next_root, ctx.next_degree);
+      uint8_t approach = getApproachNote(ctx);
       addBassNoteWithTritoneCheck(ctx.track, ctx.harmony, tick, TICK_EIGHTH, approach, ctx.root,
                                   note_vel);
     } else {
@@ -1036,7 +1142,7 @@ void generateWalkingPattern(const BassBarContext& ctx) {
     if (interval >= 2 && interval <= 3) {
       approach = getChromaticApproach(ctx.next_root);
     } else {
-      approach = getApproachNote(ctx.root, ctx.next_root, ctx.next_degree);
+      approach = getApproachNote(ctx);
     }
     addBassNoteWithTritoneCheck(ctx.track, ctx.harmony, ctx.bar_start + 3 * TICK_QUARTER,
                                 TICK_QUARTER, approach, ctx.root, ctx.vel_weak);
@@ -1063,7 +1169,7 @@ void generatePowerDrivePattern(const BassBarContext& ctx) {
   if (hasApproachTarget(ctx)) {
     addBassNotePreferRoot(ctx.track, ctx.bar_start + 3 * TICK_QUARTER, TICK_EIGHTH, ctx.root,
                           ctx.vel, ctx.harmony);
-    uint8_t approach = getApproachNote(ctx.root, ctx.next_root, ctx.next_degree);
+    uint8_t approach = getApproachNote(ctx);
     addBassNoteWithTritoneCheck(ctx.track, ctx.harmony,
                                 ctx.bar_start + 3 * TICK_QUARTER + TICK_EIGHTH, TICK_EIGHTH,
                                 approach, ctx.root, ctx.vel_weak);
@@ -1094,7 +1200,7 @@ void generateAggressivePattern(const BassBarContext& ctx) {
     } else if (sixteenth == 8) {
       pitch = ctx.fifth;
     } else if (sixteenth == 15 && hasApproachTarget(ctx)) {
-      pitch = getApproachNote(ctx.root, ctx.next_root, ctx.next_degree);
+      pitch = getApproachNote(ctx);
     }
     if (pitch == ctx.root || pitch == ctx.octave) {
       addBassNotePreferRoot(ctx.track, tick, SIXTEENTH_NOTE, pitch, note_vel, ctx.harmony);
@@ -1116,7 +1222,7 @@ void generateSidechainPulsePattern(const BassBarContext& ctx) {
       sidechain_duration = TICK_EIGHTH;
       addBassNotePreferRoot(ctx.track, sidechain_start, sidechain_duration, ctx.root, beat_vel,
                             ctx.harmony);
-      uint8_t approach = getApproachNote(ctx.root, ctx.next_root, ctx.next_degree);
+      uint8_t approach = getApproachNote(ctx);
       addBassNoteWithTritoneCheck(ctx.track, ctx.harmony, beat_tick + TICK_QUARTER - TICK_EIGHTH,
                                   TICK_EIGHTH, approach, ctx.root, ctx.vel_weak);
     } else {
@@ -1133,7 +1239,7 @@ void generateGroovePattern(const BassBarContext& ctx) {
   addBassNotePreferRoot(ctx.track, ctx.bar_start + 2 * TICK_QUARTER, TICK_QUARTER, ctx.root,
                         ctx.vel, ctx.harmony);
   if (hasApproachTarget(ctx)) {
-    uint8_t approach = getApproachNote(ctx.root, ctx.next_root, ctx.next_degree);
+    uint8_t approach = getApproachNote(ctx);
     addBassNoteWithTritoneCheck(ctx.track, ctx.harmony,
                                 ctx.bar_start + 3 * TICK_QUARTER + TICK_EIGHTH, TICK_EIGHTH,
                                 approach, ctx.root, ctx.vel_weak);
@@ -1157,7 +1263,7 @@ void generateOctaveJumpPattern(const BassBarContext& ctx) {
   if (hasApproachTarget(ctx)) {
     addBassNotePreferRoot(ctx.track, ctx.bar_start + 3 * TICK_QUARTER, TICK_EIGHTH, ctx.root,
                           ctx.vel_weak, ctx.harmony);
-    uint8_t approach = getApproachNote(ctx.root, ctx.next_root, ctx.next_degree);
+    uint8_t approach = getApproachNote(ctx);
     addBassNoteWithTritoneCheck(ctx.track, ctx.harmony,
                                 ctx.bar_start + 3 * TICK_QUARTER + TICK_EIGHTH, TICK_EIGHTH,
                                 approach, ctx.root, ctx.vel_weak);
@@ -1179,11 +1285,14 @@ void generatePedalTonePattern(const BassBarContext& ctx) {
     pedal_pitch = getBassRoot(0);  // Tonic pedal: C
   }
 
-  // Rhythm: half notes with optional re-attack on beat 3
-  addBassNotePreferRoot(ctx.track, ctx.bar_start, TICK_HALF, pedal_pitch, ctx.vel, ctx.harmony);
+  // Rhythm: half notes with optional re-attack on beat 3. The pedal holds its
+  // pitch through whatever the timeline puts above it, including a secondary
+  // dominant planned inside the bridge; that tension is the device.
+  addBassNotePreferRoot(ctx.track, ctx.bar_start, TICK_HALF, pedal_pitch, ctx.vel, ctx.harmony,
+                        /*hold_through_chord_changes=*/true);
   uint8_t beat3_vel = static_cast<uint8_t>(ctx.vel * 0.9f);
   addBassNotePreferRoot(ctx.track, ctx.bar_start + TICK_HALF, TICK_HALF, pedal_pitch, beat3_vel,
-                        ctx.harmony);
+                        ctx.harmony, /*hold_through_chord_changes=*/true);
 }
 
 void generateTresilloPattern(const BassBarContext& ctx) {
@@ -1194,7 +1303,7 @@ void generateTresilloPattern(const BassBarContext& ctx) {
   if (hasApproachTarget(ctx)) {
     addBassNotePreferRoot(ctx.track, ctx.bar_start + 2 * TICK_QUARTER + 2 * TICK_EIGHTH,
                           TICK_QUARTER, ctx.root, ctx.vel_weak, ctx.harmony);
-    uint8_t approach = getApproachNote(ctx.root, ctx.next_root, ctx.next_degree);
+    uint8_t approach = getApproachNote(ctx);
     addBassNoteWithTritoneCheck(ctx.track, ctx.harmony,
                                 ctx.bar_start + 3 * TICK_QUARTER + 2 * TICK_EIGHTH, TICK_EIGHTH,
                                 approach, ctx.root, ctx.vel_weak);
@@ -1226,7 +1335,9 @@ void generateSubBass808Pattern(const BassBarContext& ctx) {
     NoteOptions slide_opts;
     slide_opts.start = ctx.bar_start + 3 * TICK_QUARTER + TICK_EIGHTH;
     slide_opts.duration = TICK_EIGHTH;
-    slide_opts.desired_pitch = slide_note;
+    slide_opts.desired_pitch = separateFromVocalDoubling(
+        ctx.harmony, avoidChordClashAtTick(ctx.harmony, slide_note, slide_opts.start),
+        slide_opts.start, slide_opts.duration);
     slide_opts.velocity = static_cast<uint8_t>(sub_vel * 0.7f);
     slide_opts.role = TrackRole::Bass;
     slide_opts.preference = PitchPreference::SkipIfUnsafe;
@@ -1250,9 +1361,7 @@ void generateRnBNeoSoulPattern(const BassBarContext& ctx) {
                               TICK_EIGHTH, third, ctx.root, ctx.vel_weak);
   addBassNoteWithTritoneCheck(ctx.track, ctx.harmony, ctx.bar_start + 2 * TICK_QUARTER,
                               TICK_QUARTER, ctx.fifth, ctx.root, ctx.vel);
-  uint8_t approach = hasApproachTarget(ctx)
-                         ? getApproachNote(ctx.root, ctx.next_root, ctx.next_degree)
-                         : getNextDiatonic(ctx.root, -1);
+  uint8_t approach = hasApproachTarget(ctx) ? getApproachNote(ctx) : getNextDiatonic(ctx.root, -1);
   addBassNoteWithTritoneCheck(ctx.track, ctx.harmony, ctx.bar_start + 3 * TICK_QUARTER,
                               TICK_QUARTER, approach, ctx.root, ctx.vel_weak);
 }
@@ -1269,7 +1378,9 @@ void generateSlapPopPattern(const BassBarContext& ctx) {
     NoteOptions opts;
     opts.start = ctx.bar_start + TICK_EIGHTH;
     opts.duration = static_cast<Tick>(TICK_EIGHTH * 0.25f);
-    opts.desired_pitch = ctx.root;
+    opts.desired_pitch = separateFromVocalDoubling(
+        ctx.harmony, avoidChordClashAtTick(ctx.harmony, ctx.root, opts.start), opts.start,
+        opts.duration);
     opts.velocity = ghost_vel;
     opts.role = TrackRole::Bass;
     opts.preference = PitchPreference::SkipIfUnsafe;
@@ -1290,7 +1401,9 @@ void generateSlapPopPattern(const BassBarContext& ctx) {
     NoteOptions opts;
     opts.start = ctx.bar_start + TICK_QUARTER;
     opts.duration = static_cast<Tick>(TICK_EIGHTH * 0.25f);
-    opts.desired_pitch = ctx.root;
+    opts.desired_pitch = separateFromVocalDoubling(
+        ctx.harmony, avoidChordClashAtTick(ctx.harmony, ctx.root, opts.start), opts.start,
+        opts.duration);
     opts.velocity = ghost_vel;
     opts.role = TrackRole::Bass;
     opts.preference = PitchPreference::SkipIfUnsafe;
@@ -1316,7 +1429,9 @@ void generateSlapPopPattern(const BassBarContext& ctx) {
     NoteOptions opts;
     opts.start = ctx.bar_start + 2 * TICK_QUARTER + TICK_EIGHTH;
     opts.duration = static_cast<Tick>(TICK_EIGHTH * 0.25f);
-    opts.desired_pitch = ctx.root;
+    opts.desired_pitch = separateFromVocalDoubling(
+        ctx.harmony, avoidChordClashAtTick(ctx.harmony, ctx.root, opts.start), opts.start,
+        opts.duration);
     opts.velocity = ghost_vel;
     opts.role = TrackRole::Bass;
     opts.preference = PitchPreference::SkipIfUnsafe;
@@ -1338,7 +1453,9 @@ void generateSlapPopPattern(const BassBarContext& ctx) {
     NoteOptions opts;
     opts.start = ctx.bar_start + 3 * TICK_QUARTER;
     opts.duration = static_cast<Tick>(TICK_EIGHTH * 0.25f);
-    opts.desired_pitch = ctx.root;
+    opts.desired_pitch = separateFromVocalDoubling(
+        ctx.harmony, avoidChordClashAtTick(ctx.harmony, ctx.root, opts.start), opts.start,
+        opts.duration);
     opts.velocity = ghost_vel;
     opts.role = TrackRole::Bass;
     opts.preference = PitchPreference::SkipIfUnsafe;
@@ -1350,9 +1467,7 @@ void generateSlapPopPattern(const BassBarContext& ctx) {
   }
 
   // Beat 4.5: Slap approach note
-  uint8_t approach = hasApproachTarget(ctx)
-                         ? getApproachNote(ctx.root, ctx.next_root, ctx.next_degree)
-                         : getNextDiatonic(ctx.root, -1);
+  uint8_t approach = hasApproachTarget(ctx) ? getApproachNote(ctx) : getNextDiatonic(ctx.root, -1);
   addBassNoteWithTritoneCheck(ctx.track, ctx.harmony,
                               ctx.bar_start + 3 * TICK_QUARTER + TICK_EIGHTH,
                               static_cast<Tick>(TICK_QUARTER * 0.50f), approach, ctx.root, ctx.vel);
@@ -1485,9 +1600,9 @@ int findLastNoteInBar(const MidiTrack& track, Tick bar_start, Tick bar_end) {
 
 /// @brief Apply microvariation to the last note of the bar for rhythm variety.
 ///
-/// Modifies the track's notes in place after bar generation. The collision
-/// tracker is NOT updated per-bar; caller must re-register the entire bass
-/// track after all microvariations are applied (see generateBassTrack).
+/// Every edit goes through TrackPitchEditor, so the moved pitch is verified
+/// against the harmony state, the move is recorded on the note, and the
+/// collision registry is refreshed before the pass returns.
 ///
 /// @param track The bass track (notes may be modified in place or removed)
 /// @param bar_start Start tick of the current bar
@@ -1509,19 +1624,18 @@ void applyBassMicrovariation(MidiTrack& track, Tick bar_start, IHarmonyContext& 
     return;  // Pass: no change
   }
 
-  auto& notes = track.notes();
+  TrackPitchEditor editor(track, harmony, TrackRole::Bass);
+  const size_t target_idx = static_cast<size_t>(last_idx);
 
   if (variation == 0) {
     // Rest insertion: remove the last note
-    notes.erase(notes.begin() + last_idx);
+    editor.removeAt(target_idx);
     return;
   }
 
-  auto& target = notes[last_idx];
-
   if (variation == 1) {
     // Octave jump: shift pitch by +12 or -12
-    uint8_t original_pitch = target.note;
+    uint8_t original_pitch = editor.at(target_idx).note;
     int up = static_cast<int>(original_pitch) + 12;
     int down = static_cast<int>(original_pitch) - 12;
     bool up_ok = up <= BASS_HIGH;
@@ -1538,16 +1652,8 @@ void applyBassMicrovariation(MidiTrack& track, Tick bar_start, IHarmonyContext& 
       new_pitch = static_cast<uint8_t>(down);
     }
 
-    if (new_pitch != original_pitch) {
-      // Check consonance before applying
-      if (harmony.isConsonantWithOtherTracks(new_pitch, target.start_tick, target.duration,
-                                             TrackRole::Bass)) {
-        target.note = new_pitch;
-#ifdef MIDISKETCH_NOTE_PROVENANCE
-        target.prov_original_pitch = original_pitch;
-#endif
-      }
-    }
+    editor.moveTo(target_idx, new_pitch, TransformStepType::OctaveAdjust,
+                  static_cast<int8_t>(new_pitch > original_pitch ? 12 : -12), 0);
     return;
   }
 
@@ -1558,10 +1664,7 @@ void applyBassMicrovariation(MidiTrack& track, Tick bar_start, IHarmonyContext& 
 
     // Approach note: diatonic step approach to next bar's root
     // Try diatonic neighbors (step below, step above, two steps below, two steps above)
-    uint8_t original_pitch = target.note;
-#ifndef MIDISKETCH_NOTE_PROVENANCE
-    (void)original_pitch;
-#endif
+    const NoteEvent& target = editor.at(target_idx);
     int candidates[] = {
         static_cast<int>(next_root) - 1,  // half-step below
         static_cast<int>(next_root) - 2,  // whole-step below
@@ -1580,14 +1683,10 @@ void applyBassMicrovariation(MidiTrack& track, Tick bar_start, IHarmonyContext& 
       // Only accept diatonic pitches to maintain key consistency
       if (!isDiatonic(cand)) continue;
       if (hasTritoneWithChord(cand % 12, current_chord_pcs)) continue;
-      uint8_t cand_u8 = static_cast<uint8_t>(cand);
-      if (harmony.isConsonantWithOtherTracks(cand_u8, target.start_tick, target.duration,
-                                             TrackRole::Bass)) {
-        target.note = cand_u8;
-#ifdef MIDISKETCH_NOTE_PROVENANCE
-        target.prov_original_pitch = original_pitch;
-        target.addTransformStep(TransformStepType::CollisionAvoid, original_pitch, cand_u8, 0, 0);
-#endif
+      // The note may already sit on the highest-priority approach pitch; that
+      // is the approach, so stop rather than search past it.
+      if (static_cast<int>(target.note) == cand) break;
+      if (editor.moveTo(target_idx, static_cast<uint8_t>(cand), TransformStepType::PatternOffset)) {
         break;
       }
     }
@@ -1604,7 +1703,9 @@ void addBassApproachNoteWithTritoneGuard(MidiTrack& track, IHarmonyContext& harm
 }
 
 uint8_t selectBassApproachNote(uint8_t current_root, uint8_t next_root, int8_t target_degree) {
-  return getApproachNote(current_root, next_root, target_degree);
+  // Degree-only entry point: the caller names a chord rather than a position,
+  // so the diatonic triad of that degree is all there is to voice against.
+  return getApproachNote(current_root, next_root, target_degree, getChordTones(target_degree));
 }
 
 uint8_t selectBassOctaveNote(uint8_t root) { return getOctave(root); }
@@ -1872,32 +1973,34 @@ void applySlashChordOverride(BassTrackContext& ctx, uint8_t& root, int8_t degree
 }
 
 // Apply vocal motion adjustment to bass root if vocal analysis is available
-uint8_t resolveEffectiveRoot(BassTrackContext& ctx, uint8_t root, int8_t degree, Tick bar_start,
-                             uint8_t bar) {
+uint8_t resolveEffectiveRoot(BassTrackContext& ctx, uint8_t root, Tick bar_start, uint8_t bar) {
   if (!ctx.has_vocal) {
     return root;
   }
   int8_t vocal_direction = getVocalDirectionAt(*ctx.vocal_analysis, bar_start);
   uint8_t vocal_pitch = getVocalPitchAt(*ctx.vocal_analysis, bar_start);
   MotionType motion = selectMotionType(vocal_direction, bar, ctx.rng);
-  return adjustPitchForMotion(root, motion, vocal_direction, vocal_pitch, degree);
+  return adjustPitchForMotion(root, motion, vocal_direction, vocal_pitch,
+                              ctx.harmony.getChordTonesAt(bar_start));
 }
 
 // Try dominant preparation before Chorus. Returns true if bar was handled (caller should continue).
 bool tryDominantPreparation(BassTrackContext& ctx, Tick bar_start, uint8_t effective_root,
                             SectionType section_type, SectionType next_section_type, int8_t degree,
                             bool is_last_bar, BassPattern pattern) {
-  if (!is_last_bar) {
-    return false;
-  }
-
-  // A section-boundary secondary dominant is already in the shared harmonic
-  // timeline.  It takes precedence over the generic V preparation so bass
-  // uses the same root as chord, vocal, and collision analysis.
+  // A secondary dominant covering only the second half of the bar is already in
+  // the shared harmonic timeline.  It takes precedence over the generic V
+  // preparation so bass uses the same root as chord, vocal, and collision
+  // analysis; a whole-bar unsplit root would sound the natural third against
+  // the chord track's raised one.  This holds anywhere in a section, not only
+  // at a section boundary, because the timeline places such chords per tick.
   Tick preparation_start = bar_start + TICK_HALF;
-  bool has_planned_secondary = ctx.harmony.isSecondaryDominantAt(preparation_start);
+  bool has_planned_secondary =
+      ctx.harmony.isSecondaryDominantAt(preparation_start) &&
+      ctx.harmony.getChordDegreeAt(preparation_start) != ctx.harmony.getChordDegreeAt(bar_start);
   if (!has_planned_secondary &&
-      !shouldAddDominantPreparation(section_type, next_section_type, degree, ctx.params.mood)) {
+      (!is_last_bar ||
+       !shouldAddDominantPreparation(section_type, next_section_type, degree, ctx.params.mood))) {
     return false;
   }
 
@@ -1991,27 +2094,15 @@ void applyPlayabilityPostProcess(BassTrackContext& ctx) {
           ? BassPlayabilityChecker(ctx.harmony, ctx.params.bpm,
                                    ctx.params.blueprint_ref->constraints)
           : BassPlayabilityChecker(ctx.harmony, ctx.params.bpm);
-  auto& notes = ctx.track.notes();
-  for (auto& note : notes) {
-    uint8_t original_pitch = note.note;
+  // A pitch moved for playability is still a pitch move: the editor keeps the
+  // original when the new one clashes with another track, records the move, and
+  // refreshes the registry so the next consumer does not read the old pitch.
+  TrackPitchEditor editor(ctx.track, ctx.harmony, TrackRole::Bass);
+  for (size_t i = 0; i < editor.size(); ++i) {
+    const NoteEvent& note = editor.at(i);
     uint8_t playable_pitch =
         playability_checker.ensurePlayable(note.note, note.start_tick, note.duration);
-    if (playable_pitch != original_pitch) {
-      // Re-check collision: if the playable pitch clashes with other tracks,
-      // keep the original pitch (which was already collision-safe).
-      if (!ctx.harmony.isConsonantWithOtherTracks(playable_pitch, note.start_tick, note.duration,
-                                                  TrackRole::Bass)) {
-        playable_pitch = original_pitch;
-      }
-    }
-    note.note = playable_pitch;
-#ifdef MIDISKETCH_NOTE_PROVENANCE
-    if (note.note != original_pitch) {
-      note.prov_original_pitch = original_pitch;
-      note.addTransformStep(TransformStepType::RangeClamp, original_pitch, note.note,
-                            static_cast<int8_t>(0), static_cast<int8_t>(0));
-    }
-#endif
+    editor.moveTo(i, playable_pitch, TransformStepType::RangeClamp);
   }
 }
 
@@ -2091,7 +2182,7 @@ void generateBassTrack(MidiTrack& track, const Song& song, const GeneratorParams
       applySlashChordOverride(ctx, root, degree, next_degree, section.type, bar_start);
 
       // Vocal motion adjustment
-      uint8_t effective_root = resolveEffectiveRoot(ctx, root, degree, bar_start, bar);
+      uint8_t effective_root = resolveEffectiveRoot(ctx, root, bar_start, bar);
 
       bool is_last_bar = (bar == section.bars - 1);
 
@@ -2243,34 +2334,24 @@ bool wouldClashWithVocal(int bass_pitch, int vocal_pitch) {
   return interval == 1;  // Minor 2nd is a harsh clash
 }
 
-// Check if a pitch is a chord tone of the given degree.
-// @param include_7th If true, includes 7th as chord tone (jazz style)
-bool isPitchChordTone(int pitch, int8_t degree, bool include_7th = false) {
-  const ChordTones chord_tones = getChordTones(degree);
+// Check if a pitch belongs to the given chord-tone set.
+bool isPitchChordTone(int pitch, const ChordTones& chord_tones) {
   int pitch_class = ((pitch % 12) + 12) % 12;
   for (int ct : chord_tones) {
     if (ct == pitch_class) return true;
   }
-  if (include_7th) {
-    // Add 7th: major chords get major 7th, minor chords get minor 7th
-    int d = ((degree % 7) + 7) % 7;
-    int root_pc = SCALE[d];
-    bool is_minor = (d == 1 || d == 2 || d == 5);  // ii, iii, vi
-    int seventh_pc = (root_pc + (is_minor ? 10 : 11)) % 12;
-    if (pitch_class == seventh_pc) return true;
-  }
   return false;
 }
 
-std::optional<int> nearestChordToneInDirection(int bass_pitch, int direction, int8_t degree,
-                                               int vocal_pitch) {
+std::optional<int> nearestChordToneInDirection(int bass_pitch, int direction,
+                                               const ChordTones& chord_tones, int vocal_pitch) {
   if (direction == 0) return std::nullopt;
 
   for (int distance = 1; distance <= Interval::OCTAVE; ++distance) {
     int candidate = bass_pitch + direction * distance;
     if (candidate < BASS_LOW || candidate > BASS_HIGH) continue;
     if (!isDiatonic(candidate)) continue;
-    if (!isPitchChordTone(candidate, degree)) continue;
+    if (!isPitchChordTone(candidate, chord_tones)) continue;
     if (wouldClashWithVocal(candidate, vocal_pitch)) continue;
     return candidate;
   }
@@ -2278,10 +2359,16 @@ std::optional<int> nearestChordToneInDirection(int bass_pitch, int direction, in
   return std::nullopt;
 }
 
-// Adjust bass pitch based on Motion Type and vocal direction
-// degree parameter is used to ensure adjusted pitch is still a chord tone
 uint8_t adjustPitchForMotion(uint8_t base_pitch, MotionType motion, int8_t vocal_direction,
                              uint8_t vocal_pitch, int8_t degree) {
+  return adjustPitchForMotion(base_pitch, motion, vocal_direction, vocal_pitch,
+                              getChordTones(degree));
+}
+
+// Adjust bass pitch based on Motion Type and vocal direction
+// chord_tones constrains every adjustment to a tone of the chord that sounds here
+uint8_t adjustPitchForMotion(uint8_t base_pitch, MotionType motion, int8_t vocal_direction,
+                             uint8_t vocal_pitch, const ChordTones& chord_tones) {
   // Ensure 2+ octave separation (24 semitones) for doubling avoidance
   constexpr int kMinOctaveSeparation = 24;
 
@@ -2318,11 +2405,11 @@ uint8_t adjustPitchForMotion(uint8_t base_pitch, MotionType motion, int8_t vocal
     case MotionType::Contrary:
       // Move opposite to vocal direction
       if (vocal_direction > 0) {
-        if (auto candidate = nearestChordToneInDirection(bass_pitch, -1, degree, v_pitch)) {
+        if (auto candidate = nearestChordToneInDirection(bass_pitch, -1, chord_tones, v_pitch)) {
           proposed_pitch = *candidate;  // Vocal going up, bass goes down
         }
       } else if (vocal_direction < 0) {
-        if (auto candidate = nearestChordToneInDirection(bass_pitch, +1, degree, v_pitch)) {
+        if (auto candidate = nearestChordToneInDirection(bass_pitch, +1, chord_tones, v_pitch)) {
           proposed_pitch = *candidate;  // Vocal going down, bass goes up
         }
       }
@@ -2331,11 +2418,11 @@ uint8_t adjustPitchForMotion(uint8_t base_pitch, MotionType motion, int8_t vocal
     case MotionType::Similar:
       // Move same direction as vocal but different interval
       if (vocal_direction > 0) {
-        if (auto candidate = nearestChordToneInDirection(bass_pitch, +1, degree, v_pitch)) {
+        if (auto candidate = nearestChordToneInDirection(bass_pitch, +1, chord_tones, v_pitch)) {
           proposed_pitch = *candidate;
         }
       } else if (vocal_direction < 0) {
-        if (auto candidate = nearestChordToneInDirection(bass_pitch, -1, degree, v_pitch)) {
+        if (auto candidate = nearestChordToneInDirection(bass_pitch, -1, chord_tones, v_pitch)) {
           proposed_pitch = *candidate;
         }
       }
@@ -2366,7 +2453,7 @@ uint8_t adjustPitchForMotion(uint8_t base_pitch, MotionType motion, int8_t vocal
   // CRITICAL: Bass must stay on chord tones to define harmony correctly
   if (proposed_pitch != bass_pitch) {
     bool diatonic_ok = isDiatonic(proposed_pitch);
-    bool chord_tone_ok = isPitchChordTone(proposed_pitch, degree);
+    bool chord_tone_ok = isPitchChordTone(proposed_pitch, chord_tones);
     bool vocal_ok = !wouldClashWithVocal(proposed_pitch, v_pitch);
 
     if (diatonic_ok && chord_tone_ok && vocal_ok) {
@@ -2393,7 +2480,8 @@ uint8_t adjustPitchForMotion(uint8_t base_pitch, MotionType motion, int8_t vocal
     // Vocal priority: bass must yield, but only to chord tones
     // Try moving bass down by a whole step (more musical than half step)
     if (bass_pitch - 2 >= BASS_LOW && isDiatonic(bass_pitch - 2) &&
-        isPitchChordTone(bass_pitch - 2, degree) && !wouldClashWithVocal(bass_pitch - 2, v_pitch)) {
+        isPitchChordTone(bass_pitch - 2, chord_tones) &&
+        !wouldClashWithVocal(bass_pitch - 2, v_pitch)) {
 #if BASS_DEBUG_LOG
       std::cerr << "    [vocal_priority] clash fix (chord tone): " << bass_pitch << " -> "
                 << (bass_pitch - 2) << "\n";
@@ -2402,7 +2490,7 @@ uint8_t adjustPitchForMotion(uint8_t base_pitch, MotionType motion, int8_t vocal
     }
     // Try moving up by a whole step
     else if (bass_pitch + 2 <= BASS_HIGH && isDiatonic(bass_pitch + 2) &&
-             isPitchChordTone(bass_pitch + 2, degree) &&
+             isPitchChordTone(bass_pitch + 2, chord_tones) &&
              !wouldClashWithVocal(bass_pitch + 2, v_pitch)) {
 #if BASS_DEBUG_LOG
       std::cerr << "    [vocal_priority] clash fix (chord tone): " << bass_pitch << " -> "
