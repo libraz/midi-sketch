@@ -7,6 +7,7 @@
 
 #include <gtest/gtest.h>
 
+#include <cstdlib>
 #include <map>
 #include <random>
 #include <set>
@@ -149,6 +150,68 @@ TEST_F(MotifTest, VariationEmbellished) {
   EXPECT_EQ(embellished.rhythm.size(), original.rhythm.size());
   // First and last notes should be unchanged (strong beats or endpoints)
   EXPECT_EQ(embellished.contour_degrees[0], original.contour_degrees[0]);
+}
+
+// Motifs reaching applyVariation() are not guaranteed to be well formed: a
+// fragmented or freshly constructed motif can be empty, hold a single note, or
+// carry fewer rhythm slots than contour degrees. Every variation must stay
+// inside both vectors instead of assuming they are parallel and non-empty.
+TEST_F(MotifTest, VariationsHandleEmptyMotif) {
+  const MotifVariation variations[] = {MotifVariation::Exact,      MotifVariation::Transposed,
+                                       MotifVariation::Inverted,   MotifVariation::Augmented,
+                                       MotifVariation::Diminished, MotifVariation::Fragmented,
+                                       MotifVariation::Sequenced,  MotifVariation::Embellished};
+
+  for (MotifVariation variation : variations) {
+    Motif empty;
+    Motif result = applyVariation(empty, variation, 2, rng_);
+
+    EXPECT_TRUE(result.rhythm.empty()) << "variation index " << static_cast<int>(variation);
+    EXPECT_TRUE(result.contour_degrees.empty())
+        << "variation index " << static_cast<int>(variation);
+    EXPECT_TRUE(result.absolute_pitches.empty())
+        << "variation index " << static_cast<int>(variation);
+  }
+}
+
+TEST_F(MotifTest, VariationsHandleSingleNoteMotif) {
+  const MotifVariation variations[] = {MotifVariation::Exact,      MotifVariation::Transposed,
+                                       MotifVariation::Inverted,   MotifVariation::Augmented,
+                                       MotifVariation::Diminished, MotifVariation::Fragmented,
+                                       MotifVariation::Sequenced,  MotifVariation::Embellished};
+
+  for (MotifVariation variation : variations) {
+    Motif single;
+    single.rhythm = {{0.0f, 2, false}};
+    single.contour_degrees = {3};
+    single.absolute_pitches = {64};
+
+    Motif result = applyVariation(single, variation, 2, rng_);
+
+    EXPECT_EQ(result.rhythm.size(), 1u) << "variation index " << static_cast<int>(variation);
+    EXPECT_EQ(result.contour_degrees.size(), 1u)
+        << "variation index " << static_cast<int>(variation);
+    EXPECT_EQ(result.absolute_pitches.size(), 1u)
+        << "variation index " << static_cast<int>(variation);
+  }
+}
+
+TEST_F(MotifTest, VariationEmbellishedStaysInsideShorterRhythm) {
+  Motif mismatched;
+  mismatched.rhythm = {{0.0f, 2, true}, {1.0f, 2, false}};
+  mismatched.contour_degrees = {0, 2, 4, 5, 7};
+  mismatched.absolute_pitches = {60, 62, 64, 65, 67};
+
+  Motif embellished = applyVariation(mismatched, MotifVariation::Embellished, 0, rng_);
+
+  ASSERT_EQ(embellished.contour_degrees.size(), 5u);
+  // Only index 1 has a rhythm slot and is an interior weak note; degrees with no
+  // rhythm slot must be left alone rather than read against foreign memory.
+  EXPECT_EQ(embellished.contour_degrees[0], 0);
+  EXPECT_LE(std::abs(embellished.contour_degrees[1] - 2), 1);
+  EXPECT_EQ(embellished.contour_degrees[2], 4);
+  EXPECT_EQ(embellished.contour_degrees[3], 5);
+  EXPECT_EQ(embellished.contour_degrees[4], 7);
 }
 
 // === Integration with StyleMelodyParams ===

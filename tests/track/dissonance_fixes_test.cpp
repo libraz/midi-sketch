@@ -149,7 +149,7 @@ TEST_F(MotifCounterChordAwareTest, ChordDegreeLookedUpAtNotePosition) {
 
   // For each note, verify the pitch is valid MIDI
   for (const auto& note : notes) {
-    EXPECT_GE(note.note, 0) << "Note pitch should be valid MIDI";
+    EXPECT_GT(note.note, 0) << "Note pitch should be an audible MIDI pitch";
     EXPECT_LE(note.note, 127) << "Note pitch should be valid MIDI";
     EXPECT_GT(note.duration, 0u) << "Note should have duration";
   }
@@ -250,7 +250,7 @@ TEST_F(SuspensionResolutionTest, GeneratorProducesValidAuxNotes) {
   // All notes should be in valid MIDI range (0-127)
   // Some aux notes may be in low register for counter-melody effect
   for (const auto& note : aux_notes) {
-    EXPECT_GE(note.note, 0) << "Aux note below MIDI range";
+    EXPECT_GT(note.note, 0) << "Aux note below MIDI range";
     EXPECT_LE(note.note, 127) << "Aux note above MIDI range";
     EXPECT_GT(note.duration, 0u) << "Aux note has zero duration";
   }

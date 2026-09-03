@@ -7,16 +7,29 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cstring>
 #include <map>
 #include <random>
+#include <set>
+#include <sstream>
+#include <string>
 #include <vector>
 
+#include "core/chord.h"
+#include "core/coordinator.h"
+#include "core/emotion_curve.h"
 #include "core/generator.h"
+#include "core/harmony_coordinator.h"
+#include "core/post_processing_pipeline.h"
 #include "core/preset_data.h"
 #include "core/preset_types.h"
+#include "core/song.h"
 #include "core/structure.h"
 #include "test_helpers/note_event_test_helper.h"
+#include "track/drums/drum_constants.h"
+#include "track/drums/percussion_generator.h"
+#include "track/generators/guitar.h"
 #include "track/generators/motif.h"
 #include "track/generators/vocal.h"
 #include "track/vocal/phrase_cache.h"
@@ -1560,11 +1573,8 @@ TEST_F(ProductionBlueprintTest, BlueprintConstraintsDefaultValues) {
 
   // Default instrument constraint values
   EXPECT_EQ(constraints.bass_skill, InstrumentSkillLevel::Intermediate);
-  EXPECT_EQ(constraints.guitar_skill, InstrumentSkillLevel::Intermediate);
+  EXPECT_EQ(constraints.keys_skill, InstrumentSkillLevel::Intermediate);
   EXPECT_EQ(constraints.instrument_mode, InstrumentModelMode::Off);
-  EXPECT_FALSE(constraints.enable_slap);
-  EXPECT_FALSE(constraints.enable_tapping);
-  EXPECT_FALSE(constraints.enable_harmonics);
   EXPECT_EQ(constraints.drum_style_hint, 0);
 }
 
@@ -1572,19 +1582,13 @@ TEST_F(ProductionBlueprintTest, BlueprintConstraintsCustomValues) {
   // Verify BlueprintConstraints can be initialized with custom values
   BlueprintConstraints constraints{};
   constraints.bass_skill = InstrumentSkillLevel::Advanced;
-  constraints.guitar_skill = InstrumentSkillLevel::Virtuoso;
+  constraints.keys_skill = InstrumentSkillLevel::Virtuoso;
   constraints.instrument_mode = InstrumentModelMode::Full;
-  constraints.enable_slap = true;
-  constraints.enable_tapping = true;
-  constraints.enable_harmonics = true;
   constraints.drum_style_hint = static_cast<uint8_t>(DrumStyle::FourOnFloor) + 1;
 
   EXPECT_EQ(constraints.bass_skill, InstrumentSkillLevel::Advanced);
-  EXPECT_EQ(constraints.guitar_skill, InstrumentSkillLevel::Virtuoso);
+  EXPECT_EQ(constraints.keys_skill, InstrumentSkillLevel::Virtuoso);
   EXPECT_EQ(constraints.instrument_mode, InstrumentModelMode::Full);
-  EXPECT_TRUE(constraints.enable_slap);
-  EXPECT_TRUE(constraints.enable_tapping);
-  EXPECT_TRUE(constraints.enable_harmonics);
   EXPECT_EQ(constraints.drum_style_hint, static_cast<uint8_t>(DrumStyle::FourOnFloor) + 1);
 }
 
@@ -1619,6 +1623,744 @@ TEST_F(ProductionBlueprintTest, AllBlueprintConstraintsHaveExpectedInstrumentMod
       EXPECT_EQ(bp.constraints.instrument_mode, it->second)
           << "Blueprint " << bp.name << " should have expected InstrumentModelMode";
     }
+  }
+}
+
+// ============================================================================
+// Blueprint Identity
+// ============================================================================
+
+TEST_F(ProductionBlueprintTest, EveryBlueprintDeclaresItsDesignedParadigm) {
+  // The paradigm decides the coordinate-axis track and the rhythm lock, so it is
+  // the one field that has to agree with the published blueprint table.
+  const std::map<std::string, GenerationParadigm> expected = {
+      {"Traditional", GenerationParadigm::Traditional},
+      {"RhythmLock", GenerationParadigm::RhythmSync},
+      {"StoryPop", GenerationParadigm::MelodyDriven},
+      {"Ballad", GenerationParadigm::MelodyDriven},
+      {"IdolStandard", GenerationParadigm::MelodyDriven},
+      {"IdolHyper", GenerationParadigm::RhythmSync},
+      {"IdolKawaii", GenerationParadigm::MelodyDriven},
+      {"IdolCoolPop", GenerationParadigm::RhythmSync},
+      {"IdolEmo", GenerationParadigm::MelodyDriven},
+      {"BehavioralLoop", GenerationParadigm::RhythmSync},
+  };
+  ASSERT_EQ(expected.size(), getProductionBlueprintCount());
+
+  for (uint8_t id = 0; id < getProductionBlueprintCount(); ++id) {
+    const auto& bp = getProductionBlueprint(id);
+    auto it = expected.find(bp.name);
+    ASSERT_NE(it, expected.end()) << bp.name << " is not in the blueprint table";
+    EXPECT_EQ(bp.paradigm, it->second) << bp.name << " generates under the wrong paradigm";
+  }
+}
+
+TEST_F(ProductionBlueprintTest, BlueprintsBuiltAroundARiffGenerateOne) {
+  // A blueprint whose identity is a fixed riff has to produce a motif track even
+  // though it has no section flow of its own to declare one.
+  GeneratorParams params;
+  params.seed = 20240903;
+  params.blueprint_id = 9;
+
+  Generator gen;
+  gen.generate(params);
+  EXPECT_FALSE(gen.getSong().motif().notes().empty())
+      << "BehavioralLoop is defined by its riff, so the motif track cannot be empty";
+}
+
+TEST_F(ProductionBlueprintTest, AddictiveModeGeneratesARiffOnAnyBlueprint) {
+  // The flag alone asks for a fixed riff, whatever blueprint it is combined with.
+  ASSERT_FALSE(getProductionBlueprint(0).addictive_mode);
+
+  GeneratorParams params;
+  params.seed = 20240903;
+  params.blueprint_id = 0;
+  params.addictive_mode = true;
+
+  Generator gen;
+  gen.generate(params);
+  EXPECT_FALSE(gen.getSong().motif().notes().empty())
+      << "addictive_mode asks for a fixed riff, so the motif track cannot be empty";
+}
+
+// ============================================================================
+// Declarations reaching the accompaniment
+// ============================================================================
+
+/// @brief Generate a shipped blueprint end to end.
+Generator generateBlueprint(uint8_t blueprint_id) {
+  GeneratorParams params;
+  params.seed = 20240903;
+  params.blueprint_id = blueprint_id;
+
+  Generator gen;
+  gen.generate(params);
+  return gen;
+}
+
+/// @brief Group a track's notes by onset tick.
+std::map<Tick, std::vector<uint8_t>> notesByOnset(const MidiTrack& track) {
+  std::map<Tick, std::vector<uint8_t>> by_onset;
+  for (const auto& note : track.notes()) {
+    by_onset[note.start_tick].push_back(note.note);
+  }
+  for (auto& [tick, pitches] : by_onset) {
+    (void)tick;
+    std::sort(pitches.begin(), pitches.end());
+  }
+  return by_onset;
+}
+
+// ============================================================================
+// Field Accounting
+// ============================================================================
+//
+// visitBlueprintFields() is exhaustive at compile time: its structured bindings
+// name every member, so a field cannot join the blueprint table without being
+// given a role. These tests close the other end, and require every declared
+// field to have a reader that reaches a song. A field that only exists in the
+// table describes a difference between blueprints that no listener can hear.
+
+/// @brief Base blueprint for the perturbation probe.
+/// IdolStandard is used because it declares a section flow, a non-default aux
+/// profile and a physical instrument mode, so most fields start from a value
+/// that has somewhere to move.
+constexpr uint8_t kProbeBlueprintId = 4;
+
+/// @brief Move a blueprint field to a different, still-valid value.
+using FieldPerturbation = void (*)(ProductionBlueprint&);
+
+struct GenerationProbe {
+  const char* field;
+  FieldPerturbation perturb;
+  /// Blueprint the perturbation starts from. Some fields only bite where the
+  /// section flow actually enables the track they steer.
+  uint8_t base_blueprint = kProbeBlueprintId;
+};
+
+const GenerationProbe kGenerationProbes[] = {
+    {"section_flow", [](ProductionBlueprint& bp) { bp.section_flow = nullptr; }},
+    {"constraints.guitar_below_vocal",
+     [](ProductionBlueprint& bp) {
+       bp.constraints.guitar_below_vocal = !bp.constraints.guitar_below_vocal;
+     },
+     9},
+    {"intro_bass_enabled",
+     [](ProductionBlueprint& bp) { bp.intro_bass_enabled = !bp.intro_bass_enabled; }, 1},
+    {"section_count", [](ProductionBlueprint& bp) { bp.section_count = 3; }},
+    {"constraints.max_velocity", [](ProductionBlueprint& bp) { bp.constraints.max_velocity = 60; }},
+    {"constraints.max_pitch", [](ProductionBlueprint& bp) { bp.constraints.max_pitch = 72; }},
+    {"constraints.max_leap_semitones",
+     [](ProductionBlueprint& bp) { bp.constraints.max_leap_semitones = 2; }},
+    {"constraints.prefer_stepwise",
+     [](ProductionBlueprint& bp) {
+       bp.constraints.prefer_stepwise = !bp.constraints.prefer_stepwise;
+     }},
+    {"constraints.keys_skill",
+     [](ProductionBlueprint& bp) { bp.constraints.keys_skill = InstrumentSkillLevel::Beginner; }},
+    {"constraints.instrument_mode",
+     [](ProductionBlueprint& bp) { bp.constraints.instrument_mode = InstrumentModelMode::Off; }},
+    {"constraints.drum_style_hint",
+     [](ProductionBlueprint& bp) {
+       bp.constraints.drum_style_hint = static_cast<uint8_t>(DrumStyle::FourOnFloor) + 1;
+     }},
+};
+
+/// @brief Fields whose only reader runs before or after track generation.
+/// Each name here is covered by a named assertion below rather than by the
+/// perturbation probe, because Generator resolves the blueprint itself and
+/// cannot be handed a modified one.
+const char* const kAssemblyCheckedFields[] = {
+    "paradigm",
+    "riff_policy",
+    "drums_sync_vocal",
+    "drums_required",
+    "intro_kick_enabled",
+    "intro_stagger_percent",
+    "percussion_policy",
+    "addictive_mode",
+    "tempo_default",
+    "tempo_min",
+    "tempo_max",
+    "constraints.ritardando_amount",
+    "constraints.motif_note_count",
+    "aux_profile.program_override",
+};
+
+/// @brief Fields with a reader in the source that no value of them can move.
+///
+/// euclidean_drums_percent and every aux_profile function/scale here are read
+/// through getProductionBlueprint(params.blueprint_id), so the blueprint handed
+/// to the generator never reaches them; routing those readers through
+/// params.blueprint_ref moves them to the probe above. constraints.bass_skill is
+/// wired correctly but its playability constraint never binds: all ten
+/// blueprints produce the same bass at every skill level, in both instrument
+/// modes. This is the standing list of settings that describe an inaudible
+/// difference, and it should only shrink.
+const char* const kUnprovenLivenessFields[] = {
+    "euclidean_drums_percent",    "constraints.bass_skill",      "aux_profile.intro_function",
+    "aux_profile.verse_function", "aux_profile.chorus_function", "aux_profile.velocity_scale",
+    "aux_profile.density_scale",  "aux_profile.range_ceiling",
+};
+
+/// @brief Fields read only while a blueprint is being chosen.
+const char* const kSelectionCheckedFields[] = {"weight", "mood_mask"};
+
+/// @brief Fields that name the blueprint rather than steer generation.
+const char* const kIdentityCheckedFields[] = {"name"};
+
+/// @brief Collect the declared name of every field, keyed by role.
+std::map<BlueprintFieldRole, std::vector<std::string>> collectFieldNamesByRole() {
+  std::map<BlueprintFieldRole, std::vector<std::string>> names;
+  visitBlueprintFields(getProductionBlueprint(kProbeBlueprintId),
+                       [&names](BlueprintFieldRole role, const char* name, const auto&) {
+                         names[role].emplace_back(name);
+                       });
+  return names;
+}
+
+/// @brief Baseline parameters for the perturbation probe.
+GeneratorParams probeParams(const ProductionBlueprint& blueprint) {
+  GeneratorParams params;
+  params.seed = 20240903;
+  params.chord_id = 0;
+  params.mood = Mood::BrightUpbeat;
+  params.blueprint_id = kProbeBlueprintId;
+  params.humanize = false;
+  params.bpm = 132;
+  params.bpm_explicit = true;
+  params.blueprint_ref = &blueprint;
+  // Coordinator reads these two from params when a blueprint is supplied
+  // externally, mirroring what Generator::initializeBlueprint copies across.
+  params.paradigm = blueprint.paradigm;
+  params.riff_policy = blueprint.riff_policy;
+  return params;
+}
+
+/// @brief Reduce a song to the note data a listener would hear.
+std::string songDigest(const Song& song) {
+  std::ostringstream out;
+  for (size_t role = 0; role < kTrackCount; ++role) {
+    const MidiTrack& track = song.track(static_cast<TrackRole>(role));
+    out << '|' << role << ':' << track.notes().size();
+    for (const auto& note : track.notes()) {
+      out << ',' << note.start_tick << '/' << note.duration << '/' << static_cast<int>(note.note)
+          << '/' << static_cast<int>(note.velocity);
+    }
+  }
+  return out.str();
+}
+
+/// @brief Generate a song with @p blueprint in force and digest the result.
+///
+/// Runs the track generators and the post-processing pipeline, which together
+/// cover every reader that sees the blueprint after the parameters are resolved.
+void renderSongWithBlueprint(const ProductionBlueprint& blueprint, Song& out_song) {
+  GeneratorParams params = probeParams(blueprint);
+
+  // Build the arrangement from the supplied blueprint the way Coordinator does,
+  // so the section flow under test is the one being probed.
+  std::vector<Section> sections = (blueprint.section_flow != nullptr && blueprint.section_count > 0)
+                                      ? buildStructureFromBlueprint(blueprint)
+                                      : buildStructure(params.structure);
+  applyEnergyCurve(sections, params.energy_curve);
+  Arrangement arrangement(sections);
+
+  HarmonyCoordinator harmony;
+  harmony.initialize(arrangement, getChordProgression(params.chord_id), params.mood);
+
+  std::mt19937 rng(params.seed);
+  Coordinator coord;
+  coord.initialize(params, arrangement, rng, &harmony);
+
+  out_song.setArrangement(arrangement);
+  coord.generateAllTracks(out_song);
+
+  EmotionCurve emotion_curve;
+  emotion_curve.plan(arrangement.sections(), params.mood);
+  PostProcessingPipeline pipeline;
+  PostProcessingPipeline::Context ctx{out_song, params, harmony, rng, &blueprint, emotion_curve};
+  pipeline.run(ctx);
+}
+
+/// @brief Digest of a song generated with @p blueprint in force.
+std::string renderWithBlueprint(const ProductionBlueprint& blueprint) {
+  Song song;
+  renderSongWithBlueprint(blueprint, song);
+  return songDigest(song);
+}
+
+/// @brief Flow whose Outro sings and enables Aux.
+///
+/// Purpose-built rather than borrowed from a shipped blueprint: the question is
+/// whether a section type can be excluded behind the mask's back, so the fixture
+/// has to put Aux in the section type that used to be filtered out and give it a
+/// vocal for the sections that need one.
+constexpr SectionSlot kAuxInOutroFlow[] = {
+    {SectionType::Intro, 4, TrackMask::Chord | TrackMask::Drums, EntryPattern::Immediate,
+     SectionEnergy::Low, 60, 60, PeakLevel::None, DrumRole::Full},
+    {SectionType::A, 8, TrackMask::All, EntryPattern::Immediate, SectionEnergy::Medium, 70, 80,
+     PeakLevel::None, DrumRole::Full},
+    {SectionType::Chorus, 8, TrackMask::All, EntryPattern::Immediate, SectionEnergy::High, 85, 90,
+     PeakLevel::Medium, DrumRole::Full},
+    {SectionType::Outro, 8, TrackMask::All, EntryPattern::Immediate, SectionEnergy::Medium, 70, 80,
+     PeakLevel::None, DrumRole::Full},
+};
+
+TEST_F(ProductionBlueprintTest, AuxFollowsTheSectionMaskIntoAnOutro) {
+  // The track mask is the eligibility rule. A section type the blueprint author
+  // enabled Aux in must not be dropped by a second, hidden filter.
+  ProductionBlueprint blueprint = getProductionBlueprint(0);
+  blueprint.section_flow = kAuxInOutroFlow;
+  blueprint.section_count = static_cast<uint8_t>(sizeof(kAuxInOutroFlow) / sizeof(SectionSlot));
+
+  GeneratorParams params = probeParams(blueprint);
+  // An outro carries no vocal, so the aux function chosen for it must be one
+  // that does not follow a melody; otherwise the section's silence says nothing
+  // about whether the mask was honoured. Idol resolves the chorus template to a
+  // rhythmic aux, which is what the outro falls back to.
+  params.vocal_style = VocalStylePreset::Idol;
+
+  std::vector<Section> sections = buildStructureFromBlueprint(blueprint);
+  ASSERT_FALSE(sections.empty());
+  const Section& outro = sections.back();
+  ASSERT_EQ(outro.type, SectionType::Outro);
+  ASSERT_TRUE(hasTrack(outro.track_mask, TrackMask::Aux));
+
+  Arrangement arrangement(sections);
+  HarmonyCoordinator harmony;
+  harmony.initialize(arrangement, getChordProgression(params.chord_id), params.mood);
+
+  std::mt19937 rng(params.seed);
+  Coordinator coord;
+  coord.initialize(params, arrangement, rng, &harmony);
+
+  Song song;
+  song.setArrangement(arrangement);
+  coord.generateAllTracks(song);
+
+  size_t outro_aux = 0;
+  for (const auto& note : song.aux().notes()) {
+    if (note.start_tick >= outro.start_tick && note.start_tick < outro.endTick()) ++outro_aux;
+  }
+  ASSERT_FALSE(song.aux().notes().empty()) << "the fixture generates an aux track at all";
+  EXPECT_GT(outro_aux, 0u) << "the outro enables Aux but no aux note lands in it";
+}
+
+TEST_F(ProductionBlueprintTest, PadAuxFunctionsLayAChordNotASinglePitch) {
+  // A pad exists to hold the harmony under the melody, so a single repeated
+  // pitch is the function's negation rather than a quiet version of it. The
+  // sparsest aux density any blueprint ships is used, because that is the case
+  // where a truncated voice count collapsed the voicing onto one note.
+  ProductionBlueprint blueprint = getProductionBlueprint(0);
+  blueprint.aux_profile.intro_function = AuxFunction::SustainPad;
+  blueprint.aux_profile.verse_function = AuxFunction::SustainPad;
+  blueprint.aux_profile.chorus_function = AuxFunction::SustainPad;
+  blueprint.aux_profile.density_scale = 0.5f;
+
+  Song song;
+  renderSongWithBlueprint(blueprint, song);
+  ASSERT_FALSE(song.aux().notes().empty()) << "the pad produced no aux at all";
+
+  std::map<Tick, std::vector<uint8_t>> by_onset;
+  for (const auto& note : song.aux().notes()) by_onset[note.start_tick].push_back(note.note);
+  for (auto& entry : by_onset) std::sort(entry.second.begin(), entry.second.end());
+
+  size_t chords = 0;
+  size_t thirds = 0;
+  for (const auto& entry : by_onset) {
+    const auto& pitches = entry.second;
+    if (pitches.size() < 2) continue;
+    ++chords;
+    for (size_t i = 1; i < pitches.size(); ++i) {
+      const int interval = pitches[i] - pitches[i - 1];
+      if (interval == 3 || interval == 4) ++thirds;
+    }
+  }
+  EXPECT_GT(chords, 0u) << "every pad onset sounds a lone pitch";
+  EXPECT_GT(thirds, 0u) << "the pad never states the third that colours the chord";
+}
+
+TEST_F(ProductionBlueprintTest, GuitarCeilingReachesEveryPlayingStyle) {
+  // guitar_below_vocal is a section-wide contract, so it cannot depend on which
+  // guitar pattern a section resolves to. The three styles below take a root
+  // pitch rather than a chord voicing, which is how they used to sidestep the
+  // ceiling entirely.
+  struct StyleCase {
+    const char* name;
+    uint8_t hint;  // GuitarStyle enum + 1
+  };
+  const StyleCase kRootDrivenStyles[] = {
+      {"PedalTone", static_cast<uint8_t>(GuitarStyle::PedalTone) + 1},
+      {"RhythmChord", static_cast<uint8_t>(GuitarStyle::RhythmChord) + 1},
+      {"TremoloPick", static_cast<uint8_t>(GuitarStyle::TremoloPick) + 1},
+  };
+
+  for (const auto& style : kRootDrivenStyles) {
+    SectionSlot flow[] = {
+        {SectionType::A, 8, TrackMask::All, EntryPattern::Immediate, SectionEnergy::Medium, 70, 80,
+         PeakLevel::None, DrumRole::Full},
+        {SectionType::Chorus, 8, TrackMask::All, EntryPattern::Immediate, SectionEnergy::High, 85,
+         90, PeakLevel::Medium, DrumRole::Full},
+    };
+    for (auto& slot : flow) slot.guitar_style_hint = style.hint;
+
+    ProductionBlueprint unconstrained = getProductionBlueprint(0);
+    unconstrained.section_flow = flow;
+    unconstrained.section_count = static_cast<uint8_t>(sizeof(flow) / sizeof(SectionSlot));
+    unconstrained.constraints.guitar_below_vocal = false;
+
+    ProductionBlueprint constrained = unconstrained;
+    constrained.constraints.guitar_below_vocal = true;
+
+    Song loose;
+    Song capped;
+    renderSongWithBlueprint(unconstrained, loose);
+    renderSongWithBlueprint(constrained, capped);
+
+    ASSERT_FALSE(loose.guitar().notes().empty()) << style.name << " produced no guitar";
+    ASSERT_FALSE(capped.vocal().notes().empty()) << style.name << " produced no vocal to sit under";
+
+    const auto loose_range = loose.guitar().analyzeRange();
+    const auto capped_range = capped.guitar().analyzeRange();
+    EXPECT_LE(capped_range.second, loose_range.second)
+        << style.name << " reaches higher with the ceiling on than with it off";
+
+    uint8_t vocal_low = 127;
+    for (const auto& note : capped.vocal().notes()) vocal_low = std::min(vocal_low, note.note);
+    const int ceiling = static_cast<int>(vocal_low) - 2;
+    if (static_cast<int>(loose_range.second) <= ceiling) {
+      // The style never plays high enough for the ceiling to bind, so there is
+      // nothing for it to change here.
+      continue;
+    }
+    EXPECT_NE(songDigest(capped), songDigest(loose))
+        << style.name << " plays above the ceiling but ignores guitar_below_vocal";
+  }
+}
+
+TEST_F(ProductionBlueprintTest, EveryDeclaredFieldIsAccountedFor) {
+  const auto names_by_role = collectFieldNamesByRole();
+
+  std::set<std::string> declared;
+  size_t declared_count = 0;
+  for (const auto& [role, names] : names_by_role) {
+    for (const auto& name : names) {
+      EXPECT_TRUE(declared.insert(name).second) << "Field " << name << " is declared twice";
+      ++declared_count;
+    }
+  }
+  EXPECT_EQ(declared.size(), declared_count);
+
+  std::set<std::string> covered;
+  for (const auto& probe : kGenerationProbes) covered.insert(probe.field);
+  for (const char* name : kAssemblyCheckedFields) covered.insert(name);
+  for (const char* name : kUnprovenLivenessFields) covered.insert(name);
+  for (const char* name : kSelectionCheckedFields) covered.insert(name);
+  for (const char* name : kIdentityCheckedFields) covered.insert(name);
+
+  std::vector<std::string> unchecked;
+  std::set_difference(declared.begin(), declared.end(), covered.begin(), covered.end(),
+                      std::back_inserter(unchecked));
+  std::vector<std::string> stale;
+  std::set_difference(covered.begin(), covered.end(), declared.begin(), declared.end(),
+                      std::back_inserter(stale));
+
+  for (const auto& name : unchecked) {
+    ADD_FAILURE() << "Blueprint field " << name
+                  << " has no check proving a generator reads it; add one alongside its role";
+  }
+  for (const auto& name : stale) {
+    ADD_FAILURE() << "Check exists for " << name << ", which the blueprint no longer declares";
+  }
+
+  // The role a field carries decides which kind of check has to cover it.
+  const auto expect_role = [&names_by_role](BlueprintFieldRole role, const std::string& name) {
+    auto it = names_by_role.find(role);
+    ASSERT_NE(it, names_by_role.end());
+    EXPECT_NE(std::find(it->second.begin(), it->second.end(), name), it->second.end())
+        << name << " is checked as if it had a different role";
+  };
+  for (const auto& probe : kGenerationProbes) {
+    expect_role(BlueprintFieldRole::TrackGeneration, probe.field);
+  }
+  for (const char* name : kAssemblyCheckedFields) {
+    expect_role(BlueprintFieldRole::SongAssembly, name);
+  }
+  for (const char* name : kUnprovenLivenessFields) {
+    expect_role(BlueprintFieldRole::UnprovenLiveness, name);
+  }
+  for (const char* name : kSelectionCheckedFields) {
+    expect_role(BlueprintFieldRole::Selection, name);
+  }
+  for (const char* name : kIdentityCheckedFields) {
+    expect_role(BlueprintFieldRole::Identity, name);
+  }
+}
+
+TEST_F(ProductionBlueprintTest, EveryTrackGenerationFieldChangesTheSong) {
+  std::map<uint8_t, std::string> baselines;
+  for (const auto& probe : kGenerationProbes) {
+    if (baselines.count(probe.base_blueprint) == 0) {
+      baselines[probe.base_blueprint] =
+          renderWithBlueprint(getProductionBlueprint(probe.base_blueprint));
+      ASSERT_FALSE(baselines[probe.base_blueprint].empty());
+    }
+  }
+
+  for (const auto& probe : kGenerationProbes) {
+    ProductionBlueprint modified = getProductionBlueprint(probe.base_blueprint);
+    probe.perturb(modified);
+    EXPECT_NE(renderWithBlueprint(modified), baselines[probe.base_blueprint])
+        << "Changing " << probe.field << " left the song identical, so nothing reads it";
+  }
+}
+
+TEST_F(ProductionBlueprintTest, ParadigmAndRiffPolicyReachGeneratorParams) {
+  GeneratorParams params;
+  params.seed = 20240903;
+  params.blueprint_id = 1;  // RhythmLock: RhythmSync, LockedContour, drum-synced
+
+  Generator gen;
+  gen.generate(params);
+
+  const auto& bp = getProductionBlueprint(1);
+  EXPECT_EQ(gen.getParams().paradigm, bp.paradigm);
+  EXPECT_EQ(gen.getParams().riff_policy, bp.riff_policy);
+  EXPECT_EQ(gen.getParams().drums_sync_vocal, bp.drums_sync_vocal);
+  EXPECT_NE(bp.paradigm, GenerationParadigm::Traditional);
+  EXPECT_TRUE(bp.drums_sync_vocal);
+}
+
+TEST_F(ProductionBlueprintTest, DrumsRequiredOverridesDisabledDrums) {
+  ASSERT_TRUE(getProductionBlueprint(1).drums_required);
+
+  GeneratorParams params;
+  params.seed = 20240903;
+  params.blueprint_id = 1;
+  params.drums_enabled = false;  // not explicit: the blueprint may override it
+
+  Generator gen;
+  gen.generate(params);
+
+  EXPECT_TRUE(gen.getParams().drums_enabled);
+  EXPECT_FALSE(gen.getSong().drums().notes().empty());
+}
+
+TEST_F(ProductionBlueprintTest, AddictiveModeLocksTheRiffAndMaximizesTheHook) {
+  ASSERT_TRUE(getProductionBlueprint(9).addictive_mode);
+
+  GeneratorParams params;
+  params.seed = 20240903;
+  params.blueprint_id = 9;
+
+  Generator gen;
+  gen.generate(params);
+
+  EXPECT_EQ(gen.getParams().riff_policy, RiffPolicy::LockedPitch);
+  EXPECT_EQ(gen.getParams().hook_intensity, HookIntensity::Maximum);
+}
+
+TEST_F(ProductionBlueprintTest, TempoDefaultAndRangeResolveTheBpm) {
+  const auto& bp = getProductionBlueprint(1);
+  ASSERT_GT(bp.tempo_default, 0);
+  ASSERT_GT(bp.tempo_min, 0);
+
+  GeneratorParams params;
+  params.seed = 20240903;
+  params.blueprint_id = 1;
+  params.bpm = 0;  // implicit: the blueprint decides
+
+  Generator gen;
+  gen.generate(params);
+  EXPECT_EQ(gen.getParams().bpm, bp.tempo_default);
+
+  // An implicit BPM outside the declared range is pulled back into it.
+  const auto below = clampBlueprintBpm(static_cast<uint16_t>(bp.tempo_min - 20), bp, false);
+  EXPECT_EQ(below.first, bp.tempo_min);
+  const auto above = clampBlueprintBpm(static_cast<uint16_t>(bp.tempo_max + 20), bp, false);
+  EXPECT_EQ(above.first, bp.tempo_max);
+}
+
+TEST_F(ProductionBlueprintTest, MotifNoteCountOverridesTheDefaultRiffDensity) {
+  const auto& bp = getProductionBlueprint(6);  // IdolKawaii: melody-driven, 8 onsets
+  ASSERT_GT(bp.constraints.motif_note_count, 0);
+  ASSERT_NE(bp.paradigm, GenerationParadigm::RhythmSync);
+
+  GeneratorParams params;
+  params.seed = 20240903;
+  params.blueprint_id = 6;
+
+  Generator gen;
+  gen.generate(params);
+
+  EXPECT_EQ(gen.getParams().motif.note_count, bp.constraints.motif_note_count);
+}
+
+TEST_F(ProductionBlueprintTest, RitardandoAmountSetsTheOutroSlowdown) {
+  const auto& bp = getProductionBlueprint(3);  // Ballad: the deepest slowdown
+  ASSERT_GT(bp.constraints.ritardando_amount, 0.0f);
+
+  GeneratorParams params;
+  params.seed = 20240903;
+  params.blueprint_id = 3;
+
+  Generator gen;
+  gen.generate(params);
+
+  const auto& tempo_map = gen.getSong().tempoMap();
+  ASSERT_FALSE(tempo_map.empty()) << "Ballad should end on a ritardando";
+
+  const uint16_t bpm = gen.getParams().bpm;
+  float amount = bp.constraints.ritardando_amount;
+  if (bpm > 120) amount *= 120.0f / static_cast<float>(bpm);
+  const auto expected_final = static_cast<uint16_t>(static_cast<float>(bpm) / (1.0f + amount));
+
+  uint16_t slowest = tempo_map.front().bpm;
+  for (const auto& event : tempo_map) slowest = std::min(slowest, event.bpm);
+  EXPECT_EQ(slowest, expected_final);
+}
+
+TEST_F(ProductionBlueprintTest, WeightAndMoodMaskGateRandomSelection) {
+  // BehavioralLoop carries weight 0, so weighted selection must never reach it.
+  ASSERT_EQ(getProductionBlueprint(9).weight, 0);
+  for (uint32_t seed = 1; seed <= 200; ++seed) {
+    std::mt19937 rng(seed);
+    EXPECT_NE(selectProductionBlueprint(rng, 255), 9);
+  }
+
+  // Ballad declares a mood mask, so it is only reachable for those moods.
+  const auto& ballad = getProductionBlueprint(3);
+  ASSERT_NE(ballad.mood_mask, 0u);
+  for (uint8_t mood = 0; mood < 32; ++mood) {
+    const bool declared = (ballad.mood_mask & (1u << mood)) != 0;
+    EXPECT_EQ(isMoodCompatible(3, mood), declared) << "mood " << static_cast<int>(mood);
+  }
+}
+
+TEST_F(ProductionBlueprintTest, IntroKickFlagKeepsTheKickOutOfTheIntro) {
+  ASSERT_FALSE(getProductionBlueprint(1).intro_kick_enabled);
+
+  GeneratorParams params;
+  params.seed = 20240903;
+  params.blueprint_id = 1;
+
+  Generator gen;
+  gen.generate(params);
+
+  Tick intro_end = 0;
+  for (const auto& section : gen.getSong().arrangement().sections()) {
+    if (section.type == SectionType::Intro) {
+      intro_end = section.endTick();
+      break;
+    }
+  }
+  ASSERT_GT(intro_end, 0u) << "RhythmLock opens on an intro";
+
+  size_t intro_drums = 0;
+  size_t intro_kicks = 0;
+  for (const auto& note : gen.getSong().drums().notes()) {
+    if (note.start_tick >= intro_end) continue;
+    ++intro_drums;
+    if (note.note == drums::BD) ++intro_kicks;
+  }
+  EXPECT_GT(intro_drums, 0u) << "the intro is drum-led, so the comparison has something to see";
+  EXPECT_EQ(intro_kicks, 0u) << "intro_kick_enabled is false, so the kick must stay out";
+}
+
+TEST_F(ProductionBlueprintTest, IntroStaggerPercentDecidesWhetherTheIntroBuildsUp) {
+  // The field is a probability, so neither value can be compared against the
+  // shipped one: a single roll may fall the same side of both. Comparing the
+  // two extremes against each other removes the roll from the question.
+  const uint8_t kStaggerProbeBlueprint = 2;  // StoryPop: 4-bar intro, all tracks, no forced stagger
+  ASSERT_GT(getProductionBlueprint(kStaggerProbeBlueprint).intro_stagger_percent, 0);
+
+  ProductionBlueprint never = getProductionBlueprint(kStaggerProbeBlueprint);
+  never.intro_stagger_percent = 0;
+  ProductionBlueprint always = getProductionBlueprint(kStaggerProbeBlueprint);
+  always.intro_stagger_percent = 100;
+
+  EXPECT_NE(renderWithBlueprint(always), renderWithBlueprint(never))
+      << "the intro entered the same way whether staggering was certain or impossible";
+}
+
+TEST_F(ProductionBlueprintTest, PercussionPolicyChangesTheAuxiliaryPercussionSet) {
+  const auto none =
+      drums::getPercussionConfig(Mood::BrightUpbeat, SectionType::Chorus, PercussionPolicy::None);
+  const auto minimal = drums::getPercussionConfig(Mood::BrightUpbeat, SectionType::Chorus,
+                                                  PercussionPolicy::Minimal);
+  const auto standard = drums::getPercussionConfig(Mood::BrightUpbeat, SectionType::Chorus,
+                                                   PercussionPolicy::Standard);
+  const auto full =
+      drums::getPercussionConfig(Mood::BrightUpbeat, SectionType::Chorus, PercussionPolicy::Full);
+
+  EXPECT_FALSE(none.shaker || none.tambourine || none.handclap)
+      << "None must silence every auxiliary percussion element";
+  EXPECT_TRUE(minimal.handclap);
+  EXPECT_FALSE(minimal.shaker);
+  EXPECT_NE(standard.shaker_16th, full.shaker_16th)
+      << "Full is the policy that puts the shaker on a 16th grid";
+}
+
+TEST_F(ProductionBlueprintTest, AuxProgramOverrideReplacesTheMoodProgram) {
+  const auto& bp = getProductionBlueprint(1);  // RhythmLock: Square Lead
+  ASSERT_NE(bp.aux_profile.program_override, 0xFF);
+
+  EXPECT_EQ(getEffectiveAuxProgram(Mood::BrightUpbeat, 1), bp.aux_profile.program_override);
+  // Blueprint 0 leaves the choice to the mood.
+  ASSERT_EQ(getProductionBlueprint(0).aux_profile.program_override, 0xFF);
+  EXPECT_EQ(getEffectiveAuxProgram(Mood::BrightUpbeat, 0), getMoodPrograms(Mood::BrightUpbeat).aux);
+}
+
+TEST_F(ProductionBlueprintTest, CoordinatorReportsTheBlueprintItIsRunning) {
+  // Anything downstream that asks the Coordinator which blueprint is in force
+  // must get the resolved id. A fixed 0 answers "Traditional" for every song.
+  for (uint8_t id = 0; id < getProductionBlueprintCount(); ++id) {
+    const ProductionBlueprint& blueprint = getProductionBlueprint(id);
+    GeneratorParams params = probeParams(blueprint);
+    params.blueprint_id = id;
+
+    std::vector<Section> sections =
+        (blueprint.section_flow != nullptr && blueprint.section_count > 0)
+            ? buildStructureFromBlueprint(blueprint)
+            : buildStructure(params.structure);
+    Arrangement arrangement(sections);
+
+    HarmonyCoordinator harmony;
+    harmony.initialize(arrangement, getChordProgression(params.chord_id), params.mood);
+
+    std::mt19937 rng(params.seed);
+    Coordinator coord;
+    coord.initialize(params, arrangement, rng, &harmony);
+
+    EXPECT_EQ(coord.getBlueprintId(), id) << "Coordinator lost the identity of " << blueprint.name;
+    EXPECT_EQ(coord.getBlueprint(), &blueprint);
+  }
+}
+
+TEST_F(ProductionBlueprintTest, CoordinatorRecoversTheBlueprintIdFromTheTableEntry) {
+  // A caller that resolved the blueprint but left blueprint_id unresolved still
+  // gets a truthful answer, because the reference itself names a table entry.
+  const ProductionBlueprint& blueprint = getProductionBlueprint(7);
+  GeneratorParams params = probeParams(blueprint);
+  params.blueprint_id = 255;  // random sentinel: never a resolved id
+
+  Arrangement arrangement(buildStructureFromBlueprint(blueprint));
+  HarmonyCoordinator harmony;
+  harmony.initialize(arrangement, getChordProgression(params.chord_id), params.mood);
+
+  std::mt19937 rng(params.seed);
+  Coordinator coord;
+  coord.initialize(params, arrangement, rng, &harmony);
+
+  EXPECT_EQ(coord.getBlueprintId(), 7);
+}
+
+TEST_F(ProductionBlueprintTest, NameResolvesBothWays) {
+  for (uint8_t id = 0; id < getProductionBlueprintCount(); ++id) {
+    const auto& bp = getProductionBlueprint(id);
+    EXPECT_STREQ(getProductionBlueprintName(id), bp.name);
+    EXPECT_EQ(findProductionBlueprintByName(bp.name), id);
   }
 }
 

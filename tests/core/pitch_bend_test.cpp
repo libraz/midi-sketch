@@ -330,13 +330,14 @@ TEST(PitchBendTest, AllValuesEncodable) {
   // Verify all valid internal values can be encoded to MIDI
   for (int16_t value = -8192; value <= 8191; ++value) {
     uint16_t midi_value = static_cast<uint16_t>(value + 8192);
-    EXPECT_GE(midi_value, 0);
-    EXPECT_LE(midi_value, 16383);
+    EXPECT_LE(midi_value, 16383) << "Bend value " << value << " does not fit 14 bits";
 
+    // Masking to 7 bits cannot itself fail, so what is worth asserting is that
+    // the two 7-bit halves put the original value back together.
     uint8_t lsb = midi_value & 0x7F;
     uint8_t msb = (midi_value >> 7) & 0x7F;
-    EXPECT_LE(lsb, 127);
-    EXPECT_LE(msb, 127);
+    EXPECT_EQ((static_cast<uint16_t>(msb) << 7) | lsb, midi_value)
+        << "Bend value " << value << " does not survive the 7-bit split";
   }
 }
 

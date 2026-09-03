@@ -10,6 +10,10 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <ostream>
+#include <vector>
+
 #include "core/arrangement.h"
 #include "core/chord.h"
 #include "core/timing_constants.h"
@@ -421,6 +425,107 @@ TEST_F(ChordProgressionTrackerTest, SecondaryDominant_EmptyTracker) {
   ChordProgressionTracker empty;
   empty.registerSecondaryDominant(0, 960, 2);  // Should not crash
   EXPECT_EQ(empty.getChordDegreeAt(0), 0);     // Fallback
+}
+
+// One sampled point of the chord timeline, read through the public lookups.
+struct TimelinePoint {
+  int8_t degree;
+  bool secondary_dominant;
+  ChordExtension extension;
+
+  bool operator==(const TimelinePoint& other) const {
+    return degree == other.degree && secondary_dominant == other.secondary_dominant &&
+           extension == other.extension;
+  }
+};
+
+std::ostream& operator<<(std::ostream& os, const TimelinePoint& point) {
+  return os << "{degree=" << static_cast<int>(point.degree)
+            << ", sec_dom=" << point.secondary_dominant
+            << ", ext=" << static_cast<int>(point.extension) << "}";
+}
+
+std::vector<TimelinePoint> sampleTimeline(const ChordProgressionTracker& tracker, Tick song_end,
+                                          Tick step) {
+  std::vector<TimelinePoint> samples;
+  for (Tick tick = 0; tick < song_end; tick += step) {
+    samples.push_back({tracker.getChordDegreeAt(tick), tracker.isSecondaryDominantAt(tick),
+                       tracker.getChordExtensionAt(tick)});
+  }
+  return samples;
+}
+
+// Registering a secondary dominant grows the chord timeline, which moves its
+// storage. Every registration must therefore decide from values copied before
+// the timeline is rewritten, and must leave a timeline that still covers the
+// same tick range with ascending, non-empty entries. Exercises all four shapes:
+// a span ending on the covered entry's boundary, a span splitting it in three,
+// a span starting exactly on an entry boundary, and a span reaching past the
+// covered entry.
+TEST_F(ChordProgressionTrackerTest, SecondaryDominantKeepsTimelineIntactAcrossStorageGrowth) {
+  // An extension covering the middle of one bar rebuilds the timeline into a
+  // buffer with no spare room (the split adds exactly the two reserved slots),
+  // so the next registration is guaranteed to grow and move the storage.
+  tracker_.registerChordExtension(TICKS_PER_BEAT, 3 * TICKS_PER_BEAT, ChordExtension::Maj7);
+
+  constexpr Tick kStep = 120;
+  const Tick song_end = 8 * TICKS_PER_BAR;
+  std::vector<TimelinePoint> expected = sampleTimeline(tracker_, song_end, kStep);
+  ASSERT_FALSE(expected.empty());
+
+  struct Registration {
+    Tick start;
+    Tick end;
+    int8_t degree;
+    const char* shape;
+  };
+  const Registration registrations[] = {
+      {1 * TICKS_PER_BAR + TICK_HALF, 2 * TICKS_PER_BAR, 2, "ends on the entry boundary"},
+      {2 * TICKS_PER_BAR + TICKS_PER_BEAT, 2 * TICKS_PER_BAR + 3 * TICKS_PER_BEAT, 6,
+       "splits the entry in three"},
+      {3 * TICKS_PER_BAR, 3 * TICKS_PER_BAR + TICK_HALF, 1, "starts on the entry boundary"},
+      {4 * TICKS_PER_BAR + TICK_HALF, 5 * TICKS_PER_BAR + TICK_HALF, 3, "reaches past the entry"},
+  };
+
+  for (const Registration& reg : registrations) {
+    SCOPED_TRACE(reg.shape);
+
+    // The covered entry ends where the next one starts; the secondary dominant
+    // may never be recorded past that point.
+    const Tick covered_end = tracker_.getNextChordEntryTick(reg.start);
+    ASSERT_GT(covered_end, reg.start) << "test setup: no entry covers the requested start";
+    const Tick sec_dom_end = std::min(reg.end, covered_end);
+
+    tracker_.registerSecondaryDominant(reg.start, reg.end, reg.degree);
+
+    for (size_t i = 0; i < expected.size(); ++i) {
+      const Tick tick = static_cast<Tick>(i) * kStep;
+      if (tick >= reg.start && tick < sec_dom_end) {
+        expected[i] = {reg.degree, true, ChordExtension::Dom7};
+      }
+    }
+
+    EXPECT_EQ(sampleTimeline(tracker_, song_end, kStep), expected)
+        << "registration must only rewrite its own span";
+  }
+
+  // Entry boundaries stay strictly ascending and gapless: a stale reference that
+  // erased the wrong entry would leave a hole in the timeline.
+  Tick cursor = 0;
+  size_t boundaries = 0;
+  while (true) {
+    const Tick next = tracker_.getNextChordEntryTick(cursor);
+    if (next == 0) break;
+    ASSERT_GT(next, cursor) << "chord entries must be ordered and non-empty";
+    ASSERT_LT(next, song_end);
+    cursor = next;
+    ++boundaries;
+    ASSERT_LT(boundaries, 100u) << "boundary walk did not terminate";
+  }
+  // 8 bars, one extension split, and four secondary-dominant splits.
+  EXPECT_GE(boundaries, 8u + 1u + 4u);
+  EXPECT_EQ(tracker_.getChordDegreeAt(song_end - 1), expected.back().degree)
+      << "the timeline must still reach the end of the song";
 }
 
 // ============================================================================

@@ -12,6 +12,7 @@
 #include "core/config_converter.h"
 #include "core/generator.h"
 #include "core/preset_data.h"
+#include "core/production_blueprint.h"
 #include "core/types.h"
 #include "midi/midi_writer.h"
 #include "midisketch.h"
@@ -153,6 +154,37 @@ TEST(StylePresetTest, MoodDefaultsEnableChordExtensions) {
 
   EXPECT_TRUE(params.chord_extension.enable_7th);
   EXPECT_TRUE(params.chord_extension.enable_9th);
+}
+
+TEST(StylePresetTest, ExplicitNinthDoesNotSuppressMoodSeventhAndSus) {
+  SongConfig config = createDefaultSongConfig(16);  // Emotional Ballad
+  config.seed = 12345;
+  config.mood = static_cast<uint8_t>(Mood::Ballad);
+  config.mood_explicit = true;
+  config.chord_extension.enable_9th = true;
+
+  GeneratorParams params = ConfigConverter::convert(config);
+
+  EXPECT_TRUE(params.chord_extension.enable_9th);
+  EXPECT_TRUE(params.chord_extension.enable_7th)
+      << "Asking for ninths must not remove the sevenths the mood implies";
+  EXPECT_TRUE(params.chord_extension.enable_sus)
+      << "Asking for ninths must not remove the suspensions the mood implies";
+}
+
+TEST(StylePresetTest, BlueprintHarmonicIdentityReachesChordExtensions) {
+  SongConfig config = createDefaultSongConfig(0);  // Minimal Groove Pop -> StraightPop
+  config.seed = 12345;
+  config.blueprint_id = 3;  // Ballad
+  ASSERT_FALSE(config.mood_explicit);
+  ASSERT_FALSE(isMoodCompatible(config.blueprint_id, static_cast<uint8_t>(Mood::StraightPop)));
+
+  GeneratorParams params = ConfigConverter::convert(config);
+
+  EXPECT_TRUE(params.chord_extension.enable_7th)
+      << "A blueprint named for a harmonic identity must reach that vocabulary "
+         "without the caller also guessing a matching mood";
+  EXPECT_TRUE(params.chord_extension.enable_sus);
 }
 
 // ============================================================================

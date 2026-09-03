@@ -396,6 +396,33 @@ TEST(PianoModelTest, SuggestPlayableTriesInversions) {
   EXPECT_TRUE(beginner.isVoicingPlayable(result));
 }
 
+TEST(PianoModelTest, ReducingForPlayabilityKeepsTheGuideTones) {
+  // A reduction has to give something up, but not the tones that say what the
+  // chord is. The fifth carries no identity and the root is already in the bass,
+  // so those go first; the third (major or minor) and the seventh (the dominant
+  // pull) are what the header contract promises to keep whenever a playable
+  // reduction that keeps them exists.
+  PianoModel beginner(InstrumentSkillLevel::Beginner);
+
+  // C3 G3 Bb3 D4 E5: root, fifth, seventh, ninth, third, with the third two
+  // octaves up so no hand assignment covers the whole voicing.
+  const std::vector<uint8_t> spread = {48, 55, 58, 62, 76};
+  ASSERT_FALSE(beginner.isVoicingPlayable(spread));
+
+  auto result = beginner.suggestPlayableVoicing(spread, 0);
+  ASSERT_FALSE(result.empty());
+  ASSERT_TRUE(beginner.isVoicingPlayable(result));
+
+  bool has_third = false;
+  bool has_seventh = false;
+  for (uint8_t pitch : result) {
+    if (pitch % 12 == 4) has_third = true;
+    if (pitch % 12 == 10) has_seventh = true;
+  }
+  EXPECT_TRUE(has_third) << "the reduction dropped the third while droppable voices remained";
+  EXPECT_TRUE(has_seventh) << "the reduction dropped the seventh while droppable voices remained";
+}
+
 TEST(PianoModelTest, SuggestPlayableAlwaysReturnsNonEmpty) {
   PianoModel beginner(InstrumentSkillLevel::Beginner);
   // Very wide voicing spanning many octaves

@@ -107,8 +107,9 @@ TEST(MotifTransformTest, AugmentCapsAtMaxValue) {
 
   GlobalMotif result = augmentMotif(source);
 
-  // Should cap at 255
-  EXPECT_LE(result.rhythm_signature[0], 255);
+  // 200 doubled is 400, which does not fit the byte the signature is stored in.
+  // Without the cap it would wrap to 144 rather than saturate.
+  EXPECT_EQ(result.rhythm_signature[0], 255);
 }
 
 // ============================================================================

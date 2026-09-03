@@ -3,9 +3,10 @@
  * @brief Regression tests for velocity floor (never 0) and Aux dynamics shaping.
  *
  * Covers:
- *  - calculateVelocity / calculateEffectiveVelocity must never return 0
+ *  - calculateVelocity and the section dynamics scale must never yield 0
  *    (velocity 0 is a MIDI Note-Off semantically), even under worst-case
- *    combinations of section multiplier, energy, mood and base velocity.
+ *    combinations of section multiplier, energy, mood, base velocity and
+ *    section modifier.
  *  - The Aux track must receive non-flat dynamics (velocity shaping and/or
  *    humanization) after post-processing, i.e. its velocities are not all
  *    identical when the track is actually populated.
@@ -24,7 +25,7 @@ namespace midisketch {
 namespace {
 
 // ============================================================================
-// Velocity floor: calculateVelocity / calculateEffectiveVelocity never 0
+// Velocity floor: calculateVelocity and the section dynamics scale never 0
 // ============================================================================
 
 TEST(VelocityClampTest, CalculateVelocityNeverZeroAcrossSweep) {
@@ -47,44 +48,36 @@ TEST(VelocityClampTest, CalculateVelocityNeverZeroAcrossSweep) {
   }
 }
 
-TEST(VelocityClampTest, CalculateEffectiveVelocityNeverZeroWorstCase) {
-  // Construct the worst case that previously underflowed to 0:
-  //  - smallest base velocity (no modifier floor applies when modifier=None)
-  //  - lowest energy multiplier
-  //  - no peak boost
-  //  - lowest mood adjustment (0.9)
-  //  - beat 1 (no beat boost)
-  Section section;
-  section.type = SectionType::A;
-  section.energy = SectionEnergy::Low;
-  section.peak_level = PeakLevel::None;
-  section.modifier = SectionModifier::None;
-  section.base_velocity = 1;  // minimal base, bypasses modifier [40,127] floor
-
-  // Sweep all moods at beat 1 (no beat boost) to find any zero.
-  for (int m = 0; m < 24; ++m) {
-    Mood mood = static_cast<Mood>(m);
-    uint8_t vel = calculateEffectiveVelocity(section, /*beat=*/1, mood);
-    EXPECT_GE(vel, 1) << "calculateEffectiveVelocity returned 0 for base=1 energy=Low mood=" << m;
-    EXPECT_LE(vel, 127);
-  }
-}
-
-TEST(VelocityClampTest, CalculateEffectiveVelocityNeverZeroFullSweep) {
-  // Broader sweep: low base velocities x all energies x all moods x all beats.
+TEST(VelocityClampTest, SectionDynamicsNeverSilencesANoteAcrossSweep) {
+  // The section scale is a multiplication over notes that already exist, so the
+  // most attenuating combination of every control, applied to the quietest
+  // possible note, still has to leave a sounding note behind.
+  const SectionModifier kModifiers[] = {SectionModifier::None, SectionModifier::Ochisabi,
+                                        SectionModifier::Transitional, SectionModifier::Climactic};
   for (uint8_t base = 0; base <= 4; ++base) {
     for (int e = 0; e < 4; ++e) {
-      Section section;
-      section.type = SectionType::Outro;  // typically low energy section type
-      section.energy = static_cast<SectionEnergy>(e);
-      section.peak_level = PeakLevel::None;
-      section.modifier = SectionModifier::None;
-      section.base_velocity = base;
-      for (uint8_t beat = 0; beat < 4; ++beat) {
-        for (int m = 0; m < 24; ++m) {
-          uint8_t vel = calculateEffectiveVelocity(section, beat, static_cast<Mood>(m));
-          EXPECT_GE(vel, 1) << "zero velocity at base=" << static_cast<int>(base) << " energy=" << e
-                            << " beat=" << static_cast<int>(beat) << " mood=" << m;
+      for (SectionModifier modifier : kModifiers) {
+        for (uint8_t note_velocity = 1; note_velocity <= 4; ++note_velocity) {
+          Section section;
+          section.type = SectionType::Outro;
+          section.start_tick = 0;
+          section.bars = 1;
+          section.energy = static_cast<SectionEnergy>(e);
+          section.peak_level = PeakLevel::None;
+          section.modifier = modifier;
+          section.modifier_intensity = 100;
+          section.base_velocity = base;
+
+          MidiTrack track;
+          track.addNote(NoteEventBuilder::create(0, TICKS_PER_BEAT, 60, note_velocity));
+          std::vector<MidiTrack*> tracks = {&track};
+          applySectionDynamics(tracks, {section});
+
+          EXPECT_GE(track.notes()[0].velocity, 1)
+              << "note silenced at base=" << static_cast<int>(base) << " energy=" << e
+              << " modifier=" << static_cast<int>(modifier)
+              << " velocity=" << static_cast<int>(note_velocity);
+          EXPECT_LE(track.notes()[0].velocity, 127);
         }
       }
     }

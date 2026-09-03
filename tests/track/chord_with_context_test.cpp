@@ -623,12 +623,10 @@ TEST_F(ChordWithContextTest, AvoidsCloseIntervalsAcrossAllChordProgressions) {
 }
 
 TEST_F(ChordWithContextTest, RegressionVocalCloseIntervalOriginalBug) {
-  // Regression test based on backup/dissonance_investigation_2026-01-12.md
-  // Original bug: Chord(C4/E4) vs Vocal/Aux(D5) causing major 2nd/minor 7th
-  // clashes at bars 17, 22, 24, 46, 48, 72.
-  //
-  // Note: The original MIDI had metadata bugs, so exact reproduction is
-  // not possible. This test uses similar parameters to verify the fix.
+  // A close chord voicing under a melody note a major 2nd or minor 7th away is
+  // the shape this parameter set produces most readily: an Axis progression at
+  // a fast idol tempo, where the chord sits in the same octave the vocal and
+  // aux lines occupy. The voicing has to open up rather than hold the clash.
 
   params_.chord_id = 2;          // Axis progression: vi-IV-I-V
   params_.mood = Mood::IdolPop;  // mood 14
@@ -736,9 +734,9 @@ TEST_F(ChordWithContextTest, AvoidsTritoneCashesWithBass) {
 }
 
 TEST_F(ChordWithContextTest, RegressionChordBassTritoneOriginalBug) {
-  // Regression test for backup/midi-sketch-1768105073187.mid bug.
-  // Original: Chord B4/B3 vs Bass F3 tritone clashes at bar 29/53 beat 1.
-  // Fix: clashesWithBass() now rejects tritone intervals.
+  // Chord voicing is decided after the bass, so a chord tone a tritone above the
+  // bass note is a clash the chord track is the one able to avoid. These
+  // parameters put a B in the chord over an F in the bass on beat 1.
 
   params_.seed = 3604033891;
   params_.chord_id = 0;

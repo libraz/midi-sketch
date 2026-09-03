@@ -83,13 +83,13 @@ TEST(SecondaryDominantTest, VofI) {
 
 TEST(SecondaryDominantTest, LowTensionNoInsertion) {
   // Low tension should not insert secondary dominant
-  auto info = checkSecondaryDominant(0, 1, 0.3f);  // I -> ii
+  auto info = checkSecondaryDominant(1, 0.3f);  // target ii
   EXPECT_FALSE(info.should_insert);
 }
 
 TEST(SecondaryDominantTest, HighTensionToII) {
   // High tension going to ii should suggest V/ii
-  auto info = checkSecondaryDominant(0, 1, 0.7f);  // I -> ii
+  auto info = checkSecondaryDominant(1, 0.7f);  // target ii
   EXPECT_TRUE(info.should_insert);
   EXPECT_EQ(info.dominant_degree, 5);  // VI (A in C)
   EXPECT_EQ(info.extension, ChordExtension::Dom7);
@@ -98,7 +98,7 @@ TEST(SecondaryDominantTest, HighTensionToII) {
 
 TEST(SecondaryDominantTest, HighTensionToVI) {
   // High tension going to vi should suggest V/vi
-  auto info = checkSecondaryDominant(0, 5, 0.8f);  // I -> vi
+  auto info = checkSecondaryDominant(5, 0.8f);  // target vi
   EXPECT_TRUE(info.should_insert);
   EXPECT_EQ(info.dominant_degree, 2);  // III (E in C)
   EXPECT_EQ(info.extension, ChordExtension::Dom7);
@@ -106,9 +106,9 @@ TEST(SecondaryDominantTest, HighTensionToVI) {
 }
 
 TEST(SecondaryDominantTest, HighTensionToIV) {
-  // High tension going to IV should suggest V/IV (but not if already on I)
-  // V/IV = I chord, so from vi -> IV we get C7 before F
-  auto info = checkSecondaryDominant(5, 3, 0.6f);  // vi -> IV
+  // High tension going to IV should suggest V/IV, which is the tonic played
+  // as C7.
+  auto info = checkSecondaryDominant(3, 0.6f);  // target IV
   EXPECT_TRUE(info.should_insert);
   EXPECT_EQ(info.dominant_degree, 0);  // I (C7 in C)
   EXPECT_EQ(info.extension, ChordExtension::Dom7);
@@ -116,7 +116,7 @@ TEST(SecondaryDominantTest, HighTensionToIV) {
 
 TEST(SecondaryDominantTest, HighTensionToV) {
   // High tension going to V should suggest V/V
-  auto info = checkSecondaryDominant(0, 4, 0.7f);  // I -> V
+  auto info = checkSecondaryDominant(4, 0.7f);  // target V
   EXPECT_TRUE(info.should_insert);
   EXPECT_EQ(info.dominant_degree, 1);  // II (D in C)
   EXPECT_EQ(info.extension, ChordExtension::Dom7);
@@ -124,23 +124,47 @@ TEST(SecondaryDominantTest, HighTensionToV) {
 
 TEST(SecondaryDominantTest, BadTargetNoInsertion) {
   // iii is not a good target for secondary dominant
-  auto info = checkSecondaryDominant(0, 2, 0.8f);  // I -> iii
+  auto info = checkSecondaryDominant(2, 0.8f);  // target iii
   EXPECT_FALSE(info.should_insert);
 }
 
-TEST(SecondaryDominantTest, AlreadyOnDominantNoInsertion) {
-  // If current chord IS the secondary dominant, don't insert
-  auto info = checkSecondaryDominant(5, 1, 0.8f);  // VI -> ii (VI is already V/ii)
-  EXPECT_FALSE(info.should_insert);
+TEST(SecondaryDominantTest, DominantsThatRecolourTheStandingChordAreEligible) {
+  // In each of these the dominant lands on the degree that is already sounding,
+  // so comparing degrees would reject them. Dom7 forces a major third, so the
+  // standing chord becomes a dominant seventh and resolves down a fifth to a
+  // different chord -- which is what a secondary dominant is, and these four are
+  // the most common ones in this repertoire.
+  struct Approach {
+    int8_t target;
+    int8_t dominant;
+    const char* description;
+  };
+  const Approach approaches[] = {
+      {3, 0, "I becomes I7 before IV"},
+      {4, 1, "ii becomes II7 before V"},
+      {5, 2, "iii becomes III7 before vi"},
+      {1, 5, "vi becomes VI7 before ii"},
+  };
+
+  for (const auto& approach : approaches) {
+    auto info = checkSecondaryDominant(approach.target, 0.8f);
+    EXPECT_TRUE(info.should_insert) << approach.description;
+    EXPECT_EQ(info.dominant_degree, approach.dominant) << approach.description;
+    EXPECT_EQ(info.extension, ChordExtension::Dom7) << approach.description;
+    EXPECT_EQ(info.target_degree, approach.target) << approach.description;
+    EXPECT_NE(info.dominant_degree, info.target_degree)
+        << approach.description
+        << ": a secondary dominant resolves to another chord, never to itself";
+  }
 }
 
 TEST(SecondaryDominantTest, ModerateTensionThreshold) {
   // Exactly at threshold (0.5) should not insert
-  auto info = checkSecondaryDominant(0, 1, 0.5f);
+  auto info = checkSecondaryDominant(1, 0.5f);
   EXPECT_FALSE(info.should_insert);
 
   // Just above threshold should insert
-  info = checkSecondaryDominant(0, 1, 0.51f);
+  info = checkSecondaryDominant(1, 0.51f);
   EXPECT_TRUE(info.should_insert);
 }
 

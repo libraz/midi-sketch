@@ -7,6 +7,7 @@
 
 #include <gtest/gtest.h>
 
+#include "core/melody_templates.h"
 #include "core/midi_track.h"
 #include "core/note_source.h"
 #include "core/note_timeline_utils.h"
@@ -15,6 +16,10 @@
 #include "core/types.h"
 #include "test_helpers/note_event_test_helper.h"
 #include "test_support/stub_harmony_context.h"
+#include "track/melody/melody_utils.h"
+#include "track/vocal/melody_designer.h"
+#include "track/vocal/phrase_plan.h"
+#include "track/vocal/phrase_planner.h"
 #include "track/vocal/vocal_post_process.h"
 
 namespace midisketch {
@@ -742,6 +747,518 @@ TEST_F(MergeSamePitchSyllabicSubTest, FourWaySplitPreserved) {
     EXPECT_EQ(notes[i].duration, TICK_QUARTER);
     EXPECT_EQ(notes[i].note, 72);
   }
+}
+
+// ============================================================================
+// Chord-tone identity and non-chord-tone legality
+// ============================================================================
+
+/// @brief Minimal chord lookup that reports one chord for every tick.
+///
+/// The generation stubs answer isSecondaryDominantAt() with a constant false,
+/// which is precisely the case these tests need to vary.
+class FixedChordLookup : public IChordLookup {
+ public:
+  FixedChordLookup(int8_t degree, std::vector<int> tones, bool secondary_dominant)
+      : degree_(degree), tones_(std::move(tones)), secondary_dominant_(secondary_dominant) {}
+
+  int8_t getChordDegreeAt(Tick /*tick*/) const override { return degree_; }
+
+  ChordTones getChordTonesAt(Tick /*tick*/) const override {
+    ChordTones result{};
+    result.pitch_classes.fill(-1);
+    result.count = static_cast<uint8_t>(std::min<size_t>(tones_.size(), 5));
+    std::copy_n(tones_.begin(), result.count, result.pitch_classes.begin());
+    return result;
+  }
+
+  Tick getNextChordChangeTick(Tick /*after*/) const override { return 0; }
+
+  bool isSecondaryDominantAt(Tick /*tick*/) const override { return secondary_dominant_; }
+
+ private:
+  int8_t degree_;
+  std::vector<int> tones_;
+  bool secondary_dominant_;
+};
+
+/// @brief Two chords in sequence, so a resolution can land on a different one.
+class TwoChordLookup : public IChordLookup {
+ public:
+  TwoChordLookup(int8_t first_degree, std::vector<int> first_tones, bool first_is_secondary,
+                 int8_t second_degree, std::vector<int> second_tones, Tick boundary)
+      : first_(first_degree, std::move(first_tones), first_is_secondary),
+        second_(second_degree, std::move(second_tones), false),
+        boundary_(boundary) {}
+
+  int8_t getChordDegreeAt(Tick tick) const override { return at(tick).getChordDegreeAt(tick); }
+  ChordTones getChordTonesAt(Tick tick) const override { return at(tick).getChordTonesAt(tick); }
+  Tick getNextChordChangeTick(Tick /*after*/) const override { return boundary_; }
+  bool isSecondaryDominantAt(Tick tick) const override {
+    return at(tick).isSecondaryDominantAt(tick);
+  }
+
+ private:
+  const FixedChordLookup& at(Tick tick) const { return tick < boundary_ ? first_ : second_; }
+
+  FixedChordLookup first_;
+  FixedChordLookup second_;
+  Tick boundary_;
+};
+
+std::vector<int> toVector(const ChordTones& tones) {
+  std::vector<int> result(tones.begin(), tones.end());
+  std::sort(result.begin(), result.end());
+  return result;
+}
+
+TEST(VocalChordToneIdentityTest, DiatonicTriadPassesThroughUnchanged) {
+  FixedChordLookup harmony(0, {0, 4, 7}, false);
+  EXPECT_EQ(toVector(melody::vocalChordTonesAt(harmony, 0)), (std::vector<int>{0, 4, 7}));
+}
+
+TEST(VocalChordToneIdentityTest, SecondaryDominantDropsItsChromaticThird) {
+  // V/vi on the iii degree sounds E7 (E G# B D). The vocal stays diatonic, so
+  // the raised third is unavailable and the line must retreat to root/5th/b7.
+  FixedChordLookup harmony(2, {4, 8, 11, 2}, true);
+  EXPECT_EQ(toVector(melody::vocalChordTonesAt(harmony, 0)), (std::vector<int>{2, 4, 11}));
+}
+
+TEST(VocalChordToneIdentityTest, SecondaryDominantDropsTheUnalteredThirdToo) {
+  // When the lookup only knows the diatonic triad under a registered secondary
+  // dominant, keeping its third would sound the minor quality against the major
+  // one the accompaniment plays. Root and fifth are what both chords share.
+  FixedChordLookup harmony(2, {4, 7, 11}, true);
+  EXPECT_EQ(toVector(melody::vocalChordTonesAt(harmony, 0)), (std::vector<int>{4, 11}));
+}
+
+TEST(VocalChordToneIdentityTest, SecondaryDominantOnAMajorDegreeKeepsItsThird) {
+  // V/IV is built on I, whose third is already major: the alteration is the
+  // seventh, not the third. Dropping the third here would strip the chord of
+  // its quality for no reason.
+  FixedChordLookup registered(0, {0, 4, 7, 10}, true);
+  EXPECT_EQ(toVector(melody::vocalChordTonesAt(registered, 0)), (std::vector<int>{0, 4, 7}));
+
+  FixedChordLookup triad_only(0, {0, 4, 7}, true);
+  EXPECT_EQ(toVector(melody::vocalChordTonesAt(triad_only, 0)), (std::vector<int>{0, 4, 7}));
+}
+
+TEST(VocalToneLegalityTest, AccentedNonChordToneResolvingDownIsAdmitted) {
+  FixedChordLookup harmony(0, {0, 4, 7}, false);  // C major triad
+  melody::MelodicNeighborhood n;
+  n.prev_pitch = 67;  // G4
+  n.next_pitch = 64;  // E4, a chord tone
+  n.start = 0;        // bar downbeat: the accent an appoggiatura needs
+  n.duration = TICK_QUARTER;
+  n.next_start = TICK_QUARTER;
+
+  EXPECT_EQ(melody::classifyVocalTone(harmony, 65, n), melody::ToneLegality::Appoggiatura)
+      << "F over C resolving down to E on a downbeat is the ballad appoggiatura";
+}
+
+TEST(VocalToneLegalityTest, NonChordToneThatLeapsAwayIsRejected) {
+  FixedChordLookup harmony(0, {0, 4, 7}, false);
+  melody::MelodicNeighborhood n;
+  n.prev_pitch = 67;
+  n.next_pitch = 72;  // leaps up instead of resolving down
+  n.start = 0;
+  n.duration = TICK_QUARTER;
+  n.next_start = TICK_QUARTER;
+
+  EXPECT_EQ(melody::classifyVocalTone(harmony, 65, n), melody::ToneLegality::Illegal);
+}
+
+TEST(VocalToneLegalityTest, ChromaticNonChordToneIsRejectedEvenWhenItResolves) {
+  FixedChordLookup harmony(0, {0, 4, 7}, false);
+  melody::MelodicNeighborhood n;
+  n.prev_pitch = 67;
+  n.next_pitch = 64;
+  n.start = 0;
+  n.duration = TICK_QUARTER;
+  n.next_start = TICK_QUARTER;
+
+  EXPECT_EQ(melody::classifyVocalTone(harmony, 66, n), melody::ToneLegality::Illegal)
+      << "F# is outside the internal key and nothing licenses it";
+}
+
+TEST(VocalToneLegalityTest, CollisionAvoidanceKeepsTheFigureTheDesignerAdmits) {
+  // The seam: a downbeat appoggiatura the melody designer deliberately keeps
+  // must survive the collision-avoidance pass, which runs afterwards over the
+  // whole section. Snapping it here collapses the figure onto its own
+  // resolution pitch and the tension disappears.
+  test::StubHarmonyContext harmony;
+  harmony.setAllPitchesSafe(true);
+  harmony.setChordDegree(0);
+  harmony.setChordTones({0, 4, 7});
+
+  std::vector<NoteEvent> notes = {
+      NoteEventTestHelper::create(TICKS_PER_BAR - TICK_QUARTER, TICK_QUARTER, 67, 90),
+      NoteEventTestHelper::create(TICKS_PER_BAR, TICK_QUARTER, 65, 90),
+      NoteEventTestHelper::create(TICKS_PER_BAR + TICK_QUARTER, TICK_QUARTER, 64, 90),
+  };
+
+  applyCollisionAvoidanceWithIntervalConstraint(notes, harmony, 55, 79, SectionType::A, 12);
+
+  EXPECT_EQ(notes[1].note, 65) << "The appoggiatura was snapped onto a chord tone";
+  EXPECT_EQ(notes[2].note, 64) << "The resolution must stay where it was";
+}
+
+// ============================================================================
+// Section transition pickup
+// ============================================================================
+
+TEST(TransitionLeadingToneTest, PickupIsScreenedAgainstThePitchItActuallyUses) {
+  // The pickup pitch is a chord tone near the tessitura centre. Screening the
+  // insertion against a differently-derived candidate rejected pickups that the
+  // chosen pitch reaches comfortably.
+  MelodyDesigner designer;
+  test::StubHarmonyContext harmony;
+  harmony.setAllPitchesSafe(true);
+  harmony.setChordDegree(4);
+  harmony.setChordTones({7, 11, 2});  // V: G B D
+
+  MelodyDesigner::SectionContext ctx;
+  ctx.section_type = SectionType::A;  // standard leap allowance: 9 semitones
+  ctx.section_start = 0;
+  ctx.section_end = TICKS_PER_BAR;
+  ctx.section_bars = 1;
+  ctx.chord_degree = 4;
+  ctx.key_offset = 0;
+  ctx.vocal_low = 55;
+  ctx.vocal_high = 84;
+  ctx.max_leap_semitones = 12;
+  ctx.tessitura = calculateTessitura(ctx.vocal_low, ctx.vocal_high);
+  ctx.tessitura.center = 73;
+
+  SectionTransition transition{SectionType::A, SectionType::Chorus, 0, 1.0f, 1, true};
+  ctx.transition_to_next = &transition;
+
+  // The last note ends right where the pickup starts, a whole step below the
+  // chord tone the pickup will pick. tessitura.center - 1 is 11 semitones away
+  // from it; the chord tone the pickup actually uses is 9, which is allowed.
+  std::vector<NoteEvent> notes = {
+      NoteEventTestHelper::create(0, TICKS_PER_BAR - TICK_SIXTEENTH, 62, 90),
+  };
+
+  designer.applyTransitionApproach(notes, ctx, harmony);
+
+  ASSERT_EQ(notes.size(), 2u) << "The pickup was rejected on a pitch it never uses";
+  EXPECT_EQ(notes.back().start_tick, ctx.section_end - TICKS_PER_BEAT / 4);
+  EXPECT_LE(std::abs(static_cast<int>(notes.back().note) - 62), 9)
+      << "The inserted pickup must itself respect the section leap allowance";
+}
+
+// ============================================================================
+// Hook repetition counting
+// ============================================================================
+
+std::vector<NoteEvent> makeHookHead(uint8_t pitch) {
+  std::vector<NoteEvent> notes;
+  for (int i = 0; i < 8; ++i) {
+    notes.push_back(NoteEventTestHelper::create(static_cast<Tick>(i) * TICK_EIGHTH, TICK_EIGHTH,
+                                                static_cast<uint8_t>(pitch + (i % 3)), 90));
+  }
+  return notes;
+}
+
+TEST(HookRepetitionTest, ReplayedHooksAdvanceTheCounter) {
+  // A repeated chorus is served from the phrase cache, so counting only
+  // generated hooks left the counter stuck below every template threshold.
+  MelodyDesigner designer;
+  test::StubHarmonyContext harmony;
+  harmony.setAllPitchesSafe(true);
+  harmony.setChordDegree(0);
+  harmony.setChordTones({0, 4, 7});
+  std::mt19937 rng(1234);
+  const MelodyTemplate& tmpl = getTemplate(MelodyTemplateId::RunUpTarget);
+  ASSERT_EQ(tmpl.betrayal_threshold, 3) << "This test needs a template that varies on the 3rd";
+
+  EXPECT_EQ(designer.hookRepetitionCount(), 0);
+  for (uint8_t expected = 1; expected <= 3; ++expected) {
+    std::vector<NoteEvent> replayed = makeHookHead(67);
+    designer.replayHookOccurrence(tmpl, replayed, harmony, rng, 55, 79);
+    EXPECT_EQ(designer.hookRepetitionCount(), expected);
+  }
+}
+
+TEST(HookRepetitionTest, ThirdOccurrenceVariesWhileTheFirstTwoRepeatVerbatim) {
+  MelodyDesigner designer;
+  test::StubHarmonyContext harmony;
+  harmony.setAllPitchesSafe(true);
+  harmony.setChordDegree(0);
+  harmony.setChordTones({0, 4, 7});
+  std::mt19937 rng(20260903);
+  const MelodyTemplate& tmpl = getTemplate(MelodyTemplateId::RunUpTarget);
+
+  const std::vector<NoteEvent> original = makeHookHead(67);
+  std::vector<std::vector<NoteEvent>> heads;
+  for (int occurrence = 0; occurrence < 3; ++occurrence) {
+    std::vector<NoteEvent> replayed = original;
+    designer.replayHookOccurrence(tmpl, replayed, harmony, rng, 55, 79);
+    heads.push_back(std::move(replayed));
+  }
+
+  auto sameAsOriginal = [&original](const std::vector<NoteEvent>& head) {
+    if (head.size() != original.size()) return false;
+    for (size_t i = 0; i < head.size(); ++i) {
+      if (head[i].note != original[i].note || head[i].duration != original[i].duration) {
+        return false;
+      }
+    }
+    return true;
+  };
+
+  EXPECT_TRUE(sameAsOriginal(heads[0])) << "The first hook must repeat verbatim";
+  EXPECT_TRUE(sameAsOriginal(heads[1])) << "The second hook must repeat verbatim";
+  EXPECT_FALSE(sameAsOriginal(heads[2]))
+      << "The third hook must depart from the first two: that departure is the "
+         "tension the threshold exists to create";
+}
+
+TEST(HookRepetitionTest, ZeroThresholdNeverVaries) {
+  MelodyDesigner designer;
+  test::StubHarmonyContext harmony;
+  harmony.setAllPitchesSafe(true);
+  harmony.setChordDegree(0);
+  harmony.setChordTones({0, 4, 7});
+  std::mt19937 rng(7);
+
+  MelodyTemplate exact = getTemplate(MelodyTemplateId::RunUpTarget);
+  exact.betrayal_threshold = 0;
+
+  const std::vector<NoteEvent> original = makeHookHead(67);
+  for (int occurrence = 0; occurrence < 6; ++occurrence) {
+    std::vector<NoteEvent> replayed = original;
+    EXPECT_FALSE(designer.replayHookOccurrence(exact, replayed, harmony, rng, 55, 79));
+    for (size_t i = 0; i < replayed.size(); ++i) {
+      EXPECT_EQ(replayed[i].note, original[i].note);
+    }
+  }
+  EXPECT_EQ(designer.hookRepetitionCount(), 6)
+      << "Occurrences are still counted; only the variation is disabled";
+}
+
+TEST(VocalToneLegalityTest, NoFigureLicensesTheUnalteredThirdUnderASecondaryDominant) {
+  melody::MelodicNeighborhood n;
+  n.prev_pitch = 74;  // D5
+  n.next_pitch = 71;  // B4
+  n.start = 0;
+  n.duration = TICK_QUARTER;
+  n.next_start = TICK_QUARTER;
+
+  // A7 (V/ii, built on vi) into V. The accompaniment plays C#, so a vocal C is
+  // a cross relation -- yet it steps down onto B, a chord tone of the V it
+  // resolves to, which is exactly the shape of a textbook appoggiatura. The
+  // resolution must not be allowed to license this particular pitch.
+  TwoChordLookup secondary(5, {9, 1, 4, 7}, true, 4, {7, 11, 2}, TICK_QUARTER);
+  EXPECT_EQ(melody::classifyVocalTone(secondary, 72, n), melody::ToneLegality::Illegal)
+      << "C has no licence while the C# of the secondary dominant sounds";
+
+  // The identical figure with no secondary dominant sounding is admitted.
+  TwoChordLookup plain(4, {7, 11, 2}, false, 4, {7, 11, 2}, TICK_QUARTER);
+  EXPECT_EQ(melody::classifyVocalTone(plain, 72, n), melody::ToneLegality::Appoggiatura)
+      << "C over V steps down to B, a chord tone: an ordinary appoggiatura";
+}
+
+// ============================================================================
+// Hook emphasis
+// ============================================================================
+
+std::vector<NoteEvent> makeHookWindow() {
+  return {
+      NoteEventTestHelper::create(0, TICK_EIGHTH, 72, 90),
+      NoteEventTestHelper::create(TICK_EIGHTH, TICK_EIGHTH, 74, 90),
+      NoteEventTestHelper::create(TICK_QUARTER, TICK_EIGHTH, 76, 90),
+      NoteEventTestHelper::create(TICKS_PER_BEAT * 3, TICK_EIGHTH, 72, 90),
+  };
+}
+
+TEST(HookIntensityTest, MaximumEmphasisReachesTheNotes) {
+  // The blueprint that asks for Maximum used to get nothing at all: the value
+  // was missing from the emphasis ladder, so the call computed its window and
+  // then applied a 1.0x duration and a +0 velocity.
+  std::vector<NoteEvent> notes = makeHookWindow();
+  const std::vector<NoteEvent> before = notes;
+
+  applyHookIntensity(notes, SectionType::Chorus, HookIntensity::Maximum, 0);
+
+  bool changed = false;
+  for (size_t i = 0; i < notes.size(); ++i) {
+    if (notes[i].duration != before[i].duration || notes[i].velocity != before[i].velocity) {
+      changed = true;
+    }
+  }
+  EXPECT_TRUE(changed) << "Maximum must emphasise the hook, not pass through unchanged";
+  EXPECT_GT(notes[0].duration, before[0].duration);
+  EXPECT_GT(notes[0].velocity, before[0].velocity);
+}
+
+TEST(HookIntensityTest, MaximumIsAtLeastAsStrongAsStrong) {
+  std::vector<NoteEvent> strong = makeHookWindow();
+  std::vector<NoteEvent> maximum = makeHookWindow();
+
+  applyHookIntensity(strong, SectionType::Chorus, HookIntensity::Strong, 0);
+  applyHookIntensity(maximum, SectionType::Chorus, HookIntensity::Maximum, 0);
+
+  ASSERT_EQ(strong.size(), maximum.size());
+  for (size_t i = 0; i < strong.size(); ++i) {
+    EXPECT_GE(maximum[i].duration, strong[i].duration) << "note " << i;
+    EXPECT_GE(maximum[i].velocity, strong[i].velocity) << "note " << i;
+  }
+}
+
+TEST(HookIntensityTest, MaximumReachesSectionsThatAreNotHookPoints) {
+  // Strong and above are the levels that emphasise every section rather than
+  // only the Chorus and Pre-chorus hook points.
+  std::vector<NoteEvent> notes = makeHookWindow();
+  const Tick before_duration = notes[0].duration;
+
+  applyHookIntensity(notes, SectionType::A, HookIntensity::Maximum, 0);
+  EXPECT_GT(notes[0].duration, before_duration);
+}
+
+TEST(HookIntensityTest, OffLeavesTheNotesAlone) {
+  std::vector<NoteEvent> notes = makeHookWindow();
+  const std::vector<NoteEvent> before = notes;
+  applyHookIntensity(notes, SectionType::Chorus, HookIntensity::Off, 0);
+  for (size_t i = 0; i < notes.size(); ++i) {
+    EXPECT_EQ(notes[i].duration, before[i].duration);
+    EXPECT_EQ(notes[i].velocity, before[i].velocity);
+  }
+}
+
+// ============================================================================
+// Section ceiling enforcement
+// ============================================================================
+
+/// @brief Harmony stub that rejects one specific pitch and accepts the rest.
+class OnePitchBlockedHarmony : public test::StubHarmonyContext {
+ public:
+  explicit OnePitchBlockedHarmony(uint8_t blocked) : blocked_(blocked) {}
+
+  bool isConsonantWithOtherTracks(uint8_t pitch, Tick /*start*/, Tick /*duration*/,
+                                  TrackRole /*exclude*/,
+                                  bool /*is_weak_beat*/ = false) const override {
+    return pitch != blocked_;
+  }
+
+ private:
+  uint8_t blocked_;
+};
+
+TEST(SectionCeilingTest, ClashAtTheCeilingStepsDownRatherThanDroppingAnOctave) {
+  // The note has to come under the ceiling, and the pitch at the ceiling
+  // clashes. Dropping to the octave below would trade a ceiling breach for a
+  // 12-semitone hole -- a leap no section's bound allows -- and the note after
+  // it would have to climb all the way back.
+  OnePitchBlockedHarmony harmony(79);
+  harmony.setChordDegree(0);
+  harmony.setChordTones({0, 4, 7});
+
+  std::vector<NoteEvent> notes = {NoteEventTestHelper::create(0, TICK_QUARTER, 84, 90)};
+  enforceSectionCeiling(notes, harmony, 55, 79);
+
+  EXPECT_LE(notes[0].note, 79) << "The ceiling must be respected";
+  EXPECT_GE(notes[0].note, 79 - 7) << "The replacement must stay within a 5th of the ceiling, "
+                                      "not fall to the octave below";
+  EXPECT_NE(notes[0].note, 79) << "The blocked pitch must not be kept when a consonant one exists";
+  EXPECT_TRUE(isScaleTone(getPitchClass(notes[0].note))) << "The vocal stays diatonic";
+}
+
+TEST(SectionCeilingTest, NotesUnderTheCeilingAreLeftAlone) {
+  test::StubHarmonyContext harmony;
+  harmony.setAllPitchesSafe(true);
+  harmony.setChordDegree(0);
+  harmony.setChordTones({0, 4, 7});
+
+  std::vector<NoteEvent> notes = {NoteEventTestHelper::create(0, TICK_QUARTER, 72, 90)};
+  enforceSectionCeiling(notes, harmony, 55, 79);
+  EXPECT_EQ(notes[0].note, 72);
+}
+
+// ============================================================================
+// Leap bound resolution
+// ============================================================================
+
+TEST(LeapBoundTest, PrefersAChordToneInsideTheBound) {
+  test::StubHarmonyContext harmony;
+  harmony.setAllPitchesSafe(true);
+  harmony.setChordDegree(0);
+  harmony.setChordTones({0, 4, 7});
+
+  melody::MelodicNeighborhood n;
+  n.start = 0;
+  n.duration = TICK_QUARTER;
+  n.prev_pitch = 60;  // C4
+  n.next_pitch = 64;  // E4
+  n.next_start = TICK_QUARTER;
+
+  // The note sits an octave above its neighbour; the bound allows a fifth.
+  const int fixed = melody::resolveLeapWithinBound(harmony, n, 72, 7, 55, 79);
+  EXPECT_LE(std::abs(fixed - 60), 7) << "The bound must actually close";
+  EXPECT_EQ(fixed % 12, 7) << "G4 is the chord tone nearest the pitch it had";
+}
+
+TEST(LeapBoundTest, FallsBackToALegalNonChordToneWhenNoChordToneFits) {
+  // The chord's tones are all outside the window the bound leaves open, so a
+  // chord-tone-only search would give up and leave the leap open. A figure the
+  // shared rule admits is a better answer than an unsingable interval.
+  test::StubHarmonyContext harmony;
+  harmony.setAllPitchesSafe(true);
+  harmony.setChordDegree(0);
+  harmony.setChordTones({0});  // C only: 60 and 72 are the reachable octaves
+
+  melody::MelodicNeighborhood n;
+  n.start = TICK_EIGHTH;  // weak position, so a passing tone is admissible
+  n.duration = TICK_EIGHTH;
+  n.prev_pitch = 65;
+  n.next_pitch = 67;
+  n.next_start = TICK_EIGHTH * 2;
+
+  const int fixed = melody::resolveLeapWithinBound(harmony, n, 79, 2, 55, 79);
+  EXPECT_LE(std::abs(fixed - 65), 2) << "The bound must actually close";
+  EXPECT_NE(fixed % 12, 0) << "No C is reachable inside the bound";
+  EXPECT_NE(melody::classifyVocalTone(harmony, fixed, n), melody::ToneLegality::Illegal)
+      << "The replacement still has to be a figure the shared rule admits";
+}
+
+TEST(LeapBoundTest, KeepsThePitchWhenNothingInsideTheBoundIsAdmissible) {
+  // Every candidate collides with another track. An open leap is the lesser
+  // problem: a clashing pitch breaks an invariant that outranks singability.
+  test::StubHarmonyContext harmony;
+  harmony.setAllPitchesSafe(false);
+  harmony.setChordDegree(0);
+  harmony.setChordTones({0, 4, 7});
+
+  melody::MelodicNeighborhood n;
+  n.start = 0;
+  n.duration = TICK_QUARTER;
+  n.prev_pitch = 60;
+  n.next_pitch = 64;
+  n.next_start = TICK_QUARTER;
+
+  EXPECT_EQ(melody::resolveLeapWithinBound(harmony, n, 79, 7, 55, 79), 79);
+}
+
+// ============================================================================
+// Hold-burst marking
+// ============================================================================
+
+TEST(HoldBurstEntryTest, DensitySurgeIsAppliedExactlyOnce) {
+  PlannedPhrase phrase;
+  phrase.density_modifier = 1.0f;
+
+  ASSERT_TRUE(PhrasePlanner::markHoldBurstEntry(phrase, SectionType::Chorus));
+  EXPECT_TRUE(phrase.is_hold_burst_entry);
+  const float after_first = phrase.density_modifier;
+  const uint8_t target_after_first = phrase.target_note_count;
+  EXPECT_GT(after_first, 1.0f) << "A burst phrase must actually get denser";
+
+  EXPECT_FALSE(PhrasePlanner::markHoldBurstEntry(phrase, SectionType::Chorus))
+      << "A phrase that is both the section climax and the post-hold entry would "
+         "otherwise be boosted twice";
+  EXPECT_FLOAT_EQ(phrase.density_modifier, after_first);
+  EXPECT_EQ(phrase.target_note_count, target_after_first);
 }
 
 }  // namespace

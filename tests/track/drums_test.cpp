@@ -310,8 +310,8 @@ TEST_F(DrumsTest, DifferentMoodsProduceDifferentPatterns) {
 }
 
 TEST(DrumBeatProcessorTest, GhostNotesCanFollowBackbeats) {
-  drums::GhostBeatParams params{BackingDensity::Normal, false, 1.0f, 0.0f,
-                                DrumGrooveFeel::Straight};
+  drums::GhostBeatParams params{BackingDensity::Normal, false, 1.0f, 1.0f};
+  const drums::GrooveGrid grid;
 
   for (uint8_t beat : {1, 3}) {
     int generated = 0;
@@ -327,6 +327,7 @@ TEST(DrumBeatProcessorTest, GhostNotesCanFollowBackbeats) {
                                  0,
                                  4,
                                  false,
+                                 grid,
                                  rng};
 
       drums::generateGhostNotesForBeat(track, context, params);
@@ -1504,6 +1505,36 @@ int countDrumNotes(const MidiTrack& track, uint8_t note_num) {
   return count;
 }
 
+/// @brief Assert the shaker plays the subdivision the tempo admits.
+///
+/// The onset count per bar is what distinguishes an 8th pattern from a 16th
+/// one; the ticks themselves follow the section groove and time feel, and
+/// texture thinning may drop a hit here and there.
+void expectShakerSubdivision(const MidiTrack& track, uint16_t resolved_bpm) {
+  constexpr uint16_t kShakerBPMThreshold = 150;
+  const bool sixteenths = (resolved_bpm == 0 || resolved_bpm < kShakerBPMThreshold);
+
+  std::map<Tick, int> per_bar;
+  for (const auto& note : track.notes()) {
+    if (note.note == SHAKER) {
+      per_bar[note.start_tick / TICKS_PER_BAR]++;
+    }
+  }
+  ASSERT_FALSE(per_bar.empty()) << "No shaker to check";
+
+  for (const auto& [bar, count] : per_bar) {
+    if (sixteenths) {
+      EXPECT_GT(count, 8) << "Bar " << bar << " has " << count
+                          << " shaker onsets, too few for a 16th pattern";
+      EXPECT_LE(count, 16) << "Bar " << bar << " has " << count << " shaker onsets";
+    } else {
+      EXPECT_LE(count, 8) << "Bar " << bar << " has " << count
+                          << " shaker onsets; above the tempo threshold the grid is 8ths";
+      EXPECT_GE(count, 4) << "Bar " << bar << " lost most of its shaker";
+    }
+  }
+}
+
 TEST_F(DrumsTest, TambourineAppearsInChorusForIdolPop) {
   // IdolPop is in the Idol category; chorus should have tambourine on beats 2 and 4.
   params_.mood = Mood::IdolPop;
@@ -1565,16 +1596,10 @@ TEST_F(DrumsTest, ShakerHas16thNotePattern) {
   EXPECT_GT(shaker_count, 16) << "Expected at least a bar's worth of shaker 16th notes, got "
                               << shaker_count;
 
-  // Verify spacing: shaker notes should be on 16th note grid
-  for (const auto& note : track.notes()) {
-    if (note.note == SHAKER) {
-      Tick tick_in_beat = note.start_tick % TICKS_PER_BEAT;
-      Tick sixteenth = TICKS_PER_BEAT / 4;  // 120 ticks
-      EXPECT_EQ(tick_in_beat % sixteenth, 0u)
-          << "Shaker note at tick " << note.start_tick
-          << " is not on 16th note grid (remainder = " << (tick_in_beat % sixteenth) << ")";
-    }
-  }
+  // The subdivision shows in the onsets per bar, not in the raw multiples of
+  // 120: the ticks themselves follow the section groove and time feel. A 16th
+  // pattern puts more than eight onsets in a bar; an 8th pattern cannot.
+  expectShakerSubdivision(track, gen.getSong().bpm());
 }
 
 TEST_F(DrumsTest, ShakerVelocityDynamics) {
@@ -1868,15 +1893,12 @@ TEST_F(DrumsTest, PercussionPolicyFull_16thShaker) {
   int shaker_count = countDrumNotes(track, SHAKER);
   EXPECT_GT(shaker_count, 16) << "Full policy should have many 16th shaker notes";
 
-  // Verify on 16th note grid
-  for (const auto& note : track.notes()) {
-    if (note.note == SHAKER) {
-      Tick tick_in_beat = note.start_tick % TICKS_PER_BEAT;
-      Tick sixteenth = TICKS_PER_BEAT / 4;
-      EXPECT_EQ(tick_in_beat % sixteenth, 0u)
-          << "Shaker note at tick " << note.start_tick << " not on 16th grid";
-    }
-  }
+  // Full policy asks for the 16th grid; the tempo decides whether the kit can
+  // actually carry it.
+  EXPECT_TRUE(
+      drums::getPercussionConfig(params_.mood, SectionType::A, PercussionPolicy::Full).shaker_16th)
+      << "Full policy should select the 16th shaker grid";
+  expectShakerSubdivision(track, gen.getSong().bpm());
 }
 
 TEST_F(DrumsTest, PercussionPolicyStandard_8thShaker) {
@@ -2317,15 +2339,15 @@ TEST_F(DrumsTest, BridgeCrossStickDoesNotLayerFullSnare) {
   MidiTrack track;
   std::mt19937 rng(42);
 
+  const drums::GrooveGrid grid;
   drums::BeatContext beat_ctx{
-      TICKS_PER_BEAT, 1, 90, SectionType::Bridge, Mood::StraightPop, 120, 0, 8, false, rng};
+      TICKS_PER_BEAT, 1, 90, SectionType::Bridge, Mood::StraightPop, 120, 0, 8, false, grid, rng};
 
   drums::DrumSectionContext ctx;
   ctx.use_ride = true;
   ctx.hh_level = drums::HiHatLevel::Quarter;
 
-  drums::HiHatBeatParams hh_params{DrumRole::Full,          1.0f, false, 3, false, 0.0f,
-                                   DrumGrooveFeel::Straight};
+  drums::HiHatBeatParams hh_params{DrumRole::Full, 1.0f, false, 3, false};
   drums::generateHiHatForBeat(track, beat_ctx, ctx, hh_params);
 
   drums::SnareBeatParams snare_params{
@@ -2489,15 +2511,24 @@ TEST_F(DrumsTest, IdolHyperRhythmSyncUsesBlueprintSwing) {
       continue;
     }
 
+    // Ask the section's own grid where a straight 16th lands, then look for a
+    // note there. The grid also carries the section time feel, so the expected
+    // tick is not a fixed offset from the straight grid.
+    const drums::GrooveGrid grid =
+        drums::makeGrooveGrid(sec, 0,
+                              drums::resolveSectionDrumGroove(
+                                  params_.mood, GenerationParadigm::RhythmSync, sec.swing_amount),
+                              sec.time_feel, params_.bpm);
+    const Tick swung_sixteenth = grid.resolve(grid.bar_start + TICK_SIXTEENTH) % TICKS_PER_BEAT;
+    ASSERT_NE(swung_sixteenth, TICK_SIXTEENTH)
+        << "IdolHyper RhythmSync should preserve blueprint swing instead of forcing Straight";
+
     bool found_swung_offbeat = false;
-    constexpr Tick kSixteenth = TICKS_PER_BEAT / 4;
-    constexpr Tick kExpectedSixteenthSwingOffset = 40;  // 16th-grid swing at amount 0.5
     for (const auto& note : track.notes()) {
       if (note.start_tick < sec.start_tick || note.start_tick >= sec.endTick()) {
         continue;
       }
-      Tick position = note.start_tick - sec.start_tick;
-      if (position % kSixteenth == kExpectedSixteenthSwingOffset) {
+      if (note.start_tick % TICKS_PER_BEAT == swung_sixteenth) {
         found_swung_offbeat = true;
         break;
       }
@@ -2518,8 +2549,11 @@ TEST(DrumSwingConsistencyTest, AuxiliaryShakerUsesSharedSwingGrid) {
   const drums::PercussionConfig config{/*tambourine=*/false, /*shaker=*/true,
                                        /*handclap=*/false, /*shaker_16th=*/true};
 
-  drums::generateAuxPercussionForBar(track, 0, config, DrumRole::Full, 1.0f, rng, 120,
-                                     DrumGrooveFeel::Swing, 0.5f);
+  drums::GrooveGrid grid;
+  grid.groove = DrumGrooveFeel::Swing;
+  grid.swing_amount = 0.5f;
+  grid.bpm = 120;
+  drums::generateAuxPercussionForBar(track, 0, config, DrumRole::Full, 1.0f, rng, 120, grid);
 
   bool found_first_swung_sixteenth = false;
   bool found_swung_eighth = false;
@@ -3019,29 +3053,35 @@ TEST_F(DrumsTest, GhostNotesHaveContextDependentVelocity) {
 // ============================================================================
 
 TEST_F(DrumsTest, HighEnergyChorusAllowsLongerFills) {
-  // Test that different energy levels produce appropriate drum patterns
-  // This is a smoke test - the fill energy linkage is internal
-  params_.structure = StructurePattern::FullPop;
-  params_.seed = 555;
-  params_.mood = Mood::EnergeticDance;  // High energy style
+  // High-energy transitions draw the dramatic fill types, which reach for the
+  // toms. One song can draw only tom-free types, so the property is asserted
+  // over a sweep rather than a single seed.
+  const std::vector<uint32_t> seeds = {555, 1, 42, 100, 777, 2024, 7, 31337};
+  size_t songs_with_toms = 0;
 
-  Generator gen;
-  gen.generate(params_);
+  for (uint32_t seed : seeds) {
+    params_.structure = StructurePattern::FullPop;
+    params_.seed = seed;
+    params_.mood = Mood::EnergeticDance;  // High energy style
 
-  const auto& track = gen.getSong().drums();
+    Generator gen;
+    gen.generate(params_);
 
-  // Verify drums are generated
-  EXPECT_GT(track.notes().size(), 100u) << "High energy song should have substantial drum content";
+    const auto& track = gen.getSong().drums();
+    EXPECT_GT(track.notes().size(), 100u)
+        << "High energy song should have substantial drum content (seed " << seed << ")";
 
-  // Count tom notes (fills typically use toms)
-  int tom_notes = 0;
-  for (const auto& note : track.notes()) {
-    if (note.note == TOM_H || note.note == TOM_M || note.note == TOM_L) {
-      tom_notes++;
+    for (const auto& note : track.notes()) {
+      if (note.note == TOM_H || note.note == TOM_M || note.note == TOM_L) {
+        ++songs_with_toms;
+        break;
+      }
     }
   }
 
-  EXPECT_GT(tom_notes, 0) << "High energy style should produce tom fill activity";
+  EXPECT_GE(songs_with_toms, seeds.size() - 2)
+      << "High energy style should produce tom fill activity in most songs, saw " << songs_with_toms
+      << " of " << seeds.size();
 }
 
 // ============================================================================
@@ -3413,21 +3453,11 @@ TEST_F(DrumsTest, ShakerHighBPMUsesEighthGrid) {
 
   const auto& track = gen.getSong().drums();
 
-  // Verify shaker notes are on 8th note grid (not 16th)
-  int shaker_count = 0;
-  for (const auto& note : track.notes()) {
-    if (note.note == SHAKER) {
-      shaker_count++;
-      Tick tick_in_beat = note.start_tick % TICKS_PER_BEAT;
-      Tick eighth = TICKS_PER_BEAT / 2;  // 240 ticks
-      EXPECT_EQ(tick_in_beat % eighth, 0u)
-          << "Shaker at tick " << note.start_tick
-          << " should be on 8th note grid at high BPM (remainder = " << (tick_in_beat % eighth)
-          << ")";
-    }
-  }
-  // Should still have shaker notes
-  EXPECT_GT(shaker_count, 0) << "Should have shaker notes at high BPM";
+  // At high BPM the shaker falls back to an 8th subdivision, wherever the
+  // section groove and time feel place the onsets.
+  ASSERT_GE(gen.getSong().bpm(), 150) << "This test needs a tempo above the shaker threshold";
+  EXPECT_GT(countDrumNotes(track, SHAKER), 0) << "Should have shaker notes at high BPM";
+  expectShakerSubdivision(track, gen.getSong().bpm());
 
   // At 8th note grid: 8 per bar instead of 16
   // Count per bar to verify density reduction
@@ -3586,14 +3616,613 @@ TEST_F(DrumsTest, RhythmLockVocalSyncKeepsKickAnchors) {
       }
       for (uint8_t bar = 0; bar < sec.bars; ++bar) {
         Tick bar_start = sec.start_tick + bar * TICKS_PER_BAR;
-        EXPECT_TRUE(hasKickNear(track, bar_start))
-            << "RhythmLock seed " << seed << " missing downbeat kick at tick " << bar_start
-            << " in " << sec.name;
-        EXPECT_TRUE(hasKickNear(track, bar_start + TICKS_PER_BEAT * 2))
-            << "RhythmLock seed " << seed << " missing beat-3 kick at tick "
-            << (bar_start + TICKS_PER_BEAT * 2) << " in " << sec.name;
+        // The anchors sit on the section's own grid, which carries its time
+        // feel, so the expected tick is the resolved one rather than the
+        // straight beat.
+        const Tick downbeat = applyTimeFeel(bar_start, sec.time_feel, params_.bpm);
+        const Tick beat3 =
+            applyTimeFeel(bar_start + TICKS_PER_BEAT * 2, sec.time_feel, params_.bpm);
+        EXPECT_TRUE(hasKickNear(track, downbeat))
+            << "RhythmLock seed " << seed << " missing downbeat kick at tick " << downbeat << " in "
+            << sec.name;
+        EXPECT_TRUE(hasKickNear(track, beat3))
+            << "RhythmLock seed " << seed << " missing beat-3 kick at tick " << beat3 << " in "
+            << sec.name;
       }
     }
+  }
+}
+
+// ============================================================================
+// Shared Beat Grid
+// ============================================================================
+
+namespace {
+
+/// Kit pieces that place their onsets on the shared beat grid.
+const std::set<uint8_t> kGridVoices = {
+    drums::BD,  drums::SD,   drums::SIDESTICK,  drums::CHH,    drums::FHH,
+    drums::OHH, drums::RIDE, drums::TAMBOURINE, drums::SHAKER, drums::HANDCLAP};
+
+/// @brief Generate one section on its own and return the drum track.
+MidiTrack generateSectionDrums(const Section& section, Mood mood, GenerationParadigm paradigm,
+                               uint8_t blueprint_id, uint32_t seed, uint8_t drum_style_hint = 0) {
+  Song song;
+  song.setArrangement(Arrangement({section}));
+
+  drums::DrumGenerationParams params{};
+  params.mood = mood;
+  params.bpm = 120;
+  params.blueprint_id = blueprint_id;
+  params.composition_style = CompositionStyle::MelodyLead;
+  params.paradigm = paradigm;
+  params.drum_style_hint = drum_style_hint;
+
+  std::mt19937 rng(seed);
+  MidiTrack track;
+  drums::generateDrumsTrackImpl(track, song, params, rng);
+  return track;
+}
+
+}  // namespace
+
+TEST(DrumGrooveGridTest, EveryVoicePlacesOnsetsOnTheSectionGrid) {
+  // A swung section resolves each subdivision to one tick. Whichever kit piece
+  // places a note there, it lands on that tick and no other. The Synth style
+  // puts the hi-hat on 16ths, so the densest timekeeping is included.
+  const uint8_t kSynthStyleHint = static_cast<uint8_t>(DrumStyle::Synth) + 1;
+
+  for (Mood mood : {Mood::CityPop, Mood::RnBNeoSoul, Mood::Lofi, Mood::Ballad}) {
+    for (float swing : {0.35f, 0.5f, 0.7f}) {
+      Section chorus;
+      chorus.type = SectionType::Chorus;
+      chorus.name = "Chorus";
+      chorus.start_tick = 0;
+      chorus.bars = 4;
+      chorus.track_mask = TrackMask::Drums;
+      chorus.swing_amount = swing;
+
+      const MidiTrack track = generateSectionDrums(chorus, mood, GenerationParadigm::Traditional, 0,
+                                                   42, kSynthStyleHint);
+      ASSERT_FALSE(track.notes().empty());
+
+      drums::GrooveGrid grid = drums::makeGrooveGrid(
+          chorus, 0, drums::resolveSectionDrumGroove(mood, GenerationParadigm::Traditional, swing),
+          chorus.time_feel, 120);
+
+      std::set<Tick> allowed;
+      for (Tick nominal = 0; nominal < TICKS_PER_BEAT; nominal += TICK_SIXTEENTH) {
+        allowed.insert(grid.resolve(grid.bar_start + nominal) % TICKS_PER_BEAT);
+      }
+
+      for (const auto& note : track.notes()) {
+        if (kGridVoices.count(note.note) == 0) continue;
+        EXPECT_NE(allowed.find(note.start_tick % TICKS_PER_BEAT), allowed.end())
+            << "Drum note " << static_cast<int>(note.note) << " at tick " << note.start_tick
+            << " is off the section grid (mood " << static_cast<int>(mood) << ", swing " << swing
+            << ")";
+      }
+    }
+  }
+}
+
+TEST(DrumGrooveGridTest, PreChorusBuildupSharesTheGridWithTheHiHat) {
+  // The buildup snare and the hi-hat name the same off-beat, so a swung
+  // section has to give them the same tick.
+  Section verse;
+  verse.type = SectionType::B;
+  verse.name = "B";
+  verse.start_tick = 0;
+  verse.bars = 4;
+  verse.track_mask = TrackMask::Drums;
+  verse.swing_amount = 0.5f;
+
+  Section chorus;
+  chorus.type = SectionType::Chorus;
+  chorus.name = "Chorus";
+  chorus.start_tick = 4 * TICKS_PER_BAR;
+  chorus.bars = 4;
+  chorus.track_mask = TrackMask::Drums;
+  chorus.swing_amount = 0.5f;
+
+  Song song;
+  song.setArrangement(Arrangement({verse, chorus}));
+
+  drums::DrumGenerationParams params{};
+  params.mood = Mood::CityPop;
+  params.bpm = 120;
+  params.blueprint_id = 0;
+  params.composition_style = CompositionStyle::MelodyLead;
+  params.paradigm = GenerationParadigm::Traditional;
+
+  std::mt19937 rng(7);
+  MidiTrack track;
+  drums::generateDrumsTrackImpl(track, song, params, rng);
+
+  drums::GrooveGrid grid = drums::makeGrooveGrid(
+      verse, verse.bars - 1,
+      drums::resolveSectionDrumGroove(params.mood, params.paradigm, verse.swing_amount),
+      verse.time_feel, params.bpm);
+  const Tick swung_offbeat = grid.resolve(grid.bar_start + TICK_EIGHTH) % TICKS_PER_BEAT;
+  ASSERT_NE(swung_offbeat, TICK_EIGHTH) << "This section must actually swing for the test to bite";
+
+  const Tick lift_start = verse.endTick() - drums::kPreChorusLiftBars * TICKS_PER_BAR;
+  int checked = 0;
+  for (const auto& note : track.notes()) {
+    if (note.start_tick < lift_start || note.start_tick >= verse.endTick()) continue;
+    if (note.note != SNARE) continue;
+    const Tick offset = note.start_tick % TICKS_PER_BEAT;
+    if (offset == 0) continue;
+    ++checked;
+    EXPECT_EQ(offset, swung_offbeat)
+        << "Buildup snare at " << note.start_tick << " ignores the section swing";
+  }
+  EXPECT_GT(checked, 0) << "The lift should place off-beat snares to check";
+}
+
+TEST(DrumGrooveGridTest, TimeFeelMovesTheWholeKitAndSurvivesSwing) {
+  // A section time feel displaces every kit piece by one offset, and swing
+  // quantization afterwards must not discard it.
+  auto ticks_by_voice = [](TimeFeel feel) {
+    Section chorus;
+    chorus.type = SectionType::Chorus;
+    chorus.name = "Chorus";
+    chorus.start_tick = 0;
+    chorus.bars = 4;
+    chorus.track_mask = TrackMask::Drums;
+    chorus.swing_amount = 0.5f;
+    chorus.time_feel = feel;
+
+    const MidiTrack track =
+        generateSectionDrums(chorus, Mood::CityPop, GenerationParadigm::Traditional, 0, 99);
+
+    std::map<uint8_t, std::vector<Tick>> by_voice;
+    for (const auto& note : track.notes()) {
+      by_voice[note.note].push_back(note.start_tick);
+    }
+    return by_voice;
+  };
+
+  const auto on_beat = ticks_by_voice(TimeFeel::OnBeat);
+  const auto laid_back = ticks_by_voice(TimeFeel::LaidBack);
+  const Tick expected_offset =
+      applyTimeFeel(TICKS_PER_BAR, TimeFeel::LaidBack, 120) - TICKS_PER_BAR;
+  ASSERT_GT(expected_offset, 0u);
+  ASSERT_FALSE(on_beat.empty());
+
+  int compared = 0;
+  for (const auto& [voice, straight_ticks] : on_beat) {
+    const auto it = laid_back.find(voice);
+    ASSERT_NE(it, laid_back.end()) << "Voice " << static_cast<int>(voice) << " disappeared";
+    ASSERT_EQ(it->second.size(), straight_ticks.size())
+        << "Voice " << static_cast<int>(voice) << " changed its note count";
+    for (size_t i = 0; i < straight_ticks.size(); ++i) {
+      ++compared;
+      EXPECT_EQ(it->second[i], straight_ticks[i] + expected_offset)
+          << "Voice " << static_cast<int>(voice) << " note " << i
+          << " did not take the section time feel";
+    }
+  }
+  EXPECT_GT(compared, 0);
+}
+
+// ============================================================================
+// Section Density Arc
+// ============================================================================
+
+TEST_F(DrumsTest, BSectionNeverOutplaysTheChorusItLeadsInto) {
+  // The chorus is the destination of the arc, so the pre-chorus may not write
+  // more drum events per bar than the chorus that follows it.
+  for (uint8_t blueprint = 0; blueprint < 10; ++blueprint) {
+    for (uint32_t seed : {1u, 42u, 777u, 2024u}) {
+      params_.blueprint_id = blueprint;
+      params_.seed = seed;
+
+      Generator gen;
+      gen.generate(params_);
+
+      const auto& track = gen.getSong().drums();
+      const auto& sections = gen.getSong().arrangement().sections();
+
+      auto events_per_bar = [&track](const Section& section) {
+        int count = 0;
+        for (const auto& note : track.notes()) {
+          if (note.start_tick >= section.start_tick && note.start_tick < section.endTick()) {
+            ++count;
+          }
+        }
+        return static_cast<float>(count) / std::max<uint8_t>(1, section.bars);
+      };
+
+      for (size_t idx = 0; idx < sections.size(); ++idx) {
+        if (sections[idx].type != SectionType::B) continue;
+        for (size_t next = idx + 1; next < sections.size(); ++next) {
+          if (sections[next].type != SectionType::Chorus) continue;
+          const float b_density = events_per_bar(sections[idx]);
+          if (b_density <= 0.0f) break;  // Drums are muted for this B section
+          EXPECT_LE(b_density, events_per_bar(sections[next]))
+              << "Blueprint " << static_cast<int>(blueprint) << " seed " << seed << ": B section "
+              << sections[idx].name << " is denser than the chorus it leads into";
+          break;
+        }
+      }
+    }
+  }
+}
+
+TEST(DrumDensityTest, SectionDensityPercentScalesDrumEvents) {
+  // density_percent is a note-count control for the kit the same way it is for
+  // the pitched tracks, not only a velocity trim.
+  auto count_events = [](uint8_t density_percent) {
+    Section chorus;
+    chorus.type = SectionType::Chorus;
+    chorus.name = "Chorus";
+    chorus.start_tick = 0;
+    chorus.bars = 4;
+    chorus.track_mask = TrackMask::Drums;
+    chorus.density_percent = density_percent;
+
+    return generateSectionDrums(chorus, Mood::IdolPop, GenerationParadigm::Traditional, 4, 5)
+        .notes()
+        .size();
+  };
+
+  const size_t full = count_events(100);
+  const size_t thinned = count_events(55);
+  EXPECT_GT(full, 0u);
+  EXPECT_LT(thinned, full) << "A section asking for 55% density wrote " << thinned
+                           << " events against " << full << " at full density";
+}
+
+// ============================================================================
+// Drum Role Coverage
+// ============================================================================
+
+TEST(DrumRoleTest, SnareSilencingRolesEmitNoSnareFamilyNotes) {
+  // A role with zero snare probability has to silence every path that can write
+  // a snare drum, including the ghost layer and the pre-chorus buildup. Ambient
+  // keeps its cross-stick, so only the snare drum itself is checked there.
+  for (DrumRole role : {DrumRole::FXOnly, DrumRole::Minimal, DrumRole::Ambient}) {
+    if (drums::getDrumRoleSnareProbability(role) > 0.0f) continue;
+    const bool sidestick_allowed = (role == DrumRole::Ambient);
+
+    Section verse;
+    verse.type = SectionType::B;
+    verse.name = "B";
+    verse.start_tick = 0;
+    verse.bars = 4;
+    verse.track_mask = TrackMask::Drums;
+    verse.drum_role = role;
+
+    Section chorus;
+    chorus.type = SectionType::Chorus;
+    chorus.name = "Chorus";
+    chorus.start_tick = 4 * TICKS_PER_BAR;
+    chorus.bars = 4;
+    chorus.track_mask = TrackMask::Drums;
+
+    Song song;
+    song.setArrangement(Arrangement({verse, chorus}));
+
+    drums::DrumGenerationParams params{};
+    params.mood = Mood::CityPop;
+    params.bpm = 120;
+    params.blueprint_id = 0;
+    params.composition_style = CompositionStyle::MelodyLead;
+    params.paradigm = GenerationParadigm::Traditional;
+
+    for (uint32_t seed = 1; seed <= 16; ++seed) {
+      std::mt19937 rng(seed);
+      MidiTrack track;
+      drums::generateDrumsTrackImpl(track, song, params, rng);
+
+      int snare_family = 0;
+      for (const auto& note : track.notes()) {
+        if (note.start_tick >= verse.endTick()) continue;
+        if (note.note == SNARE) ++snare_family;
+        if (!sidestick_allowed && note.note == drums::SIDESTICK) ++snare_family;
+      }
+      EXPECT_EQ(snare_family, 0) << "Role " << static_cast<int>(role) << " seed " << seed
+                                 << " leaked " << snare_family << " snare-family notes";
+    }
+  }
+}
+
+// ============================================================================
+// Fill Coverage
+// ============================================================================
+
+TEST(DrumFillCoverageTest, EveryFilledBeatCarriesAnOnset) {
+  // A quiet destination draws the subtle fill types, which have nothing to say
+  // on the first beat of a two-beat fill window. Whatever is drawn, no beat of
+  // the bar handed to the next section may fall silent.
+  Section verse;
+  verse.type = SectionType::A;
+  verse.name = "A";
+  verse.start_tick = 0;
+  verse.bars = 4;
+  verse.track_mask = TrackMask::Drums;
+  verse.energy = SectionEnergy::Medium;  // Fill window is beats 3 and 4
+  verse.fill_before = false;
+
+  Section chorus;
+  chorus.type = SectionType::Chorus;
+  chorus.name = "Chorus";
+  chorus.start_tick = 4 * TICKS_PER_BAR;
+  chorus.bars = 4;
+  chorus.track_mask = TrackMask::Drums;
+  chorus.energy = SectionEnergy::Low;
+  chorus.fill_before = true;
+
+  Song song;
+  song.setArrangement(Arrangement({verse, chorus}));
+
+  drums::DrumGenerationParams params{};
+  params.mood = Mood::StraightPop;
+  params.bpm = 120;
+  params.blueprint_id = 0;
+  params.composition_style = CompositionStyle::MelodyLead;
+  params.paradigm = GenerationParadigm::Traditional;
+
+  const Tick last_bar_start = verse.endTick() - TICKS_PER_BAR;
+  for (uint32_t seed = 1; seed <= 40; ++seed) {
+    std::mt19937 rng(seed);
+    MidiTrack track;
+    drums::generateDrumsTrackImpl(track, song, params, rng);
+
+    for (uint8_t beat = 0; beat < 4; ++beat) {
+      const Tick beat_start = last_bar_start + beat * TICKS_PER_BEAT;
+      int onsets = 0;
+      for (const auto& note : track.notes()) {
+        if (note.start_tick >= beat_start && note.start_tick < beat_start + TICKS_PER_BEAT) {
+          ++onsets;
+        }
+      }
+      EXPECT_GT(onsets, 0) << "Seed " << seed << ": beat " << static_cast<int>(beat + 1)
+                           << " of the transition bar is silent";
+    }
+  }
+}
+
+// ============================================================================
+// Rhythm Section Grid
+// ============================================================================
+
+TEST_F(DrumsTest, BassResolvesItsOffBeatsOnTheKitGrid) {
+  // Swing and time feel belong to the arrangement, so the bass reads them from
+  // the same grid the kit does. In a section whose grid moves an off-beat away
+  // from its straight tick, no bass onset may remain on the straight tick.
+  for (Mood mood : {Mood::Lofi, Mood::RnBNeoSoul, Mood::Nostalgic, Mood::Ballad, Mood::CityPop}) {
+    params_.mood = mood;
+    params_.seed = 7;
+    params_.structure = StructurePattern::StandardPop;
+
+    Generator gen;
+    gen.generate(params_);
+
+    const auto& sections = gen.getSong().arrangement().sections();
+    const auto& bass = gen.getSong().bass();
+    int checked_sections = 0;
+    int on_grid_onsets = 0;
+
+    for (const auto& section : sections) {
+      // Outro re-derives its swing bar by bar, so one grid does not describe it.
+      if (section.type == SectionType::Outro) continue;
+
+      const drums::GrooveGrid grid = drums::makeGrooveGrid(
+          section, 0,
+          drums::resolveSectionDrumGroove(params_.mood, params_.paradigm, section.swing_amount),
+          section.time_feel, gen.getSong().bpm());
+
+      std::set<Tick> straight;
+      std::set<Tick> resolved;
+      for (Tick nominal = TICK_SIXTEENTH; nominal < TICKS_PER_BEAT; nominal += TICK_SIXTEENTH) {
+        const Tick played = grid.resolve(grid.bar_start + nominal) % TICKS_PER_BEAT;
+        if (played != nominal) {
+          straight.insert(nominal);
+        }
+        resolved.insert(played);
+      }
+      if (straight.empty()) continue;  // This section does not swing
+      ++checked_sections;
+
+      for (const auto& note : bass.notes()) {
+        if (note.start_tick < section.start_tick || note.start_tick >= section.endTick()) {
+          continue;
+        }
+        const Tick offset = note.start_tick % TICKS_PER_BEAT;
+        EXPECT_EQ(straight.find(offset), straight.end())
+            << "Mood " << static_cast<int>(mood) << ": bass note at " << note.start_tick
+            << " sits on the straight off-beat while the kit grid moved it";
+        if (resolved.count(offset) > 0 && offset != 0) {
+          ++on_grid_onsets;
+        }
+      }
+    }
+
+    EXPECT_GT(checked_sections, 0)
+        << "Mood " << static_cast<int>(mood) << " produced no swung section to check";
+    EXPECT_GT(on_grid_onsets, 0) << "Mood " << static_cast<int>(mood)
+                                 << ": no bass onset landed on a swung subdivision";
+  }
+}
+
+// ============================================================================
+// Blueprint Routing
+// ============================================================================
+
+namespace {
+
+/// @brief Generate a two-section song against a caller-supplied blueprint.
+MidiTrack generateWithBlueprint(const ProductionBlueprint& blueprint, uint8_t blueprint_id,
+                                uint32_t seed) {
+  Section verse;
+  verse.type = SectionType::A;
+  verse.name = "A";
+  verse.start_tick = 0;
+  verse.bars = 4;
+  verse.track_mask = TrackMask::Drums;
+
+  Section chorus;
+  chorus.type = SectionType::Chorus;
+  chorus.name = "Chorus";
+  chorus.start_tick = 4 * TICKS_PER_BAR;
+  chorus.bars = 4;
+  chorus.track_mask = TrackMask::Drums;
+
+  Song song;
+  song.setArrangement(Arrangement({verse, chorus}));
+
+  drums::DrumGenerationParams params{};
+  params.mood = Mood::IdolPop;
+  params.bpm = 120;
+  params.blueprint_id = blueprint_id;
+  params.composition_style = CompositionStyle::MelodyLead;
+  params.paradigm = GenerationParadigm::Traditional;
+  params.blueprint = &blueprint;
+
+  std::mt19937 rng(seed);
+  MidiTrack track;
+  drums::generateDrumsTrackImpl(track, song, params, rng);
+  return track;
+}
+
+std::vector<std::pair<Tick, uint8_t>> onsets(const MidiTrack& track) {
+  std::vector<std::pair<Tick, uint8_t>> out;
+  out.reserve(track.notes().size());
+  for (const auto& note : track.notes()) {
+    out.emplace_back(note.start_tick, note.note);
+  }
+  return out;
+}
+
+}  // namespace
+
+TEST(DrumBlueprintRoutingTest, GeneratorReadsTheBlueprintItWasGiven) {
+  // The blueprint id names a shipped entry, but the caller may be running a
+  // blueprint it built or overrode. Every blueprint value the kit reads has to
+  // come from that entity, or an override silently does nothing.
+  constexpr uint8_t kBlueprintId = 4;
+
+  ProductionBlueprint quiet = getProductionBlueprint(kBlueprintId);
+  quiet.percussion_policy = PercussionPolicy::None;
+  quiet.euclidean_drums_percent = 0;
+
+  ProductionBlueprint busy = getProductionBlueprint(kBlueprintId);
+  busy.percussion_policy = PercussionPolicy::Full;
+  busy.euclidean_drums_percent = 100;
+
+  const MidiTrack quiet_track = generateWithBlueprint(quiet, kBlueprintId, 42);
+  const MidiTrack busy_track = generateWithBlueprint(busy, kBlueprintId, 42);
+
+  EXPECT_NE(onsets(quiet_track), onsets(busy_track))
+      << "The same blueprint id with different blueprint contents produced identical drums, "
+         "so the generator is reading the shipped table instead of what it was handed";
+
+  auto count_percussion = [](const MidiTrack& track) {
+    int count = 0;
+    for (const auto& note : track.notes()) {
+      if (note.note == TAMBOURINE || note.note == SHAKER || note.note == HANDCLAP) ++count;
+    }
+    return count;
+  };
+  EXPECT_EQ(count_percussion(quiet_track), 0) << "PercussionPolicy::None was not honoured";
+  EXPECT_GT(count_percussion(busy_track), 0) << "PercussionPolicy::Full was not honoured";
+}
+
+TEST(DrumBlueprintRoutingTest, IntroKickStaysOffOnEveryPathThatCanPlaceOne) {
+  // Turning the intro kick off has to hold for the vocal-driven callbacks too,
+  // which place kicks of their own before the ordinary pattern runs.
+  Section intro;
+  intro.type = SectionType::Intro;
+  intro.name = "Intro";
+  intro.start_tick = 0;
+  intro.bars = 4;
+  intro.track_mask = TrackMask::Drums;
+
+  Section chorus;
+  chorus.type = SectionType::Chorus;
+  chorus.name = "Chorus";
+  chorus.start_tick = 4 * TICKS_PER_BAR;
+  chorus.bars = 4;
+  chorus.track_mask = TrackMask::Drums;
+
+  Song song;
+  song.setArrangement(Arrangement({intro, chorus}));
+
+  ProductionBlueprint blueprint = getProductionBlueprint(0);
+  blueprint.intro_kick_enabled = false;
+
+  // A vocal line on every 16th of the intro, so any onset-following path has
+  // something to latch onto.
+  VocalAnalysis vocal_analysis{};
+  for (Tick tick = 0; tick < 4 * TICKS_PER_BAR; tick += TICK_SIXTEENTH) {
+    vocal_analysis.pitch_at_tick.emplace(tick, 60);
+  }
+
+  for (GenerationParadigm paradigm :
+       {GenerationParadigm::RhythmSync, GenerationParadigm::MelodyDriven}) {
+    drums::DrumGenerationParams params{};
+    params.mood = Mood::IdolPop;
+    params.bpm = 120;
+    params.blueprint_id = 0;
+    params.composition_style = CompositionStyle::MelodyLead;
+    params.paradigm = paradigm;
+    params.blueprint = &blueprint;
+
+    auto callback = (paradigm == GenerationParadigm::RhythmSync)
+                        ? drums::createVocalSyncCallback(vocal_analysis, params.bpm)
+                        : drums::createMelodyDrivenCallback(vocal_analysis);
+
+    for (uint32_t seed = 1; seed <= 8; ++seed) {
+      std::mt19937 rng(seed);
+      MidiTrack track;
+      drums::generateDrumsTrackImpl(track, song, params, rng, callback);
+
+      int intro_kicks = 0;
+      for (const auto& note : track.notes()) {
+        if (note.note == KICK && note.start_tick < intro.endTick()) ++intro_kicks;
+      }
+      EXPECT_EQ(intro_kicks, 0) << "Paradigm " << static_cast<int>(paradigm) << " seed " << seed
+                                << " placed " << intro_kicks
+                                << " kicks in an intro that disables them";
+    }
+  }
+}
+
+// ============================================================================
+// Drum Style Identity
+// ============================================================================
+
+TEST(DrumStyleTest, TrapPlaysAHalfTimeBackbeat) {
+  // The Trap style promises a half-time snare, so the backbeat sits on beat 3
+  // alone rather than being decided per song.
+  Section chorus;
+  chorus.type = SectionType::Chorus;
+  chorus.name = "Chorus";
+  chorus.start_tick = 0;
+  chorus.bars = 4;
+  chorus.track_mask = TrackMask::Drums;
+
+  for (uint32_t seed = 1; seed <= 16; ++seed) {
+    const MidiTrack track =
+        generateSectionDrums(chorus, Mood::Trap, GenerationParadigm::Traditional, 0, seed);
+
+    int on_beat3 = 0;
+    int on_other_beats = 0;
+    for (const auto& note : track.notes()) {
+      if (note.note != SNARE && note.note != drums::SIDESTICK) continue;
+      const Tick in_bar = note.start_tick % TICKS_PER_BAR;
+      if (in_bar % TICKS_PER_BEAT != 0) continue;  // Ghost notes are not the backbeat
+      if (in_bar / TICKS_PER_BEAT == 2) {
+        ++on_beat3;
+      } else {
+        ++on_other_beats;
+      }
+    }
+    EXPECT_GT(on_beat3, 0) << "Seed " << seed << ": Trap has no beat-3 backbeat";
+    EXPECT_EQ(on_other_beats, 0) << "Seed " << seed << ": Trap put " << on_other_beats
+                                 << " backbeat snares off beat 3";
   }
 }
 
@@ -3688,19 +4317,26 @@ TEST(FillTypeEnergyTest, HighEnergyUsesExistingSectionLogic) {
   EXPECT_GT(high_fills.size(), 1u) << "High energy should produce varied fills";
 }
 
-TEST(FillGeneratorContentTest, FullBarFillHasContentOnFirstTwoBeats) {
-  const std::vector<FillType> fill_types = {
+// Every fill type the selector can return. Kept as one list so a new fill type
+// cannot be added without every content property below covering it.
+const std::vector<FillType>& allFillTypes() {
+  static const std::vector<FillType> kFillTypes = {
       FillType::SnareRoll,     FillType::TomDescend,       FillType::TomAscend,
       FillType::SnareTomCombo, FillType::SimpleCrash,      FillType::LinearFill,
       FillType::GhostToAccent, FillType::BDSnareAlternate, FillType::HiHatChoke,
       FillType::TomShuffle,    FillType::BreakdownFill,    FillType::FlamsAndDrags,
       FillType::HalfTimeFill,
   };
+  return kFillTypes;
+}
 
-  for (FillType fill : fill_types) {
+TEST(FillGeneratorContentTest, FullBarFillHasContentOnFirstTwoBeats) {
+  const GrooveGrid grid;
+
+  for (FillType fill : allFillTypes()) {
     MidiTrack track;
-    generateFill(track, 0, 0, fill, 100);
-    generateFill(track, TICKS_PER_BEAT, 1, fill, 100);
+    generateFill(track, grid, 0, 0, fill, 100);
+    generateFill(track, grid, TICKS_PER_BEAT, 1, fill, 100);
 
     int beat0_notes = 0;
     int beat1_notes = 0;
@@ -3719,9 +4355,44 @@ TEST(FillGeneratorContentTest, FullBarFillHasContentOnFirstTwoBeats) {
   }
 }
 
+TEST(FillGeneratorContentTest, ReportedFillMaterialMatchesWhatWasWritten) {
+  // The caller decides whether a beat needs the ordinary pattern by trusting
+  // this return value, so it has to agree with the track exactly.
+  const GrooveGrid grid;
+
+  for (FillType fill : allFillTypes()) {
+    for (uint8_t beat = 0; beat < 4; ++beat) {
+      MidiTrack track;
+      const Tick beat_tick = beat * TICKS_PER_BEAT;
+      const bool reported = generateFill(track, grid, beat_tick, beat, fill, 100);
+      EXPECT_EQ(reported, !track.notes().empty())
+          << "Fill type " << static_cast<int>(fill) << " misreports beat "
+          << static_cast<int>(beat + 1);
+    }
+  }
+}
+
+TEST(FillGeneratorContentTest, HalfTimeFillCarriesTheFinalBeat) {
+  // A one-beat fill window lands on beat 4, so a fill type that only speaks on
+  // beat 3 would leave the bar handed to the next section silent there.
+  const GrooveGrid grid;
+  MidiTrack track;
+
+  EXPECT_TRUE(generateFill(track, grid, 3 * TICKS_PER_BEAT, 3, FillType::HalfTimeFill, 100));
+
+  int notes_on_final_beat = 0;
+  for (const auto& note : track.notes()) {
+    if (note.start_tick >= 3 * TICKS_PER_BEAT && note.start_tick < 4 * TICKS_PER_BEAT) {
+      ++notes_on_final_beat;
+    }
+  }
+  EXPECT_GT(notes_on_final_beat, 0);
+}
+
 TEST(FillGeneratorContentTest, SimpleCrashIncludesCrashCymbal) {
   MidiTrack track;
-  generateFill(track, 3 * TICKS_PER_BEAT, 3, FillType::SimpleCrash, 100);
+  const GrooveGrid grid;
+  generateFill(track, grid, 3 * TICKS_PER_BEAT, 3, FillType::SimpleCrash, 100);
 
   bool has_kick = false;
   bool has_crash = false;

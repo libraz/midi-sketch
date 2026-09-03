@@ -169,9 +169,13 @@ TEST(GeneratorTest, HumanizeTimingWithinBounds) {
   gen.generate(params);
   const auto& notes = gen.getSong().vocal().notes();
 
-  // All notes should still have reasonable timing (>= 0)
+  // Ticks are unsigned, so a humanize offset that pushed a note before the song
+  // start would wrap to a huge value rather than go negative. Bounding the tick
+  // by the arrangement length is what catches that.
+  ASSERT_FALSE(notes.empty()) << "No vocal notes to check timing on";
+  const Tick song_end = gen.getSong().arrangement().totalTicks();
   for (const auto& note : notes) {
-    EXPECT_GE(note.start_tick, 0u);
+    EXPECT_LT(note.start_tick, song_end) << "Humanized note landed outside the arrangement";
   }
 }
 

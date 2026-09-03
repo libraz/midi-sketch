@@ -1330,13 +1330,12 @@ TEST_F(HarmonyIntegrationTest, BassChordPhraseEndSynchronization) {
 // These tests verify that HarmonyContext correctly handles Dense harmonic rhythm
 // for Chorus sections with energetic moods (EnergeticDance, IdolPop, etc.).
 //
-// Root cause of original bug (backup/midi-sketch-1768137053786.mid):
-// - Chord track used shouldSplitPhraseEnd() to change chords mid-bar
-// - HarmonyContext didn't know about mid-bar splits, returned wrong chord degree
-// - Vocal track generated notes based on wrong chord, causing dissonance
-//
-// Fix: HarmonyContext now uses HarmonicRhythmInfo::forSection() and
-// shouldSplitPhraseEnd() to synchronize with chord track timing.
+// Dense sections change chords mid-bar, and shouldSplitPhraseEnd() moves the
+// change to beat 3 at phrase ends. HarmonyContext is the single source every
+// track queries for the chord at a tick, so it has to place those changes at the
+// same ticks the chord track does. A HarmonyContext that reported the bar's
+// first chord for the whole bar would hand every later track a chord the
+// accompaniment is no longer playing.
 // ============================================================================
 
 TEST(HarmonyContextDenseRhythm, MidBarChordChangeInChorus) {

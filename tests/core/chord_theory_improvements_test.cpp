@@ -8,7 +8,10 @@
 
 #include <gtest/gtest.h>
 
+#include <random>
+
 #include "core/chord.h"
+#include "core/chord_extension_planner.h"
 #include "core/pitch_utils.h"
 
 namespace midisketch {
@@ -136,6 +139,43 @@ TEST(AvoidNoteMaj7Test, MajorSeventhExemptOnMaj7) {
 TEST(AvoidNoteMaj7Test, OtherAvoidNotesUnaffectedByMaj7Flag) {
   // C#(61) over C(60) tonic = minor 2nd (interval 1) -> avoid regardless.
   EXPECT_TRUE(isAvoidNoteWithContext(61, 60, false, 0, /*chord_has_major7=*/true));
+}
+
+// ============================================================================
+// Chord extension family independence
+// ============================================================================
+
+// A high sus probability must not consume the range a separate seventh
+// probability is measured against.
+TEST(ChordExtensionPlannerTest, SusProbabilityDoesNotStarveSevenths) {
+  ChordExtensionParams params;
+  params.enable_sus = true;
+  params.enable_7th = true;
+  params.sus_probability = 0.40f;
+  params.seventh_probability = 0.30f;
+
+  std::mt19937 rng(20260903);
+  int sevenths = 0;
+  int suspensions = 0;
+  constexpr int kTrials = 400;
+  for (int trial = 0; trial < kTrials; ++trial) {
+    // Bar 0 of a Chorus is both a suspension context and a seventh context, so
+    // the two families compete for the same slot.
+    ChordExtension extension =
+        selectChordExtension(/*degree=*/0, SectionType::Chorus, /*bar_in_section=*/0,
+                             /*section_bars=*/8, params, rng);
+    if (isSusExtension(extension)) ++suspensions;
+    if (extension == ChordExtension::Maj7 || extension == ChordExtension::Min7 ||
+        extension == ChordExtension::Dom7) {
+      ++sevenths;
+    }
+  }
+
+  EXPECT_GT(suspensions, 0);
+  EXPECT_GT(sevenths, kTrials / 10)
+      << "sevenths appeared " << sevenths << " times in " << kTrials
+      << " trials; a 0.30 seventh probability behind a 0.40 sus probability must "
+         "not collapse to the sliver of one shared roll";
 }
 
 }  // namespace

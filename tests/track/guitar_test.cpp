@@ -25,6 +25,8 @@
 #include "core/structure.h"
 #include "core/timing_constants.h"
 #include "test_support/generator_test_fixture.h"
+#include "test_support/stub_harmony_context.h"
+#include "track/accompaniment_ceiling.h"
 
 using namespace midisketch;
 
@@ -101,7 +103,66 @@ TEST(GuitarTrackTest, ElectricGuitarPhysicalModel) {
   EXPECT_EQ(model.pitch_low, 40);   // E2
   EXPECT_EQ(model.pitch_high, 88);  // E6
   EXPECT_TRUE(model.supports_legato);
-  EXPECT_EQ(model.vocal_ceiling_offset, 2);
+}
+
+// ============================================================================
+// Accompaniment Ceiling Tests
+// ============================================================================
+
+namespace {
+
+/// Guitar's own physical bounds, mirroring the constants in guitar.cpp.
+constexpr uint8_t kGuitarRangeLow = 40;   // E2
+constexpr uint8_t kGuitarRangeHigh = 76;  // E5
+
+test::StubHarmonyContext harmonyWithVocalAt(uint8_t vocal_pitch) {
+  test::StubHarmonyContext harmony;
+  harmony.setHighestPitchForTrack(vocal_pitch);
+  return harmony;
+}
+
+}  // namespace
+
+TEST(AccompanimentCeilingTest, StaysTheNamedMarginUnderTheSoundingVocal) {
+  const test::StubHarmonyContext harmony = harmonyWithVocalAt(72);  // C5
+
+  EXPECT_EQ(resolveVocalCeiling(harmony, 0, 480, kGuitarRangeLow, kGuitarRangeHigh,
+                                VocalCeilingMargin::kGuitar),
+            72)
+      << "a guitar line may reach the lead's pitch";
+  EXPECT_EQ(resolveVocalCeiling(harmony, 0, 480, 48, 84, VocalCeilingMargin::kChord), 69)
+      << "a chord bed sits a minor third under the lead";
+}
+
+TEST(AccompanimentCeilingTest, ReturnsTheTrackBoundWhileTheVocalRests) {
+  const test::StubHarmonyContext silent = harmonyWithVocalAt(0);
+
+  // Nothing is sounding to stay under, so the track keeps its own upper bound.
+  EXPECT_EQ(resolveVocalCeiling(silent, 0, 480, kGuitarRangeLow, kGuitarRangeHigh,
+                                VocalCeilingMargin::kGuitar),
+            kGuitarRangeHigh);
+  EXPECT_EQ(resolveVocalCeiling(silent, 0, 480, 48, 84, VocalCeilingMargin::kChord), 84);
+}
+
+TEST(AccompanimentCeilingTest, NeverLeavesTheTrackRange) {
+  // A vocal below the track's range would otherwise invert the bounds and push
+  // every note under the instrument's lowest playable pitch.
+  const test::StubHarmonyContext below_range = harmonyWithVocalAt(30);
+  EXPECT_EQ(resolveVocalCeiling(below_range, 0, 480, kGuitarRangeLow, kGuitarRangeHigh,
+                                VocalCeilingMargin::kGuitar),
+            kGuitarRangeLow);
+
+  // A vocal above the track's range cannot raise its ceiling.
+  const test::StubHarmonyContext above_range = harmonyWithVocalAt(100);
+  EXPECT_EQ(resolveVocalCeiling(above_range, 0, 480, kGuitarRangeLow, kGuitarRangeHigh,
+                                VocalCeilingMargin::kGuitar),
+            kGuitarRangeHigh);
+
+  // The margin must not underflow past the low bound either.
+  const test::StubHarmonyContext at_low = harmonyWithVocalAt(41);
+  EXPECT_EQ(resolveVocalCeiling(at_low, 0, 480, kGuitarRangeLow, kGuitarRangeHigh,
+                                VocalCeilingMargin::kChord),
+            kGuitarRangeLow);
 }
 
 // ============================================================================
@@ -568,7 +629,7 @@ TEST_F(GuitarGenerationTest, SimultaneousNotesWithinGuitarStringCount) {
     gen.generate(params_);
 
     const auto& notes = gen.getSong().guitar().notes();
-    if (notes.empty()) continue;
+    ASSERT_FALSE(notes.empty()) << "Mood " << static_cast<int>(mood) << " produced no guitar notes";
 
     int max_simultaneous = 1;
     int current_count = 1;
@@ -643,7 +704,8 @@ TEST_F(GuitarGenerationTest, NotesAreDiatonicToCMajorAcrossMoods) {
       gen.generate(params_);
 
       const auto& guitar = gen.getSong().guitar();
-      if (guitar.notes().empty()) continue;
+      ASSERT_FALSE(guitar.notes().empty())
+          << "Mood " << static_cast<int>(mood) << " seed " << seed << " produced no guitar notes";
 
       int total = 0;
       int diatonic_count = 0;
@@ -701,7 +763,10 @@ TEST_F(GuitarGenerationTest, GuitarDoesNotClashWithVocal) {
 
       const auto& guitar = gen.getSong().guitar();
       const auto& vocal = gen.getSong().vocal();
-      if (guitar.notes().empty()) continue;
+      ASSERT_FALSE(guitar.notes().empty())
+          << "Mood " << static_cast<int>(mood) << " seed " << seed << " produced no guitar notes";
+      ASSERT_FALSE(vocal.notes().empty())
+          << "Mood " << static_cast<int>(mood) << " seed " << seed << " produced no vocal notes";
 
       int clashes = countDissonantClashes(guitar, vocal);
       int total = static_cast<int>(guitar.notes().size());
@@ -727,7 +792,10 @@ TEST_F(GuitarGenerationTest, GuitarDoesNotClashWithBass) {
 
       const auto& guitar = gen.getSong().guitar();
       const auto& bass = gen.getSong().bass();
-      if (guitar.notes().empty()) continue;
+      ASSERT_FALSE(guitar.notes().empty())
+          << "Mood " << static_cast<int>(mood) << " seed " << seed << " produced no guitar notes";
+      ASSERT_FALSE(bass.notes().empty())
+          << "Mood " << static_cast<int>(mood) << " seed " << seed << " produced no bass notes";
 
       int clashes = countDissonantClashes(guitar, bass);
       int total = static_cast<int>(guitar.notes().size());
@@ -752,7 +820,10 @@ TEST_F(GuitarGenerationTest, GuitarDoesNotClashWithChord) {
 
       const auto& guitar = gen.getSong().guitar();
       const auto& chord = gen.getSong().chord();
-      if (guitar.notes().empty()) continue;
+      ASSERT_FALSE(guitar.notes().empty())
+          << "Mood " << static_cast<int>(mood) << " seed " << seed << " produced no guitar notes";
+      ASSERT_FALSE(chord.notes().empty())
+          << "Mood " << static_cast<int>(mood) << " seed " << seed << " produced no chord notes";
 
       int clashes = countDissonantClashes(guitar, chord);
       int total = static_cast<int>(guitar.notes().size());
@@ -779,7 +850,7 @@ TEST_F(GuitarGenerationTest, GuitarWithAllTracksActive_NoMajorClashes) {
     gen.generate(params_);
 
     const auto& guitar = gen.getSong().guitar();
-    if (guitar.notes().empty()) continue;
+    ASSERT_FALSE(guitar.notes().empty()) << "Seed " << seed << " produced no guitar notes";
 
     int total_clashes = 0;
     total_clashes += countDissonantClashes(guitar, gen.getSong().vocal());

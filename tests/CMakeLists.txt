@@ -49,6 +49,7 @@ set(TEST_SOURCES
   core/piano_roll_test.cpp
   cli/args_test.cpp
   cli/display_helpers_test.cpp
+  cli/file_input_test.cpp
   cli/generate_mode_test.cpp
   ../src/cli/args.cpp
   ../src/cli/generate_mode.cpp
@@ -58,6 +59,7 @@ set(TEST_SOURCES
   core/music_theory_test.cpp
   core/velocity_test.cpp
   core/velocity_clamp_test.cpp
+  core/section_dynamics_test.cpp
   core/post_processor_test.cpp
   core/tempo_map_test.cpp
   core/modulation_calculator_test.cpp
@@ -144,6 +146,8 @@ set(TEST_SOURCES
   track/vocal_hook_boundary_test.cpp
   track/phrase_planner_test.cpp
   track/mora_rhythm_test.cpp
+  track/pitch_writeback_test.cpp
+  core/generator_param_resolution_test.cpp
 )
 
 add_executable(midisketch_tests ${TEST_SOURCES})

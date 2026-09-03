@@ -8,6 +8,7 @@
 #include "core/generator.h"
 #include "core/section_types.h"
 #include "core/timing_constants.h"
+#include "core/velocity.h"
 #include "test_support/generator_test_fixture.h"
 
 namespace midisketch {
@@ -163,6 +164,77 @@ TEST_F(StaggeredEntryGeneratorTest, StaggeredEntryDoesNotAffectDrums) {
       break;
     }
   }
+}
+
+// ============================================================================
+// Composite entries and the fade-in floor
+// ============================================================================
+
+TEST(StaggeredEntryFadeTest, FadedVelocityNeverReachesNoteOff) {
+  // The quietest possible note, faded at the instant of entry, is the case that
+  // used to round to velocity 0 (a MIDI note-off) instead of a soft attack.
+  for (int velocity = 1; velocity <= 127; ++velocity) {
+    for (int step = 0; step <= 10; ++step) {
+      float progress = static_cast<float>(step) / 10.0f;
+      uint8_t faded = getEntryFadeVelocity(static_cast<uint8_t>(velocity), progress);
+      EXPECT_GE(faded, 1) << "velocity=" << velocity << " progress=" << progress;
+      EXPECT_LE(faded, 127);
+    }
+  }
+}
+
+TEST(StaggeredEntryFadeTest, FadeRisesToFullLevel) {
+  EXPECT_LT(getEntryFadeVelocity(100, 0.0f), getEntryFadeVelocity(100, 0.5f));
+  EXPECT_LT(getEntryFadeVelocity(100, 0.5f), getEntryFadeVelocity(100, 1.0f));
+  EXPECT_EQ(getEntryFadeVelocity(100, 1.0f), 100);
+}
+
+/// @brief IdolCoolPop opens with an 8-bar Stagger intro, whose default schedule
+/// brings tracks in as pairs: Chord with Motif at bar 4, Arpeggio with Aux at
+/// bar 6. Both members of a pair have to wait for their bar.
+class CompositeStaggerEntryTest : public test::GeneratorTestFixture {
+ protected:
+  void SetUp() override {
+    GeneratorTestFixture::SetUp();
+    params_.blueprint_id = 7;
+    params_.drums_enabled = true;
+    params_.arpeggio_enabled = true;
+    params_.seed = 12345;
+  }
+
+  static bool hasNotesBefore(const MidiTrack& track, Tick from, Tick before) {
+    for (const auto& note : track.notes()) {
+      if (note.start_tick >= from && note.start_tick < before) return true;
+    }
+    return false;
+  }
+};
+
+TEST_F(CompositeStaggerEntryTest, SecondTrackOfACompositeEntryAlsoWaits) {
+  generate();
+
+  const auto& sections = song().arrangement().sections();
+  const Section* intro = nullptr;
+  for (const auto& section : sections) {
+    if (section.type == SectionType::Intro && section.bars >= 8) {
+      intro = &section;
+      break;
+    }
+  }
+  ASSERT_NE(intro, nullptr) << "blueprint 7 should open with an 8-bar intro";
+
+  auto config = StaggeredEntryConfig::defaultIntro(intro->bars);
+  ASSERT_EQ(config.entry_count, 4);
+  ASSERT_EQ(config.entries[2].track, TrackMask::Chord | TrackMask::Motif);
+  ASSERT_EQ(config.entries[3].track, TrackMask::Arpeggio | TrackMask::Aux);
+
+  Tick chord_entry = intro->start_tick + config.entries[2].entry_bar * TICKS_PER_BAR;
+  Tick arp_entry = intro->start_tick + config.entries[3].entry_bar * TICKS_PER_BAR;
+
+  EXPECT_FALSE(hasNotesBefore(song().motif(), intro->start_tick, chord_entry))
+      << "Motif shares the bar-4 entry with Chord and must not sound before it";
+  EXPECT_FALSE(hasNotesBefore(song().aux(), intro->start_tick, arp_entry))
+      << "Aux shares the bar-6 entry with Arpeggio and must not sound before it";
 }
 
 // ============================================================================

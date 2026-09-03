@@ -2779,10 +2779,11 @@ TEST(ZombieParamASeriesTest, MaxLeapSemitones3RestrictsIntervals) {
       int interval =
           std::abs(static_cast<int>(notes[idx].note) - static_cast<int>(notes[idx - 1].note));
       total_intervals++;
-      // getEffectiveMaxInterval adds section-based bonus on top of ctx_max_leap,
-      // so effective limit may be slightly higher than 3 for some sections.
-      // But for section type A (default), it should be close to 3.
-      if (interval > 5) {  // Allow small overhead from section adjustment
+      // getEffectiveMaxInterval takes the SMALLER of the section's allowance
+      // and the configured budget, so 3 is the bound in every section here.
+      // The tolerance covers passes that may leave a wider interval when no
+      // admissible pitch fits inside the bound, not a wider bound.
+      if (interval > 5) {
         large_interval_count++;
       }
     }

@@ -66,12 +66,12 @@ TEST_F(DiagnosticTest, DISABLED_DiagnoseClashSources) {
   std::cout << "Motif notes: " << song.motif().notes().size() << "\n\n";
 
   const auto& harmony = gen.getHarmonyContext();
-  auto vb = findClashes(song.vocal(), "Vocal", song.bass(), "Bass", harmony);
-  auto vc = findClashes(song.vocal(), "Vocal", song.chord(), "Chord", harmony);
-  auto va = findClashes(song.vocal(), "Vocal", song.aux(), "Aux", harmony);
-  auto bc = findClashes(song.bass(), "Bass", song.chord(), "Chord", harmony);
-  auto ba = findClashes(song.bass(), "Bass", song.aux(), "Aux", harmony);
-  auto ca = findClashes(song.chord(), "Chord", song.aux(), "Aux", harmony);
+  auto vb = findClashes(song, params_, harmony, TrackRole::Vocal, TrackRole::Bass);
+  auto vc = findClashes(song, params_, harmony, TrackRole::Vocal, TrackRole::Chord);
+  auto va = findClashes(song, params_, harmony, TrackRole::Vocal, TrackRole::Aux);
+  auto bc = findClashes(song, params_, harmony, TrackRole::Bass, TrackRole::Chord);
+  auto ba = findClashes(song, params_, harmony, TrackRole::Bass, TrackRole::Aux);
+  auto ca = findClashes(song, params_, harmony, TrackRole::Chord, TrackRole::Aux);
 
   std::cout << "Vocal-Bass: " << vb.size() << "\n";
   std::cout << "Vocal-Chord: " << vc.size() << "\n";
@@ -111,7 +111,7 @@ TEST_F(DiagnosticTest, DISABLED_DiagnoseClashSources) {
     params_.seed = seed;
     gen.generate(params_);
     const auto& s = gen.getSong();
-    auto all = analyzeAllTrackPairs(s, gen.getHarmonyContext());
+    auto all = analyzeAllTrackPairs(s, params_, gen.getHarmonyContext());
     std::cout << "Seed " << seed << ": " << all.size() << " clashes\n";
 
     // Count by pair

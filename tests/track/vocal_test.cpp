@@ -25,6 +25,7 @@
 #include "test_helpers/note_event_test_helper.h"
 #include "test_support/generator_test_fixture.h"
 #include "test_support/test_constants.h"
+#include "track/melody/melody_utils.h"
 #include "track/vocal/phrase_variation.h"
 
 namespace midisketch {
@@ -182,30 +183,34 @@ TEST_F(VocalTest, RhythmLockRhythmSyncLaterChorusLiftsHook) {
   params_.vocal_high = 79;
   params_.humanize = false;
   params_.target_duration_seconds = 212;
-  // The later-chorus average-pitch lift is a per-seed tendency: the +2
-  // register shift is often absorbed by the vocal ceiling (high=79) in the
-  // locked-rhythm path. Use a seed where the designed lift clearly manifests.
-  params_.seed = 84;
 
-  Generator gen;
-  gen.generate(params_);
+  // Checked over a set of seeds rather than one: a single seed cannot
+  // distinguish "the lift mechanism works" from "this seed happened to lift",
+  // and the locked-rhythm path is where the +2 register shift is most likely
+  // to be absorbed by the vocal ceiling (high=79).
+  for (uint32_t seed : {12345u, 777u, 20260903u, 424242u, 999u}) {
+    params_.seed = seed;
+    Generator gen;
+    gen.generate(params_);
 
-  auto choruses = sectionsOfType(gen.getSong(), SectionType::Chorus);
-  ASSERT_GE(choruses.size(), 2u);
+    auto choruses = sectionsOfType(gen.getSong(), SectionType::Chorus);
+    ASSERT_GE(choruses.size(), 2u) << "seed " << seed;
 
-  auto first_chorus = collectNotesInSection(gen.getSong().vocal(), *choruses.front(), 12);
-  auto later_chorus = collectNotesInSection(gen.getSong().vocal(), *choruses.back(), 12);
-  ASSERT_GE(first_chorus.size(), 8u);
-  ASSERT_GE(later_chorus.size(), 8u);
+    auto first_chorus = collectNotesInSection(gen.getSong().vocal(), *choruses.front(), 12);
+    auto later_chorus = collectNotesInSection(gen.getSong().vocal(), *choruses.back(), 12);
+    ASSERT_GE(first_chorus.size(), 8u) << "seed " << seed;
+    ASSERT_GE(later_chorus.size(), 8u) << "seed " << seed;
 
-  // The later chorus must lift in average pitch relative to the first chorus.
-  // Threshold is 0.5 st: with breathability-driven phrase-end rests the locked
-  // rhythm selects slightly different pitches, so the lift (while clearly
-  // present and audible) is smaller than the pre-breathability generation.
-  EXPECT_GT(averagePitch(later_chorus), averagePitch(first_chorus) + 0.5)
-      << "Later chorus hook should lift instead of repeating the first chorus verbatim.";
-  EXPECT_GE(maxPitch(later_chorus), maxPitch(first_chorus))
-      << "Later chorus should preserve or raise the hook peak.";
+    // The later chorus must lift in average pitch relative to the first chorus.
+    // Threshold is 0.5 st: with breathability-driven phrase-end rests the locked
+    // rhythm selects slightly different pitches, so the lift (while clearly
+    // present and audible) is smaller than the pre-breathability generation.
+    EXPECT_GT(averagePitch(later_chorus), averagePitch(first_chorus) + 0.5)
+        << "seed " << seed
+        << ": later chorus hook should lift instead of repeating the first chorus verbatim.";
+    EXPECT_GE(maxPitch(later_chorus), maxPitch(first_chorus))
+        << "seed " << seed << ": later chorus should preserve or raise the hook peak.";
+  }
 }
 
 // VocalNotesInValidMidiRange: consolidated into AllNotesHaveValidData below
@@ -215,12 +220,47 @@ TEST_F(VocalTest, VocalNotesWithinConfiguredRange) {
   gen.generate(params_);
 
   const auto& track = gen.getSong().vocal();
+  ASSERT_FALSE(track.notes().empty()) << "Range enforcement needs notes to enforce it on";
   for (const auto& note : track.notes()) {
-    // Allow some tolerance for octave adjustments
-    EXPECT_GE(note.note, params_.vocal_low - 12)
-        << "Note " << static_cast<int>(note.note) << " below range";
-    EXPECT_LE(note.note, params_.vocal_high + 12)
-        << "Note " << static_cast<int>(note.note) << " above range";
+    // The configured range is a hard bound: it is a singer's real range, and
+    // the piano-roll safety API reports notes outside it as out of range.
+    EXPECT_GE(note.note, params_.vocal_low)
+        << "Note " << static_cast<int>(note.note) << " below vocal_low "
+        << static_cast<int>(params_.vocal_low);
+    EXPECT_LE(note.note, params_.vocal_high)
+        << "Note " << static_cast<int>(note.note) << " above vocal_high "
+        << static_cast<int>(params_.vocal_high);
+  }
+}
+
+TEST_F(VocalTest, ClimaxNeverSingsAboveConfiguredCeiling) {
+  // The climax Chorus is the section that used to overshoot: it was given
+  // headroom ABOVE the configured ceiling rather than inside it.
+  for (uint8_t ceiling : {static_cast<uint8_t>(74), static_cast<uint8_t>(79)}) {
+    uint8_t highest_peak = 0;
+    for (uint32_t seed : {12345u, 777u, 20260903u}) {
+      params_.vocal_low = 60;
+      params_.vocal_high = ceiling;
+      params_.seed = seed;
+      Generator gen;
+      gen.generate(params_);
+
+      const auto& notes = gen.getSong().vocal().notes();
+      ASSERT_FALSE(notes.empty()) << "seed " << seed << " produced no vocal";
+      for (const auto& note : notes) {
+        highest_peak = std::max(highest_peak, note.note);
+        EXPECT_LE(note.note, ceiling) << "seed " << seed << " sang " << static_cast<int>(note.note)
+                                      << " above ceiling " << static_cast<int>(ceiling);
+        EXPECT_GE(note.note, params_.vocal_low)
+            << "seed " << seed << " sang " << static_cast<int>(note.note) << " below floor";
+      }
+    }
+    // The ceiling must stay usable, not merely respected by never approaching
+    // it: capping the climax by shrinking the whole range would also pass the
+    // per-note bound above while quietly costing the song its top register.
+    EXPECT_GE(highest_peak, ceiling - 2)
+        << "No seed reached within 2 semitones of the ceiling " << static_cast<int>(ceiling)
+        << "; the highest note sung was " << static_cast<int>(highest_peak);
   }
 }
 
@@ -359,10 +399,10 @@ TEST_F(VocalTest, VocalRangeRespected) {
   gen.generate(params_);
 
   const auto& track = gen.getSong().vocal();
+  ASSERT_FALSE(track.notes().empty()) << "A narrow range must still produce a melody";
   for (const auto& note : track.notes()) {
-    // Notes should be within or near the configured range
-    EXPECT_GE(note.note, params_.vocal_low - 12);
-    EXPECT_LE(note.note, params_.vocal_high + 12);
+    EXPECT_GE(note.note, params_.vocal_low) << "Note below the configured floor";
+    EXPECT_LE(note.note, params_.vocal_high) << "Note above the configured ceiling";
   }
 }
 
@@ -1242,6 +1282,139 @@ TEST_F(VocalTest, PowerfulShoutStyleGeneratesNotes) {
 }
 
 // ============================================================================
+// Accented non-chord tones
+// ============================================================================
+
+/// @brief Count vocal notes that sound an appoggiatura against their chord.
+///
+/// A non-chord tone that steps down onto a chord tone of the chord its
+/// resolution belongs to. Counted from the emitted track, so it measures what
+/// survives every pass rather than what any one pass intended.
+int countAppoggiaturas(const Song& song, const IHarmonyContext& harmony) {
+  const auto& notes = song.vocal().notes();
+  int count = 0;
+  for (size_t i = 0; i + 1 < notes.size(); ++i) {
+    const int pitch = notes[i].note;
+    if (melody::isPitchClassInSet(melody::vocalChordTonesAt(harmony, notes[i].start_tick),
+                                  getPitchClass(notes[i].note))) {
+      continue;
+    }
+    const int resolution_down = pitch - static_cast<int>(notes[i + 1].note);
+    if (resolution_down < 1 || resolution_down > 2) continue;
+    if (melody::isPitchClassInSet(melody::vocalChordTonesAt(harmony, notes[i + 1].start_tick),
+                                  getPitchClass(notes[i + 1].note))) {
+      ++count;
+    }
+  }
+  return count;
+}
+
+TEST_F(VocalTest, BalladKeepsAccentedNonChordTonesAtObservableDensity) {
+  // The accented dissonance that resolves down by step is the core expressive
+  // device of a ballad vocal. Downstream passes used to reject it because they
+  // asked a weak-beat-only rule, flattening every one onto its resolution.
+  params_.mood = Mood::Ballad;
+  params_.blueprint_id = 3;
+  params_.structure = StructurePattern::FullWithBridge;
+
+  int total_appoggiaturas = 0;
+  int total_notes = 0;
+  for (uint32_t seed : {12345u, 777u, 20260903u, 424242u, 999u}) {
+    params_.seed = seed;
+    Generator gen;
+    gen.generate(params_);
+    const auto& harmony = gen.getHarmonyContext();
+    const auto& notes = gen.getSong().vocal().notes();
+    ASSERT_FALSE(notes.empty()) << "seed " << seed << " produced no vocal";
+
+    const int appoggiaturas = countAppoggiaturas(gen.getSong(), harmony);
+    EXPECT_GT(appoggiaturas, 0) << "seed " << seed << " kept no accented non-chord tone at all";
+    total_appoggiaturas += appoggiaturas;
+    total_notes += static_cast<int>(notes.size());
+  }
+
+  // Reference ballad vocals carry these continuously, not as isolated
+  // accidents. Five songs producing only a handful means a later pass is
+  // merging them into their resolution pitch again.
+  ASSERT_GT(total_notes, 0);
+  EXPECT_GE(total_appoggiaturas, 40)
+      << "Only " << total_appoggiaturas << " accented non-chord tones survived across "
+      << total_notes << " vocal notes";
+}
+
+TEST_F(VocalTest, VocalAvoidsTheUnalteredThirdUnderASecondaryDominant) {
+  // A secondary dominant is a dominant seventh, so the third it sounds is
+  // major. The vocal cannot follow a raised third (the line stays diatonic), so
+  // it has to retreat to the root, fifth or seventh: sounding the minor third
+  // above the same root against the major one is a cross relation, the harshest
+  // way to disagree with the chord.
+  constexpr int kMinorThird = 3;
+
+  int cross_relations = 0;
+  int notes_under_secondary_dominants = 0;
+  for (uint8_t blueprint : {static_cast<uint8_t>(0), static_cast<uint8_t>(3),
+                            static_cast<uint8_t>(4), static_cast<uint8_t>(9)}) {
+    for (uint32_t seed : {12345u, 777u, 20260903u}) {
+      params_.blueprint_id = blueprint;
+      params_.seed = seed;
+      Generator gen;
+      gen.generate(params_);
+
+      const auto& harmony = gen.getHarmonyContext();
+      for (const auto& note : gen.getSong().vocal().notes()) {
+        if (!harmony.isSecondaryDominantAt(note.start_tick)) continue;
+        const ChordTones sounding = harmony.getChordTonesAt(note.start_tick);
+        if (sounding.empty() || sounding[0] < 0) continue;
+        ++notes_under_secondary_dominants;
+        if (getPitchClass(note.note) == (sounding[0] + kMinorThird) % 12) {
+          ++cross_relations;
+          ADD_FAILURE() << "blueprint " << static_cast<int>(blueprint) << " seed " << seed
+                        << ": vocal holds the unaltered third at tick " << note.start_tick;
+        }
+      }
+    }
+  }
+
+  ASSERT_GT(notes_under_secondary_dominants, 0)
+      << "No secondary dominant was sung over, so the rule was never exercised";
+  EXPECT_EQ(cross_relations, 0);
+}
+
+TEST_F(VocalTest, AppoggiaturasAreNotMergedIntoTheirResolution) {
+  // The failure mode is not "fewer appoggiaturas" but "the note became its own
+  // resolution": a repeated pitch where a step down used to be.
+  params_.mood = Mood::Ballad;
+  params_.blueprint_id = 3;
+  params_.seed = 777;
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& harmony = gen.getHarmonyContext();
+  const auto& notes = gen.getSong().vocal().notes();
+  ASSERT_GT(notes.size(), 8u);
+
+  int repeats_on_downbeat = 0;
+  int downbeats = 0;
+  for (size_t i = 0; i + 1 < notes.size(); ++i) {
+    if (positionInBar(notes[i].start_tick) >= TICK_SIXTEENTH) continue;
+    ++downbeats;
+    if (notes[i].note == notes[i + 1].note) ++repeats_on_downbeat;
+  }
+  ASSERT_GT(downbeats, 0);
+  EXPECT_LT(static_cast<float>(repeats_on_downbeat) / downbeats, 0.5f)
+      << repeats_on_downbeat << " of " << downbeats
+      << " bar starts repeat into the next note, which is what a collapsed "
+         "appoggiatura looks like";
+
+  // The figures must survive in quantity, not merely exist: when the passes
+  // downstream of the designer reject them, a handful still slip through
+  // whichever way the melody happened to fall.
+  EXPECT_GE(countAppoggiaturas(gen.getSong(), harmony), 20)
+      << "Too few accented non-chord tones reached the output for a ballad of " << notes.size()
+      << " notes";
+}
+
+// ============================================================================
 // Phase 6: RangeProfile Tests
 // ============================================================================
 
@@ -1291,6 +1464,17 @@ TEST_F(VocalTest, ExtremeLeapOnlyInChorusAndBridge) {
       static_cast<float>(large_leap_counts[SectionType::A]) / note_counts[SectionType::A];
   EXPECT_LT(verse_leap_ratio, 0.25f)
       << "Verse should have minimal large leaps. Got: " << verse_leap_ratio;
+
+  // The section-limited allowance is only meaningful if the wider sections
+  // actually use it: without this, a melody capped flat at a major 6th
+  // everywhere would satisfy the verse bound above and read as passing.
+  int wide_section_large_leaps = large_leap_counts[SectionType::Chorus] +
+                                 large_leap_counts[SectionType::Bridge] +
+                                 large_leap_counts[SectionType::Drop];
+  ASSERT_GT(note_counts[SectionType::Chorus] + note_counts[SectionType::Bridge], 0)
+      << "The tested structure must contain a sung Chorus or Bridge";
+  EXPECT_GT(wide_section_large_leaps, 0)
+      << "Chorus/Bridge are allowed leaps beyond a perfect 5th but produced none";
 }
 
 // ============================================================================
@@ -3124,51 +3308,131 @@ TEST_F(VocalTest, RhythmSyncMelodyHasReasonableIntervals) {
                                    << ", Leaps: " << leap_count << ", Same: " << same_pitch_count;
 }
 
-TEST_F(VocalTest, RhythmSyncMelodyHasMelodicContour) {
-  // Verify that the melody has recognizable melodic contour (not random)
-  // Check for direction consistency (melodic momentum)
-  params_.paradigm = GenerationParadigm::RhythmSync;
-  params_.riff_policy = RiffPolicy::LockedContour;
-  params_.structure = StructurePattern::StandardPop;
-  params_.seed = 42;
-
-  Generator gen;
-  gen.generate(params_);
-
-  const auto& notes = gen.getSong().vocal().notes();
-  ASSERT_GT(notes.size(), 10) << "Need enough notes to analyze contour";
-
-  // Count direction changes (sign changes in movement)
+/// @brief Share of melodic movements that reverse the previous direction.
+///
+/// 1.0 is a pure zigzag, ~0.5 is an undirected random walk, and a shaped line
+/// sits below that because its phrases travel before they turn.
+float directionChangeRatio(const std::vector<NoteEvent>& notes) {
   int direction_changes = 0;
+  int movements = 0;
   int prev_direction = 0;  // -1 = down, 0 = same, +1 = up
 
   for (size_t i = 1; i < notes.size(); ++i) {
     int movement = static_cast<int>(notes[i].note) - static_cast<int>(notes[i - 1].note);
     int direction = (movement > 0) ? 1 : (movement < 0) ? -1 : 0;
-
-    if (direction != 0 && prev_direction != 0 && direction != prev_direction) {
-      direction_changes++;
+    if (direction == 0) continue;
+    if (prev_direction != 0 && direction != prev_direction) {
+      ++direction_changes;
     }
-    if (direction != 0) {
-      prev_direction = direction;
-    }
+    prev_direction = direction;
+    ++movements;
   }
 
-  // Good melody should have some direction consistency (not zigzag every note)
-  // Direction change ratio should be < 0.7 (not changing direction every other note)
-  int movements_with_direction = 0;
+  if (movements <= 2) return 0.0f;
+  return static_cast<float>(direction_changes) / static_cast<float>(movements - 1);
+}
+
+/// @brief Largest interval between notes that actually adjoin.
+///
+/// A rest between two notes ends the phrase; the pitch the next phrase starts
+/// on is not a leap the singer has to negotiate, so measuring it as one turns
+/// every phrase boundary into a false violation.
+int widestContiguousLeap(const std::vector<const NoteEvent*>& notes) {
+  int widest = 0;
   for (size_t i = 1; i < notes.size(); ++i) {
-    int movement = static_cast<int>(notes[i].note) - static_cast<int>(notes[i - 1].note);
-    if (movement != 0) movements_with_direction++;
+    const Tick prev_end = notes[i - 1]->start_tick + notes[i - 1]->duration;
+    if (notes[i]->start_tick > prev_end) continue;  // separate phrases
+    widest = std::max(
+        widest, std::abs(static_cast<int>(notes[i]->note) - static_cast<int>(notes[i - 1]->note)));
+  }
+  return widest;
+}
+
+TEST_F(VocalTest, SectionLeapTableIsInEffectRatherThanAFlatBound) {
+  // The per-section table (Chorus 12 / Bridge 14 / B 10 / else 9) only means
+  // something if the wide sections actually exceed the standard 9 while the
+  // Verse does not. A single flat bound would satisfy the Verse half of this
+  // and silently fail the other, which is exactly what a hardcoded 9 looked
+  // like: every section capped at the "else" row of the table.
+  params_.melody_max_leap_override = true;
+  params_.melody_params.max_leap_interval = 12;
+  int verse_pairs = 0;
+  int wide_section_leaps_beyond_standard = 0;
+  int widest_wide_section = 0;
+
+  for (uint8_t bp : {0, 3, 4, 6, 7, 9}) {
+    params_.blueprint_id = bp;
+    for (uint32_t seed : {5u, 11u, 42u, 4242u, 12345u, 424242u}) {  // probe
+      params_.seed = seed;
+      Generator gen;
+      gen.generate(params_);
+      const auto& song = gen.getSong();
+
+      for (const auto& section : song.arrangement().sections()) {
+        auto notes = collectNotesInSection(song.vocal(), section, 0);
+        if (notes.size() < 2) continue;
+
+        if (section.type == SectionType::A) {
+          verse_pairs += static_cast<int>(notes.size()) - 1;
+          EXPECT_LE(widestContiguousLeap(notes), kMaxMelodicInterval)
+              << "seed " << seed << ": a Verse leap exceeded the standard allowance";
+          continue;
+        }
+        if (section.type != SectionType::Chorus && section.type != SectionType::Drop &&
+            section.type != SectionType::Bridge) {
+          continue;
+        }
+        const int widest = widestContiguousLeap(notes);
+        widest_wide_section = std::max(widest_wide_section, widest);
+        if (widest > kMaxMelodicInterval) ++wide_section_leaps_beyond_standard;
+      }
+    }
+  }
+  ASSERT_GT(verse_pairs, 0) << "The tested songs must contain a sung Verse";
+  EXPECT_GT(wide_section_leaps_beyond_standard, 0)
+      << "No Chorus/Bridge/Drop leap went beyond the standard " << kMaxMelodicInterval
+      << " semitones, so the section table is not reaching the melody. Widest seen: "
+      << widest_wide_section;
+}
+
+TEST_F(VocalTest, RhythmSyncMelodyHasMelodicContour) {
+  // Directional consistency is a property of the generator, not of one seed:
+  // the per-song ratio has a wide natural spread, so a single seed only records
+  // where that seed happened to land. Measured over a seed set, the average is
+  // what says the melody travels before it turns rather than zigzagging.
+  params_.paradigm = GenerationParadigm::RhythmSync;
+  params_.riff_policy = RiffPolicy::LockedContour;
+  params_.structure = StructurePattern::StandardPop;
+
+  constexpr uint32_t kSeedCount = 30;
+  double ratio_sum = 0.0;
+  uint32_t songs = 0;
+  float worst_ratio = 0.0f;
+  uint32_t worst_seed = 0;
+
+  for (uint32_t seed = 1; seed <= kSeedCount; ++seed) {
+    params_.seed = seed;
+    Generator gen;
+    gen.generate(params_);
+
+    const auto& notes = gen.getSong().vocal().notes();
+    ASSERT_GT(notes.size(), 10u) << "seed " << seed << " has too few notes to analyze contour";
+    const float ratio = directionChangeRatio(notes);
+    if (ratio <= 0.0f) continue;  // too few directed movements to score
+    ratio_sum += ratio;
+    ++songs;
+    if (ratio > worst_ratio) {
+      worst_ratio = ratio;
+      worst_seed = seed;
+    }
   }
 
-  if (movements_with_direction > 2) {
-    float change_ratio = static_cast<float>(direction_changes) / (movements_with_direction - 1);
-    EXPECT_LT(change_ratio, 0.70f)
-        << "Melody should have some directional consistency, not random zigzag. "
-        << "Direction changes: " << direction_changes
-        << ", Total movements: " << movements_with_direction;
-  }
+  ASSERT_GT(songs, kSeedCount / 2) << "Too few scorable songs to judge the distribution";
+  const double mean_ratio = ratio_sum / songs;
+  EXPECT_LT(mean_ratio, 0.70)
+      << "Melody should have some directional consistency, not random zigzag. Mean ratio "
+      << mean_ratio << " over " << songs << " songs; worst was seed " << worst_seed << " at "
+      << worst_ratio;
 }
 
 TEST_F(VocalTest, RhythmSyncSameSectionTypeRepeats) {

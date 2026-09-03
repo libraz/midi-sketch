@@ -368,7 +368,7 @@ TEST(GetSwingOffsetContinuousTest, OverridePassedToSwingCalculation) {
 }
 
 // ============================================================================
-// Phase 1 Improvements: Outro Swing Behavior Tests
+// Outro Swing Behavior Tests
 // ============================================================================
 
 TEST(CalculateSwingAmountTest, OutroDecayIsGradual) {
@@ -386,45 +386,6 @@ TEST(CalculateSwingAmountTest, OutroDecayIsGradual) {
   // Linear midpoint at 3/7 progress would be: start - (start-end) * 3/7
   float linear_mid = start - (start - end) * 3.0f / 7.0f;
   EXPECT_GT(mid, linear_mid) << "Outro decay should be gradual (quadratic), not linear";
-}
-
-// ============================================================================
-// Phase 1 Improvements: Mood-Dependent Swing Behavior Tests
-// ============================================================================
-
-TEST(HiHatSwingFactorTest, CityPopHasStrongerSwingThanIdolPop) {
-  // CityPop is a groove-oriented genre that benefits from stronger swing
-  // IdolPop is precise and energetic, requiring tighter timing
-  float citypop = getHiHatSwingFactor(Mood::CityPop);
-  float idolpop = getHiHatSwingFactor(Mood::IdolPop);
-
-  EXPECT_GT(citypop, idolpop) << "CityPop should have stronger swing than IdolPop for groove feel";
-}
-
-TEST(HiHatSwingFactorTest, BalladHasModerateSwing) {
-  // Ballad swing should be between tight (IdolPop) and loose (CityPop)
-  float ballad = getHiHatSwingFactor(Mood::Ballad);
-  float idolpop = getHiHatSwingFactor(Mood::IdolPop);
-  float citypop = getHiHatSwingFactor(Mood::CityPop);
-
-  EXPECT_GT(ballad, idolpop) << "Ballad should have more swing than IdolPop";
-  EXPECT_LT(ballad, citypop) << "Ballad should have less swing than CityPop";
-}
-
-TEST(HiHatSwingFactorTest, AllMoodsProduceValidSwingFactor) {
-  // All moods must produce swing factors that result in musically valid timing
-  std::vector<Mood> all_moods = {
-      Mood::StraightPop,     Mood::BrightUpbeat, Mood::EnergeticDance, Mood::LightRock,
-      Mood::MidPop,          Mood::EmotionalPop, Mood::Sentimental,    Mood::Chill,
-      Mood::Ballad,          Mood::DarkPop,      Mood::Dramatic,       Mood::Nostalgic,
-      Mood::ModernPop,       Mood::ElectroPop,   Mood::IdolPop,        Mood::Anthem,
-      Mood::AnimeHighEnergy, Mood::Synthwave,    Mood::FutureBass,     Mood::CityPop};
-
-  for (Mood mood : all_moods) {
-    float factor = getHiHatSwingFactor(mood);
-    EXPECT_GE(factor, 0.2f) << "Swing factor too low - would sound too mechanical";
-    EXPECT_LE(factor, 0.8f) << "Swing factor too high - would sound sloppy";
-  }
 }
 
 // ============================================================================
@@ -484,51 +445,6 @@ TEST(TimeFeelTest, TripletReturnsOriginalTick) {
   // Triplet feel is not implemented as a simple offset
   // For now, it should return the original tick
   EXPECT_EQ(applyTimeFeel(1920, TimeFeel::Triplet, 120), 1920);
-}
-
-// ============================================================================
-// Mood Time Feel Mapping Tests
-// ============================================================================
-
-TEST(MoodTimeFeelTest, BalladIsLaidBack) {
-  EXPECT_EQ(getMoodTimeFeel(Mood::Ballad), TimeFeel::LaidBack);
-}
-
-TEST(MoodTimeFeelTest, ChillIsLaidBack) {
-  EXPECT_EQ(getMoodTimeFeel(Mood::Chill), TimeFeel::LaidBack);
-}
-
-TEST(MoodTimeFeelTest, CityPopIsLaidBack) {
-  EXPECT_EQ(getMoodTimeFeel(Mood::CityPop), TimeFeel::LaidBack);
-}
-
-TEST(MoodTimeFeelTest, EnergeticDanceIsPushed) {
-  EXPECT_EQ(getMoodTimeFeel(Mood::EnergeticDance), TimeFeel::Pushed);
-}
-
-TEST(MoodTimeFeelTest, AnimeHighEnergyIsPushed) {
-  EXPECT_EQ(getMoodTimeFeel(Mood::AnimeHighEnergy), TimeFeel::Pushed);
-}
-
-TEST(MoodTimeFeelTest, StandardPopIsOnBeat) {
-  EXPECT_EQ(getMoodTimeFeel(Mood::StraightPop), TimeFeel::OnBeat);
-}
-
-TEST(MoodTimeFeelTest, AllMoodsReturnValidTimeFeel) {
-  std::vector<Mood> all_moods = {
-      Mood::StraightPop,     Mood::BrightUpbeat, Mood::EnergeticDance, Mood::LightRock,
-      Mood::MidPop,          Mood::EmotionalPop, Mood::Sentimental,    Mood::Chill,
-      Mood::Ballad,          Mood::DarkPop,      Mood::Dramatic,       Mood::Nostalgic,
-      Mood::ModernPop,       Mood::ElectroPop,   Mood::IdolPop,        Mood::Anthem,
-      Mood::AnimeHighEnergy, Mood::Synthwave,    Mood::FutureBass,     Mood::CityPop};
-
-  for (Mood mood : all_moods) {
-    TimeFeel feel = getMoodTimeFeel(mood);
-    // All time feels should be valid enum values
-    EXPECT_TRUE(feel == TimeFeel::OnBeat || feel == TimeFeel::LaidBack ||
-                feel == TimeFeel::Pushed || feel == TimeFeel::Triplet)
-        << "Invalid TimeFeel for mood " << static_cast<int>(mood);
-  }
 }
 
 }  // namespace

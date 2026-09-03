@@ -7,6 +7,8 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
+
 #include "core/arrangement.h"
 #include "core/chord.h"
 #include "core/harmony_context.h"
@@ -67,6 +69,56 @@ TEST_F(NoteCreatorTest, CreateNoteWithoutHarmonyAndAdd) {
 
   EXPECT_EQ(track.noteCount(), 1);
   EXPECT_EQ(track.notes()[0].note, 60);
+}
+
+/// Real chord lookup, but only one pitch in the whole range is collision free.
+class SinglePitchIsSafeHarmony final : public HarmonyContext {
+ public:
+  explicit SinglePitchIsSafeHarmony(uint8_t safe_pitch) : safe_pitch_(safe_pitch) {}
+
+  bool isConsonantWithOtherTracks(uint8_t pitch, Tick /*start*/, Tick /*duration*/,
+                                  TrackRole /*exclude*/,
+                                  bool /*allow_accented_nct*/ = false) const override {
+    return pitch == safe_pitch_;
+  }
+
+ private:
+  uint8_t safe_pitch_;
+};
+
+TEST_F(NoteCreatorTest, PreferChordTonesNeverReturnsANonChordTone) {
+  // The only pitch this context accepts is D4, a non-chord tone over the tonic.
+  // PreferChordTones is a contract, not a ranking hint: producing no note is the
+  // correct answer, because the caller can shorten it or leave the voice to the
+  // minimum-voice fill, while a held D contradicts the chord every other track
+  // is voiced against.
+  SinglePitchIsSafeHarmony harmony(62);
+  harmony.initialize(arrangement_, progression_, Mood::StraightPop);
+
+  auto chord_tones = harmony.getChordTonesAt(0);
+  ASSERT_GT(chord_tones.count, 0u) << "the fixture must expose a real chord at tick 0";
+  ASSERT_EQ(std::find(chord_tones.begin(), chord_tones.end(), 2), chord_tones.end())
+      << "D must be a non-chord tone here for this test to mean anything";
+
+  NoteOptions opts;
+  opts.start = 0;
+  opts.duration = TICK_WHOLE;
+  opts.desired_pitch = 62;
+  opts.velocity = 100;
+  opts.role = TrackRole::Chord;
+  opts.preference = PitchPreference::PreferChordTones;
+  opts.range_low = 48;
+  opts.range_high = 84;
+  opts.source = NoteSource::ChordVoicing;
+
+  auto note = createNote(harmony, opts);
+
+  if (note.has_value()) {
+    int pitch_class = note->note % 12;
+    EXPECT_NE(std::find(chord_tones.begin(), chord_tones.end(), pitch_class), chord_tones.end())
+        << "PreferChordTones returned " << static_cast<int>(note->note)
+        << ", which the chord sounding at this tick does not contain";
+  }
 }
 
 TEST_F(NoteCreatorTest, CreateNoteNoCollision) {

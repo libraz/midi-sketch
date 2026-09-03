@@ -1409,13 +1409,11 @@ TEST(EmbellishmentGridTest, SixteenthNotesProbabilistic) {
     }
   }
 
-  // Short notes may not appear in every seed due to embellishment conditions
-  // Just verify the system can produce them (at least 1 seed should have short notes)
-  // If the 16th note grid is working, we should see some short notes across many seeds
-  EXPECT_GE(seeds_with_short_notes, 0)
-      << "Short notes should be possible (0 is acceptable if conditions don't trigger)";
-  // Note: This is a weak assertion because embellishment triggering depends on
-  // many factors. The DeterministicWithSameSeed test is more reliable.
+  // Embellishment does not trigger on every seed, so no single seed has to show
+  // a sub-eighth note. What the 16th grid does guarantee is that the mechanism
+  // fires somewhere across a sweep this wide.
+  EXPECT_GT(seeds_with_short_notes, 0)
+      << "No seed produced a note shorter than an eighth; the 16th grid never fired";
 }
 
 TEST(EmbellishmentGridTest, DeterministicWithSameSeed) {

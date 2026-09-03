@@ -34,9 +34,13 @@ TEST_F(NonDiatonicDetectionTest, SummaryCountsNonDiatonicNotes) {
 
   auto report = analyzeDissonance(song, params_);
 
-  // After the bass fix, there should be zero non-diatonic notes
-  // This test verifies the detection mechanism works
-  EXPECT_GE(report.summary.non_diatonic_notes, 0u);
+  // Every reported non-diatonic note must be one the issue list actually holds.
+  uint32_t listed_non_diatonic = 0;
+  for (const auto& issue : report.issues) {
+    if (issue.type == DissonanceType::NonDiatonicNote) listed_non_diatonic++;
+  }
+  EXPECT_EQ(report.summary.non_diatonic_notes, listed_non_diatonic)
+      << "Non-diatonic counter disagrees with the reported issues";
 
   // Total should include non-diatonic count
   EXPECT_EQ(report.summary.total_issues,
@@ -205,8 +209,8 @@ TEST_F(NonDiatonicDetectionTest, DetectsInAllMelodicTracks) {
 
   auto report = analyzeDissonance(song, params_);
 
-  // The analysis ran without errors
-  EXPECT_GE(report.summary.total_issues, 0u);
+  EXPECT_EQ(report.summary.total_issues, report.issues.size())
+      << "total_issues does not match the reported issue list";
 
   // Verify the count formula is correct
   EXPECT_EQ(report.summary.total_issues,

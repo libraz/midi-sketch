@@ -315,6 +315,47 @@ TEST(CoordinatorTest, ExternalInitializePlansChordExtensionsIntoHarmony) {
   EXPECT_EQ(harmony.getChordExtensionAt(0), ChordExtension::Maj7);
 }
 
+TEST(CoordinatorTest, ChorusColourObeysTheConfiguredProbabilityAndFamilies) {
+  // A section rule may bias which colour a chorus reaches for, but it cannot
+  // force one: a zero seventh probability means no seventh anywhere, chorus
+  // included, and a ninth never appears when only sevenths were asked for.
+  Section chorus;
+  chorus.type = SectionType::Chorus;
+  chorus.start_tick = 0;
+  chorus.bars = 8;
+  chorus.name = "Chorus";
+  Arrangement arrangement({chorus});
+
+  GeneratorParams params;
+  params.seed = 12345;
+  params.chord_id = 0;
+  params.mood = Mood::StraightPop;
+  params.chord_extension.enable_7th = true;
+  params.chord_extension.enable_sus = false;
+  params.chord_extension.enable_9th = false;
+  params.chord_extension.seventh_probability = 0.0f;
+  params.chord_extension.ninth_probability = 1.0f;
+
+  HarmonyCoordinator harmony;
+  harmony.initialize(arrangement, getChordProgression(params.chord_id), params.mood);
+  registerPlannedHarmonyTimeline(arrangement, params, getChordProgression(params.chord_id),
+                                 harmony);
+
+  size_t checked = 0;
+  for (Tick tick = 0; tick < 8 * TICKS_PER_BAR; tick += TICK_QUARTER) {
+    ChordExtension extension = harmony.getChordExtensionAt(tick);
+    ++checked;
+    EXPECT_NE(extension, ChordExtension::Maj7) << "tick " << tick;
+    EXPECT_NE(extension, ChordExtension::Min7) << "tick " << tick;
+    EXPECT_NE(extension, ChordExtension::Dom7) << "tick " << tick;
+    EXPECT_NE(extension, ChordExtension::Add9) << "tick " << tick;
+    EXPECT_NE(extension, ChordExtension::Maj9) << "tick " << tick;
+    EXPECT_NE(extension, ChordExtension::Min9) << "tick " << tick;
+    EXPECT_NE(extension, ChordExtension::Dom9) << "tick " << tick;
+  }
+  EXPECT_GT(checked, 0u);
+}
+
 TEST(CoordinatorTest, GenerateAllTracksMarksPriorityTargetsGenerated) {
   Section verse;
   verse.type = SectionType::A;
@@ -365,16 +406,6 @@ TEST(PhysicalModelTest, IsPitchInRange) {
   EXPECT_FALSE(model.isPitchInRange(20));   // Below range
   EXPECT_TRUE(model.isPitchInRange(50));    // Within range
   EXPECT_FALSE(model.isPitchInRange(100));  // Above range
-}
-
-TEST(PhysicalModelTest, VocalCeilingOffset) {
-  PhysicalModel model = PhysicalModels::kElectricPiano;
-
-  // E.Piano has vocal_ceiling_offset = -2
-  EXPECT_EQ(model.vocal_ceiling_offset, -2);
-
-  // With vocal_high = 79 (G5), effective high = 77 (F5)
-  EXPECT_EQ(model.getEffectiveHigh(79), 77);
 }
 
 // ============================================================================

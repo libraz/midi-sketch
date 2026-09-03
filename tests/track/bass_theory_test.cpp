@@ -10,6 +10,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cstdlib>
 #include <iomanip>
 #include <map>
@@ -151,7 +152,7 @@ TEST(BassDensityAdjustmentTest, LowDensityStillThinsUnhintedOffbeats) {
 // Part 1: Diatonic Tests (from bass_diatonic_test.cpp)
 // ============================================================================
 
-// Helper to find non-diatonic notes
+// Every bass note outside C major, whatever the reason.
 std::vector<std::pair<Tick, uint8_t>> findNonDiatonicNotes(const MidiTrack& track) {
   std::vector<std::pair<Tick, uint8_t>> non_diatonic;
   for (const auto& note : track.notes()) {
@@ -160,6 +161,28 @@ std::vector<std::pair<Tick, uint8_t>> findNonDiatonicNotes(const MidiTrack& trac
     }
   }
   return non_diatonic;
+}
+
+// Bass notes outside C major that the chord sounding at that tick does not
+// contain.
+//
+// The bass is not unconditionally diatonic: a secondary dominant or a borrowed
+// chord on the shared timeline raises or lowers one of its tones, and the bass
+// voicing that chord sounds that tone. The raised third of a secondary dominant
+// is its leading tone, which is what makes it function, so a bass note on it is
+// the chord rather than a defect. What must not happen is a non-diatonic bass
+// note at a tick whose chord does not contain it - the accidental chromaticism
+// these tests were written to catch.
+std::vector<std::pair<Tick, uint8_t>> findUnexplainedNonDiatonicNotes(
+    const MidiTrack& track, const IHarmonyContext& harmony) {
+  std::vector<std::pair<Tick, uint8_t>> unexplained;
+  for (const auto& [tick, pitch] : findNonDiatonicNotes(track)) {
+    const ChordTones tones = harmony.getChordTonesAt(tick);
+    if (std::find(tones.begin(), tones.end(), pitch % 12) == tones.end()) {
+      unexplained.push_back({tick, pitch});
+    }
+  }
+  return unexplained;
 }
 
 class BassDiatonicTest : public test::GeneratorTestFixture {
@@ -181,7 +204,7 @@ TEST_F(BassDiatonicTest, AllBassNotesAreDiatonic) {
     gen.generate(params_);
 
     const auto& track = gen.getSong().bass();
-    auto non_diatonic = findNonDiatonicNotes(track);
+    auto non_diatonic = findUnexplainedNonDiatonicNotes(track, gen.getHarmonyContext());
 
     EXPECT_TRUE(non_diatonic.empty())
         << "Seed " << seed << " produced " << non_diatonic.size()
@@ -214,7 +237,7 @@ TEST_F(BassDiatonicTest, ViiChordUsesDiminishedFifth) {
     gen.generate(params_);
 
     const auto& track = gen.getSong().bass();
-    auto non_diatonic = findNonDiatonicNotes(track);
+    auto non_diatonic = findUnexplainedNonDiatonicNotes(track, gen.getHarmonyContext());
 
     int fsharp_count = 0;
     for (const auto& [tick, pitch] : non_diatonic) {
@@ -243,7 +266,7 @@ TEST_F(BassDiatonicTest, ApproachNotesAreDiatonicAllMoods) {
     gen.generate(params_);
 
     const auto& track = gen.getSong().bass();
-    auto non_diatonic = findNonDiatonicNotes(track);
+    auto non_diatonic = findUnexplainedNonDiatonicNotes(track, gen.getHarmonyContext());
 
     EXPECT_TRUE(non_diatonic.empty())
         << "Mood " << static_cast<int>(mood) << " produced " << non_diatonic.size()
@@ -302,7 +325,7 @@ TEST_F(BassDiatonicTest, SyncopatedApproachNotesAreDiatonic) {
     gen.generate(params_);
 
     const auto& track = gen.getSong().bass();
-    auto non_diatonic = findNonDiatonicNotes(track);
+    auto non_diatonic = findUnexplainedNonDiatonicNotes(track, gen.getHarmonyContext());
 
     EXPECT_TRUE(non_diatonic.empty())
         << "EnergeticDance seed " << seed << " produced non-diatonic bass notes";
@@ -320,7 +343,7 @@ TEST_F(BassDiatonicTest, DrivingPatternIsDiatonic) {
     gen.generate(params_);
 
     const auto& track = gen.getSong().bass();
-    auto non_diatonic = findNonDiatonicNotes(track);
+    auto non_diatonic = findUnexplainedNonDiatonicNotes(track, gen.getHarmonyContext());
 
     EXPECT_TRUE(non_diatonic.empty())
         << "LightRock seed " << seed << " produced non-diatonic bass notes";
@@ -339,7 +362,7 @@ TEST_F(BassDiatonicTest, RegressionOriginalBugCase) {
   gen.generate(params_);
 
   const auto& track = gen.getSong().bass();
-  auto non_diatonic = findNonDiatonicNotes(track);
+  auto non_diatonic = findUnexplainedNonDiatonicNotes(track, gen.getHarmonyContext());
 
   EXPECT_TRUE(non_diatonic.empty()) << "Original bug case (seed 1670804638) still produces "
                                     << non_diatonic.size() << " non-diatonic bass notes";
@@ -362,7 +385,7 @@ TEST_F(BassDiatonicTest, DiatonicChordProgressionsProduceDiatonicBass) {
     gen.generate(params_);
 
     const auto& track = gen.getSong().bass();
-    auto non_diatonic = findNonDiatonicNotes(track);
+    auto non_diatonic = findUnexplainedNonDiatonicNotes(track, gen.getHarmonyContext());
 
     EXPECT_LE(non_diatonic.size(), 2u)
         << "Chord progression " << static_cast<int>(chord_id) << " produced " << non_diatonic.size()

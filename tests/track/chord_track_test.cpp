@@ -6,9 +6,11 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <cstdlib>
 #include <map>
 #include <random>
 #include <set>
+#include <string>
 
 #include "core/chord.h"
 #include "core/generator.h"
@@ -33,8 +35,7 @@ namespace midisketch {
 
 uint8_t getVocalCeilingForRange(const IHarmonyContext& harmony, Tick start, Tick end,
                                 uint8_t fallback_ceiling);
-bool wouldCreateVoicingMinorSecond(const chord_voicing::VoicedChord& voicing,
-                                   uint8_t candidate_pitch);
+bool wouldCreateVoicingCluster(const chord_voicing::VoicedChord& voicing, uint8_t candidate_pitch);
 
 namespace {
 
@@ -54,6 +55,25 @@ bool isDiminishedPitchClassSet(const std::set<int>& pcs) {
     }
   }
   return false;
+}
+
+/// Bars of @p section in which a diminished chord sounds.
+///
+/// Counted per bar rather than per onset: one approach chord held over an
+/// eighth-note pulse is still one chord, and counting onsets would make the
+/// answer depend on the chord rhythm rather than on the harmony.
+int countDiminishedBarsInSection(const MidiTrack& track, const Section& section) {
+  std::map<Tick, std::set<int>> pcs_by_tick;
+  for (const auto& note : track.notes()) {
+    if (note.start_tick < section.start_tick || note.start_tick >= section.endTick()) continue;
+    pcs_by_tick[note.start_tick].insert(note.note % 12);
+  }
+
+  std::set<Tick> bars;
+  for (const auto& [tick, pcs] : pcs_by_tick) {
+    if (isDiminishedPitchClassSet(pcs)) bars.insert((tick - section.start_tick) / TICKS_PER_BAR);
+  }
+  return static_cast<int>(bars.size());
 }
 
 int countDiminishedOnsetsInSection(const MidiTrack& track, const Section& section) {
@@ -91,7 +111,7 @@ TEST_F(ChordTrackTest, PassingDiminishedLimitedToPreChorusApproach) {
   const Section* prechorus = findSection(gen.getSong(), SectionType::B);
   ASSERT_NE(prechorus, nullptr);
 
-  EXPECT_LE(countDiminishedOnsetsInSection(gen.getSong().chord(), *prechorus), 1)
+  EXPECT_LE(countDiminishedBarsInSection(gen.getSong().chord(), *prechorus), 1)
       << "Passing diminished should be an approach color, not a B-section default.";
 }
 
@@ -841,6 +861,234 @@ TEST_F(ChordTrackTest, WithContextRendersRegisteredMidBarSecondaryDominant) {
       << "WithContext generation must render the registered G7 at the mid-bar SD tick";
 }
 
+TEST_F(ChordTrackTest, SectionFinalBarSecondaryDominantIsVoiced) {
+  // The chord track used to hand the last two bars of a section to the cadence
+  // devices unconditionally, so a secondary dominant registered there was never
+  // rendered even though every other surface kept reporting it.
+  params_.chord_extension.enable_7th = true;
+
+  Section section{};
+  section.type = SectionType::Chorus;
+  section.name = "Chorus";
+  section.bars = 4;
+  section.start_bar = 0;
+  section.start_tick = 0;
+  section.track_mask = TrackMask::Chord;
+
+  Song song;
+  song.setArrangement(Arrangement({section}));
+
+  HarmonyContext harmony;
+  harmony.initialize(song.arrangement(), getChordProgression(params_.chord_id), params_.mood);
+
+  // V/vi in C major is E7 (E-G#-B-D). Its leading tone G# cannot come from any
+  // diatonic chord, and the plain iii triad it replaces sounds G instead.
+  const Tick sd_start = 3 * TICKS_PER_BAR + TICK_HALF;
+  const Tick sd_end = 4 * TICKS_PER_BAR;
+  harmony.registerSecondaryDominant(sd_start, sd_end, 2);
+
+  VocalAnalysis vocal_analysis;
+  MidiTrack chord_track;
+  std::mt19937 rng(params_.seed);
+  auto ctx = TrackGenerationContextBuilder(song, params_, rng, harmony)
+                 .withMutableHarmony(&harmony)
+                 .withVocalAnalysis(&vocal_analysis)
+                 .build();
+  generateChordTrackWithContext(chord_track, ctx);
+
+  bool attacks_at_change = false;
+  bool has_leading_tone = false;
+  bool has_diatonic_third = false;
+  for (const auto& note : chord_track.notes()) {
+    if (note.start_tick == sd_start) attacks_at_change = true;
+    if (note.start_tick < sd_start || note.start_tick >= sd_end) continue;
+    if (note.note % 12 == 8) has_leading_tone = true;
+    if (note.note % 12 == 7) has_diatonic_third = true;
+  }
+  EXPECT_TRUE(attacks_at_change)
+      << "The harmony changes mid-bar, so the chord track has to re-attack there "
+         "instead of holding the chord the bar started on";
+  EXPECT_TRUE(has_leading_tone)
+      << "A secondary dominant registered in a section's last bar must be voiced";
+  EXPECT_FALSE(has_diatonic_third)
+      << "Every voice in this range belongs to the registered chord, not to the "
+         "diatonic triad the degree alone implies";
+}
+
+TEST_F(ChordTrackTest, ChordOnsetsSoundAtLeastThreeDistinctTones) {
+  params_.chord_extension.enable_7th = true;
+
+  Section section{};
+  section.type = SectionType::Chorus;
+  section.name = "Chorus";
+  section.bars = 16;
+  section.start_bar = 0;
+  section.start_tick = 0;
+  section.track_mask = TrackMask::Chord;
+
+  Song song;
+  song.setArrangement(Arrangement({section}));
+
+  size_t checked = 0;
+  for (uint32_t seed : {7u, 99u, 777u, 4242u, 12345u, 20260903u}) {
+    params_.seed = seed;
+
+    HarmonyContext harmony;
+    harmony.initialize(song.arrangement(), getChordProgression(params_.chord_id), params_.mood);
+
+    // A lead sitting low in its range squeezes the chord into a narrow window,
+    // which is where a voice quota counted in notes lets octave doublings stand
+    // in for the tones that give the chord its quality.
+    for (uint8_t bar = 0; bar < section.bars; ++bar) {
+      Tick bar_start = bar * TICKS_PER_BAR;
+      harmony.registerNote(bar_start, TICK_HALF, 72, TrackRole::Vocal);
+      harmony.registerNote(bar_start + TICK_HALF, TICK_HALF, 76, TrackRole::Vocal);
+    }
+
+    VocalAnalysis vocal_analysis;
+    MidiTrack chord_track;
+    std::mt19937 rng(seed);
+    auto ctx = TrackGenerationContextBuilder(song, params_, rng, harmony)
+                   .withMutableHarmony(&harmony)
+                   .withVocalAnalysis(&vocal_analysis)
+                   .build();
+    generateChordTrackWithContext(chord_track, ctx);
+
+    std::map<Tick, std::vector<uint8_t>> onsets;
+    for (const auto& note : chord_track.notes()) {
+      onsets[note.start_tick].push_back(note.note);
+    }
+
+    for (const auto& [tick, pitches] : onsets) {
+      if (pitches.size() < 3) continue;
+      ++checked;
+      std::set<int> pitch_classes;
+      for (uint8_t pitch : pitches) pitch_classes.insert(pitch % 12);
+      std::string voiced;
+      for (uint8_t pitch : pitches) voiced += " " + std::to_string(static_cast<int>(pitch));
+      EXPECT_GE(pitch_classes.size(), 3u)
+          << "seed " << seed << " tick " << tick << " voiced" << voiced
+          << ": three voices spanning fewer than three tones is a doubled interval, "
+             "not a chord with a major or minor identity";
+    }
+  }
+  EXPECT_GT(checked, 0u) << "no full chord onsets were produced to check";
+}
+
+TEST_F(ChordTrackTest, CompingDoesNotCollapseToSingleNoteOnsets) {
+  // Thinning an eighth pulse is unavoidable: a full voicing on all eight
+  // eighths is roughly double what reference piano comping plays. What the
+  // pulse gives up differs by paradigm. Under RhythmSync the chord track is a
+  // rhythmic bed tracking the motif's grid, where a bare low note on the weak
+  // eighths is the point. Everywhere else the track is comping, and an onset
+  // carrying one note states no harmony at all, so thinning there has to drop
+  // onsets rather than hollow them out.
+  //
+  // The bound is on the share of onsets, not on any single bar: a squeezed
+  // register can legitimately leave one voice standing here and there.
+  constexpr double kMaxSingleNoteShare = 0.15;
+  const uint8_t comping_blueprints[] = {0, 2, 3, 4, 6, 8};
+
+  size_t total_onsets = 0;
+  size_t single_note_onsets = 0;
+
+  for (uint8_t blueprint : comping_blueprints) {
+    for (uint32_t seed : {42u, 4242u}) {
+      params_.blueprint_id = blueprint;
+      params_.seed = seed;
+
+      Generator gen;
+      gen.generate(params_);
+
+      std::map<Tick, size_t> onsets;
+      for (const auto& note : gen.getSong().chord().notes()) {
+        ++onsets[note.start_tick];
+      }
+
+      size_t song_total = onsets.size();
+      size_t song_single = 0;
+      for (const auto& [tick, count] : onsets) {
+        if (count == 1) ++song_single;
+      }
+      total_onsets += song_total;
+      single_note_onsets += song_single;
+
+      ASSERT_GT(song_total, 0u) << "blueprint " << static_cast<int>(blueprint) << " seed " << seed
+                                << " produced no chord onsets";
+      EXPECT_LE(static_cast<double>(song_single) / static_cast<double>(song_total),
+                kMaxSingleNoteShare)
+          << "blueprint " << static_cast<int>(blueprint) << " seed " << seed << ": " << song_single
+          << " of " << song_total << " onsets carry a single note";
+    }
+  }
+
+  EXPECT_LE(static_cast<double>(single_note_onsets) / static_cast<double>(total_onsets),
+            kMaxSingleNoteShare)
+      << single_note_onsets << " of " << total_onsets
+      << " chord onsets across the comping blueprints carry a single note";
+}
+
+TEST_F(ChordTrackTest, ChordOnsetsHaveNoStepClusters) {
+  params_.chord_extension.enable_7th = true;
+  params_.chord_extension.enable_9th = true;
+  params_.structure = StructurePattern::FullPop;
+
+  Section section{};
+  section.type = SectionType::Chorus;
+  section.name = "Chorus";
+  section.bars = 8;
+  section.start_bar = 0;
+  section.start_tick = 0;
+  section.track_mask = TrackMask::Chord;
+
+  Song song;
+  song.setArrangement(Arrangement({section}));
+
+  HarmonyContext harmony;
+  harmony.initialize(song.arrangement(), getChordProgression(params_.chord_id), params_.mood);
+
+  VocalAnalysis vocal_analysis;
+  MidiTrack chord_track;
+  std::mt19937 rng(params_.seed);
+  auto ctx = TrackGenerationContextBuilder(song, params_, rng, harmony)
+                 .withMutableHarmony(&harmony)
+                 .withVocalAnalysis(&vocal_analysis)
+                 .build();
+  generateChordTrackWithContext(chord_track, ctx);
+  ASSERT_FALSE(chord_track.empty());
+
+  std::map<Tick, std::vector<uint8_t>> onsets;
+  for (const auto& note : chord_track.notes()) {
+    onsets[note.start_tick].push_back(note.note);
+  }
+
+  for (const auto& [tick, pitches] : onsets) {
+    for (size_t i = 0; i < pitches.size(); ++i) {
+      for (size_t j = i + 1; j < pitches.size(); ++j) {
+        int gap = std::abs(static_cast<int>(pitches[i]) - static_cast<int>(pitches[j]));
+        EXPECT_FALSE(gap == 1 || gap == 2 || gap == 13)
+            << "tick " << tick << ": " << static_cast<int>(pitches[i]) << " and "
+            << static_cast<int>(pitches[j])
+            << " form a cluster the cross-track collision check cannot see";
+      }
+    }
+  }
+}
+
+TEST_F(ChordTrackTest, RootlessVoicingKeepsTheSuspendedQuality) {
+  const Chord sus4 = getExtendedChord(0, ChordExtension::Sus4);
+  auto voicings = chord_voicing::generateRootlessVoicings(MIDI_C4, sus4, 1u << 0);
+
+  ASSERT_FALSE(voicings.empty());
+  for (const auto& voicing : voicings) {
+    for (uint8_t idx = 0; idx < voicing.count; ++idx) {
+      EXPECT_NE(voicing.pitches[idx] % 12, 4)
+          << "A rootless voicing must voice the chord it was given; a suspended "
+             "chord has no major third";
+    }
+  }
+}
+
 TEST_F(ChordTrackTest, HarmonicSubdivisionUsesPlannedSecondHalfExtension) {
   params_.chord_extension.enable_7th = false;
 
@@ -1074,9 +1322,11 @@ TEST_F(ChordTrackTest, ChordVoicingConsidersFullBarMotifNotes) {
 // Sus4/Sus2 Within-Bar Resolution Tests
 // ============================================================================
 
-TEST_F(ChordTrackTest, SusChordSplitsBarIntoTwoHalves) {
-  // When sus extension is selected, the bar should contain notes at both
-  // bar_start and bar_start + HALF (960 ticks), indicating a split
+TEST_F(ChordTrackTest, SusResolvesToItsThirdWithinTheSameBar) {
+  // A suspension is only a suspension if it resolves. The 4th sounds in the
+  // first half of the bar and the 3rd it displaced arrives in the second, over
+  // the same root. The chord rhythm is unaffected: the harmony changes at the
+  // half bar, the pulse does not stop.
   params_.chord_extension.enable_sus = true;
   params_.chord_extension.sus_probability = 1.0f;  // Force sus when possible
   params_.chord_extension.enable_7th = false;
@@ -1088,90 +1338,59 @@ TEST_F(ChordTrackTest, SusChordSplitsBarIntoTwoHalves) {
 
   const auto& chord_track = gen.getSong().chord();
   const auto& sections = gen.getSong().arrangement().sections();
+  ASSERT_FALSE(chord_track.empty());
 
-  EXPECT_FALSE(chord_track.empty());
-
-  // Look for bars that have notes at both bar_start and bar_start + HALF
-  // This indicates a sus resolution split occurred
-  int split_bars_found = 0;
-
-  for (const auto& sec : sections) {
-    for (uint8_t bar = 0; bar < sec.bars; ++bar) {
-      Tick bar_start = sec.start_tick + bar * TICKS_PER_BAR;
-      bool has_first_half = false;
-      bool has_second_half = false;
-
-      for (const auto& note : chord_track.notes()) {
-        if (note.start_tick == bar_start && note.duration == TICKS_PER_BAR / 2) {
-          has_first_half = true;
-        }
-        if (note.start_tick == bar_start + TICKS_PER_BAR / 2 &&
-            note.duration == TICKS_PER_BAR / 2) {
-          has_second_half = true;
-        }
-      }
-
-      if (has_first_half && has_second_half) {
-        ++split_bars_found;
-      }
-    }
-  }
-
-  // With sus probability at 1.0, we should find at least one split bar
-  // (sus chords are only valid in certain contexts, so not every bar will be sus)
-  EXPECT_GT(split_bars_found, 0) << "Expected at least one bar split for sus resolution";
-}
-
-TEST_F(ChordTrackTest, SusChordFirstHalfHasSus4Interval) {
-  // Verify that the first half of a sus4-resolved bar contains the sus4
-  // interval (perfect 4th = 5 semitones from root) and the second half
-  // contains the resolved major 3rd (4 semitones) or minor 3rd (3 semitones)
-  params_.chord_extension.enable_sus = true;
-  params_.chord_extension.sus_probability = 1.0f;
-  params_.chord_extension.enable_7th = false;
-  params_.chord_extension.enable_9th = false;
-  params_.seed = 44444;
-
-  Generator gen;
-  gen.generate(params_);
-
-  const auto& chord_track = gen.getSong().chord();
-  const auto& sections = gen.getSong().arrangement().sections();
-
-  bool found_sus_resolution = false;
-  // Collect pitch classes at bar_start and bar_start+HALF for split bars
+  int resolutions_found = 0;
   for (const auto& sec : sections) {
     for (uint8_t bar = 0; bar < sec.bars; ++bar) {
       Tick bar_start = sec.start_tick + bar * TICKS_PER_BAR;
       Tick half_start = bar_start + TICKS_PER_BAR / 2;
+      Tick bar_end = bar_start + TICKS_PER_BAR;
 
       std::set<int> first_half_pcs;
       std::set<int> second_half_pcs;
-
       for (const auto& note : chord_track.notes()) {
-        if (note.start_tick == bar_start && note.duration == TICKS_PER_BAR / 2) {
+        if (note.start_tick >= bar_start && note.start_tick < half_start) {
           first_half_pcs.insert(note.note % 12);
-        }
-        if (note.start_tick == half_start && note.duration == TICKS_PER_BAR / 2) {
+        } else if (note.start_tick >= half_start && note.start_tick < bar_end) {
           second_half_pcs.insert(note.note % 12);
         }
       }
+      if (first_half_pcs.empty() || second_half_pcs.empty()) continue;
 
-      // If both halves have notes, this is a split bar (likely sus resolution)
-      if (first_half_pcs.size() >= 2 && second_half_pcs.size() >= 2) {
-        // The first half should have a different pitch class set than the second
-        // (sus4 has interval 5 from root; resolved triad has interval 3 or 4)
-        // We check that the two halves are not identical
-        bool halves_differ = (first_half_pcs != second_half_pcs);
-        if (halves_differ) {
-          found_sus_resolution = true;
+      // A suspended fourth in the first half that gives way to a third in the
+      // second, over a root both halves share and with nothing else changing.
+      for (int candidate_root = 0; candidate_root < 12; ++candidate_root) {
+        const int fourth = (candidate_root + 5) % 12;
+        const int major_third = (candidate_root + 4) % 12;
+        const int minor_third = (candidate_root + 3) % 12;
+
+        bool shares_root =
+            first_half_pcs.count(candidate_root) != 0 && second_half_pcs.count(candidate_root) != 0;
+        bool suspended = first_half_pcs.count(fourth) != 0 &&
+                         first_half_pcs.count(major_third) == 0 &&
+                         first_half_pcs.count(minor_third) == 0;
+        bool resolved =
+            second_half_pcs.count(fourth) == 0 &&
+            (second_half_pcs.count(major_third) != 0 || second_half_pcs.count(minor_third) != 0);
+        if (!shares_root || !suspended || !resolved) continue;
+
+        // Everything but the moving voice stays where it was.
+        std::set<int> held_before = first_half_pcs;
+        std::set<int> held_after = second_half_pcs;
+        held_before.erase(fourth);
+        held_after.erase(major_third);
+        held_after.erase(minor_third);
+        if (held_before == held_after) {
+          ++resolutions_found;
+          break;
         }
       }
     }
   }
 
-  EXPECT_TRUE(found_sus_resolution)
-      << "A 100% sus configuration should produce a split bar with different pitch content";
+  EXPECT_GT(resolutions_found, 0)
+      << "A configuration that always suspends must produce a suspension that resolves";
 }
 
 TEST_F(ChordTrackTest, NonSusExtensionDoesNotSplitBar) {
@@ -1425,16 +1644,22 @@ TEST_F(ChordTrackTest, AreVoicingsIdentical_IgnoresTypeAndSubtype) {
   EXPECT_TRUE(chord_voicing::areVoicingsIdentical(a, b));
 }
 
-TEST_F(ChordTrackTest, AugmentVoicingRejectsMinorSecondClusterCandidates) {
+TEST_F(ChordTrackTest, AugmentVoicingRejectsStepClusterCandidates) {
   chord_voicing::VoicedChord voicing{};
   voicing.pitches = {60, 64, 0, 0, 0};
   voicing.count = 2;
 
-  EXPECT_TRUE(wouldCreateVoicingMinorSecond(voicing, 61))
+  EXPECT_TRUE(wouldCreateVoicingCluster(voicing, 61))
       << "C and Db should be rejected as an internal minor-second cluster";
-  EXPECT_TRUE(wouldCreateVoicingMinorSecond(voicing, 63))
+  EXPECT_TRUE(wouldCreateVoicingCluster(voicing, 63))
       << "E and Eb should be rejected as an internal minor-second cluster";
-  EXPECT_FALSE(wouldCreateVoicingMinorSecond(voicing, 67))
+  EXPECT_TRUE(wouldCreateVoicingCluster(voicing, 62))
+      << "C and D adjacent in the same octave is a major second in close position";
+  EXPECT_TRUE(wouldCreateVoicingCluster(voicing, 47))
+      << "A minor ninth is the compound minor second and stays dissonant";
+  EXPECT_FALSE(wouldCreateVoicingCluster(voicing, 71))
+      << "A major seventh above the root is the chord itself in a seventh chord";
+  EXPECT_FALSE(wouldCreateVoicingCluster(voicing, 67))
       << "A fifth above C should remain available for minimum voicing fill";
 }
 

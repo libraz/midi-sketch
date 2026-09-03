@@ -2,8 +2,11 @@
  * @file clash_analysis_helper.h
  * @brief Shared clash analysis utilities for dissonance tests.
  *
- * Provides ClashInfo struct, findClashes(), and analyzeAllTrackPairs()
- * used by both dissonance_integration_test.cpp and dissonance_diagnostic_test.cpp.
+ * Every judgement here comes from analyzeDissonance(), the same detector the
+ * CLI and the C API report with. A second, hand-rolled interval rule in test
+ * code would drift from it, and a test-side rule that is even slightly more
+ * permissive lets through exactly the clashes the shipped analysis reports.
+ * These helpers only select and reshape what that detector returned.
  */
 
 #ifndef MIDISKETCH_TEST_CLASH_ANALYSIS_HELPER_H
@@ -14,18 +17,18 @@
 #include <utility>
 #include <vector>
 
+#include "analysis/dissonance.h"
 #include "core/basic_types.h"
+#include "core/i_chord_lookup.h"
 #include "core/i_harmony_context.h"
 #include "core/midi_track.h"
 #include "core/pitch_utils.h"
 #include "core/song.h"
 #include "core/track_collision_detector.h"
+#include "core/types.h"
 
 namespace midisketch {
 namespace test {
-
-/// Maximum allowed register separation for clash detection (2 octaves)
-constexpr int kMaxClashSeparation = 24;
 
 struct ClashInfo {
   std::string track_a;
@@ -37,120 +40,52 @@ struct ClashInfo {
 };
 
 /**
- * @brief Get track name for reporting.
- * @param track Pointer to a MidiTrack
- * @param song The Song containing the tracks
- * @return Human-readable track name
- */
-inline std::string getTrackName(const MidiTrack* track, const Song& song) {
-  if (track == &song.vocal()) return "Vocal";
-  if (track == &song.bass()) return "Bass";
-  if (track == &song.chord()) return "Chord";
-  if (track == &song.motif()) return "Motif";
-  if (track == &song.aux()) return "Aux";
-  if (track == &song.arpeggio()) return "Arpeggio";
-  if (track == &song.guitar()) return "Guitar";
-  return "Unknown";
-}
-
-/**
- * @brief Find all dissonant clashes between two tracks using chord context.
- * @param track_a First track
- * @param name_a Name of first track (for reporting)
- * @param track_b Second track
- * @param name_b Name of second track (for reporting)
- * @param harmony Harmony context for chord-degree-aware dissonance detection
- * @return Vector of ClashInfo for each dissonant pair found
- */
-inline std::vector<ClashInfo> findClashes(const MidiTrack& track_a, const std::string& name_a,
-                                          const MidiTrack& track_b, const std::string& name_b,
-                                          const IHarmonyContext& harmony) {
-  std::vector<ClashInfo> clashes;
-
-  for (const auto& note_a : track_a.notes()) {
-    Tick start_a = note_a.start_tick;
-    Tick end_a = start_a + note_a.duration;
-
-    for (const auto& note_b : track_b.notes()) {
-      Tick start_b = note_b.start_tick;
-      Tick end_b = start_b + note_b.duration;
-
-      // Check temporal overlap
-      bool overlap = (start_a < end_b) && (start_b < end_a);
-      if (!overlap) continue;
-
-      // Calculate actual interval
-      int actual_interval = std::abs(static_cast<int>(note_a.note) - static_cast<int>(note_b.note));
-
-      // Skip wide separations (perceptually not clashing)
-      if (actual_interval >= kMaxClashSeparation) continue;
-
-      // Duration-aware passing tone tolerance (consistent with collision detector)
-      Tick overlap_start = std::max(start_a, start_b);
-      Tick overlap_end = std::min(end_a, end_b);
-      Tick overlap_duration = overlap_end - overlap_start;
-      if (isToleratedPassingTone(actual_interval, overlap_duration, note_a.note, note_b.note,
-                                 overlap_start)) {
-        continue;
-      }
-
-      // Registered extensions and replacements are authoritative: a tritone
-      // or major seventh between two exact chord tones is structural harmony,
-      // not an inter-track clash.
-      const ChordTones chord_tones = harmony.getChordTonesAt(overlap_start);
-      const int pitch_class_a = note_a.note % 12;
-      const int pitch_class_b = note_b.note % 12;
-      const bool a_is_chord_tone =
-          std::find(chord_tones.begin(), chord_tones.end(), pitch_class_a) != chord_tones.end();
-      const bool b_is_chord_tone =
-          std::find(chord_tones.begin(), chord_tones.end(), pitch_class_b) != chord_tones.end();
-      if (a_is_chord_tone && b_is_chord_tone) {
-        continue;
-      }
-
-      // Check dissonance using unified logic from pitch_utils
-      int8_t chord_degree = harmony.getChordDegreeAt(overlap_start);
-
-      if (isDissonantActualInterval(actual_interval, chord_degree)) {
-        clashes.push_back(
-            {name_a, name_b, note_a.note, note_b.note, overlap_start, actual_interval});
-      }
-    }
-  }
-
-  return clashes;
-}
-
-/**
- * @brief Analyze all track pairs in a song for dissonances using chord context.
+ * @brief Every simultaneous clash the shipped analysis reports for a song.
  * @param song The Song to analyze
- * @param harmony Harmony context for chord-degree-aware dissonance detection
- * @return Vector of all ClashInfo found across all track pairs
+ * @param params Generation params the song was produced with
+ * @param harmony Generation-time harmony timeline (registered extensions intact)
+ * @return One ClashInfo per reported clash, in report order
  */
-inline std::vector<ClashInfo> analyzeAllTrackPairs(const Song& song,
-                                                   const IHarmonyContext& harmony) {
+inline std::vector<ClashInfo> analyzeAllTrackPairs(const Song& song, const GeneratorParams& params,
+                                                   const IChordLookup& harmony) {
   std::vector<ClashInfo> all_clashes;
+  const DissonanceReport report = analyzeDissonance(song, params, harmony);
 
-  // Get all melodic tracks (skip drums and SE)
-  std::vector<std::pair<const MidiTrack*, std::string>> tracks;
-  if (!song.vocal().empty()) tracks.push_back({&song.vocal(), "Vocal"});
-  if (!song.bass().empty()) tracks.push_back({&song.bass(), "Bass"});
-  if (!song.chord().empty()) tracks.push_back({&song.chord(), "Chord"});
-  if (!song.motif().empty()) tracks.push_back({&song.motif(), "Motif"});
-  if (!song.aux().empty()) tracks.push_back({&song.aux(), "Aux"});
-  if (!song.arpeggio().empty()) tracks.push_back({&song.arpeggio(), "Arpeggio"});
-  if (!song.guitar().empty()) tracks.push_back({&song.guitar(), "Guitar"});
-
-  // Check all unique pairs
-  for (size_t idx = 0; idx < tracks.size(); ++idx) {
-    for (size_t jdx = idx + 1; jdx < tracks.size(); ++jdx) {
-      auto clashes = findClashes(*tracks[idx].first, tracks[idx].second, *tracks[jdx].first,
-                                 tracks[jdx].second, harmony);
-      all_clashes.insert(all_clashes.end(), clashes.begin(), clashes.end());
-    }
+  for (const auto& issue : report.issues) {
+    if (issue.type != DissonanceType::SimultaneousClash) continue;
+    if (issue.notes.size() < 2) continue;
+    all_clashes.push_back({issue.notes[0].track_name, issue.notes[1].track_name,
+                           issue.notes[0].pitch, issue.notes[1].pitch, issue.tick,
+                           static_cast<int>(issue.interval_semitones)});
   }
 
   return all_clashes;
+}
+
+/**
+ * @brief The reported clashes that involve one specific pair of tracks.
+ * @param song The Song to analyze
+ * @param params Generation params the song was produced with
+ * @param harmony Generation-time harmony timeline
+ * @param role_a First track role
+ * @param role_b Second track role
+ * @return ClashInfo for each reported clash between those two tracks
+ */
+inline std::vector<ClashInfo> findClashes(const Song& song, const GeneratorParams& params,
+                                          const IChordLookup& harmony, TrackRole role_a,
+                                          TrackRole role_b) {
+  const std::string name_a = trackRoleToString(role_a);
+  const std::string name_b = trackRoleToString(role_b);
+
+  std::vector<ClashInfo> clashes;
+  for (const auto& clash : analyzeAllTrackPairs(song, params, harmony)) {
+    const bool forward = clash.track_a == name_a && clash.track_b == name_b;
+    const bool reverse = clash.track_a == name_b && clash.track_b == name_a;
+    if (forward || reverse) {
+      clashes.push_back(clash);
+    }
+  }
+  return clashes;
 }
 
 }  // namespace test

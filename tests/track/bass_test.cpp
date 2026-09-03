@@ -44,8 +44,11 @@ TEST_F(BassTest, BassNotesInValidMidiRange) {
   gen.generate(params_);
 
   const auto& track = gen.getSong().bass();
+  ASSERT_FALSE(track.notes().empty()) << "No bass notes to range-check";
+  // The bass physical models bottom out at C1 (24), so anything below that is
+  // an underflowed pitch rather than a low note.
   for (const auto& note : track.notes()) {
-    EXPECT_GE(note.note, 0) << "Note pitch below 0";
+    EXPECT_GE(note.note, PhysicalModels::kSynthBass.pitch_low) << "Note pitch below bass range";
     EXPECT_LE(note.note, 127) << "Note pitch above 127";
     EXPECT_GT(note.velocity, 0) << "Velocity is 0";
     EXPECT_LE(note.velocity, 127) << "Velocity above 127";
@@ -325,8 +328,16 @@ TEST_F(BassTest, IntroMayHaveSparserBass) {
     }
   }
 
-  // Intro may have bass notes (style-dependent)
-  EXPECT_GE(intro_notes, 0);
+  // Whether the intro carries bass is style-dependent, so the count itself is
+  // not the property. What must hold is that the counted notes really are the
+  // ones inside the intro span.
+  for (const auto& note : track.notes()) {
+    const bool counted = note.start_tick >= intro_start && note.start_tick < intro_end;
+    if (counted) {
+      EXPECT_LT(note.start_tick, intro_end) << "Counted a note past the end of the intro";
+    }
+  }
+  EXPECT_LE(intro_notes, static_cast<int>(track.notes().size()));
 }
 
 // ============================================================================

@@ -12,6 +12,7 @@
 #include <array>
 #include <cstring>
 #include <iomanip>
+#include <map>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -330,16 +331,16 @@ TEST_F(GeneratorIterationSnapshotTest, NoteCountsAreStable) {
 
 TEST(GeneratorMidiGoldenTest, FixedBlueprintsMatchNormalizedMidiSha256) {
   constexpr std::array<const char*, 10> kExpectedHashes = {
-      "ef1058fd967e949c1b028e3e9619e4ce15231f93d9ab9c2c90269a4fda1d504d",
-      "5acd28807debd3d27cd738c87ed0bfe64ce706b0351014afcd858537506707ca",
-      "003a7c1a99eaf3568d182e5e5971f9c91eb756772435a542c7991cbebbf3ff55",
-      "974bddefa091bc974d0e4dc70bc669b079dcc1bb7729489e15c2930bf3f39128",
-      "0530c2513da3c40149c7e7d49e23e7b90d25d5088308fadcc226bd8cbc12551c",
-      "8aeb95689223a594502e1a3dd785e6c9c3c71dacc60d5548c7632e7902b7a9a6",
-      "61a0ee1aa3a38b65d3328e7d9f4c9679e68d28ed7163a356de3ad91ba8982d7f",
-      "86371147921366d912c669b6b2be5df81815e2be2e3f7d2a1cf51fde20bf662f",
-      "e68634c1baf974719cbd8a7ad579221c99b04912483d5dc65a9e10da5ac932f4",
-      "99d04a5b9f34aacab5aab6e60e5b18a7f58a60fdd941a20f07cb6f160c3ed24f",
+      "9a328357165d374fa954e6ab7fbcbde7c37122821142a894be1cee4a15148c03",
+      "404b9a04a42e90adc7ee2c29465e25e41830fa4201f48f8fa5cde609b20eb7ca",
+      "4873fc279a175b9ffdcd4040b5a074b1c6a5fc60b1fb93542399047933711a82",
+      "46de93281849b107d782eece2f4fd75da1d06ea3d23b1e75804a9062b83b82c6",
+      "badd64dc55ede5c5c4965e39ac34e0e1527062c67f4dc342c45de06c01041e43",
+      "8bc4f35486b7fbfc48ab18bd7e81a5e9de2a631705eb0db12b9124bd6c2cfe46",
+      "40030e2376d676ba2dfa93be38efe5f16377492e832090f544f2c5b0af270596",
+      "efe67377d34d01584a8b1d8132bcb0e10576aea97f8a3e05ef669aa66ad92730",
+      "d38e805b48af1b37e8f4956f546b2ff7977e253b19ed2e4602bdf04f5b8364f7",
+      "174f94e4deedf89990d2927ca97a94dabe19199a5e8a97d7176e6ceaf708175f",
   };
 
   for (uint8_t blueprint = 0; blueprint < kExpectedHashes.size(); ++blueprint) {
@@ -354,6 +355,32 @@ TEST(GeneratorMidiGoldenTest, FixedBlueprintsMatchNormalizedMidiSha256) {
     ASSERT_TRUE(normalizeLibraryBuildTimestamp(midi));
     EXPECT_EQ(sha256(midi), kExpectedHashes[blueprint])
         << "blueprint=" << static_cast<int>(blueprint);
+  }
+}
+
+TEST(GeneratorMidiGoldenTest, EveryBlueprintProducesADistinctSongFromOneSeed) {
+  // The golden hashes above move the seed together with the blueprint, so ten
+  // distinct hashes would appear there even if blueprint_id changed nothing.
+  // Holding the seed fixed leaves blueprint_id as the only varying input, which
+  // is what makes a difference in the output attributable to it.
+  constexpr uint32_t kFixedSeed = 4200;
+  std::map<std::string, int> first_blueprint_for_hash;
+
+  for (uint8_t blueprint = 0; blueprint < getProductionBlueprintCount(); ++blueprint) {
+    MidiSketch sketch;
+    sketch.setMidiFormat(MidiFormat::SMF1);
+    SongConfig config = createDefaultSongConfig(0);
+    config.seed = kFixedSeed;
+    config.blueprint_id = blueprint;
+    sketch.generateFromConfig(config);
+
+    auto midi = sketch.getMidi();
+    ASSERT_TRUE(normalizeLibraryBuildTimestamp(midi));
+
+    auto [entry, inserted] =
+        first_blueprint_for_hash.emplace(sha256(midi), static_cast<int>(blueprint));
+    EXPECT_TRUE(inserted) << "Blueprint " << static_cast<int>(blueprint)
+                          << " produced byte-identical MIDI to blueprint " << entry->second;
   }
 }
 

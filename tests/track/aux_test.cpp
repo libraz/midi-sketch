@@ -68,10 +68,14 @@ class TimelineHarmony final : public test::StubHarmonyContext {
   int8_t getChordDegreeAt(Tick tick) const override {
     return tick < TICKS_PER_BAR ? 0 : 1;  // I -> ii, with no shared pitch classes
   }
+
+  ChordTones getChordTonesAt(Tick tick) const override {
+    return getChordTones(getChordDegreeAt(tick));
+  }
 };
 
 bool isChordToneAt(const NoteEvent& note, const IHarmonyContext& harmony) {
-  const ChordTones tones = getChordTones(harmony.getChordDegreeAt(note.start_tick));
+  const ChordTones tones = harmony.getChordTonesAt(note.start_tick);
   return std::any_of(tones.pitch_classes.begin(), tones.pitch_classes.begin() + tones.count,
                      [&note](int pitch_class) { return pitch_class == note.note % 12; });
 }
@@ -112,6 +116,7 @@ TEST(AuxSongContextTest, SongPhraseBoundariesReachPhraseTailGeneration) {
 
     GeneratorParams params;
     params.blueprint_id = 2;  // StoryPop
+    params.blueprint_ref = &getProductionBlueprint(2);
     params.seed = seed;
     params.vocal_low = 60;
     params.vocal_high = 72;
@@ -154,7 +159,9 @@ TEST(AuxSongContextTest, RegistersOnlyFinalPostProcessedNotes) {
   song_ctx.vocal_track = &vocal;
   song_ctx.progression = &progression;
   song_ctx.phrase_boundaries = &phrase_boundaries;
-  song_ctx.blueprint_id = 1;  // RhythmLock uses PulseLoop in verse sections.
+  // RhythmLock uses PulseLoop in verse sections.
+  const ProductionBlueprint& blueprint = getProductionBlueprint(1);
+  song_ctx.blueprint = &blueprint;
 
   test::StubHarmonyContext harmony;
   harmony.setAllPitchesSafe(true);
@@ -1109,6 +1116,7 @@ TEST(AuxIntegrationTest, FullSongUnisonPreservesVocalPitches) {
   GeneratorParams params;
   params.mood = Mood::IdolPop;
   params.blueprint_id = 4;  // IdolStandard uses Unison in chorus.
+  params.blueprint_ref = &getProductionBlueprint(4);
   params.seed = 12345;
   params.vocal_low = 60;
   params.vocal_high = 88;
@@ -1782,6 +1790,248 @@ TEST(AuxPitchRange, StaysWithinDocumentedRangeAcrossSeeds) {
       }
     }
   }
+}
+
+// ============================================================================
+// Blueprint entity plumbing
+// ============================================================================
+
+namespace {
+
+/// Generate an aux track for one blueprint entity, holding everything else
+/// fixed. The blueprint is passed by address, so a generator that looks the
+/// blueprint up again by id produces the same track for every adjustment.
+MidiTrack generateAuxForBlueprint(const ProductionBlueprint& blueprint, bool with_chorus = true) {
+  // Without a chorus there is no hook to foreshadow, which is the only case
+  // where the intro falls back to the profile's intro_function.
+  std::vector<Section> sections = {makeSection(SectionType::Intro, 2, 0),
+                                   makeSection(SectionType::A, 4, TICKS_PER_BAR * 2)};
+  if (with_chorus) {
+    sections.push_back(makeChorusSection(4, TICKS_PER_BAR * 6));
+  }
+  static MidiTrack vocal = [] {
+    MidiTrack track;
+    for (Tick tick = 0; tick < TICKS_PER_BAR * 10; tick += TICK_QUARTER) {
+      track.addNote(NoteEventTestHelper::create(tick, TICK_EIGHTH,
+                                                static_cast<uint8_t>(72 + (tick / 480) % 5), 100));
+    }
+    return track;
+  }();
+  static std::vector<PhraseBoundary> phrase_boundaries;
+  const auto& progression = getChordProgression(0);
+
+  AuxGenerator::SongContext song_ctx;
+  song_ctx.sections = &sections;
+  song_ctx.vocal_track = &vocal;
+  song_ctx.progression = &progression;
+  song_ctx.phrase_boundaries = &phrase_boundaries;
+  song_ctx.blueprint = &blueprint;
+
+  test::StubHarmonyContext harmony;
+  harmony.setAllPitchesSafe(true);
+  std::mt19937 rng(12345);
+  MidiTrack aux;
+  AuxGenerator generator;
+  generator.generateFromSongContext(aux, song_ctx, harmony, rng);
+  return aux;
+}
+
+std::string describeTrack(const MidiTrack& track) {
+  std::string out;
+  for (const auto& note : track.notes()) {
+    out += std::to_string(note.start_tick) + "/" + std::to_string(note.note) + "/" +
+           std::to_string(note.velocity) + " ";
+  }
+  return out;
+}
+
+}  // namespace
+
+// The generator has nothing to voice against without a blueprint, so it emits
+// nothing. Stating that here keeps a missing blueprint from reading as an
+// ordinary empty aux track for whoever hits it next.
+TEST(AuxBlueprintPlumbingTest, WithoutABlueprintTheGeneratorEmitsNothing) {
+  std::vector<Section> sections = {makeSection(SectionType::A, 4, 0)};
+  MidiTrack vocal;
+  for (Tick tick = 0; tick < TICKS_PER_BAR * 4; tick += TICK_QUARTER) {
+    vocal.addNote(NoteEventTestHelper::create(tick, TICK_EIGHTH, 72, 100));
+  }
+  std::vector<PhraseBoundary> phrase_boundaries;
+  const auto& progression = getChordProgression(0);
+
+  AuxGenerator::SongContext song_ctx;
+  song_ctx.sections = &sections;
+  song_ctx.vocal_track = &vocal;
+  song_ctx.progression = &progression;
+  song_ctx.phrase_boundaries = &phrase_boundaries;
+  song_ctx.blueprint = nullptr;
+
+  test::StubHarmonyContext harmony;
+  harmony.setAllPitchesSafe(true);
+  std::mt19937 rng(42);
+  MidiTrack aux;
+  AuxGenerator generator;
+  generator.generateFromSongContext(aux, song_ctx, harmony, rng);
+  EXPECT_TRUE(aux.notes().empty());
+
+  // The same context with a blueprint attached does produce notes, so the empty
+  // result above is the missing blueprint and not an unrelated dead end.
+  song_ctx.blueprint = &getProductionBlueprint(1);
+  MidiTrack aux_with_blueprint;
+  AuxGenerator with_blueprint;
+  std::mt19937 rng2(42);
+  with_blueprint.generateFromSongContext(aux_with_blueprint, song_ctx, harmony, rng2);
+  EXPECT_FALSE(aux_with_blueprint.notes().empty());
+}
+
+// The full-track entry point takes the blueprint from params.blueprint_ref. The
+// id stays the same across all three runs, so anything that changes has to have
+// come through the entity.
+TEST(AuxBlueprintPlumbingTest, TheFullTrackEntryPointReadsTheBlueprintReference) {
+  auto run = [](const ProductionBlueprint* blueprint_ref) {
+    Section verse = makeSection(SectionType::A, 4, 0);
+    verse.track_mask = TrackMask::All;
+    Song song;
+    song.setArrangement(Arrangement({verse}));
+    for (Tick tick = 0; tick < verse.endTick(); tick += TICK_QUARTER) {
+      song.vocal().addNote(NoteEventTestHelper::create(tick, TICK_EIGHTH, 74, 100));
+    }
+
+    GeneratorParams params;
+    params.blueprint_id = 0;  // Same id for every run
+    params.blueprint_ref = blueprint_ref;
+    params.seed = 12345;
+
+    const auto& progression = getChordProgression(params.chord_id);
+    HarmonyCoordinator harmony;
+    harmony.initialize(song.arrangement(), progression, params.mood);
+    std::mt19937 rng(params.seed);
+    FullTrackContext ctx;
+    ctx.song = &song;
+    ctx.params = &params;
+    ctx.rng = &rng;
+    ctx.harmony = &harmony;
+    ctx.chord_progression = &progression;
+
+    AuxGenerator generator;
+    generator.generateFullTrack(song.aux(), ctx);
+    return describeTrack(song.aux());
+  };
+
+  const ProductionBlueprint& shipped = getProductionBlueprint(0);
+  const std::string baseline = run(&shipped);
+  ASSERT_FALSE(baseline.empty());
+
+  ProductionBlueprint adjusted = shipped;
+  adjusted.aux_profile.velocity_scale = 0.4f;
+  adjusted.aux_profile.density_scale = 0.2f;
+  EXPECT_NE(run(&adjusted), baseline) << "params.blueprint_ref did not reach the aux generator";
+}
+
+// Each aux profile field is perturbed on the blueprint entity the caller hands
+// to the generator, with the blueprint id untouched. A generator that reads the
+// shipped table by id ignores every one of them and returns an identical track.
+TEST(AuxBlueprintPlumbingTest, EachAuxProfileFieldReachesTheGenerator) {
+  const ProductionBlueprint& shipped = getProductionBlueprint(0);
+  MidiTrack baseline = generateAuxForBlueprint(shipped);
+  ASSERT_FALSE(baseline.notes().empty());
+
+  auto expectDiffers = [&](const char* field, const ProductionBlueprint& adjusted) {
+    MidiTrack track = generateAuxForBlueprint(adjusted);
+    EXPECT_NE(describeTrack(track), describeTrack(baseline))
+        << field << " did not reach the aux generator";
+  };
+
+  {
+    MidiTrack hookless_baseline = generateAuxForBlueprint(shipped, /*with_chorus=*/false);
+    ASSERT_FALSE(hookless_baseline.notes().empty());
+    ProductionBlueprint bp = shipped;
+    bp.aux_profile.intro_function = AuxFunction::PulseLoop;
+    MidiTrack track = generateAuxForBlueprint(bp, /*with_chorus=*/false);
+    EXPECT_NE(describeTrack(track), describeTrack(hookless_baseline))
+        << "intro_function did not reach the aux generator";
+  }
+  {
+    ProductionBlueprint bp = shipped;
+    bp.aux_profile.verse_function = AuxFunction::GrooveAccent;
+    expectDiffers("verse_function", bp);
+  }
+  {
+    ProductionBlueprint bp = shipped;
+    bp.aux_profile.chorus_function = AuxFunction::PulseLoop;
+    expectDiffers("chorus_function", bp);
+  }
+  {
+    ProductionBlueprint bp = shipped;
+    bp.aux_profile.velocity_scale = 0.4f;
+    expectDiffers("velocity_scale", bp);
+  }
+  {
+    ProductionBlueprint bp = shipped;
+    bp.aux_profile.density_scale = 0.2f;
+    expectDiffers("density_scale", bp);
+  }
+  {
+    ProductionBlueprint bp = shipped;
+    bp.aux_profile.range_ceiling = -24;
+    expectDiffers("range_ceiling", bp);
+  }
+}
+
+// The chord the timeline holds and the diatonic triad of its degree are made
+// disjoint, which is what a reharmonization such as a secondary dominant does
+// on a smaller scale. Every aux pattern that picks chord tones has to voice the
+// chord the timeline holds; rebuilding the triad from the degree sounds pitches
+// the chord track never plays.
+TEST(AuxTimelineChordTest, PatternsVoiceTheTimelineChordRatherThanTheDegreesTriad) {
+  const std::vector<int> kTimelineTones = {2, 6, 9};    // D F# A
+  const std::vector<int> kDegreeOnlyTones = {0, 4, 7};  // C E G, the degree's own triad
+
+  test::StubHarmonyContext harmony;
+  harmony.setAllPitchesSafe(true);
+  harmony.setChordDegree(0);
+  harmony.setChordTones(kTimelineTones);
+
+  AuxGenerator::AuxContext ctx = createTestContext();
+  ctx.section_end = TICKS_PER_BAR * 4;
+
+  AuxConfig config;
+  config.range_offset = -12;
+  config.range_width = 24;
+  config.velocity_ratio = 0.7f;
+  config.density_ratio = 1.0f;
+
+  // Patterns that build their pitches from the chord tones at a tick. PulseLoop
+  // maps its cell through the shared nearest-chord-tone accessor instead, whose
+  // own resolution is not part of this check.
+  const std::pair<AuxFunction, const char*> kFunctions[] = {
+      {AuxFunction::GrooveAccent, "GrooveAccent"},
+      {AuxFunction::EmotionalPad, "EmotionalPad"},
+      {AuxFunction::SustainPad, "SustainPad"},
+  };
+
+  size_t notes_scanned = 0;
+  std::string offenders;
+  for (const auto& entry : kFunctions) {
+    config.function = entry.first;
+    AuxGenerator generator;
+    std::mt19937 rng(12345);
+    MidiTrack aux = generator.generate(config, ctx, harmony, rng);
+    EXPECT_FALSE(aux.notes().empty()) << entry.second << " produced no notes";
+
+    for (const auto& note : aux.notes()) {
+      ++notes_scanned;
+      int pitch_class = note.note % 12;
+      if (std::find(kDegreeOnlyTones.begin(), kDegreeOnlyTones.end(), pitch_class) !=
+          kDegreeOnlyTones.end()) {
+        offenders += std::string(entry.second) + " tick " + std::to_string(note.start_tick) +
+                     ": pitch " + std::to_string(note.note) +
+                     " belongs to the degree's triad, not to the chord the timeline holds\n";
+      }
+    }
+  }
+  EXPECT_GT(notes_scanned, 0u) << "No aux notes were generated";
+  EXPECT_TRUE(offenders.empty()) << offenders;
 }
 
 }  // namespace

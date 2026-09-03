@@ -792,6 +792,40 @@ TEST_F(EnhancedFinalHitTest, BassPitchUnchangedWhenSafe) {
   }
 }
 
+TEST_F(EnhancedFinalHitTest, AddedBassNoteIsRegisteredWithHarmony) {
+  // A pitched note this pass creates has to become visible to the harmony
+  // context, or every later query reasons about a texture that is missing it.
+  test::StubHarmonyContext harmony;
+  harmony.setAllPitchesSafe(true);
+  harmony.setChordTones({0, 4, 7});
+
+  MidiTrack bass_track;  // Empty - forces a new note
+  int before = harmony.getRegisteredNoteCount();
+
+  PostProcessor::applyEnhancedFinalHit(&bass_track, nullptr, nullptr, nullptr, section_, &harmony);
+
+  ASSERT_FALSE(bass_track.notes().empty());
+  EXPECT_GT(harmony.getRegisteredNoteCount(), before)
+      << "The final-hit bass note was added to the track without being registered";
+}
+
+TEST_F(EnhancedFinalHitTest, AddedBassNoteIsRegisteredEvenWhenNothingIsSafe) {
+  // The ending keeps its bass when no pitch is safe, and that fallback note is
+  // registered too: a note that sounds must never be invisible to harmony.
+  test::StubHarmonyContext harmony;
+  harmony.setAllPitchesSafe(false);
+  harmony.setChordTones({0, 4, 7});
+
+  MidiTrack bass_track;
+  int before = harmony.getRegisteredNoteCount();
+
+  PostProcessor::applyEnhancedFinalHit(&bass_track, nullptr, nullptr, nullptr, section_, &harmony);
+
+  ASSERT_FALSE(bass_track.notes().empty());
+  EXPECT_GT(harmony.getRegisteredNoteCount(), before)
+      << "The fallback final-hit bass note bypassed harmony registration";
+}
+
 TEST_F(EnhancedFinalHitTest, BassPitchFallsBackToDefaultWithoutHarmony) {
   // When no harmony context is provided (nullptr), the default C2 should be used.
 
@@ -901,9 +935,12 @@ TEST(MicroTimingTest, VocalTimingVariesByPhrasePosition) {
   PostProcessor::applyMicroTimingOffsets(vocal, bass, drums, &sections);
 
   // All vocal offsets capped to ±2 ticks
-  Tick start_offset = vocal.notes()[0].start_tick - orig_start;
-  Tick middle_offset = vocal.notes()[1].start_tick - orig_middle;
-  Tick end_offset = vocal.notes()[2].start_tick - orig_end;
+  // Ticks are unsigned, so a backward shift would wrap instead of going
+  // negative and slip past a non-negativity check. The offsets are compared as
+  // signed values so that "forward lean" is actually what is asserted.
+  int start_offset = static_cast<int>(vocal.notes()[0].start_tick) - static_cast<int>(orig_start);
+  int middle_offset = static_cast<int>(vocal.notes()[1].start_tick) - static_cast<int>(orig_middle);
+  int end_offset = static_cast<int>(vocal.notes()[2].start_tick) - static_cast<int>(orig_end);
 
   EXPECT_GE(start_offset, 0) << "Vocal offset should be non-negative (forward lean)";
   EXPECT_LE(start_offset, 2) << "Vocal offset capped at +2";
@@ -1048,7 +1085,7 @@ TEST(MicroTimingTest, DriveFeelAffectsVocalPhraseOffsets) {
   // With aggressive drive (100), vocal offset is still capped to ±2
   PostProcessor::applyMicroTimingOffsets(vocal, bass, drums, &sections, 100);
 
-  Tick offset = vocal.notes()[0].start_tick - orig;
+  int offset = static_cast<int>(vocal.notes()[0].start_tick) - static_cast<int>(orig);
   EXPECT_GE(offset, 0) << "Vocal offset should be non-negative";
   EXPECT_LE(offset, 2) << "Vocal offset capped at +2 even with aggressive drive";
 }
@@ -1097,8 +1134,8 @@ TEST(PostProcessorTest, HighPitchTimingDelay) {
 
   PostProcessor::applyMicroTimingOffsets(vocal, bass, drums, &sections);
 
-  Tick low_offset = vocal.notes()[0].start_tick - orig_low;
-  Tick high_offset = vocal.notes()[1].start_tick - orig_high;
+  int low_offset = static_cast<int>(vocal.notes()[0].start_tick) - static_cast<int>(orig_low);
+  int high_offset = static_cast<int>(vocal.notes()[1].start_tick) - static_cast<int>(orig_high);
 
   // Both offsets are within ±2 cap
   EXPECT_GE(low_offset, 0);
@@ -1129,8 +1166,8 @@ TEST(PostProcessorTest, LeapLandingTimingDelay) {
 
   PostProcessor::applyMicroTimingOffsets(vocal, bass, drums, &sections);
 
-  Tick step_offset = vocal.notes()[1].start_tick - orig_step;
-  Tick leap_offset = vocal.notes()[2].start_tick - orig_leap;
+  int step_offset = static_cast<int>(vocal.notes()[1].start_tick) - static_cast<int>(orig_step);
+  int leap_offset = static_cast<int>(vocal.notes()[2].start_tick) - static_cast<int>(orig_leap);
 
   // Both offsets within ±2 cap
   EXPECT_GE(step_offset, 0);
@@ -1162,9 +1199,9 @@ TEST(PostProcessorTest, PostBreathSoftStart) {
 
   PostProcessor::applyMicroTimingOffsets(vocal, bass, drums, &sections);
 
-  Tick first_offset = vocal.notes()[0].start_tick - orig_first;
-  Tick second_offset = vocal.notes()[1].start_tick - orig_second;
-  Tick third_offset = vocal.notes()[2].start_tick - orig_third;
+  int first_offset = static_cast<int>(vocal.notes()[0].start_tick) - static_cast<int>(orig_first);
+  int second_offset = static_cast<int>(vocal.notes()[1].start_tick) - static_cast<int>(orig_second);
+  int third_offset = static_cast<int>(vocal.notes()[2].start_tick) - static_cast<int>(orig_third);
 
   // All vocal offsets within ±2 cap
   EXPECT_GE(first_offset, 0);
@@ -1196,7 +1233,7 @@ TEST(PostProcessorTest, HumanBodyTimingCombined) {
 
   PostProcessor::applyMicroTimingOffsets(vocal, bass, drums, &sections);
 
-  Tick offset = vocal.notes()[1].start_tick - orig_high;
+  int offset = static_cast<int>(vocal.notes()[1].start_tick) - static_cast<int>(orig_high);
 
   // Combined offset capped to ±2 ticks
   EXPECT_GE(offset, 0) << "Vocal offset should be non-negative";

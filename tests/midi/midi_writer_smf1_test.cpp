@@ -8,6 +8,7 @@
 #include <cstring>
 
 #include "core/structure.h"
+#include "core/timing_constants.h"
 #include "midi/byte_order.h"
 #include "midi/midi_reader.h"
 #include "midi/midi_writer.h"
@@ -318,16 +319,22 @@ TEST(MidiWriterSmf1Test, LongMarkerTextTruncatedTo255) {
   EXPECT_NO_THROW(writer.build(song, Key::C, Mood::StraightPop, "", MidiFormat::SMF1));
   auto data = writer.toBytes();
 
-  // Find marker meta event (FF 06 len) and verify length <= 255
-  for (size_t i = 0; i + 2 < data.size(); ++i) {
+  // Find the marker meta event (FF 06 <vlq len>). A length of 255 needs two
+  // variable-length bytes: 0x81 0x7F. A single 0xFF byte would be read as the
+  // first byte of a longer value and desynchronize the whole track.
+  bool found = false;
+  for (size_t i = 0; i + 3 < data.size(); ++i) {
     if (data[i] == 0xFF && data[i + 1] == 0x06) {
-      // Length byte should be <= 255 (truncated from 300)
-      EXPECT_LE(data[i + 2], 255u);
-      // Verify actual truncation to 255
-      EXPECT_EQ(data[i + 2], 255u);
+      EXPECT_EQ(data[i + 2], 0x81u);
+      EXPECT_EQ(data[i + 3], 0x7Fu);
+      found = true;
       break;
     }
   }
+  EXPECT_TRUE(found);
+
+  MidiReader reader;
+  EXPECT_TRUE(reader.read(data)) << reader.getError();
 }
 
 TEST(MidiWriterSmf1Test, MarkerTextExactly255BytesNotTruncated) {
@@ -342,12 +349,37 @@ TEST(MidiWriterSmf1Test, MarkerTextExactly255BytesNotTruncated) {
   writer.build(song, Key::C, Mood::StraightPop, "", MidiFormat::SMF1);
   auto data = writer.toBytes();
 
-  // Find marker meta event (FF 06 len) and verify length == 255
-  for (size_t i = 0; i + 2 < data.size(); ++i) {
+  // 255 encodes as the two variable-length bytes 0x81 0x7F, not a raw 0xFF.
+  bool found = false;
+  for (size_t i = 0; i + 3 < data.size(); ++i) {
     if (data[i] == 0xFF && data[i + 1] == 0x06) {
-      EXPECT_EQ(data[i + 2], 255u);
+      EXPECT_EQ(data[i + 2], 0x81u);
+      EXPECT_EQ(data[i + 3], 0x7Fu);
+      found = true;
       break;
     }
+  }
+  EXPECT_TRUE(found);
+
+  MidiReader reader;
+  EXPECT_TRUE(reader.read(data)) << reader.getError();
+}
+
+TEST(MidiWriterSmf1Test, MetaTextAtEveryLengthStaysReadable) {
+  // A length below 128 fits one byte; at 128 and above the variable-length form
+  // is the only encoding a reader can follow.
+  for (size_t length : {1u, 127u, 128u, 129u, 255u}) {
+    Song song;
+    song.setBpm(120);
+    song.se().addText(0, std::string(length, 'A'));
+    song.vocal().addNote(NoteEventBuilder::create(0, TICK_QUARTER, 60, 100));
+
+    MidiWriter writer;
+    writer.build(song, Key::C, Mood::StraightPop, "", MidiFormat::SMF1);
+
+    MidiReader reader;
+    EXPECT_TRUE(reader.read(writer.toBytes()))
+        << "marker text of " << length << " bytes: " << reader.getError();
   }
 }
 
@@ -804,6 +836,116 @@ TEST(MidiWriterSmf1Test, PitchBendExtremeValues) {
 
   // Count should be 2
   EXPECT_EQ(countPitchBendEvents(data, 0), 2u);
+}
+
+TEST(MidiWriterSmf1Test, RepeatedDrumStrikesKeepTheirOwnOnsets) {
+  // Four hi-hat strikes an eighth apart, each ringing a full quarter, so every
+  // strike overlaps the next. On a percussion channel all four must sound.
+  constexpr uint8_t kHiHat = 42;
+  constexpr size_t kStrikes = 4;
+
+  Song song;
+  song.setBpm(120);
+  for (size_t i = 0; i < kStrikes; ++i) {
+    song.drums().addNote(
+        NoteEventBuilder::create(static_cast<Tick>(i) * TICK_EIGHTH, TICK_QUARTER, kHiHat, 100));
+  }
+
+  const auto events = song.drums().toMidiEvents(kPercussionChannel);
+  size_t note_ons = 0;
+  for (const auto& event : events) {
+    if ((event.status & 0xF0) == 0x90) ++note_ons;
+  }
+  EXPECT_EQ(note_ons, kStrikes) << "Overlapping strikes were collapsed into fewer hits";
+
+  // Each strike is cut at the next onset so the channel carries one voice.
+  std::vector<Tick> ons;
+  std::vector<Tick> offs;
+  for (const auto& event : events) {
+    if ((event.status & 0xF0) == 0x90) ons.push_back(event.tick);
+    if ((event.status & 0xF0) == 0x80) offs.push_back(event.tick);
+  }
+  ASSERT_EQ(ons.size(), kStrikes);
+  ASSERT_EQ(offs.size(), kStrikes);
+  for (size_t i = 0; i + 1 < kStrikes; ++i) {
+    EXPECT_EQ(ons[i + 1], static_cast<Tick>(i + 1) * TICK_EIGHTH);
+    EXPECT_LE(offs[i], ons[i + 1]) << "Strike " << i << " still rings into the next onset";
+  }
+}
+
+TEST(MidiWriterSmf1Test, SustainedSamePitchOverlapsStillCollapse) {
+  // The same shape on a melodic channel is one sounding voice, so it collapses.
+  constexpr uint8_t kPitch = 60;
+
+  Song song;
+  song.setBpm(120);
+  for (size_t i = 0; i < 4; ++i) {
+    song.chord().addNote(
+        NoteEventBuilder::create(static_cast<Tick>(i) * TICK_EIGHTH, TICK_QUARTER, kPitch, 100));
+  }
+
+  size_t note_ons = 0;
+  for (const auto& event : song.chord().toMidiEvents(1)) {
+    if ((event.status & 0xF0) == 0x90) ++note_ons;
+  }
+  EXPECT_EQ(note_ons, 1u) << "A sustained pitch must not be re-struck mid-note";
+}
+
+TEST(MidiWriterSmf1Test, EveryDrumOnsetSurvivesIntoTheWrittenFile) {
+  Song song;
+  song.setBpm(120);
+  constexpr uint8_t kHiHat = 42;
+  constexpr size_t kStrikes = 8;
+  for (size_t i = 0; i < kStrikes; ++i) {
+    song.drums().addNote(
+        NoteEventBuilder::create(static_cast<Tick>(i) * TICK_EIGHTH, TICK_QUARTER, kHiHat, 100));
+  }
+  song.vocal().addNote(NoteEventBuilder::create(0, TICK_QUARTER, 60, 100));
+
+  MidiWriter writer;
+  writer.build(song, Key::C, Mood::StraightPop, "", MidiFormat::SMF1);
+
+  MidiReader reader;
+  ASSERT_TRUE(reader.read(writer.toBytes())) << reader.getError();
+  const ParsedTrack* drums = reader.getParsedMidi().getTrack("Drums");
+  ASSERT_NE(drums, nullptr);
+  EXPECT_EQ(drums->notes.size(), kStrikes)
+      << "The written file describes a different groove than the generated song";
+}
+
+TEST(MidiWriterSmf1Test, CallNotesFollowTheOutputKeyLikeEveryOtherPitchedTrack) {
+  constexpr uint8_t kCallPitch = 48;
+  constexpr uint8_t kVocalPitch = 60;
+  constexpr uint8_t kDrumPitch = 36;
+
+  Song song;
+  song.setBpm(120);
+  song.se().addNote(NoteEventBuilder::create(0, TICK_EIGHTH, kCallPitch, 100));
+  song.vocal().addNote(NoteEventBuilder::create(0, TICK_QUARTER, kVocalPitch, 100));
+  song.drums().addNote(NoteEventBuilder::create(0, TICK_EIGHTH, kDrumPitch, 100));
+
+  MidiWriter writer;
+  writer.build(song, Key::E, Mood::StraightPop, "", MidiFormat::SMF1);
+
+  MidiReader reader;
+  ASSERT_TRUE(reader.read(writer.toBytes())) << reader.getError();
+  const auto& midi = reader.getParsedMidi();
+
+  const ParsedTrack* se = midi.getTrack("SE");
+  const ParsedTrack* vocal = midi.getTrack("Vocal");
+  const ParsedTrack* drums = midi.getTrack("Drums");
+  ASSERT_NE(se, nullptr);
+  ASSERT_NE(vocal, nullptr);
+  ASSERT_NE(drums, nullptr);
+  ASSERT_EQ(se->notes.size(), 1u);
+  ASSERT_EQ(vocal->notes.size(), 1u);
+  ASSERT_EQ(drums->notes.size(), 1u);
+
+  const int shift = vocal->notes[0].note - kVocalPitch;
+  EXPECT_GT(shift, 0) << "Key::E must shift pitched material away from C";
+  EXPECT_EQ(se->notes[0].note, kCallPitch + shift)
+      << "Calls stayed in C while the harmony moved to the output key";
+  EXPECT_EQ(drums->notes[0].note, kDrumPitch) << "Percussion note numbers must not be transposed";
 }
 
 }  // namespace

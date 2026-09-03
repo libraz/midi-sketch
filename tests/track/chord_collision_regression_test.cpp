@@ -57,7 +57,8 @@ TEST_F(ChordCollisionRegressionTest, BassChordClashesBelowThreshold) {
       const auto& song = sketch_.getSong();
       const auto& harmony = sketch_.getHarmonyContext();
 
-      auto clashes = findClashes(song.bass(), "Bass", song.chord(), "Chord", harmony);
+      auto clashes =
+          findClashes(song, sketch_.getParams(), harmony, TrackRole::Bass, TrackRole::Chord);
 
       if (!clashes.empty()) {
         // Log for debugging but don't necessarily fail
@@ -150,7 +151,7 @@ TEST_F(ChordCollisionRegressionTest, TotalClashCountBelowThreshold) {
     const auto& song = sketch_.getSong();
     const auto& harmony = sketch_.getHarmonyContext();
 
-    auto all_clashes = test::analyzeAllTrackPairs(song, harmony);
+    auto all_clashes = test::analyzeAllTrackPairs(song, sketch_.getParams(), harmony);
 
     std::ostringstream details;
     for (const auto& clash : all_clashes) {

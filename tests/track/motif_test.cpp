@@ -319,6 +319,7 @@ TEST_F(MotifDissonanceTest, TritoneAvoidanceRobustness) {
 
   std::vector<uint32_t> test_seeds = {12345, 2802138756, 99999, 54321};
   int total_tritone_clashes = 0;
+  int examined_pairs = 0;
 
   for (uint32_t seed : test_seeds) {
     params_.seed = seed;
@@ -329,7 +330,8 @@ TEST_F(MotifDissonanceTest, TritoneAvoidanceRobustness) {
     const auto& motif_notes = gen.getSong().motif().notes();
     const auto& bass_notes = gen.getSong().bass().notes();
 
-    if (motif_notes.empty()) continue;
+    ASSERT_FALSE(motif_notes.empty()) << "Seed " << seed << ": BackgroundMotif produced no motif";
+    ASSERT_FALSE(bass_notes.empty()) << "Seed " << seed << ": no bass to measure motif against";
 
     for (const auto& motif_note : motif_notes) {
       Tick motif_start = motif_note.start_tick;
@@ -346,12 +348,16 @@ TEST_F(MotifDissonanceTest, TritoneAvoidanceRobustness) {
             std::abs(static_cast<int>(motif_note.note) - static_cast<int>(bass_note.note));
         if (actual_interval >= 24) continue;
 
+        examined_pairs++;
         if (actual_interval % 12 == 6) {
           total_tritone_clashes++;
         }
       }
     }
   }
+
+  // A zero clash count only means something if overlapping pairs were actually compared.
+  EXPECT_GT(examined_pairs, 0) << "No overlapping motif/bass pair was compared";
 
   // Should have very few or zero tritone clashes across all seeds
   EXPECT_LE(total_tritone_clashes, 2)
@@ -1242,7 +1248,7 @@ TEST_F(MotifRhythmLockTest, PitchesStayWithinRangeAfterShifts) {
     gen.generate(params_);
 
     const auto& motif_notes = gen.getSong().motif().notes();
-    if (motif_notes.empty()) continue;
+    ASSERT_FALSE(motif_notes.empty()) << "Seed " << seed << ": no motif notes to range-check";
 
     int out_of_range = 0;
     int min_pitch = 127;
@@ -1297,29 +1303,32 @@ TEST_F(MotifRhythmLockTest, RhythmPatternIsConsistent) {
     }
   }
 
-  if (verses.size() >= 2) {
-    auto onsets1 = extractBarOnsets(verses[0]);
-    auto onsets2 = extractBarOnsets(verses[1]);
+  // FullPop always contains at least two A/B sections, and RhythmLock keeps the
+  // motif active in them, so both prerequisites are part of what this test asserts.
+  ASSERT_GE(verses.size(), 2u) << "FullPop should contain at least two A/B sections";
 
-    if (onsets1.size() >= 2 && onsets2.size() >= 2) {
-      // Compare onset patterns (should have similar rhythmic positions)
-      // Count how many onsets are at similar positions (within 120 ticks = 16th note)
-      int similar_onsets = 0;
-      for (Tick o1 : onsets1) {
-        for (Tick o2 : onsets2) {
-          if (std::abs(static_cast<int>(o1) - static_cast<int>(o2)) <= 120) {
-            similar_onsets++;
-            break;
-          }
-        }
+  auto onsets1 = extractBarOnsets(verses[0]);
+  auto onsets2 = extractBarOnsets(verses[1]);
+
+  ASSERT_GE(onsets1.size(), 2u) << "First verse has too few motif onsets to compare";
+  ASSERT_GE(onsets2.size(), 2u) << "Second verse has too few motif onsets to compare";
+
+  // Compare onset patterns (should have similar rhythmic positions)
+  // Count how many onsets are at similar positions (within 120 ticks = 16th note)
+  int similar_onsets = 0;
+  for (Tick o1 : onsets1) {
+    for (Tick o2 : onsets2) {
+      if (std::abs(static_cast<int>(o1) - static_cast<int>(o2)) <= 120) {
+        similar_onsets++;
+        break;
       }
-
-      float similarity = static_cast<float>(similar_onsets) / onsets1.size();
-      EXPECT_GE(similarity, 0.4f)
-          << "RhythmLock should maintain consistent rhythm pattern across sections. "
-          << "Similarity: " << similarity;
     }
   }
+
+  float similarity = static_cast<float>(similar_onsets) / onsets1.size();
+  EXPECT_GE(similarity, 0.4f)
+      << "RhythmLock should maintain consistent rhythm pattern across sections. "
+      << "Similarity: " << similarity;
 }
 
 // Test that different seeds produce valid riff patterns
@@ -1334,7 +1343,7 @@ TEST_F(MotifRhythmLockTest, MultipleSeeedsProduceValidRiffs) {
     gen.generate(params_);
 
     const auto& motif_notes = gen.getSong().motif().notes();
-    if (motif_notes.empty()) continue;
+    ASSERT_FALSE(motif_notes.empty()) << "Seed " << seed << ": no riff was generated";
 
     // A valid riff should:
     // 1. Have multiple notes
@@ -1383,7 +1392,7 @@ TEST_F(MotifRhythmLockTest, AllNotesDiatonic) {
     gen.generate(params_);
 
     const auto& motif_notes = gen.getSong().motif().notes();
-    if (motif_notes.empty()) continue;
+    ASSERT_FALSE(motif_notes.empty()) << "Seed " << seed << ": no motif notes to check";
 
     int non_diatonic = 0;
     for (const auto& note : motif_notes) {
@@ -1409,7 +1418,7 @@ TEST_F(MotifRhythmLockTest, NoAvoidNotesAgainstChord) {
     gen.generate(params_);
 
     const auto& motif_notes = gen.getSong().motif().notes();
-    if (motif_notes.empty()) continue;
+    ASSERT_FALSE(motif_notes.empty()) << "Seed " << seed << ": no motif notes to check";
 
     const auto& harmony = gen.getHarmonyContext();
     int avoid_count = 0;
@@ -1641,7 +1650,7 @@ TEST_F(MotifLockedCacheTest, MultiSeedProducesSimilarRepeatSections) {
     const auto& motif_notes = gen.getSong().motif().notes();
     const auto& sections = gen.getSong().arrangement().sections();
 
-    if (motif_notes.empty()) continue;
+    ASSERT_FALSE(motif_notes.empty()) << "Seed " << seed << ": locked mode produced no motif";
 
     // Group motif-enabled sections by type
     std::map<SectionType, std::vector<const Section*>> sections_by_type;
@@ -1683,15 +1692,15 @@ TEST_F(MotifLockedCacheTest, MultiSeedProducesSimilarRepeatSections) {
     }
   }
 
-  // With IdolKawaii flow, chorus sections 2 and 3 both have motif enabled.
-  // We should find testable pairs in at least some seeds.
-  if (testable_count > 0) {
-    double consistency_rate = static_cast<double>(consistent_count) / testable_count;
-    EXPECT_GE(consistency_rate, 0.35)
-        << "Locked mode note caching should produce consistent repeat sections "
-        << "in at least 35% of testable cases"
-        << " (consistent=" << consistent_count << ", testable=" << testable_count << ")";
-  }
+  // With IdolKawaii flow, chorus sections 2 and 3 both have motif enabled, so at
+  // least one repeated-section pair must exist for the consistency rate to mean anything.
+  ASSERT_GT(testable_count, 0) << "No repeated motif-enabled section pair was found";
+
+  double consistency_rate = static_cast<double>(consistent_count) / testable_count;
+  EXPECT_GE(consistency_rate, 0.35)
+      << "Locked mode note caching should produce consistent repeat sections "
+      << "in at least 35% of testable cases"
+      << " (consistent=" << consistent_count << ", testable=" << testable_count << ")";
 }
 
 TEST_F(MotifLockedCacheTest, NonRhythmSyncLockedRiffsKeepPitchIdentityAfterPostProcessing) {

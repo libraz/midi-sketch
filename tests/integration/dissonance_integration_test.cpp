@@ -179,7 +179,8 @@ TEST_F(TrackClashIntegrationTest, MotifBassClashes_BGMMode) {
 
     if (motif.empty() || bass.empty()) continue;
 
-    auto clashes = findClashes(motif, "Motif", bass, "Bass", gen.getHarmonyContext());
+    auto clashes = findClashes(gen.getSong(), params_, gen.getHarmonyContext(), TrackRole::Motif,
+                               TrackRole::Bass);
 
     // Allow up to 2 clashes due to Bridge/FinalChorus motif variations
     // which may introduce inverted or fragmented patterns with limited
@@ -204,7 +205,8 @@ TEST_F(TrackClashIntegrationTest, VocalBassClashes_MelodyLeadMode) {
 
     if (vocal.empty() || bass.empty()) continue;
 
-    auto clashes = findClashes(vocal, "Vocal", bass, "Bass", gen.getHarmonyContext());
+    auto clashes = findClashes(gen.getSong(), params_, gen.getHarmonyContext(), TrackRole::Vocal,
+                               TrackRole::Bass);
 
     EXPECT_EQ(clashes.size(), 0u) << "Vocal-Bass clashes (seed " << seed << "): " << clashes.size();
   }

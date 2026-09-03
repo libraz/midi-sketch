@@ -2,17 +2,18 @@
  * @file bass_pattern_test.cpp
  * @brief Unit/integration tests for bass pattern correctness.
  *
- * Covers three audit findings (all verified real against bass.cpp):
- *   1. generateSyncopatedPattern was missing the `next_root != 0` guard that
- *      sibling pattern functions have. With no next chord (sentinel root == 0)
- *      getApproachNote(root, 0, ...) produces a nonsense approach pitch on the
- *      final bar.
- *   2. findLastNoteInBar had a fragile positional early-exit while scanning
- *      backwards; after erase/insert during microvariation the notes are not
- *      guaranteed sorted, so the break could yield a false "not found".
- *   3. generateSubBass808Pattern could underflow the slide note below BASS_LOW
- *      (sub_pitch - 1 when sub_pitch == BASS_LOW), and the octave-descent loop
- *      could drop below the physical bass floor.
+ * Three properties the pattern functions have to hold, each of which has a way of
+ * failing that produces a plausible-looking bass line rather than an obvious break:
+ *   1. generateSyncopatedPattern must apply the same `next_root != 0` guard its
+ *      sibling pattern functions apply. On the final bar there is no next chord, and
+ *      getApproachNote(root, 0, ...) reads the sentinel root 0 as a real chord and
+ *      approaches a pitch that is not there.
+ *   2. findLastNoteInBar must scan the whole bar. Microvariation erases and inserts
+ *      notes, so they are not guaranteed sorted afterwards, and a positional
+ *      early-exit reports "not found" for a note that is present.
+ *   3. generateSubBass808Pattern must keep the slide note and the octave descent at
+ *      or above BASS_LOW. The slide subtracts a semitone, and the descent subtracts
+ *      an octave, so both can pass under the physical floor of the instrument.
  *
  * Pattern functions live in an anonymous namespace, so they are exercised via
  * full generation across many fixed seeds and all blueprints.

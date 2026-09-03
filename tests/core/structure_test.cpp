@@ -233,6 +233,77 @@ TEST(StructureTest, DurationOverlayReservesFinalChorusSlotForActualEnding) {
   }
 }
 
+TEST(StructureTest, DurationOverlayBuildsTheSameLayerScheduleAsTheDirectPath) {
+  // A slot can schedule its layers two ways: stagger_bars spreads the intro
+  // entries over a custom span, and custom_layer_schedule names the tracks to
+  // add mid-section and drop before the end. Both are slot data, so both paths
+  // that fill a Section from a slot have to read them, or asking for a target
+  // duration silently changes the arrangement.
+  SectionSlot flow[3] = {};
+  flow[0].type = SectionType::Intro;
+  flow[0].bars = 8;
+  flow[0].enabled_tracks = TrackMask::All;
+  flow[0].entry_pattern = EntryPattern::Immediate;
+  flow[0].energy = SectionEnergy::Low;
+  flow[0].base_velocity = 70;
+  flow[0].density_percent = 60;
+  flow[0].peak_level = PeakLevel::None;
+  flow[0].drum_role = DrumRole::Ambient;
+  flow[0].stagger_bars = 8;
+
+  flow[1] = flow[0];
+  flow[1].type = SectionType::A;
+  flow[1].energy = SectionEnergy::Medium;
+  flow[1].stagger_bars = 0;
+  flow[1].custom_layer_schedule = true;
+  flow[1].layer_add_at_mid = TrackMask::Arpeggio;
+  flow[1].layer_remove_at_end = TrackMask::Aux;
+
+  flow[2] = flow[1];
+  flow[2].type = SectionType::Chorus;
+  flow[2].energy = SectionEnergy::Peak;
+  flow[2].custom_layer_schedule = false;
+  flow[2].layer_add_at_mid = TrackMask::None;
+  flow[2].layer_remove_at_end = TrackMask::None;
+
+  ProductionBlueprint blueprint{};
+  blueprint.name = "layer schedule fixture";
+  blueprint.weight = 0;
+  blueprint.paradigm = GenerationParadigm::Traditional;
+  blueprint.section_flow = flow;
+  blueprint.section_count = 3;
+  blueprint.riff_policy = RiffPolicy::Free;
+
+  auto direct = buildStructureFromBlueprint(blueprint);
+  ASSERT_EQ(direct.size(), 3u);
+
+  // Same sections, arriving through the duration path: the schedule is carried
+  // by the overlay rather than by the builder.
+  auto overlaid = direct;
+  for (auto& section : overlaid) {
+    section.layer_events.clear();
+    section.entry_pattern = EntryPattern::Immediate;
+  }
+  applyBlueprintOverlay(overlaid, blueprint);
+
+  for (size_t i = 0; i < direct.size(); ++i) {
+    EXPECT_EQ(overlaid[i].entry_pattern, direct[i].entry_pattern) << "section " << i;
+    ASSERT_EQ(overlaid[i].layer_events.size(), direct[i].layer_events.size())
+        << "section " << i << " (" << direct[i].name << ")";
+    for (size_t e = 0; e < direct[i].layer_events.size(); ++e) {
+      EXPECT_EQ(overlaid[i].layer_events[e].bar_offset, direct[i].layer_events[e].bar_offset);
+      EXPECT_EQ(overlaid[i].layer_events[e].tracks_add_mask,
+                direct[i].layer_events[e].tracks_add_mask);
+      EXPECT_EQ(overlaid[i].layer_events[e].tracks_remove_mask,
+                direct[i].layer_events[e].tracks_remove_mask);
+    }
+  }
+
+  // The fixture is only meaningful if it actually schedules something.
+  EXPECT_FALSE(direct[0].layer_events.empty()) << "stagger_bars should produce entries";
+  EXPECT_FALSE(direct[1].layer_events.empty()) << "custom_layer_schedule should produce entries";
+}
+
 TEST(StructureTest, BuildForDurationAnimeHighEnergyReferenceLengthAt130BPM) {
   // 259 seconds @ 130 BPM is about 140 bars.
   auto sections = buildStructureForDuration(259, 130);

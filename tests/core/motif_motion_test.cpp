@@ -153,10 +153,16 @@ TEST_F(MotifMotionGenerationTest, NotesInValidRange) {
     gen.generate(params_);
 
     const auto& motif = gen.getSong().motif();
+    ASSERT_FALSE(motif.notes().empty())
+        << "Motion " << static_cast<int>(motion) << " produced no motif notes";
+    // The vocal-aware motif range reaches a fourth below the synth model's own
+    // floor, down to G3, so that the motif is not forced to crowd C4-E4.
+    constexpr int kMotifRangeLow = 55;    // G3
+    constexpr int kMotifRangeHigh = 108;  // C8
     for (const auto& note : motif.notes()) {
-      EXPECT_GE(static_cast<int>(note.note), 0)
+      EXPECT_GE(static_cast<int>(note.note), kMotifRangeLow)
           << "Motion " << static_cast<int>(motion) << " produced invalid low pitch";
-      EXPECT_LE(static_cast<int>(note.note), 127)
+      EXPECT_LE(static_cast<int>(note.note), kMotifRangeHigh)
           << "Motion " << static_cast<int>(motion) << " produced invalid high pitch";
     }
   }

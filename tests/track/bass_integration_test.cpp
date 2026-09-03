@@ -12,6 +12,8 @@
 
 #include <random>
 #include <set>
+#include <string>
+#include <vector>
 
 #include "core/arrangement.h"
 #include "core/chord.h"
@@ -106,48 +108,129 @@ TEST_F(BassWithVocalTest, DeterministicGeneration) {
 
 // --- Octave Separation Tests ---
 
+namespace {
+
+/// Two octaves: closer than this, a shared pitch class reads as the bass
+/// doubling the vocal instead of supporting it.
+constexpr int kMinOctaveSeparation = 24;
+
+struct CloseDoubling {
+  Tick tick;
+  int bass_pitch;
+  int vocal_pitch;
+};
+
+/// Every bass note is compared against every vocal note that overlaps any part
+/// of the span it sounds, not against a single sample at its onset: a vocal
+/// note entering halfway through the bass note doubles it just as audibly.
+std::vector<CloseDoubling> findCloseDoublings(const MidiTrack& bass, const MidiTrack& vocal) {
+  std::vector<CloseDoubling> out;
+  for (const auto& bass_note : bass.notes()) {
+    Tick bass_end = bass_note.start_tick + bass_note.duration;
+    for (const auto& vocal_note : vocal.notes()) {
+      Tick vocal_end = vocal_note.start_tick + vocal_note.duration;
+      if (bass_note.start_tick >= vocal_end || vocal_note.start_tick >= bass_end) continue;
+      if ((bass_note.note % 12) != (vocal_note.note % 12)) continue;
+      int separation =
+          std::abs(static_cast<int>(bass_note.note) - static_cast<int>(vocal_note.note));
+      if (separation < kMinOctaveSeparation) {
+        out.push_back({bass_note.start_tick, bass_note.note, vocal_note.note});
+      }
+    }
+  }
+  return out;
+}
+
+std::string describeCloseDoublings(const std::vector<CloseDoubling>& doublings) {
+  std::string out;
+  for (const auto& d : doublings) {
+    out += "tick " + std::to_string(d.tick) + ": bass " + std::to_string(d.bass_pitch) +
+           " doubles vocal " + std::to_string(d.vocal_pitch) + "\n";
+  }
+  return out;
+}
+
+}  // namespace
+
+// The bass is generated with the vocal already registered in the harmony
+// context, which is how the coordinator runs it; without that registration the
+// separation query has nothing to answer from and the property is vacuous.
+void generateBassAgainstVocal(const Song& song, const GeneratorParams& params, uint32_t seed,
+                              MidiTrack& bass_track) {
+  VocalAnalysis va = analyzeVocal(song.vocal());
+  std::mt19937 rng(seed);
+  HarmonyContext harmony;
+  harmony.registerTrack(song.vocal(), TrackRole::Vocal);
+  generateBassTrack(bass_track, song, params, rng, harmony, nullptr, &va);
+}
+
 TEST_F(BassWithVocalTest, MaintainsOctaveSeparation) {
   Generator gen;
   gen.generateVocal(params_);
 
-  VocalAnalysis va = analyzeVocal(gen.getSong().vocal());
+  MidiTrack bass_track;
+  generateBassAgainstVocal(gen.getSong(), params_, params_.seed, bass_track);
+  ASSERT_FALSE(bass_track.empty());
+  ASSERT_FALSE(gen.getSong().vocal().empty());
+
+  auto doublings = findCloseDoublings(bass_track, gen.getSong().vocal());
+  EXPECT_TRUE(doublings.empty()) << describeCloseDoublings(doublings);
+}
+
+// --- Timeline Chord Identity Tests ---
+
+// Every chord of the timeline is turned into a secondary dominant, so the third
+// of each entry is raised a semitone everywhere. A generator that rebuilds
+// chord tones from the degree instead of reading them at the tick keeps
+// offering the natural third the timeline no longer contains, which sounds a
+// semitone under what the chord track voices.
+TEST_F(BassWithVocalTest, VoicesTheChordOnTheTimelineRatherThanTheDegreesTriad) {
+  params_.seed = 12345;
+  Generator gen;
+  gen.generateVocal(params_);
+  const Song& song = gen.getSong();
+  ASSERT_FALSE(song.vocal().empty());
+
+  VocalAnalysis va = analyzeVocal(song.vocal());
+  HarmonyContext harmony;
+  harmony.initialize(song.arrangement(), getChordProgression(params_.chord_id), params_.mood);
+  harmony.registerTrack(song.vocal(), TrackRole::Vocal);
+
+  Tick total = song.arrangement().totalTicks();
+  std::vector<std::pair<Tick, Tick>> entries;
+  for (Tick tick = 0; tick < total;) {
+    Tick next = harmony.getNextChordEntryTick(tick);
+    if (next == 0 || next <= tick) next = total;
+    entries.push_back({tick, next});
+    tick = next;
+  }
+  ASSERT_FALSE(entries.empty());
+  for (const auto& entry : entries) {
+    harmony.registerSecondaryDominant(entry.first, entry.second,
+                                      harmony.getChordDegreeAt(entry.first));
+  }
 
   MidiTrack bass_track;
   std::mt19937 rng(params_.seed);
-  HarmonyContext harmony;
-  generateBassTrack(bass_track, gen.getSong(), params_, rng, harmony, nullptr, &va);
+  generateBassTrack(bass_track, song, params_, rng, harmony, nullptr, &va);
+  ASSERT_FALSE(bass_track.empty());
 
-  constexpr int kMinOctaveSeparation = 24;
-
-  const auto& vocal_notes = gen.getSong().vocal().notes();
-  const auto& bass_notes = bass_track.notes();
-
-  int close_doubling_count = 0;
-
-  for (const auto& bass_note : bass_notes) {
-    Tick bass_end = bass_note.start_tick + bass_note.duration;
-
-    for (const auto& vocal_note : vocal_notes) {
-      Tick vocal_end = vocal_note.start_tick + vocal_note.duration;
-
-      bool overlap = (bass_note.start_tick < vocal_end) && (vocal_note.start_tick < bass_end);
-
-      if (overlap) {
-        if ((bass_note.note % 12) == (vocal_note.note % 12)) {
-          int separation =
-              std::abs(static_cast<int>(bass_note.note) - static_cast<int>(vocal_note.note));
-          if (separation < kMinOctaveSeparation) {
-            close_doubling_count++;
-          }
-        }
-      }
+  size_t raised_spans_checked = 0;
+  std::string offenders;
+  for (const auto& note : bass_track.notes()) {
+    ChordTones planned = harmony.getChordTonesAt(note.start_tick);
+    ChordTones diatonic = getChordTones(harmony.getChordDegreeAt(note.start_tick));
+    if (planned.count < 2 || diatonic.count < 2) continue;
+    if (planned.pitch_classes[1] == diatonic.pitch_classes[1]) continue;
+    ++raised_spans_checked;
+    if (note.note % 12 == diatonic.pitch_classes[1]) {
+      offenders += "tick " + std::to_string(note.start_tick) + ": pitch " +
+                   std::to_string(note.note) + " is the natural third, the chord here has " +
+                   std::to_string(planned.pitch_classes[1]) + "\n";
     }
   }
-
-  double doubling_ratio =
-      static_cast<double>(close_doubling_count) / static_cast<double>(bass_notes.size());
-  EXPECT_LT(doubling_ratio, 0.2) << "Too many close pitch class doublings: " << close_doubling_count
-                                 << " out of " << bass_notes.size() << " bass notes";
+  EXPECT_GT(raised_spans_checked, 0u) << "No note landed on an altered chord";
+  EXPECT_TRUE(offenders.empty()) << offenders;
 }
 
 // --- Rhythmic Complementation Tests ---
@@ -843,28 +926,25 @@ class BlueprintConstraintsTest : public ::testing::Test {
   void SetUp() override {}
 };
 
-TEST_F(BlueprintConstraintsTest, RhythmLockHasFullModeAndSlap) {
+TEST_F(BlueprintConstraintsTest, RhythmLockHasAdvancedBassSkill) {
   const auto& bp_data = getProductionBlueprint(1);
   EXPECT_STREQ(bp_data.name, "RhythmLock");
   EXPECT_EQ(bp_data.constraints.instrument_mode, InstrumentModelMode::Full);
   EXPECT_EQ(bp_data.constraints.bass_skill, InstrumentSkillLevel::Advanced);
-  EXPECT_TRUE(bp_data.constraints.enable_slap);
 }
 
-TEST_F(BlueprintConstraintsTest, IdolHyperHasFullModeAndSlap) {
+TEST_F(BlueprintConstraintsTest, IdolHyperHasAdvancedBassSkill) {
   const auto& bp_data = getProductionBlueprint(5);
   EXPECT_STREQ(bp_data.name, "IdolHyper");
   EXPECT_EQ(bp_data.constraints.instrument_mode, InstrumentModelMode::Full);
   EXPECT_EQ(bp_data.constraints.bass_skill, InstrumentSkillLevel::Advanced);
-  EXPECT_TRUE(bp_data.constraints.enable_slap);
 }
 
-TEST_F(BlueprintConstraintsTest, IdolCoolPopHasFullModeAndSlap) {
+TEST_F(BlueprintConstraintsTest, IdolCoolPopHasAdvancedBassSkill) {
   const auto& bp_data = getProductionBlueprint(7);
   EXPECT_STREQ(bp_data.name, "IdolCoolPop");
   EXPECT_EQ(bp_data.constraints.instrument_mode, InstrumentModelMode::Full);
   EXPECT_EQ(bp_data.constraints.bass_skill, InstrumentSkillLevel::Advanced);
-  EXPECT_TRUE(bp_data.constraints.enable_slap);
 }
 
 TEST_F(BlueprintConstraintsTest, BalladHasBeginnerSkill) {
@@ -872,7 +952,6 @@ TEST_F(BlueprintConstraintsTest, BalladHasBeginnerSkill) {
   EXPECT_STREQ(bp_data.name, "Ballad");
   EXPECT_EQ(bp_data.constraints.instrument_mode, InstrumentModelMode::ConstraintsOnly);
   EXPECT_EQ(bp_data.constraints.bass_skill, InstrumentSkillLevel::Beginner);
-  EXPECT_FALSE(bp_data.constraints.enable_slap);
 }
 
 TEST_F(BlueprintConstraintsTest, IdolKawaiiHasBeginnerSkill) {
@@ -880,7 +959,6 @@ TEST_F(BlueprintConstraintsTest, IdolKawaiiHasBeginnerSkill) {
   EXPECT_STREQ(bp_data.name, "IdolKawaii");
   EXPECT_EQ(bp_data.constraints.instrument_mode, InstrumentModelMode::ConstraintsOnly);
   EXPECT_EQ(bp_data.constraints.bass_skill, InstrumentSkillLevel::Beginner);
-  EXPECT_FALSE(bp_data.constraints.enable_slap);
 }
 
 TEST_F(BlueprintConstraintsTest, TraditionalHasConstraintsOnlyMode) {
@@ -992,7 +1070,8 @@ TEST_F(BassPhysicalModelIntegrationTest, AllBlueprintsGenerateValidBass) {
         << "Blueprint " << bp_data.name << " should generate bass notes";
 
     for (const auto& note : bass.notes()) {
-      EXPECT_GE(note.note, 0) << "Blueprint " << bp_data.name << " has invalid note";
+      EXPECT_GE(note.note, PhysicalModels::kSynthBass.pitch_low)
+          << "Blueprint " << bp_data.name << " has a note below the bass range";
       EXPECT_LE(note.note, 127) << "Blueprint " << bp_data.name << " has invalid note";
       EXPECT_GT(note.velocity, 0) << "Blueprint " << bp_data.name << " has zero velocity";
     }

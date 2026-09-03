@@ -378,16 +378,17 @@ TEST(ExpressionCurveTest, CCEventsAtBeatResolution) {
   generator.generate(params);
   const Song& song = generator.getSong();
 
-  if (!song.vocal().ccEvents().empty()) {
-    // Verify CC events are spaced at TICKS_PER_BEAT intervals within sections
-    const auto& cc_events = song.vocal().ccEvents();
-    // Check that consecutive events within a section are spaced by 480 ticks
-    for (size_t idx = 1; idx < cc_events.size(); ++idx) {
-      Tick delta = cc_events[idx].tick - cc_events[idx - 1].tick;
-      // Delta should be either TICKS_PER_BEAT (480) within a section,
-      // or a section boundary gap
-      EXPECT_GE(delta, 0u);
-    }
+  const auto& cc_events = song.vocal().ccEvents();
+  ASSERT_GT(cc_events.size(), 1u) << "Need consecutive CC events to check their spacing";
+
+  // Ticks are unsigned, so an out-of-order pair would produce a huge delta
+  // rather than a negative one. Comparing the ticks directly is what rules that
+  // out. Events sit on the beat grid, so every gap is a whole number of beats.
+  for (size_t idx = 1; idx < cc_events.size(); ++idx) {
+    EXPECT_GE(cc_events[idx].tick, cc_events[idx - 1].tick) << "CC events are out of order";
+    Tick delta = cc_events[idx].tick - cc_events[idx - 1].tick;
+    EXPECT_EQ(delta % TICKS_PER_BEAT, 0u)
+        << "CC event at tick " << cc_events[idx].tick << " is off the beat grid";
   }
 }
 
@@ -449,7 +450,6 @@ TEST(BrightnessCurveTest, BrightnessValuesInValidRange) {
     for (const auto& cc : track.ccEvents()) {
       if (cc.cc == MidiCC::kBrightness) {
         EXPECT_LE(cc.value, 127) << name << " CC74 value out of range at tick " << cc.tick;
-        EXPECT_GE(cc.value, 0) << name << " CC74 value out of range at tick " << cc.tick;
       }
     }
   };

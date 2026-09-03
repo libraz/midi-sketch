@@ -9,17 +9,37 @@
 
 #include <set>
 #include <sstream>
+#include <string>
 #include <tuple>
+#include <vector>
 
 #include "core/arrangement.h"
 #include "core/chord.h"
 #include "core/chord_progression_tracker.h"
 #include "core/generator.h"
+#include "core/preset_data.h"
 #include "core/song.h"
+#include "midisketch.h"
 #include "test_helpers/note_event_test_helper.h"
 
 namespace midisketch {
 namespace {
+
+// Every issue that the analyzer records also bumps exactly one type counter and
+// exactly one severity counter, and total_issues is their sum. A report whose
+// counters disagree with its issue list has lost or double-counted an issue.
+void expectSummaryMatchesIssues(const DissonanceReport& report) {
+  const uint32_t issue_count = static_cast<uint32_t>(report.issues.size());
+  EXPECT_EQ(report.summary.total_issues, issue_count) << "total_issues does not match issue list";
+  EXPECT_EQ(report.summary.simultaneous_clashes + report.summary.non_chord_tones +
+                report.summary.sustained_over_chord_change + report.summary.non_diatonic_notes,
+            issue_count)
+      << "per-type counters do not add up to the issue list";
+  EXPECT_EQ(
+      report.summary.high_severity + report.summary.medium_severity + report.summary.low_severity,
+      issue_count)
+      << "per-severity counters do not add up to the issue list";
+}
 
 TEST(DissonanceTest, MidiNoteToName) {
   EXPECT_EQ(midiNoteToName(60), "C4");
@@ -361,9 +381,20 @@ TEST(DissonanceTest, WithChordExtensions) {
 
   auto report = analyzeDissonance(song, params);
 
-  // With extensions enabled, 7th and 9th should be accepted as chord tones
-  // This test just verifies the analysis doesn't crash with extensions
-  EXPECT_GE(report.summary.total_issues, 0u);
+  expectSummaryMatchesIssues(report);
+
+  // With extensions enabled the chord track voices 7ths and 9ths, and those
+  // degrees must be registered as chord tones, so the chord track's own notes
+  // must never come back as non-chord tones.
+  ASSERT_FALSE(song.chord().notes().empty()) << "No chord track to check extensions against";
+  int chord_track_non_chord_tones = 0;
+  for (const auto& issue : report.issues) {
+    if (issue.type == DissonanceType::NonChordTone && issue.track_name == "chord") {
+      chord_track_non_chord_tones++;
+    }
+  }
+  EXPECT_EQ(chord_track_non_chord_tones, 0)
+      << "Chord voicing tones flagged as non-chord tones with 7th/9th enabled";
 }
 
 // Test: Available tensions are not flagged as issues
@@ -468,8 +499,7 @@ TEST(DissonanceTest, AuxTrackIssuesAreDetected) {
 
   auto report = analyzeDissonance(song, params);
 
-  // Analysis should run without errors
-  EXPECT_GE(report.summary.total_issues, 0u);
+  expectSummaryMatchesIssues(report);
 
   // If there are aux issues, they should be detected with proper severity
   // (not all forced to Low)
@@ -492,7 +522,18 @@ TEST(DissonanceTest, AuxTrackIssuesAreDetected) {
     }
   }
 
-  // Just verify detection works (count may vary)
+  // Severity is derived from beat strength, so an aux non-chord tone landing on
+  // beat 1 is never Low. This is what "proper severity" means for the aux track.
+  for (const auto& issue : report.issues) {
+    if (issue.type != DissonanceType::NonChordTone || issue.track_name != "aux") continue;
+    if (issue.beat >= 1.0f && issue.beat < 1.25f) {
+      EXPECT_NE(issue.severity, DissonanceSeverity::Low)
+          << "Aux non-chord tone on beat 1 at bar " << issue.bar << " was not elevated";
+    }
+  }
+
+  // The aux track is enabled for this fixture, so it must be part of what was scanned.
+  EXPECT_FALSE(song.aux().notes().empty()) << "Aux track produced no notes to analyze";
   EXPECT_GE(aux_issues, 0);
 }
 
@@ -630,84 +671,37 @@ TEST(DissonanceTest, AnalyzeFromParsedMidiNoClash) {
   }
 }
 
-TEST(DissonanceTest, AnalyzeFromParsedMidiTritone) {
-  // Test tritone detection
-  ParsedMidi midi;
-  midi.format = 1;
-  midi.num_tracks = 2;
-  midi.division = 480;
-  midi.bpm = 120;
+TEST(DissonanceTest, ContextDependentIntervalsAreJudgedOnlyAgainstAKnownChord) {
+  // A tritone and a major 7th are chord tones under some harmonies and clashes
+  // under others. With a chord timeline they are still reported; from a bare
+  // external file, where no chord exists, they are not.
+  Section verse;
+  verse.type = SectionType::A;
+  verse.start_tick = 0;
+  verse.bars = 1;
+  verse.name = "Verse";
+  Arrangement arrangement({verse});
 
-  // Track 1: C4
-  ParsedTrack track1;
-  track1.name = "Track1";
-  track1.channel = 0;
-  NoteEvent note1 = NoteEventTestHelper::create(0, 480, 60, 100);  // C4
-  track1.notes.push_back(note1);
-  midi.tracks.push_back(track1);
+  ChordProgression progression{};
+  progression.degrees = {0, -1, -1, -1, -1, -1, -1, -1};  // I, no extension
+  progression.length = 1;
 
-  // Track 2: F#4 (tritone)
-  ParsedTrack track2;
-  track2.name = "Track2";
-  track2.channel = 1;
-  NoteEvent note2 = NoteEventTestHelper::create(0, 480, 66, 80);  // F#4
-  track2.notes.push_back(note2);
-  midi.tracks.push_back(track2);
+  GeneratorParams params{};
+  params.chord_id = 0;
+  params.mood = Mood::StraightPop;
 
-  auto report = analyzeDissonanceFromParsedMidi(midi);
+  const auto clashesFor = [&](uint8_t pitch_a, uint8_t pitch_b) {
+    Song song;
+    song.setArrangement(arrangement);
+    song.bass().addNote(NoteEventTestHelper::create(0, TICKS_PER_BEAT, pitch_a, 100));
+    song.chord().addNote(NoteEventTestHelper::create(0, TICKS_PER_BEAT, pitch_b, 80));
+    ChordProgressionTracker timeline;
+    timeline.initialize(arrangement, progression, Mood::StraightPop);
+    return analyzeDissonance(song, params, timeline).summary.simultaneous_clashes;
+  };
 
-  // Should detect tritone (may be medium severity in context)
-  bool found_tritone = false;
-  for (const auto& issue : report.issues) {
-    if (issue.type == DissonanceType::SimultaneousClash && issue.interval_semitones == 6) {
-      found_tritone = true;
-      EXPECT_EQ(issue.interval_name, "tritone");
-      break;
-    }
-  }
-  EXPECT_TRUE(found_tritone) << "Tritone should be detected";
-}
-
-TEST(DissonanceTest, AnalyzeFromParsedMidiMajor7th) {
-  // Test major 7th detection
-  ParsedMidi midi;
-  midi.format = 1;
-  midi.num_tracks = 2;
-  midi.division = 480;
-  midi.bpm = 120;
-
-  // Track 1: C4
-  ParsedTrack track1;
-  track1.name = "Track1";
-  track1.channel = 0;
-  NoteEvent note1 = NoteEventTestHelper::create(0, 480, 60, 100);  // C4
-  track1.notes.push_back(note1);
-  midi.tracks.push_back(track1);
-
-  // Track 2: B4 (major 7th)
-  ParsedTrack track2;
-  track2.name = "Track2";
-  track2.channel = 1;
-  NoteEvent note2 = NoteEventTestHelper::create(0, 480, 71, 80);  // B4
-  track2.notes.push_back(note2);
-  midi.tracks.push_back(track2);
-
-  auto report = analyzeDissonanceFromParsedMidi(midi);
-
-  // Should detect major 7th
-  // Note: Without chord info, defaults to I chord (degree 0), where major 7th
-  // is considered part of Imaj7 voicing and gets Medium severity
-  bool found_major7th = false;
-  for (const auto& issue : report.issues) {
-    if (issue.type == DissonanceType::SimultaneousClash && issue.interval_semitones == 11) {
-      found_major7th = true;
-      EXPECT_EQ(issue.interval_name, "major 7th");
-      // On I chord context, major 7th is downgraded to Medium (Imaj7 voicing)
-      EXPECT_EQ(issue.severity, DissonanceSeverity::Medium);
-      break;
-    }
-  }
-  EXPECT_TRUE(found_major7th) << "Major 7th should be detected";
+  EXPECT_GE(clashesFor(60, 66), 1u) << "A tritone over I must still be reported";
+  EXPECT_GE(clashesFor(60, 71), 1u) << "A major 7th over a plain I triad must still be reported";
 }
 
 TEST(DissonanceTest, AnalyzeFromParsedMidiNonOverlappingNotes) {
@@ -895,7 +889,7 @@ TEST(DissonanceIntegrationTest, AnalysisRunsMultiSeed) {
       total_tests++;
 
       // Verify analysis runs without crash and produces valid results
-      EXPECT_GE(report.summary.total_issues, 0u);
+      expectSummaryMatchesIssues(report);
     }
   }
 
@@ -928,7 +922,7 @@ TEST(DissonanceIntegrationTest, AnalysisRunsRandomSeeds) {
     total_tests++;
 
     // Verify analysis runs without crash
-    EXPECT_GE(report.summary.total_issues, 0u);
+    expectSummaryMatchesIssues(report);
   }
 
   EXPECT_EQ(total_tests, 15) << "Should test 15 seeds";
@@ -983,127 +977,112 @@ TEST(DissonanceIntegrationTest, MediumSeverityMetrics) {
 
 // Test: Dissonance on beat 1 should have elevated severity
 TEST(DissonanceContextTest, Beat1ElevatesSeverity) {
-  // Tritone on beat 1 should be Medium (elevated from Low)
-  // Tritone on beat 3 should remain Low
-  ParsedMidi midi;
-  midi.format = 1;
-  midi.num_tracks = 2;
-  midi.division = 480;
-  midi.bpm = 120;
+  // Beat strength raises the severity of a context-dependent clash. That only
+  // applies where the harmony is known, so this goes through the chord timeline
+  // rather than the bare external-file path.
+  Section verse;
+  verse.type = SectionType::A;
+  verse.start_tick = 0;
+  verse.bars = 1;
+  verse.name = "Verse";
+  Arrangement arrangement({verse});
 
-  // Track 1: Bass
-  ParsedTrack bass_track;
-  bass_track.name = "Bass";
-  bass_track.channel = 2;
-  // F3 on beat 1 of bar 1 (tick 0)
-  bass_track.notes.push_back(NoteEventTestHelper::create(0, 480, 53, 100));
-  // F3 on beat 3 of bar 1 (tick 960)
-  bass_track.notes.push_back(NoteEventTestHelper::create(960, 480, 53, 100));
-  midi.tracks.push_back(bass_track);
+  ChordProgression progression{};
+  progression.degrees = {0, -1, -1, -1, -1, -1, -1, -1};
+  progression.length = 1;
 
-  // Track 2: Chord - B4 creates tritone with F3
-  ParsedTrack chord_track;
-  chord_track.name = "Chord";
-  chord_track.channel = 1;
-  // B4 on beat 1 (tick 0) - should be Medium
-  chord_track.notes.push_back(NoteEventTestHelper::create(0, 480, 71, 80));
-  // B4 on beat 3 (tick 960) - should be Low
-  chord_track.notes.push_back(NoteEventTestHelper::create(960, 480, 71, 80));
-  midi.tracks.push_back(chord_track);
+  GeneratorParams params{};
+  params.chord_id = 0;
+  params.mood = Mood::StraightPop;
 
-  auto report = analyzeDissonanceFromParsedMidi(midi);
-
-  // Should have 2 tritone clashes
-  ASSERT_EQ(report.summary.simultaneous_clashes, 2u);
-
-  // Find clashes and verify severity based on beat position
-  bool found_beat1_medium = false;
-  bool found_beat3_low = false;
-
-  for (const auto& issue : report.issues) {
-    if (issue.type == DissonanceType::SimultaneousClash && issue.interval_semitones == 18) {
-      if (issue.tick == 0) {
-        // Beat 1: should be elevated to Medium
-        EXPECT_EQ(issue.severity, DissonanceSeverity::Medium)
-            << "Tritone on beat 1 should be Medium severity";
-        found_beat1_medium = true;
-      } else if (issue.tick == 960) {
-        // Beat 3: should remain Low
-        EXPECT_EQ(issue.severity, DissonanceSeverity::Low)
-            << "Tritone on beat 3 should be Low severity";
-        found_beat3_low = true;
-      }
+  const auto severityAt = [&](Tick tick) {
+    Song song;
+    song.setArrangement(arrangement);
+    // F3 against B4 is a compound tritone, whose base severity is Low.
+    song.bass().addNote(NoteEventTestHelper::create(tick, TICKS_PER_BEAT, 53, 100));
+    song.chord().addNote(NoteEventTestHelper::create(tick, TICKS_PER_BEAT, 71, 80));
+    ChordProgressionTracker timeline;
+    timeline.initialize(arrangement, progression, Mood::StraightPop);
+    const auto report = analyzeDissonance(song, params, timeline);
+    for (const auto& issue : report.issues) {
+      if (issue.type == DissonanceType::SimultaneousClash) return issue.severity;
     }
-  }
+    ADD_FAILURE() << "No clash reported at tick " << tick;
+    return DissonanceSeverity::Low;
+  };
 
-  EXPECT_TRUE(found_beat1_medium) << "Should find tritone on beat 1";
-  EXPECT_TRUE(found_beat3_low) << "Should find tritone on beat 3";
+  EXPECT_GT(static_cast<int>(severityAt(0)), static_cast<int>(severityAt(TICKS_PER_BEAT)))
+      << "A clash on beat 1 must not be graded the same as one on beat 2";
 }
 
 // Test: Section start (like B section) elevates severity further
 TEST(DissonanceContextTest, SectionStartElevatesSeverityFurther) {
-  // When using internal Song analysis with arrangement info,
-  // section starts should elevate severity even more.
-  // Low → Medium at section start
-  // Medium → High at section start
+  // A close-range tritone is Medium on its own. Beat 1 of an ordinary bar leaves
+  // Medium alone, while beat 1 of a section's first bar raises it to High.
+  // Planting the identical clash at both positions isolates that extra step.
+  Section verse;
+  verse.type = SectionType::A;
+  verse.name = "A";
+  verse.bars = 8;
+  verse.start_bar = 0;
+  verse.start_tick = 0;
 
-  Generator gen;
+  Section bridge;
+  bridge.type = SectionType::B;
+  bridge.name = "B";
+  bridge.bars = 8;
+  bridge.start_bar = 8;
+  bridge.start_tick = 8 * TICKS_PER_BAR;
+
+  Arrangement arrangement({verse, bridge});
+  ChordProgression progression = getChordProgression(0);
+  ChordProgressionTracker tracker;
+  tracker.initialize(arrangement, progression, Mood::StraightPop);
+
+  constexpr Tick kMidSectionTick = 4 * TICKS_PER_BAR;  // beat 1, not a section start
+  constexpr Tick kSectionStartTick = 8 * TICKS_PER_BAR;
+
+  // The two positions have to sit on the same chord, otherwise the severity
+  // difference could come from the harmony rather than from the section boundary.
+  ASSERT_EQ(tracker.getChordDegreeAt(kMidSectionTick), tracker.getChordDegreeAt(kSectionStartTick))
+      << "Chosen bars must share a chord degree for the comparison to isolate position";
+  const int8_t degree = tracker.getChordDegreeAt(kMidSectionTick);
+  ASSERT_NE(degree, 4) << "Tritone is a chord tone on V";
+  ASSERT_NE(degree, 6) << "Tritone is a chord tone on vii";
+
+  constexpr uint8_t kF4 = 65;
+  constexpr uint8_t kB4 = 71;  // F-B is a tritone
+  Song song;
+  song.setArrangement(arrangement);
+  for (Tick tick : {kMidSectionTick, kSectionStartTick}) {
+    song.vocal().addNote(NoteEventTestHelper::create(tick, TICK_HALF, kB4, 90));
+    song.chord().addNote(NoteEventTestHelper::create(tick, TICK_HALF, kF4, 80));
+  }
+
   GeneratorParams params{};
-  params.structure = StructurePattern::StandardPop;  // Has A, B, Chorus sections
-  params.mood = Mood::StraightPop;
   params.chord_id = 0;
   params.key = Key::C;
-  params.drums_enabled = true;
+  params.mood = Mood::StraightPop;
   params.vocal_low = 60;
   params.vocal_high = 79;
-  params.seed = 12345;
 
-  gen.generate(params);
-  const auto& song = gen.getSong();
+  auto report = analyzeDissonance(song, params, tracker);
 
-  // Get arrangement to find section starts
-  const auto& arrangement = song.arrangement();
-  const auto& sections = arrangement.sections();
-
-  // Find B section start tick
-  [[maybe_unused]] Tick b_section_start = 0;
-  for (const auto& section : sections) {
-    if (section.type == SectionType::B) {
-      b_section_start = section.start_tick;
-      break;
-    }
-  }
-
-  // Analyze and check that issues at section start have elevated severity
-  auto report = analyzeDissonance(song, params);
-
-  // Count issues at section starts
-  int section_start_issues = 0;
-  int section_start_not_low = 0;
-
+  const DissonanceIssue* mid_section = nullptr;
+  const DissonanceIssue* section_start = nullptr;
   for (const auto& issue : report.issues) {
-    // Check if issue is at the start of any section
-    for (const auto& section : sections) {
-      Tick section_start = section.start_tick;
-      // Within first beat of section start
-      if (issue.tick >= section_start && issue.tick < section_start + TICKS_PER_BEAT) {
-        section_start_issues++;
-        if (issue.severity != DissonanceSeverity::Low) {
-          section_start_not_low++;
-        }
-        break;
-      }
-    }
+    if (issue.type != DissonanceType::SimultaneousClash) continue;
+    if (issue.tick == kMidSectionTick) mid_section = &issue;
+    if (issue.tick == kSectionStartTick) section_start = &issue;
   }
 
-  // If there are issues at section starts, they should be elevated
-  // (not all Low severity)
-  if (section_start_issues > 0) {
-    // At least some issues at section start should be elevated
-    // This test verifies the context-aware severity adjustment works
-    EXPECT_GE(section_start_not_low, 0)
-        << "Issues at section starts should have context-aware severity";
-  }
+  ASSERT_NE(mid_section, nullptr) << "Planted mid-section tritone was not reported";
+  ASSERT_NE(section_start, nullptr) << "Planted section-start tritone was not reported";
+
+  EXPECT_EQ(mid_section->severity, DissonanceSeverity::Medium)
+      << "Beat 1 of an ordinary bar should leave a tritone at Medium";
+  EXPECT_EQ(section_start->severity, DissonanceSeverity::High)
+      << "The same tritone at a section start should be elevated to High";
 }
 
 // Test: Internal analysis uses full context (section + beat)
@@ -1125,9 +1104,17 @@ TEST(DissonanceContextTest, InternalAnalysisUsesFullContext) {
 
   auto report = analyzeDissonance(song, params);
 
-  // Beat 1 issues should have higher severity due to elevation
-  // Test passes if analysis completes (severity adjustment is applied internally)
-  EXPECT_GE(report.summary.total_issues, 0u);
+  expectSummaryMatchesIssues(report);
+
+  // Beat strength feeds severity: a non-chord tone on beat 1 starts at Medium
+  // (High for bass) and context adjustment only raises it, so it is never Low.
+  for (const auto& issue : report.issues) {
+    if (issue.type != DissonanceType::NonChordTone) continue;
+    if (issue.beat < 1.0f || issue.beat >= 1.25f) continue;
+    EXPECT_NE(issue.severity, DissonanceSeverity::Low)
+        << "Beat 1 " << issue.track_name << " non-chord tone at bar " << issue.bar
+        << " kept Low severity";
+  }
 }
 
 // Test: Secondary dominant tones should not be flagged as non-diatonic
@@ -1192,11 +1179,10 @@ TEST(DissonanceContextTest, SecondaryDominantTonesNotFlagged) {
 
 // Test: Regression - original bug parameters should produce clean output
 TEST(DissonanceContextTest, RegressionOriginalBugParameters) {
-  // The original bug: backup/midi-sketch-1768105073187.mid had
-  // Bar 29 beat 1 tritone that should be elevated to Medium.
-  //
-  // When regenerating with current code, the generation should avoid
-  // this dissonance entirely.
+  // These parameters once produced a beat 1 tritone against the chord in the
+  // second half of the song. Beat 1 is the position where a clash is most
+  // audible, so the generator has to keep it clear rather than rely on the
+  // analyzer flagging it afterwards.
 
   Generator gen;
   GeneratorParams params{};
@@ -1231,6 +1217,145 @@ TEST(DissonanceContextTest, RegressionOriginalBugParameters) {
   // Allow some tolerance for random variation in generation
   EXPECT_LE(beat1_clashes, 10) << "Beat 1 clashes should be minimal after regeneration: found "
                                << beat1_clashes;
+}
+
+// Builds a two-track ParsedMidi, the shape an external file arrives in.
+ParsedMidi makeTwoTrackMidi(const std::vector<NoteEvent>& track_a,
+                            const std::vector<NoteEvent>& track_b) {
+  ParsedMidi midi;
+  midi.format = 1;
+  midi.num_tracks = 2;
+  midi.division = 480;
+  midi.bpm = 120;
+
+  ParsedTrack a;
+  a.name = "Vocal";
+  a.channel = 0;
+  a.notes = track_a;
+  midi.tracks.push_back(a);
+
+  ParsedTrack b;
+  b.name = "Chord";
+  b.channel = 1;
+  b.notes = track_b;
+  midi.tracks.push_back(b);
+  return midi;
+}
+
+TEST(DissonanceTest, ExternalMidiDoesNotJudgeIntervalsThatNeedAChord) {
+  // A tritone is a chord tone on V and vii, and a major 7th is a chord tone on
+  // any maj7. An external file states no harmony, so neither can be called a
+  // clash without inventing the chord underneath it.
+  const auto tritone = makeTwoTrackMidi({NoteEventTestHelper::create(0, 480, 60, 100)},
+                                        {NoteEventTestHelper::create(0, 480, 66, 100)});
+  EXPECT_EQ(analyzeDissonanceFromParsedMidi(tritone).summary.simultaneous_clashes, 0u)
+      << "A tritone was reported against an assumed chord";
+
+  const auto major_seventh = makeTwoTrackMidi({NoteEventTestHelper::create(0, 480, 60, 100)},
+                                              {NoteEventTestHelper::create(0, 480, 71, 100)});
+  EXPECT_EQ(analyzeDissonanceFromParsedMidi(major_seventh).summary.simultaneous_clashes, 0u)
+      << "A major 7th was reported against an assumed chord";
+
+  // Intervals that are dissonant under every harmony are still reported.
+  const auto minor_second = makeTwoTrackMidi({NoteEventTestHelper::create(0, 480, 60, 100)},
+                                             {NoteEventTestHelper::create(0, 480, 61, 100)});
+  EXPECT_EQ(analyzeDissonanceFromParsedMidi(minor_second).summary.simultaneous_clashes, 1u);
+
+  const auto minor_ninth = makeTwoTrackMidi({NoteEventTestHelper::create(0, 480, 60, 100)},
+                                            {NoteEventTestHelper::create(0, 480, 73, 100)});
+  EXPECT_EQ(analyzeDissonanceFromParsedMidi(minor_ninth).summary.simultaneous_clashes, 1u);
+}
+
+TEST(DissonanceTest, EachOverlapAgainstAHeldNoteIsReportedSeparately) {
+  // One held pad note brushed by three repeated stabs of the same pitch is three
+  // events. Keying on the held note's start would report only the first.
+  std::vector<NoteEvent> stabs;
+  for (int i = 0; i < 3; ++i) {
+    stabs.push_back(NoteEventTestHelper::create(static_cast<Tick>(i) * 480, 240, 61, 100));
+  }
+  const auto midi = makeTwoTrackMidi({NoteEventTestHelper::create(0, 1920, 60, 100)}, stabs);
+
+  const auto report = analyzeDissonanceFromParsedMidi(midi);
+  EXPECT_EQ(report.summary.simultaneous_clashes, stabs.size());
+
+  std::vector<Tick> ticks;
+  for (const auto& issue : report.issues) {
+    if (issue.type == DissonanceType::SimultaneousClash) ticks.push_back(issue.tick);
+  }
+  ASSERT_EQ(ticks.size(), stabs.size());
+  for (size_t i = 0; i < ticks.size(); ++i) {
+    EXPECT_EQ(ticks[i], static_cast<Tick>(i) * 480)
+        << "Issue " << i << " is located at the held note's start instead of the overlap";
+  }
+}
+
+TEST(DissonanceTest, ExternalMidiReportsHowLongTheClashSounds) {
+  // A brush of 120 ticks and a clash held for 480 must be distinguishable.
+  const auto brush = makeTwoTrackMidi({NoteEventTestHelper::create(0, 120, 60, 100)},
+                                      {NoteEventTestHelper::create(0, 480, 61, 100)});
+  const auto brush_report = analyzeDissonanceFromParsedMidi(brush);
+  ASSERT_EQ(brush_report.summary.simultaneous_clashes, 1u);
+  EXPECT_EQ(brush_report.issues.front().overlap_duration, 120u);
+
+  const auto held = makeTwoTrackMidi({NoteEventTestHelper::create(0, 480, 60, 100)},
+                                     {NoteEventTestHelper::create(0, 480, 61, 100)});
+  const auto held_report = analyzeDissonanceFromParsedMidi(held);
+  ASSERT_EQ(held_report.summary.simultaneous_clashes, 1u);
+  EXPECT_EQ(held_report.issues.front().overlap_duration, 480u);
+}
+
+TEST(DissonanceTest, SustainedOverChordChangeTreatsEveryPitchedTrackAlike) {
+  // The same held note is placed in Aux, Bass and Chord. Whatever the detector
+  // concludes, it has to conclude it for all three: leaving Bass and Chord out
+  // would report zero for the two tracks most able to hold a note into the next
+  // chord. This asserts the symmetry rather than a corpus count, so it does not
+  // drift when generation changes.
+  Section verse;
+  verse.type = SectionType::A;
+  verse.start_tick = 0;
+  verse.bars = 2;
+  verse.name = "Verse";
+  Arrangement arrangement({verse});
+
+  ChordProgression progression{};
+  progression.degrees = {0, 4, -1, -1, -1, -1, -1, -1};  // I then V
+  progression.length = 2;
+
+  GeneratorParams params{};
+  params.chord_id = 0;
+  params.mood = Mood::StraightPop;
+
+  // Held from the middle of bar 1 across the bar line into the V chord.
+  const Tick start = TICKS_PER_BAR - TICKS_PER_BEAT;
+  const Tick duration = TICKS_PER_BEAT * 2;
+
+  bool any_reported = false;
+  for (uint8_t pitch = 60; pitch < 72 && !any_reported; ++pitch) {
+    Song song;
+    song.setArrangement(arrangement);
+    song.aux().addNote(NoteEventTestHelper::create(start, duration, pitch, 90));
+    song.bass().addNote(NoteEventTestHelper::create(start, duration, pitch, 90));
+    song.chord().addNote(NoteEventTestHelper::create(start, duration, pitch, 90));
+
+    ChordProgressionTracker timeline;
+    timeline.initialize(arrangement, progression, Mood::StraightPop);
+    const auto report = analyzeDissonance(song, params, timeline);
+
+    std::set<std::string> reported;
+    for (const auto& issue : report.issues) {
+      if (issue.type == DissonanceType::SustainedOverChordChange) {
+        reported.insert(issue.track_name);
+      }
+    }
+    if (reported.empty()) continue;  // this pitch stays consonant over both chords
+
+    any_reported = true;
+    EXPECT_EQ(reported.count("aux"), 1u);
+    EXPECT_EQ(reported.count("bass"), 1u) << "Bass is excluded from the sustained-note check";
+    EXPECT_EQ(reported.count("chord"), 1u) << "Chord is excluded from the sustained-note check";
+  }
+
+  EXPECT_TRUE(any_reported) << "No pitch produced a sustained-note issue, so nothing was checked";
 }
 
 }  // namespace

@@ -12,6 +12,7 @@
 #include "core/json_helpers.h"
 #include "core/preset_data.h"
 #include "core/song.h"
+#include "midi/midi_reader.h"
 #include "midi/midi_writer.h"
 #include "midi/ump.h"
 #include "midisketch.h"
@@ -203,6 +204,35 @@ TEST(MidiValidatorErrorTest, RejectsMissingEotAndUnknownStatus) {
   const auto unknown_status_report = validator.validate(unknown_status);
   EXPECT_FALSE(unknown_status_report.valid);
   EXPECT_TRUE(unknown_status_report.hasErrors());
+}
+
+TEST(MidiValidatorErrorTest, RejectsHeaderDivisionsThatMidiReaderCannotRead) {
+  const std::vector<uint8_t> empty_track = {'M', 'T', 'r', 'k', 0, 0, 0, 4, 0, 0xFF, 0x2F, 0x00};
+  const auto withDivision = [&empty_track](uint8_t high, uint8_t low) {
+    std::vector<uint8_t> data = {'M', 'T', 'h', 'd', 0, 0, 0, 6, 0, 1, 0, 1, high, low};
+    data.insert(data.end(), empty_track.begin(), empty_track.end());
+    return data;
+  };
+
+  MidiValidator validator;
+
+  const auto ppqn = withDivision(0x01, 0xE0);
+  EXPECT_TRUE(validator.validate(ppqn).valid);
+  MidiReader ppqn_reader;
+  EXPECT_TRUE(ppqn_reader.read(ppqn));
+
+  // A zero division and an SMPTE division are both unreadable downstream, so
+  // validation has to reject what MidiReader::parseHeader rejects.
+  const std::vector<std::vector<uint8_t>> unreadable = {withDivision(0x00, 0x00),
+                                                        withDivision(0xE7, 0x28)};
+  for (const auto& data : unreadable) {
+    const auto report = validator.validate(data);
+    EXPECT_FALSE(report.valid) << "Accepted division 0x" << std::hex
+                               << ((data[12] << 8) | data[13]);
+    EXPECT_TRUE(report.hasErrors());
+    MidiReader reader;
+    EXPECT_FALSE(reader.read(data));
+  }
 }
 
 TEST(MidiValidatorErrorTest, RejectsUnimplementedAndTruncatedSmf2) {

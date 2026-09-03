@@ -7,9 +7,12 @@
 
 #include <gtest/gtest.h>
 
+#include <set>
+
 #include "core/emotion_curve.h"
 #include "core/melody_types.h"
 #include "core/midi_track.h"
+#include "core/velocity_constants.h"
 
 namespace midisketch {
 namespace {
@@ -302,56 +305,85 @@ TEST(VelocityTest, GetEffectiveSectionEnergyFallback) {
   EXPECT_EQ(getEffectiveSectionEnergy(section), SectionEnergy::High);
 }
 
-TEST(VelocityTest, CalculateEffectiveVelocity) {
+TEST(VelocityTest, SectionVelocityScaleIsNeutralAtDefaults) {
   Section section;
   section.type = SectionType::A;
-  section.energy = SectionEnergy::Medium;
+  section.energy = SectionEnergy::Peak;
+  section.peak_level = PeakLevel::None;
+  section.base_velocity = 80;
+  section.modifier = SectionModifier::None;
+
+  // Every control at its neutral value must leave generated velocity alone.
+  EXPECT_FLOAT_EQ(getSectionVelocityScale(section), 1.0f);
+}
+
+TEST(VelocityTest, SectionVelocityScaleRisesWithEnergy) {
+  Section section;
+  section.type = SectionType::A;
   section.peak_level = PeakLevel::None;
   section.base_velocity = 80;
 
-  // Basic calculation should return bounded velocity
-  uint8_t vel = calculateEffectiveVelocity(section, 0, Mood::StraightPop);
-  EXPECT_GE(vel, 1);
-  EXPECT_LE(vel, 127);
+  // An undeclared energy is neutral; only a declared one scales.
+  section.energy = SectionEnergy::Unset;
+  EXPECT_FLOAT_EQ(getSectionVelocityScale(section), 1.0f);
+
+  section.energy = SectionEnergy::Low;
+  float low = getSectionVelocityScale(section);
+  section.energy = SectionEnergy::Medium;
+  float medium = getSectionVelocityScale(section);
+  section.energy = SectionEnergy::High;
+  float high = getSectionVelocityScale(section);
+  section.energy = SectionEnergy::Peak;
+  float peak = getSectionVelocityScale(section);
+
+  EXPECT_LT(low, medium);
+  EXPECT_LT(medium, high);
+  EXPECT_LT(high, peak);
 }
 
-TEST(VelocityTest, CalculateEffectiveVelocityPeakBoost) {
+TEST(VelocityTest, SectionVelocityScaleRisesWithPeakLevel) {
   Section section;
   section.type = SectionType::Chorus;
   section.energy = SectionEnergy::Peak;
   section.base_velocity = 80;
 
-  // None peak
   section.peak_level = PeakLevel::None;
-  uint8_t vel_none = calculateEffectiveVelocity(section, 0, Mood::StraightPop);
-
-  // Max peak should be higher
+  float none = getSectionVelocityScale(section);
+  section.peak_level = PeakLevel::Medium;
+  float medium = getSectionVelocityScale(section);
   section.peak_level = PeakLevel::Max;
-  uint8_t vel_max = calculateEffectiveVelocity(section, 0, Mood::StraightPop);
+  float max = getSectionVelocityScale(section);
 
-  EXPECT_GT(vel_max, vel_none);
+  EXPECT_LT(none, medium);
+  EXPECT_LT(medium, max);
 }
 
-TEST(VelocityTest, CalculateEffectiveVelocityEnergyEffect) {
+TEST(VelocityTest, SectionVelocityScaleFollowsModifier) {
   Section section;
-  section.type = SectionType::A;
-  section.peak_level = PeakLevel::None;
-  section.base_velocity = 80;
-
-  // Low energy
-  section.energy = SectionEnergy::Low;
-  uint8_t vel_low = calculateEffectiveVelocity(section, 0, Mood::StraightPop);
-
-  // Peak energy should be higher
+  section.type = SectionType::Chorus;
   section.energy = SectionEnergy::Peak;
-  uint8_t vel_peak = calculateEffectiveVelocity(section, 0, Mood::StraightPop);
+  section.base_velocity = 80;
+  section.modifier_intensity = 100;
 
-  EXPECT_GT(vel_peak, vel_low);
+  section.modifier = SectionModifier::None;
+  float none = getSectionVelocityScale(section);
+  section.modifier = SectionModifier::Ochisabi;
+  float ochisabi = getSectionVelocityScale(section);
+  section.modifier = SectionModifier::Transitional;
+  float transitional = getSectionVelocityScale(section);
+  section.modifier = SectionModifier::Climactic;
+  float climactic = getSectionVelocityScale(section);
+
+  // The documented adjustments are -30% / -10% / +15% around no modifier.
+  EXPECT_LT(ochisabi, transitional);
+  EXPECT_LT(transitional, none);
+  EXPECT_LT(none, climactic);
 }
 
-TEST(VelocityTest, SectionBaseVelocityScalesProductionNotes) {
+TEST(VelocityTest, SectionDynamicsScalesProductionNotes) {
   Section quiet;
   quiet.type = SectionType::A;
+  quiet.energy = SectionEnergy::Peak;
   quiet.start_tick = 0;
   quiet.bars = 1;
   quiet.base_velocity = 60;
@@ -365,7 +397,7 @@ TEST(VelocityTest, SectionBaseVelocityScalesProductionNotes) {
   track.addNote(NoteEventBuilder::create(TICKS_PER_BAR, TICKS_PER_BEAT, 60, 80));
   std::vector<MidiTrack*> tracks = {&track};
 
-  applySectionBaseVelocity(tracks, {quiet, loud});
+  applySectionDynamics(tracks, {quiet, loud});
 
   ASSERT_EQ(track.notes().size(), 2u);
   EXPECT_EQ(track.notes()[0].velocity, 60);
@@ -561,38 +593,141 @@ TEST(VelocityTest, CalculateVelocityCeilingHighTension) {
   EXPECT_LE(ceiling_10, 127);         // Capped at MIDI max
 }
 
-TEST(VelocityTest, CalculateEnergyAdjustedVelocityLowEnergy) {
-  // Low energy should reduce velocity
-  uint8_t base = 100;
-  uint8_t adjusted_0 = calculateEnergyAdjustedVelocity(base, 0.0f);
-  uint8_t adjusted_03 = calculateEnergyAdjustedVelocity(base, 0.3f);
+// ============================================================================
+// Percussion velocity ceiling
+// ============================================================================
 
-  EXPECT_LT(adjusted_0, base);  // Low energy reduces velocity
-  EXPECT_GE(adjusted_03, adjusted_0);
+/// @brief Fill a track with one note per velocity from 1 to 127.
+static MidiTrack fullVelocitySweep() {
+  MidiTrack track;
+  for (int v = 1; v <= 127; ++v) {
+    track.addNote(NoteEventBuilder::create(v * TICKS_PER_BEAT, TICKS_PER_BEAT / 4, 36,
+                                           static_cast<uint8_t>(v)));
+  }
+  return track;
 }
 
-TEST(VelocityTest, CalculateEnergyAdjustedVelocityHighEnergy) {
-  // High energy should boost velocity
-  uint8_t base = 100;
-  uint8_t adjusted_07 = calculateEnergyAdjustedVelocity(base, 0.7f);
-  uint8_t adjusted_10 = calculateEnergyAdjustedVelocity(base, 1.0f);
-
-  EXPECT_GE(adjusted_07, base);         // Starts at 100%
-  EXPECT_GT(adjusted_10, adjusted_07);  // Higher energy = higher velocity
+TEST(VelocityTest, PercussionCeilingLeavesNothingAboveIt) {
+  for (uint8_t ceiling : {80, 100, 110, 120}) {
+    MidiTrack track = fullVelocitySweep();
+    applyPercussionVelocityCeiling(track, ceiling);
+    for (const auto& note : track.notes()) {
+      EXPECT_LE(note.velocity, ceiling) << "ceiling=" << static_cast<int>(ceiling);
+      EXPECT_GE(note.velocity, 1);
+    }
+  }
 }
 
-TEST(VelocityTest, CalculateEnergyDensityMultiplier) {
-  // Low energy should reduce density
-  float density_low = calculateEnergyDensityMultiplier(1.0f, 0.1f);
-  EXPECT_LT(density_low, 1.0f);
+TEST(VelocityTest, PercussionCeilingKeepsTheQuietHalfExact) {
+  // Ghost notes are a different sound, not a quieter one, so the bottom of the
+  // kit must come through untouched.
+  constexpr uint8_t kCeiling = 80;
+  MidiTrack track = fullVelocitySweep();
+  applyPercussionVelocityCeiling(track, kCeiling);
 
-  // High energy should increase density
-  float density_high = calculateEnergyDensityMultiplier(1.0f, 0.9f);
-  EXPECT_GT(density_high, 1.0f);
+  const int knee = static_cast<int>(kCeiling * velocity::kCeilingKneeRatio);
+  ASSERT_GT(knee, 40) << "the knee must sit above the ghost-note range to be meaningful";
+  for (const auto& note : track.notes()) {
+    int original = static_cast<int>(note.start_tick / TICKS_PER_BEAT);
+    if (original <= knee) {
+      EXPECT_EQ(note.velocity, original) << "a hit below the knee was moved";
+    }
+  }
+}
 
-  // Results should be clamped
-  EXPECT_GE(density_low, 0.5f);
-  EXPECT_LE(density_high, 1.5f);
+TEST(VelocityTest, PercussionCeilingNeverSwapsTwoHits) {
+  // The loud half is folded rather than cut, so an accent stays above the hit it
+  // was already louder than. A clip cannot promise this: it collapses every
+  // value above the ceiling onto one.
+  for (uint8_t ceiling : {80, 100, 110, 120}) {
+    MidiTrack track = fullVelocitySweep();
+    applyPercussionVelocityCeiling(track, ceiling);
+    const auto& notes = track.notes();
+    for (size_t i = 1; i < notes.size(); ++i) {
+      EXPECT_LE(notes[i - 1].velocity, notes[i].velocity)
+          << "ceiling=" << static_cast<int>(ceiling) << " at index " << i;
+    }
+  }
+}
+
+TEST(VelocityTest, PercussionCeilingPilesFarLessOntoTheCeiling) {
+  // The same input through both routes. Clipping drops every hit above the
+  // ceiling onto the ceiling itself, so the loud half of the kit becomes one
+  // sound; folding sends only the very top there.
+  constexpr uint8_t kCeiling = 80;
+  MidiTrack folded = fullVelocitySweep();
+  applyPercussionVelocityCeiling(folded, kCeiling);
+  MidiTrack clipped = fullVelocitySweep();
+  clampTrackVelocity(clipped, kCeiling);
+
+  auto pinned = [](const MidiTrack& t, uint8_t value) {
+    size_t count = 0;
+    for (const auto& note : t.notes()) count += (note.velocity == value);
+    return count;
+  };
+
+  size_t folded_at_ceiling = pinned(folded, kCeiling);
+  size_t clipped_at_ceiling = pinned(clipped, kCeiling);
+  // Rounding lets the top handful of inputs share the ceiling; the loud half of
+  // the range does not.
+  EXPECT_LE(folded_at_ceiling, 3u) << "the fold piled the top of the kit onto the ceiling";
+  EXPECT_GT(clipped_at_ceiling, 10 * folded_at_ceiling)
+      << "the comparison is only meaningful if clipping really does pile up";
+}
+
+TEST(VelocityTest, PercussionCeilingFollowsTheDeclaredValue) {
+  // The same kit through two declared ceilings. If the declared number did not
+  // reach the notes the two would come out identical, which is the shape the
+  // defect had: the value was declared and the kit never saw it.
+  MidiTrack low = fullVelocitySweep();
+  applyPercussionVelocityCeiling(low, 80);
+  MidiTrack high = fullVelocitySweep();
+  applyPercussionVelocityCeiling(high, 100);
+
+  ASSERT_EQ(low.notes().size(), high.notes().size());
+  int differing = 0;
+  uint8_t low_peak = 0;
+  uint8_t high_peak = 0;
+  for (size_t i = 0; i < low.notes().size(); ++i) {
+    differing += (low.notes()[i].velocity != high.notes()[i].velocity);
+    low_peak = std::max(low_peak, low.notes()[i].velocity);
+    high_peak = std::max(high_peak, high.notes()[i].velocity);
+  }
+  EXPECT_GT(differing, 0) << "the declared ceiling never reached the notes";
+  EXPECT_EQ(low_peak, 80);
+  EXPECT_EQ(high_peak, 100);
+}
+
+TEST(VelocityTest, PercussionCeilingIsANoOpWithoutOne) {
+  MidiTrack track = fullVelocitySweep();
+  MidiTrack untouched = fullVelocitySweep();
+  applyPercussionVelocityCeiling(track, 127);
+  ASSERT_EQ(track.notes().size(), untouched.notes().size());
+  for (size_t i = 0; i < track.notes().size(); ++i) {
+    EXPECT_EQ(track.notes()[i].velocity, untouched.notes()[i].velocity);
+  }
+}
+
+// ============================================================================
+// Drive as an independent groove-timing control
+// ============================================================================
+
+TEST(VelocityTest, GrooveTimingAmountIsZeroAtNeutralDrive) {
+  // Neutral drive asks for no push and no lay-back, which is what lets a song
+  // that sets no timing options stay exactly on the grid.
+  EXPECT_FLOAT_EQ(DriveMapping::getGrooveTimingAmount(50), 0.0f);
+}
+
+TEST(VelocityTest, GrooveTimingAmountGrowsTowardBothExtremes) {
+  EXPECT_GT(DriveMapping::getGrooveTimingAmount(70), DriveMapping::getGrooveTimingAmount(60));
+  EXPECT_GT(DriveMapping::getGrooveTimingAmount(30), DriveMapping::getGrooveTimingAmount(40));
+  EXPECT_FLOAT_EQ(DriveMapping::getGrooveTimingAmount(100), 1.0f);
+  EXPECT_FLOAT_EQ(DriveMapping::getGrooveTimingAmount(0), 1.0f);
+  for (int drive = 0; drive <= 100; ++drive) {
+    float amount = DriveMapping::getGrooveTimingAmount(static_cast<uint8_t>(drive));
+    EXPECT_GE(amount, 0.0f);
+    EXPECT_LE(amount, 1.0f);
+  }
 }
 
 TEST(VelocityTest, GetChordTonePreferenceBoost) {
@@ -604,39 +739,6 @@ TEST(VelocityTest, GetChordTonePreferenceBoost) {
   float boost_high = getChordTonePreferenceBoost(0.9f);
   EXPECT_GT(boost_high, 0.15f);
   EXPECT_LE(boost_high, 0.3f);
-}
-
-TEST(VelocityTest, CalculateEmotionAwareVelocityWithoutEmotion) {
-  Section section;
-  section.type = SectionType::Chorus;
-  section.energy = SectionEnergy::High;
-  section.peak_level = PeakLevel::None;
-  section.base_velocity = 80;
-
-  // Without emotion, should match calculateEffectiveVelocity
-  uint8_t effective = calculateEffectiveVelocity(section, 0, Mood::StraightPop);
-  uint8_t emotion_aware = calculateEmotionAwareVelocity(section, 0, Mood::StraightPop, nullptr);
-
-  EXPECT_EQ(emotion_aware, effective);
-}
-
-TEST(VelocityTest, CalculateEmotionAwareVelocityWithHighTension) {
-  Section section;
-  section.type = SectionType::B;
-  section.energy = SectionEnergy::High;
-  section.peak_level = PeakLevel::None;
-  section.base_velocity = 90;
-
-  // Create high-tension emotion
-  SectionEmotion emotion;
-  emotion.tension = 0.9f;
-  emotion.energy = 0.8f;
-
-  uint8_t velocity = calculateEmotionAwareVelocity(section, 0, Mood::StraightPop, &emotion);
-
-  // Should be boosted due to high energy
-  EXPECT_GE(velocity, 80);
-  EXPECT_LE(velocity, 127);
 }
 
 // ============================================================================

@@ -124,8 +124,12 @@ TEST_F(ArpeggioTest, ArpeggioNotesInValidRange) {
   gen.generate(params_);
 
   const auto& track = gen.getSong().arpeggio();
+  ASSERT_FALSE(track.notes().empty()) << "No arpeggio notes to range-check";
+  // MIDI note 0 is C-1: an unplayable pitch that only appears when a pitch
+  // computation underflows, so the floor has to be above it rather than at
+  // the bottom of the byte the pitch is stored in.
   for (const auto& note : track.notes()) {
-    EXPECT_GE(note.note, 0);
+    EXPECT_GT(note.note, 0);
     EXPECT_LE(note.note, 127);
     EXPECT_GT(note.velocity, 0);
     EXPECT_LE(note.velocity, 127);
@@ -921,17 +925,11 @@ TEST_F(ArpeggioTest, SyncChordFalseRespectsHarmonicDensity) {
 }
 
 TEST_F(ArpeggioTest, PhraseEndSplitMatchesChordTrack) {
-  // Test that arpeggio handles phrase-end splits like chord_track
-  // At phrase-end bars, chord changes at beat 3 (half-bar) for anticipation
+  // At phrase-end bars the chord changes at beat 3 for anticipation. Arpeggio
+  // has to follow that split: staying on the previous chord past beat 3 puts it
+  // a semitone or tritone against the chord track for half a bar.
   //
-  // Bug history: arpeggio stayed on original chord while chord_track
-  // switched to next chord at beat 3, causing Chord(B3) vs Arpeggio(F5/C5) clashes
-  // at bars 19, 24, 43, 48, 67, 72 (6 total clashes)
-  //
-  // Fix: Added shouldSplitPhraseEnd handling to arpeggio.cpp
-
-  // Exact parameters from backup/midi-sketch-1768126658069.mid
-  // that showed the phrase-end split bug
+  // These parameters place phrase ends where the split is most audible.
   params_.chord_id = 0;                           // Canon: I - V - vi - IV
   params_.structure = StructurePattern::FullPop;  // structure=5
   params_.mood = Mood::IdolPop;                   // mood=14

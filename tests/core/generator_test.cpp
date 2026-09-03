@@ -336,7 +336,7 @@ TEST(GeneratorTest, CadenceFixIsPreRegisteredInHarmonyTimeline) {
   EXPECT_EQ(harmony.getChordDegreeAt(v_tick), 4);
 }
 
-TEST(GeneratorTest, BorrowedIvUsesMinorSeventhInPlannedChorusHarmony) {
+TEST(GeneratorTest, BorrowedIvNeverTakesAMajorOrDominantSeventh) {
   GeneratorParams params{};
   params.structure = StructurePattern::DirectChorus;
   params.mood = Mood::StraightPop;
@@ -347,6 +347,10 @@ TEST(GeneratorTest, BorrowedIvUsesMinorSeventhInPlannedChorusHarmony) {
   Generator gen;
   gen.generate(params);
 
+  // Whether a chorus chord takes a seventh at all is decided by the configured
+  // probability. What is fixed is the quality: a borrowed iv is a minor chord,
+  // so the seventh it can take is the minor one, never a major or dominant
+  // seventh that would contradict its third.
   const auto& harmony = gen.getHarmonyContext();
   bool found_borrowed_iv = false;
   for (const auto& section : gen.getSong().arrangement().sections()) {
@@ -355,7 +359,11 @@ TEST(GeneratorTest, BorrowedIvUsesMinorSeventhInPlannedChorusHarmony) {
       Tick tick = section.start_tick + bar * TICKS_PER_BAR;
       if (harmony.getChordDegreeAt(tick) != 12) continue;
       found_borrowed_iv = true;
-      EXPECT_EQ(harmony.getChordExtensionAt(tick), ChordExtension::Min7);
+      ChordExtension extension = harmony.getChordExtensionAt(tick);
+      EXPECT_NE(extension, ChordExtension::Maj7) << "tick " << tick;
+      EXPECT_NE(extension, ChordExtension::Dom7) << "tick " << tick;
+      EXPECT_NE(extension, ChordExtension::Maj9) << "tick " << tick;
+      EXPECT_NE(extension, ChordExtension::Dom9) << "tick " << tick;
     }
   }
   EXPECT_TRUE(found_borrowed_iv);
