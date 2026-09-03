@@ -1710,22 +1710,21 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         nullptr,
         0,  // Use existing StructurePattern
         RiffPolicy::Free,
-        false,                       // drums_sync_vocal
-        false,                       // drums_required
-        true,                        // intro_kick
-        true,                        // intro_bass
-        40,                          // intro_stagger_percent
-        30,                          // euclidean_drums_percent
-        PercussionPolicy::Standard,  // percussion_policy
-        false,                       // addictive_mode
-        0,                           // mood_mask: all moods allowed
-        {127, 108, 12, false,        // max_velocity, max_pitch, max_leap, prefer_stepwise
-         InstrumentSkillLevel::Intermediate, InstrumentSkillLevel::Intermediate,
+        false,                                // drums_sync_vocal
+        false,                                // drums_required
+        true,                                 // intro_kick
+        true,                                 // intro_bass
+        40,                                   // intro_stagger_percent
+        30,                                   // euclidean_drums_percent
+        PercussionPolicy::Standard,           // percussion_policy
+        false,                                // addictive_mode
+        0,                                    // mood_mask: all moods allowed
+        {127, 108, 12, false,                 // max_velocity, max_pitch, max_leap, prefer_stepwise
+         InstrumentSkillLevel::Intermediate,  // bass_skill
          InstrumentSkillLevel::Intermediate,  // keys_skill
-         InstrumentModelMode::ConstraintsOnly, false, false,
-         false,  // enable_slap, enable_tapping, enable_harmonics
-         false,  // guitar_below_vocal
-         0.3f},  // ritardando_amount (Traditional: default)
+         InstrumentModelMode::ConstraintsOnly,  // instrument_mode
+         false,                                 // guitar_below_vocal
+         0.3f},                                 // ritardando_amount (Traditional: default)
         // aux_profile: Mood default, standard functions, default scaling
         // Chorus MelodicHook: pop references carry an active aux line in
         // choruses (1.9-6.7 notes/bar); EmotionalPad measured ~0.7
@@ -1756,11 +1755,11 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         false,                   // addictive_mode
         0,                       // mood_mask: all moods allowed
         {127, 108, 9, false,     // max_velocity, max_pitch, max_leap, prefer_stepwise
-         InstrumentSkillLevel::Advanced, InstrumentSkillLevel::Advanced,
-         InstrumentSkillLevel::Advanced,                 // keys_skill
-         InstrumentModelMode::Full, true, false, false,  // enable_slap for punchy rhythm
-         true,                                           // guitar_below_vocal
-         0.15f},  // ritardando_amount (RhythmLock: tight rhythm, subtle)
+         InstrumentSkillLevel::Advanced,  // bass_skill
+         InstrumentSkillLevel::Advanced,  // keys_skill
+         InstrumentModelMode::Full,       // instrument_mode
+         true,                            // guitar_below_vocal
+         0.15f},                          // ritardando_amount (RhythmLock: tight rhythm, subtle)
         // aux_profile: Square Lead, PulseLoop throughout: RhythmSync references
         // hold ONE aux pulse cell for most of the song (repeat_cell_consistency
         // 0.625-0.742), so the chorus keeps the same loop instead of switching
@@ -1780,21 +1779,21 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         STORYPOP_FLOW,
         static_cast<uint8_t>(sizeof(STORYPOP_FLOW) / sizeof(STORYPOP_FLOW[0])),
         RiffPolicy::Evolving,
-        false,                      // drums_sync_vocal
-        false,                      // drums_required
-        true,                       // intro_kick
-        true,                       // intro_bass
-        50,                         // intro_stagger_percent
-        40,                         // euclidean_drums_percent
-        PercussionPolicy::Minimal,  // percussion_policy (story focus, minimal percussion)
-        false,                      // addictive_mode
-        0,                          // mood_mask: all moods allowed
-        {127, 108, 12, false,       // max_velocity, max_pitch, max_leap, prefer_stepwise
-         InstrumentSkillLevel::Intermediate, InstrumentSkillLevel::Intermediate,
-         InstrumentSkillLevel::Intermediate,                         // keys_skill
-         InstrumentModelMode::ConstraintsOnly, false, false, false,  // techniques
-         true,                                                       // guitar_below_vocal
-         0.3f},  // ritardando_amount (StoryPop: narrative ending)
+        false,                                // drums_sync_vocal
+        false,                                // drums_required
+        true,                                 // intro_kick
+        true,                                 // intro_bass
+        50,                                   // intro_stagger_percent
+        40,                                   // euclidean_drums_percent
+        PercussionPolicy::Minimal,            // percussion_policy (story focus, minimal percussion)
+        false,                                // addictive_mode
+        0,                                    // mood_mask: all moods allowed
+        {127, 108, 12, false,                 // max_velocity, max_pitch, max_leap, prefer_stepwise
+         InstrumentSkillLevel::Intermediate,  // bass_skill
+         InstrumentSkillLevel::Intermediate,  // keys_skill
+         InstrumentModelMode::ConstraintsOnly,  // instrument_mode
+         true,                                  // guitar_below_vocal
+         0.3f},                                 // ritardando_amount (StoryPop: narrative ending)
         // aux_profile: Mood default, PhraseTail for gap-filling, gentle EmotionalPad chorus
         {0xFF, AuxFunction::MelodicHook, AuxFunction::PhraseTail, AuxFunction::EmotionalPad, 0.7f,
          0.75f, -2},
@@ -1822,12 +1821,11 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         // mood_mask: EmotionalPop(5), Sentimental(6), Chill(7), Ballad(8), Nostalgic(11)
         (1u << 5) | (1u << 6) | (1u << 7) | (1u << 8) | (1u << 11),
         {100, 84, 9, true,  // max_vel=100, max_pitch=C6(84), prefer_stepwise for lyrical flow
-         InstrumentSkillLevel::Beginner, InstrumentSkillLevel::Beginner,
-         InstrumentSkillLevel::Beginner,  // keys_skill
-         InstrumentModelMode::ConstraintsOnly, false, false,
-         false,  // no techniques for ballad simplicity
-         true,   // guitar_below_vocal
-         0.4f},  // ritardando_amount (Ballad: dramatic slowdown)
+         InstrumentSkillLevel::Beginner,        // bass_skill
+         InstrumentSkillLevel::Beginner,        // keys_skill
+         InstrumentModelMode::ConstraintsOnly,  // instrument_mode
+         true,                                  // guitar_below_vocal
+         0.4f},                                 // ritardando_amount (Ballad: dramatic slowdown)
         // aux_profile: Choir Aahs, SustainPad throughout, very quiet and sparse
         {52, AuxFunction::SustainPad, AuxFunction::SustainPad, AuxFunction::SustainPad, 0.5f, 0.5f,
          -7},
@@ -1844,22 +1842,22 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         IDOL_STANDARD_FLOW,
         static_cast<uint8_t>(sizeof(IDOL_STANDARD_FLOW) / sizeof(IDOL_STANDARD_FLOW[0])),
         RiffPolicy::Evolving,
-        false,                       // drums_sync_vocal
-        false,                       // drums_required
-        true,                        // intro_kick
-        false,                       // intro_bass
-        70,                          // intro_stagger_percent (gradual build concept)
-        35,                          // euclidean_drums_percent
-        PercussionPolicy::Standard,  // percussion_policy (classic idol)
-        false,                       // addictive_mode
-        0,                           // mood_mask: all moods allowed
-        {127, 108, 10, false,        // max_leap=10 for memorable melodies
-         InstrumentSkillLevel::Intermediate, InstrumentSkillLevel::Intermediate,
-         InstrumentSkillLevel::Intermediate,                         // keys_skill
-         InstrumentModelMode::ConstraintsOnly, false, false, false,  // techniques
-         false,                                                      // guitar_below_vocal
-         0.25f,  // ritardando_amount (IdolStandard)
-         10},    // motif_note_count: busy idol synth riff (refs 4.8-9 notes/bar)
+        false,                                  // drums_sync_vocal
+        false,                                  // drums_required
+        true,                                   // intro_kick
+        false,                                  // intro_bass
+        70,                                     // intro_stagger_percent (gradual build concept)
+        35,                                     // euclidean_drums_percent
+        PercussionPolicy::Standard,             // percussion_policy (classic idol)
+        false,                                  // addictive_mode
+        0,                                      // mood_mask: all moods allowed
+        {127, 108, 10, false,                   // max_leap=10 for memorable melodies
+         InstrumentSkillLevel::Intermediate,    // bass_skill
+         InstrumentSkillLevel::Intermediate,    // keys_skill
+         InstrumentModelMode::ConstraintsOnly,  // instrument_mode
+         false,                                 // guitar_below_vocal
+         0.25f,                                 // ritardando_amount (IdolStandard)
+         10},  // motif_note_count: busy idol synth riff (refs 4.8-9 notes/bar)
         // aux_profile: Mood default, PhraseTail verse, Unison chorus for idol power
         // density 1.0: idol references show aux lines at 2.9-10.3 notes/bar
         {0xFF, AuxFunction::MelodicHook, AuxFunction::PhraseTail, AuxFunction::Unison, 0.90f, 1.0f,
@@ -1887,12 +1885,12 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         false,                   // addictive_mode
         // mood_mask: EnergeticDance(2), ElectroPop(13), IdolPop(14), FutureBass(18)
         (1u << 2) | (1u << 13) | (1u << 14) | (1u << 18),
-        {110, 96, 12, false,  // max_vel=110, max_pitch=C7(96), max_leap=12
-         InstrumentSkillLevel::Advanced, InstrumentSkillLevel::Advanced,
-         InstrumentSkillLevel::Advanced,                 // keys_skill
-         InstrumentModelMode::Full, true, false, false,  // enable_slap for high-energy punch
-         true,                                           // guitar_below_vocal
-         0.1f},  // ritardando_amount (IdolHyper: minimal, high-energy)
+        {110, 96, 12, false,              // max_vel=110, max_pitch=C7(96), max_leap=12
+         InstrumentSkillLevel::Advanced,  // bass_skill
+         InstrumentSkillLevel::Advanced,  // keys_skill
+         InstrumentModelMode::Full,       // instrument_mode
+         true,                            // guitar_below_vocal
+         0.1f},                           // ritardando_amount (IdolHyper: minimal, high-energy)
         // aux_profile: Square Lead, PulseLoop/GrooveAccent, high energy punch
         {80, AuxFunction::GrooveAccent, AuxFunction::PulseLoop, AuxFunction::GrooveAccent, 0.85f,
          0.9f, -4},
@@ -1920,13 +1918,12 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         // mood_mask: BrightUpbeat(1), IdolPop(14), AnimeHighEnergy(16)
         (1u << 1) | (1u << 14) | (1u << 16),
         {80, 86, 7, true,  // max_vel=80, max_pitch=D6(86), max_leap=7, prefer_stepwise
-         InstrumentSkillLevel::Beginner, InstrumentSkillLevel::Beginner,
-         InstrumentSkillLevel::Beginner,  // keys_skill
-         InstrumentModelMode::ConstraintsOnly, false, false,
-         false,  // simple patterns for cute vibe
-         true,   // guitar_below_vocal
-         0.2f,   // ritardando_amount (IdolKawaii: soft ending)
-         8},     // motif_note_count: bouncy but restrained
+         InstrumentSkillLevel::Beginner,        // bass_skill
+         InstrumentSkillLevel::Beginner,        // keys_skill
+         InstrumentModelMode::ConstraintsOnly,  // instrument_mode
+         true,                                  // guitar_below_vocal
+         0.2f,                                  // ritardando_amount (IdolKawaii: soft ending)
+         8},                                    // motif_note_count: bouncy but restrained
         // aux_profile: Music Box, MelodicHook throughout for cute sparkle, low density
         {10, AuxFunction::MelodicHook, AuxFunction::MelodicHook, AuxFunction::MelodicHook, 0.6f,
          0.6f, -5},
@@ -1949,15 +1946,15 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         true,   // intro_bass
         80,     // intro_stagger_percent (8-bar intro, full effect)
         70,     // euclidean_drums_percent (four-on-floor + euclidean = great match)
-        PercussionPolicy::Full,  // percussion_policy (funky, full percussion)
-        false,                   // addictive_mode
-        0,                       // mood_mask: all moods allowed
-        {120, 108, 9, false,     // max_vel=120, max_leap=9 for controlled coolness
-         InstrumentSkillLevel::Advanced, InstrumentSkillLevel::Advanced,
-         InstrumentSkillLevel::Advanced,                 // keys_skill
-         InstrumentModelMode::Full, true, false, false,  // enable_slap for funky grooves
-         true,                                           // guitar_below_vocal
-         0.15f, 0, DRUM_STYLE_HINT_FOUR_ON_FLOOR},       // drum_style_hint: four-on-floor
+        PercussionPolicy::Full,           // percussion_policy (funky, full percussion)
+        false,                            // addictive_mode
+        0,                                // mood_mask: all moods allowed
+        {120, 108, 9, false,              // max_vel=120, max_leap=9 for controlled coolness
+         InstrumentSkillLevel::Advanced,  // bass_skill
+         InstrumentSkillLevel::Advanced,  // keys_skill
+         InstrumentModelMode::Full,       // instrument_mode
+         true,                            // guitar_below_vocal
+         0.15f, 0, DRUM_STYLE_HINT_FOUR_ON_FLOOR},  // drum_style_hint: four-on-floor
         // aux_profile: Square Lead, PulseLoop/GrooveAccent, cool driving energy
         {80, AuxFunction::PulseLoop, AuxFunction::PulseLoop, AuxFunction::GrooveAccent, 0.8f, 0.85f,
          -4},
@@ -1984,13 +1981,13 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         false,                   // addictive_mode
         // mood_mask: EmotionalPop(5), Sentimental(6), Ballad(8)
         (1u << 5) | (1u << 6) | (1u << 8),
-        {127, 108, 12, false,  // default (emotional dynamics need full range)
-         InstrumentSkillLevel::Intermediate, InstrumentSkillLevel::Intermediate,
-         InstrumentSkillLevel::Intermediate,                         // keys_skill
-         InstrumentModelMode::ConstraintsOnly, false, false, false,  // techniques
-         true,                                                       // guitar_below_vocal
-         0.35f,  // ritardando_amount (IdolEmo: emotional slowdown)
-         10},    // motif_note_count: busy riff for explosive chorus energy
+        {127, 108, 12, false,                   // default (emotional dynamics need full range)
+         InstrumentSkillLevel::Intermediate,    // bass_skill
+         InstrumentSkillLevel::Intermediate,    // keys_skill
+         InstrumentModelMode::ConstraintsOnly,  // instrument_mode
+         true,                                  // guitar_below_vocal
+         0.35f,                                 // ritardando_amount (IdolEmo: emotional slowdown)
+         10},  // motif_note_count: busy riff for explosive chorus energy
         // aux_profile: Choir Aahs, SustainPad throughout, very quiet and sparse
         {52, AuxFunction::SustainPad, AuxFunction::SustainPad, AuxFunction::SustainPad, 0.55f, 0.5f,
          -7},
@@ -2003,25 +2000,30 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
     {
         "BehavioralLoop",
         0,  // weight: 0% (explicit selection only, not random)
-        GenerationParadigm::Traditional,
+        // RhythmSync, not Traditional: the riff is this blueprint's identity, and
+        // under Traditional the Motif gate in Coordinator::shouldSkipTrack has no
+        // reason to keep it -- a blueprint with no section_flow and a non-RhythmSync
+        // paradigm skips Motif outright, so LockedPitch and addictive_mode below
+        // described a riff that was never generated.
+        GenerationParadigm::RhythmSync,
         nullptr,
-        0,                           // Use existing StructurePattern
-        RiffPolicy::LockedPitch,     // Fixed riff patterns
-        false,                       // drums_sync_vocal
-        false,                       // drums_required
-        true,                        // intro_kick
-        true,                        // intro_bass
-        40,                          // intro_stagger_percent
-        30,                          // euclidean_drums_percent
-        PercussionPolicy::Standard,  // percussion_policy
-        true,                        // addictive_mode - enables Behavioral Loop
-        0,                           // mood_mask: all moods allowed
-        {127, 108, 12, false,        // default constraints
-         InstrumentSkillLevel::Intermediate, InstrumentSkillLevel::Intermediate,
-         InstrumentSkillLevel::Intermediate,                         // keys_skill
-         InstrumentModelMode::ConstraintsOnly, false, false, false,  // techniques
-         false,                                                      // guitar_below_vocal
-         0.3f},  // ritardando_amount (BehavioralLoop: default)
+        0,                                      // Use existing StructurePattern
+        RiffPolicy::LockedPitch,                // Fixed riff patterns
+        false,                                  // drums_sync_vocal
+        false,                                  // drums_required
+        true,                                   // intro_kick
+        true,                                   // intro_bass
+        40,                                     // intro_stagger_percent
+        30,                                     // euclidean_drums_percent
+        PercussionPolicy::Standard,             // percussion_policy
+        true,                                   // addictive_mode - enables Behavioral Loop
+        0,                                      // mood_mask: all moods allowed
+        {127, 108, 12, false,                   // default constraints
+         InstrumentSkillLevel::Intermediate,    // bass_skill
+         InstrumentSkillLevel::Intermediate,    // keys_skill
+         InstrumentModelMode::ConstraintsOnly,  // instrument_mode
+         false,                                 // guitar_below_vocal
+         0.3f},                                 // ritardando_amount (BehavioralLoop: default)
         // aux_profile: Mood default, PulseLoop for addictive loop feel
         {0xFF, AuxFunction::MelodicHook, AuxFunction::PulseLoop, AuxFunction::PulseLoop, 0.9f, 0.9f,
          -2},
@@ -2033,6 +2035,17 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
 
 constexpr uint8_t BLUEPRINT_COUNT =
     static_cast<uint8_t>(sizeof(BLUEPRINTS) / sizeof(BLUEPRINTS[0]));
+
+/// @brief Instantiate the field walk so its exhaustiveness is checked here.
+///
+/// visitBlueprintFields() decomposes every blueprint struct with structured
+/// bindings, which only compiles when the identifier list matches the members
+/// exactly. Instantiating it in this translation unit means a member added to
+/// the table without being given a role breaks this build rather than waiting
+/// for a test to be compiled. Nothing calls it, so the linker drops it.
+[[maybe_unused]] void checkBlueprintFieldTableIsComplete() {
+  visitBlueprintFields(BLUEPRINTS[0], [](BlueprintFieldRole, const char*, const auto&) {});
+}
 
 }  // namespace
 

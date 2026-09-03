@@ -14,6 +14,7 @@
 #include "core/chord_utils.h"
 #include "core/i_chord_lookup.h"
 #include "core/i_collision_detector.h"
+#include "core/i_harmony_context.h"
 #include "core/note_creator.h"
 #include "core/note_source.h"
 #include "core/pitch_utils.h"
@@ -449,8 +450,7 @@ static Tick getMaxSafeEndTick(const NoteEvent& chord_note, Tick desired_end,
 
 void PostProcessor::applyEnhancedFinalHit(MidiTrack* bass_track, MidiTrack* drum_track,
                                           MidiTrack* chord_track, const MidiTrack* vocal_track,
-                                          const Section& section,
-                                          const ICollisionDetector* harmony) {
+                                          const Section& section, IHarmonyContext* harmony) {
   if (section.exit_pattern != ExitPattern::FinalHit) {
     return;
   }
@@ -481,35 +481,49 @@ void PostProcessor::applyEnhancedFinalHit(MidiTrack* bass_track, MidiTrack* drum
       }
     }
 
-    // If no bass note exists on final beat, add one (root note at bass range)
+    // If no bass note exists on final beat, add one (root note at bass range).
+    // The note is pitched, so it goes through the note creation API: that is
+    // what resolves collisions and registers the result with the harmony
+    // context, keeping later queries aware of the note this pass added.
     if (!has_final_bass) {
       constexpr uint8_t DEFAULT_BASS_ROOT = 36;  // C2
-      uint8_t bass_pitch = DEFAULT_BASS_ROOT;
+      bool added = false;
 
-      // Verify pitch is safe; find alternative if collision detected
-      if (harmony != nullptr &&
-          !harmony->isConsonantWithOtherTracks(bass_pitch, final_beat_start, TICKS_PER_BEAT,
-                                               TrackRole::Bass)) {
-        auto candidates = getSafePitchCandidates(*harmony, bass_pitch, final_beat_start,
-                                                 TICKS_PER_BEAT, TrackRole::Bass, BASS_LOW,
-                                                 BASS_HIGH, PitchPreference::PreferRootFifth);
-        if (!candidates.empty()) {
-          bass_pitch = candidates[0].pitch;
-        }
+      if (harmony != nullptr) {
+        NoteOptions opts;
+        opts.start = final_beat_start;
+        opts.duration = TICKS_PER_BEAT;
+        opts.desired_pitch = DEFAULT_BASS_ROOT;
+        opts.velocity = FINAL_HIT_VEL;
+        opts.role = TrackRole::Bass;
+        opts.preference = PitchPreference::PreferRootFifth;
+        opts.range_low = BASS_LOW;
+        opts.range_high = BASS_HIGH;
+        opts.source = NoteSource::PostProcess;
+        opts.original_pitch = DEFAULT_BASS_ROOT;
+        added = createNoteAndAdd(*bass_track, *harmony, opts).has_value();
       }
 
-      NoteEvent final_bass;
-      final_bass.start_tick = final_beat_start;
-      final_bass.duration = TICKS_PER_BEAT;
-      final_bass.note = bass_pitch;
-      final_bass.velocity = FINAL_HIT_VEL;
+      // An ending without its bass is worse than an ending whose bass is not
+      // the pitch the search would have preferred, so the root goes in even when
+      // nothing was safe. It is registered all the same: a note that sounds and
+      // is invisible to the harmony context is what later passes reason wrongly
+      // from.
+      if (!added) {
+        NoteEvent final_bass = createNoteWithoutHarmony(final_beat_start, TICKS_PER_BEAT,
+                                                        DEFAULT_BASS_ROOT, FINAL_HIT_VEL);
 #ifdef MIDISKETCH_NOTE_PROVENANCE
-      final_bass.prov_chord_degree = -1;
-      final_bass.prov_lookup_tick = final_beat_start;
-      final_bass.prov_source = static_cast<uint8_t>(NoteSource::PostProcess);
-      final_bass.prov_original_pitch = DEFAULT_BASS_ROOT;
+        final_bass.prov_chord_degree = -1;
+        final_bass.prov_lookup_tick = final_beat_start;
+        final_bass.prov_source = static_cast<uint8_t>(NoteSource::PostProcess);
+        final_bass.prov_original_pitch = DEFAULT_BASS_ROOT;
 #endif
-      bass_notes.push_back(final_bass);
+        bass_track->addNote(final_bass);
+        if (harmony != nullptr) {
+          harmony->registerNote(final_beat_start, TICKS_PER_BEAT, DEFAULT_BASS_ROOT,
+                                TrackRole::Bass);
+        }
+      }
     }
   }
 

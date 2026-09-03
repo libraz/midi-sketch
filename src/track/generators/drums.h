@@ -30,7 +30,7 @@ class DrumsGenerator : public TrackBase {
 
   PhysicalModel getPhysicalModel() const override {
     // Drums have no pitch constraints (GM drum map)
-    return PhysicalModel{0, 127, 1, 127, 30, false, 0};
+    return PhysicalModel{0, 127, 1, 127, 30, false};
   }
 
   /// @brief Generate full drums track using FullTrackContext.

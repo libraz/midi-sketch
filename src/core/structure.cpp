@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <limits>
 #include <map>
 
 #include "core/preset_data.h"
@@ -23,10 +24,8 @@ namespace {
 constexpr float kSecondsPerMinute = 60.0f;
 constexpr float kBeatsPerBar = 4.0f;
 constexpr float kSecondsToBarsDivisor = kSecondsPerMinute * kBeatsPerBar;  // 240.0f
-constexpr uint16_t kMinStructureBars = 12;   // Minimum structure length
-constexpr uint16_t kMaxStructureBars = 144;  // Maximum structure length (~4.8 min @120BPM)
-constexpr int kBarTolerance = 8;             // Bar tolerance for pattern matching
-constexpr int kExtensionBlockSize = 24;      // A(8) + B(8) + Chorus(8) = 24 bars
+constexpr int kBarTolerance = 8;         // Bar tolerance for pattern matching
+constexpr int kExtensionBlockSize = 24;  // A(8) + B(8) + Chorus(8) = 24 bars
 
 std::string sectionTypeName(SectionType type) {
   switch (type) {
@@ -425,14 +424,49 @@ Tick calculateTotalTicks(const std::vector<Section>& sections) {
   return last.endTick();
 }
 
+uint16_t barsForDuration(uint16_t target_seconds, uint16_t bpm) {
+  // bars = seconds * bpm / 60 / 4 (4 beats per bar)
+  return static_cast<uint16_t>(
+      std::round(static_cast<float>(target_seconds) * bpm / kSecondsToBarsDivisor));
+}
+
+std::pair<uint16_t, uint16_t> achievableDurationRange(uint16_t bpm) {
+  if (bpm == 0) return {0, 0};
+
+  // Invert barsForDuration through its own rounding: a duration lands on a bar count
+  // once it passes the half-bar mark, so the endpoints are settled against
+  // barsForDuration itself rather than against a second formula that could disagree
+  // with it by a second.
+  const float seconds_per_bar = kSecondsToBarsDivisor / static_cast<float>(bpm);
+  auto lowest = static_cast<int>(std::ceil((kMinStructureBars - 0.5f) * seconds_per_bar));
+  auto highest = static_cast<int>(std::floor((kMaxStructureBars + 0.5f) * seconds_per_bar));
+  lowest = std::max(lowest, 0);
+  highest = std::min(highest, static_cast<int>(std::numeric_limits<uint16_t>::max()));
+
+  while (lowest <= highest &&
+         barsForDuration(static_cast<uint16_t>(lowest), bpm) < kMinStructureBars) {
+    ++lowest;
+  }
+  while (highest >= lowest &&
+         barsForDuration(static_cast<uint16_t>(highest), bpm) > kMaxStructureBars) {
+    --highest;
+  }
+  return {static_cast<uint16_t>(lowest), static_cast<uint16_t>(highest)};
+}
+
+bool isTargetDurationAchievable(uint16_t target_seconds, uint16_t bpm) {
+  if (target_seconds == 0) return true;  // 0 means "use the form pattern"
+  const uint16_t bars = barsForDuration(target_seconds, bpm);
+  return bars >= kMinStructureBars && bars <= kMaxStructureBars;
+}
+
 std::vector<Section> buildStructureForDuration(uint16_t target_seconds, uint16_t bpm,
                                                StructurePattern pattern) {
-  // Calculate target bars from duration and BPM
-  // bars = seconds * bpm / 60 / 4 (4 beats per bar)
-  uint16_t target_bars = static_cast<uint16_t>(
-      std::round(static_cast<float>(target_seconds) * bpm / kSecondsToBarsDivisor));
+  uint16_t target_bars = barsForDuration(target_seconds, bpm);
 
-  // Clamp to valid range
+  // Clamp to valid range. Entry points that validate their input reject an
+  // out-of-range duration before reaching here; this is the backstop for callers
+  // that build a structure directly.
   target_bars = std::max(target_bars, kMinStructureBars);
   target_bars = std::min(target_bars, kMaxStructureBars);
 
@@ -704,6 +738,57 @@ BackingDensity trackMaskToBackingDensity(TrackMask mask) {
   }
 }
 
+namespace {
+
+/// @brief Build a section's layer schedule from its blueprint slot.
+///
+/// A slot expresses per-bar track scheduling two ways: stagger_bars spreads the
+/// default intro entries over a custom span, and custom_layer_schedule names the
+/// tracks to add mid-section and drop before the end. Both paths that fill a
+/// Section from a SectionSlot read them here, so an arrangement built to a
+/// target duration schedules its layers exactly as the untrimmed one does.
+///
+/// @param section Section to populate (layer_events and entry_pattern may change)
+/// @param slot Blueprint slot describing the schedule
+void applySlotLayerSchedule(Section& section, const SectionSlot& slot) {
+  // Handle custom stagger_bars from blueprint
+  // If stagger_bars > 0, override entry_pattern to Stagger and generate custom layer events
+  if (slot.stagger_bars > 0 && section.bars >= slot.stagger_bars) {
+    section.entry_pattern = EntryPattern::Stagger;
+    // Generate layer events based on stagger_bars
+    // Use the custom stagger duration instead of default
+    StaggeredEntryConfig stagger_config = StaggeredEntryConfig::defaultIntro(slot.stagger_bars);
+    for (uint8_t e = 0; e < stagger_config.entry_count; ++e) {
+      const auto& entry = stagger_config.entries[e];
+      section.layer_events.emplace_back(entry.entry_bar, entry.track, TrackMask::None);
+    }
+  }
+
+  // Handle custom layer scheduling from blueprint
+  // Allows direct control of track add/remove at specific points
+  if (slot.custom_layer_schedule) {
+    // Clear any auto-generated layer events
+    section.layer_events.clear();
+
+    // Add event at section start with all enabled tracks
+    section.layer_events.emplace_back(0, slot.enabled_tracks, TrackMask::None);
+
+    // Add tracks at midpoint if specified
+    if (slot.layer_add_at_mid != TrackMask::None && section.bars >= 2) {
+      uint8_t mid_bar = section.bars / 2;
+      section.layer_events.emplace_back(mid_bar, slot.layer_add_at_mid, TrackMask::None);
+    }
+
+    // Remove tracks near end if specified
+    if (slot.layer_remove_at_end != TrackMask::None && section.bars >= 2) {
+      uint8_t end_bar = section.bars - 1;
+      section.layer_events.emplace_back(end_bar, TrackMask::None, slot.layer_remove_at_end);
+    }
+  }
+}
+
+}  // namespace
+
 std::vector<Section> buildStructureFromBlueprint(const ProductionBlueprint& blueprint) {
   std::vector<Section> sections;
 
@@ -770,40 +855,7 @@ std::vector<Section> buildStructureFromBlueprint(const ProductionBlueprint& blue
     // (fill_before is true when peak_level is not None)
     section.fill_before = (slot.peak_level != PeakLevel::None);
 
-    // Handle custom stagger_bars from blueprint
-    // If stagger_bars > 0, override entry_pattern to Stagger and generate custom layer events
-    if (slot.stagger_bars > 0 && section.bars >= slot.stagger_bars) {
-      section.entry_pattern = EntryPattern::Stagger;
-      // Generate layer events based on stagger_bars
-      // Use the custom stagger duration instead of default
-      StaggeredEntryConfig stagger_config = StaggeredEntryConfig::defaultIntro(slot.stagger_bars);
-      for (uint8_t e = 0; e < stagger_config.entry_count; ++e) {
-        const auto& entry = stagger_config.entries[e];
-        section.layer_events.emplace_back(entry.entry_bar, entry.track, TrackMask::None);
-      }
-    }
-
-    // Handle custom layer scheduling from blueprint
-    // Allows direct control of track add/remove at specific points
-    if (slot.custom_layer_schedule) {
-      // Clear any auto-generated layer events
-      section.layer_events.clear();
-
-      // Add event at section start with all enabled tracks
-      section.layer_events.emplace_back(0, slot.enabled_tracks, TrackMask::None);
-
-      // Add tracks at midpoint if specified
-      if (slot.layer_add_at_mid != TrackMask::None && section.bars >= 2) {
-        uint8_t mid_bar = section.bars / 2;
-        section.layer_events.emplace_back(mid_bar, slot.layer_add_at_mid, TrackMask::None);
-      }
-
-      // Remove tracks near end if specified
-      if (slot.layer_remove_at_end != TrackMask::None && section.bars >= 2) {
-        uint8_t end_bar = section.bars - 1;
-        section.layer_events.emplace_back(end_bar, TrackMask::None, slot.layer_remove_at_end);
-      }
-    }
+    applySlotLayerSchedule(section, slot);
 
     sections.push_back(section);
 
@@ -921,6 +973,11 @@ void applyBlueprintOverlay(std::vector<Section>& sections, const ProductionBluep
 
     // Derive fill_before from PeakLevel
     section.fill_before = (slot.peak_level != PeakLevel::None);
+
+    // The overlaid slot replaces the schedule the duration builder left behind,
+    // exactly as it replaces every other slot-derived field above.
+    section.layer_events.clear();
+    applySlotLayerSchedule(section, slot);
   }
 
   // Restore contextual defaults (for example B->Chorus sustain) only after

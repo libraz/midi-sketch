@@ -43,6 +43,7 @@
 #include "core/sustain_trimmer.h"
 #include "core/swing_quantize.h"
 #include "core/timing_constants.h"
+#include "core/track_pitch_editor.h"
 #include "core/track_registration_guard.h"
 #include "core/velocity_helper.h"
 #include "track/drums.h"
@@ -81,10 +82,10 @@ void tameStandaloneMotifSections(MidiTrack& motif, const MidiTrack& vocal,
                                  const IHarmonyContext& harmony);
 void separateMotifFromBass(MidiTrack& motif, const MidiTrack& vocal, const MidiTrack& bass,
                            const IHarmonyContext& harmony);
-void separateGuitarFromBass(MidiTrack& guitar, const MidiTrack& bass);
+void separateGuitarFromBass(MidiTrack& guitar, const MidiTrack& bass, IHarmonyContext& harmony);
 void strengthenRhythmLockBassDrive(MidiTrack& bass, const std::vector<Section>& sections);
 void anchorBassStrongBeats(MidiTrack& bass, const std::vector<Section>& sections,
-                           const IHarmonyContext& harmony);
+                           IHarmonyContext& harmony);
 
 void reregisterTrack(IHarmonyCoordinator& harmony, MidiTrack& track, TrackRole role) {
   harmony.clearNotesForTrack(role);
@@ -206,8 +207,10 @@ void Generator::initializeBlueprint(uint32_t seed) {
     params_.drums_enabled = true;
   }
 
-  // Apply addictive mode from blueprint (OR with config setting)
-  if (blueprint_->addictive_mode) {
+  // Addictive mode comes either from the blueprint or from the caller. The riff
+  // it promises is a verbatim one, so it resolves to LockedPitch; LockedContour
+  // would let each section revoice the pitches and break that promise.
+  if (blueprint_->addictive_mode || params_.addictive_mode) {
     params_.addictive_mode = true;
     params_.riff_policy = RiffPolicy::LockedPitch;
     params_.hook_intensity = HookIntensity::Maximum;
@@ -547,6 +550,29 @@ void Generator::generateAllTracksViaCoordinator() {
        params_.composition_style == CompositionStyle::SynthDriven)) {
     resolveArpeggioChordClashes();
   }
+
+  // The bass shares the rhythm section's grid. Swing and time feel are
+  // properties of the arrangement rather than of humanization, so the bass
+  // takes them whenever the kit does, and it takes them from the same place:
+  // each note asks the grid the drums used for its bar, at the same amount.
+  // Scaling the amount down for the bass would separate it from the kick,
+  // which this grid places at the full amount, so no role factor is applied.
+  const auto& sections = song_.arrangement().sections();
+  for (auto& note : song_.bass().notes()) {
+    for (const auto& section : sections) {
+      if (note.start_tick < section.start_tick || note.start_tick >= section.endTick()) {
+        continue;
+      }
+      const uint8_t bar =
+          static_cast<uint8_t>((note.start_tick - section.start_tick) / TICKS_PER_BAR);
+      const drums::GrooveGrid grid = drums::makeGrooveGrid(
+          section, bar,
+          drums::resolveSectionDrumGroove(params_.mood, params_.paradigm, section.swing_amount),
+          section.time_feel, song_.bpm());
+      note.start_tick = grid.resolve(note.start_tick);
+      break;
+    }
+  }
 }
 
 void Generator::applyPostProcessingEffects() {
@@ -724,7 +750,7 @@ void Generator::applyPostProcessingEffects() {
     PostProcessor::fixTrackReferenceClashes(song_.guitar(), song_.motif(), TrackRole::Guitar);
     PostProcessor::fixTrackReferenceClashes(song_.guitar(), song_.chord(), TrackRole::Guitar);
     PostProcessor::fixTrackReferenceClashes(song_.guitar(), song_.aux(), TrackRole::Guitar);
-    separateGuitarFromBass(song_.guitar(), song_.bass());
+    separateGuitarFromBass(song_.guitar(), song_.bass(), *harmony_context_);
     removeComfortClashesAgainstReference(song_.guitar(), song_.vocal());
     removeComfortClashesAgainstReference(song_.guitar(), song_.motif());
     removeComfortClashesAgainstReference(song_.guitar(), song_.chord());
@@ -938,7 +964,13 @@ void Generator::generateVocal(const GeneratorParams& params) {
 }
 
 void Generator::regenerateVocal(uint32_t new_seed) {
+  // Resolve the auto seed once and propagate it to the shared generation
+  // parameters, the same contract regenerateAccompaniment() follows. The
+  // parameters are what gets serialized into the exported metadata, so leaving
+  // the requested value here makes a take that was regenerated with seed 0
+  // resolve to a different melody when that file is regenerated.
   uint32_t seed = resolveSeed(new_seed);
+  params_.seed = seed;
   rng_.seed(seed);
   song_.setMelodySeed(seed);
 
@@ -1007,8 +1039,11 @@ void Generator::regenerateVocal(const VocalConfig& config) {
     ConfigConverter::applyMelodicComplexity(params_);
   }
 
-  // Resolve and apply seed
+  // Resolve and apply seed. params_.seed is what the exported metadata carries,
+  // so the resolved value has to land there for the take to be reproducible
+  // from its own file.
   uint32_t seed = resolveSeed(config.seed);
+  params_.seed = seed;
   rng_.seed(seed);
   song_.setMelodySeed(seed);
 
@@ -1387,19 +1422,6 @@ void Generator::generateBass() {
   ctx.kick_cache = kick_cache_.has_value() ? &kick_cache_.value() : nullptr;
 
   bass_gen.generateFullTrack(song_.bass(), ctx);
-
-  // Swing is a groove property, independent of whether random humanization is
-  // enabled. Straight moods remain on-grid; swung/shuffle moods share the
-  // section amount used by the drum kit.
-  const bool has_swung_section = std::any_of(
-      song_.arrangement().sections().begin(), song_.arrangement().sections().end(),
-      [this](const Section& section) {
-        return drums::resolveSectionDrumGroove(params_.mood, params_.paradigm,
-                                               section.swing_amount) != DrumGrooveFeel::Straight;
-      });
-  if (has_swung_section) {
-    applySwingToTrackBySections(song_.bass(), song_.arrangement().sections(), TrackRole::Bass);
-  }
 }
 
 void Generator::generateDrums() {
@@ -2289,12 +2311,14 @@ void separateMotifFromBass(MidiTrack& motif, const MidiTrack& vocal, const MidiT
   }
 }
 
-void separateGuitarFromBass(MidiTrack& guitar, const MidiTrack& bass) {
+void separateGuitarFromBass(MidiTrack& guitar, const MidiTrack& bass, IHarmonyContext& harmony) {
   if (guitar.empty() || bass.empty()) {
     return;
   }
 
-  for (auto& guitar_note : guitar.notes()) {
+  TrackPitchEditor editor(guitar, harmony, TrackRole::Guitar);
+  for (size_t i = 0; i < editor.size(); ++i) {
+    const NoteEvent& guitar_note = editor.at(i);
     if (guitar_note.note >= 52) {
       continue;
     }
@@ -2307,7 +2331,11 @@ void separateGuitarFromBass(MidiTrack& guitar, const MidiTrack& bass) {
       int interval =
           std::abs(static_cast<int>(guitar_note.note) - static_cast<int>(bass_note.note));
       if (interval > 0 && interval < 7 && guitar_note.note <= 115) {
-        guitar_note.note = static_cast<uint8_t>(guitar_note.note + 12);
+        // The octave up is a proposal, not a decision: a guitar note crowding
+        // the bass is muddy, but a verified clash one octave higher is worse,
+        // so a rejected move leaves the note where it is.
+        editor.moveTo(i, static_cast<uint8_t>(guitar_note.note + 12),
+                      TransformStepType::OctaveAdjust, 12, 0);
         break;
       }
     }
@@ -2366,9 +2394,36 @@ void strengthenRhythmLockBassDrive(MidiTrack& bass, const std::vector<Section>& 
   });
 }
 
+/// @brief Whether a bass pitch would double a vocal pitch class too closely.
+///
+/// Two octaves is the separation below which a shared pitch class reads as the
+/// bass doubling the vocal instead of supporting it. The vocal is scanned over
+/// the whole span the note sounds, and only the lowest vocal pitch that could
+/// carry the pitch class counts, so a vocal note two octaves up is not treated
+/// as a doubling. The bass generator applies the same rule at note creation;
+/// a pass that moves a bass pitch afterwards has to respect it too.
+bool doublesVocalWithinTwoOctaves(const IHarmonyContext& harmony, uint8_t pitch, Tick start,
+                                  Tick duration) {
+  constexpr int kMinVocalOctaveSeparation = 24;
+  Tick end = start + duration;
+  uint8_t vocal_low = harmony.getLowestPitchForTrackInRange(start, end, TrackRole::Vocal);
+  if (vocal_low == 0) {
+    return false;
+  }
+  uint8_t vocal_high = harmony.getHighestPitchForTrackInRange(start, end, TrackRole::Vocal);
+  int nearest_double = static_cast<int>(vocal_low);
+  nearest_double += ((pitch % 12 - nearest_double) % 12 + 12) % 12;
+  if (nearest_double > static_cast<int>(vocal_high)) {
+    return false;
+  }
+  return nearest_double - static_cast<int>(pitch) < kMinVocalOctaveSeparation;
+}
+
 void anchorBassStrongBeats(MidiTrack& bass, const std::vector<Section>& sections,
-                           const IHarmonyContext& harmony) {
-  for (auto& note : bass.notes()) {
+                           IHarmonyContext& harmony) {
+  TrackPitchEditor editor(bass, harmony, TrackRole::Bass);
+  for (size_t i = 0; i < editor.size(); ++i) {
+    const NoteEvent& note = editor.at(i);
     const auto section_it =
         std::find_if(sections.begin(), sections.end(), [&note](const Section& section) {
           return note.start_tick >= section.start_tick && note.start_tick < section.endTick();
@@ -2387,31 +2442,46 @@ void anchorBassStrongBeats(MidiTrack& bass, const std::vector<Section>& sections
       continue;
     }
 
-    ChordToneHelper chord(harmony.getChordDegreeAt(note.start_tick));
-    if (chord.isChordTone(note.note)) {
+    // The triad of the chord that sounds at this tick, not the diatonic triad
+    // of its degree: a tick the timeline reharmonized has tones the degree does
+    // not contain. Chord tones are ordered root, third, fifth, seventh, and an
+    // anchor stops at the fifth - a bass on the seventh of a dominant is a
+    // tritone under the chord's third, which is no foundation for a strong beat.
+    const ChordTones tones = harmony.getChordTonesAt(note.start_tick);
+    const uint8_t triad_count = std::min<uint8_t>(tones.count, 3);
+    const auto triad_end = tones.begin() + triad_count;
+    std::vector<uint8_t> candidates;
+    bool already_chord_tone = false;
+    for (int pitch = BASS_LOW; pitch <= BASS_HIGH; ++pitch) {
+      if (std::find(tones.begin(), triad_end, pitch % 12) == triad_end) {
+        continue;
+      }
+      if (pitch == static_cast<int>(note.note)) {
+        already_chord_tone = true;
+        break;
+      }
+      candidates.push_back(static_cast<uint8_t>(pitch));
+    }
+    if (already_chord_tone || candidates.empty()) {
       continue;
     }
 
-    std::vector<uint8_t> candidates = chord.allInRange(BASS_LOW, BASS_HIGH);
     std::stable_sort(candidates.begin(), candidates.end(), [&note](uint8_t a, uint8_t b) {
       const int distance_a = std::abs(static_cast<int>(a) - static_cast<int>(note.note));
       const int distance_b = std::abs(static_cast<int>(b) - static_cast<int>(note.note));
       return distance_a != distance_b ? distance_a < distance_b : a < b;
     });
-    const auto target_it =
-        std::find_if(candidates.begin(), candidates.end(), [&harmony, &note](uint8_t candidate) {
-          return harmony.isConsonantWithOtherTracks(candidate, note.start_tick, note.duration,
-                                                    TrackRole::Bass);
-        });
-    if (target_it == candidates.end()) {
-      continue;
+    // moveTo runs the consonance check itself and leaves the note alone when it
+    // fails, so the nearest candidate that lands is the one that is safe.
+    for (uint8_t candidate : candidates) {
+      if (doublesVocalWithinTwoOctaves(harmony, candidate, note.start_tick, note.duration)) {
+        continue;
+      }
+      if (editor.moveTo(i, candidate, TransformStepType::ChordToneSnap)) {
+        editor.markSource(i, NoteSource::PostProcess);
+        break;
+      }
     }
-    const uint8_t target = *target_it;
-#ifdef MIDISKETCH_NOTE_PROVENANCE
-    note.addTransformStep(TransformStepType::ChordToneSnap, note.note, target, 0, 0);
-    note.prov_source = static_cast<uint8_t>(NoteSource::PostProcess);
-#endif
-    note.note = target;
   }
 }
 

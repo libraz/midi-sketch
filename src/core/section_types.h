@@ -576,6 +576,21 @@ struct Section {
   /// @brief Check if layer scheduling is active for this section.
   bool hasLayerSchedule() const { return !layer_events.empty(); }
 
+  /// @brief Velocity multiplier contributed by this section's modifier.
+  ///
+  /// This is the modifier term of the section velocity scale, isolated from any
+  /// particular base level so that a caller scaling existing notes and a caller
+  /// deriving an absolute velocity share one formula.
+  ///
+  /// @return Multiplier (1.0 when no modifier is active)
+  float getModifierVelocityMultiplier() const {
+    if (modifier == SectionModifier::None || modifier_intensity == 0) {
+      return 1.0f;
+    }
+    float intensity_factor = static_cast<float>(modifier_intensity) / 100.0f;
+    return 1.0f + getModifierProperties(modifier).velocity_adjust * intensity_factor;
+  }
+
   /// @brief Apply modifier properties to adjust velocity.
   /// @param base_vel Input base velocity
   /// @return Adjusted velocity with modifier applied
@@ -583,10 +598,7 @@ struct Section {
     if (modifier == SectionModifier::None || modifier_intensity == 0) {
       return base_vel;
     }
-    ModifierProperties props = getModifierProperties(modifier);
-    float intensity_factor = static_cast<float>(modifier_intensity) / 100.0f;
-    float adjusted =
-        static_cast<float>(base_vel) * (1.0f + props.velocity_adjust * intensity_factor);
+    float adjusted = static_cast<float>(base_vel) * getModifierVelocityMultiplier();
     return static_cast<uint8_t>(std::clamp(adjusted, 40.0f, 127.0f));
   }
 

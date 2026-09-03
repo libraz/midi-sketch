@@ -13,6 +13,7 @@
 #include "core/chord_utils.h"
 #include "core/harmony_coordinator.h"
 #include "core/midi_track.h"
+#include "core/note_source.h"
 #include "core/pitch_utils.h"
 #include "core/preset_data.h"
 #include "core/rng_util.h"
@@ -41,6 +42,27 @@ Coordinator::~Coordinator() = default;
 
 namespace {
 
+/// @brief Replace a timeline range while leaving registered secondary dominants intact.
+///
+/// registerChordReplacement() clears the secondary-dominant flag on every entry
+/// it covers, so a planner that runs later and happens to span one of those
+/// ranges deletes a chord the rest of the song is already voiced against, with
+/// no diagnostic. Splitting the write at entry boundaries keeps the two devices
+/// from being mutually exclusive by accident of ordering.
+void registerReplacementOutsideSecondaryDominants(IHarmonyCoordinator& harmony, Tick start,
+                                                  Tick end, int8_t degree,
+                                                  ChordExtension extension) {
+  Tick cursor = start;
+  while (cursor < end) {
+    Tick next_entry = harmony.getNextChordEntryTick(cursor);
+    Tick chunk_end = (next_entry > cursor && next_entry < end) ? next_entry : end;
+    if (!harmony.isSecondaryDominantAt(cursor)) {
+      harmony.registerChordReplacement(cursor, chunk_end, degree, extension);
+    }
+    cursor = chunk_end;
+  }
+}
+
 void planAndRegisterCadenceFixes(const Arrangement& arrangement, const GeneratorParams& params,
                                  const ChordProgression& progression,
                                  IHarmonyCoordinator& harmony) {
@@ -59,8 +81,75 @@ void planAndRegisterCadenceFixes(const Arrangement& arrangement, const Generator
         params.chord_extension.enable_7th ? ChordExtension::Min7 : ChordExtension::None;
     ChordExtension v_extension =
         params.chord_extension.enable_7th ? ChordExtension::Dom7 : ChordExtension::None;
-    harmony.registerChordReplacement(ii_start, v_start, 1, ii_extension);
-    harmony.registerChordReplacement(v_start, v_start + TICKS_PER_BAR, 4, v_extension);
+    registerReplacementOutsideSecondaryDominants(harmony, ii_start, v_start, 1, ii_extension);
+    registerReplacementOutsideSecondaryDominants(harmony, v_start, v_start + TICKS_PER_BAR, 4,
+                                                 v_extension);
+  }
+}
+
+/// @brief Turn the last half of a pre-chorus into its dominant.
+///
+/// The chord track used to insert this itself, which left the bass and the
+/// analysis metadata asserting the chord it replaced. Registering it here puts
+/// the preparation in front of every track that reads the timeline.
+void planAndRegisterDominantPreparation(const Arrangement& arrangement,
+                                        const GeneratorParams& params,
+                                        IHarmonyCoordinator& harmony) {
+  const auto& sections = arrangement.sections();
+  for (size_t index = 0; index + 1 < sections.size(); ++index) {
+    const Section& section = sections[index];
+    if (section.bars == 0) continue;
+
+    Tick bar_start = section.start_tick + (section.bars - 1) * TICKS_PER_BAR;
+    int8_t degree = harmony.getChordDegreeAt(bar_start);
+    if (!chord_voicing::shouldAddDominantPreparation(section.type, sections[index + 1].type, degree,
+                                                     params.mood)) {
+      continue;
+    }
+
+    ChordExtension extension =
+        params.chord_extension.enable_7th ? ChordExtension::Dom7 : ChordExtension::None;
+    registerReplacementOutsideSecondaryDominants(harmony, bar_start + TICK_HALF,
+                                                 bar_start + TICKS_PER_BAR, 4, extension);
+  }
+}
+
+/// @brief The degree that names a diminished triad on @p semitone, or -1 for none.
+///
+/// The timeline stores a degree, so a chromatic approach chord is only
+/// registrable on the two roots the degree table gives a diminished quality.
+int8_t diminishedDegreeForSemitone(int semitone) {
+  int pitch_class = ((semitone % 12) + 12) % 12;
+  if (pitch_class == degreeToSemitone(6)) return 6;
+  if (pitch_class == degreeToSemitone(14)) return 14;
+  return -1;
+}
+
+/// @brief Register the chromatic approach chord that leads a pre-chorus out.
+void planAndRegisterPassingDiminished(const Arrangement& arrangement,
+                                      IHarmonyCoordinator& harmony) {
+  for (const auto& section : arrangement.sections()) {
+    if (section.type != SectionType::B || section.bars < 2) continue;
+
+    Tick bar_start = section.start_tick + (section.bars - 2) * TICKS_PER_BAR;
+    Tick bar_end = bar_start + TICKS_PER_BAR;
+    Tick approach_start = bar_end - TICK_QUARTER;
+
+    // A bar that already changes chord partway through is not a static bar
+    // waiting for an approach chord.
+    Tick next_entry = harmony.getNextChordEntryTick(bar_start);
+    if (next_entry > bar_start && next_entry < bar_end) continue;
+    if (harmony.isSecondaryDominantAt(approach_start)) continue;
+
+    PassingChordInfo passing = checkPassingDiminished(
+        harmony.getChordDegreeAt(bar_start), harmony.getChordDegreeAt(bar_end), section.type);
+    if (!passing.should_insert) continue;
+
+    int8_t dim_degree = diminishedDegreeForSemitone(passing.root_semitone);
+    if (dim_degree < 0) continue;
+
+    registerReplacementOutsideSecondaryDominants(harmony, approach_start, bar_end, dim_degree,
+                                                 ChordExtension::None);
   }
 }
 
@@ -91,12 +180,61 @@ void planAndRegisterTritoneSubstitutions(const Arrangement& arrangement,
             rng_util::rollFloat(rng, 0.0f, 1.0f));
         if (substitution.should_substitute) {
           // bII is the tritone substitute for V in the supported degree table.
-          harmony.registerChordReplacement(entry_start, entry_end, 13, ChordExtension::Dom7);
+          registerReplacementOutsideSecondaryDominants(harmony, entry_start, entry_end, 13,
+                                                       ChordExtension::Dom7);
         }
         entry_start = entry_end;
       }
     }
   }
+}
+
+/// @brief Apply a section's preferred chord colour under the caller's settings.
+///
+/// A section rule may bias the colour but not force it. Applying it verbatim
+/// made a chorus ignore both the probabilities and the family switches: every
+/// chorus chord took an extension however low the probability was set, and a
+/// ninth appeared even when only sevenths were asked for. A family the caller
+/// did not enable falls back to the nearest colour that is enabled.
+///
+/// @param preferred Colour the section rule asks for
+/// @param settings Caller's extension families and probabilities
+/// @param rng Deterministic stream for the probability roll
+/// @return Colour to register, possibly ChordExtension::None
+ChordExtension sectionColour(ChordExtension preferred, const ChordExtensionParams& settings,
+                             std::mt19937& rng) {
+  ChordExtension colour = preferred;
+
+  // Ninth-family colours fall back to their seventh when ninths are off.
+  if (!settings.enable_9th) {
+    switch (colour) {
+      case ChordExtension::Add9:
+        colour = ChordExtension::None;
+        break;
+      case ChordExtension::Maj9:
+        colour = ChordExtension::Maj7;
+        break;
+      case ChordExtension::Min9:
+        colour = ChordExtension::Min7;
+        break;
+      case ChordExtension::Dom9:
+        colour = ChordExtension::Dom7;
+        break;
+      default:
+        break;
+    }
+  }
+
+  bool is_ninth = (colour == ChordExtension::Add9 || colour == ChordExtension::Maj9 ||
+                   colour == ChordExtension::Min9 || colour == ChordExtension::Dom9);
+  bool is_seventh = (colour == ChordExtension::Maj7 || colour == ChordExtension::Min7 ||
+                     colour == ChordExtension::Dom7);
+
+  if (is_seventh && !settings.enable_7th) return ChordExtension::None;
+  if (colour == ChordExtension::None) return colour;
+
+  float probability = is_ninth ? settings.ninth_probability : settings.seventh_probability;
+  return rng_util::rollProbability(rng, probability) ? colour : ChordExtension::None;
 }
 
 void planAndRegisterChordExtensions(const Arrangement& arrangement, const GeneratorParams& params,
@@ -148,14 +286,24 @@ void planAndRegisterChordExtensions(const Arrangement& arrangement, const Genera
             reharm.degree, section.type, bar, section.bars, params.chord_extension, extension_rng);
 
         if (reharm.extension_overridden) {
-          extension = reharm.extension;
+          extension = sectionColour(reharm.extension, params.chord_extension, extension_rng);
         }
 
         if (isSusExtension(prev_extension) && isSusExtension(extension)) {
           extension = ChordExtension::None;
         }
 
-        harmony.registerChordExtension(entry_start, entry_end, extension);
+        // A suspension is only a suspension if it resolves. Registering the
+        // resolution splits the entry, so every track reads the release of the
+        // 4th onto the 3rd instead of the chord track alone inventing it.
+        Tick resolution = entry_start + (entry_end - entry_start) / 2;
+        if (isSusExtension(extension) && resolution > entry_start &&
+            entry_end - entry_start >= TICK_HALF) {
+          harmony.registerChordExtension(entry_start, resolution, extension);
+          harmony.registerChordExtension(resolution, entry_end, ChordExtension::None);
+        } else {
+          harmony.registerChordExtension(entry_start, entry_end, extension);
+        }
         prev_extension = extension;
         entry_start = entry_end;
       }
@@ -172,8 +320,12 @@ void registerPlannedHarmonyTimeline(const Arrangement& arrangement, const Genera
   uint32_t sec_dom_seed = params.seed ^ kSecDomSalt;
   if (sec_dom_seed == 0) sec_dom_seed = kSecDomSalt;
   std::mt19937 sec_dom_rng(sec_dom_seed);
+  // Secondary dominants are planned first and every later planner writes around
+  // them, so the order below is what keeps two devices from cancelling out.
   planAndRegisterSecondaryDominants(arrangement, progression, params.mood, sec_dom_rng, harmony);
   planAndRegisterCadenceFixes(arrangement, params, progression, harmony);
+  planAndRegisterDominantPreparation(arrangement, params, harmony);
+  planAndRegisterPassingDiminished(arrangement, harmony);
   planAndRegisterTritoneSubstitutions(arrangement, params, harmony);
   planAndRegisterChordExtensions(arrangement, params, harmony);
 }
@@ -255,7 +407,17 @@ void Coordinator::initialize(const GeneratorParams& params, const Arrangement& a
   // including drums_required enforcement and addictive_mode application.
   if (params.blueprint_ref != nullptr) {
     blueprint_ = params.blueprint_ref;
-    blueprint_id_ = 0;  // Not needed when using external blueprint ref
+    // The reference itself names a table entry, so the running blueprint's id is
+    // recoverable even when the caller left params.blueprint_id unresolved.
+    // Reporting 0 here would make every consumer of getBlueprintId() see
+    // Traditional regardless of what is actually being generated.
+    blueprint_id_ = params.blueprint_id;
+    for (uint8_t i = 0; i < getProductionBlueprintCount(); ++i) {
+      if (&getProductionBlueprint(i) == blueprint_) {
+        blueprint_id_ = i;
+        break;
+      }
+    }
     paradigm_ = params.paradigm;
     riff_policy_ = params.riff_policy;
   } else {
@@ -828,9 +990,18 @@ bool Coordinator::shouldSkipTrack(TrackRole role, const Song& song) const {
         !song.motif().empty()) {
       return true;
     }
-    // MelodyLead: skip unless RhythmSync or Blueprint explicitly requires Motif
+    // MelodyLead: skip unless the riff is part of what is being asked for.
     if (params_.composition_style == CompositionStyle::MelodyLead) {
-      bool motif_needed = (paradigm_ == GenerationParadigm::RhythmSync);
+      // A locked riff is a riff that repeats, not a riff that is absent, so a
+      // locking policy is itself a request for one.
+      const bool riff_is_locked = riff_policy_ == RiffPolicy::LockedContour ||
+                                  riff_policy_ == RiffPolicy::LockedPitch ||
+                                  riff_policy_ == RiffPolicy::LockedAll;
+      bool motif_needed =
+          paradigm_ == GenerationParadigm::RhythmSync || params_.addictive_mode || riff_is_locked;
+      // A section mask only declares a track when the blueprint authored it;
+      // arrangements built from a StructurePattern leave every mask at
+      // TrackMask::All, where Motif is a default rather than a request.
       if (!motif_needed && blueprint_ && blueprint_->section_flow) {
         for (const auto& sec : arrangement_.sections()) {
           if (hasTrack(sec.track_mask, TrackMask::Motif)) {
@@ -997,6 +1168,14 @@ void copyNotesFromBar(std::vector<NoteEvent>& notes, const std::vector<NoteEvent
       copied.start_tick += offset;
 #ifdef MIDISKETCH_NOTE_PROVENANCE
       copied.prov_lookup_tick += offset;
+      // The copy is a new note placed here, not a continuation of the one it
+      // was taken from. Keeping the source's history would attribute this
+      // pitch to decisions made a bar earlier, under a different chord, and
+      // would leave the difference between the pitch that sounds and the pitch
+      // the history ends on unexplained. Start the history at this note.
+      copied.prov_source = static_cast<uint8_t>(NoteSource::PostProcess);
+      copied.prov_original_pitch = copied.note;
+      copied.transform_count = 0;
 #endif
       notes.push_back(copied);
     }
@@ -1032,9 +1211,20 @@ int getVocalCeiling(const IHarmonyCoordinator& harmony, Tick start, Tick duratio
   return lowest > 0 ? lowest : 128;
 }
 
+/// Pitch classes already sounding at this onset, when the note being resolved
+/// belongs to a chord stack. Candidates that repeat one are deprioritized, not
+/// forbidden: a duplicated pitch class is a worse chord than a distinct one,
+/// but still better than a known clash or a dropped note.
+bool pitchClassTaken(const std::vector<uint8_t>* taken_pcs, uint8_t pitch) {
+  if (taken_pcs == nullptr) return false;
+  return std::find(taken_pcs->begin(), taken_pcs->end(), static_cast<uint8_t>(pitch % 12)) !=
+         taken_pcs->end();
+}
+
 int findConsonantChordTone(IHarmonyCoordinator& harmony, uint8_t snapped, uint8_t original,
                            Tick start, Tick duration, TrackRole role, uint8_t range_low = 0,
-                           uint8_t range_high = 127) {
+                           uint8_t range_high = 127,
+                           const std::vector<uint8_t>* taken_pcs = nullptr) {
   auto chord_tones = harmony.getChordTonesAt(start);
   int orig_octave = original / 12;
   int vocal_ceiling = getVocalCeiling(harmony, start, duration, role);
@@ -1047,6 +1237,7 @@ int findConsonantChordTone(IHarmonyCoordinator& harmony, uint8_t snapped, uint8_
 
   // Collect all candidate pitches (chord tones in nearby octaves)
   struct Candidate {
+    bool duplicates_stack;
     bool crosses_above_vocal;
     int distance;
     uint8_t pitch;
@@ -1058,7 +1249,8 @@ int findConsonantChordTone(IHarmonyCoordinator& harmony, uint8_t snapped, uint8_
       if (p < range_low || p > range_high) continue;
       int dist = std::abs(p - static_cast<int>(original));
       bool crosses = orig_below_vocal && p >= vocal_ceiling;
-      candidates.push_back({crosses, dist, static_cast<uint8_t>(p)});
+      bool dup = pitchClassTaken(taken_pcs, static_cast<uint8_t>(p));
+      candidates.push_back({dup, crosses, dist, static_cast<uint8_t>(p)});
     }
   }
 
@@ -1068,6 +1260,9 @@ int findConsonantChordTone(IHarmonyCoordinator& harmony, uint8_t snapped, uint8_
   // implementation-defined and diverges across platforms).
   std::stable_sort(candidates.begin(), candidates.end(),
                    [](const Candidate& a, const Candidate& b) {
+                     if (a.duplicates_stack != b.duplicates_stack) {
+                       return !a.duplicates_stack;
+                     }
                      if (a.crosses_above_vocal != b.crosses_above_vocal) {
                        return !a.crosses_above_vocal;
                      }
@@ -1091,11 +1286,15 @@ int findConsonantChordTone(IHarmonyCoordinator& harmony, uint8_t snapped, uint8_
       if (p < range_low || p > range_high) continue;
       int dist = std::abs(p - static_cast<int>(original));
       bool crosses = orig_below_vocal && p >= vocal_ceiling;
-      scale_candidates.push_back({crosses, dist, static_cast<uint8_t>(p)});
+      bool dup = pitchClassTaken(taken_pcs, static_cast<uint8_t>(p));
+      scale_candidates.push_back({dup, crosses, dist, static_cast<uint8_t>(p)});
     }
   }
   std::stable_sort(scale_candidates.begin(), scale_candidates.end(),
                    [](const Candidate& a, const Candidate& b) {
+                     if (a.duplicates_stack != b.duplicates_stack) {
+                       return !a.duplicates_stack;
+                     }
                      if (a.crosses_above_vocal != b.crosses_above_vocal) {
                        return !a.crosses_above_vocal;
                      }
@@ -1283,8 +1482,12 @@ void Coordinator::applyVoiceLimit(Song& song, const std::vector<Section>& sectio
       // burying the melody (see scripts/check_pitch_crossing.py). The ceiling is
       // applied per-note below (not per-bar) so it mirrors the per-overlap
       // crossing criterion exactly.
+      // Guitar belongs here for the same reason as the other four: the crossing
+      // criterion this ceiling mirrors counts guitar notes above the vocal, and
+      // the guitar's own range reaches well into the vocal register.
       bool is_accompaniment = (fb.role == TrackRole::Motif || fb.role == TrackRole::Chord ||
-                               fb.role == TrackRole::Arpeggio || fb.role == TrackRole::Aux);
+                               fb.role == TrackRole::Arpeggio || fb.role == TrackRole::Aux ||
+                               fb.role == TrackRole::Guitar);
 
       auto& notes = song.track(fb.role).notes();
 
@@ -1338,6 +1541,11 @@ void Coordinator::applyVoiceLimit(Song& song, const std::vector<Section>& sectio
 
       Tick prev_onset = static_cast<Tick>(-1);
       size_t onset_note_count = 0;
+      // Pitch classes already resolved at the current onset. A chord stack has
+      // to stay a chord: its members are re-quantized one at a time, so without
+      // this two voices land on the same pitch and the third disappears,
+      // leaving a bare fifth that has no major or minor identity.
+      std::vector<uint8_t> onset_taken_pcs;
       for (size_t idx : bar_note_indices) {
         auto& note = notes[idx];
 
@@ -1349,6 +1557,7 @@ void Coordinator::applyVoiceLimit(Song& song, const std::vector<Section>& sectio
         } else {
           prev_onset = note.start_tick;
           onset_note_count = 1;
+          onset_taken_pcs.clear();
         }
 
         // Per-note vocal ceiling for accompaniment tracks: never snap above the
@@ -1438,6 +1647,23 @@ void Coordinator::applyVoiceLimit(Song& song, const std::vector<Section>& sectio
           // frozen bar must keep the previous bar's rhythm)
         }
 
+        // Keep a chord stack a chord. The snap above answers for one note in
+        // isolation, so the second and later members of an onset can duplicate
+        // a pitch class already sounding -- and the voice that would have
+        // carried the third is exactly the one that gets absorbed. Re-resolve
+        // against what this onset already sounds; a duplicate is kept only when
+        // no consonant distinct chord tone exists, since a doubled voice still
+        // beats a clash or a dropped note.
+        if (onset_note_count > 1 && pitchClassTaken(&onset_taken_pcs, candidate)) {
+          int distinct =
+              findConsonantChordTone(harmony, candidate, note.note, note.start_tick, note.duration,
+                                     fb.role, range_low, note_range_high, &onset_taken_pcs);
+          if (distinct >= 0 && !pitchClassTaken(&onset_taken_pcs, static_cast<uint8_t>(distinct))) {
+            candidate = static_cast<uint8_t>(distinct);
+          }
+        }
+        onset_taken_pcs.push_back(static_cast<uint8_t>(candidate % 12));
+
         // Break long same-pitch runs: re-quantization collapses copied
         // contours onto the nearest chord tone, producing monotone lines.
         bool is_stack = (onset_note_count > 1);
@@ -1474,6 +1700,22 @@ void Coordinator::applyVoiceLimit(Song& song, const std::vector<Section>& sectio
       for (const auto& tail : split_tails) {
         notes.push_back(tail);
       }
+
+      // Refresh this role before moving to the next frozen bar. A song can
+      // freeze several roles in the same bar, and every consonance query and
+      // candidate search above reads the registry: without this, the roles
+      // resolved later in the list answer against the pitches this bar held
+      // before it was re-quantized, so a real clash passes or a good candidate
+      // is rejected against a note that is no longer sounding.
+      harmony.clearNotesForTrack(fb.role);
+      harmony.registerTrack(song.track(fb.role), fb.role);
+    }
+
+    // Leave the registry describing what the song now contains, so the next
+    // consumer does not evaluate pitches and lengths that no longer exist.
+    for (TrackRole role : kVoiceLimitPriority) {
+      harmony.clearNotesForTrack(role);
+      harmony.registerTrack(song.track(role), role);
     }
   }
 }

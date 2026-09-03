@@ -83,11 +83,10 @@ void planAndRegisterSecondaryDominants(const Arrangement& arrangement,
           continue;
         }
 
-        int8_t degree = harmony.getChordDegreeAt(insert_start);
         int8_t next_degree = harmony.getChordDegreeAt(target_start);
         float tension = getSectionProperties(section.type).secondary_tension;
 
-        SecondaryDominantInfo sec_dom = checkSecondaryDominant(degree, next_degree, tension);
+        SecondaryDominantInfo sec_dom = checkSecondaryDominant(next_degree, tension);
 
         if (sec_dom.should_insert) {
           // Always consume RNG to keep chord.cpp's RNG stream in sync.

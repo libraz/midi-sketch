@@ -17,7 +17,12 @@ ChordExtension selectChordExtension(int8_t degree, SectionType section, int bar_
     return ChordExtension::None;
   }
 
-  float roll = rng_util::rollFloat(rng, 0.0f, 1.0f);
+  // Each family rolls its own die. Sharing one roll across families makes the
+  // thresholds cumulative rather than independent: a sus probability above the
+  // seventh probability consumes the whole low end of the range, so no roll can
+  // ever reach the seventh, however high its own probability is set.
+  float sus_roll = rng_util::rollFloat(rng, 0.0f, 1.0f);
+  float seventh_roll = rng_util::rollFloat(rng, 0.0f, 1.0f);
 
   ChordQuality quality = getChordQuality(degree);
   bool is_minor = (quality == ChordQuality::Minor);
@@ -27,7 +32,7 @@ ChordExtension selectChordExtension(int8_t degree, SectionType section, int bar_
   if (ext_params.enable_sus) {
     bool is_sus_context = (bar_in_section == 0) || (bar_in_section == section_bars - 2);
 
-    if (is_sus_context && !is_minor && roll < ext_params.sus_probability) {
+    if (is_sus_context && !is_minor && sus_roll < ext_params.sus_probability) {
       return rng_util::rollProbability(rng, 0.7f) ? ChordExtension::Sus4 : ChordExtension::Sus2;
     }
   }
@@ -41,7 +46,7 @@ ChordExtension selectChordExtension(int8_t degree, SectionType section, int bar_
       adjusted_prob *= 2.0f;
     }
 
-    if (is_seventh_context && roll < adjusted_prob) {
+    if (is_seventh_context && seventh_roll < adjusted_prob) {
       if (is_dominant) {
         return ChordExtension::Dom7;
       }

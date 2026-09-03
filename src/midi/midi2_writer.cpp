@@ -7,7 +7,6 @@
 
 #include <algorithm>
 #include <fstream>
-#include <map>
 
 #include "core/pitch_utils.h"
 #include "core/timing_constants.h"
@@ -86,38 +85,19 @@ void Midi2Writer::writeTrackData(const MidiTrack& track, uint8_t group, uint8_t 
   events.reserve(track.notes().size() * 2 + track.ccEvents().size() +
                  track.pitchBendEvents().size());
 
-  struct OutputNote {
-    Tick start;
-    Tick end;
-    uint8_t pitch;
-    uint8_t velocity;
-  };
-  std::map<uint8_t, std::vector<OutputNote>> notes_by_pitch;
+  const bool percussive = isPercussionChannel(channel);
+  std::vector<SerializedNote> serialized;
+  serialized.reserve(track.notes().size());
   for (const auto& note : track.notes()) {
     uint8_t pitch = note.note;
-    if (channel != 9) {  // Not drums
+    if (!percussive) {
       pitch = transposeAndModulate(pitch, key, note.start_tick, mod_tick, mod_amount);
     }
-    notes_by_pitch[pitch].push_back(
-        {note.start_tick, note.start_tick + note.duration, pitch, note.velocity});
+    serialized.push_back({note.start_tick, note.start_tick + note.duration, pitch, note.velocity});
   }
-  for (auto& [pitch, notes] : notes_by_pitch) {
-    std::stable_sort(notes.begin(), notes.end(),
-                     [](const OutputNote& a, const OutputNote& b) { return a.start < b.start; });
-    std::vector<OutputNote> normalized;
-    normalized.reserve(notes.size());
-    for (const auto& note : notes) {
-      if (!normalized.empty() && note.start < normalized.back().end) {
-        normalized.back().end = std::max(normalized.back().end, note.end);
-        normalized.back().velocity = std::max(normalized.back().velocity, note.velocity);
-      } else {
-        normalized.push_back(note);
-      }
-    }
-    for (const auto& note : normalized) {
-      events.push_back({note.start, 0x90, pitch, note.velocity});
-      events.push_back({note.end, 0x80, pitch, 0});
-    }
+  for (const auto& note : resolveSamePitchOverlaps(std::move(serialized), percussive)) {
+    events.push_back({note.start, 0x90, note.pitch, note.velocity});
+    events.push_back({note.end, 0x80, note.pitch, 0});
   }
 
   // Add CC events to the unified stream
@@ -181,7 +161,8 @@ void Midi2Writer::writeTrackData(const MidiTrack& track, uint8_t group, uint8_t 
 
 void Midi2Writer::writeMarkerData(const MidiTrack& track, uint8_t group, uint16_t bpm,
                                   const std::vector<TempoEvent>& tempo_map,
-                                  const std::string& metadata) {
+                                  const std::string& metadata, Key key, Tick mod_tick,
+                                  int8_t mod_amount) {
   // Write metadata as text event if present
   if (!metadata.empty()) {
     std::string metaText = "MIDISKETCH:" + metadata;
@@ -207,8 +188,21 @@ void Midi2Writer::writeMarkerData(const MidiTrack& track, uint8_t group, uint16_
     Kind kind;
     size_t index;
   };
+  // Calls and chants are pitched material written in the internal C major space,
+  // so they follow the output key like every other pitched track, and their
+  // same-pitch overlaps resolve by the one shared rule the other writers use.
+  std::vector<SerializedNote> serialized;
+  serialized.reserve(track.notes().size());
+  for (const auto& note : track.notes()) {
+    const uint8_t pitch =
+        transposeAndModulate(note.note, key, note.start_tick, mod_tick, mod_amount);
+    serialized.push_back({note.start_tick, note.start_tick + note.duration, pitch, note.velocity});
+  }
+  const std::vector<SerializedNote> se_notes =
+      resolveSamePitchOverlaps(std::move(serialized), isPercussionChannel(SE_CH));
+
   std::vector<TimedEvent> events;
-  events.reserve(track.textEvents().size() + tempo_map.size() + track.notes().size() * 2);
+  events.reserve(track.textEvents().size() + tempo_map.size() + se_notes.size() * 2);
 
   for (size_t i = 0; i < track.textEvents().size(); ++i) {
     events.push_back({track.textEvents()[i].time, TimedEvent::Kind::Marker, i});
@@ -216,10 +210,9 @@ void Midi2Writer::writeMarkerData(const MidiTrack& track, uint8_t group, uint16_
   for (size_t i = 0; i < tempo_map.size(); ++i) {
     events.push_back({tempo_map[i].tick, TimedEvent::Kind::Tempo, i});
   }
-  for (size_t i = 0; i < track.notes().size(); ++i) {
-    const auto& note = track.notes()[i];
-    events.push_back({note.start_tick, TimedEvent::Kind::Note, i * 2});
-    events.push_back({note.start_tick + note.duration, TimedEvent::Kind::Note, i * 2 + 1});
+  for (size_t i = 0; i < se_notes.size(); ++i) {
+    events.push_back({se_notes[i].start, TimedEvent::Kind::Note, i * 2});
+    events.push_back({se_notes[i].end, TimedEvent::Kind::Note, i * 2 + 1});
   }
 
   std::stable_sort(events.begin(), events.end(), [](const TimedEvent& a, const TimedEvent& b) {
@@ -246,11 +239,11 @@ void Midi2Writer::writeMarkerData(const MidiTrack& track, uint8_t group, uint16_
     } else if (evt.kind == TimedEvent::Kind::Marker) {
       ump::writeMetadataText(data_, group, track.textEvents()[evt.index].text);
     } else {
-      const auto& note = track.notes()[evt.index / 2];
+      const auto& note = se_notes[evt.index / 2];
       if (evt.index % 2 == 0) {
-        ump::writeUint32BE(data_, ump::makeNoteOn(group, SE_CH, note.note, note.velocity));
+        ump::writeUint32BE(data_, ump::makeNoteOn(group, SE_CH, note.pitch, note.velocity));
       } else {
-        ump::writeUint32BE(data_, ump::makeNoteOff(group, SE_CH, note.note, 0));
+        ump::writeUint32BE(data_, ump::makeNoteOff(group, SE_CH, note.pitch, 0));
       }
     }
   }
@@ -311,7 +304,7 @@ void Midi2Writer::buildContainer(const Song& song, Key key, const std::string& m
     writeClipConfig(TICKS_PER_BEAT, song.bpm());
     ump::writeDeltaClockstamp(data_, 0, 0);
     ump::writeMetadataText(data_, 0, "TRACK:Markers");
-    writeMarkerData(song.se(), 0, song.bpm(), song.tempoMap(), metadata);
+    writeMarkerData(song.se(), 0, song.bpm(), song.tempoMap(), metadata, key, mod_tick, mod_amount);
     ump::writeDeltaClockstamp(data_, 0, 0);
     ump::writeEndOfClip(data_);
   }

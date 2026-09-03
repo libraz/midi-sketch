@@ -7,8 +7,10 @@
 
 #include <chrono>
 #include <climits>
+#include <cstdlib>
 
 #include "core/preset_data.h"
+#include "core/production_blueprint.h"
 #include "track/generators/se.h"
 
 namespace midisketch {
@@ -280,44 +282,94 @@ GeneratorParams ConfigConverter::convert(const SongConfig& config) {
   // Chord extensions
   params.chord_extension = config.chord_extension;
 
-  if (!params.chord_extension.enable_sus && !params.chord_extension.enable_7th &&
-      !params.chord_extension.enable_9th) {
-    switch (params.mood) {
+  // Harmonic vocabulary follows the blueprint the caller asked for. A blueprint
+  // is a named production identity ("Ballad"), and the moods it accepts are part
+  // of that identity: deriving the extension defaults from a mood the blueprint
+  // rejects gives a ballad no sevenths and no suspensions unless the caller also
+  // guesses the matching mood. An explicit mood is the caller's decision and is
+  // left alone; only the harmonic vocabulary is realigned, so a mismatched mood
+  // still raises the existing warning.
+  auto moodExtensionFamilies = [](Mood mood, bool& wants_7th, bool& wants_9th, bool& wants_sus) {
+    wants_7th = wants_9th = wants_sus = false;
+    switch (mood) {
       case Mood::CityPop:
       case Mood::RnBNeoSoul:
       case Mood::Lofi:
-        params.chord_extension.enable_7th = true;
-        params.chord_extension.enable_9th = true;
+        wants_7th = true;
+        wants_9th = true;
         break;
       case Mood::Ballad:
       case Mood::Sentimental:
       case Mood::Nostalgic:
       case Mood::Chill:
-        params.chord_extension.enable_7th = true;
-        params.chord_extension.enable_sus = true;
+        wants_7th = true;
+        wants_sus = true;
         break;
       default:
         break;
     }
+  };
+
+  Mood harmony_mood = params.mood;
+  if (!config.mood_explicit &&
+      !isMoodCompatible(config.blueprint_id, static_cast<uint8_t>(params.mood))) {
+    // Prefer the compatible mood that actually carries a harmonic vocabulary:
+    // a blueprint lists several moods as valid realizations of one identity, and
+    // picking a member with no vocabulary would leave the name "Ballad" meaning
+    // nothing harmonically. Falls back to the nearest compatible mood.
+    uint32_t mask = getProductionBlueprint(config.blueprint_id).mood_mask;
+    int requested = static_cast<int>(params.mood);
+    int nearest = -1;
+    int nearest_with_vocabulary = -1;
+    for (int candidate = 0; candidate < 32; ++candidate) {
+      if ((mask & (1u << candidate)) == 0) continue;
+      bool wants_7th = false;
+      bool wants_9th = false;
+      bool wants_sus = false;
+      moodExtensionFamilies(static_cast<Mood>(candidate), wants_7th, wants_9th, wants_sus);
+      auto closer = [&](int lhs, int rhs) {
+        return rhs < 0 || std::abs(lhs - requested) < std::abs(rhs - requested);
+      };
+      if (closer(candidate, nearest)) nearest = candidate;
+      if ((wants_7th || wants_9th || wants_sus) && closer(candidate, nearest_with_vocabulary)) {
+        nearest_with_vocabulary = candidate;
+      }
+    }
+    int resolved = (nearest_with_vocabulary >= 0) ? nearest_with_vocabulary : nearest;
+    if (resolved >= 0) {
+      harmony_mood = static_cast<Mood>(resolved);
+    }
   }
+
+  // Mood-implied extension families compose with the caller's flags instead of
+  // being suppressed by them. A conjunctive gate made every family exclusive:
+  // asking a ballad for ninths silently removed its sevenths and suspensions,
+  // so enabling one extension produced fewer extensions overall.
+  bool mood_wants_7th = false;
+  bool mood_wants_9th = false;
+  bool mood_wants_sus = false;
+  moodExtensionFamilies(harmony_mood, mood_wants_7th, mood_wants_9th, mood_wants_sus);
+  params.chord_extension.enable_7th = params.chord_extension.enable_7th || mood_wants_7th;
+  params.chord_extension.enable_9th = params.chord_extension.enable_9th || mood_wants_9th;
+  params.chord_extension.enable_sus = params.chord_extension.enable_sus || mood_wants_sus;
 
   // Apply mood-based chord extension probability adjustments.
   // NOTE: enable_* flags are NOT overridden here - they come from the user/preset config.
   // Mood only adjusts probabilities when extensions are enabled AND user didn't explicitly set
   // them.
   if (!config.chord_ext_prob_explicit) {
-    if (params.mood == Mood::CityPop) {
+    if (harmony_mood == Mood::CityPop) {
       params.chord_extension.seventh_probability = 0.40f;
       params.chord_extension.ninth_probability = 0.25f;
-    } else if (params.mood == Mood::RnBNeoSoul) {
+    } else if (harmony_mood == Mood::RnBNeoSoul) {
       params.chord_extension.seventh_probability = 0.50f;
       params.chord_extension.ninth_probability = 0.35f;
-    } else if (params.mood == Mood::Ballad || params.mood == Mood::Sentimental) {
+    } else if (harmony_mood == Mood::Ballad || harmony_mood == Mood::Sentimental) {
       params.chord_extension.seventh_probability = 0.30f;
       params.chord_extension.sus_probability = 0.25f;
-    } else if (params.mood == Mood::Nostalgic || params.mood == Mood::Chill) {
+    } else if (harmony_mood == Mood::Nostalgic || harmony_mood == Mood::Chill) {
       params.chord_extension.seventh_probability = 0.25f;
-    } else if (params.mood == Mood::Lofi) {
+    } else if (harmony_mood == Mood::Lofi) {
       params.chord_extension.seventh_probability = 0.40f;
       params.chord_extension.ninth_probability = 0.30f;
     }

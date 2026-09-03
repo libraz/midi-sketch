@@ -26,14 +26,23 @@ namespace midisketch {
 /**
  * @brief Emotion parameters for a single section.
  *
- * These values guide note selection, velocity, and density across tracks.
+ * The curve is planned after the arrangement is fixed and consumed by the
+ * post-processing pipeline, so these values shape the dynamics of notes that
+ * already exist: tension sets a velocity ceiling and energy sets the level
+ * within it. They do not reach note selection or note count, which are decided
+ * during generation, before the curve is planned.
  */
 struct SectionEmotion {
   float tension;          ///< Tension level 0.0-1.0 (0=relaxed, 1=maximum tension)
   float energy;           ///< Energy level 0.0-1.0 (0=calm, 1=explosive)
   float resolution_need;  ///< Need for resolution 0.0-1.0 (0=stable, 1=desperate for resolution)
   int8_t pitch_tendency;  ///< Pitch direction tendency -3..+3 (-=down, +=up)
-  float density_factor;   ///< Density multiplier 0.5-1.5 (affects note count)
+  /// @brief Planned density weight 0.5-1.5, carried by the curve's own rules.
+  ///
+  /// Section note counts are set by Section::density_percent during generation.
+  /// This value records the arc's density intent alongside it and is not applied
+  /// to any track.
+  float density_factor;
 };
 
 /**

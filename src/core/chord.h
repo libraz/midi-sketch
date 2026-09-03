@@ -203,7 +203,7 @@ struct SecondaryDominantInfo {
 };
 
 /**
- * @brief Check if a secondary dominant should be inserted between two chords.
+ * @brief Check whether a chord may be approached by its own dominant.
  *
  * Secondary dominants (V/x chords) create tension before resolution:
  * - V/ii (A7 in C) before ii (Dm)
@@ -211,13 +211,20 @@ struct SecondaryDominantInfo {
  * - V/IV (C7 in C) before IV (F) - actually I7 used as dominant
  * - V/V (D7 in C) before V (G)
  *
- * @param current_degree Current chord degree
+ * Eligibility is a property of the target alone. The chord being replaced is
+ * deliberately not consulted: what makes a secondary dominant is its quality,
+ * not its degree. Dom7 forces a major third, so the four cases where the
+ * dominant lands on the degree already sounding -- I before IV, ii before V,
+ * iii before vi, vi before ii -- turn that chord into a dominant seventh and
+ * resolve it down a fifth to a different chord. Those are the four most common
+ * secondary dominants in this repertoire, and matching on degree rejected
+ * exactly them.
+ *
  * @param next_degree Next chord degree
  * @param tension_level Emotional tension level 0.0-1.0 (higher = more likely to insert)
  * @return SecondaryDominantInfo with insertion recommendation
  */
-SecondaryDominantInfo checkSecondaryDominant(int8_t current_degree, int8_t next_degree,
-                                             float tension_level);
+SecondaryDominantInfo checkSecondaryDominant(int8_t next_degree, float tension_level);
 
 /**
  * @brief Get the scale degree for V/x (secondary dominant to x).

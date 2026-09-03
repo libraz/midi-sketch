@@ -151,7 +151,11 @@ class ICollisionDetector : public IChordLookup {
    *
    * Returns the highest actual MIDI pitch (0-127) for notes from the specified
    * track that overlap with [start, end). Returns 0 if no notes found.
-   * Used for per-bar vocal ceiling in accompaniment tracks.
+   *
+   * This is the query behind the vocal-derived ceiling for accompaniment tracks
+   * (see resolveVocalCeiling in track/accompaniment_ceiling.h): the question there
+   * is whether the accompaniment rises above the lead, so the lead's top note in
+   * the window is what it has to clear.
    *
    * @param start Start of time range
    * @param end End of time range
@@ -165,8 +169,14 @@ class ICollisionDetector : public IChordLookup {
    *
    * Returns the lowest actual MIDI pitch (1-127) for notes from the specified
    * track that overlap with [start, end). Returns 0 if no notes found.
-   * Used for per-onset vocal ceiling: accompaniment should not exceed the
-   * lowest concurrent vocal pitch to prevent pitch crossing at any point.
+   *
+   * Callers use this where the lead's bottom note is the thing to clear, which is a
+   * different question from the accompaniment ceiling above: keeping a re-quantized
+   * backing note under every vocal pitch in its span, holding a section-wide guitar
+   * part below the vocal, and moving a bass note off a vocal octave doubling. Over a
+   * window wide enough to span a phrase this is far stricter than the highest pitch,
+   * so it pushes a part down to clear the lowest note in the phrase; that is the
+   * intent at those call sites, not a general substitute for the ceiling query.
    *
    * @param start Start of time range
    * @param end End of time range

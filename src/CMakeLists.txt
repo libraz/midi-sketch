@@ -67,6 +67,7 @@ set(MIDISKETCH_CORE_SOURCES
   track/chord/bass_coordination.cpp
   track/drums.cpp
   track/drums/drum_constants.h
+  track/drums/groove_grid.cpp
   track/drums/fill_generator.cpp
   track/drums/ghost_notes.cpp
   track/drums/kick_patterns.cpp

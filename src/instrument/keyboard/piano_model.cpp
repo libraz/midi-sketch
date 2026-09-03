@@ -348,42 +348,44 @@ std::vector<uint8_t> PianoModel::suggestPlayableVoicing(const std::vector<uint8_
     if (isVoicingPlayable(inverted)) return inverted;
   }
 
-  // Strategy 2: Omit inner voices (5th first, then 3rd, preserve root and 7th)
+  // Strategy 2: Drop voices in order of how little they say about the chord.
+  //
+  // The 5th carries no identity and the root is already in the bass, so both go
+  // before any colour. The 3rd is what makes the chord major or minor and the
+  // 7th is what gives a dominant its pull, so they are the last two to go and
+  // the 3rd is last of all. Dropping the 3rd before trying to drop the 7th left
+  // chords with no quality at all while a droppable voice was still present.
   if (sorted.size() >= 4) {
-    // Omit 5th (7 semitones from root)
-    auto without_fifth = sorted;
-    for (auto iter = without_fifth.begin(); iter != without_fifth.end(); ++iter) {
-      if ((*iter % 12) == ((root_pitch_class + 7) % 12)) {
-        without_fifth.erase(iter);
-        break;
+    auto expendability = [root_pitch_class](uint8_t pitch) {
+      int interval = (static_cast<int>(pitch) + 12 - static_cast<int>(root_pitch_class)) % 12;
+      switch (interval) {
+        case 7:
+          return 0;  // fifth
+        case 0:
+          return 1;  // root, doubled by the bass
+        case 3:
+        case 4:
+          return 4;  // third: major/minor identity
+        case 10:
+        case 11:
+          return 3;  // seventh: dominant pull and colour
+        default:
+          return 2;  // ninths, elevenths, sixths
       }
-    }
-    if (without_fifth.size() < sorted.size() && isVoicingPlayable(without_fifth)) {
-      return without_fifth;
-    }
+    };
 
-    // Omit 3rd (3 or 4 semitones from root) if still not playable
-    auto without_third = without_fifth.size() < sorted.size() ? without_fifth : sorted;
-    for (auto iter = without_third.begin(); iter != without_third.end(); ++iter) {
-      uint8_t interval = (*iter + 12 - root_pitch_class) % 12;
-      if (interval == 3 || interval == 4) {
-        without_third.erase(iter);
-        break;
-      }
+    auto reduced = sorted;
+    while (reduced.size() > 3) {
+      auto victim = std::max_element(reduced.begin(), reduced.end(), [&](uint8_t lhs, uint8_t rhs) {
+        int lhs_rank = expendability(lhs);
+        int rhs_rank = expendability(rhs);
+        if (lhs_rank != rhs_rank) return lhs_rank > rhs_rank;
+        // Same role: prefer to keep the lower voice, which is more audible.
+        return lhs < rhs;
+      });
+      reduced.erase(victim);
+      if (isVoicingPlayable(reduced)) return reduced;
     }
-    if (isVoicingPlayable(without_third)) return without_third;
-
-    // Omit 5th, 7th, and any extended tones as last resort
-    auto minimal = sorted;
-    for (auto iter = minimal.begin(); iter != minimal.end();) {
-      uint8_t interval = (*iter + 12 - root_pitch_class) % 12;
-      if (interval == 7 || interval == 10 || interval == 11) {
-        iter = minimal.erase(iter);
-      } else {
-        ++iter;
-      }
-    }
-    if (isVoicingPlayable(minimal)) return minimal;
   }
 
   // Strategy 3: Close position (collapse to nearest octave range)

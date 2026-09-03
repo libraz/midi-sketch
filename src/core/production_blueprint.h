@@ -35,12 +35,16 @@ enum class InstrumentSkillLevel : uint8_t {
 
 /// @brief Instrument physical constraint mode.
 ///
-/// Controls how physical playability is checked during generation.
+/// Controls whether physical playability is checked during generation.
+/// The playability checkers distinguish Off from every other value: Off returns
+/// pitches unchanged, and ConstraintsOnly, TechniquesOnly and Full all run the
+/// hand-span and position-shift check. No consumer separates the three enabled
+/// values, so they differ only in the intent a blueprint records.
 enum class InstrumentModelMode : uint8_t {
-  Off,              ///< No physical constraints (default, legacy behavior)
-  ConstraintsOnly,  ///< Physical constraints only (playability check)
-  TechniquesOnly,   ///< Technique patterns only (slap/pop, no constraint check)
-  Full              ///< Both constraints and techniques
+  Off,              ///< No physical constraints
+  ConstraintsOnly,  ///< Playability check enabled
+  TechniquesOnly,   ///< Playability check enabled
+  Full              ///< Playability check enabled
 };
 
 /// @brief Auxiliary percussion policy for a blueprint.
@@ -60,16 +64,12 @@ struct BlueprintConstraints {
   uint8_t max_leap_semitones = 12;  ///< Maximum melodic leap (octave)
   bool prefer_stepwise = false;     ///< Prefer stepwise motion over leaps
 
-  // Fretted instrument constraints
-  InstrumentSkillLevel bass_skill = InstrumentSkillLevel::Intermediate;    ///< Bass skill level
-  InstrumentSkillLevel guitar_skill = InstrumentSkillLevel::Intermediate;  ///< Guitar skill level
-  InstrumentSkillLevel keys_skill = InstrumentSkillLevel::Intermediate;    ///< Keyboard skill level
+  // Fretted instrument constraints.
+  // Only the instruments whose generator builds a physical model appear here;
+  // a skill level nothing reads describes a difference the output never shows.
+  InstrumentSkillLevel bass_skill = InstrumentSkillLevel::Intermediate;  ///< Bass skill level
+  InstrumentSkillLevel keys_skill = InstrumentSkillLevel::Intermediate;  ///< Keyboard skill level
   InstrumentModelMode instrument_mode = InstrumentModelMode::Off;  ///< Physical constraint mode
-
-  // Technique enablement (only applies when instrument_mode includes Techniques)
-  bool enable_slap = false;       ///< Enable slap/pop technique for bass
-  bool enable_tapping = false;    ///< Enable two-hand tapping
-  bool enable_harmonics = false;  ///< Enable natural harmonics
 
   /// Restrict guitar upper range to below vocal lowest pitch.
   /// When true, guitar notes are capped at vocal_low - 2 semitones.
@@ -276,6 +276,116 @@ struct ProductionBlueprint {
   uint16_t tempo_min = 0;
   uint16_t tempo_max = 0;
 };
+
+// ============================================================================
+// Field accounting
+// ============================================================================
+
+/// @brief How a blueprint field reaches generated output.
+///
+/// Every field carries exactly one role, and the role says which kind of
+/// evidence proves the field is alive.
+enum class BlueprintFieldRole : uint8_t {
+  /// Read while tracks are generated. Changing the value must change the notes.
+  TrackGeneration,
+  /// Read where the perturbation probe cannot reach it or cannot isolate it:
+  /// while the parameters and the arrangement are resolved, behind a
+  /// probability gate, or while finished tracks are shaped. A named check has
+  /// to show the value it decides.
+  SongAssembly,
+  /// Read only while choosing which blueprint to use, never during generation.
+  Selection,
+  /// A generator reads it, but no value of it changes a song. Two causes, and
+  /// they need different fixes: the reader resolves the blueprint from the
+  /// global table by id instead of using the one it was handed, so a supplied
+  /// blueprint never reaches it; or the reader is wired correctly but its
+  /// condition never binds for the material this engine produces. Either way
+  /// the field currently describes a difference nothing can hear, so the list
+  /// should only ever shrink.
+  UnprovenLiveness,
+  /// Names the blueprint. It carries no generation decision.
+  Identity,
+};
+
+/// @brief Hand every BlueprintConstraints member to @p visit exactly once.
+/// @param constraints Constraint block to walk (const or mutable).
+/// @param visit Callable invoked as `visit(role, name, field_ref)`.
+template <typename Constraints, typename Visitor>
+void visitBlueprintConstraintFields(Constraints& constraints, Visitor&& visit) {
+  auto& [max_velocity, max_pitch, max_leap_semitones, prefer_stepwise, bass_skill, keys_skill,
+         instrument_mode, guitar_below_vocal, ritardando_amount, motif_note_count,
+         drum_style_hint] = constraints;
+  visit(BlueprintFieldRole::TrackGeneration, "constraints.max_velocity", max_velocity);
+  visit(BlueprintFieldRole::TrackGeneration, "constraints.max_pitch", max_pitch);
+  visit(BlueprintFieldRole::TrackGeneration, "constraints.max_leap_semitones", max_leap_semitones);
+  visit(BlueprintFieldRole::TrackGeneration, "constraints.prefer_stepwise", prefer_stepwise);
+  visit(BlueprintFieldRole::UnprovenLiveness, "constraints.bass_skill", bass_skill);
+  visit(BlueprintFieldRole::TrackGeneration, "constraints.keys_skill", keys_skill);
+  visit(BlueprintFieldRole::TrackGeneration, "constraints.instrument_mode", instrument_mode);
+  visit(BlueprintFieldRole::TrackGeneration, "constraints.guitar_below_vocal", guitar_below_vocal);
+  visit(BlueprintFieldRole::SongAssembly, "constraints.ritardando_amount", ritardando_amount);
+  visit(BlueprintFieldRole::SongAssembly, "constraints.motif_note_count", motif_note_count);
+  visit(BlueprintFieldRole::TrackGeneration, "constraints.drum_style_hint", drum_style_hint);
+}
+
+/// @brief Hand every AuxProfile member to @p visit exactly once.
+/// @param profile Aux profile to walk (const or mutable).
+/// @param visit Callable invoked as `visit(role, name, field_ref)`.
+template <typename Profile, typename Visitor>
+void visitBlueprintAuxProfileFields(Profile& profile, Visitor&& visit) {
+  auto& [program_override, intro_function, verse_function, chorus_function, velocity_scale,
+         density_scale, range_ceiling] = profile;
+  visit(BlueprintFieldRole::SongAssembly, "aux_profile.program_override", program_override);
+  visit(BlueprintFieldRole::UnprovenLiveness, "aux_profile.intro_function", intro_function);
+  visit(BlueprintFieldRole::UnprovenLiveness, "aux_profile.verse_function", verse_function);
+  visit(BlueprintFieldRole::UnprovenLiveness, "aux_profile.chorus_function", chorus_function);
+  visit(BlueprintFieldRole::UnprovenLiveness, "aux_profile.velocity_scale", velocity_scale);
+  visit(BlueprintFieldRole::UnprovenLiveness, "aux_profile.density_scale", density_scale);
+  visit(BlueprintFieldRole::UnprovenLiveness, "aux_profile.range_ceiling", range_ceiling);
+}
+
+/// @brief Hand every ProductionBlueprint field to @p visit exactly once.
+///
+/// The structured bindings are exhaustive by construction: naming fewer or more
+/// identifiers than the struct has members is a compile error, so a field cannot
+/// be added to the blueprint table without also being given a role here. That
+/// closes the declaration end. The consumption end is closed by the accounting
+/// test, which walks this same table and requires every TrackGeneration field to
+/// change the generated notes when its value changes, every SongAssembly and
+/// Selection field to have a named check on the value it derives, and every
+/// UnprovenLiveness field to be on the standing list of settings whose effect
+/// nothing can currently demonstrate. A field no generator reads fails there
+/// instead of quietly describing a difference that never appears in a song.
+///
+/// @param blueprint Blueprint to walk (const or mutable).
+/// @param visit Callable invoked as `visit(role, name, field_ref)`.
+template <typename Blueprint, typename Visitor>
+void visitBlueprintFields(Blueprint& blueprint, Visitor&& visit) {
+  auto& [name, weight, paradigm, section_flow, section_count, riff_policy, drums_sync_vocal,
+         drums_required, intro_kick_enabled, intro_bass_enabled, intro_stagger_percent,
+         euclidean_drums_percent, percussion_policy, addictive_mode, mood_mask, constraints,
+         aux_profile, tempo_default, tempo_min, tempo_max] = blueprint;
+  visit(BlueprintFieldRole::Identity, "name", name);
+  visit(BlueprintFieldRole::Selection, "weight", weight);
+  visit(BlueprintFieldRole::SongAssembly, "paradigm", paradigm);
+  visit(BlueprintFieldRole::TrackGeneration, "section_flow", section_flow);
+  visit(BlueprintFieldRole::TrackGeneration, "section_count", section_count);
+  visit(BlueprintFieldRole::SongAssembly, "riff_policy", riff_policy);
+  visit(BlueprintFieldRole::SongAssembly, "drums_sync_vocal", drums_sync_vocal);
+  visit(BlueprintFieldRole::SongAssembly, "drums_required", drums_required);
+  visit(BlueprintFieldRole::SongAssembly, "intro_kick_enabled", intro_kick_enabled);
+  visit(BlueprintFieldRole::TrackGeneration, "intro_bass_enabled", intro_bass_enabled);
+  visit(BlueprintFieldRole::SongAssembly, "intro_stagger_percent", intro_stagger_percent);
+  visit(BlueprintFieldRole::UnprovenLiveness, "euclidean_drums_percent", euclidean_drums_percent);
+  visit(BlueprintFieldRole::SongAssembly, "percussion_policy", percussion_policy);
+  visit(BlueprintFieldRole::SongAssembly, "addictive_mode", addictive_mode);
+  visit(BlueprintFieldRole::Selection, "mood_mask", mood_mask);
+  visitBlueprintConstraintFields(constraints, visit);
+  visitBlueprintAuxProfileFields(aux_profile, visit);
+  visit(BlueprintFieldRole::SongAssembly, "tempo_default", tempo_default);
+  visit(BlueprintFieldRole::SongAssembly, "tempo_min", tempo_min);
+  visit(BlueprintFieldRole::SongAssembly, "tempo_max", tempo_max);
+}
 
 /// @brief Clamp an implicit BPM to a blueprint's declared tempo range.
 /// Explicit user BPM values are preserved so callers can intentionally work outside the

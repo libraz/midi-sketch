@@ -53,9 +53,23 @@ void PostProcessingPipeline::run(const Context& ctx) {
   // Generate CC11 Expression curves for melodic tracks
   generateExpressionCurves(ctx);
 
-  // Apply humanization if enabled
+  // Random velocity variation is humanization and stays behind that switch.
   if (ctx.params.humanize) {
-    applyHumanization(ctx);
+    applyVelocityHumanization(ctx);
+  }
+
+  // Micro-timing is not: it is the pocket the drum style and drive_feel
+  // describe, and drive is a control of its own. Gating it on humanize made
+  // --drive silently do nothing to the kit unless --humanize came with it.
+  // The amount is whatever the caller actually asked for, and asking for
+  // neither leaves every note on the grid, so a song that sets no timing
+  // options is unchanged. Exactly one call either way: the humanize path
+  // supplies its own amount instead of adding a second pass.
+  const float groove_timing = ctx.params.humanize
+                                  ? ctx.params.humanize_timing
+                                  : DriveMapping::getGrooveTimingAmount(ctx.params.drive_feel);
+  if (groove_timing > 0.0f) {
+    applyGrooveTiming(ctx, groove_timing);
   }
 }
 
@@ -89,12 +103,15 @@ void PostProcessingPipeline::applyVelocityShaping(const Context& ctx,
                                                   std::vector<MidiTrack*>& tracks) {
   const auto& sections = ctx.song.arrangement().sections();
 
-  // Route ProductionBlueprint SectionSlot::base_velocity into every sounding
-  // track before phrase and beat dynamics. A fixed-velocity motif intentionally
-  // opts out, while the drum kit receives the same section-level energy ratio.
-  std::vector<MidiTrack*> base_velocity_tracks = tracks;
-  base_velocity_tracks.push_back(&ctx.song.drums());
-  midisketch::applySectionBaseVelocity(base_velocity_tracks, sections);
+  // Route the section dynamics controls (base velocity, energy, peak level,
+  // modifier) into every sounding track in one multiplication, before phrase and
+  // beat dynamics. A fixed-velocity motif intentionally opts out; the drum kit
+  // and SE receive the same section-level ratio as the pitched tracks, so a
+  // quiet section is quiet across the whole arrangement.
+  std::vector<MidiTrack*> section_dynamics_tracks = tracks;
+  section_dynamics_tracks.push_back(&ctx.song.drums());
+  section_dynamics_tracks.push_back(&ctx.song.se());
+  midisketch::applySectionDynamics(section_dynamics_tracks, sections);
 
   // Apply melody contour-following velocity to vocal track
   midisketch::applyMelodyContourVelocity(ctx.song.vocal(), sections);
@@ -185,11 +202,20 @@ void PostProcessingPipeline::applyTransitionEffects(const Context& ctx,
                                           &ctx.song.arpeggio(), &ctx.song.motif(), &ctx.song.aux(),
                                           &ctx.song.guitar()};
 
-    // Clamp velocities for all tracks
+    // Bring every sounding track under the declared ceiling. A declared maximum
+    // describes how hard the production hits, so the kit is bound by it too --
+    // it was the loudest thing in the mix while being the only track exempt.
+    // The percussion goes through its own entry point because a drum velocity
+    // selects the sound rather than only its level: see
+    // applyPercussionVelocityCeiling().
     if (ctx.blueprint->constraints.max_velocity < 127) {
       for (MidiTrack* track : all_tracks) {
         midisketch::clampTrackVelocity(*track, ctx.blueprint->constraints.max_velocity);
       }
+      midisketch::applyPercussionVelocityCeiling(ctx.song.drums(),
+                                                 ctx.blueprint->constraints.max_velocity);
+      midisketch::applyPercussionVelocityCeiling(ctx.song.se(),
+                                                 ctx.blueprint->constraints.max_velocity);
     }
 
     // Clamp vocal pitch (other tracks have different range requirements)
@@ -203,6 +229,13 @@ void PostProcessingPipeline::applyTransitionEffects(const Context& ctx,
       PostProcessor::fixMotifVocalClashes(ctx.song.motif(), ctx.song.vocal(), ctx.harmony);
     }
   }
+
+  // Close the velocity pipeline by restoring the entry protection that the
+  // passes above can undo. It runs last, and under the declared ceiling, so no
+  // later pass can turn a chorus entry back into a dip.
+  const uint8_t velocity_ceiling =
+      (ctx.blueprint != nullptr) ? ctx.blueprint->constraints.max_velocity : 127;
+  midisketch::enforceSectionEntryLift(tracks, sections, velocity_ceiling);
 }
 
 void PostProcessingPipeline::applyFinalAdjustments(const Context& ctx) {
@@ -325,8 +358,7 @@ void PostProcessingPipeline::applyEmotionBasedDynamics(const Context& ctx,
 // Humanization
 // ============================================================================
 
-void PostProcessingPipeline::applyHumanization(const Context& ctx) {
-  // Use PostProcessor for humanization
+void PostProcessingPipeline::applyVelocityHumanization(const Context& ctx) {
   std::vector<MidiTrack*> tracks = {&ctx.song.vocal(), &ctx.song.chord(),    &ctx.song.bass(),
                                     &ctx.song.motif(), &ctx.song.arpeggio(), &ctx.song.aux(),
                                     &ctx.song.guitar()};
@@ -335,18 +367,22 @@ void PostProcessingPipeline::applyHumanization(const Context& ctx) {
   const auto& sections = ctx.song.arrangement().sections();
   PostProcessor::applySectionAwareVelocityHumanization(tracks, sections,
                                                        ctx.params.humanize_velocity, ctx.rng);
+}
 
+void PostProcessingPipeline::applyGrooveTiming(const Context& ctx, float timing_amount) {
   // Apply per-instrument micro-timing offsets for groove pocket
   // Pass sections for phrase-aware vocal timing (Start: +8, Middle: +4, End: 0)
   // drive_feel scales timing offsets: laid-back = reduced, aggressive = increased
   // vocal_style affects human timing physics (UltraVocaloid=mechanical, Human=natural)
-  // humanize_timing globally scales all timing offsets (0.0 = grid, 1.0 = full variation)
+  // timing_amount globally scales all timing offsets (0.0 = grid, 1.0 = full variation)
+  const auto& sections = ctx.song.arrangement().sections();
   DrumStyle drum_style = resolveDrumStyle(ctx.params.mood, ctx.blueprint);
-  PostProcessor::applyMicroTimingOffsets(
-      ctx.song.vocal(), ctx.song.bass(), ctx.song.drums(), &sections, ctx.params.drive_feel,
-      ctx.params.vocal_style, drum_style, ctx.params.humanize_timing, ctx.params.paradigm);
+  PostProcessor::applyMicroTimingOffsets(ctx.song.vocal(), ctx.song.bass(), ctx.song.drums(),
+                                         &sections, ctx.params.drive_feel, ctx.params.vocal_style,
+                                         drum_style, timing_amount, ctx.params.paradigm);
 
-  // Synchronize bass-kick timing for tighter groove pocket
+  // Synchronize bass-kick timing for tighter groove pocket. It repairs the
+  // alignment the offsets above just disturbed, so it belongs to the same pass.
   PostProcessor::synchronizeBassKick(ctx.song.bass(), ctx.song.drums(), drum_style);
 }
 
@@ -377,45 +413,42 @@ void PostProcessingPipeline::applyStaggeredEntry(const Context& ctx, const Secti
         {TrackMask::Motif, TrackRole::Motif}, {TrackMask::Arpeggio, TrackRole::Arpeggio},
         {TrackMask::Aux, TrackRole::Aux},     {TrackMask::Guitar, TrackRole::Guitar},
     };
-    MidiTrack* track = nullptr;
-    for (const auto& [mask, role] : kStaggerTracks) {
-      if (hasTrack(entry.track, mask)) {
-        track = &ctx.song.track(role);
-        break;
-      }
-    }
 
-    if (!track) continue;
-
-    auto& notes = track->notes();
     Tick section_end = section_start + section.bars * TICKS_PER_BAR;
 
-    // Remove notes before entry_tick within this section
-    notes.erase(std::remove_if(notes.begin(), notes.end(),
-                               [section_start, section_end, entry_tick](const NoteEvent& note) {
-                                 return note.start_tick >= section_start &&
-                                        note.start_tick < entry_tick &&
-                                        note.start_tick < section_end;
-                               }),
-                notes.end());
+    // An entry may name several tracks at once, and every bit it sets enters
+    // together. Stopping at the first match left the remaining tracks playing
+    // from bar 0 at full level.
+    for (const auto& [mask, role] : kStaggerTracks) {
+      if (!hasTrack(entry.track, mask)) continue;
+      MidiTrack* track = &ctx.song.track(role);
+      auto& notes = track->notes();
 
-    // Apply fade-in if configured
-    // A fixed-velocity motif is a metronomic pulse.  It may enter late, but
-    // its attack velocity must not be faded with the other backing layers.
-    const bool preserve_fixed_motif_velocity =
-        track == &ctx.song.motif() && ctx.params.motif.velocity_fixed;
-    if (entry.fade_in_bars > 0 && !preserve_fixed_motif_velocity) {
+      // Remove notes before entry_tick within this section
+      notes.erase(std::remove_if(notes.begin(), notes.end(),
+                                 [section_start, section_end, entry_tick](const NoteEvent& note) {
+                                   return note.start_tick >= section_start &&
+                                          note.start_tick < entry_tick &&
+                                          note.start_tick < section_end;
+                                 }),
+                  notes.end());
+
+      // Apply fade-in if configured
+      // A fixed-velocity motif is a metronomic pulse.  It may enter late, but
+      // its attack velocity must not be faded with the other backing layers.
+      const bool preserve_fixed_motif_velocity =
+          role == TrackRole::Motif && ctx.params.motif.velocity_fixed;
+      if (entry.fade_in_bars == 0 || preserve_fixed_motif_velocity) continue;
+
       Tick fade_end = entry_tick + entry.fade_in_bars * TICKS_PER_BAR;
       Tick fade_duration = fade_end - entry_tick;
 
       for (auto& note : notes) {
         if (note.start_tick >= entry_tick && note.start_tick < fade_end &&
             note.start_tick < section_end) {
-          // Linear fade from 40% to 100%
           float progress =
               static_cast<float>(note.start_tick - entry_tick) / static_cast<float>(fade_duration);
-          float fade_factor = 0.4f + 0.6f * progress;
-          note.velocity = static_cast<uint8_t>(note.velocity * fade_factor);
+          note.velocity = midisketch::getEntryFadeVelocity(note.velocity, progress);
         }
       }
     }

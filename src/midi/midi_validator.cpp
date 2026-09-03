@@ -320,13 +320,20 @@ bool MidiValidator::validateSMF1Header(const uint8_t* data, size_t size,
     return false;
   }
 
+  // Reject exactly what MidiReader::parseHeader rejects, so a file reported as
+  // valid can actually be read back by the rest of the codebase.
   report.summary.division = readUint16BE(data + 12);
+  if (report.summary.division == 0) {
+    addError(report, "Invalid MIDI division: ticks per quarter note must be non-zero");
+    return false;
+  }
   if (report.summary.division & 0x8000) {
     report.summary.timing_type = "SMPTE";
-  } else {
-    report.summary.timing_type = "PPQN";
-    report.summary.ticks_per_quarter = report.summary.division;
+    addError(report, "SMPTE time division is not supported");
+    return false;
   }
+  report.summary.timing_type = "PPQN";
+  report.summary.ticks_per_quarter = report.summary.division;
 
   return true;
 }

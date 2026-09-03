@@ -81,23 +81,6 @@ class TrackBase : public ITrackBase {
     if (!ctx.harmony) return false;
     return ctx.harmony->getTrackPriority(getRole()) == TrackPriority::Highest;
   }
-
-  /// @brief Get the effective pitch range for this track.
-  /// @param ctx Track context (unused, reserved for future expansion)
-  /// @return Pair of (low, high) pitch bounds
-  std::pair<uint8_t, uint8_t> getEffectivePitchRange(
-      [[maybe_unused]] const TrackContext& ctx) const {
-    PhysicalModel model = getPhysicalModel();
-    uint8_t low = model.pitch_low;
-    uint8_t high = model.pitch_high;
-
-    // Apply vocal ceiling if applicable
-    if (model.vocal_ceiling_offset != 0) {
-      high = model.getEffectiveHigh(config_.vocal_high);
-    }
-
-    return {low, high};
-  }
 };
 
 }  // namespace midisketch

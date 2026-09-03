@@ -200,10 +200,21 @@ class MidiSketch {
   void rebuildMidiLegacy();
   /// @brief Rebuild MIDI from current generator state with SongConfig metadata.
   void rebuildMidiWithConfig(const SongConfig& config);
+  /**
+   * @brief Rebuild MIDI, preferring the accumulated SongConfig.
+   *
+   * Once a handle has been given a SongConfig, every later state change keeps
+   * emitting config-carrying metadata; only handles driven purely through
+   * GeneratorParams fall back to the params-only form.
+   */
+  void rebuildMidi();
 
   Generator generator_;
   MidiWriter midi_writer_;
   MidiFormat midi_format_ = kDefaultMidiFormat;
+  /// Accumulated configuration of this handle, valid while has_config_ is true.
+  SongConfig config_;
+  bool has_config_ = false;
 };
 
 }  // namespace midisketch

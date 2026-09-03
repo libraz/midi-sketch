@@ -19,7 +19,6 @@
 
 #include <algorithm>
 #include <cassert>
-#include <map>
 
 namespace midisketch {
 
@@ -83,7 +82,7 @@ void MidiWriter::writeTrack(const MidiTrack& track, const std::string& name, uin
   track_data.push_back(0x00);
   track_data.push_back(0xFF);
   track_data.push_back(0x03);
-  track_data.push_back(static_cast<uint8_t>(track_name.size()));
+  writeVariableLength(track_data, static_cast<uint32_t>(track_name.size()));
   for (char c : track_name) {
     track_data.push_back(static_cast<uint8_t>(c));
   }
@@ -130,38 +129,19 @@ void MidiWriter::writeTrack(const MidiTrack& track, const std::string& name, uin
   events.reserve(track.notes().size() * 2 + track.ccEvents().size() +
                  track.pitchBendEvents().size());
 
-  struct OutputNote {
-    Tick start;
-    Tick end;
-    uint8_t pitch;
-    uint8_t velocity;
-  };
-  std::map<uint8_t, std::vector<OutputNote>> notes_by_pitch;
+  const bool percussive = isPercussionChannel(channel);
+  std::vector<SerializedNote> serialized;
+  serialized.reserve(track.notes().size());
   for (const auto& note : track.notes()) {
     uint8_t pitch = note.note;
-    if (channel != 9) {  // Not drums
+    if (!percussive) {
       pitch = transposeAndModulate(pitch, key, note.start_tick, mod_tick, mod_amount);
     }
-    notes_by_pitch[pitch].push_back(
-        {note.start_tick, note.start_tick + note.duration, pitch, note.velocity});
+    serialized.push_back({note.start_tick, note.start_tick + note.duration, pitch, note.velocity});
   }
-  for (auto& [pitch, notes] : notes_by_pitch) {
-    std::stable_sort(notes.begin(), notes.end(),
-                     [](const OutputNote& a, const OutputNote& b) { return a.start < b.start; });
-    std::vector<OutputNote> normalized;
-    normalized.reserve(notes.size());
-    for (const auto& note : notes) {
-      if (!normalized.empty() && note.start < normalized.back().end) {
-        normalized.back().end = std::max(normalized.back().end, note.end);
-        normalized.back().velocity = std::max(normalized.back().velocity, note.velocity);
-      } else {
-        normalized.push_back(note);
-      }
-    }
-    for (const auto& note : normalized) {
-      events.push_back({note.start, 0x90, pitch, note.velocity});
-      events.push_back({note.end, 0x80, pitch, 0});
-    }
+  for (const auto& note : resolveSamePitchOverlaps(std::move(serialized), percussive)) {
+    events.push_back({note.start, 0x90, note.pitch, note.velocity});
+    events.push_back({note.end, 0x80, note.pitch, 0});
   }
 
   // Add CC events to the unified stream
@@ -247,7 +227,8 @@ void MidiWriter::writeTrack(const MidiTrack& track, const std::string& name, uin
 
 void MidiWriter::writeMarkerTrack(const MidiTrack& track, uint16_t bpm,
                                   const std::vector<TempoEvent>& tempo_map,
-                                  const std::string& metadata) {
+                                  const std::string& metadata, Key key, Tick mod_tick,
+                                  int8_t mod_amount) {
   std::vector<uint8_t> track_data;
 
   // Defensive: BPM should be validated at buildSMF1() entry point
@@ -302,7 +283,17 @@ void MidiWriter::writeMarkerTrack(const MidiTrack& track, uint16_t bpm,
     size_t index;
   };
   std::vector<TimedEvent> events;
-  const auto note_events = track.toMidiEvents(SE_CH);
+  // Calls and chants are pitched material written in the internal C major space,
+  // so they follow the output key like every other pitched track. Both events of
+  // a note take the pitch resolved at its start tick, which keeps a modulation
+  // from closing a note at a pitch it never opened on.
+  MidiTrack transposed;
+  for (const auto& note : track.notes()) {
+    NoteEvent shifted = note;
+    shifted.note = transposeAndModulate(note.note, key, note.start_tick, mod_tick, mod_amount);
+    transposed.addNote(shifted);
+  }
+  const auto note_events = transposed.toMidiEvents(SE_CH);
   events.reserve(track.textEvents().size() + tempo_map.size() + note_events.size());
 
   for (size_t i = 0; i < track.textEvents().size(); ++i) {
@@ -352,7 +343,7 @@ void MidiWriter::writeMarkerTrack(const MidiTrack& track, uint16_t bpm,
       writeVariableLength(track_data, delta);
       track_data.push_back(0xFF);
       track_data.push_back(0x06);
-      track_data.push_back(static_cast<uint8_t>(marker_text.size()));
+      writeVariableLength(track_data, static_cast<uint32_t>(marker_text.size()));
       for (char c : marker_text) {
         track_data.push_back(static_cast<uint8_t>(c));
       }
@@ -423,11 +414,11 @@ void MidiWriter::buildSMF1(const Song& song, Key key, Mood mood, const std::stri
 
   writeHeader(num_tracks, TICKS_PER_BEAT);
 
-  // SE track first (contains tempo, markers, and metadata)
-  writeMarkerTrack(song.se(), bpm, song.tempoMap(), metadata);
-
   Tick mod_tick = song.modulationTick();
   int8_t mod_amount = song.modulationAmount();
+
+  // SE track first (contains tempo, markers, and metadata)
+  writeMarkerTrack(song.se(), bpm, song.tempoMap(), metadata, key, mod_tick, mod_amount);
 
   if (!song.vocal().empty()) {
     writeTrack(song.vocal(), "Vocal", VOCAL_CH, progs.vocal, bpm, key, false, mod_tick, mod_amount);

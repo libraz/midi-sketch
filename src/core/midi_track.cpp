@@ -165,44 +165,63 @@ std::pair<uint8_t, uint8_t> MidiTrack::analyzeRange() const {
   return {lowest, highest};
 }
 
-std::vector<MidiEvent> MidiTrack::toMidiEvents(uint8_t channel) const {
-  std::vector<MidiEvent> events;
-
-  struct MergedNote {
-    Tick start;
-    Tick end;
-    uint8_t pitch;
-    uint8_t velocity;
-  };
-  std::vector<MergedNote> merged_notes;
-  merged_notes.reserve(notes_.size());
-  for (const auto& note : notes_) {
-    merged_notes.push_back(
-        {note.start_tick, note.start_tick + note.duration, note.note, note.velocity});
-  }
-
-  std::stable_sort(merged_notes.begin(), merged_notes.end(),
-                   [](const MergedNote& a, const MergedNote& b) {
+std::vector<SerializedNote> resolveSamePitchOverlaps(std::vector<SerializedNote> notes,
+                                                     bool percussive) {
+  std::stable_sort(notes.begin(), notes.end(),
+                   [](const SerializedNote& a, const SerializedNote& b) {
                      if (a.pitch != b.pitch) return a.pitch < b.pitch;
                      return a.start < b.start;
                    });
 
-  std::vector<MergedNote> normalized_notes;
-  normalized_notes.reserve(merged_notes.size());
-  for (const auto& note : merged_notes) {
-    if (!normalized_notes.empty() && normalized_notes.back().pitch == note.pitch &&
-        note.start < normalized_notes.back().end) {
-      normalized_notes.back().end = std::max(normalized_notes.back().end, note.end);
-      normalized_notes.back().velocity = std::max(normalized_notes.back().velocity, note.velocity);
+  const auto collapseInto = [](SerializedNote& kept, const SerializedNote& dropped) {
+    kept.end = std::max(kept.end, dropped.end);
+    kept.velocity = std::max(kept.velocity, dropped.velocity);
+  };
+
+  std::vector<SerializedNote> resolved;
+  resolved.reserve(notes.size());
+  for (const auto& note : notes) {
+    if (resolved.empty() || resolved.back().pitch != note.pitch ||
+        note.start >= resolved.back().end) {
+      resolved.push_back(note);
+      continue;
+    }
+    if (note.start == resolved.back().start) {
+      // One note-on cannot carry two velocities at one tick.
+      collapseInto(resolved.back(), note);
+    } else if (percussive) {
+      // End the ringing strike where the next one begins so both are struck.
+      resolved.back().end = note.start;
+      resolved.push_back(note);
     } else {
-      normalized_notes.push_back(note);
+      collapseInto(resolved.back(), note);
     }
   }
 
-  // Convert normalized NoteEvents to note-on/off MidiEvents. MIDI 1.0 cannot
-  // represent overlapping notes of the same channel and pitch: either note-off
-  // would terminate both voices. Their union is the audible, stable result.
-  for (const auto& note : normalized_notes) {
+  // Pitch-major order is this function's working order, needed to bring same-pitch
+  // notes next to each other. It is not the order a track is read in: every consumer
+  // downstream — the event stream, the JSON serialisation, anything walking a melody
+  // — expects notes in the order they sound. Restore that before handing the list back.
+  std::stable_sort(resolved.begin(), resolved.end(),
+                   [](const SerializedNote& a, const SerializedNote& b) {
+                     if (a.start != b.start) return a.start < b.start;
+                     return a.pitch < b.pitch;
+                   });
+  return resolved;
+}
+
+std::vector<MidiEvent> MidiTrack::toMidiEvents(uint8_t channel) const {
+  std::vector<MidiEvent> events;
+
+  std::vector<SerializedNote> serialized;
+  serialized.reserve(notes_.size());
+  for (const auto& note : notes_) {
+    serialized.push_back(
+        {note.start_tick, note.start_tick + note.duration, note.note, note.velocity});
+  }
+  serialized = resolveSamePitchOverlaps(std::move(serialized), isPercussionChannel(channel));
+
+  for (const auto& note : serialized) {
     // Note on: status = 0x90 | channel
     events.push_back({note.start, static_cast<uint8_t>(0x90 | channel), note.pitch, note.velocity});
 

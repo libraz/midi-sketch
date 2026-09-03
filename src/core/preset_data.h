@@ -38,7 +38,7 @@ enum class DrumStyle : uint8_t {
   Upbeat,       // Energetic - syncopated, driving
   Rock,         // Rock patterns - crash accents, ride cymbal
   Synth,        // Synth-oriented - tight 16th hi-hats, punchy kick
-  Trap,         // Trap - half-time snare (beat 3), hi-hat rolls
+  Trap,         // Trap - half-time snare (beat 3), tight 16th hi-hats
   Latin         // Latin - dembow rhythm (characteristic kick-snare pattern)
 };
 
@@ -264,7 +264,9 @@ enum class SongConfigError : uint8_t {
   InvalidMelodyOverride,     // Melody override out of accepted range
   InvalidMotifOverride,      // Motif override out of accepted range
   // Kept at 34 to preserve the C API's existing INVALID_JSON value (33).
-  InvalidMood = 34  // Mood preset ID out of range (0-MOOD_COUNT-1)
+  InvalidMood = 34,        // Mood preset ID out of range (0-MOOD_COUNT-1)
+  InvalidTargetDuration =  // Target duration cannot be built at the resolved tempo
+  35
 };
 
 // Validates a SongConfig.

@@ -56,6 +56,33 @@ int sectionEnergyRank(const Section& section) {
   return static_cast<int>(getEffectiveSectionEnergy(section));
 }
 
+/// @brief Whether a section is an arrival the arrangement builds toward.
+///
+/// Chorus, pre-chorus, MixBreak and Drop are the sections a listener hears as
+/// landing; so is any section a blueprint marks as the climax. A verse that
+/// follows a chorus is not one of these even when the two carry the same
+/// declared energy, and forcing it to enter as loudly would erase the drop the
+/// arrangement wants there.
+bool isArrivalSection(const Section& section) {
+  return isHighEnergySection(section.type) || section.modifier == SectionModifier::Climactic;
+}
+
+/// @brief Mean velocity of every note the given tracks start inside a window.
+/// @return Mean velocity, or 0.0 when the window holds no notes.
+float meanVelocityInRange(const std::vector<MidiTrack*>& tracks, Tick from, Tick to) {
+  int total = 0;
+  int count = 0;
+  for (const MidiTrack* track : tracks) {
+    if (track == nullptr) continue;
+    for (const auto& note : track->notes()) {
+      if (note.start_tick < from || note.start_tick >= to) continue;
+      total += note.velocity;
+      ++count;
+    }
+  }
+  return (count > 0) ? static_cast<float>(total) / static_cast<float>(count) : 0.0f;
+}
+
 }  // namespace
 
 float getMoodVelocityAdjustment(Mood mood) {
@@ -128,66 +155,39 @@ float getPeakVelocityMultiplier(PeakLevel peak) {
   return 1.0f;
 }
 
-uint8_t calculateEffectiveVelocity(const Section& section, uint8_t beat, Mood mood) {
-  // Use section's base_velocity if set (non-default)
-  uint8_t raw_base = (section.base_velocity != 80) ? section.base_velocity : 80;
-  // Apply SectionModifier (Ochisabi, Climactic, etc.)
-  uint8_t base = section.getModifiedVelocity(raw_base);
-
-  // Beat position adjustment
-  int8_t beat_adj = (beat == 0) ? 10 : (beat == 2) ? 5 : 0;
-
-  // Energy-based multiplier
-  SectionEnergy energy = getEffectiveSectionEnergy(section);
-  float energy_mult = 1.0f;
+float getSectionEnergyMultiplier(SectionEnergy energy) {
+  float absolute = velocity::kEnergyMediumMultiplier;
   switch (energy) {
     case SectionEnergy::Low:
-      energy_mult = velocity::kEnergyLowMultiplier;
+      absolute = velocity::kEnergyLowMultiplier;
       break;
     case SectionEnergy::Medium:
-      energy_mult = velocity::kEnergyMediumMultiplier;
+      absolute = velocity::kEnergyMediumMultiplier;
       break;
     case SectionEnergy::High:
-      energy_mult = velocity::kEnergyHighMultiplier;
+      absolute = velocity::kEnergyHighMultiplier;
       break;
     case SectionEnergy::Peak:
-      energy_mult = velocity::kEnergyPeakMultiplier;
+      absolute = velocity::kEnergyPeakMultiplier;
       break;
     case SectionEnergy::Unset:
-      energy_mult = velocity::kEnergyMediumMultiplier;
-      break;
+      // Nothing was declared, so nothing is scaled.
+      return 1.0f;
   }
-
-  // Peak level multiplier
-  float peak_mult = getPeakVelocityMultiplier(section.peak_level);
-
-  // Mood adjustment
-  float mood_adj = getMoodVelocityAdjustment(mood);
-
-  // Calculate final velocity
-  int velocity = static_cast<int>((base + beat_adj) * energy_mult * peak_mult * mood_adj);
-
-  return vel::clamp(velocity, 1, 127);
+  return absolute / velocity::kEnergyReferenceMultiplier;
 }
 
-uint8_t calculateEmotionAwareVelocity(const Section& section, uint8_t beat, Mood mood,
-                                      const SectionEmotion* emotion) {
-  // Get base velocity from section and mood
-  uint8_t base_velocity = calculateEffectiveVelocity(section, beat, mood);
-
-  // If no emotion curve, return base velocity
-  if (emotion == nullptr) {
-    return base_velocity;
-  }
-
-  // Apply EmotionCurve energy adjustment to base velocity
-  uint8_t energy_adjusted = calculateEnergyAdjustedVelocity(base_velocity, emotion->energy);
-
-  // Calculate velocity ceiling based on tension
-  uint8_t ceiling = calculateVelocityCeiling(127, emotion->tension);
-
-  // Clamp to ceiling
-  return std::min(energy_adjusted, ceiling);
+float getSectionVelocityScale(const Section& section) {
+  const float base_scale =
+      static_cast<float>(section.base_velocity) / velocity::kNeutralBaseVelocity;
+  // A section with no declared energy is scaled by its type during generation
+  // already, through calculateVelocity(); re-deriving energy from the type here
+  // would apply that same signal a second time. Only an explicitly declared
+  // energy adds information this pass can act on.
+  const float energy_scale = getSectionEnergyMultiplier(section.energy);
+  const float peak_scale = getPeakVelocityMultiplier(section.peak_level);
+  const float modifier_scale = section.getModifierVelocityMultiplier();
+  return base_scale * energy_scale * peak_scale * modifier_scale;
 }
 
 float getBarVelocityMultiplier(int bar_in_section, int total_bars, SectionType section_type) {
@@ -394,9 +394,18 @@ void applyEntryPatternDynamics(MidiTrack& track, Tick section_start, uint8_t bar
 
 void applyAllEntryPatternDynamics(std::vector<MidiTrack*>& tracks,
                                   const std::vector<Section>& sections) {
-  for (const auto& section : sections) {
+  for (size_t idx = 0; idx < sections.size(); ++idx) {
+    const auto& section = sections[idx];
     // Skip sections with Immediate pattern (no modification needed)
     if (section.entry_pattern == EntryPattern::Immediate) {
+      continue;
+    }
+
+    // GradualBuild opens the section at 60%, which is the opposite of what an
+    // entry that holds or raises energy needs. The ramp belongs to sections that
+    // actually step down and rebuild.
+    if (section.entry_pattern == EntryPattern::GradualBuild && idx > 0 &&
+        sectionEnergyRank(section) >= sectionEnergyRank(sections[idx - 1])) {
       continue;
     }
 
@@ -406,6 +415,12 @@ void applyAllEntryPatternDynamics(std::vector<MidiTrack*>& tracks,
       }
     }
   }
+}
+
+uint8_t getEntryFadeVelocity(uint8_t velocity, float progress) {
+  float factor =
+      velocity::kStaggerFadeStart + velocity::kStaggerFadeRange * std::clamp(progress, 0.0f, 1.0f);
+  return vel::clamp(static_cast<int>(std::lround(velocity * factor)), 1, 127);
 }
 
 // ============================================================================
@@ -421,8 +436,10 @@ void applyBarVelocityCurve(MidiTrack& track, const Section& section, const Secti
   if (notes.empty()) return;
 
   Tick section_end = section.endTick();
+  // A section that merely holds the previous energy still must not enter below
+  // it, so equal energy is protected alongside a rise.
   bool is_energy_lift =
-      prev_section != nullptr && sectionEnergyRank(section) > sectionEnergyRank(*prev_section);
+      prev_section != nullptr && sectionEnergyRank(section) >= sectionEnergyRank(*prev_section);
 
   for (auto& note : notes) {
     // Only modify notes within this section
@@ -457,10 +474,9 @@ void applyAllBarVelocityCurves(std::vector<MidiTrack*>& tracks,
   }
 }
 
-void applySectionBaseVelocity(std::vector<MidiTrack*>& tracks,
-                              const std::vector<Section>& sections) {
+void applySectionDynamics(std::vector<MidiTrack*>& tracks, const std::vector<Section>& sections) {
   for (const auto& section : sections) {
-    const float multiplier = static_cast<float>(section.base_velocity) / 80.0f;
+    const float multiplier = getSectionVelocityScale(section);
     const Tick section_end = section.endTick();
     for (MidiTrack* track : tracks) {
       if (track == nullptr) continue;
@@ -469,6 +485,55 @@ void applySectionBaseVelocity(std::vector<MidiTrack*>& tracks,
         note.velocity =
             vel::clamp(static_cast<int>(std::lround(note.velocity * multiplier)), 1, 127);
       }
+    }
+  }
+}
+
+void enforceSectionEntryLift(std::vector<MidiTrack*>& tracks, const std::vector<Section>& sections,
+                             uint8_t max_velocity) {
+  const int ceiling = std::max<int>(1, max_velocity);
+
+  for (size_t idx = 1; idx < sections.size(); ++idx) {
+    const Section& section = sections[idx];
+    const Section& prev = sections[idx - 1];
+    if (!isArrivalSection(section)) {
+      continue;  // Only an arrival has to land; a verse may enter softly.
+    }
+    if (sectionEnergyRank(section) < sectionEnergyRank(prev)) {
+      continue;  // A deliberate step down keeps its softer entry.
+    }
+
+    const Tick entry_end = std::min(section.start_tick + TICKS_PER_BAR, section.endTick());
+    const Tick tail_start =
+        (prev.endTick() > TICKS_PER_BAR) ? prev.endTick() - TICKS_PER_BAR : prev.start_tick;
+    const float tail_mean = meanVelocityInRange(tracks, tail_start, prev.endTick());
+    if (tail_mean <= 0.0f) continue;
+
+    // A single scale can fall short because notes saturate at the ceiling, so
+    // the lift is re-derived from what the bar actually reads until it stops
+    // moving. Each pass rounds up: a bar of few notes cannot express a
+    // fractional target, and rounding down would leave it permanently short.
+    constexpr int kMaxLiftPasses = 8;
+    for (int pass = 0; pass < kMaxLiftPasses; ++pass) {
+      const float entry_mean = meanVelocityInRange(tracks, section.start_tick, entry_end);
+      if (entry_mean <= 0.0f || entry_mean >= tail_mean) break;
+
+      // The whole bar moves by one factor so its internal shape survives.
+      const float lift = tail_mean / entry_mean;
+      bool changed = false;
+      for (MidiTrack* track : tracks) {
+        if (track == nullptr) continue;
+        for (auto& note : track->notes()) {
+          if (note.start_tick < section.start_tick || note.start_tick >= entry_end) continue;
+          uint8_t lifted =
+              vel::clamp(static_cast<int>(std::ceil(note.velocity * lift)), 1, ceiling);
+          if (lifted != note.velocity) {
+            note.velocity = lifted;
+            changed = true;
+          }
+        }
+      }
+      if (!changed) break;
     }
   }
 }
@@ -649,37 +714,6 @@ uint8_t calculateVelocityCeiling(uint8_t base_velocity, float tension) {
 
   int ceiling = static_cast<int>(base_velocity * ceiling_multiplier);
   return static_cast<uint8_t>(std::clamp(ceiling, 40, 127));
-}
-
-uint8_t calculateEnergyAdjustedVelocity(uint8_t section_velocity, float energy) {
-  // Energy affects base velocity:
-  // - Low energy (0.0-0.3): reduce velocity by up to 25%
-  // - Medium energy (0.3-0.7): slight adjustment (0.9 to 1.0)
-  // - High energy (0.7-1.0): boost velocity by up to 15%
-  float energy_multiplier = velocity::calculateTieredMultiplier(
-      energy, velocity::kEnergyLowThreshold, velocity::kEnergyHighThreshold,
-      velocity::kEnergyLowVelocityMin,                // 0.75 at energy=0
-      velocity::kEnergyMediumVelocityMin,             // 0.90 at low_threshold
-      1.0f,                                           // 1.0 at high_threshold
-      1.0f + velocity::kEnergyHighVelocityMaxBonus);  // 1.15 at energy=1
-
-  int adjusted = static_cast<int>(section_velocity * energy_multiplier);
-  return static_cast<uint8_t>(std::clamp(adjusted, 30, 127));
-}
-
-float calculateEnergyDensityMultiplier(float base_density, float energy) {
-  // Energy affects note density:
-  // - Low energy: reduce density to create space (50-80%)
-  // - Medium energy: normal density (80-100%)
-  // - High energy: increase density for fuller arrangements (100-130%)
-  float density_factor = velocity::calculateTieredMultiplier(
-      energy, velocity::kEnergyLowThreshold, velocity::kEnergyHighThreshold,
-      velocity::kEnergyLowDensityMin,                // 0.5 at energy=0
-      velocity::kEnergyMediumDensityMin,             // 0.8 at low_threshold
-      1.0f,                                          // 1.0 at high_threshold
-      1.0f + velocity::kEnergyHighDensityMaxBonus);  // 1.3 at energy=1
-
-  return std::clamp(base_density * density_factor, 0.5f, 1.5f);
 }
 
 float getChordTonePreferenceBoost(float resolution_need) {
@@ -946,6 +980,29 @@ void clampTrackVelocity(MidiTrack& track, uint8_t max_velocity) {
     if (note.velocity > max_velocity) {
       note.velocity = max_velocity;
     }
+  }
+}
+
+void applyPercussionVelocityCeiling(MidiTrack& track, uint8_t max_velocity) {
+  if (max_velocity >= velocity::kMaxVelocity) {
+    return;  // Nothing is above the ceiling.
+  }
+
+  const int ceiling = max_velocity;
+  const int knee = static_cast<int>(ceiling * velocity::kCeilingKneeRatio);
+  const int above_knee = velocity::kMaxVelocity - knee;
+  const int headroom = ceiling - knee;
+  if (above_knee <= 0 || headroom <= 0) {
+    // A ceiling this low leaves no range to fold into; fall back to the clip.
+    clampTrackVelocity(track, max_velocity);
+    return;
+  }
+
+  for (auto& note : track.notes()) {
+    if (note.velocity <= knee) continue;
+    const int over = note.velocity - knee;
+    const int folded = knee + (over * headroom + above_knee / 2) / above_knee;
+    note.velocity = vel::clamp(folded, 1, ceiling);
   }
 }
 

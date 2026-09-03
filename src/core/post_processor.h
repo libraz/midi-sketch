@@ -144,11 +144,11 @@ class PostProcessor {
   /// @param chord_track Chord track pointer
   /// @param vocal_track Vocal track pointer (for legacy dissonance avoidance, can be nullptr)
   /// @param section The section with FinalHit exit pattern
-  /// @param harmony Harmony context for comprehensive clash detection (optional)
+  /// @param harmony Harmony context for clash detection and registration of the
+  ///        bass note this may create (optional)
   static void applyEnhancedFinalHit(MidiTrack* bass_track, MidiTrack* drum_track,
                                     MidiTrack* chord_track, const MidiTrack* vocal_track,
-                                    const Section& section,
-                                    const ICollisionDetector* harmony = nullptr);
+                                    const Section& section, IHarmonyContext* harmony = nullptr);
 
   // ============================================================================
   // Motif-Vocal Clash Resolution

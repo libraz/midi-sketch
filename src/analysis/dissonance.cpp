@@ -128,16 +128,32 @@ bool isPitchClassChordTone(int pitch_class, Tick tick, const IChordLookup& chord
   return std::find(chord_tones.begin(), chord_tones.end(), pitch_class) != chord_tones.end();
 }
 
+// Intervals whose consonance depends on the chord underneath them: the tritone
+// is a chord tone on V and vii, and the major 7th is a chord tone on any
+// maj7 voicing. Neither can be judged without knowing the harmony.
+bool isContextDependentInterval(uint8_t pitch_class_interval) {
+  return pitch_class_interval == 6 || pitch_class_interval == 11;
+}
+
 // Check if an interval is dissonant, considering both pitch class and register.
 // Uses the unified isDissonantActualInterval for base detection, then adds severity.
 // The analyzer also checks compound intervals (1+ octave) that the generator allows.
 // actual_semitones: the real distance between notes (not modulo 12)
 // chord_degree: the current chord's scale degree
+// harmony_known: false when no chord is available for this tick, which limits
+//   the verdict to the intervals that are dissonant under every harmony
 // Returns (is_dissonant, severity).
 std::pair<bool, DissonanceSeverity> checkIntervalDissonance(uint8_t actual_semitones,
-                                                            int8_t chord_degree) {
+                                                            int8_t chord_degree,
+                                                            bool harmony_known = true) {
   uint8_t pitch_class_interval = actual_semitones % 12;
   bool is_compound = actual_semitones > 12;
+
+  // Judging a context-dependent interval against an assumed chord invents a
+  // harmony the file never stated, so it is left unreported instead.
+  if (!harmony_known && isContextDependentInterval(pitch_class_interval)) {
+    return {false, DissonanceSeverity::Low};
+  }
   bool is_wide_separation = actual_semitones > 24;
 
   // Wide separation (2+ octaves): typically acceptable regardless of interval
@@ -523,12 +539,16 @@ void detectSimultaneousClashes(const std::vector<TimedNote>& all_notes, const De
       uint8_t actual_interval = static_cast<uint8_t>(
           std::abs(static_cast<int>(note_a.pitch) - static_cast<int>(note_b.pitch)));
 
+      Tick overlap_start = std::max(note_a.start, note_b.start);
+
+      // The overlap start is what identifies the event, matching the tick, bar,
+      // beat and severity below. Keying on note_a.start instead would fold every
+      // later stab against one held pad note into a single reported clash.
       uint8_t low_pitch = std::min(note_a.pitch, note_b.pitch);
       uint8_t high_pitch = std::max(note_a.pitch, note_b.pitch);
-      auto clash_key = std::make_tuple(note_a.start, low_pitch, high_pitch);
+      auto clash_key = std::make_tuple(overlap_start, low_pitch, high_pitch);
       if (reported_clashes.count(clash_key) > 0) continue;
 
-      Tick overlap_start = std::max(note_a.start, note_b.start);
       uint32_t bar = tickToBar(overlap_start);
       int8_t degree = ctx.chord_lookup.getChordDegreeAt(overlap_start);
 
@@ -832,7 +852,10 @@ void detectSustainedInTrack(const MidiTrack& track, TrackRole role,
   }
 }
 
-// Detect sustained notes over chord changes in all tracks
+// Detect sustained notes over chord changes in all pitched tracks.
+// Bass and Chord are included: a root or a voicing held into the next chord is
+// the same defect the field name describes, and leaving them out would make the
+// count read as zero for the two tracks most able to produce it.
 void detectSustainedOverChordChange(const DetectionContext& ctx, DissonanceReport& report) {
   std::vector<ChordChange> chord_timeline = buildChordTimeline(ctx);
   detectSustainedInTrack(ctx.song.vocal(), TrackRole::Vocal, chord_timeline, ctx, report);
@@ -840,6 +863,8 @@ void detectSustainedOverChordChange(const DetectionContext& ctx, DissonanceRepor
   detectSustainedInTrack(ctx.song.arpeggio(), TrackRole::Arpeggio, chord_timeline, ctx, report);
   detectSustainedInTrack(ctx.song.aux(), TrackRole::Aux, chord_timeline, ctx, report);
   detectSustainedInTrack(ctx.song.guitar(), TrackRole::Guitar, chord_timeline, ctx, report);
+  detectSustainedInTrack(ctx.song.bass(), TrackRole::Bass, chord_timeline, ctx, report);
+  detectSustainedInTrack(ctx.song.chord(), TrackRole::Chord, chord_timeline, ctx, report);
 }
 
 // Detect non-diatonic notes in a single track
@@ -1054,17 +1079,24 @@ DissonanceReport analyzeDissonanceFromParsedMidi(const ParsedMidi& midi) {
       uint8_t actual_interval = static_cast<uint8_t>(
           std::abs(static_cast<int>(note_a.pitch) - static_cast<int>(note_b.pitch)));
 
+      // An external file states no harmony, so the same pair of pitches clashing
+      // again under a later chord is a separate event; the overlap start is what
+      // identifies and locates it, exactly as in detectSimultaneousClashes.
+      const Tick overlap_start = std::max(note_a.start, note_b.start);
+      const Tick overlap_end = std::min(note_a.end, note_b.end);
+
       // Deduplicate
       uint8_t low_pitch = std::min(note_a.pitch, note_b.pitch);
       uint8_t high_pitch = std::max(note_a.pitch, note_b.pitch);
-      auto clash_key = std::make_tuple(note_a.start, low_pitch, high_pitch);
+      auto clash_key = std::make_tuple(overlap_start, low_pitch, high_pitch);
       if (reported_clashes.count(clash_key) > 0) {
         continue;
       }
 
-      // Check for dissonant intervals
-      // Without chord info, use default chord degree 0 (C major)
-      auto [is_dissonant, base_severity] = checkIntervalDissonance(actual_interval, 0);
+      // No chord information exists for an external file, so only the intervals
+      // that are dissonant under every harmony can be judged.
+      auto [is_dissonant, base_severity] =
+          checkIntervalDissonance(actual_interval, 0, /*harmony_known=*/false);
 
       // Also check for major 2nd (2 semitones actual) between melodic tracks and chord.
       // This catches Vocal-Chord clashes like F vs G that sound harsh.
@@ -1091,12 +1123,12 @@ DissonanceReport analyzeDissonanceFromParsedMidi(const ParsedMidi& midi) {
 
         // Calculate bar and beat using MIDI division
         Tick ticks_per_bar = midi.division * 4;  // Assuming 4/4 time
-        uint32_t bar = note_a.start / ticks_per_bar;
-        float beat = 1.0f + static_cast<float>(note_a.start % ticks_per_bar) /
+        uint32_t bar = overlap_start / ticks_per_bar;
+        float beat = 1.0f + static_cast<float>(overlap_start % ticks_per_bar) /
                                 static_cast<float>(midi.division);
 
         // Apply beat strength adjustment (limited context without song structure)
-        Tick beat_pos = note_a.start % ticks_per_bar;
+        Tick beat_pos = overlap_start % ticks_per_bar;
         BeatStrength beat_strength;
         if (beat_pos < static_cast<Tick>(midi.division)) {
           beat_strength = BeatStrength::Strong;  // Beat 1
@@ -1125,11 +1157,14 @@ DissonanceReport analyzeDissonanceFromParsedMidi(const ParsedMidi& midi) {
         DissonanceIssue issue;
         issue.type = DissonanceType::SimultaneousClash;
         issue.severity = severity;
-        issue.tick = note_a.start;
+        issue.tick = overlap_start;
         issue.bar = bar + 1;  // 1-indexed to match --bar command
         issue.beat = beat;
         issue.interval_semitones = actual_interval;
         issue.interval_name = intervalToName(actual_interval);
+        // How long the two notes actually sound together, which separates a
+        // passing brush from a sustained clash.
+        issue.overlap_duration = overlap_end - overlap_start;
 
         issue.notes.push_back({note_a.track_name, note_a.pitch, midiNoteToName(note_a.pitch)});
         issue.notes.push_back({note_b.track_name, note_b.pitch, midiNoteToName(note_b.pitch)});

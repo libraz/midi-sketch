@@ -14,6 +14,45 @@
 
 namespace midisketch {
 
+/// @brief MIDI channel reserved for percussion by General MIDI.
+constexpr uint8_t kPercussionChannel = 9;
+
+/// @brief True when @p channel carries drum-kit indices rather than pitches.
+constexpr bool isPercussionChannel(uint8_t channel) { return channel == kPercussionChannel; }
+
+/// @brief A note reduced to the start/end pair a MIDI channel actually carries.
+struct SerializedNote {
+  Tick start;
+  Tick end;
+  uint8_t pitch;
+  uint8_t velocity;
+};
+
+/**
+ * @brief Resolve same-pitch overlaps into a sequence one MIDI channel can carry.
+ *
+ * A MIDI 1.0 channel has a single voice per pitch: one note-off silences every
+ * copy that is sounding. Two kinds of source material need opposite resolutions,
+ * and this is the only place either is implemented.
+ *
+ * - Sustained material (@p percussive false): overlapping copies of a pitch are
+ *   one sounding voice, so they collapse into their union (latest end, loudest
+ *   velocity). Re-striking would not be audible anyway.
+ * - Percussive material (@p percussive true): every note is a discrete strike
+ *   whose nominal length only models decay. The earlier strike is truncated at
+ *   the next onset so the later one keeps its own note-on. Collapsing these
+ *   would delete hi-hat subdivisions and ghost snares from the written groove.
+ *
+ * Notes sharing a pitch and a start tick cannot be told apart on the wire, so
+ * they collapse in both modes.
+ *
+ * @param notes Notes to resolve; pitches must already be in output space
+ * @param percussive Whether the destination channel carries discrete strikes
+ * @return Resolved notes ordered by pitch, then by start tick
+ */
+std::vector<SerializedNote> resolveSamePitchOverlaps(std::vector<SerializedNote> notes,
+                                                     bool percussive);
+
 /// @brief NoteEvent-based track container for MIDI generation.
 ///
 /// All editing happens at NoteEvent level; converts to MidiEvent for output.

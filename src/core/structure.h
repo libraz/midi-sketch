@@ -6,12 +6,60 @@
 #ifndef MIDISKETCH_CORE_STRUCTURE_H
 #define MIDISKETCH_CORE_STRUCTURE_H
 
+#include <utility>
 #include <vector>
 
 #include "core/production_blueprint.h"
 #include "core/types.h"
 
 namespace midisketch {
+
+/// @name Structure length bounds
+///
+/// The only definition of how long a generated song may be. buildStructureForDuration()
+/// clamps to this range. validateSongConfig() rejects only a duration that no permitted
+/// tempo could reach; one that merely overshoots the resolved tempo is clamped, and the
+/// length actually built is reported back so the adjustment is visible.
+/// @{
+
+/// Shortest structure the builder will produce.
+inline constexpr uint16_t kMinStructureBars = 12;
+
+/// Longest structure the builder will produce (~4.8 min at 120 BPM).
+inline constexpr uint16_t kMaxStructureBars = 144;
+
+/// Slowest tempo a song may be built at. Also the tempo that reaches the longest
+/// duration, since a bar lasts longer the slower the song runs.
+inline constexpr uint16_t kMinSongBpm = 40;
+
+/// Fastest tempo a song may be built at, and so the one that reaches the shortest
+/// duration.
+inline constexpr uint16_t kMaxSongBpm = 240;
+
+/// @}
+
+/**
+ * @brief Bars a target duration works out to at a given tempo (4/4).
+ * @param target_seconds Target duration in seconds
+ * @param bpm Tempo in beats per minute; 0 yields 0 bars
+ * @return Unclamped bar count
+ */
+uint16_t barsForDuration(uint16_t target_seconds, uint16_t bpm);
+
+/**
+ * @brief Whether a requested duration lands inside the structure length bounds.
+ * @param target_seconds Target duration in seconds; 0 means "use the form pattern"
+ * @param bpm Tempo in beats per minute
+ * @return True when the duration is 0 or maps into [kMinStructureBars, kMaxStructureBars]
+ */
+bool isTargetDurationAchievable(uint16_t target_seconds, uint16_t bpm);
+
+/**
+ * @brief Shortest and longest duration in seconds that can be honoured at a tempo.
+ * @param bpm Tempo in beats per minute
+ * @return Pair of (minimum seconds, maximum seconds); (0, 0) when bpm is 0
+ */
+std::pair<uint16_t, uint16_t> achievableDurationRange(uint16_t bpm);
 
 /**
  * @brief Build sections from structure pattern.

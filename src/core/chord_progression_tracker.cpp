@@ -357,38 +357,45 @@ void ChordProgressionTracker::registerSecondaryDominant(Tick start, Tick end, in
     return;
   }
 
-  // Find the chord that contains 'start'
-  for (size_t i = 0; i < chords_.size(); ++i) {
-    ChordInfo& chord = chords_[i];
-    if (start >= chord.start && start < chord.end) {
-      Tick original_end = chord.end;
-      int8_t original_degree = chord.degree;
+  // Rebuild the timeline instead of splicing into it: inserting into chords_
+  // invalidates every reference into the vector, so the entry being split can
+  // only be read from a local copy.
+  std::vector<ChordInfo> updated;
+  updated.reserve(chords_.size() + 2);
 
-      // Shrink current chord to end at 'start'
-      chord.end = start;
-
-      // Insert secondary dominant with flag set
-      ChordInfo sec_dom_info{start, end, degree, ChordExtension::Dom7, true, true};
-
-      // If there's remaining portion after the secondary dominant, add it back
-      if (end < original_end) {
-        ChordInfo remaining{end, original_end, original_degree, ChordExtension::None, false, false};
-        // Insert both after current position
-        chords_.insert(chords_.begin() + static_cast<long>(i) + 1, sec_dom_info);
-        chords_.insert(chords_.begin() + static_cast<long>(i) + 2, remaining);
-      } else {
-        // Secondary dominant extends to or beyond original end
-        chords_.insert(chords_.begin() + static_cast<long>(i) + 1, sec_dom_info);
-      }
-
-      // Remove the original chord if it became empty (start == original start)
-      if (chord.start >= chord.end) {
-        chords_.erase(chords_.begin() + static_cast<long>(i));
-      }
-
-      return;
+  bool registered = false;
+  for (const auto& chord : chords_) {
+    if (registered || start < chord.start || start >= chord.end) {
+      updated.push_back(chord);
+      continue;
     }
+
+    const Tick original_end = chord.end;
+    const int8_t original_degree = chord.degree;
+
+    // Leading part of the split entry, dropped when the secondary dominant
+    // starts exactly on the entry boundary (no zero-length entries).
+    if (start > chord.start) {
+      ChordInfo before = chord;
+      before.end = start;
+      updated.push_back(before);
+    }
+
+    // The secondary dominant only replaces the covering entry, so it never
+    // extends past it: the timeline keeps its original total tick range.
+    const Tick sec_dom_end = std::min(end, original_end);
+    updated.push_back({start, sec_dom_end, degree, ChordExtension::Dom7, true, true});
+
+    // Trailing part of the split entry returns to the diatonic degree.
+    if (sec_dom_end < original_end) {
+      updated.push_back(
+          {sec_dom_end, original_end, original_degree, ChordExtension::None, false, false});
+    }
+
+    registered = true;
   }
+
+  chords_ = std::move(updated);
 }
 
 }  // namespace midisketch

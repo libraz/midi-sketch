@@ -96,8 +96,21 @@ class PostProcessingPipeline {
   uint8_t applyEmotionToVelocity(const Context& ctx, uint8_t base_velocity,
                                  const SectionEmotion& emotion);
 
-  /** @brief Apply humanization to all melodic tracks. */
-  void applyHumanization(const Context& ctx);
+  /** @brief Apply random velocity humanization to all melodic tracks. */
+  void applyVelocityHumanization(const Context& ctx);
+
+  /**
+   * @brief Apply the drum-style groove pocket and the bass-kick alignment.
+   *
+   * Deterministic micro-timing, shaped by drum_style and drive_feel. Separate
+   * from velocity humanization because it is a groove decision rather than a
+   * human-imperfection one, and it is reached whenever the caller asked for
+   * timing at all.
+   *
+   * @param ctx Context with all required dependencies
+   * @param timing_amount How much of the pocket to apply (0.0-1.0)
+   */
+  void applyGrooveTiming(const Context& ctx, float timing_amount);
 
   /** @brief Generate CC11 Expression curves for melodic tracks. */
   void generateExpressionCurves(const Context& ctx);

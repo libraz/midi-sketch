@@ -679,10 +679,15 @@ struct VocalConfig {
     KeepMotif = 1u << 10,
   };
 
-  uint32_t present_fields = 0;  ///< JSON presence mask; 0 means native/full config.
-  uint32_t seed = 0;            ///< Random seed (0 = new random)
-  uint8_t vocal_low = 60;       ///< Vocal range lower bound (MIDI note)
-  uint8_t vocal_high = 79;      ///< Vocal range upper bound (MIDI note)
+  /// Presence mask meaning "every declared field was supplied". Callers that build
+  /// the struct directly always supply a complete configuration, so it is the default;
+  /// readFrom replaces it with exactly the key set the JSON contained.
+  static constexpr uint32_t kAllFields = ~0u;
+
+  uint32_t present_fields = kAllFields;  ///< Bit N is the Nth field in visitFields.
+  uint32_t seed = 0;                     ///< Random seed (0 = new random)
+  uint8_t vocal_low = 60;                ///< Vocal range lower bound (MIDI note)
+  uint8_t vocal_high = 79;               ///< Vocal range upper bound (MIDI note)
   VocalAttitude vocal_attitude = VocalAttitude::Clean;
   VocalStylePreset vocal_style = VocalStylePreset::Auto;
   MelodyTemplateId melody_template = MelodyTemplateId::Auto;
@@ -694,7 +699,7 @@ struct VocalConfig {
       false;  ///< RhythmSync: keep existing Motif as coordinate axis (default: regenerate both)
 
   template <typename Self, typename V>
-  static void visitFields(Self&& self, V&& v) {
+  static constexpr void visitFields(Self&& self, V&& v) {
     v("seed", self.seed);
     v("vocal_low", self.vocal_low);
     v("vocal_high", self.vocal_high);
@@ -716,20 +721,16 @@ struct VocalConfig {
   void readFrom(const json::Parser& p) {
     json::ReadVisitor v{p};
     visitFields(*this, v);
-    const char* names[] = {
-        "seed",         "vocal_low",         "vocal_high",         "vocal_attitude",
-        "vocal_style",  "melody_template",   "melodic_complexity", "hook_intensity",
-        "vocal_groove", "composition_style", "keep_motif"};
-    present_fields = 0;
-    for (uint32_t idx = 0; idx < 11; ++idx) {
-      if (p.has(names[idx])) present_fields |= (1u << idx);
-    }
+    json::PresenceVisitor presence{p};
+    visitFields(*this, presence);
+    present_fields = presence.mask;
   }
 
-  bool has(Field field) const {
-    return present_fields == 0 || (present_fields & static_cast<uint32_t>(field)) != 0;
-  }
+  bool has(Field field) const { return (present_fields & static_cast<uint32_t>(field)) != 0; }
 };
+
+static_assert(VocalConfig::KeepMotif == (1u << (json::fieldCount<VocalConfig>() - 1)),
+              "VocalConfig::Field must declare one bit per visitFields entry, in that order");
 
 /// @brief Configuration for accompaniment generation/regeneration.
 /// Contains all accompaniment-related parameters (drums, arpeggio, chord, humanize, SE, call).
@@ -763,8 +764,13 @@ struct AccompanimentConfig {
     CallNotesEnabled = 1u << 25,
   };
 
-  uint32_t present_fields = 0;  ///< JSON presence mask; 0 means native/full config.
-  uint32_t seed = 0;            ///< Random seed for BGM (0 = auto-generate)
+  /// Presence mask meaning "every declared field was supplied". Callers that build
+  /// the struct directly always supply a complete configuration, so it is the default;
+  /// readFrom replaces it with exactly the key set the JSON contained.
+  static constexpr uint32_t kAllFields = ~0u;
+
+  uint32_t present_fields = kAllFields;  ///< Bit N is the Nth field in visitFields.
+  uint32_t seed = 0;                     ///< Random seed for BGM (0 = auto-generate)
 
   /// Drums
   bool drums_enabled = true;
@@ -808,7 +814,7 @@ struct AccompanimentConfig {
   bool call_notes_enabled = true;  ///< Output call as MIDI notes
 
   template <typename Self, typename V>
-  static void visitFields(Self&& self, V&& v) {
+  static constexpr void visitFields(Self&& self, V&& v) {
     v("seed", self.seed);
     v("drums_enabled", self.drums_enabled);
     v("arpeggio_enabled", self.arpeggio_enabled);
@@ -845,42 +851,18 @@ struct AccompanimentConfig {
   void readFrom(const json::Parser& p) {
     json::ReadVisitor v{p};
     visitFields(*this, v);
-    const char* names[] = {"seed",
-                           "drums_enabled",
-                           "arpeggio_enabled",
-                           "guitar_enabled",
-                           "arpeggio_pattern",
-                           "arpeggio_speed",
-                           "arpeggio_octave_range",
-                           "arpeggio_gate",
-                           "arpeggio_sync_chord",
-                           "chord_ext_sus",
-                           "chord_ext_7th",
-                           "chord_ext_9th",
-                           "chord_ext_tritone_sub",
-                           "chord_ext_sus_prob",
-                           "chord_ext_7th_prob",
-                           "chord_ext_9th_prob",
-                           "chord_ext_tritone_sub_prob",
-                           "humanize",
-                           "humanize_timing",
-                           "humanize_velocity",
-                           "se_enabled",
-                           "call_enabled",
-                           "call_density",
-                           "intro_chant",
-                           "mix_pattern",
-                           "call_notes_enabled"};
-    present_fields = 0;
-    for (uint32_t idx = 0; idx < 26; ++idx) {
-      if (p.has(names[idx])) present_fields |= (1u << idx);
-    }
+    json::PresenceVisitor presence{p};
+    visitFields(*this, presence);
+    present_fields = presence.mask;
   }
 
-  bool has(Field field) const {
-    return present_fields == 0 || (present_fields & static_cast<uint32_t>(field)) != 0;
-  }
+  bool has(Field field) const { return (present_fields & static_cast<uint32_t>(field)) != 0; }
 };
+
+static_assert(AccompanimentConfig::CallNotesEnabled ==
+                  (1u << (json::fieldCount<AccompanimentConfig>() - 1)),
+              "AccompanimentConfig::Field must declare one bit per visitFields entry, in that "
+              "order");
 
 }  // namespace midisketch
 

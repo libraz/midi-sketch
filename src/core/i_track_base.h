@@ -32,13 +32,12 @@ class IHarmonyCoordinator;
 /// - Minimum note duration (e.g., staccato limit)
 /// - Legato capability
 struct PhysicalModel {
-  uint8_t pitch_low = 0;            ///< Lowest playable pitch
-  uint8_t pitch_high = 127;         ///< Highest playable pitch
-  uint8_t velocity_min = 1;         ///< Minimum velocity
-  uint8_t velocity_max = 127;       ///< Maximum velocity
-  Tick min_note_duration = 60;      ///< Minimum note duration (ticks)
-  bool supports_legato = true;      ///< Can play legato passages
-  int8_t vocal_ceiling_offset = 0;  ///< Offset from vocal high (-2 = 2 semitones below)
+  uint8_t pitch_low = 0;        ///< Lowest playable pitch
+  uint8_t pitch_high = 127;     ///< Highest playable pitch
+  uint8_t velocity_min = 1;     ///< Minimum velocity
+  uint8_t velocity_max = 127;   ///< Maximum velocity
+  Tick min_note_duration = 60;  ///< Minimum note duration (ticks)
+  bool supports_legato = true;  ///< Can play legato passages
 
   /// @brief Clamp a pitch to the valid range.
   uint8_t clampPitch(uint8_t pitch) const {
@@ -56,60 +55,43 @@ struct PhysicalModel {
 
   /// @brief Check if a pitch is within range.
   bool isPitchInRange(uint8_t pitch) const { return pitch >= pitch_low && pitch <= pitch_high; }
-
-  /// @brief Get effective upper limit considering vocal ceiling.
-  /// @param vocal_high Vocal track's highest pitch
-  /// @return Effective upper pitch limit
-  uint8_t getEffectiveHigh(uint8_t vocal_high) const {
-    if (vocal_ceiling_offset == 0) return pitch_high;
-    int effective = static_cast<int>(vocal_high) + vocal_ceiling_offset;
-    if (effective < pitch_low) return pitch_low;
-    if (effective > pitch_high) return pitch_high;
-    return static_cast<uint8_t>(effective);
-  }
 };
 
 /// @brief Default physical models for common instruments.
 namespace PhysicalModels {
 
 /// Electric Bass: E1 (28) to G3 (55), matching the production bass register.
-inline constexpr PhysicalModel kElectricBass = {28, 55, 40, 127, 120, true, 0};
+inline constexpr PhysicalModel kElectricBass = {28, 55, 40, 127, 120, true};
 
 /// Synth Bass: C1 (24) to C4 (60)
-inline constexpr PhysicalModel kSynthBass = {24, 60, 50, 127, 60, true, 0};
+inline constexpr PhysicalModel kSynthBass = {24, 60, 50, 127, 60, true};
 
-/// Electric Piano: C3 (48) to C6 (84), respects vocal ceiling
-inline constexpr PhysicalModel kElectricPiano = {
-    48, 84, 40, 110, 60, true, -2  // 2 semitones below vocal high
-};
+/// Electric Piano: C3 (48) to C6 (84)
+inline constexpr PhysicalModel kElectricPiano = {48, 84, 40, 110, 60, true};
 
 /// Acoustic Guitar: E2 (40) to B5 (83)
-inline constexpr PhysicalModel kAcousticGuitar = {
-    40, 83, 30, 100, 120, true, 3  // 3 semitones above vocal low
-};
+inline constexpr PhysicalModel kAcousticGuitar = {40, 83, 30, 100, 120, true};
 
 /// Electric Guitar: E2 (40) to E6 (88)
-inline constexpr PhysicalModel kElectricGuitar = {
-    40, 88, 40, 110, 60, true, 2  // 2 semitones above vocal low (reduce overlap)
-};
+inline constexpr PhysicalModel kElectricGuitar = {40, 88, 40, 110, 60, true};
 
 /// Synth Pad: C2 (36) to C7 (96)
-inline constexpr PhysicalModel kSynthPad = {36, 96, 40, 100, 480, true, 0};
+inline constexpr PhysicalModel kSynthPad = {36, 96, 40, 100, 480, true};
 
 /// Synth Lead: C3 (48) to C7 (96)
-inline constexpr PhysicalModel kSynthLead = {48, 96, 60, 127, 60, true, 0};
+inline constexpr PhysicalModel kSynthLead = {48, 96, 60, 127, 60, true};
 
 /// Vocal: C4 (60) to G5 (79) default, configurable
-inline constexpr PhysicalModel kVocal = {60, 79, 50, 127, 120, true, 0};
+inline constexpr PhysicalModel kVocal = {60, 79, 50, 127, 120, true};
 
 /// Aux Vocal: Similar to main vocal
-inline constexpr PhysicalModel kAuxVocal = {55, 84, 40, 110, 120, true, 0};
+inline constexpr PhysicalModel kAuxVocal = {55, 84, 40, 110, 120, true};
 
 /// Motif Synth: C4 (60) to C8 (108), matching the production motif register.
-inline constexpr PhysicalModel kMotifSynth = {60, 108, 60, 100, 60, false, 0};
+inline constexpr PhysicalModel kMotifSynth = {60, 108, 60, 100, 60, false};
 
 /// Arpeggio Synth: C3 (48) to C8 (108)
-inline constexpr PhysicalModel kArpeggioSynth = {48, 108, 60, 100, 30, false, 0};
+inline constexpr PhysicalModel kArpeggioSynth = {48, 108, 60, 100, 30, false};
 
 }  // namespace PhysicalModels
 

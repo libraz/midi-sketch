@@ -552,6 +552,21 @@ CreateNoteResult createNoteWithResult(IHarmonyContext& harmony, const NoteOption
     }
 
     uint8_t fallback_pitch = *resolved;
+
+    // The chord-tone preferences hold through the fallback too: it folds by
+    // octaves and then clamps, and a clamp does not preserve the pitch class.
+    if (opts.preference == PitchPreference::PreferChordTones ||
+        opts.preference == PitchPreference::PreferRootFifth) {
+      auto chord_tones = harmony.getChordTonesAt(opts.start);
+      int fallback_pc = fallback_pitch % 12;
+      bool is_chord_tone =
+          std::find(chord_tones.begin(), chord_tones.end(), fallback_pc) != chord_tones.end();
+      if (!is_chord_tone) {
+        result.strategy_used = CollisionAvoidStrategy::Failed;
+        return result;
+      }
+    }
+
     NoteEvent event =
         buildNoteEvent(harmony, opts.start, effective_duration, fallback_pitch, opts.velocity,
                        opts.source, opts.record_provenance, true_original);
@@ -942,23 +957,23 @@ std::vector<PitchCandidate> getSafePitchCandidates(const ICollisionDetector& har
     }
   }
 
-  // PreferChordTones / PreferRootFifth: filter to chord tones only.
-  // This prevents ConsonantInterval/ExhaustiveSearch from selecting non-chord tones.
-  if ((preference == PitchPreference::PreferChordTones ||
-       preference == PitchPreference::PreferRootFifth) &&
-      !candidates.empty()) {
+  // PreferChordTones / PreferRootFifth: chord tones only, with no fallback.
+  //
+  // These two preferences are a hard contract, not a ranking hint: they exist so
+  // the chord bed and the bass state the harmony the rest of the song is voiced
+  // against. Falling back to the unfiltered list when no chord tone fits let a
+  // non-chord tone be held for a whole bar against the chord it contradicts.
+  // Returning nothing is the correct answer -- both callers already handle it,
+  // by shortening the note or by leaving the voice to the minimum-voice fill.
+  if (preference == PitchPreference::PreferChordTones ||
+      preference == PitchPreference::PreferRootFifth) {
     std::vector<PitchCandidate> chord_tone_candidates;
     for (const auto& c : candidates) {
       if (c.is_chord_tone) {
         chord_tone_candidates.push_back(c);
       }
     }
-    // Only use filtered list if we have chord tone candidates
-    if (!chord_tone_candidates.empty()) {
-      candidates = std::move(chord_tone_candidates);
-    }
-    // If no chord tone candidates, fall through to use original candidates
-    // (this is a fallback; ideally bass should skip the note)
+    candidates = std::move(chord_tone_candidates);
   }
 
   // PreserveContour: filter out candidates with large leaps (>12 semitones)

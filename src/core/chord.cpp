@@ -433,8 +433,7 @@ int8_t getSecondaryDominantDegree(int8_t target_degree) {
   }
 }
 
-SecondaryDominantInfo checkSecondaryDominant(int8_t current_degree, int8_t next_degree,
-                                             float tension_level) {
+SecondaryDominantInfo checkSecondaryDominant(int8_t next_degree, float tension_level) {
   SecondaryDominantInfo info = {false, 0, ChordExtension::None, 0};
 
   // Don't insert if tension is too low (must be > 0.5)
@@ -459,10 +458,9 @@ SecondaryDominantInfo checkSecondaryDominant(int8_t current_degree, int8_t next_
     return info;
   }
 
-  // Avoid inserting if current chord is already the secondary dominant
-  if (current_degree == sec_dom_degree) {
-    return info;
-  }
+  // Suppressing a genuinely redundant insertion belongs to the planner, which
+  // can see what the timeline already holds; this function only says whether the
+  // target admits a dominant at all.
 
   // Higher probability for higher tension
   // At tension 0.5, 30% chance; at tension 1.0, 70% chance

@@ -31,6 +31,33 @@ constexpr float kEnergyHighMultiplier = 1.00f;
 /// Velocity multiplier for Peak energy sections (climax).
 constexpr float kEnergyPeakMultiplier = 1.05f;
 
+/// Energy multiplier treated as neutral when scaling already-generated notes.
+///
+/// Track generators emit notes at full section level, so the energy term is
+/// applied as a ratio against this reference rather than as an absolute level.
+/// Peak is the reference, which makes the term attenuate and never boost: a
+/// climax keeps the level generation produced and the calmer sections step back
+/// from it. Anchoring lower would push the loudest sections into the MIDI
+/// ceiling instead of opening room below them, and the ratios between the four
+/// levels are the same either way.
+constexpr float kEnergyReferenceMultiplier = kEnergyPeakMultiplier;
+
+/// Base velocity that a SectionSlot declares when it wants no scaling.
+constexpr float kNeutralBaseVelocity = 80.0f;
+
+/// Fraction of a declared velocity ceiling below which a percussion hit is left
+/// alone when the kit is brought under that ceiling.
+///
+/// A drum velocity is a timbre choice, not just a level: ghost, normal and
+/// accent are different sounds. Everything under the knee therefore keeps its
+/// exact value and only the range above it is folded into the remaining
+/// headroom, which preserves the order of the hits.
+constexpr float kCeilingKneeRatio = 0.75f;
+
+/// Highest velocity MIDI can express, and the top of the range folded into a
+/// declared ceiling.
+constexpr int kMaxVelocity = 127;
+
 // ============================================================================
 // Phrase Dynamics (4-bar phrase build→hit pattern)
 // ============================================================================
@@ -100,6 +127,12 @@ constexpr float kGradualBuildEnd = 1.00f;
 
 /// DropIn velocity boost multiplier.
 constexpr float kDropInBoost = 1.10f;
+
+/// Staggered-entry fade-in multiplier at the moment a track enters.
+constexpr float kStaggerFadeStart = 0.40f;
+
+/// Staggered-entry fade-in multiplier range (full level minus entry level).
+constexpr float kStaggerFadeRange = 0.60f;
 
 // ============================================================================
 // Melody Contour Velocity Boosts

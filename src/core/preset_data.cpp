@@ -12,6 +12,7 @@
 #include "core/chord.h"
 #include "core/production_blueprint.h"
 #include "core/rng_util.h"
+#include "core/structure.h"
 
 namespace midisketch {
 
@@ -1331,8 +1332,8 @@ SongConfigError validateSongConfig(const SongConfig& config) {
     return SongConfigError::InvalidVocalRange;
   }
 
-  // Validate BPM (0 = use default, otherwise 40-240)
-  if (config.bpm != 0 && (config.bpm < 40 || config.bpm > 240)) {
+  // Validate BPM (0 = use default, otherwise the permitted tempo range)
+  if (config.bpm != 0 && (config.bpm < kMinSongBpm || config.bpm > kMaxSongBpm)) {
     return SongConfigError::InvalidBpm;
   }
 
@@ -1475,6 +1476,20 @@ SongConfigError validateSongConfig(const SongConfig& config) {
       config.motif_chord.max_chord_count > 8 ||
       (config.motif_chord.max_chord_count != 0 && config.motif_chord.max_chord_count < 2)) {
     return SongConfigError::InvalidMotifOverride;
+  }
+
+  // A duration is only rejected when no permitted tempo could build it. Asking for
+  // five minutes is an ordinary request that simply needs a slower tempo than the one
+  // that happened to be resolved, and answering it with an error hands the caller
+  // nothing; the structure builder clamps to what the resolved tempo can reach and
+  // the built length is reported back, so the adjustment is visible rather than
+  // silent. Only a length outside the whole tempo range is unbuildable in principle.
+  if (config.target_duration_seconds > 0) {
+    const uint16_t shortest = achievableDurationRange(kMaxSongBpm).first;
+    const uint16_t longest = achievableDurationRange(kMinSongBpm).second;
+    if (config.target_duration_seconds < shortest || config.target_duration_seconds > longest) {
+      return SongConfigError::InvalidTargetDuration;
+    }
   }
 
   // Validate call/duration compatibility

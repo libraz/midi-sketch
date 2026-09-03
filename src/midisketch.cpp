@@ -6,7 +6,9 @@
 #include "midisketch.h"
 
 #include <algorithm>
+#include <map>
 #include <sstream>
+#include <utility>
 
 #include "core/config_converter.h"
 #include "core/json_helpers.h"
@@ -58,6 +60,106 @@ std::string generateMetadata(const GeneratorParams& params, const SongConfig& co
   return oss.str();
 }
 
+// Fold a partial vocal update into the accumulated SongConfig so that the
+// metadata keeps describing the song as it actually stands. Only the fields the
+// caller supplied are folded in, mirroring Generator::regenerateVocal().
+void applyVocalConfigTo(SongConfig& config, const VocalConfig& vocal) {
+  if (vocal.has(VocalConfig::VocalLow)) config.vocal_low = vocal.vocal_low;
+  if (vocal.has(VocalConfig::VocalHigh)) config.vocal_high = vocal.vocal_high;
+  if (vocal.has(VocalConfig::VocalAttitudeField)) config.vocal_attitude = vocal.vocal_attitude;
+  if (vocal.has(VocalConfig::VocalStyleField) && vocal.vocal_style != VocalStylePreset::Auto) {
+    config.vocal_style = vocal.vocal_style;
+  }
+  if (vocal.has(VocalConfig::MelodyTemplateField) &&
+      vocal.melody_template != MelodyTemplateId::Auto) {
+    config.melody_template = vocal.melody_template;
+  }
+  if (vocal.has(VocalConfig::MelodicComplexityField)) {
+    config.melodic_complexity = vocal.melodic_complexity;
+  }
+  if (vocal.has(VocalConfig::HookIntensityField)) config.hook_intensity = vocal.hook_intensity;
+  if (vocal.has(VocalConfig::VocalGrooveField)) config.vocal_groove = vocal.vocal_groove;
+  if (vocal.has(VocalConfig::CompositionStyleField)) {
+    config.composition_style = vocal.composition_style;
+    config.composition_style_explicit = true;
+  }
+}
+
+// Counterpart of applyVocalConfigTo for accompaniment updates, mirroring
+// Generator::applyAccompanimentConfig() field for field.
+void applyAccompanimentConfigTo(SongConfig& config, const AccompanimentConfig& acc) {
+  if (acc.has(AccompanimentConfig::DrumsEnabled)) {
+    config.drums_enabled = acc.drums_enabled;
+    // A caller-supplied value has to survive regeneration even when the
+    // blueprint would otherwise force drums back on.
+    config.drums_enabled_explicit = true;
+  }
+  if (acc.has(AccompanimentConfig::ArpeggioEnabled)) config.arpeggio_enabled = acc.arpeggio_enabled;
+  if (acc.has(AccompanimentConfig::GuitarEnabled)) config.guitar_enabled = acc.guitar_enabled;
+  if (acc.has(AccompanimentConfig::ArpeggioPatternField)) {
+    config.arpeggio.pattern = static_cast<ArpeggioPattern>(acc.arpeggio_pattern);
+  }
+  if (acc.has(AccompanimentConfig::ArpeggioSpeedField)) {
+    config.arpeggio.speed = static_cast<ArpeggioSpeed>(acc.arpeggio_speed);
+  }
+  if (acc.has(AccompanimentConfig::ArpeggioOctaveRange)) {
+    config.arpeggio.octave_range = acc.arpeggio_octave_range;
+  }
+  if (acc.has(AccompanimentConfig::ArpeggioGate)) {
+    config.arpeggio.gate = acc.arpeggio_gate == 255 ? -1.0f : acc.arpeggio_gate / 100.0f;
+  }
+  if (acc.has(AccompanimentConfig::ArpeggioSyncChord)) {
+    config.arpeggio.sync_chord = acc.arpeggio_sync_chord;
+  }
+  if (acc.has(AccompanimentConfig::ChordExtSus)) {
+    config.chord_extension.enable_sus = acc.chord_ext_sus;
+  }
+  if (acc.has(AccompanimentConfig::ChordExt7th)) {
+    config.chord_extension.enable_7th = acc.chord_ext_7th;
+  }
+  if (acc.has(AccompanimentConfig::ChordExt9th)) {
+    config.chord_extension.enable_9th = acc.chord_ext_9th;
+  }
+  if (acc.has(AccompanimentConfig::ChordExtTritoneSub)) {
+    config.chord_extension.tritone_sub = acc.chord_ext_tritone_sub;
+  }
+  if (acc.has(AccompanimentConfig::ChordExtSusProb)) {
+    config.chord_extension.sus_probability = acc.chord_ext_sus_prob;
+  }
+  if (acc.has(AccompanimentConfig::ChordExt7thProb)) {
+    config.chord_extension.seventh_probability = acc.chord_ext_7th_prob;
+  }
+  if (acc.has(AccompanimentConfig::ChordExt9thProb)) {
+    config.chord_extension.ninth_probability = acc.chord_ext_9th_prob;
+  }
+  if (acc.has(AccompanimentConfig::ChordExtTritoneSubProb)) {
+    config.chord_extension.tritone_sub_probability = acc.chord_ext_tritone_sub_prob;
+  }
+  if (acc.has(AccompanimentConfig::Humanize)) config.humanize = acc.humanize;
+  if (acc.has(AccompanimentConfig::HumanizeTiming)) config.humanize_timing = acc.humanize_timing;
+  if (acc.has(AccompanimentConfig::HumanizeVelocity)) {
+    config.humanize_velocity = acc.humanize_velocity;
+  }
+  if (acc.has(AccompanimentConfig::SeEnabled)) config.se_enabled = acc.se_enabled;
+  if (acc.has(AccompanimentConfig::CallEnabled)) {
+    // The accompaniment surface expresses calls as a resolved boolean, so the
+    // stored config records the resolved state rather than CallSetting::Auto.
+    config.call_setting = acc.call_enabled ? CallSetting::Enabled : CallSetting::Disabled;
+  }
+  if (acc.has(AccompanimentConfig::CallDensity)) {
+    config.call_density = static_cast<CallDensity>(acc.call_density);
+  }
+  if (acc.has(AccompanimentConfig::IntroChant)) {
+    config.intro_chant = static_cast<IntroChant>(acc.intro_chant);
+  }
+  if (acc.has(AccompanimentConfig::MixPattern)) {
+    config.mix_pattern = static_cast<MixPattern>(acc.mix_pattern);
+  }
+  if (acc.has(AccompanimentConfig::CallNotesEnabled)) {
+    config.call_notes_enabled = acc.call_notes_enabled;
+  }
+}
+
 }  // namespace
 
 MidiSketch::MidiSketch() {}
@@ -81,56 +183,76 @@ void MidiSketch::rebuildMidiWithConfig(const SongConfig& config) {
                      generateMetadata(params, resolved_config), midi_format_, params.blueprint_id);
 }
 
+void MidiSketch::rebuildMidi() {
+  if (has_config_) {
+    rebuildMidiWithConfig(config_);
+  } else {
+    rebuildMidiLegacy();
+  }
+}
+
 void MidiSketch::generate(const GeneratorParams& params) {
   generator_.generate(params);
-  rebuildMidiLegacy();
+  // A params-only call describes a song that no SongConfig can reproduce, so
+  // any config carried over from an earlier call on this handle is dropped.
+  has_config_ = false;
+  rebuildMidi();
 }
 
 void MidiSketch::generateFromConfig(const SongConfig& config) {
   generator_.generateFromConfig(config);
-  rebuildMidiWithConfig(config);
+  config_ = config;
+  has_config_ = true;
+  rebuildMidi();
 }
 
 void MidiSketch::generateVocal(const SongConfig& config) {
   GeneratorParams params = ConfigConverter::convert(config);
   generator_.generateVocal(params);
-  rebuildMidiWithConfig(config);
+  config_ = config;
+  has_config_ = true;
+  rebuildMidi();
 }
 
 void MidiSketch::regenerateVocal(uint32_t new_seed) {
   generator_.regenerateVocal(new_seed);
-  rebuildMidiLegacy();
+  rebuildMidi();
 }
 
 void MidiSketch::regenerateVocal(const VocalConfig& config) {
   generator_.regenerateVocal(config);
-  rebuildMidiLegacy();
+  applyVocalConfigTo(config_, config);
+  rebuildMidi();
 }
 
 void MidiSketch::generateAccompanimentForVocal() {
   generator_.generateAccompanimentForVocal();
-  rebuildMidiLegacy();
+  rebuildMidi();
 }
 
 void MidiSketch::regenerateAccompaniment(uint32_t new_seed) {
   generator_.regenerateAccompaniment(new_seed);
-  rebuildMidiLegacy();
+  rebuildMidi();
 }
 
 void MidiSketch::regenerateAccompaniment(const AccompanimentConfig& config) {
   generator_.regenerateAccompaniment(config);
-  rebuildMidiLegacy();
+  applyAccompanimentConfigTo(config_, config);
+  rebuildMidi();
 }
 
 void MidiSketch::generateAccompanimentForVocal(const AccompanimentConfig& config) {
   generator_.generateAccompanimentForVocal(config);
-  rebuildMidiLegacy();
+  applyAccompanimentConfigTo(config_, config);
+  rebuildMidi();
 }
 
 void MidiSketch::generateWithVocal(const SongConfig& config) {
   GeneratorParams params = ConfigConverter::convert(config);
   generator_.generateWithVocal(params);
-  rebuildMidiWithConfig(config);
+  config_ = config;
+  has_config_ = true;
+  rebuildMidi();
 }
 
 MelodyData MidiSketch::getMelody() const {
@@ -140,13 +262,15 @@ MelodyData MidiSketch::getMelody() const {
 
 void MidiSketch::setMelody(const MelodyData& melody) {
   generator_.setMelody(melody);
-  rebuildMidiLegacy();
+  rebuildMidi();
 }
 
 void MidiSketch::setVocalNotes(const SongConfig& config, const std::vector<NoteEvent>& notes) {
   GeneratorParams params = ConfigConverter::convert(config);
   generator_.setVocalNotes(params, notes);
-  rebuildMidiWithConfig(config);
+  config_ = config;
+  has_config_ = true;
+  rebuildMidi();
 }
 
 void MidiSketch::setMidiFormat(MidiFormat format) { midi_format_ = format; }
@@ -177,23 +301,19 @@ std::string MidiSketch::getEventsJson() const {
   int8_t mod_amount = song.modulationAmount();
   Key key = params.key;
 
-  // Helper to write a single note
-  auto writeNote = [&](const NoteEvent& note, bool apply_transpose) {
-    double start_seconds = ticksToSecondsWithTempoMap(note.start_tick, song.bpm(), tempo_map);
+  // Helper to write a single note as it will be heard, with the source event
+  // supplying provenance. The written note is the resolved one, so this surface
+  // describes the same audible timeline as the MIDI writers.
+  auto writeNote = [&](const SerializedNote& resolved, const NoteEvent& note) {
+    double start_seconds = ticksToSecondsWithTempoMap(resolved.start, song.bpm(), tempo_map);
     double duration_secs =
-        ticksToSecondsWithTempoMap(note.start_tick + note.duration, song.bpm(), tempo_map) -
-        start_seconds;
-
-    uint8_t pitch = note.note;
-    if (apply_transpose) {
-      pitch = transposeAndModulate(pitch, key, note.start_tick, mod_tick, mod_amount);
-    }
+        ticksToSecondsWithTempoMap(resolved.end, song.bpm(), tempo_map) - start_seconds;
 
     w.beginObject()
-        .write("pitch", static_cast<int>(pitch))
-        .write("velocity", static_cast<int>(note.velocity))
-        .write("start_ticks", note.start_tick)
-        .write("duration_ticks", note.duration)
+        .write("pitch", static_cast<int>(resolved.pitch))
+        .write("velocity", static_cast<int>(resolved.velocity))
+        .write("start_ticks", resolved.start)
+        .write("duration_ticks", resolved.end - resolved.start)
         .write("start_seconds", start_seconds)
         .write("duration_seconds", duration_secs);
 
@@ -239,6 +359,32 @@ std::string MidiSketch::getEventsJson() const {
     w.endObject();
   };
 
+  // Helper to emit a track's note array through the shared overlap rule.
+  auto writeResolvedNotes = [&](const MidiTrack& track, uint8_t channel, bool apply_transpose) {
+    const bool percussive = isPercussionChannel(channel);
+    std::vector<SerializedNote> serialized;
+    serialized.reserve(track.notes().size());
+    // Maps a resolved note back to the source event that starts it, so
+    // provenance survives the resolution.
+    std::map<std::pair<uint8_t, Tick>, const NoteEvent*> sources;
+    for (const auto& note : track.notes()) {
+      uint8_t pitch = note.note;
+      if (apply_transpose) {
+        pitch = transposeAndModulate(pitch, key, note.start_tick, mod_tick, mod_amount);
+      }
+      serialized.push_back(
+          {note.start_tick, note.start_tick + note.duration, pitch, note.velocity});
+      sources.emplace(std::make_pair(pitch, note.start_tick), &note);
+    }
+
+    for (const auto& resolved : resolveSamePitchOverlaps(std::move(serialized), percussive)) {
+      const auto source = sources.find({resolved.pitch, resolved.start});
+      if (source != sources.end()) {
+        writeNote(resolved, *source->second);
+      }
+    }
+  };
+
   // Helper to write a track
   auto writeTrack = [&](const MidiTrack& track, const char* name, uint8_t channel, uint8_t program,
                         bool apply_transpose) {
@@ -246,11 +392,12 @@ std::string MidiSketch::getEventsJson() const {
         .write("name", name)
         .write("channel", static_cast<int>(channel))
         .write("program", static_cast<int>(program))
+        // Says whether the pitches below went through the key/modulation shift.
+        // Percussion note numbers are drum-kit indices and never move.
+        .write("transposed", apply_transpose)
         .beginArray("notes");
 
-    for (const auto& note : track.notes()) {
-      writeNote(note, apply_transpose);
-    }
+    writeResolvedNotes(track, channel, apply_transpose);
 
     w.endArray().endObject();
   };
@@ -266,11 +413,28 @@ std::string MidiSketch::getEventsJson() const {
   // the blueprint -> genre category from here instead of requiring the caller
   // to pass --blueprint-single. Without it, genre-gated checks degrade to an
   // uncalibrated (genre-uniform) mode.
+  //
+  // key / modulation_tick / modulation_semitones describe the only shift that
+  // separates the pitches below from the internal C major space every rule
+  // reasons in. A note on a track marked "transposed" satisfies
+  //   internal = pitch - key - (modulation_tick > 0 && start_ticks >= modulation_tick
+  //                             ? modulation_semitones : 0)
+  // so an analyzer recovers the internal pitch exactly instead of inferring the
+  // offset from the notes themselves.
+  //
+  // vocal_low / vocal_high are the resolved bounds the melody was actually
+  // written against, for the same reason: an analyzer that assumed a fixed range
+  // would penalize a song generated with a deliberately different one.
   w.beginObject("metadata")
       .write("blueprint", static_cast<int>(generator_.resolvedBlueprintId()))
       .write("style", static_cast<int>(params.style_preset_id))
       .write("mood", static_cast<int>(params.mood))
       .write("seed", params.seed)
+      .write("key", static_cast<int>(key))
+      .write("modulation_tick", mod_tick)
+      .write("modulation_semitones", static_cast<int>(mod_amount))
+      .write("vocal_low", static_cast<int>(params.vocal_low))
+      .write("vocal_high", static_cast<int>(params.vocal_high))
       .endObject();
 
   w.beginArray("tracks");
@@ -304,11 +468,12 @@ std::string MidiSketch::getEventsJson() const {
         .write("name", "SE")
         .write("channel", 15)
         .write("program", 0)
+        .write("transposed", true)
         .beginArray("notes");
 
-    for (const auto& note : se_track.notes()) {
-      writeNote(note, false);
-    }
+    // Calls and chants are pitched, so they are transposed here exactly as the
+    // MIDI writers transpose them; only the drum track stays untransposed.
+    writeResolvedNotes(se_track, SE_CH, true);
 
     w.endArray().beginArray("textEvents");
 

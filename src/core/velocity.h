@@ -78,35 +78,30 @@ SectionEnergy getEffectiveSectionEnergy(const Section& section);
 float getPeakVelocityMultiplier(PeakLevel peak);
 
 /**
- * @brief Calculate effective velocity for a section.
+ * @brief Get velocity multiplier for a SectionEnergy level.
  *
- * Combines base_velocity, energy, and peak_level into final velocity.
- * This function integrates all velocity control parameters.
+ * Expressed relative to velocity::kEnergyReferenceMultiplier, so a Peak section
+ * returns 1.0 and the calmer levels step back from it in the proportions the
+ * constants declare. Unset returns 1.0: an undeclared energy is not a quiet one.
  *
- * @param section Section struct
- * @param beat Beat position (0-3)
- * @param mood Mood preset
- * @return Calculated velocity (0-127)
+ * @param energy Section energy level
+ * @return Velocity multiplier (about 0.71 for Low, 1.0 for Peak and Unset)
  */
-uint8_t calculateEffectiveVelocity(const Section& section, uint8_t beat, Mood mood);
-
-// Forward declaration
-struct SectionEmotion;
+float getSectionEnergyMultiplier(SectionEnergy energy);
 
 /**
- * @brief Calculate effective velocity with EmotionCurve integration.
+ * @brief Get the combined velocity scale a section imposes on its notes.
  *
- * Combines section properties, beat position, mood, and emotion curve
- * parameters (tension affects ceiling, energy affects base level).
+ * This is the single place where the four section-level dynamics controls meet:
+ * base velocity, section energy, peak level and section modifier are multiplied
+ * into one factor. Every velocity that leaves generation is scaled by exactly
+ * this value once, so changing any one of the four is guaranteed to change the
+ * sounding dynamics.
  *
- * @param section Section struct
- * @param beat Beat position (0-3)
- * @param mood Mood preset
- * @param emotion EmotionCurve parameters for this section (optional)
- * @return Calculated velocity (0-127)
+ * @param section Section whose controls to combine
+ * @return Velocity scale (1.0 when every control is at its neutral value)
  */
-uint8_t calculateEmotionAwareVelocity(const Section& section, uint8_t beat, Mood mood,
-                                      const SectionEmotion* emotion);
+float getSectionVelocityScale(const Section& section);
 
 /// @brief Track-relative velocity multipliers for consistent mix balance.
 struct VelocityBalance {
@@ -194,14 +189,32 @@ void applyEntryPatternDynamics(MidiTrack& track, Tick section_start, uint8_t bar
 /**
  * @brief Apply entry pattern dynamics to all tracks for all sections.
  *
- * Processes each section's entry_pattern setting and applies
- * appropriate velocity modifications to tracks.
+ * Processes each section's entry_pattern setting and applies appropriate
+ * velocity modifications to tracks.
+ *
+ * A GradualBuild ramp starts the section at 60% velocity, which contradicts the
+ * entry protection applyBarVelocityCurve() gives a section that lifts energy.
+ * The ramp is therefore skipped where the section's effective energy is at least
+ * the previous section's, so a chorus or climax never enters below its setup.
  *
  * @param tracks Vector of tracks to modify (in-place)
  * @param sections Arrangement sections with entry_pattern settings
  */
 void applyAllEntryPatternDynamics(std::vector<MidiTrack*>& tracks,
                                   const std::vector<Section>& sections);
+
+/**
+ * @brief Scale a velocity for its position in a staggered-entry fade-in.
+ *
+ * A track that enters mid-intro fades from velocity::kStaggerFadeStart up to
+ * full level across its fade span. A faded note is still a note, so the result
+ * never reaches 0, which MIDI reads as a note-off rather than a quiet attack.
+ *
+ * @param velocity Velocity before the fade
+ * @param progress Position within the fade span (0.0 at entry, 1.0 at full level)
+ * @return Faded velocity, at least 1
+ */
+uint8_t getEntryFadeVelocity(uint8_t velocity, float progress);
 
 /**
  * @brief Apply bar-level velocity curves to a track within a section.
@@ -218,8 +231,8 @@ void applyBarVelocityCurve(MidiTrack& track, const Section& section);
 /**
  * @brief Apply bar-level velocity curves with transition context.
  *
- * When the current section has higher effective energy than the previous
- * section, the first bar is protected from phrase-start dips so an entry into
+ * When the current section's effective energy is at least the previous
+ * section's, the first bar is protected from phrase-start dips so an entry into
  * a chorus or climax does not become quieter than the setup section.
  *
  * @param track Track to modify (in-place)
@@ -241,13 +254,39 @@ void applyAllBarVelocityCurves(std::vector<MidiTrack*>& tracks,
                                const std::vector<Section>& sections);
 
 /**
- * @brief Scale note velocities by each SectionSlot's base velocity.
+ * @brief Scale note velocities by each section's combined velocity scale.
  *
- * A base velocity of 80 is neutral. Values declared by a production
- * blueprint are applied as a ratio before the remaining phrase/beat dynamics.
+ * Runs getSectionVelocityScale() over every note of every supplied track in one
+ * multiplication, before the remaining phrase/beat dynamics. Passing the drum
+ * and SE tracks alongside the melodic ones is what makes the section controls
+ * audible across the whole arrangement rather than in the pitched tracks only.
+ *
+ * @param tracks Tracks to modify (in-place)
+ * @param sections Arrangement sections carrying the dynamics controls
  */
-void applySectionBaseVelocity(std::vector<MidiTrack*>& tracks,
-                              const std::vector<Section>& sections);
+void applySectionDynamics(std::vector<MidiTrack*>& tracks, const std::vector<Section>& sections);
+
+/**
+ * @brief Keep an arrival section from entering weaker than its setup.
+ *
+ * applyBarVelocityCurve() protects the entry bar of an energy lift, but later
+ * velocity passes can undo that protection. This closes the pipeline by
+ * restoring the guarantee: an arrival section (chorus, pre-chorus, MixBreak,
+ * Drop, or a climax modifier) whose effective energy is at least the previous
+ * section's has a first bar that sounds no weaker on average than the bar it
+ * follows. Sections that step down in energy, and sections the arrangement does
+ * not build toward, keep whatever entry the earlier passes gave them.
+ *
+ * Runs after any declared velocity ceiling so the lift observes it rather than
+ * being cut back by it. Passes that run later still and change which notes a bar
+ * contains can move the average slightly afterwards.
+ *
+ * @param tracks Tracks to modify (in-place)
+ * @param sections Arrangement sections
+ * @param max_velocity Velocity ceiling the lift must stay under
+ */
+void enforceSectionEntryLift(std::vector<MidiTrack*>& tracks, const std::vector<Section>& sections,
+                             uint8_t max_velocity = 127);
 
 // ============================================================================
 // Melody Contour Velocity
@@ -299,6 +338,26 @@ void applyAccentPatterns(MidiTrack& track, const std::vector<Section>& sections)
  * @param max_velocity Maximum allowed velocity (1-127)
  */
 void clampTrackVelocity(MidiTrack& track, uint8_t max_velocity);
+
+/**
+ * @brief Bring a percussion track under a velocity ceiling without flattening it.
+ *
+ * A blueprint that declares a maximum velocity is describing how hard the
+ * production hits, and that has to bind the drum kit as well as the pitched
+ * tracks. Clipping the kit is the wrong way to get there: on a drum track the
+ * velocity selects the sound — ghost, normal, accent, rimshot — so cutting
+ * everything above the ceiling to the ceiling collapses the loud half of the
+ * kit's vocabulary onto one value and the groove reads as flat.
+ *
+ * Instead the range above velocity::kCeilingKneeRatio of the ceiling is folded
+ * into the headroom that is left. Hits below the knee keep their exact value,
+ * the order of every pair of hits is preserved, and nothing ends up louder than
+ * the ceiling.
+ *
+ * @param track Percussion track to modify (in-place)
+ * @param max_velocity Declared ceiling; 127 or above leaves the track untouched
+ */
+void applyPercussionVelocityCeiling(MidiTrack& track, uint8_t max_velocity);
 
 // ============================================================================
 // Micro-Dynamics (Beat-Level Velocity Curves)
@@ -406,6 +465,24 @@ namespace DriveMapping {
  */
 inline float getTimingMultiplier(uint8_t drive) {
   return 0.5f + drive * 0.01f;  // 0.5 to 1.5
+}
+
+/**
+ * @brief How much of the style's groove pocket an explicit drive setting asks for.
+ *
+ * getTimingMultiplier() only scales a pocket that something else decided to
+ * apply, so it cannot answer "did the caller ask for micro-timing at all" -- it
+ * never returns 0. This does: drive is documented as 50 = neutral, and neutral
+ * asks for no push and no lay-back, so a song that sets no timing options is
+ * left exactly on the grid. Moving the control toward either end asks for the
+ * pocket in proportion to the distance travelled.
+ *
+ * @param drive Drive feel value (0-100)
+ * @return Amount of groove timing requested (0.0 at neutral, 1.0 at either end)
+ */
+inline float getGrooveTimingAmount(uint8_t drive) {
+  int distance = drive > 50 ? drive - 50 : 50 - drive;
+  return std::min(1.0f, static_cast<float>(distance) / 50.0f);
 }
 
 /**
@@ -556,30 +633,6 @@ inline VocalPhysicsParams getVocalPhysicsParams(VocalStylePreset style) {
  * @return Adjusted velocity ceiling (0-127)
  */
 uint8_t calculateVelocityCeiling(uint8_t base_velocity, float tension);
-
-/**
- * @brief Calculate base velocity adjusted by EmotionCurve energy.
- *
- * Energy level affects the starting point for velocity calculations.
- * Higher energy means louder base velocity.
- *
- * @param section_velocity Section-based velocity
- * @param energy Energy level from EmotionCurve (0.0-1.0)
- * @return Adjusted base velocity (0-127)
- */
-uint8_t calculateEnergyAdjustedVelocity(uint8_t section_velocity, float energy);
-
-/**
- * @brief Get note density multiplier based on EmotionCurve energy.
- *
- * Energy affects how many notes are generated. Higher energy means
- * denser patterns; lower energy means sparser, more spacious arrangements.
- *
- * @param base_density Base density value (0.0-1.0)
- * @param energy Energy level from EmotionCurve (0.0-1.0)
- * @return Adjusted density multiplier (0.5-1.5)
- */
-float calculateEnergyDensityMultiplier(float base_density, float energy);
 
 // ============================================================================
 // Phrase Note Velocity Curve

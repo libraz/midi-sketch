@@ -74,9 +74,13 @@ struct MidiEvent {
   uint8_t data2;   ///< Second data byte
 };
 
-#ifdef MIDISKETCH_NOTE_PROVENANCE
-
-/// @brief Transformation step type for pitch debugging.
+/// @brief Reason a pass gives for moving a pitch.
+///
+/// Declared unconditionally even though the provenance record that stores it is
+/// not: every pitch-moving pass has to name its reason at the call site, so
+/// guarding the tag would make those passes fail to compile in the builds that
+/// omit provenance — the WASM build among them. The tag costs nothing when the
+/// recording is compiled out.
 enum class TransformStepType : uint8_t {
   None = 0,
   ChordLookup,          ///< chord_idx -> degree lookup
@@ -96,6 +100,8 @@ enum class TransformStepType : uint8_t {
   PostProcessDuration,  ///< PostProcessor duration modification (param1=reason)
   PostProcessTiming,    ///< PostProcessor timing modification (param1=offset, param2=reason)
 };
+
+#ifdef MIDISKETCH_NOTE_PROVENANCE
 
 /// @brief Strategy used to resolve a pitch collision.
 enum class CollisionAvoidStrategy : uint8_t {

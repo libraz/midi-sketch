@@ -497,6 +497,31 @@ class Parser {
     return true;
   }
 
+  /**
+   * @brief Read a float without accepting a partial token or a non-finite value.
+   *
+   * Applies the same strictness as readInteger: a token the requested type cannot
+   * represent (`null`, an empty string, a non-numeric string, `inf`/`nan`) leaves
+   * @p value untouched and invalidates the parser. No input escapes as an exception.
+   *
+   * @return true when the key is absent or holds a finite decimal number
+   */
+  bool readFloat(const std::string& key, float& value) const {
+    auto it = values_.find(key);
+    if (it == values_.end()) return true;
+
+    const char* begin = it->second.c_str();
+    char* end = nullptr;
+    const float parsed = std::strtof(begin, &end);
+    if (end == begin || *end != '\0' || !std::isfinite(parsed)) {
+      conversion_valid_ = false;
+      return false;
+    }
+
+    value = parsed;
+    return true;
+  }
+
   /// @brief Mark a typed read from this object as invalid.
   void markConversionInvalid() const { conversion_valid_ = false; }
 
@@ -558,13 +583,9 @@ class Parser {
    * @return The float value.
    */
   float getFloat(const std::string& key, float default_val = 0.0f) const {
-    auto it = values_.find(key);
-    if (it == values_.end()) return default_val;
-    try {
-      return std::stof(it->second);
-    } catch (...) {
-      return default_val;
-    }
+    float value = default_val;
+    readFloat(key, value);
+    return value;
   }
 
   /**
@@ -729,9 +750,15 @@ class Parser {
     }
   }
 
+  /// @brief Insignificant whitespace per RFC 8259: space, tab, LF, CR.
+  ///
+  /// Defined once so that skipping whitespace and ending an unquoted token agree.
+  /// They did not: a CR terminated neither, so a file saved with CRLF line endings
+  /// produced tokens with a trailing CR and failed to parse.
+  static bool isWhitespace(char c) { return c == ' ' || c == '\t' || c == '\n' || c == '\r'; }
+
   void skipWhitespace(size_t& pos) const {
-    while (pos < json_.size() &&
-           (json_[pos] == ' ' || json_[pos] == '\t' || json_[pos] == '\n' || json_[pos] == '\r')) {
+    while (pos < json_.size() && isWhitespace(json_[pos])) {
       ++pos;
     }
   }
@@ -803,8 +830,8 @@ class Parser {
 
     // Number, boolean, or null
     std::string value;
-    while (pos < json_.size() && json_[pos] != ',' && json_[pos] != '}' && json_[pos] != ' ' &&
-           json_[pos] != '\t' && json_[pos] != '\n') {
+    while (pos < json_.size() && json_[pos] != ',' && json_[pos] != '}' &&
+           !isWhitespace(json_[pos])) {
       value += json_[pos];
       ++pos;
     }
@@ -890,6 +917,56 @@ struct ReadVisitor {
     }
   }
 };
+
+/// @brief Records which of a config's fields the parsed JSON actually contained.
+///
+/// Bit N of @ref mask corresponds to the Nth field a config's visitFields declares,
+/// so the presence mask is derived from that one field list rather than restating it.
+struct PresenceVisitor {
+  const Parser& p;
+  uint32_t mask = 0;
+  uint32_t index = 0;
+
+  template <typename T>
+  void operator()(const char* k, T&) {
+    if (p.has(k)) mask |= (1u << index);
+    ++index;
+  }
+  template <typename T>
+  void nested(const char* k, T&) {
+    if (p.has(k)) mask |= (1u << index);
+    ++index;
+  }
+};
+
+/// @brief Counts the fields a config's visitFields declares.
+struct CountVisitor {
+  uint32_t count = 0;
+
+  template <typename T>
+  constexpr void operator()(const char*, T&) {
+    ++count;
+  }
+  template <typename T>
+  constexpr void nested(const char*, T&) {
+    ++count;
+  }
+};
+
+/// @brief Number of fields in @p T's field list, usable in a constant expression.
+template <typename T>
+constexpr uint32_t fieldCount() {
+  CountVisitor v;
+  T config{};
+  T::visitFields(config, v);
+  return v.count;
+}
+
+/// @brief Presence mask with a bit set for every field @p T declares.
+template <typename T>
+constexpr uint32_t allFieldsMask() {
+  return fieldCount<T>() >= 32 ? ~0u : (1u << fieldCount<T>()) - 1u;
+}
 
 }  // namespace json
 }  // namespace midisketch

@@ -78,7 +78,10 @@ typedef struct {
   uint16_t total_bars;   ///< Total number of bars
   uint32_t total_ticks;  ///< Total duration in ticks
   uint16_t bpm;          ///< Actual BPM used
-  uint8_t track_count;   ///< Number of tracks
+  /// Number of track roles the engine defines, not the number that carry notes:
+  /// disabled and empty tracks are counted here too. Written MIDI files and
+  /// midisketch_get_events() contain only the tracks that are populated.
+  uint8_t track_count;
 } MidiSketchInfo;
 
 // ============================================================================
@@ -214,10 +217,17 @@ typedef enum {
 } MidiSketchParadigm;
 
 /// @brief Riff policy for blueprint.
+///
+/// "Locked" names a family: the contour is what is held fixed, and only
+/// LOCKED_PITCH and LOCKED_ALL repeat a riff verbatim.
 typedef enum {
-  MIDISKETCH_RIFF_FREE = 0,     ///< Free variation per section
-  MIDISKETCH_RIFF_LOCKED = 1,   ///< Same riff throughout song
-  MIDISKETCH_RIFF_EVOLVING = 2  ///< Gradual evolution
+  MIDISKETCH_RIFF_FREE = 0,            ///< Free variation per section
+  MIDISKETCH_RIFF_LOCKED_CONTOUR = 1,  ///< Pitch contour fixed, expression variable
+  MIDISKETCH_RIFF_LOCKED_PITCH = 2,    ///< Pitch fixed, velocity variable
+  MIDISKETCH_RIFF_LOCKED_ALL = 3,      ///< Completely fixed
+  MIDISKETCH_RIFF_EVOLVING = 4,        ///< Gradual evolution with variations
+  /// Former name for LOCKED_CONTOUR; same value.
+  MIDISKETCH_RIFF_LOCKED = MIDISKETCH_RIFF_LOCKED_CONTOUR
 } MidiSketchRiffPolicy;
 
 /** @brief Get number of blueprints. @return Count */
@@ -322,6 +332,7 @@ typedef enum {
   MIDISKETCH_CONFIG_INVALID_MOTIF_OVERRIDE = 32,
   MIDISKETCH_CONFIG_INVALID_JSON = 33,
   MIDISKETCH_CONFIG_INVALID_MOOD = 34,
+  MIDISKETCH_CONFIG_INVALID_TARGET_DURATION = 35,
 } MidiSketchConfigError;
 
 /** @brief Get error message for config error. @param error Error code @return Message (static) */
@@ -373,7 +384,8 @@ MidiSketchFormCandidates midisketch_get_forms_by_style(uint8_t style_id);
  * Must be called after generateVocal() or generateWithVocal().
  * Generates: Aux → Bass → Chord → Drums (adapting to vocal).
  * @param handle MidiSketch handle
- * @return MIDISKETCH_OK on success
+ * @return MIDISKETCH_OK on success, MIDISKETCH_ERROR_INVALID_PARAM when nothing has
+ *         been generated on this handle yet
  */
 MidiSketchError midisketch_generate_accompaniment(MidiSketchHandle handle);
 
@@ -382,11 +394,12 @@ MidiSketchError midisketch_generate_accompaniment(MidiSketchHandle handle);
  *
  * Keeps current vocal, clears and regenerates all accompaniment tracks
  * (Aux, Bass, Chord, Drums, etc.) with the specified seed.
- * Must have existing vocal (call generateVocal() first).
+ * Must have an existing song (call generateVocal() first).
  *
  * @param handle MidiSketch handle
  * @param new_seed New random seed for accompaniment (0 = auto-generate)
- * @return MIDISKETCH_OK on success
+ * @return MIDISKETCH_OK on success, MIDISKETCH_ERROR_INVALID_PARAM when nothing has
+ *         been generated on this handle yet
  */
 MidiSketchError midisketch_regenerate_accompaniment(MidiSketchHandle handle, uint32_t new_seed);
 
@@ -586,7 +599,8 @@ MidiSketchError midisketch_regenerate_vocal_from_json(MidiSketchHandle handle,
  * @param handle MidiSketch handle
  * @param config_json JSON string with AccompanimentConfig fields
  * @param json_length Length of the JSON string
- * @return MIDISKETCH_OK on success
+ * @return MIDISKETCH_OK on success, MIDISKETCH_ERROR_INVALID_PARAM when nothing has
+ *         been generated on this handle yet
  */
 MidiSketchError midisketch_generate_accompaniment_from_json(MidiSketchHandle handle,
                                                             const char* config_json,
@@ -600,7 +614,8 @@ MidiSketchError midisketch_generate_accompaniment_from_json(MidiSketchHandle han
  * @param handle MidiSketch handle
  * @param config_json JSON string with AccompanimentConfig fields
  * @param json_length Length of the JSON string
- * @return MIDISKETCH_OK on success
+ * @return MIDISKETCH_OK on success, MIDISKETCH_ERROR_INVALID_PARAM when nothing has
+ *         been generated on this handle yet
  */
 MidiSketchError midisketch_regenerate_accompaniment_from_json(MidiSketchHandle handle,
                                                               const char* config_json,

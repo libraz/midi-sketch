@@ -10,7 +10,6 @@
 #include <cstring>
 #include <limits>
 #include <sstream>
-#include <unordered_map>
 
 #include "analysis/dissonance.h"
 #include "core/chord.h"
@@ -24,9 +23,33 @@
 #include "midisketch.h"
 
 namespace {
-// Thread-local storage for last config error per handle
-// Using void* as key to avoid issues with opaque handle
-std::unordered_map<void*, MidiSketchConfigError> g_last_config_errors;
+/// @brief Everything a handle owns.
+///
+/// The config-error slot lives here rather than in a process-global table, so two
+/// independently created handles share no data structure and can be driven from
+/// different threads without a race.
+struct HandleState {
+  midisketch::MidiSketch sketch;
+  MidiSketchConfigError last_config_error = MIDISKETCH_CONFIG_OK;
+};
+
+HandleState* asState(MidiSketchHandle handle) { return static_cast<HandleState*>(handle); }
+
+midisketch::MidiSketch* asSketch(MidiSketchHandle handle) { return &asState(handle)->sketch; }
+
+/// @brief Whether anything has been generated on this handle yet.
+///
+/// Accompaniment is voiced against an existing song. Running the pipeline on a handle
+/// that has none still emits a structurally valid file with every track empty, which a
+/// caller cannot tell apart from a deliberately quiet arrangement, so the accompaniment
+/// entry points refuse that state instead of reporting success.
+///
+/// The test is "some track carries notes" rather than "the vocal carries notes" so that
+/// a vocal-less arrangement (skip_vocal) can still have its accompaniment rerolled.
+bool hasGeneratedSong(MidiSketchHandle handle) {
+  return asSketch(handle)->getSong().countNonEmptyTracks() > 0;
+}
+
 constexpr const char* kUnknownName = "unknown";
 
 bool parseNoteEvents(const std::string& json, std::vector<midisketch::NoteEvent>& notes) {
@@ -173,6 +196,8 @@ const char* midisketch_config_error_string(MidiSketchConfigError error) {
       return "Invalid JSON config input";
     case MIDISKETCH_CONFIG_INVALID_MOOD:
       return "Invalid mood ID";
+    case MIDISKETCH_CONFIG_INVALID_TARGET_DURATION:
+      return "Target duration cannot be built at this tempo (too short or too long)";
     default:
       return "Unknown config error";
   }
@@ -182,21 +207,12 @@ MidiSketchConfigError midisketch_get_last_config_error(MidiSketchHandle handle) 
   if (!handle) {
     return MIDISKETCH_CONFIG_OK;
   }
-  auto it = g_last_config_errors.find(handle);
-  if (it != g_last_config_errors.end()) {
-    return it->second;
-  }
-  return MIDISKETCH_CONFIG_OK;
+  return asState(handle)->last_config_error;
 }
 
-MidiSketchHandle midisketch_create(void) { return new midisketch::MidiSketch(); }
+MidiSketchHandle midisketch_create(void) { return new HandleState(); }
 
-void midisketch_destroy(MidiSketchHandle handle) {
-  if (handle) {
-    g_last_config_errors.erase(handle);
-  }
-  delete static_cast<midisketch::MidiSketch*>(handle);
-}
+void midisketch_destroy(MidiSketchHandle handle) { delete asState(handle); }
 
 MidiSketchError midisketch_set_midi_format(MidiSketchHandle handle, MidiSketchMidiFormat format) {
   if (!handle) {
@@ -219,7 +235,7 @@ MidiSketchError midisketch_set_midi_format(MidiSketchHandle handle, MidiSketchMi
       return MIDISKETCH_ERROR_INVALID_PARAM;
   }
 
-  static_cast<midisketch::MidiSketch*>(handle)->setMidiFormat(native_format);
+  asSketch(handle)->setMidiFormat(native_format);
   return MIDISKETCH_OK;
 }
 
@@ -227,7 +243,7 @@ MidiSketchMidiFormat midisketch_get_midi_format(MidiSketchHandle handle) {
   if (!handle) {
     return MIDISKETCH_MIDI_FORMAT_SMF1;
   }
-  const auto format = static_cast<midisketch::MidiSketch*>(handle)->getMidiFormat();
+  const auto format = asSketch(handle)->getMidiFormat();
   return format == midisketch::MidiFormat::SMF2 ? MIDISKETCH_MIDI_FORMAT_SMF2
                                                 : MIDISKETCH_MIDI_FORMAT_SMF1;
 }
@@ -237,21 +253,21 @@ MidiSketchMidiFormat midisketch_get_midi_format(MidiSketchHandle handle) {
 // ============================================================================
 
 MidiSketchError midisketch_generate_accompaniment(MidiSketchHandle handle) {
-  if (!handle) {
+  if (!handle || !hasGeneratedSong(handle)) {
     return MIDISKETCH_ERROR_INVALID_PARAM;
   }
 
-  auto* sketch = static_cast<midisketch::MidiSketch*>(handle);
+  auto* sketch = asSketch(handle);
   sketch->generateAccompanimentForVocal();
   return MIDISKETCH_OK;
 }
 
 MidiSketchError midisketch_regenerate_accompaniment(MidiSketchHandle handle, uint32_t new_seed) {
-  if (!handle) {
+  if (!handle || !hasGeneratedSong(handle)) {
     return MIDISKETCH_ERROR_INVALID_PARAM;
   }
 
-  auto* sketch = static_cast<midisketch::MidiSketch*>(handle);
+  auto* sketch = asSketch(handle);
   sketch->regenerateAccompaniment(new_seed);
   return MIDISKETCH_OK;
 }
@@ -273,13 +289,13 @@ static MidiSketchMidiData* allocateMidiData(const std::vector<uint8_t>& bytes) {
 
 MidiSketchMidiData* midisketch_get_midi(MidiSketchHandle handle) {
   if (!handle) return nullptr;
-  auto* sketch = static_cast<midisketch::MidiSketch*>(handle);
+  auto* sketch = asSketch(handle);
   return allocateMidiData(sketch->getMidi());
 }
 
 MidiSketchMidiData* midisketch_get_vocal_preview_midi(MidiSketchHandle handle) {
   if (!handle) return nullptr;
-  auto* sketch = static_cast<midisketch::MidiSketch*>(handle);
+  auto* sketch = asSketch(handle);
   return allocateMidiData(sketch->getVocalPreviewMidi());
 }
 
@@ -293,7 +309,7 @@ void midisketch_free_midi(MidiSketchMidiData* data) {
 MidiSketchEventData* midisketch_get_events(MidiSketchHandle handle) {
   if (!handle) return nullptr;
 
-  auto* sketch = static_cast<midisketch::MidiSketch*>(handle);
+  auto* sketch = asSketch(handle);
   std::string json = sketch->getEventsJson();
 
   auto* result = static_cast<MidiSketchEventData*>(malloc(sizeof(MidiSketchEventData)));
@@ -320,7 +336,7 @@ void midisketch_free_events(MidiSketchEventData* data) {
 MidiSketchDissonanceData* midisketch_get_dissonance(MidiSketchHandle handle) {
   if (!handle) return nullptr;
 
-  auto* sketch = static_cast<midisketch::MidiSketch*>(handle);
+  auto* sketch = asSketch(handle);
   const auto report = midisketch::analyzeDissonance(sketch->getSong(), sketch->getParams(),
                                                     sketch->getHarmonyContext());
   const std::string json = midisketch::dissonanceReportToJson(report);
@@ -349,13 +365,13 @@ MidiSketchInfo midisketch_get_info(MidiSketchHandle handle) {
   MidiSketchInfo info{};
   if (!handle) return info;
 
-  auto* sketch = static_cast<midisketch::MidiSketch*>(handle);
+  auto* sketch = asSketch(handle);
   const auto& song = sketch->getSong();
 
   info.total_bars = song.arrangement().totalBars();
   info.total_ticks = song.arrangement().totalTicks();
   info.bpm = song.bpm();
-  info.track_count = 9;  // Vocal, Chord, Bass, Drums, SE, Motif, Arpeggio, Aux, Guitar
+  info.track_count = static_cast<uint8_t>(midisketch::kTrackCount);
 
   return info;
 }
@@ -401,6 +417,31 @@ const char* midisketch_blueprint_name(uint8_t id) {
   return midisketch::getProductionBlueprintName(id);
 }
 
+// Both getters hand the engine's raw value straight to the caller, so every value
+// the engine can hold must be a declared enumerator with the same number.
+static_assert(static_cast<int>(midisketch::GenerationParadigm::Traditional) ==
+                  MIDISKETCH_PARADIGM_TRADITIONAL,
+              "Paradigm value mismatch: Traditional");
+static_assert(static_cast<int>(midisketch::GenerationParadigm::RhythmSync) ==
+                  MIDISKETCH_PARADIGM_RHYTHM_SYNC,
+              "Paradigm value mismatch: RhythmSync");
+static_assert(static_cast<int>(midisketch::GenerationParadigm::MelodyDriven) ==
+                  MIDISKETCH_PARADIGM_MELODY_DRIVEN,
+              "Paradigm value mismatch: MelodyDriven");
+static_assert(static_cast<int>(midisketch::RiffPolicy::Free) == MIDISKETCH_RIFF_FREE,
+              "Riff policy value mismatch: Free");
+static_assert(static_cast<int>(midisketch::RiffPolicy::LockedContour) ==
+                  MIDISKETCH_RIFF_LOCKED_CONTOUR,
+              "Riff policy value mismatch: LockedContour");
+static_assert(static_cast<int>(midisketch::RiffPolicy::LockedPitch) == MIDISKETCH_RIFF_LOCKED_PITCH,
+              "Riff policy value mismatch: LockedPitch");
+static_assert(static_cast<int>(midisketch::RiffPolicy::LockedAll) == MIDISKETCH_RIFF_LOCKED_ALL,
+              "Riff policy value mismatch: LockedAll");
+static_assert(static_cast<int>(midisketch::RiffPolicy::Evolving) == MIDISKETCH_RIFF_EVOLVING,
+              "Riff policy value mismatch: Evolving");
+static_assert(static_cast<int>(midisketch::RiffPolicy::Locked) == MIDISKETCH_RIFF_LOCKED,
+              "Riff policy value mismatch: Locked alias");
+
 MidiSketchParadigm midisketch_blueprint_paradigm(uint8_t id) {
   const auto& bp = midisketch::getProductionBlueprint(id);
   return static_cast<MidiSketchParadigm>(bp.paradigm);
@@ -433,7 +474,7 @@ uint16_t midisketch_blueprint_tempo_max(uint8_t id) {
 
 uint8_t midisketch_get_resolved_blueprint_id(MidiSketchHandle handle) {
   if (!handle) return 255;
-  auto* sketch = static_cast<midisketch::MidiSketch*>(handle);
+  auto* sketch = asSketch(handle);
   return sketch->resolvedBlueprintId();
 }
 
@@ -442,7 +483,7 @@ const char* midisketch_get_warnings_json(MidiSketchHandle handle) {
   warnings_json = "[]";
   if (!handle) return warnings_json.c_str();
 
-  auto* sketch = static_cast<midisketch::MidiSketch*>(handle);
+  auto* sketch = asSketch(handle);
   std::ostringstream out;
   midisketch::json::Writer writer(out);
   writer.beginArray();
@@ -560,7 +601,10 @@ MidiSketchConfigError mapConfigError(midisketch::SongConfigError error) {
                 "Enum value mismatch: OK");
   static_assert(
       static_cast<int>(midisketch::SongConfigError::InvalidMood) == MIDISKETCH_CONFIG_INVALID_MOOD,
-      "Enum value mismatch: last entry");
+      "Enum value mismatch: InvalidMood");
+  static_assert(static_cast<int>(midisketch::SongConfigError::InvalidTargetDuration) ==
+                    MIDISKETCH_CONFIG_INVALID_TARGET_DURATION,
+                "Enum value mismatch: last entry");
   return static_cast<MidiSketchConfigError>(error);
 }
 
@@ -570,30 +614,112 @@ std::string s_json_config_buffer;
 /// Parse JSON config and validate. Returns nullptr on error (sets error codes).
 midisketch::MidiSketch* parseAndValidateConfig(MidiSketchHandle handle, const char* config_json,
                                                size_t json_length, midisketch::SongConfig& out) {
-  g_last_config_errors[handle] = MIDISKETCH_CONFIG_OK;
+  asState(handle)->last_config_error = MIDISKETCH_CONFIG_OK;
 
   if (json_length == 0) {
-    g_last_config_errors[handle] = MIDISKETCH_CONFIG_INVALID_JSON;
+    asState(handle)->last_config_error = MIDISKETCH_CONFIG_INVALID_JSON;
     return nullptr;
   }
   midisketch::json::Parser p(std::string(config_json, json_length));
   if (!p.isValid()) {
-    g_last_config_errors[handle] = MIDISKETCH_CONFIG_INVALID_JSON;
+    asState(handle)->last_config_error = MIDISKETCH_CONFIG_INVALID_JSON;
     return nullptr;
   }
   out.readFrom(p);
   if (!p.isValid()) {
-    g_last_config_errors[handle] = MIDISKETCH_CONFIG_INVALID_JSON;
+    asState(handle)->last_config_error = MIDISKETCH_CONFIG_INVALID_JSON;
     return nullptr;
   }
 
   auto validation = midisketch::validateSongConfig(out);
   if (validation != midisketch::SongConfigError::OK) {
-    g_last_config_errors[handle] = mapConfigError(validation);
+    asState(handle)->last_config_error = mapConfigError(validation);
     return nullptr;
   }
 
-  return static_cast<midisketch::MidiSketch*>(handle);
+  return asSketch(handle);
+}
+
+/// @brief Validates a partial vocal update the same way a full SongConfig is validated.
+///
+/// Fields the JSON omitted keep the handle's current value, because that combination is
+/// what generation will run with; projecting the result onto a SongConfig lets the single
+/// shared validator decide the documented ranges and relationships.
+MidiSketchConfigError validateVocalUpdate(const midisketch::GeneratorParams& current,
+                                          const midisketch::VocalConfig& config) {
+  using Field = midisketch::VocalConfig;
+  midisketch::SongConfig probe;
+  probe.style_preset_id = current.style_preset_id;
+  probe.vocal_low = config.has(Field::VocalLow) ? config.vocal_low : current.vocal_low;
+  probe.vocal_high = config.has(Field::VocalHigh) ? config.vocal_high : current.vocal_high;
+  probe.vocal_attitude =
+      config.has(Field::VocalAttitudeField) ? config.vocal_attitude : current.vocal_attitude;
+  probe.vocal_style = config.has(Field::VocalStyleField) ? config.vocal_style : current.vocal_style;
+  probe.melody_template =
+      config.has(Field::MelodyTemplateField) ? config.melody_template : current.melody_template;
+  probe.melodic_complexity = config.has(Field::MelodicComplexityField) ? config.melodic_complexity
+                                                                       : current.melodic_complexity;
+  probe.hook_intensity =
+      config.has(Field::HookIntensityField) ? config.hook_intensity : current.hook_intensity;
+  probe.vocal_groove =
+      config.has(Field::VocalGrooveField) ? config.vocal_groove : current.vocal_groove;
+  probe.composition_style = config.has(Field::CompositionStyleField) ? config.composition_style
+                                                                     : current.composition_style;
+  return mapConfigError(midisketch::validateSongConfig(probe));
+}
+
+/// @brief Validates a partial accompaniment update the same way a full SongConfig is validated.
+///
+/// The accompaniment fields are range-checked independently of one another, so fields the
+/// JSON omitted are left at the config defaults; only the supplied ones are projected onto
+/// the probe. Style and attitude come from the handle so the style-dependent attitude rule
+/// is evaluated against the song being modified.
+MidiSketchConfigError validateAccompanimentUpdate(const midisketch::GeneratorParams& current,
+                                                  const midisketch::AccompanimentConfig& config) {
+  using Field = midisketch::AccompanimentConfig;
+  midisketch::SongConfig probe;
+  probe.style_preset_id = current.style_preset_id;
+  probe.vocal_attitude = current.vocal_attitude;
+  if (config.has(Field::ArpeggioPatternField)) {
+    probe.arpeggio.pattern = static_cast<midisketch::ArpeggioPattern>(config.arpeggio_pattern);
+  }
+  if (config.has(Field::ArpeggioSpeedField)) {
+    probe.arpeggio.speed = static_cast<midisketch::ArpeggioSpeed>(config.arpeggio_speed);
+  }
+  if (config.has(Field::ArpeggioOctaveRange)) {
+    probe.arpeggio.octave_range = config.arpeggio_octave_range;
+  }
+  if (config.has(Field::ArpeggioGate)) {
+    probe.arpeggio.gate = config.arpeggio_gate == 255 ? -1.0f : config.arpeggio_gate / 100.0f;
+  }
+  if (config.has(Field::ChordExtSusProb)) {
+    probe.chord_extension.sus_probability = config.chord_ext_sus_prob;
+  }
+  if (config.has(Field::ChordExt7thProb)) {
+    probe.chord_extension.seventh_probability = config.chord_ext_7th_prob;
+  }
+  if (config.has(Field::ChordExt9thProb)) {
+    probe.chord_extension.ninth_probability = config.chord_ext_9th_prob;
+  }
+  if (config.has(Field::ChordExtTritoneSubProb)) {
+    probe.chord_extension.tritone_sub_probability = config.chord_ext_tritone_sub_prob;
+  }
+  if (config.has(Field::HumanizeTiming)) {
+    probe.humanize_timing = config.humanize_timing;
+  }
+  if (config.has(Field::HumanizeVelocity)) {
+    probe.humanize_velocity = config.humanize_velocity;
+  }
+  if (config.has(Field::CallDensity)) {
+    probe.call_density = static_cast<midisketch::CallDensity>(config.call_density);
+  }
+  if (config.has(Field::IntroChant)) {
+    probe.intro_chant = static_cast<midisketch::IntroChant>(config.intro_chant);
+  }
+  if (config.has(Field::MixPattern)) {
+    probe.mix_pattern = static_cast<midisketch::MixPattern>(config.mix_pattern);
+  }
+  return mapConfigError(midisketch::validateSongConfig(probe));
 }
 
 }  // namespace
@@ -672,25 +798,70 @@ MidiSketchError midisketch_generate_with_vocal_from_json(MidiSketchHandle handle
   return MIDISKETCH_OK;
 }
 
+namespace {
+
+/// Parses and validates a partial vocal update. Returns false and records the reason
+/// in the handle's error slot when the JSON, or its combination with the handle's
+/// current parameters, is not acceptable.
+bool parseAndValidateVocalConfig(MidiSketchHandle handle, const char* config_json,
+                                 size_t json_length, midisketch::VocalConfig& out) {
+  midisketch::json::Parser p(std::string(config_json, json_length));
+  if (!p.isValid()) {
+    asState(handle)->last_config_error = MIDISKETCH_CONFIG_INVALID_JSON;
+    return false;
+  }
+  out.readFrom(p);
+  if (!p.isValid()) {
+    asState(handle)->last_config_error = MIDISKETCH_CONFIG_INVALID_JSON;
+    return false;
+  }
+  const auto error = validateVocalUpdate(asSketch(handle)->getParams(), out);
+  if (error != MIDISKETCH_CONFIG_OK) {
+    asState(handle)->last_config_error = error;
+    return false;
+  }
+  return true;
+}
+
+/// Parses and validates a partial accompaniment update. Returns false and records the
+/// reason in the handle's error slot when the JSON is not acceptable.
+bool parseAndValidateAccompanimentConfig(MidiSketchHandle handle, const char* config_json,
+                                         size_t json_length, midisketch::AccompanimentConfig& out) {
+  midisketch::json::Parser p(std::string(config_json, json_length));
+  if (!p.isValid()) {
+    asState(handle)->last_config_error = MIDISKETCH_CONFIG_INVALID_JSON;
+    return false;
+  }
+  out.readFrom(p);
+  if (!p.isValid()) {
+    asState(handle)->last_config_error = MIDISKETCH_CONFIG_INVALID_JSON;
+    return false;
+  }
+  const auto error = validateAccompanimentUpdate(asSketch(handle)->getParams(), out);
+  if (error != MIDISKETCH_CONFIG_OK) {
+    asState(handle)->last_config_error = error;
+    return false;
+  }
+  return true;
+}
+
+}  // namespace
+
 MidiSketchError midisketch_regenerate_vocal_from_json(MidiSketchHandle handle,
                                                       const char* config_json, size_t json_length) {
   if (!handle) {
     return MIDISKETCH_ERROR_INVALID_PARAM;
   }
 
-  auto* sketch = static_cast<midisketch::MidiSketch*>(handle);
+  asState(handle)->last_config_error = MIDISKETCH_CONFIG_OK;
+  auto* sketch = asSketch(handle);
 
   if (!config_json || json_length == 0) {
     // NULL/empty config = regenerate with new seed only
     sketch->regenerateVocal(0);
   } else {
-    midisketch::json::Parser p(std::string(config_json, json_length));
-    if (!p.isValid()) {
-      return MIDISKETCH_ERROR_INVALID_PARAM;
-    }
     midisketch::VocalConfig config;
-    config.readFrom(p);
-    if (!p.isValid()) {
+    if (!parseAndValidateVocalConfig(handle, config_json, json_length, config)) {
       return MIDISKETCH_ERROR_INVALID_PARAM;
     }
     sketch->regenerateVocal(config);
@@ -701,42 +872,32 @@ MidiSketchError midisketch_regenerate_vocal_from_json(MidiSketchHandle handle,
 MidiSketchError midisketch_generate_accompaniment_from_json(MidiSketchHandle handle,
                                                             const char* config_json,
                                                             size_t json_length) {
-  if (!handle || !config_json) {
+  if (!handle || !config_json || !hasGeneratedSong(handle)) {
     return MIDISKETCH_ERROR_INVALID_PARAM;
   }
 
-  auto* sketch = static_cast<midisketch::MidiSketch*>(handle);
-  midisketch::json::Parser p(std::string(config_json, json_length));
-  if (!p.isValid()) {
-    return MIDISKETCH_ERROR_INVALID_PARAM;
-  }
+  asState(handle)->last_config_error = MIDISKETCH_CONFIG_OK;
   midisketch::AccompanimentConfig config;
-  config.readFrom(p);
-  if (!p.isValid()) {
+  if (!parseAndValidateAccompanimentConfig(handle, config_json, json_length, config)) {
     return MIDISKETCH_ERROR_INVALID_PARAM;
   }
-  sketch->generateAccompanimentForVocal(config);
+  asSketch(handle)->generateAccompanimentForVocal(config);
   return MIDISKETCH_OK;
 }
 
 MidiSketchError midisketch_regenerate_accompaniment_from_json(MidiSketchHandle handle,
                                                               const char* config_json,
                                                               size_t json_length) {
-  if (!handle || !config_json) {
+  if (!handle || !config_json || !hasGeneratedSong(handle)) {
     return MIDISKETCH_ERROR_INVALID_PARAM;
   }
 
-  auto* sketch = static_cast<midisketch::MidiSketch*>(handle);
-  midisketch::json::Parser p(std::string(config_json, json_length));
-  if (!p.isValid()) {
-    return MIDISKETCH_ERROR_INVALID_PARAM;
-  }
+  asState(handle)->last_config_error = MIDISKETCH_CONFIG_OK;
   midisketch::AccompanimentConfig config;
-  config.readFrom(p);
-  if (!p.isValid()) {
+  if (!parseAndValidateAccompanimentConfig(handle, config_json, json_length, config)) {
     return MIDISKETCH_ERROR_INVALID_PARAM;
   }
-  sketch->regenerateAccompaniment(config);
+  asSketch(handle)->regenerateAccompaniment(config);
   return MIDISKETCH_OK;
 }
 
@@ -746,11 +907,12 @@ MidiSketchError midisketch_set_vocal_notes_from_json(MidiSketchHandle handle, co
     return MIDISKETCH_ERROR_INVALID_PARAM;
   }
 
-  g_last_config_errors[handle] = MIDISKETCH_CONFIG_OK;
+  asState(handle)->last_config_error = MIDISKETCH_CONFIG_OK;
 
   const std::string json_string(json, json_length);
   midisketch::json::Parser p(json_string);
   if (!p.isValid()) {
+    asState(handle)->last_config_error = MIDISKETCH_CONFIG_INVALID_JSON;
     return MIDISKETCH_ERROR_INVALID_PARAM;
   }
 
@@ -760,14 +922,14 @@ MidiSketchError midisketch_set_vocal_notes_from_json(MidiSketchHandle handle, co
     midisketch::json::Parser config_parser = p.getObject("config");
     config.readFrom(config_parser);
     if (!config_parser.isValid()) {
-      g_last_config_errors[handle] = MIDISKETCH_CONFIG_INVALID_JSON;
+      asState(handle)->last_config_error = MIDISKETCH_CONFIG_INVALID_JSON;
       return MIDISKETCH_ERROR_INVALID_PARAM;
     }
   }
 
   auto validation = midisketch::validateSongConfig(config);
   if (validation != midisketch::SongConfigError::OK) {
-    g_last_config_errors[handle] = mapConfigError(validation);
+    asState(handle)->last_config_error = mapConfigError(validation);
     return MIDISKETCH_ERROR_INVALID_PARAM;
   }
 
@@ -776,7 +938,7 @@ MidiSketchError midisketch_set_vocal_notes_from_json(MidiSketchHandle handle, co
     return MIDISKETCH_ERROR_INVALID_PARAM;
   }
 
-  auto* sketch = static_cast<midisketch::MidiSketch*>(handle);
+  auto* sketch = asSketch(handle);
   sketch->setVocalNotes(config, notes);
   return MIDISKETCH_OK;
 }
@@ -784,7 +946,7 @@ MidiSketchError midisketch_set_vocal_notes_from_json(MidiSketchHandle handle, co
 const char* midisketch_get_melody_json(MidiSketchHandle handle) {
   if (!handle) return nullptr;
 
-  const auto* sketch = static_cast<const midisketch::MidiSketch*>(handle);
+  const auto* sketch = asSketch(handle);
   const midisketch::MelodyData melody = sketch->getMelody();
   std::ostringstream out;
   midisketch::json::Writer writer(out);
@@ -810,6 +972,8 @@ MidiSketchError midisketch_set_melody_from_json(MidiSketchHandle handle, const c
     return MIDISKETCH_ERROR_INVALID_PARAM;
   }
 
+  asState(handle)->last_config_error = MIDISKETCH_CONFIG_OK;
+
   const std::string json_string(json, json_length);
   midisketch::json::Parser parser(json_string);
   if (!parser.isValid()) {
@@ -825,7 +989,7 @@ MidiSketchError midisketch_set_melody_from_json(MidiSketchHandle handle, const c
     return MIDISKETCH_ERROR_INVALID_PARAM;
   }
 
-  auto* sketch = static_cast<midisketch::MidiSketch*>(handle);
+  auto* sketch = asSketch(handle);
   sketch->setMelody(melody);
   return MIDISKETCH_OK;
 }
@@ -997,7 +1161,7 @@ MidiSketchPianoRollData* midisketch_get_piano_roll_safety(MidiSketchHandle handl
     return nullptr;
   }
 
-  auto* sketch = static_cast<midisketch::MidiSketch*>(handle);
+  auto* sketch = asSketch(handle);
   const auto& song = sketch->getSong();
   const auto& harmony = sketch->getHarmonyContext();
   const auto& params = sketch->getParams();
@@ -1042,7 +1206,7 @@ MidiSketchPianoRollInfo* midisketch_get_piano_roll_safety_at(MidiSketchHandle ha
                                                              uint32_t tick) {
   if (!handle) return nullptr;
 
-  auto* sketch = static_cast<midisketch::MidiSketch*>(handle);
+  auto* sketch = asSketch(handle);
   const auto& song = sketch->getSong();
   const auto& harmony = sketch->getHarmonyContext();
   const auto& params = sketch->getParams();
@@ -1056,7 +1220,7 @@ MidiSketchPianoRollInfo* midisketch_get_piano_roll_safety_with_context(MidiSketc
                                                                        uint8_t prev_pitch) {
   if (!handle) return nullptr;
 
-  auto* sketch = static_cast<midisketch::MidiSketch*>(handle);
+  auto* sketch = asSketch(handle);
   const auto& song = sketch->getSong();
   const auto& harmony = sketch->getHarmonyContext();
   const auto& params = sketch->getParams();
