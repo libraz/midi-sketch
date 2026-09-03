@@ -3,7 +3,7 @@
 import unittest
 
 from conftest import Note, MusicAnalyzer, TICKS_PER_BAR, TICKS_PER_BEAT
-from music_analyzer.analyzers.base import BaseAnalyzer
+from music_analyzer.analyzers.base import BaseAnalyzer, is_high_energy_section_name
 
 
 def _make_section(section_type, name, start_bar, end_bar):
@@ -144,15 +144,80 @@ class TestBaseAnalyzerSections(unittest.TestCase):
         )
 
     def test_generated_section_names_map_to_distinct_roles(self):
+        # Every section name the generator can emit. The chorus role carries the
+        # sections the core calls high energy (Chorus, MixBreak, Drop); the
+        # transitional ones (Intro, Interlude, Outro, Chant) frame the song. B is
+        # the deliberate exception: it is the pre-chorus, and the tension curve
+        # needs it to read as the run-up into the chorus rather than a chorus.
         expected = {
+            'Intro': 'instrumental',
             'A': 'verse',
             'B': 'bridge',
             'Chorus': 'chorus',
-            'Drop': 'chorus',
-            'Intro': 'instrumental',
+            'Bridge': 'bridge',
+            'Interlude': 'instrumental',
             'Outro': 'instrumental',
-            'MixBreak': 'instrumental',
             'Chant': 'instrumental',
+            'MixBreak': 'chorus',
+            'Drop': 'chorus',
+        }
+        for raw_type, normalized in expected.items():
+            with self.subTest(raw_type=raw_type):
+                self.assertEqual(DummyAnalyzer._normalize_section_type(raw_type), normalized)
+
+    def test_high_energy_matches_the_generators_own_classification(self):
+        # isHighEnergySection in src/core/section_types.h: Chorus, B, MixBreak
+        # and Drop. This is a separate axis from the structural role, which is
+        # why B is high energy without being a chorus.
+        expected = {
+            'Intro': False,
+            'A': False,
+            'B': True,
+            'Chorus': True,
+            'Bridge': False,
+            'Interlude': False,
+            'Outro': False,
+            'Chant': False,
+            'MixBreak': True,
+            'Drop': True,
+        }
+        for raw_type, high_energy in expected.items():
+            with self.subTest(raw_type=raw_type):
+                self.assertEqual(is_high_energy_section_name(raw_type), high_energy)
+
+    def test_the_two_axes_are_independent(self):
+        # B is the case that cannot be expressed with one field.
+        self.assertTrue(is_high_energy_section_name('B'))
+        self.assertEqual(DummyAnalyzer._normalize_section_type('B'), 'bridge')
+
+    def test_sections_carry_both_axes(self):
+        sections = [
+            {'type': 'B', 'startTick': 0, 'endTick': 4 * TICKS_PER_BAR,
+             'start_bar': 1, 'bars': 4},
+            {'type': 'Chorus', 'startTick': 4 * TICKS_PER_BAR,
+             'endTick': 8 * TICKS_PER_BAR, 'start_bar': 5, 'bars': 4},
+            {'type': 'A', 'startTick': 8 * TICKS_PER_BAR,
+             'endTick': 12 * TICKS_PER_BAR, 'start_bar': 9, 'bars': 4},
+        ]
+        notes = _fill_notes(1, 12, 2, channels=[0])
+        analyzer = DummyAnalyzer(notes=notes, notes_by_channel={0: notes},
+                                 metadata={'sections': sections})
+
+        resolved = analyzer.sections
+
+        self.assertEqual([section['type'] for section in resolved],
+                         ['bridge', 'chorus', 'verse'])
+        self.assertEqual([analyzer.is_high_energy(section) for section in resolved],
+                         [True, True, False])
+
+    def test_foreign_labels_fall_back_without_swallowing_the_pre_chorus(self):
+        expected = {
+            'Pre-Chorus': 'bridge',
+            'pre chorus': 'bridge',
+            'Verse 2': 'verse',
+            'Final Chorus': 'chorus',
+            'Hook': 'chorus',
+            'Guitar Solo': 'instrumental',
         }
         for raw_type, normalized in expected.items():
             with self.subTest(raw_type=raw_type):

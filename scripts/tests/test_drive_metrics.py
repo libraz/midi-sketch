@@ -235,6 +235,24 @@ class TestChordDriveDeficit(unittest.TestCase):
         self.assertEqual(chord_drive[0].severity, Severity.INFO)
         self.assertIn("pad-like", chord_drive[0].message)
 
+    def test_sustained_harmony_blueprint_not_flagged(self):
+        """A blueprint built on long notes keeps its pad-like chord track."""
+        notes = []
+        for bar in range(5, 13):
+            tick = (bar - 1) * TICKS_PER_BAR
+            notes.extend(make_chord_notes(tick, [60, 64, 67], duration=TICKS_PER_BAR))
+
+        # Blueprint 3 (Ballad) declares a preference for long notes.
+        result = MusicAnalyzer(
+            notes, blueprint=3, metadata=self._chorus_metadata()
+        ).analyze_all()
+
+        chord_drive = [
+            idx for idx in result.issues
+            if idx.subcategory == "drive_deficit" and idx.track == "Chord"
+        ]
+        self.assertEqual(len(chord_drive), 0)
+
     def test_rhythmic_chord_no_issue(self):
         """Chord with mostly short notes should not be flagged."""
         notes = []

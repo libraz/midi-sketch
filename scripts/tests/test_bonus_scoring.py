@@ -9,9 +9,10 @@ import unittest
 from conftest import Note, MusicAnalyzer, TICKS_PER_BAR, TICKS_PER_BEAT
 
 from music_analyzer.models import Bonus, QualityScore
-from music_analyzer.constants import Category
+from music_analyzer.constants import Category, chord_function
 from music_analyzer.blueprints import BLUEPRINT_PROFILES, BlueprintProfile
-from music_analyzer.analyzers.bonus_harmonic import BonusHarmonicAnalyzer
+from music_analyzer.analyzers.bonus_harmonic import BonusHarmonicAnalyzer, _tension_value
+from music_analyzer.analyzers.bonus_melodic import BonusMelodicAnalyzer
 
 
 def _make_song(bars=32, with_patterns=True):
@@ -279,6 +280,164 @@ class TestHarmonicCadenceBonus(unittest.TestCase):
         self.assertEqual(score, 0.5)
 
 
+class TestHarmonicFunctionTable(unittest.TestCase):
+    """The function of each degree, and the tension that follows from it.
+
+    iii shares two notes with I and stands in for the tonic; IV is the
+    subdominant. Swapping them inverts the tension curve on two of the seven
+    degrees, which no test noticed for as long as the table went unread.
+    """
+
+    def test_tonic_substitutes_are_tonic(self):
+        for degree in (0, 2, 5):  # I, iii, vi
+            with self.subTest(degree=degree):
+                self.assertEqual(chord_function(degree), 'T')
+
+    def test_subdominants_are_subdominant(self):
+        for degree in (1, 3):  # ii, IV
+            with self.subTest(degree=degree):
+                self.assertEqual(chord_function(degree), 'S')
+
+    def test_dominants_are_dominant(self):
+        for degree in (4, 6):  # V, vii
+            with self.subTest(degree=degree):
+                self.assertEqual(chord_function(degree), 'D')
+
+    def test_the_third_and_fourth_degrees_are_not_the_same_function(self):
+        self.assertNotEqual(chord_function(2), chord_function(3))
+
+    def test_unknown_harmony_has_no_function(self):
+        self.assertIsNone(chord_function(-1))
+
+    def test_tension_follows_the_function(self):
+        # iii resolves nothing, IV leans, V pulls.
+        self.assertEqual(_tension_value(2), _tension_value(0))
+        self.assertGreater(_tension_value(3), _tension_value(2))
+        self.assertGreater(_tension_value(4), _tension_value(3))
+
+    def test_a_dominant_to_subdominant_bar_pair_is_reported(self):
+        # V then IV is the retrograde the check looks for; V then iii is not,
+        # because iii is a tonic substitute.
+        def issues(second_degree):
+            notes = [
+                Note(start=bar * TICKS_PER_BAR, duration=TICKS_PER_BAR, pitch=43,
+                     velocity=80, channel=2)
+                for bar in range(4)
+            ]
+            metadata = {'chords': [
+                {'tick': 0, 'endTick': 2 * TICKS_PER_BAR, 'degree': 4},
+                {'tick': 2 * TICKS_PER_BAR, 'endTick': 4 * TICKS_PER_BAR,
+                 'degree': second_degree},
+            ]}
+            result = MusicAnalyzer(notes, metadata=metadata).analyze_all()
+            return [issue for issue in result.issues
+                    if issue.subcategory == "chord_function"]
+
+        self.assertEqual(len(issues(3)), 1, "V -> IV is a retrograde")
+        self.assertEqual(issues(2), [], "V -> iii resolves toward the tonic")
+
+
+class TestHarmonyReadsTheExportedTimeline(unittest.TestCase):
+    """Harmony lookups follow the exported chord timeline, not nearby notes.
+
+    Near a section boundary the closest note carrying provenance often belongs
+    to the neighbouring chord, so a provenance-first lookup reads the wrong
+    harmony exactly where cadences are judged.
+    """
+
+    SECTIONS = [
+        {'type': 'verse', 'start_bar': 1, 'end_bar': 8},
+        {'type': 'chorus', 'start_bar': 9, 'end_bar': 16},
+    ]
+
+    @staticmethod
+    def _analyzer():
+        end_tick = 7 * TICKS_PER_BAR
+        start_tick = 8 * TICKS_PER_BAR
+        # Provenance says the tonic on both sides of the boundary; the exported
+        # timeline records the V that actually sounds at the end of the verse.
+        notes = [
+            Note(start=end_tick, duration=TICKS_PER_BAR, pitch=43, velocity=80, channel=2,
+                 provenance={'chord_degree': 0, 'source': 'bass_pattern'}),
+            Note(start=start_tick, duration=TICKS_PER_BAR, pitch=48, velocity=80, channel=2,
+                 provenance={'chord_degree': 0, 'source': 'bass_pattern'}),
+        ]
+        metadata = {
+            'chords': [
+                {'tick': 0, 'endTick': end_tick, 'degree': 0},
+                {'tick': end_tick, 'endTick': start_tick, 'degree': 4},
+                {'tick': start_tick, 'endTick': 16 * TICKS_PER_BAR, 'degree': 0},
+            ],
+        }
+        return BonusHarmonicAnalyzer(
+            notes=notes,
+            notes_by_channel={2: notes},
+            metadata=metadata,
+        )
+
+    def test_boundary_degree_comes_from_the_timeline(self):
+        analyzer = self._analyzer()
+
+        self.assertEqual(analyzer.get_chord_degree_at(7 * TICKS_PER_BAR), 4)
+        self.assertEqual(analyzer.get_chord_degree_at(8 * TICKS_PER_BAR), 0)
+
+    def test_cadence_is_found_on_the_exported_timeline(self):
+        analyzer = self._analyzer()
+
+        score = analyzer._evaluate_cadences(self.SECTIONS)
+
+        self.assertEqual(score, 1.0, "root-position V->I on the timeline must score")
+
+
+class TestPreChorusTensionBaseline(unittest.TestCase):
+    """A chorus is never part of the build-up that leads into a chorus."""
+
+    @staticmethod
+    def _sections():
+        # Consecutive choruses: the generator routinely emits this shape.
+        return [
+            {'type': 'verse', 'start_bar': 1, 'end_bar': 8},
+            {'type': 'bridge', 'start_bar': 9, 'end_bar': 12},
+            {'type': 'chorus', 'start_bar': 13, 'end_bar': 20},
+            {'type': 'chorus', 'start_bar': 21, 'end_bar': 28},
+        ]
+
+    def test_chorus_is_excluded_from_the_pre_chorus_set(self):
+        analyzer = BonusHarmonicAnalyzer(notes=[], notes_by_channel={})
+        # verse 0.0, bridge 1.0 (the actual build-up), chorus 0.0, chorus 0.0.
+        tensions = [0.0, 1.0, 0.0, 0.0]
+
+        score = analyzer._evaluate_pre_chorus_tension(self._sections(), tensions)
+
+        # Only the bridge precedes a chorus without being one, so the average
+        # build-up tension is 1.0 against a verse baseline of 0.0.
+        self.assertEqual(score, 2.0)
+
+    def test_run_up_verse_is_not_also_its_own_baseline(self):
+        analyzer = BonusHarmonicAnalyzer(notes=[], notes_by_channel={})
+        sections = [
+            {'type': 'verse', 'start_bar': 1, 'end_bar': 8},
+            {'type': 'verse', 'start_bar': 9, 'end_bar': 16},
+            {'type': 'chorus', 'start_bar': 17, 'end_bar': 24},
+            {'type': 'chorus', 'start_bar': 25, 'end_bar': 32},
+        ]
+        # The second verse is the run-up; only the first is the baseline.
+        score = analyzer._evaluate_pre_chorus_tension(sections, [0.0, 1.0, 0.0, 0.0])
+
+        self.assertEqual(score, 2.0)
+
+    def test_no_baseline_left_scores_nothing(self):
+        analyzer = BonusHarmonicAnalyzer(notes=[], notes_by_channel={})
+        sections = [
+            {'type': 'verse', 'start_bar': 1, 'end_bar': 8},
+            {'type': 'chorus', 'start_bar': 9, 'end_bar': 16},
+        ]
+        # The only verse is the run-up, so there is nothing to compare against.
+        score = analyzer._evaluate_pre_chorus_tension(sections, [1.0, 0.0])
+
+        self.assertEqual(score, 0.0)
+
+
 class TestBlueprintDifferentiation(unittest.TestCase):
     """Test that different blueprints produce different bonus weights."""
 
@@ -336,6 +495,45 @@ class TestBlueprintDifferentiation(unittest.TestCase):
             result_bp4.score.melodic_bonus,
             result_bp0.score.melodic_bonus,
             "IdolStandard blueprint should give >= melodic bonus vs Traditional",
+        )
+
+    def test_simplicity_preference_tolerates_more_literal_repetition(self):
+        """A blueprint declaring a simplicity preference keeps more earworm
+        credit for a song whose bars repeat literally, while one preferring
+        variation is penalized for the same repetition."""
+        # Six bars: three copies of one interval shape, then three of another.
+        # Two thirds of the bar pairs never match, so the exact-repetition rate
+        # lands between the two profiles' tolerated maxima.
+        shape_a = [60, 62, 64, 62]
+        shape_b = [67, 60, 65, 59]
+        notes = []
+        for bar, shape in enumerate([shape_a] * 3 + [shape_b] * 3):
+            for beat, pitch in enumerate(shape):
+                notes.append(Note(
+                    start=bar * TICKS_PER_BAR + beat * TICKS_PER_BEAT,
+                    duration=TICKS_PER_BEAT,
+                    pitch=pitch,
+                    velocity=90,
+                    channel=0,
+                ))
+
+        def earworm_score(simplicity_weight):
+            profile = BlueprintProfile(
+                "Test", "MelodyDriven", "Locked",
+                simplicity_bonus_weight=simplicity_weight,
+            )
+            analyzer = BonusMelodicAnalyzer(
+                notes=notes, notes_by_channel={0: notes}, profile=profile,
+            )
+            bonuses = {bonus.name: bonus.score for bonus in analyzer.analyze()}
+            return bonuses.get("earworm_potential", 0.0)
+
+        simple = earworm_score(1.5)
+        varied = earworm_score(0.8)
+        self.assertGreater(simple, 0.0, "fixture must earn an earworm bonus")
+        self.assertGreater(
+            simple, varied,
+            "simplicity-preferring blueprint must keep more credit for literal repetition",
         )
 
     def test_no_blueprint_uses_defaults(self):
