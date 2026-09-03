@@ -88,12 +88,11 @@ cd scripts && python3 -m unittest discover -s tests -v
 Compares generated output against real J-pop and vocaloid arrangements for rhythm
 density, motif style and arrangement shape.
 
-The reference corpus lives in a local-only `backup/reference/` directory (eight MIDI
-files with their own `README.md` covering per-file format, PPQ, tempo, time signature
-and analysis caveats). It is not distributed with the repository, so the tools below all
-take explicit paths. `track_roles.json` in that directory maps each `(track, channel)`
-pair to a musical role and to the closest midi-sketch track role (`ms_role`); prefer it
-over heuristic track selection.
+The reference corpus is commercial material that cannot be redistributed, so it is not
+part of the repository and every tool below takes an explicit path to it. Supply your own
+directory of reference MIDI files. A `track_roles.json` alongside them maps each
+`(track, channel)` pair to a musical role and to the closest midi-sketch track role
+(`ms_role`); prefer it over heuristic track selection.
 
 | Tool | Purpose |
 |---|---|
@@ -115,8 +114,8 @@ interference) and writes `target_profiles.json` next to the corpus. Categories m
 blueprint IDs to rhythmsync/idol/ballad/pop and are defined under `_blueprint_categories`
 in `track_roles.json`. Re-run it after adding or relabeling references.
 
-`compare_generation_to_targets.py [--seeds N] [--category C] [--json]` generates songs
-per category (a representative blueprint across several seeds) and reports the per-role
+`compare_generation_to_targets.py --targets <file>.json [--seeds N] [--category C] [--json]`
+generates songs per category (a representative blueprint across several seeds) and reports the per-role
 metrics that fall outside the reference range. It prints the median across seeds, so
 check per-seed values before declaring a gap closed.
 

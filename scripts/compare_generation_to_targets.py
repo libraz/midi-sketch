@@ -1,16 +1,19 @@
 #!/usr/bin/env python3
 """Compare generated output against reference target profiles.
 
-For each blueprint category in backup/reference/target_profiles.json,
-generates songs with a representative blueprint across multiple seeds,
-profiles each named track, and reports per-role metrics that fall outside
-the reference min-max range.
+For each blueprint category in a target-profile file, generates songs with a
+representative blueprint across multiple seeds, profiles each named track, and
+reports per-role metrics that fall outside the reference min-max range.
+
+The profiles are derived from a commercial reference corpus that cannot be
+redistributed, so the file is supplied by the caller and is not part of the
+repository. Point --targets at your own copy.
 
 Usage:
-    python3 scripts/compare_generation_to_targets.py                # all categories
-    python3 scripts/compare_generation_to_targets.py --seeds 10
-    python3 scripts/compare_generation_to_targets.py --category rhythmsync
-    python3 scripts/compare_generation_to_targets.py --json         # machine-readable
+    python3 scripts/compare_generation_to_targets.py --targets PATH
+    python3 scripts/compare_generation_to_targets.py --targets PATH --seeds 10
+    python3 scripts/compare_generation_to_targets.py --targets PATH --category rhythmsync
+    python3 scripts/compare_generation_to_targets.py --targets PATH --json
 """
 
 from __future__ import annotations
@@ -28,7 +31,6 @@ from reference_motif_report import Note, profile_track
 
 ROOT = Path(__file__).resolve().parent.parent
 CLI = ROOT / "build" / "bin" / "midisketch_cli"
-TARGETS = ROOT / "backup" / "reference" / "target_profiles.json"
 
 # Metrics compared against reference ranges. lead_overtake is checked
 # upper-bound only (lower interference than references is fine).
@@ -98,12 +100,18 @@ def generate_profiles(blueprint: int, seed: int, workdir: Path) -> tuple[list, d
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--targets", type=Path, required=True,
+                        help="target-profile JSON produced from your reference corpus")
     parser.add_argument("--seeds", type=int, default=5, help="seeds per blueprint")
     parser.add_argument("--category", type=str, default=None)
     parser.add_argument("--json", action="store_true", dest="as_json")
     args = parser.parse_args()
 
-    targets_full = json.loads(TARGETS.read_text())
+    if not args.targets.is_file():
+        print(f"target-profile file not found: {args.targets}")
+        return 1
+
+    targets_full = json.loads(args.targets.read_text())
     targets = targets_full["categories"]
     common_rules = targets_full.get("melody_common_rules", {})
     report: dict = {}
