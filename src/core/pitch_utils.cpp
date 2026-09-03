@@ -15,10 +15,11 @@ namespace midisketch {
 TessituraRange calculateTessitura(uint8_t vocal_low, uint8_t vocal_high) {
   int range = vocal_high - vocal_low;
 
-  // Tessitura is the middle portion of the range
-  // Leave ~15-20% headroom at top and bottom for climactic moments
-  int margin = range / 5;        // 20% margin
-  margin = std::max(margin, 3);  // At least 3 semitones margin
+  // Tessitura is the middle portion of the range: a fifth of it is left as
+  // headroom at each end for climactic moments. The floor of 3 semitones keeps
+  // a narrow range from collapsing to a tessitura barely distinguishable from
+  // the range itself, and makes the margin exceed a fifth below 15 semitones.
+  int margin = std::max(range / 5, 3);
 
   TessituraRange t;
   t.low = static_cast<uint8_t>(vocal_low + margin);

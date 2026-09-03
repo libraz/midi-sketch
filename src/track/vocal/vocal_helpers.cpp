@@ -263,9 +263,10 @@ void applyHookIntensity(std::vector<NoteEvent>& notes, SectionType section_type,
     case HookIntensity::Strong:
     case HookIntensity::Maximum:
       // Maximum's extra meaning (locked repetition, simple patterns) is carried
-      // by hook skeleton selection; on this emphasis ladder it sits with Strong,
-      // which is the top rung. Leaving it out of the switch made the whole call
-      // a no-op for the blueprint that asks for it.
+      // by hook skeleton selection; on this emphasis ladder it shares the top
+      // rung with Strong. It must still name a case here, because an intensity
+      // that falls through the switch leaves the emphasis at its default and
+      // makes the whole call a no-op.
       duration_mult = 2.0f;  // Double duration
       velocity_boost = 15.0f;
       break;

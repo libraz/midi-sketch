@@ -331,7 +331,7 @@ export interface AccompanimentConfig {
   callEnabled?: boolean;
   /** Call density: 0=None, 1=Minimal, 2=Standard, 3=Intense. None emits no calls. */
   callDensity?: number;
-  /** Intro chant: 0=None, 1=Gachikoi, 2=Mix */
+  /** Intro chant: 0=None, 1=Gachikoi, 2=Shouting */
   introChant?: number;
   /** Mix pattern: 0=None, 1=Standard, 2=Tiger */
   mixPattern?: number;

@@ -808,8 +808,8 @@ struct AccompanimentConfig {
 
   /// Call System
   bool call_enabled = false;
-  uint8_t call_density = 2;        ///< 0=Sparse, 1=Light, 2=Standard, 3=Dense
-  uint8_t intro_chant = 0;         ///< 0=None, 1=Gachikoi, 2=Mix
+  uint8_t call_density = 2;        ///< CallDensity: 0=None, 1=Minimal, 2=Standard, 3=Intense
+  uint8_t intro_chant = 0;         ///< IntroChant: 0=None, 1=Gachikoi, 2=Shouting
   uint8_t mix_pattern = 0;         ///< 0=None, 1=Standard, 2=Tiger
   bool call_notes_enabled = true;  ///< Output call as MIDI notes
 
