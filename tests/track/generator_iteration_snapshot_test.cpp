@@ -109,18 +109,28 @@ std::string sha256(const std::vector<uint8_t>& input) {
   return output.str();
 }
 
-bool normalizeLibraryBuildTimestamp(std::vector<uint8_t>& midi) {
+/// @brief Erase the embedded build identity so a hash describes only the music.
+///
+/// Generated MIDI carries `"library_version"`, which is the release version, the
+/// git commit the binary was configured at, and the build timestamp. All three
+/// change without a note changing, so a golden hash taken over the raw bytes
+/// records the build that produced it rather than the song. Zeroing only the
+/// timestamp is not enough: the commit hash is captured at configure time, so
+/// every commit would invalidate the goldens.
+///
+/// The whole key and its value are removed, which leaves a byte stream that is
+/// no longer a well-formed meta event. That is fine here — the result is only
+/// ever hashed, never parsed.
+bool eraseLibraryBuildId(std::vector<uint8_t>& midi) {
   const std::string bytes(midi.begin(), midi.end());
   constexpr const char* kMarker = "\"library_version\":\"";
-  const size_t version_start = bytes.find(kMarker);
-  if (version_start == std::string::npos) return false;
-  const size_t version_end = bytes.find('"', version_start + std::strlen(kMarker));
-  const size_t timestamp_dot = bytes.rfind('.', version_end);
-  if (timestamp_dot == std::string::npos || timestamp_dot + 15 > version_end) return false;
-  for (size_t i = timestamp_dot + 1; i <= timestamp_dot + 14; ++i) {
-    if (bytes[i] < '0' || bytes[i] > '9') return false;
-    midi[i] = '0';
-  }
+  const size_t key_start = bytes.find(kMarker);
+  if (key_start == std::string::npos) return false;
+  const size_t value_start = key_start + std::strlen(kMarker);
+  const size_t value_end = bytes.find('"', value_start);
+  if (value_end == std::string::npos) return false;
+  midi.erase(midi.begin() + static_cast<std::ptrdiff_t>(key_start),
+             midi.begin() + static_cast<std::ptrdiff_t>(value_end) + 1);
   return true;
 }
 
@@ -335,16 +345,16 @@ TEST_F(GeneratorIterationSnapshotTest, NoteCountsAreStable) {
 // captured from it records that stale output as the expectation.
 TEST(GeneratorMidiGoldenTest, FixedBlueprintsMatchNormalizedMidiSha256) {
   constexpr std::array<const char*, 10> kExpectedHashes = {
-      "d90654e2a8d602d2e7415b19cf90bb64a98d2c2b3cb139fa7bae22695b0bd10a",
-      "a5dcafecf2e249bb35b5908867ac44386f9040eb9b3379cecbb790df3fa10a52",
-      "2450e9ee32989d1feb99fedb3e98967b25f777efdf1b3518ac164b36b612fee9",
-      "8f87f68f56e4335a10818110cff1a0624b671535adc60e95cc01ca7509247a53",
-      "7aa0afb0cdecdeb48e63db497d58d6a8e5aa86088fa6ea1d0f1ce4126a52c2d8",
-      "4a052f464586dad4203fadb81e8bb0f36e151b16b6a7c25bb0c405b747c33344",
-      "25b0d327721f071807c773e27cd5c0f9cd46f3b86dc0b23ad6833b4068f29a69",
-      "c5056f3a744c96a72fcb95c8e965dac81b74618bde10178e764d8cc07e745c99",
-      "bbbb9620f422484e38dc03131cd1fb38a4bff270f8f97917f7cdd7957e714ae1",
-      "796d42a7098311c3e522958e37873307767ea65d35fdffda8f1c192d250cdc52",
+      "e407c575bba0c99eedb620a83990fd54fdd4055cc6cad5a4782d345bbf48cfd9",
+      "2add66260ba28473c54fbd32e00866e5dfeedb1f237652f86d502aab3e667469",
+      "f9f99105056c31a6dac7158151f73e7b7621663532f0dcd58d71068043a07a49",
+      "086cbef5522173d46f491ff022c614e621450bacfbe5929728525234ef3eb8e5",
+      "bb969f333df4de9b76b2f34c5e75ed42580fe8bd7418529cabf68715056bf524",
+      "3fc2b6821eb360aa68c8f84518ae4d828d423fffdafc84dcc8b062c13cb86e82",
+      "9628e4862e1cb517b7b9a63031c7a518cf787225dc13969346c73e5d662b3239",
+      "6f6d4e27ab26199906f3a2fb9d8621559543833350e265379b3c4f46b1fd5718",
+      "7aa24978d5b3b66458255affcafe925fa1687f1690b84575dde6c486477063bb",
+      "58115cb874f976e1c7dd1a669381573822fd180aef32d0c76926e52a913de06f",
   };
 
   for (uint8_t blueprint = 0; blueprint < kExpectedHashes.size(); ++blueprint) {
@@ -356,7 +366,7 @@ TEST(GeneratorMidiGoldenTest, FixedBlueprintsMatchNormalizedMidiSha256) {
     sketch.generateFromConfig(config);
 
     auto midi = sketch.getMidi();
-    ASSERT_TRUE(normalizeLibraryBuildTimestamp(midi));
+    ASSERT_TRUE(eraseLibraryBuildId(midi));
     EXPECT_EQ(sha256(midi), kExpectedHashes[blueprint])
         << "blueprint=" << static_cast<int>(blueprint);
   }
@@ -379,7 +389,7 @@ TEST(GeneratorMidiGoldenTest, EveryBlueprintProducesADistinctSongFromOneSeed) {
     sketch.generateFromConfig(config);
 
     auto midi = sketch.getMidi();
-    ASSERT_TRUE(normalizeLibraryBuildTimestamp(midi));
+    ASSERT_TRUE(eraseLibraryBuildId(midi));
 
     auto [entry, inserted] =
         first_blueprint_for_hash.emplace(sha256(midi), static_cast<int>(blueprint));
