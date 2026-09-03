@@ -10,6 +10,7 @@
 #include <iostream>
 
 #include "cli/display_helpers.h"
+#include "cli/file_input.h"
 #include "midi/midi2_reader.h"
 #include "midi/midi_reader.h"
 #include "midisketch.h"
@@ -45,14 +46,12 @@ int runInputMode(const ParsedArgs& args) {
     std::cout << "Analyzing: " << args.input_file << "\n\n";
   }
 
-  std::ifstream input_stream(args.input_file, std::ios::binary);
-  if (!input_stream) {
-    std::cerr << "Error: Failed to open file: " << args.input_file << "\n";
+  std::vector<uint8_t> file_data;
+  std::string read_error;
+  if (!readInputFile(args.input_file, file_data, read_error)) {
+    std::cerr << "Error: " << read_error << "\n";
     return 1;
   }
-  std::vector<uint8_t> file_data((std::istreambuf_iterator<char>(input_stream)),
-                                 std::istreambuf_iterator<char>());
-  input_stream.close();
 
   auto detected_format = midisketch::MidiReader::detectFormat(file_data.data(), file_data.size());
 

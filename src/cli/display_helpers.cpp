@@ -210,6 +210,8 @@ const char* songConfigErrorName(midisketch::SongConfigError error) {
       return "Invalid motif override";
     case midisketch::SongConfigError::InvalidMood:
       return "Invalid mood";
+    case midisketch::SongConfigError::InvalidTargetDuration:
+      return "Target duration cannot be built at the resolved tempo";
   }
   return "Unknown config error";
 }
@@ -241,9 +243,20 @@ const char* vocalStyleName(midisketch::VocalStylePreset style) {
       return "CityPop";
     case midisketch::VocalStylePreset::Anime:
       return "Anime";
-    default:
-      return "Unknown";
+    case midisketch::VocalStylePreset::BrightKira:
+      return "BrightKira";
+    case midisketch::VocalStylePreset::CoolSynth:
+      return "CoolSynth";
+    case midisketch::VocalStylePreset::CuteAffected:
+      return "CuteAffected";
+    case midisketch::VocalStylePreset::PowerfulShout:
+      return "PowerfulShout";
+    case midisketch::VocalStylePreset::KPop:
+      return "KPop";
   }
+  // No default label above: a new enumerator has to fail the switch warning
+  // rather than silently reach this line, which exists for out-of-range casts.
+  return "Unknown";
 }
 
 std::vector<std::pair<std::string, uint8_t>> getAllNotesAtTick(const midisketch::Song& song,

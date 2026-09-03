@@ -11,6 +11,7 @@
 #include <sstream>
 
 #include "cli/display_helpers.h"
+#include "cli/file_input.h"
 #include "cli/generate_mode.h"
 #include "core/json_helpers.h"
 #include "midi/midi2_reader.h"
@@ -80,14 +81,12 @@ int runRegenerateMode(const ParsedArgs& args) {
   midisketch::DetectedMidiFormat original_format = midisketch::DetectedMidiFormat::Unknown;
 
   // Read file and detect format
-  std::ifstream regen_stream(args.regenerate_file, std::ios::binary);
-  if (!regen_stream) {
-    std::cerr << "Error: Failed to open file: " << args.regenerate_file << "\n";
+  std::vector<uint8_t> regen_data;
+  std::string read_error;
+  if (!readInputFile(args.regenerate_file, regen_data, read_error)) {
+    std::cerr << "Error: " << read_error << "\n";
     return 1;
   }
-  std::vector<uint8_t> regen_data((std::istreambuf_iterator<char>(regen_stream)),
-                                  std::istreambuf_iterator<char>());
-  regen_stream.close();
 
   original_format = midisketch::MidiReader::detectFormat(regen_data.data(), regen_data.size());
 
@@ -136,7 +135,15 @@ int runRegenerateMode(const ParsedArgs& args) {
                  "available in that format and may differ from the original.\n";
   }
 
-  midisketch::SongConfig config = configFromMetadata(metadata);
+  MetadataRestoreStatus restore_status = MetadataRestoreStatus::OK;
+  midisketch::SongConfig config = configFromMetadata(metadata, &restore_status);
+  if (restore_status != MetadataRestoreStatus::OK) {
+    // Falling back to defaults here would produce an unrelated song and call it
+    // a reproduction, so an incomplete restore ends the run instead.
+    std::cerr << "Error: Cannot restore configuration from " << args.regenerate_file << ": "
+              << metadataRestoreStatusName(restore_status) << "\n";
+    return 1;
+  }
 
   if (args.use_new_seed) {
     std::cout << "Using new seed: " << args.new_seed << " (original: " << config.seed << ")\n";
@@ -149,10 +156,14 @@ int runRegenerateMode(const ParsedArgs& args) {
     return 1;
   }
 
+  // Without an explicit --format, a regenerated file keeps the container family
+  // it came from. Every recognized SMF2 variant stays MIDI 2.0 instead of
+  // collapsing to SMF1; the writer emits one SMF2 container for all of them.
   midisketch::MidiFormat output_format = args.midi_format;
-  if (!args.midi_format_explicit && args.midi_format == midisketch::kDefaultMidiFormat &&
-      original_format == midisketch::DetectedMidiFormat::SMF1) {
-    output_format = midisketch::MidiFormat::SMF1;
+  if (!args.midi_format_explicit) {
+    output_format = (original_format == midisketch::DetectedMidiFormat::SMF1)
+                        ? midisketch::MidiFormat::SMF1
+                        : midisketch::MidiFormat::SMF2;
   }
 
   midisketch::MidiSketch sketch;
@@ -200,11 +211,18 @@ int runRegenerateMode(const ParsedArgs& args) {
     }
   }
 
-  if (args.dump_collisions_requested) {
+  // With --json, stdout carries the analysis document and nothing else, so the
+  // human-readable inspections are announced on stderr rather than appended.
+  const bool machine_readable_stdout = args.json_output && args.analyze;
+  if (machine_readable_stdout && (args.dump_collisions_requested || args.bar_num > 0)) {
+    std::cerr << "Note: note inspection output is omitted because stdout carries JSON.\n";
+  }
+
+  if (args.dump_collisions_requested && !machine_readable_stdout) {
     std::cout << "\n" << sketch.getHarmonyContext().dumpNotesAt(args.dump_collisions_tick) << "\n";
   }
 
-  if (args.bar_num > 0) {
+  if (args.bar_num > 0 && !machine_readable_stdout) {
     if (output_format == midisketch::MidiFormat::SMF1) {
       midisketch::MidiReader reader;
       if (reader.read(midi_output)) {

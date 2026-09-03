@@ -12,6 +12,7 @@
 #include <sstream>
 
 #include "cli/display_helpers.h"
+#include "cli/file_input.h"
 #include "core/json_helpers.h"
 #include "core/preset_data.h"
 #include "core/structure.h"
@@ -49,14 +50,52 @@ std::string absoluteOutputPath(const std::string& path) {
 
 }  // namespace
 
-midisketch::SongConfig configFromMetadata(const std::string& metadata) {
+const char* metadataRestoreStatusName(MetadataRestoreStatus status) {
+  switch (status) {
+    case MetadataRestoreStatus::OK:
+      return "OK";
+    case MetadataRestoreStatus::InvalidJson:
+      return "metadata is not a complete JSON object";
+    case MetadataRestoreStatus::MissingConfig:
+      return "metadata declares a config block but does not contain one";
+    case MetadataRestoreStatus::InvalidConfig:
+      return "metadata holds a value that does not fit its field";
+  }
+  return "unknown";
+}
+
+midisketch::SongConfig configFromMetadata(const std::string& metadata,
+                                          MetadataRestoreStatus* status) {
+  const auto report = [status](MetadataRestoreStatus value) {
+    if (status != nullptr) *status = value;
+  };
+  report(MetadataRestoreStatus::OK);
+
   midisketch::json::Parser p(metadata);
+  if (!p.isValid()) {
+    report(MetadataRestoreStatus::InvalidJson);
+    return midisketch::createDefaultSongConfig(0);
+  }
 
   // v4+: Direct SongConfig restoration from "config" field
   int version = p.getInt("format_version", 2);
-  if (version >= 4 && p.has("config")) {
+  if (!p.isValid()) {
+    report(MetadataRestoreStatus::InvalidConfig);
+    return midisketch::createDefaultSongConfig(0);
+  }
+  if (version >= 4) {
+    if (!p.has("config")) {
+      report(MetadataRestoreStatus::MissingConfig);
+      return midisketch::createDefaultSongConfig(0);
+    }
+    // The nested parser has to outlive readFrom(): it is what records a value
+    // that could not be converted, and a temporary would discard that.
+    midisketch::json::Parser config_parser = p.getObject("config");
     midisketch::SongConfig config;
-    config.readFrom(p.getObject("config"));
+    config.readFrom(config_parser);
+    if (!config_parser.isValid()) {
+      report(MetadataRestoreStatus::InvalidConfig);
+    }
     return config;
   }
 
@@ -235,6 +274,7 @@ midisketch::SongConfig configFromMetadata(const std::string& metadata) {
       config.chord_extension.ninth_probability = ce.getFloat("ninth_probability");
     if (ce.has("tritone_sub_probability"))
       config.chord_extension.tritone_sub_probability = ce.getFloat("tritone_sub_probability");
+    if (!ce.isValid()) p.markConversionInvalid();
   }
 
   // Arpeggio parameters
@@ -250,6 +290,7 @@ midisketch::SongConfig configFromMetadata(const std::string& metadata) {
     if (ap.has("sync_chord")) config.arpeggio.sync_chord = ap.getBool("sync_chord");
     if (ap.has("base_velocity"))
       config.arpeggio.base_velocity = static_cast<uint8_t>(ap.getInt("base_velocity"));
+    if (!ap.isValid()) p.markConversionInvalid();
   }
 
   // Motif chord parameters
@@ -259,11 +300,15 @@ midisketch::SongConfig configFromMetadata(const std::string& metadata) {
       config.motif_chord.fixed_progression = mc.getBool("fixed_progression");
     if (mc.has("max_chord_count"))
       config.motif_chord.max_chord_count = static_cast<uint8_t>(mc.getInt("max_chord_count"));
+    if (!mc.isValid()) p.markConversionInvalid();
   }
 
   // Mark form as explicit since it was loaded from metadata
   config.form_explicit = true;
 
+  if (!p.isValid()) {
+    report(MetadataRestoreStatus::InvalidConfig);
+  }
   return config;
 }
 
@@ -283,17 +328,16 @@ int runGenerateMode(const ParsedArgs& args) {
 
   midisketch::SongConfig config;
   if (!args.config_file.empty()) {
-    std::ifstream config_file(args.config_file);
-    if (!config_file) {
-      std::cerr << "Error: Failed to open config file: " << args.config_file << "\n";
+    std::string config_text;
+    std::string read_error;
+    if (!readInputTextFile(args.config_file, config_text, read_error)) {
+      std::cerr << "Error: " << read_error << "\n";
       if (original_stdout) {
         std::cout.rdbuf(original_stdout);
       }
       return 1;
     }
-    std::stringstream buffer;
-    buffer << config_file.rdbuf();
-    midisketch::json::Parser parser(buffer.str());
+    midisketch::json::Parser parser(config_text);
     if (!parser.isValid()) {
       std::cerr << "Error: Invalid JSON config file: " << args.config_file << "\n";
       if (original_stdout) {
@@ -526,7 +570,15 @@ int runGenerateMode(const ParsedArgs& args) {
   } else {
     std::cout << static_cast<int>(config.chord_progression_id) << "\n";
   }
-  std::cout << "  BPM: " << (config.bpm == 0 ? preset.tempo_default : config.bpm) << "\n";
+  // An unset BPM is resolved during generation from mood and blueprint, not from
+  // the preset default, so the banner defers to the generation result below
+  // instead of naming a tempo the song will not have.
+  std::cout << "  BPM: ";
+  if (config.bpm == 0) {
+    std::cout << "auto (selected during generation)\n";
+  } else {
+    std::cout << config.bpm << "\n";
+  }
   std::cout << "  VocalAttitude: " << static_cast<int>(config.vocal_attitude) << "\n";
   std::cout << "  VocalStyle: " << vocalStyleName(config.vocal_style) << "\n";
   if (config.target_duration_seconds > 0) {
@@ -592,7 +644,15 @@ int runGenerateMode(const ParsedArgs& args) {
               << static_cast<int>(song.modulationAmount()) << " semitones)\n";
   }
 
-  if (args.dump_collisions_requested) {
+  // With --json, stdout carries the analysis document and nothing else, so the
+  // human-readable inspections are announced on stderr rather than swallowed by
+  // the suppression buffer or appended after the JSON.
+  const bool machine_readable_stdout = args.json_output && args.analyze;
+  if (machine_readable_stdout && (args.dump_collisions_requested || args.bar_num > 0)) {
+    std::cerr << "Note: note inspection output is omitted because stdout carries JSON.\n";
+  }
+
+  if (args.dump_collisions_requested && !machine_readable_stdout) {
     std::cout << "\n" << sketch.getHarmonyContext().dumpNotesAt(args.dump_collisions_tick) << "\n";
   }
 
@@ -619,7 +679,7 @@ int runGenerateMode(const ParsedArgs& args) {
     }
   }
 
-  if (args.bar_num > 0) {
+  if (args.bar_num > 0 && !machine_readable_stdout) {
     midisketch::MidiReader reader;
     if (reader.read(midi_output)) {
       showBarNotes(reader.getParsedMidi(), args.bar_num);

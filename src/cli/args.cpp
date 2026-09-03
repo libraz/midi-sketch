@@ -398,7 +398,9 @@ void printUsage(const char* program) {
   std::cout << "                    7=CityPop, 8=Anime, 9=BrightKira, 10=CoolSynth,\n";
   std::cout << "                    11=CuteAffected, 12=PowerfulShout, 13=KPop)\n";
   std::cout << "  --bpm N           Set BPM (40-240, 0/default: style preset)\n";
-  std::cout << "  --duration N      Set target duration in seconds (0 = use pattern)\n";
+  std::cout << "  --duration N      Set target duration in seconds (0 = use pattern).\n";
+  std::cout << "                    Must reach 12-144 bars at the resolved tempo; a value\n";
+  std::cout << "                    outside that is rejected, not silently shortened.\n";
   std::cout << "  --form N          Set form/structure pattern (0-17 or name like StandardPop)\n";
   std::cout << "  --key N           Set key (0-11: C, C#, D, Eb, E, F, F#, G, Ab, A, Bb, B)\n";
   std::cout << "  --input FILE      Analyze existing MIDI file for dissonance\n";
@@ -409,7 +411,7 @@ void printUsage(const char* program) {
   std::cout << "  --vocal-attitude N  Vocal attitude (0-2)\n";
   std::cout << "  --vocal-low N     Vocal range low (MIDI note, default 60)\n";
   std::cout << "  --vocal-high N    Vocal range high (MIDI note, default 79)\n";
-  std::cout << "  --format FMT      Set MIDI format (smf1 or smf2, default: smf2)\n";
+  std::cout << "  --format FMT      Set MIDI format (smf1 or smf2, default: smf1)\n";
   std::cout << "  --validate FILE   Validate MIDI file structure\n";
   std::cout << "  --regenerate FILE Regenerate MIDI from embedded metadata\n";
   std::cout << "  --new-seed N      Use new seed when regenerating (default: same seed)\n";
