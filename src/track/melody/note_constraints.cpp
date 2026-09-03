@@ -43,8 +43,7 @@ bool ConsecutiveSameNoteTracker::shouldForceMovement(std::mt19937& rng) const {
   return !rng_util::rollProbability(rng, allow_prob);
 }
 
-bool isChordTone(int pitch_pc, int8_t chord_degree) {
-  const ChordTones chord_tones = getChordTones(chord_degree);
+bool isChordTone(int pitch_pc, const ChordTones& chord_tones) {
   for (int ct : chord_tones) {
     if (pitch_pc == ct) {
       return true;
@@ -53,12 +52,11 @@ bool isChordTone(int pitch_pc, int8_t chord_degree) {
   return false;
 }
 
-int findNearestDifferentChordTone(int current_pitch, int8_t chord_degree, uint8_t vocal_low,
-                                  uint8_t vocal_high, int max_interval) {
+int findNearestDifferentChordTone(int current_pitch, const ChordTones& chord_tones,
+                                  uint8_t vocal_low, uint8_t vocal_high, int max_interval) {
   std::vector<int> candidates;
 
   // First priority: chord tones (most harmonically stable)
-  const ChordTones chord_tones = getChordTones(chord_degree);
   for (int pc : chord_tones) {
     for (int oct = 3; oct <= 6; ++oct) {
       int candidate = oct * 12 + pc;
@@ -107,9 +105,9 @@ int findNearestDifferentChordTone(int current_pitch, int8_t chord_degree, uint8_
 }
 
 bool applyConsecutiveSameNoteConstraint(int& pitch, ConsecutiveSameNoteTracker& tracker,
-                                        int prev_pitch, int8_t chord_degree, int key_offset,
-                                        uint8_t vocal_low, uint8_t vocal_high, int max_interval,
-                                        std::mt19937& rng) {
+                                        int prev_pitch, const ChordTones& chord_tones,
+                                        int key_offset, uint8_t vocal_low, uint8_t vocal_high,
+                                        int max_interval, std::mt19937& rng) {
   if (pitch == prev_pitch) {
     tracker.increment();
     if (tracker.shouldForceMovement(rng)) {
@@ -134,7 +132,7 @@ bool applyConsecutiveSameNoteConstraint(int& pitch, ConsecutiveSameNoteTracker& 
       }
 
       int new_pitch =
-          findNearestDifferentChordTone(pitch, chord_degree, vocal_low, vocal_high, max_interval);
+          findNearestDifferentChordTone(pitch, chord_tones, vocal_low, vocal_high, max_interval);
       if (new_pitch != pitch) {
         pitch = new_pitch;
         tracker.reset();

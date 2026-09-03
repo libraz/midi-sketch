@@ -28,10 +28,9 @@ bool isStrongBeat(Tick tick) {
   return beat == 0 || beat == 2;
 }
 
-int findBestChordTonePreservingDirection(int target_pitch, int prev_pitch, int8_t chord_degree,
-                                         uint8_t vocal_low, uint8_t vocal_high, int max_interval) {
-  const ChordTones chord_tones = getChordTones(chord_degree);
-
+int findBestChordTonePreservingDirection(int target_pitch, int prev_pitch,
+                                         const ChordTones& chord_tones, uint8_t vocal_low,
+                                         uint8_t vocal_high, int max_interval) {
   // Determine intended direction
   bool intended_movement = (target_pitch != prev_pitch);
   int intended_direction = (target_pitch > prev_pitch) ? 1 : -1;
@@ -84,14 +83,13 @@ int findBestChordTonePreservingDirection(int target_pitch, int prev_pitch, int8_
   return best_pitch;
 }
 
-int enforceDownbeatChordTone(int pitch, Tick tick, int8_t chord_degree, int prev_pitch,
+int enforceDownbeatChordTone(int pitch, Tick tick, const ChordTones& chord_tones, int prev_pitch,
                              uint8_t vocal_low, uint8_t vocal_high, bool disable_singability,
                              Tick duration) {
   if (!isDownbeat(tick)) {
     return pitch;
   }
 
-  const ChordTones chord_tones = getChordTones(chord_degree);
   int pitch_pc = pitch % 12;
 
   // Check if already a chord tone
@@ -115,13 +113,13 @@ int enforceDownbeatChordTone(int pitch, Tick tick, int8_t chord_degree, int prev
   // Need to adjust to chord tone
   if (disable_singability) {
     // Simple nearest chord tone for machine-style vocals
-    int new_pitch = nearestChordTonePitch(pitch, chord_degree);
+    int new_pitch = nearestPitchInSet(chord_tones, pitch, 0, 127);
     return std::clamp(new_pitch, static_cast<int>(vocal_low), static_cast<int>(vocal_high));
   }
 
   // Use direction-preserving adjustment for natural vocals
-  return findBestChordTonePreservingDirection(pitch, prev_pitch, chord_degree, vocal_low,
-                                              vocal_high, 0);
+  return findBestChordTonePreservingDirection(pitch, prev_pitch, chord_tones, vocal_low, vocal_high,
+                                              0);
 }
 
 int enforceGuideToneOnDownbeat(int pitch, Tick tick, int8_t chord_degree, uint8_t vocal_low,
@@ -177,7 +175,7 @@ int enforceGuideToneOnDownbeat(int pitch, Tick tick, int8_t chord_degree, uint8_
   return best_pitch;
 }
 
-int enforceAvoidNoteConstraint(int pitch, int8_t chord_degree, uint8_t vocal_low,
+int enforceAvoidNoteConstraint(int pitch, const ChordTones& chord_tones, uint8_t vocal_low,
                                uint8_t vocal_high, [[maybe_unused]] Tick tick, Tick duration) {
   // Passing-tone exemption: notes shorter than a half note may sound avoid
   // notes freely (passing tones, neighbor tones, appoggiaturas). Snapping
@@ -189,18 +187,19 @@ int enforceAvoidNoteConstraint(int pitch, int8_t chord_degree, uint8_t vocal_low
     return pitch;
   }
 
-  int bass_root_pc = getBassRootPitchClass(chord_degree);
-  const ChordTones chord_tones = getChordTones(chord_degree);
+  // The root the bass will play is the lookup's own root, not a degree table's:
+  // a secondary dominant or a borrowed chord has a root the degree cannot name.
+  int bass_root_pc = chord_tones.empty() ? 0 : chord_tones[0];
   int pitch_pc = pitch % 12;
 
   if (isAvoidNoteWithChord(pitch_pc, chord_tones, bass_root_pc)) {
-    return getNearestSafeChordTone(pitch, chord_degree, bass_root_pc, vocal_low, vocal_high);
+    return getNearestSafeChordTone(pitch, chord_tones, bass_root_pc, vocal_low, vocal_high);
   }
 
   return pitch;
 }
 
-int enforceMaxIntervalConstraint(int new_pitch, int prev_pitch, int8_t chord_degree,
+int enforceMaxIntervalConstraint(int new_pitch, int prev_pitch, const ChordTones& chord_tones,
                                  int max_interval, uint8_t vocal_low, uint8_t vocal_high,
                                  const TessituraRange* tessitura) {
   int interval = std::abs(new_pitch - prev_pitch);
@@ -208,13 +207,13 @@ int enforceMaxIntervalConstraint(int new_pitch, int prev_pitch, int8_t chord_deg
     return new_pitch;
   }
 
-  return nearestChordToneWithinInterval(new_pitch, prev_pitch, chord_degree, max_interval,
-                                        vocal_low, vocal_high, tessitura);
+  return nearestPitchInSetWithinInterval(chord_tones, new_pitch, prev_pitch, max_interval,
+                                         vocal_low, vocal_high, tessitura);
 }
 
 int applyLeapPreparationConstraint(int new_pitch, int prev_pitch, Tick prev_duration,
-                                   int8_t chord_degree, uint8_t vocal_low, uint8_t vocal_high,
-                                   const TessituraRange* tessitura) {
+                                   const ChordTones& chord_tones, uint8_t vocal_low,
+                                   uint8_t vocal_high, const TessituraRange* tessitura) {
   // Short note threshold: 8th note (240 ticks)
   constexpr Tick SHORT_NOTE_THRESHOLD = TICK_EIGHTH;
   // Maximum leap after short note: 5 semitones (perfect 4th)
@@ -230,12 +229,12 @@ int applyLeapPreparationConstraint(int new_pitch, int prev_pitch, Tick prev_dura
   }
 
   // Constrain to maximum allowed leap
-  return nearestChordToneWithinInterval(new_pitch, prev_pitch, chord_degree, MAX_LEAP_AFTER_SHORT,
-                                        vocal_low, vocal_high, tessitura);
+  return nearestPitchInSetWithinInterval(chord_tones, new_pitch, prev_pitch, MAX_LEAP_AFTER_SHORT,
+                                         vocal_low, vocal_high, tessitura);
 }
 
 int encourageMovementAfterLongNote(int new_pitch, int prev_pitch, Tick prev_duration,
-                                   int8_t chord_degree, int key_offset, uint8_t vocal_low,
+                                   const ChordTones& chord_tones, int key_offset, uint8_t vocal_low,
                                    uint8_t vocal_high, std::mt19937& rng) {
   // Long note threshold: 1 beat (quarter note)
   constexpr Tick LONG_NOTE_THRESHOLD = TICKS_PER_BEAT;
@@ -275,7 +274,6 @@ int encourageMovementAfterLongNote(int new_pitch, int prev_pitch, Tick prev_dura
   }
 
   // Fallback: small chord-tone move (minor/major 3rd at most)
-  const ChordTones chord_tones = getChordTones(chord_degree);
   std::vector<int> move_candidates;
   for (int pc : chord_tones) {
     for (int oct = 4; oct <= 6; ++oct) {

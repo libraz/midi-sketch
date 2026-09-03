@@ -14,6 +14,7 @@
 #include "core/pitch_utils.h"
 #include "core/timing_constants.h"
 #include "core/velocity_helper.h"
+#include "track/melody/melody_utils.h"
 
 namespace midisketch {
 
@@ -131,7 +132,9 @@ int8_t getRegisterShift(SectionType type, const StyleMelodyParams& params, int o
       // 2nd occurrence: +2 semitones for noticeable lift
       base_shift += 2;
     } else if (occurrence >= 3) {
-      // 3rd+ occurrence: progressive shift, capped at +4 total
+      // 3rd+ occurrence: the added lift grows with the occurrence and stops at
+      // +4. The cap is on this added term, not on the resulting shift: the
+      // style's own chorus_register_shift is still underneath it.
       int progressive_shift = std::min(occurrence, 4);
       base_shift += static_cast<int8_t>(progressive_shift);
     }
@@ -228,8 +231,8 @@ void applyHookIntensity(std::vector<NoteEvent>& notes, SectionType section_type,
 
   // Hook points: Chorus start, B section climax
   bool is_hook_section = (section_type == SectionType::Chorus || section_type == SectionType::B);
-  if (!is_hook_section && intensity != HookIntensity::Strong) {
-    return;  // Only Strong applies to all sections
+  if (!is_hook_section && intensity < HookIntensity::Strong) {
+    return;  // Strong and above reach every section, not just the hook points
   }
 
   // Find notes at or near section start (first beat)
@@ -258,10 +261,15 @@ void applyHookIntensity(std::vector<NoteEvent>& notes, SectionType section_type,
       velocity_boost = 10.0f;
       break;
     case HookIntensity::Strong:
+    case HookIntensity::Maximum:
+      // Maximum's extra meaning (locked repetition, simple patterns) is carried
+      // by hook skeleton selection; on this emphasis ladder it sits with Strong,
+      // which is the top rung. Leaving it out of the switch made the whole call
+      // a no-op for the blueprint that asks for it.
       duration_mult = 2.0f;  // Double duration
       velocity_boost = 15.0f;
       break;
-    default:
+    case HookIntensity::Off:
       break;
   }
 
@@ -405,25 +413,21 @@ void applyGrooveFeel(std::vector<NoteEvent>& notes, VocalGrooveFeel groove) {
 
 void applyCollisionAvoidanceWithIntervalConstraint(std::vector<NoteEvent>& notes,
                                                    const IHarmonyContext& harmony,
-                                                   uint8_t vocal_low, uint8_t vocal_high) {
+                                                   uint8_t vocal_low, uint8_t vocal_high,
+                                                   SectionType section_type, uint8_t ctx_max_leap) {
   if (notes.empty()) return;
 
-  // Major 6th (9 semitones) - the practical limit for singable leaps in pop music.
+  // The singable-leap bound for THIS section.
   //
-  // Music theory rationale for this constraint:
-  // - Major 6th is the largest interval that untrained singers can reliably pitch
-  // - Octave leaps (12 semitones) ARE common in pop but require more skill
-  // - Minor 7th (10) and Major 7th (11) are difficult to sing accurately
-  //
-  // Genre consideration: Rock/opera styles allow larger leaps.
-  // Future enhancement: Make this configurable per style (pop=9, rock=12, ballad=7)
-  constexpr int MAX_VOCAL_INTERVAL = 9;
+  // Music theory rationale: a major 6th is the largest interval untrained
+  // singers reliably pitch, so it is the standing limit. A Chorus, MixBreak or
+  // Drop is allowed the octave that carries a J-pop hook, and a Bridge a
+  // minor 9th for contrast; getMaxMelodicIntervalForSection owns that table and
+  // melody::getEffectiveMaxInterval narrows it by the blueprint's own budget.
+  const int max_vocal_interval = melody::getEffectiveMaxInterval(section_type, ctx_max_leap);
 
   for (size_t i = 0; i < notes.size(); ++i) {
     auto& note = notes[i];
-
-    // Get chord degree at this note's position
-    int8_t chord_degree = harmony.getChordDegreeAt(note.start_tick);
 
 #ifdef MIDISKETCH_NOTE_PROVENANCE
     uint8_t old_pitch = note.note;
@@ -452,28 +456,38 @@ void applyCollisionAvoidanceWithIntervalConstraint(std::vector<NoteEvent>& notes
     safe_pitch = static_cast<uint8_t>(std::clamp(
         static_cast<int>(safe_pitch), static_cast<int>(vocal_low), static_cast<int>(vocal_high)));
 
-    // Theory-legal non-chord tones keep their collision-safe pitch: snapping
-    // them to chord tones converts the stepwise motion the melody generator
-    // chose into 3-4 semitone leaps. Suspensions are accented exceptions, so
-    // they may remain on strong beats when they resolve down by step.
-    bool keep_as_nct = false;
-    if (i > 0 && i + 1 < notes.size()) {
+    // A figure the melody was written around keeps its collision-safe pitch.
+    // Snapping it onto a chord tone converts the stepwise motion the melody
+    // generator chose into 3-4 semitone leaps, and it destroys the accented
+    // dissonances (appoggiaturas, suspensions) that carry the line's tension.
+    // The rule that decides this is melody::classifyVocalTone, shared with the
+    // designer and the post-generation passes, so no pass here can reject a
+    // figure another pass deliberately kept.
+    melody::MelodicNeighborhood neighborhood;
+    neighborhood.start = note.start_tick;
+    neighborhood.duration = note.duration;
+    if (i > 0) neighborhood.prev_pitch = notes[i - 1].note;
+    if (i + 1 < notes.size()) {
       Tick cur_end = note.start_tick + note.duration;
-      Tick gap_to_next =
+      neighborhood.next_pitch = notes[i + 1].note;
+      neighborhood.next_start = notes[i + 1].start_tick;
+      neighborhood.gap_to_next =
           notes[i + 1].start_tick > cur_end ? notes[i + 1].start_tick - cur_end : Tick{0};
-      bool is_suspension = isLegalSuspensionTone(notes[i - 1].note, safe_pitch, notes[i + 1].note,
-                                                 note.start_tick, note.duration, gap_to_next);
-      keep_as_nct = isLegalNonChordTone(notes[i - 1].note, safe_pitch, notes[i + 1].note,
-                                        note.start_tick, note.duration, gap_to_next) &&
-                    (is_suspension || !isAvoidNoteForDegree(safe_pitch, chord_degree)) &&
-                    harmony.isConsonantWithOtherTracks(safe_pitch, note.start_tick, note.duration,
-                                                       TrackRole::Vocal, is_suspension);
     }
+    const melody::ToneLegality legality =
+        melody::classifyVocalTone(harmony, safe_pitch, neighborhood);
+    const bool accented_dissonance = legality == melody::ToneLegality::Appoggiatura ||
+                                     legality == melody::ToneLegality::Suspension;
+    const bool keep_as_nct =
+        legality != melody::ToneLegality::Illegal &&
+        harmony.isConsonantWithOtherTracks(safe_pitch, note.start_tick, note.duration,
+                                           TrackRole::Vocal, accented_dissonance);
 
+    const ChordTones snap_tones = melody::vocalSnapTonesAt(harmony, note.start_tick);
     uint8_t snapped_pitch = safe_pitch;
     if (!keep_as_nct) {
       // Snap to chord tone (to maintain harmonic stability)
-      int snapped = nearestChordTonePitch(safe_pitch, chord_degree);
+      int snapped = melody::nearestPitchInSet(snap_tones, safe_pitch, vocal_low, vocal_high);
       snapped = std::clamp(snapped, static_cast<int>(vocal_low), static_cast<int>(vocal_high));
       // Re-snap to scale if clamp moved us off a chord tone
       snapped = snapToNearestScaleTone(snapped, 0);  // Always C major internally
@@ -508,21 +522,20 @@ void applyCollisionAvoidanceWithIntervalConstraint(std::vector<NoteEvent>& notes
     if (i > 0) {
       int prev_pitch = notes[i - 1].note;
       int interval = std::abs(static_cast<int>(note.note) - prev_pitch);
-      if (interval > MAX_VOCAL_INTERVAL) {
+      if (interval > max_vocal_interval) {
         // Use nearestChordToneWithinInterval to find chord tone within constraint
 #ifdef MIDISKETCH_NOTE_PROVENANCE
         uint8_t pre_interval_pitch = note.note;
 #endif
-        int new_pitch =
-            nearestChordToneWithinInterval(note.note, prev_pitch, chord_degree, MAX_VOCAL_INTERVAL,
-                                           vocal_low, vocal_high, nullptr);
+        int new_pitch = melody::nearestPitchInSetWithinInterval(
+            snap_tones, note.note, prev_pitch, max_vocal_interval, vocal_low, vocal_high);
         // Keep the vocal diatonic: a secondary dominant's chord tone can be
         // chromatic (e.g. G# on V/vi). Snap to scale, then pull back inside
         // the interval bound if the snap pushed it out.
         new_pitch = snapToNearestScaleTone(new_pitch, 0);  // C major internally
-        if (std::abs(new_pitch - prev_pitch) > MAX_VOCAL_INTERVAL) {
+        if (std::abs(new_pitch - prev_pitch) > max_vocal_interval) {
           int dir = (new_pitch > prev_pitch) ? 1 : -1;
-          new_pitch = prev_pitch + dir * MAX_VOCAL_INTERVAL;
+          new_pitch = prev_pitch + dir * max_vocal_interval;
           while (new_pitch != prev_pitch && !isScaleTone(new_pitch % 12)) {
             new_pitch -= dir;
           }
@@ -577,16 +590,26 @@ void enforceSectionCeiling(std::vector<NoteEvent>& notes, const IHarmonyContext&
     }
     uint8_t candidate = static_cast<uint8_t>(snapped);
 
-    // Prefer a collision-safe result; if the snapped scale tone clashes, try the
-    // next diatonic scale tone an octave lower (or the same pitch class an octave
-    // down) so the vocal stays diatonic. Never fall back to a chromatic pitch.
+    // Prefer a collision-safe result. When the pitch at the ceiling clashes, walk
+    // DOWN through diatonic scale tones and take the first consonant one rather
+    // than jumping straight to the octave below: an octave is itself a leap no
+    // section allows, so that jump traded a ceiling breach for an unsingable
+    // hole in the line, and the note after it had to climb all the way back.
+    //
+    // The walk stops at a perfect 5th. Past that the replacement is no longer
+    // the same melodic gesture, and a transient clash on a diatonic pitch is the
+    // lesser problem -- the same trade the ceiling snap above already makes.
     if (!harmony.isConsonantWithOtherTracks(candidate, note.start_tick, note.duration,
                                             TrackRole::Vocal)) {
-      int alt = snapped - 12;  // Same scale tone, octave lower
-      if (alt >= vocal_low &&
-          harmony.isConsonantWithOtherTracks(static_cast<uint8_t>(alt), note.start_tick,
-                                             note.duration, TrackRole::Vocal)) {
-        candidate = static_cast<uint8_t>(alt);
+      constexpr int kMaxCeilingDrop = 7;  // perfect 5th
+      const int floor_pitch = std::max(static_cast<int>(vocal_low), snapped - kMaxCeilingDrop);
+      for (int alt = snapped - 1; alt >= floor_pitch; --alt) {
+        if (!isScaleTone(getPitchClass(static_cast<uint8_t>(alt)))) continue;
+        if (harmony.isConsonantWithOtherTracks(static_cast<uint8_t>(alt), note.start_tick,
+                                               note.duration, TrackRole::Vocal)) {
+          candidate = static_cast<uint8_t>(alt);
+          break;
+        }
       }
       // Otherwise keep the (diatonic) snapped pitch even if it clashes:
       // a transient clash is preferable to a chromatic vocal note.

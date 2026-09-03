@@ -10,6 +10,7 @@
 #include <random>
 #include <vector>
 
+#include "core/chord_utils.h"
 #include "core/melody_types.h"
 #include "core/types.h"
 
@@ -33,7 +34,7 @@ namespace melody {
 /// @param choice Pitch movement choice (Same, StepUp, StepDown, TargetStep)
 /// @param current_pitch Current pitch
 /// @param target_pitch Target pitch for TargetStep choice (-1 if none)
-/// @param chord_degree Current chord degree
+/// @param chord_tones Pitch classes sounding at this tick (see vocalChordTonesAt)
 /// @param key_offset Key offset from C major
 /// @param vocal_low Minimum allowed pitch
 /// @param vocal_high Maximum allowed pitch
@@ -43,10 +44,11 @@ namespace melody {
 /// @param tension_usage Tension note probability (0.0=chord tones only, 1.0=always add tensions)
 /// @param max_melodic_interval Maximum allowed leap for singability clamps
 /// @return New pitch after applying choice
-int applyPitchChoice(PitchChoice choice, int current_pitch, int target_pitch, int8_t chord_degree,
-                     int key_offset, uint8_t vocal_low, uint8_t vocal_high, VocalAttitude attitude,
-                     bool disable_singability = false, float note_eighths = 2.0f,
-                     float tension_usage = 0.2f, int max_melodic_interval = 9);
+int applyPitchChoice(PitchChoice choice, int current_pitch, int target_pitch,
+                     const ChordTones& chord_tones, int key_offset, uint8_t vocal_low,
+                     uint8_t vocal_high, VocalAttitude attitude, bool disable_singability = false,
+                     float note_eighths = 2.0f, float tension_usage = 0.2f,
+                     int max_melodic_interval = 9);
 
 /// @brief Calculate target pitch for phrase based on template and context.
 ///

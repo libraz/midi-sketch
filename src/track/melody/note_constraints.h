@@ -10,6 +10,7 @@
 #include <random>
 #include <vector>
 
+#include "core/chord_utils.h"
 #include "core/types.h"
 
 namespace midisketch {
@@ -49,19 +50,19 @@ struct ConsecutiveSameNoteTracker {
 /// the closest chord tone that differs from the current pitch.
 ///
 /// @param current_pitch Current pitch to move away from
-/// @param chord_degree Chord degree for chord tone lookup
+/// @param chord_tones Pitch classes sounding at this tick (see vocalChordTonesAt)
 /// @param vocal_low Minimum allowed pitch
 /// @param vocal_high Maximum allowed pitch
 /// @param max_interval Maximum interval from current pitch (0 = no limit)
 /// @return New pitch (different chord tone), or current if none found
-int findNearestDifferentChordTone(int current_pitch, int8_t chord_degree, uint8_t vocal_low,
-                                  uint8_t vocal_high, int max_interval = 0);
+int findNearestDifferentChordTone(int current_pitch, const ChordTones& chord_tones,
+                                  uint8_t vocal_low, uint8_t vocal_high, int max_interval = 0);
 
 /// @brief Check if pitch is a chord tone.
 /// @param pitch_pc Pitch class (0-11)
-/// @param chord_degree Chord degree
+/// @param chord_tones Pitch classes sounding at this tick (see vocalChordTonesAt)
 /// @return true if pitch is a chord tone
-bool isChordTone(int pitch_pc, int8_t chord_degree);
+bool isChordTone(int pitch_pc, const ChordTones& chord_tones);
 
 /// @brief Apply consecutive same note constraint.
 ///
@@ -73,7 +74,7 @@ bool isChordTone(int pitch_pc, int8_t chord_degree);
 /// @param[in,out] pitch Pitch to potentially modify
 /// @param[in,out] tracker Consecutive note tracker
 /// @param prev_pitch Previous pitch (for comparison)
-/// @param chord_degree Current chord degree
+/// @param chord_tones Pitch classes sounding at this tick (see vocalChordTonesAt)
 /// @param key_offset Key offset for scale tone check
 /// @param vocal_low Minimum pitch
 /// @param vocal_high Maximum pitch
@@ -81,9 +82,9 @@ bool isChordTone(int pitch_pc, int8_t chord_degree);
 /// @param rng Random number generator
 /// @return true if pitch was modified
 bool applyConsecutiveSameNoteConstraint(int& pitch, ConsecutiveSameNoteTracker& tracker,
-                                        int prev_pitch, int8_t chord_degree, int key_offset,
-                                        uint8_t vocal_low, uint8_t vocal_high, int max_interval,
-                                        std::mt19937& rng);
+                                        int prev_pitch, const ChordTones& chord_tones,
+                                        int key_offset, uint8_t vocal_low, uint8_t vocal_high,
+                                        int max_interval, std::mt19937& rng);
 
 }  // namespace melody
 }  // namespace midisketch

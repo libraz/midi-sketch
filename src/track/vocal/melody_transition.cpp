@@ -46,8 +46,8 @@ void MelodyDesigner::applyTransitionApproach(std::vector<NoteEvent>& notes,
     int8_t pitch_shift = static_cast<int8_t>(trans.pitch_tendency * progress);
 
     // Move toward chord tone while shifting
-    int8_t chord_degree = harmony.getChordDegreeAt(note.start_tick);
-    int new_pitch = nearestChordTonePitch(note.note + pitch_shift, chord_degree);
+    int new_pitch = melody::nearestPitchInSet(melody::vocalSnapTonesAt(harmony, note.start_tick),
+                                              note.note + pitch_shift, 0, 127);
 
     // Constrain to vocal range
     new_pitch =
@@ -91,13 +91,11 @@ void MelodyDesigner::applyTransitionApproach(std::vector<NoteEvent>& notes,
     note.velocity = vel::scale(note.velocity, vel_factor);
   }
 
-  // 3. Insert leading tone if requested (skip if it would create large interval)
+  // 3. Insert leading tone if requested. insertLeadingTone() applies the same
+  // interval bound to the pitch it actually chooses, so screening here against
+  // a differently-derived candidate would reject usable pickups.
   if (trans.use_leading_tone && !notes.empty()) {
-    int last_pitch = notes.back().note;
-    int leading_pitch = ctx.tessitura.center - 1;
-    if (std::abs(leading_pitch - last_pitch) <= effective_max_interval) {
-      insertLeadingTone(notes, ctx, harmony);
-    }
+    insertLeadingTone(notes, ctx, harmony);
   }
 }
 
@@ -112,14 +110,13 @@ void MelodyDesigner::insertLeadingTone(std::vector<NoteEvent>& notes, const Sect
   Tick last_note_end = last_note.start_tick + last_note.duration;
   Tick leading_tone_start = ctx.section_end - TICKS_PER_BEAT / 4;  // 16th note before end
 
-  // Use chord tone at the pickup position for harmonically correct approach note.
-  // The old approach (tessitura.center - 1) produced chromatic pitches (e.g. F# in C major)
-  // that are non-diatonic. Chord tones are always diatonic and create natural pickup motion.
-  int8_t degree = harmony.getChordDegreeAt(leading_tone_start);
-  ChordToneHelper helper(degree);
-  int leading_pitch = helper.nearestChordTone(static_cast<uint8_t>(
+  // Use a chord tone at the pickup position so the approach note is
+  // harmonically correct and diatonic, aimed just under the tessitura centre.
+  int leading_pitch = melody::nearestPitchInSet(
+      melody::vocalSnapTonesAt(harmony, leading_tone_start),
       std::clamp(static_cast<int>(ctx.tessitura.center) - 1, static_cast<int>(ctx.vocal_low),
-                 static_cast<int>(ctx.vocal_high))));
+                 static_cast<int>(ctx.vocal_high)),
+      0, 127);
 
   // Ensure it's within range
   leading_pitch =

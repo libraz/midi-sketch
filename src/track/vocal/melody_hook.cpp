@@ -36,7 +36,73 @@ namespace {
 // Default velocity for melody notes (must match melody_designer.cpp)
 constexpr uint8_t DEFAULT_VELOCITY = 100;
 
+// Length of the cached chorus head, in notes. This is the stretch that repeats
+// verbatim across choruses, so it is also where a betrayal has to land to be
+// heard as a change to the hook rather than to the phrase around it.
+constexpr size_t kSabiHeadNotes = 8;
+
 }  // namespace
+
+bool MelodyDesigner::replayHookOccurrence(const MelodyTemplate& tmpl, std::vector<NoteEvent>& notes,
+                                          const IHarmonyContext& harmony, std::mt19937& rng,
+                                          uint8_t vocal_low, uint8_t vocal_high) {
+  hook_cache_.repetition_count = static_cast<uint8_t>(hook_cache_.repetition_count + 1);
+
+  if (tmpl.betrayal_threshold == 0 || notes.empty()) {
+    return false;
+  }
+  const uint8_t threshold = tmpl.betrayal_threshold;
+  const uint8_t occurrence = hook_cache_.repetition_count;
+  if (occurrence < threshold || (occurrence % threshold) != 0) {
+    return false;
+  }
+
+  const HookBetrayal betrayal = selectBetrayal(1, rng);
+  if (betrayal == HookBetrayal::None) {
+    return false;
+  }
+
+  const size_t head = std::min(kSabiHeadNotes, notes.size());
+  std::vector<int8_t> pitches;
+  std::vector<Tick> durations;
+  pitches.reserve(head);
+  durations.reserve(head);
+  for (size_t i = 0; i < head; ++i) {
+    pitches.push_back(static_cast<int8_t>(notes[i].note));
+    durations.push_back(notes[i].duration);
+  }
+
+  applyBetrayal(pitches, durations, betrayal, rng);
+
+  for (size_t i = 0; i < head; ++i) {
+    [[maybe_unused]] const uint8_t old_pitch = notes[i].note;
+    int new_pitch = std::clamp(static_cast<int>(pitches[i]), static_cast<int>(vocal_low),
+                               static_cast<int>(vocal_high));
+    auto candidates =
+        getSafePitchCandidates(harmony, static_cast<uint8_t>(new_pitch), notes[i].start_tick,
+                               notes[i].duration, TrackRole::Vocal, vocal_low, vocal_high);
+    if (candidates.empty()) {
+      notes[i].note = static_cast<uint8_t>(new_pitch);
+    } else {
+      PitchSelectionHints hints;
+      if (i > 0) {
+        hints.prev_pitch = static_cast<int8_t>(notes[i - 1].note);
+      }
+      hints.note_duration = notes[i].duration;
+      hints.tessitura_center = (vocal_low + vocal_high) / 2;
+      notes[i].note = selectBestCandidate(candidates, static_cast<uint8_t>(new_pitch), hints);
+    }
+    notes[i].duration = durations[i];
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+    if (old_pitch != notes[i].note) {
+      notes[i].prov_original_pitch = old_pitch;
+      notes[i].addTransformStep(TransformStepType::MotionAdjust, old_pitch, notes[i].note, 0, 0);
+    }
+#endif
+  }
+
+  return true;
+}
 
 MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& tmpl,
                                                           Tick hook_start, Tick phrase_end,
@@ -46,17 +112,14 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& 
   PhraseResult result;
   result.notes.clear();
 
-  // Get chord degree at hook start position
-  int8_t start_chord_degree = harmony.getChordDegreeAt(hook_start);
-
   // Initialize base pitch using chord at hook position
+  const ChordTones start_chord_tones = melody::vocalSnapTonesAt(harmony, hook_start);
   int base_pitch;
   if (prev_pitch < 0) {
-    base_pitch = ctx.tessitura.center;
-    base_pitch = nearestChordTonePitch(base_pitch, start_chord_degree);
+    base_pitch = melody::nearestPitchInSet(start_chord_tones, ctx.tessitura.center, 0, 127);
   } else {
     // Snap prev_pitch to current chord's chord tone
-    base_pitch = nearestChordTonePitch(prev_pitch, start_chord_degree);
+    base_pitch = melody::nearestPitchInSet(start_chord_tones, prev_pitch, 0, 127);
   }
   // Clamp base_pitch to vocal range
   base_pitch =
@@ -171,6 +234,7 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& 
       if (current_tick >= phrase_end) break;
       // Get chord at this note's position
       int8_t note_chord_degree = harmony.getChordDegreeAt(current_tick);
+      const ChordTones note_chord_tones = melody::vocalSnapTonesAt(harmony, current_tick);
 
       // Calculate pitch from contour, then snap to current chord
       int pitch = base_pitch + hook.contour_degrees[i % hook.contour_degrees.size()];
@@ -185,9 +249,9 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& 
 
       // Find nearest chord tone within vocal range and interval constraint
       int max_interval = melody::getEffectiveMaxInterval(ctx.section_type, ctx.max_leap_semitones);
-      pitch =
-          nearestChordToneWithinInterval(pitch, prev_hook_pitch, note_chord_degree, max_interval,
-                                         ctx.vocal_low, ctx.vocal_high, &ctx.tessitura);
+      pitch = melody::nearestPitchInSetWithinInterval(note_chord_tones, pitch, prev_hook_pitch,
+                                                      max_interval, ctx.vocal_low, ctx.vocal_high,
+                                                      &ctx.tessitura);
 
       // Leap preparation principle: constrain leaps after very short notes
       // Same threshold as generateMelodyPhrase for consistency
@@ -196,18 +260,18 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& 
       if ((rep > 0 || i > 0) && prev_note_duration < VERY_SHORT_THRESHOLD) {
         int leap = std::abs(pitch - prev_hook_pitch);
         if (leap > MAX_LEAP_AFTER_SHORT) {
-          pitch = nearestChordToneWithinInterval(pitch, prev_hook_pitch, note_chord_degree,
-                                                 MAX_LEAP_AFTER_SHORT, ctx.vocal_low,
-                                                 ctx.vocal_high, &ctx.tessitura);
+          pitch = melody::nearestPitchInSetWithinInterval(note_chord_tones, pitch, prev_hook_pitch,
+                                                          MAX_LEAP_AFTER_SHORT, ctx.vocal_low,
+                                                          ctx.vocal_high, &ctx.tessitura);
         }
       }
 
       // Avoid note check: melody should not form tritone/minor2nd with chord tones
-      pitch = melody::enforceAvoidNoteConstraint(pitch, note_chord_degree, ctx.vocal_low,
+      pitch = melody::enforceAvoidNoteConstraint(pitch, note_chord_tones, ctx.vocal_low,
                                                  ctx.vocal_high);
 
       // Downbeat chord-tone constraint for hooks
-      pitch = melody::enforceDownbeatChordTone(pitch, current_tick, note_chord_degree,
+      pitch = melody::enforceDownbeatChordTone(pitch, current_tick, note_chord_tones,
                                                prev_hook_pitch, ctx.vocal_low, ctx.vocal_high,
                                                true);  // disable_singability=true for hooks
 
@@ -250,9 +314,9 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& 
       {
         int final_interval = std::abs(pitch - prev_hook_pitch);
         if (final_interval > max_interval) {
-          pitch = nearestChordToneWithinInterval(pitch, prev_hook_pitch, note_chord_degree,
-                                                 max_interval, ctx.vocal_low, ctx.vocal_high,
-                                                 &ctx.tessitura);
+          pitch = melody::nearestPitchInSetWithinInterval(note_chord_tones, pitch, prev_hook_pitch,
+                                                          max_interval, ctx.vocal_low,
+                                                          ctx.vocal_high, &ctx.tessitura);
           // Defensive clamp to ensure vocal range is respected
           pitch =
               std::clamp(pitch, static_cast<int>(ctx.vocal_low), static_cast<int>(ctx.vocal_high));
@@ -285,7 +349,7 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& 
         // First note of hook MUST exist — try chord tones as fallback
         if (i == 0 && rep == 0) {
           uint8_t fallback_pitch =
-              static_cast<uint8_t>(nearestChordTonePitch(pitch, note_chord_degree));
+              static_cast<uint8_t>(melody::nearestPitchInSet(note_chord_tones, pitch, 0, 127));
           fallback_pitch = static_cast<uint8_t>(std::clamp(static_cast<int>(fallback_pitch),
                                                            static_cast<int>(ctx.vocal_low),
                                                            static_cast<int>(ctx.vocal_high)));
@@ -312,7 +376,7 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& 
       // Apply consecutive same note limit AFTER final pitch selection
       // This ensures we catch cases where collision avoidance re-selected the same pitch
       melody::applyConsecutiveSameNoteConstraint(pitch, consecutive_tracker, prev_hook_pitch,
-                                                 note_chord_degree, ctx.key_offset, ctx.vocal_low,
+                                                 note_chord_tones, ctx.key_offset, ctx.vocal_low,
                                                  ctx.vocal_high, max_interval, rng);
 
       NoteEvent hook_note = createNoteWithoutHarmony(current_tick, final_duration,

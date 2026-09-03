@@ -11,14 +11,15 @@
 #include "core/chord_utils.h"
 #include "core/i_harmony_context.h"
 #include "core/pitch_utils.h"
+#include "track/melody/melody_utils.h"
 
 namespace midisketch {
 namespace melody {
 
-int applyPitchChoice(PitchChoice choice, int current_pitch, int target_pitch, int8_t chord_degree,
-                     int key_offset, uint8_t vocal_low, uint8_t vocal_high, VocalAttitude attitude,
-                     bool disable_singability, float note_eighths, float tension_usage,
-                     int max_melodic_interval) {
+int applyPitchChoice(PitchChoice choice, int current_pitch, int target_pitch,
+                     const ChordTones& chord_tones, int key_offset, uint8_t vocal_low,
+                     uint8_t vocal_high, VocalAttitude attitude, bool disable_singability,
+                     float note_eighths, float tension_usage, int max_melodic_interval) {
   // VocalAttitude affects candidate pitch selection:
   //   Clean: chord tones only (1, 3, 5)
   //   Expressive: chord tones + tensions (7, 9)
@@ -27,9 +28,6 @@ int applyPitchChoice(PitchChoice choice, int current_pitch, int target_pitch, in
   // Rhythm-melody coupling: note duration modulates tension allowance
   //   Short notes (< 1 eighth): Force chord tones for stability
   //   Long notes (>= 4 eighths): Allow tensions if attitude permits
-
-  // Get chord tones for current chord
-  const ChordTones chord_tones = getChordTones(chord_degree);
 
   // Determine effective attitude based on note duration
   // Short notes should be more consonant (chord tones preferred)
@@ -100,7 +98,7 @@ int applyPitchChoice(PitchChoice choice, int current_pitch, int target_pitch, in
 
   if (candidates.empty()) {
     // Fallback: use nearest chord tone to current pitch
-    return std::clamp(nearestChordTonePitch(current_pitch, chord_degree),
+    return std::clamp(nearestPitchInSet(chord_tones, current_pitch, 0, 127),
                       static_cast<int>(vocal_low), static_cast<int>(vocal_high));
   }
 
@@ -116,7 +114,7 @@ int applyPitchChoice(PitchChoice choice, int current_pitch, int target_pitch, in
       if (isScaleTone(current_pitch % 12, static_cast<uint8_t>(key_offset))) {
         new_pitch = current_pitch;
       } else {
-        new_pitch = nearestChordTonePitch(current_pitch, chord_degree);
+        new_pitch = nearestPitchInSet(chord_tones, current_pitch, 0, 127);
       }
       break;
 
@@ -172,7 +170,7 @@ int applyPitchChoice(PitchChoice choice, int current_pitch, int target_pitch, in
       }
       if (best < 0) {
         // No chord tone above, use nearest
-        best = nearestChordTonePitch(current_pitch, chord_degree);
+        best = nearestPitchInSet(chord_tones, current_pitch, 0, 127);
       }
       // SINGABILITY: Enforce section/blueprint-aware maximum interval.
       // Large leaps are difficult to sing and sound unnatural in pop melodies.
@@ -191,7 +189,7 @@ int applyPitchChoice(PitchChoice choice, int current_pitch, int target_pitch, in
           best = closest;
         } else {
           // No chord tone within range, stay on current or use nearest
-          best = nearestChordTonePitch(current_pitch, chord_degree);
+          best = nearestPitchInSet(chord_tones, current_pitch, 0, 127);
         }
       }
       new_pitch = best;
@@ -243,7 +241,7 @@ int applyPitchChoice(PitchChoice choice, int current_pitch, int target_pitch, in
         }
       }
       if (best < 0) {
-        best = nearestChordTonePitch(current_pitch, chord_degree);
+        best = nearestPitchInSet(chord_tones, current_pitch, 0, 127);
       }
       // SINGABILITY: Enforce section/blueprint-aware maximum interval.
       if (best >= 0 && std::abs(best - current_pitch) > max_melodic_interval) {
@@ -260,7 +258,7 @@ int applyPitchChoice(PitchChoice choice, int current_pitch, int target_pitch, in
         if (closest >= 0) {
           best = closest;
         } else {
-          best = nearestChordTonePitch(current_pitch, chord_degree);
+          best = nearestPitchInSet(chord_tones, current_pitch, 0, 127);
         }
       }
       new_pitch = best;
@@ -312,7 +310,7 @@ int applyPitchChoice(PitchChoice choice, int current_pitch, int target_pitch, in
         // At target (or no target): hold position when already on a scale tone
         new_pitch = current_pitch;
       } else {
-        new_pitch = nearestChordTonePitch(current_pitch, chord_degree);
+        new_pitch = nearestPitchInSet(chord_tones, current_pitch, 0, 127);
       }
       break;
   }

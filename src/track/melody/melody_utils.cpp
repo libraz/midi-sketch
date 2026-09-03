@@ -9,7 +9,11 @@
 #include <cmath>
 
 #include "core/chord_utils.h"
+#include "core/i_harmony_context.h"
+#include "core/pitch_monotony_tracker.h"
 #include "core/pitch_utils.h"
+#include "core/preset_types.h"
+#include "core/production_blueprint.h"
 #include "core/velocity.h"
 
 namespace midisketch {
@@ -39,9 +43,252 @@ float getMotifWeightForSection(SectionType section, int section_occurrence) {
   return 0.12f;
 }
 
+uint8_t resolveContextMaxLeap(const GeneratorParams& params) {
+  if (params.melody_max_leap_override) {
+    return params.melody_params.max_leap_interval;
+  }
+  if (params.blueprint_ref != nullptr) {
+    return params.blueprint_ref->constraints.max_leap_semitones;
+  }
+  // Matches BlueprintConstraints::max_leap_semitones and SectionContext's own
+  // default. The per-section table in getMaxMelodicIntervalForSection is what
+  // narrows a Verse back to a major 6th; this value is the budget, not the cap.
+  return static_cast<uint8_t>(kDefaultMaxLeapSemitones);
+}
+
 int getEffectiveMaxInterval(SectionType section_type, uint8_t ctx_max_leap) {
   int section_max = getMaxMelodicIntervalForSection(section_type);
   return std::min(section_max, static_cast<int>(ctx_max_leap));
+}
+
+namespace {
+
+void appendPitchClass(ChordTones& set, int pitch_class) {
+  if (set.count >= set.pitch_classes.size()) return;
+  set.pitch_classes[set.count++] = pitch_class;
+}
+
+}  // namespace
+
+int crossRelationPitchClassAt(const IChordLookup& harmony, Tick tick) {
+  if (!harmony.isSecondaryDominantAt(tick)) return -1;
+  const ChordTones sounding = harmony.getChordTonesAt(tick);
+  if (sounding.empty() || sounding[0] < 0) return -1;
+  // A secondary dominant is a dominant seventh, so its third is major. A minor
+  // third above the same root is therefore the degree's *unaltered* third, a
+  // semitone below the one that actually sounds -- the two together are a cross
+  // relation. Chords whose diatonic third was already major (V/IV, V/V on a
+  // major degree) have nothing to exclude, and this test says so by itself.
+  constexpr int kMinorThird = 3;
+  return (sounding[0] + kMinorThird) % 12;
+}
+
+ChordTones vocalChordTonesAt(const IChordLookup& harmony, Tick tick) {
+  const ChordTones sounding = harmony.getChordTonesAt(tick);
+  const int cross_relation_pc = crossRelationPitchClassAt(harmony, tick);
+
+  ChordTones singable{};
+  singable.pitch_classes.fill(-1);
+  singable.count = 0;
+  for (int pc : sounding) {
+    if (pc < 0) continue;
+    if (!isScaleTone(pc)) continue;  // internal key is always C major
+    if (pc == cross_relation_pc) continue;
+    appendPitchClass(singable, pc);
+  }
+
+  // A chord with no diatonic member at all would leave callers with nothing to
+  // snap to; the sounding set is still the better answer than a degree table.
+  return singable.count > 0 ? singable : sounding;
+}
+
+ChordTones vocalSnapTonesAt(const IChordLookup& harmony, Tick tick) {
+  ChordTones tones = vocalChordTonesAt(harmony, tick);
+  constexpr uint8_t kTriadSize = 3;
+  if (tones.count > kTriadSize) {
+    for (uint8_t i = kTriadSize; i < tones.count; ++i) {
+      tones.pitch_classes[i] = -1;
+    }
+    tones.count = kTriadSize;
+  }
+  return tones;
+}
+
+bool isPitchClassInSet(const ChordTones& pcs, int pitch_class) {
+  for (int pc : pcs) {
+    if (pc == pitch_class) return true;
+  }
+  return false;
+}
+
+int nearestPitchInSet(const ChordTones& pcs, int target, int low, int high) {
+  int best_pitch = std::clamp(target, low, high);
+  int best_dist = 1000;
+  const int octave = target / 12;
+
+  for (int pc : pcs) {
+    if (pc < 0) continue;
+    for (int oct_offset = -2; oct_offset <= 2; ++oct_offset) {
+      int candidate = (octave + oct_offset) * 12 + pc;
+      if (candidate < low || candidate > high) continue;
+      if (candidate < 0 || candidate > 127) continue;
+      int dist = std::abs(candidate - target);
+      if (dist < best_dist) {
+        best_dist = dist;
+        best_pitch = candidate;
+      }
+    }
+  }
+
+  return best_pitch;
+}
+
+int nearestPitchInSetWithinInterval(const ChordTones& pcs, int target, int prev, int max_interval,
+                                    int low, int high, const TessituraRange* tessitura) {
+  if (prev < 0) {
+    return nearestPitchInSet(pcs, target, low, high);
+  }
+
+  int best_pitch = std::clamp(prev, low, high);
+  int best_score = -1000;
+
+  for (int pc : pcs) {
+    if (pc < 0) continue;
+    for (int oct = low / 12; oct <= (high / 12) + 1; ++oct) {
+      int candidate = oct * 12 + pc;
+      if (candidate < low || candidate > high) continue;
+      if (std::abs(candidate - prev) > max_interval) continue;
+
+      int dist_to_prev = std::abs(candidate - prev);
+      int score = 100 - std::abs(candidate - target);
+      if (dist_to_prev == 0) {
+        score += 20;
+      } else if (dist_to_prev <= 2) {
+        score += 25;  // stepwise motion is the most singable resolution
+      } else if (dist_to_prev <= 4) {
+        score += 5;
+      } else {
+        score -= (dist_to_prev - 4) * 8;
+      }
+      if (tessitura != nullptr) {
+        if (candidate >= tessitura->low && candidate <= tessitura->high) {
+          score += 15;
+        }
+        if (isInPassaggioRange(static_cast<uint8_t>(candidate), tessitura->vocal_low,
+                               tessitura->vocal_high)) {
+          score -= 5;
+        }
+      }
+
+      if (score > best_score) {
+        best_score = score;
+        best_pitch = candidate;
+      }
+    }
+  }
+
+  return best_pitch;
+}
+
+ToneLegality classifyVocalTone(const IChordLookup& harmony, int pitch, const MelodicNeighborhood& n,
+                               int key) {
+  const int pitch_pc = getPitchClass(static_cast<uint8_t>(pitch));
+  if (isPitchClassInSet(vocalChordTonesAt(harmony, n.start), pitch_pc)) {
+    return ToneLegality::ChordTone;
+  }
+
+  // Every admitted non-chord figure is diatonic; a chromatic pitch that is not
+  // a chord tone has nothing licensing it.
+  if (!isScaleTone(pitch_pc, static_cast<uint8_t>(key))) {
+    return ToneLegality::Illegal;
+  }
+
+  // No figure licenses the pitch a secondary dominant raised away from: it is a
+  // semitone below the third the accompaniment plays, and the two sounding
+  // together is a cross relation rather than a dissonance that resolves. This
+  // is the one pitch the figures below may not reach for.
+  if (pitch_pc == crossRelationPitchClassAt(harmony, n.start)) {
+    return ToneLegality::Illegal;
+  }
+
+  // Every admitted figure is defined by where it goes. A note with no
+  // successor -- the end of a phrase -- has nowhere to resolve, and that is
+  // exactly the position a line is expected to land on a chord tone.
+  if (n.next_pitch < 0) {
+    return ToneLegality::Illegal;
+  }
+
+  // Appoggiatura: the accent lands on the dissonance and steps down onto a
+  // chord tone of the chord the resolution belongs to. Approach interval and
+  // beat position are deliberately unconstrained; the resolution is the rule.
+  const int resolution_down = pitch - n.next_pitch;
+  if (resolution_down >= 1 && resolution_down <= 2) {
+    const Tick resolution_tick = n.next_start > 0 ? n.next_start : n.start + n.duration;
+    if (isPitchClassInSet(vocalChordTonesAt(harmony, resolution_tick),
+                          getPitchClass(static_cast<uint8_t>(n.next_pitch)))) {
+      return ToneLegality::Appoggiatura;
+    }
+  }
+
+  if (isLegalSuspensionTone(n.prev_pitch, pitch, n.next_pitch, n.start, n.duration, n.gap_to_next,
+                            key)) {
+    return ToneLegality::Suspension;
+  }
+
+  if (isLegalNonChordTone(n.prev_pitch, pitch, n.next_pitch, n.start, n.duration, n.gap_to_next,
+                          key) &&
+      !isAvoidNoteForDegree(pitch, harmony.getChordDegreeAt(n.start))) {
+    return ToneLegality::PassingOrNeighbor;
+  }
+
+  return ToneLegality::Illegal;
+}
+
+int resolveLeapWithinBound(const IHarmonyContext& harmony, const MelodicNeighborhood& n,
+                           int current_pitch, int max_interval, int low, int high, int key) {
+  if (n.prev_pitch < 0) return current_pitch;
+
+  const int lowest = std::max(low, n.prev_pitch - max_interval);
+  const int highest = std::min(high, n.prev_pitch + max_interval);
+  if (lowest > highest) return current_pitch;
+
+  const ChordTones snap_tones = vocalSnapTonesAt(harmony, n.start);
+  int best_chord_tone = -1;
+  int best_chord_distance = 1000;
+  int best_other = -1;
+  int best_other_distance = 1000;
+
+  for (int candidate = lowest; candidate <= highest; ++candidate) {
+    if (candidate < 0 || candidate > 127) continue;
+    const int candidate_pc = getPitchClass(static_cast<uint8_t>(candidate));
+    if (!isScaleTone(candidate_pc, static_cast<uint8_t>(key))) continue;
+    if (!harmony.isConsonantWithOtherTracks(static_cast<uint8_t>(candidate), n.start, n.duration,
+                                            TrackRole::Vocal)) {
+      continue;
+    }
+
+    const int distance = std::abs(candidate - current_pitch);
+    if (isPitchClassInSet(snap_tones, candidate_pc)) {
+      if (distance < best_chord_distance) {
+        best_chord_distance = distance;
+        best_chord_tone = candidate;
+      }
+    } else if (isVocalToneLegal(harmony, candidate, n, key)) {
+      if (distance < best_other_distance) {
+        best_other_distance = distance;
+        best_other = candidate;
+      }
+    }
+  }
+
+  if (best_chord_tone >= 0) return best_chord_tone;
+  if (best_other >= 0) return best_other;
+  return current_pitch;
+}
+
+bool isVocalToneLegal(const IChordLookup& harmony, int pitch, const MelodicNeighborhood& n,
+                      int key) {
+  return classifyVocalTone(harmony, pitch, n, key) != ToneLegality::Illegal;
 }
 
 Tick getBaseBreathDuration(SectionType section, Mood mood) {
@@ -149,9 +396,8 @@ bool isAvoidNoteWithRoot(int pitch_pc, int root_pc) {
   return interval == 1 || interval == 6;
 }
 
-int getNearestSafeChordTone(int current_pitch, int8_t chord_degree, int root_pc, uint8_t vocal_low,
-                            uint8_t vocal_high) {
-  const ChordTones chord_tones = getChordTones(chord_degree);
+int getNearestSafeChordTone(int current_pitch, const ChordTones& chord_tones, int root_pc,
+                            uint8_t vocal_low, uint8_t vocal_high) {
   if (chord_tones.empty()) {
     return std::clamp(current_pitch, static_cast<int>(vocal_low), static_cast<int>(vocal_high));
   }

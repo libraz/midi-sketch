@@ -26,6 +26,7 @@
 namespace midisketch {
 
 class IHarmonyContext;
+struct PhrasePlan;
 
 /// @brief Context information for breath calculation.
 ///
@@ -125,6 +126,12 @@ class MelodyDesigner {
         -1.0f;                       ///< Override MelodyTemplate long_note_ratio (-1=no override)
     uint8_t phrase_length_bars = 0;  ///< Override phrase length in bars (0=use template)
 
+    // Phrase structure the caller already planned for this section.
+    // The caller is the only place that knows the resolved rhythm lock and the
+    // section flow (a Chorus entered from a Pre-chorus bursts out of a hold),
+    // so re-planning here from a narrower input would silently discard both.
+    const PhrasePlan* phrase_plan = nullptr;  ///< nullptr = plan the section here
+
     // ========================================================================
     // Internal 4-stage structure within a section.
     // ========================================================================
@@ -203,6 +210,34 @@ class MelodyDesigner {
     if (!hook_cache_.pitches_cached) return std::nullopt;
     return hook_cache_.sabi_pitches;
   }
+
+  /// @brief How many hook occurrences have reached the output so far.
+  ///
+  /// Counts occurrences that were emitted, not candidates evaluated and
+  /// discarded, so the betrayal threshold measures what a listener hears.
+  uint8_t hookRepetitionCount() const { return hook_cache_.repetition_count; }
+
+  /**
+   * @brief Count a hook occurrence replayed from a cached phrase and vary it
+   *        when the template's betrayal threshold is reached.
+   *
+   * A repeated chorus is served from the phrase cache rather than generated
+   * again, so without this the counter would stall below every threshold and
+   * the "same, same, then different" tension the templates describe would never
+   * occur. Counting the replay keeps the counter equal to the number of hook
+   * occurrences the listener actually hears.
+   *
+   * @param tmpl Melody template supplying the betrayal threshold
+   * @param notes Replayed section notes, modified in place
+   * @param harmony Harmony context for pitch safety
+   * @param rng Random number generator
+   * @param vocal_low Minimum allowed pitch
+   * @param vocal_high Maximum allowed pitch
+   * @return true when a betrayal was applied
+   */
+  bool replayHookOccurrence(const MelodyTemplate& tmpl, std::vector<NoteEvent>& notes,
+                            const IHarmonyContext& harmony, std::mt19937& rng, uint8_t vocal_low,
+                            uint8_t vocal_high);
 
   /**
    * @brief Get recommended candidate count for section type.

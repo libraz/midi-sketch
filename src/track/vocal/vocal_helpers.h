@@ -160,17 +160,24 @@ void applyGrooveFeel(std::vector<NoteEvent>& notes, VocalGrooveFeel groove);
 /**
  * @brief Apply collision avoidance with interval constraint.
  *
- * Prevents clashes with bass/chord while maintaining singable intervals
- * (≤major 6th). Snaps to chord tones after avoiding clashes.
+ * Prevents clashes with bass/chord while keeping the line singable. The
+ * interval bound is the section's own allowance (melody::getEffectiveMaxInterval
+ * of section_type and ctx_max_leap), not a fixed one: this pass runs per section
+ * and before the song-wide passes, so a bound narrower than the section's would
+ * collapse a Chorus octave leap that no later pass can restore.
+ * Snaps to chord tones after avoiding clashes.
  *
  * @param notes Notes to modify (in-place)
  * @param harmony Harmony context for collision detection
  * @param vocal_low Vocal range low limit
  * @param vocal_high Vocal range high limit
+ * @param section_type Section these notes belong to
+ * @param ctx_max_leap Song-wide leap budget (melody::resolveContextMaxLeap)
  */
 void applyCollisionAvoidanceWithIntervalConstraint(std::vector<NoteEvent>& notes,
                                                    const IHarmonyContext& harmony,
-                                                   uint8_t vocal_low, uint8_t vocal_high);
+                                                   uint8_t vocal_low, uint8_t vocal_high,
+                                                   SectionType section_type, uint8_t ctx_max_leap);
 
 /**
  * @brief Enforce a hard upper pitch ceiling on a section's notes.

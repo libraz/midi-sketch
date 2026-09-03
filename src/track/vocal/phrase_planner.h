@@ -52,6 +52,20 @@ class PhrasePlanner {
                               uint16_t bpm = 120, uint8_t phrase_length_bars = 0,
                               AnticipationRestMode anticipation_rest = AnticipationRestMode::Off);
 
+  /// @brief Density multiplier for the phrase that bursts out of a hold.
+  static constexpr float kHoldBurstDensityBoost = 1.3f;
+
+  /// @brief Mark a phrase as the burst that follows a hold (tame) point.
+  ///
+  /// Applies the density surge and recomputes the mora target. A phrase that
+  /// is already marked is left alone, so the section-internal climax rule and
+  /// a caller's cross-section rule cannot compound into a double boost.
+  ///
+  /// @param phrase Phrase to mark (modified in place)
+  /// @param section_type Section the phrase belongs to (sets the mora base)
+  /// @return true when this call is what marked the phrase
+  static bool markHoldBurstEntry(PlannedPhrase& phrase, SectionType section_type);
+
  private:
   /// @brief Step 1: Determine phrase count and antecedent-consequent structure.
   /// @param plan Plan to populate with phrase structure

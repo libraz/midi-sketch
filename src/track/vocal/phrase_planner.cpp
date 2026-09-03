@@ -442,20 +442,24 @@ void PhrasePlanner::detectHoldBurstPoints(PhrasePlan& plan) {
   if (plan.section_type == SectionType::Chorus || plan.section_type == SectionType::Drop) {
     for (auto& phrase : plan.phrases) {
       if (phrase.arc_stage == 2) {
-        phrase.is_hold_burst_entry = true;
-        phrase.density_modifier *= 1.3f;
-        // Recalculate target note count
-        uint8_t base_mora = getBaseMoraCount(plan.section_type);
-        float target = static_cast<float>(base_mora) * phrase.density_modifier;
-        phrase.target_note_count = static_cast<uint8_t>(std::max(1.0f, std::round(target)));
+        markHoldBurstEntry(phrase, plan.section_type);
       }
     }
   }
+}
 
-  // Note: First phrase of Chorus being marked as hold-burst entry when it
-  // follows a B section is a cross-section concern. The caller should set
-  // is_hold_burst_entry on the first Chorus phrase based on section flow,
-  // since PhrasePlanner operates on a single section at a time.
+bool PhrasePlanner::markHoldBurstEntry(PlannedPhrase& phrase, SectionType section_type) {
+  // The flag is what makes the surge idempotent: a phrase that is both the
+  // section's climax stage and the first phrase after a hold section would
+  // otherwise be boosted twice and outrun the rest of the chorus.
+  if (phrase.is_hold_burst_entry) {
+    return false;
+  }
+  phrase.is_hold_burst_entry = true;
+  phrase.density_modifier *= kHoldBurstDensityBoost;
+  float target = static_cast<float>(getBaseMoraCount(section_type)) * phrase.density_modifier;
+  phrase.target_note_count = static_cast<uint8_t>(std::max(1.0f, std::round(target)));
+  return true;
 }
 
 }  // namespace midisketch

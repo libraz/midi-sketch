@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <random>
 
+#include "core/chord_utils.h"
 #include "core/pitch_utils.h"
 #include "core/types.h"
 
@@ -34,13 +35,13 @@ bool isStrongBeat(Tick tick);
 ///
 /// @param pitch Current pitch candidate
 /// @param tick Tick position for downbeat check
-/// @param chord_degree Current chord degree
+/// @param chord_tones Pitch classes sounding at this tick (see vocalChordTonesAt)
 /// @param prev_pitch Previous pitch (for direction preservation)
 /// @param vocal_low Minimum allowed pitch
 /// @param vocal_high Maximum allowed pitch
 /// @param disable_singability If true, use simple nearest chord tone
 /// @param duration Note duration in ticks; 0 = always enforce
-int enforceDownbeatChordTone(int pitch, Tick tick, int8_t chord_degree, int prev_pitch,
+int enforceDownbeatChordTone(int pitch, Tick tick, const ChordTones& chord_tones, int prev_pitch,
                              uint8_t vocal_low, uint8_t vocal_high,
                              bool disable_singability = false, Tick duration = 0);
 
@@ -51,14 +52,14 @@ int enforceDownbeatChordTone(int pitch, Tick tick, int8_t chord_degree, int prev
 ///
 /// @param target_pitch Target pitch to adjust
 /// @param prev_pitch Previous pitch (reference for direction)
-/// @param chord_degree Current chord degree
+/// @param chord_tones Pitch classes sounding at this tick (see vocalChordTonesAt)
 /// @param vocal_low Minimum allowed pitch
 /// @param vocal_high Maximum allowed pitch
 /// @param max_interval Maximum interval allowed (0 = no limit)
 /// @return Best chord tone preserving direction intent
-int findBestChordTonePreservingDirection(int target_pitch, int prev_pitch, int8_t chord_degree,
-                                         uint8_t vocal_low, uint8_t vocal_high,
-                                         int max_interval = 0);
+int findBestChordTonePreservingDirection(int target_pitch, int prev_pitch,
+                                         const ChordTones& chord_tones, uint8_t vocal_low,
+                                         uint8_t vocal_high, int max_interval = 0);
 
 /// @brief Bias downbeat pitch toward guide tones (3rd/7th) with given probability.
 ///
@@ -90,13 +91,13 @@ int enforceGuideToneOnDownbeat(int pitch, Tick tick, int8_t chord_degree, uint8_
 /// duration-aware passing tone tolerance in collision detection).
 ///
 /// @param pitch Current pitch candidate
-/// @param chord_degree Current chord degree
+/// @param chord_tones Pitch classes sounding at this tick (see vocalChordTonesAt)
 /// @param vocal_low Minimum allowed pitch
 /// @param vocal_high Maximum allowed pitch
 /// @param tick Note start tick (for strong beat check); 0 = always enforce
 /// @param duration Note duration in ticks; 0 = always enforce
 /// @return Adjusted pitch (safe from avoid intervals)
-int enforceAvoidNoteConstraint(int pitch, int8_t chord_degree, uint8_t vocal_low,
+int enforceAvoidNoteConstraint(int pitch, const ChordTones& chord_tones, uint8_t vocal_low,
                                uint8_t vocal_high, Tick tick = 0, Tick duration = 0);
 
 /// @brief Enforce maximum interval constraint between consecutive notes.
@@ -106,13 +107,13 @@ int enforceAvoidNoteConstraint(int pitch, int8_t chord_degree, uint8_t vocal_low
 ///
 /// @param new_pitch New pitch candidate
 /// @param prev_pitch Previous pitch
-/// @param chord_degree Current chord degree
+/// @param chord_tones Pitch classes sounding at this tick (see vocalChordTonesAt)
 /// @param max_interval Maximum allowed interval in semitones
 /// @param vocal_low Minimum allowed pitch
 /// @param vocal_high Maximum allowed pitch
 /// @param tessitura Optional tessitura range for preference
 /// @return Adjusted pitch within interval constraint
-int enforceMaxIntervalConstraint(int new_pitch, int prev_pitch, int8_t chord_degree,
+int enforceMaxIntervalConstraint(int new_pitch, int prev_pitch, const ChordTones& chord_tones,
                                  int max_interval, uint8_t vocal_low, uint8_t vocal_high,
                                  const TessituraRange* tessitura = nullptr);
 
@@ -125,14 +126,14 @@ int enforceMaxIntervalConstraint(int new_pitch, int prev_pitch, int8_t chord_deg
 /// @param new_pitch New pitch candidate
 /// @param prev_pitch Previous pitch
 /// @param prev_duration Previous note duration in ticks
-/// @param chord_degree Current chord degree
+/// @param chord_tones Pitch classes sounding at this tick (see vocalChordTonesAt)
 /// @param vocal_low Minimum allowed pitch
 /// @param vocal_high Maximum allowed pitch
 /// @param tessitura Optional tessitura range
 /// @return Adjusted pitch respecting leap preparation
 int applyLeapPreparationConstraint(int new_pitch, int prev_pitch, Tick prev_duration,
-                                   int8_t chord_degree, uint8_t vocal_low, uint8_t vocal_high,
-                                   const TessituraRange* tessitura = nullptr);
+                                   const ChordTones& chord_tones, uint8_t vocal_low,
+                                   uint8_t vocal_high, const TessituraRange* tessitura = nullptr);
 
 /// @brief Encourage movement after long notes.
 ///
@@ -145,14 +146,14 @@ int applyLeapPreparationConstraint(int new_pitch, int prev_pitch, Tick prev_dura
 /// @param new_pitch New pitch candidate
 /// @param prev_pitch Previous pitch
 /// @param prev_duration Previous note duration in ticks
-/// @param chord_degree Current chord degree
+/// @param chord_tones Pitch classes sounding at this tick (see vocalChordTonesAt)
 /// @param key_offset Key offset for scale tone check
 /// @param vocal_low Minimum allowed pitch
 /// @param vocal_high Maximum allowed pitch
 /// @param rng Random number generator
 /// @return Possibly adjusted pitch with encouraged movement
 int encourageMovementAfterLongNote(int new_pitch, int prev_pitch, Tick prev_duration,
-                                   int8_t chord_degree, int key_offset, uint8_t vocal_low,
+                                   const ChordTones& chord_tones, int key_offset, uint8_t vocal_low,
                                    uint8_t vocal_high, std::mt19937& rng);
 
 /// @brief Hard limit on same-direction leap chains.

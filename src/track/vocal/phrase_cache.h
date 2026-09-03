@@ -34,6 +34,10 @@ struct CachedPhrase {
   uint8_t vocal_low;             ///< Vocal range when cached
   uint8_t vocal_high;
   int reuse_count = 0;  ///< How many times this phrase has been reused
+  /// Whether generating this phrase emitted a hook. Replays of a phrase that
+  /// contains one are hook occurrences too, and the betrayal threshold counts
+  /// what reaches the output rather than what was generated.
+  bool contains_hook = false;
 };
 
 /**

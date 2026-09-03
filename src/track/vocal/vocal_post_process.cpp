@@ -46,11 +46,7 @@ int effectiveMaxIntervalAt(Tick tick, const std::vector<Section>* sections, uint
 
 void enforceVocalPitchConstraints(std::vector<NoteEvent>& all_notes, const GeneratorParams& params,
                                   IHarmonyContext& harmony, const std::vector<Section>* sections) {
-  uint8_t ctx_max_leap =
-      params.melody_max_leap_override
-          ? params.melody_params.max_leap_interval
-          : (params.blueprint_ref != nullptr ? params.blueprint_ref->constraints.max_leap_semitones
-                                             : static_cast<uint8_t>(kMaxMelodicInterval));
+  uint8_t ctx_max_leap = melody::resolveContextMaxLeap(params);
 
   // FINAL INTERVAL ENFORCEMENT: section/blueprint-aware singability limit.
   for (size_t i = 1; i < all_notes.size(); ++i) {
@@ -59,19 +55,25 @@ void enforceVocalPitchConstraints(std::vector<NoteEvent>& all_notes, const Gener
     int interval = std::abs(curr_pitch - prev_pitch);
     int max_interval = effectiveMaxIntervalAt(all_notes[i].start_tick, sections, ctx_max_leap);
     if (interval > max_interval) {
-      int8_t chord_degree = harmony.getChordDegreeAt(all_notes[i].start_tick);
 #ifdef MIDISKETCH_NOTE_PROVENANCE
       uint8_t old_pitch = all_notes[i].note;
 #endif
-      int fixed_pitch =
-          nearestChordToneWithinInterval(curr_pitch, prev_pitch, chord_degree, max_interval,
-                                         params.vocal_low, params.vocal_high, nullptr);
-      // Re-verify collision safety after interval fix
-      if (!harmony.isConsonantWithOtherTracks(static_cast<uint8_t>(fixed_pitch),
-                                              all_notes[i].start_tick, all_notes[i].duration,
-                                              TrackRole::Vocal)) {
-        fixed_pitch = curr_pitch;  // Keep original if fix introduces collision
+      melody::MelodicNeighborhood neighborhood;
+      neighborhood.start = all_notes[i].start_tick;
+      neighborhood.duration = all_notes[i].duration;
+      neighborhood.prev_pitch = prev_pitch;
+      if (i + 1 < all_notes.size()) {
+        Tick cur_end = all_notes[i].start_tick + all_notes[i].duration;
+        neighborhood.next_pitch = static_cast<int>(all_notes[i + 1].note);
+        neighborhood.next_start = all_notes[i + 1].start_tick;
+        neighborhood.gap_to_next =
+            all_notes[i + 1].start_tick > cur_end ? all_notes[i + 1].start_tick - cur_end : 0;
       }
+      // Collision safety and chord legality are decided inside the search, so a
+      // pitch it returns is already admissible; an unchanged pitch means the
+      // bound could not be closed without breaking something that outranks it.
+      int fixed_pitch = melody::resolveLeapWithinBound(
+          harmony, neighborhood, curr_pitch, max_interval, params.vocal_low, params.vocal_high);
       all_notes[i].note = static_cast<uint8_t>(fixed_pitch);
 #ifdef MIDISKETCH_NOTE_PROVENANCE
       if (old_pitch != all_notes[i].note) {
@@ -174,22 +176,26 @@ void breakConsecutiveSamePitch(std::vector<NoteEvent>& all_notes, const IHarmony
           Tick duration = all_notes[j].duration;
 
           // Find nearby chord tones as alternatives
-          auto chord_tones = harmony.getChordTonesAt(tick);
+          auto chord_tones = melody::vocalChordTonesAt(harmony, tick);
           if (chord_tones.empty()) continue;
 
           // Neighbor pitches for interval/non-chord-tone legality checks: the
           // alternation note must stay singable relative to BOTH neighbors
           // (an offset picked against streak_pitch alone can land 10+
           // semitones from the note that follows the streak).
-          int prev_pitch = (j > 0) ? static_cast<int>(all_notes[j - 1].note) : -1;
-          int next_pitch =
-              (j + 1 < all_notes.size()) ? static_cast<int>(all_notes[j + 1].note) : -1;
-          Tick gap_to_next = 0;
+          melody::MelodicNeighborhood neighborhood;
+          neighborhood.start = tick;
+          neighborhood.duration = duration;
+          neighborhood.prev_pitch = (j > 0) ? static_cast<int>(all_notes[j - 1].note) : -1;
           if (j + 1 < all_notes.size()) {
             Tick cur_end = tick + duration;
-            gap_to_next =
+            neighborhood.next_pitch = static_cast<int>(all_notes[j + 1].note);
+            neighborhood.next_start = all_notes[j + 1].start_tick;
+            neighborhood.gap_to_next =
                 all_notes[j + 1].start_tick > cur_end ? all_notes[j + 1].start_tick - cur_end : 0;
           }
+          const int prev_pitch = neighborhood.prev_pitch;
+          const int next_pitch = neighborhood.next_pitch;
 
           // Step-first candidate order: an adjacent scale tone preserves the
           // conjunct motion of the line (neighbor-tone figure); chord-tone
@@ -206,15 +212,10 @@ void breakConsecutiveSamePitch(std::vector<NoteEvent>& all_notes, const IHarmony
             // the current chord.
             int pc = candidate % 12;
             if (!isScaleTone(pc)) continue;
-            bool is_chord_tone =
-                std::find(chord_tones.begin(), chord_tones.end(), pc) != chord_tones.end();
-            // Non-chord tones must qualify as theory-legal passing/neighbor
-            // figures (weak beat, short, step-connected) and must not be
-            // avoid notes against the chord root.
-            if (!is_chord_tone &&
-                (!isLegalNonChordTone(prev_pitch, candidate, next_pitch, tick, duration,
-                                      gap_to_next) ||
-                 isAvoidNoteForDegree(candidate, harmony.getChordDegreeAt(tick)))) {
+            // A replacement is admissible on exactly the terms every other
+            // vocal pass uses: a chord tone, or a figure the shared legality
+            // rule licenses (appoggiatura, suspension, passing/neighbor tone).
+            if (!melody::isVocalToneLegal(harmony, candidate, neighborhood)) {
               continue;
             }
             // Keep the line singable relative to both neighbors.
@@ -279,6 +280,18 @@ void breakSameDirectionLeapChains(std::vector<NoteEvent>& all_notes, const IHarm
 
     if (chain_count < 3) continue;
 
+    melody::MelodicNeighborhood neighborhood;
+    neighborhood.start = all_notes[i].start_tick;
+    neighborhood.duration = all_notes[i].duration;
+    neighborhood.prev_pitch = prev_pitch;
+    if (i + 1 < all_notes.size()) {
+      Tick cur_end = all_notes[i].start_tick + all_notes[i].duration;
+      neighborhood.next_pitch = static_cast<int>(all_notes[i + 1].note);
+      neighborhood.next_start = all_notes[i + 1].start_tick;
+      neighborhood.gap_to_next =
+          all_notes[i + 1].start_tick > cur_end ? all_notes[i + 1].start_tick - cur_end : 0;
+    }
+
     const int offsets_up_chain[] = {-1, -2, 0, 1, 2};
     const int offsets_down_chain[] = {1, 2, 0, -1, -2};
     const int* offsets = chain_sign > 0 ? offsets_up_chain : offsets_down_chain;
@@ -289,7 +302,8 @@ void breakSameDirectionLeapChains(std::vector<NoteEvent>& all_notes, const IHarm
         continue;
       }
       if (!isScaleTone(candidate % 12)) continue;
-      if (isAvoidNoteForDegree(candidate, harmony.getChordDegreeAt(all_notes[i].start_tick))) {
+      // Same admissibility rule as every other vocal pitch-moving pass.
+      if (!melody::isVocalToneLegal(harmony, candidate, neighborhood)) {
         continue;
       }
       if (!harmony.isConsonantWithOtherTracks(static_cast<uint8_t>(candidate),
