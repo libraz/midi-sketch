@@ -329,18 +329,22 @@ TEST_F(GeneratorIterationSnapshotTest, NoteCountsAreStable) {
   }
 }
 
+// Refresh these hashes only from a binary built from a clean tree. Generation
+// reaches across most of the library, so an incremental build that missed a
+// header change produces music the source no longer describes, and a golden
+// captured from it records that stale output as the expectation.
 TEST(GeneratorMidiGoldenTest, FixedBlueprintsMatchNormalizedMidiSha256) {
   constexpr std::array<const char*, 10> kExpectedHashes = {
-      "9a328357165d374fa954e6ab7fbcbde7c37122821142a894be1cee4a15148c03",
-      "404b9a04a42e90adc7ee2c29465e25e41830fa4201f48f8fa5cde609b20eb7ca",
-      "4873fc279a175b9ffdcd4040b5a074b1c6a5fc60b1fb93542399047933711a82",
-      "46de93281849b107d782eece2f4fd75da1d06ea3d23b1e75804a9062b83b82c6",
-      "badd64dc55ede5c5c4965e39ac34e0e1527062c67f4dc342c45de06c01041e43",
-      "8bc4f35486b7fbfc48ab18bd7e81a5e9de2a631705eb0db12b9124bd6c2cfe46",
-      "40030e2376d676ba2dfa93be38efe5f16377492e832090f544f2c5b0af270596",
-      "efe67377d34d01584a8b1d8132bcb0e10576aea97f8a3e05ef669aa66ad92730",
-      "d38e805b48af1b37e8f4956f546b2ff7977e253b19ed2e4602bdf04f5b8364f7",
-      "174f94e4deedf89990d2927ca97a94dabe19199a5e8a97d7176e6ceaf708175f",
+      "8e9c9cdb7b9ad51240ee3c894499eee7a2cead6de52fd3f9b3bafbac8a93afc7",
+      "85f907c3c2636665e1a42e9b8d1e92996af90ada622bb5a3a0c1d259c783d8c7",
+      "7406223af87f05dae64b63b3210d0cdedd3ab38feaea27dde118f34faebcafd0",
+      "123e15b47106137fb328a95bbb368e6224336dcf6869dc44f433ba4c65ad6162",
+      "d2c98489d922c1d0b2d6b4b82a6319cbe8cb1ffb82628bbe8b8a137ea30a89bd",
+      "559955d4c967a1f5eea57b04106d14457b7cd77fb165613500729f1d17f3747e",
+      "7e2f07ba548d40ca5f34f87c9a83beccee45d767b390aac949e4268e59a05621",
+      "e659480aa0125b42ef19ad7db164a11e5ae81c51356b1789ba6e19d4b83d3e84",
+      "4e1d5e5e7bba5e9eb9722f8b3d7d3611ba03316aabe07a19c38f6804fd301fee",
+      "4bd41fcf81f9f29541b17f26b3879d0cceffd48cd9624dba9915411ebc8f7212",
   };
 
   for (uint8_t blueprint = 0; blueprint < kExpectedHashes.size(); ++blueprint) {
