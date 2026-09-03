@@ -1225,6 +1225,15 @@ struct MotifGenerationState {
   std::map<SectionType, LockedNoteCache> coord_axis_note_cache;
   std::map<SectionType, std::vector<NoteEvent>> section_patterns;
   std::map<SectionType, std::vector<NoteEvent>> hint_patterns;
+  /// Hint patterns as first generated. `hint_patterns` is mutated in place by the
+  /// Evolving policy, so a final-chorus reprise needs the untouched copy to quote
+  /// from, the same way `riff_cache` keeps `original_pattern` beside `pattern`.
+  std::map<SectionType, std::vector<NoteEvent>> hint_patterns_original;
+  /// The riff as the first chorus stated it. An Evolving riff is already several
+  /// mutations old by the time the first chorus arrives, because the intro and verse
+  /// evolve it too. What a listener carries into the last chorus is the hook from the
+  /// first one, not the shape the song opened with, so that is what the reprise quotes.
+  std::vector<NoteEvent> first_chorus_pattern;
   MotifRiffCache riff_cache;
   size_t sec_idx = 0;
 };
@@ -1452,11 +1461,21 @@ std::vector<NoteEvent>* resolveCurrentPattern(
       if (iter == state.hint_patterns.end()) {
         iter =
             state.hint_patterns.emplace(section.type, generateMotifPattern(hint_params, rng)).first;
+        state.hint_patterns_original[section.type] = iter->second;
       } else if (!reprise_original_evolving_riff) {
         Tick cycle_length = static_cast<Tick>(motif_params.length) * TICKS_PER_BAR;
         evolveRiffPattern(iter->second, cycle_length, rng);
       }
       hint_pattern_ptr = &iter->second;
+      // The reprise quotes the opening statement, so it has to reach past every
+      // mutation this hint pattern has accumulated since. Freezing the evolution
+      // here is not enough: the pattern has already drifted.
+      if (reprise_original_evolving_riff) {
+        auto original = state.hint_patterns_original.find(section.type);
+        if (original != state.hint_patterns_original.end() && !original->second.empty()) {
+          hint_pattern_ptr = &original->second;
+        }
+      }
     } else {
       hint_pattern = generateMotifPattern(hint_params, rng);
       hint_pattern_ptr = &hint_pattern;
@@ -1467,7 +1486,10 @@ std::vector<NoteEvent>* resolveCurrentPattern(
   std::vector<NoteEvent>* current_pattern = &pattern;
 
   if (policy == RiffPolicy::Evolving && reprise_original_evolving_riff &&
-      !state.riff_cache.original_pattern.empty()) {
+      !state.first_chorus_pattern.empty()) {
+    current_pattern = &state.first_chorus_pattern;
+  } else if (policy == RiffPolicy::Evolving && reprise_original_evolving_riff &&
+             !state.riff_cache.original_pattern.empty()) {
     current_pattern = &state.riff_cache.original_pattern;
   } else if (is_locked && state.riff_cache.cached) {
     current_pattern = &state.riff_cache.pattern;
@@ -1510,6 +1532,12 @@ std::vector<NoteEvent>* resolveCurrentPattern(
   // Override pattern with motif_motion_hint if set
   if (hint_pattern_ptr != nullptr && !hint_pattern_ptr->empty()) {
     current_pattern = hint_pattern_ptr;
+  }
+
+  if (policy == RiffPolicy::Evolving && section.type == SectionType::Chorus &&
+      state.first_chorus_pattern.empty() && current_pattern != nullptr &&
+      !current_pattern->empty()) {
+    state.first_chorus_pattern = *current_pattern;
   }
 
   return current_pattern;
@@ -1887,11 +1915,6 @@ void generateMotifForSection(MidiTrack& track, const Section& section, const Ful
   const MotifContext* vocal_ctx = ctx.vocal_ctx;
   const MotifParams& motif_params = params.motif;
   Tick motif_length = static_cast<Tick>(motif_params.length) * TICKS_PER_BAR;
-
-  if (!is_rhythm_lock_global) {
-    // Reset monotony tracker at section boundary (not needed in coordinate axis
-    // mode where monotony tracking is skipped entirely).
-  }
 
   Tick section_end = section.endTick();
   bool is_chorus = (section.type == SectionType::Chorus);

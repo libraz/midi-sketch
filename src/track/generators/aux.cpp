@@ -113,6 +113,44 @@ Motif smoothMotifRhythm(const Motif& motif) {
   return result;
 }
 
+/// @brief Place a chord tone inside an aux voice's own range.
+///
+/// Folding a pitch class into an octave below the range and then clamping puts
+/// every voice on the range floor, which turns a pad's chord into one repeated
+/// pitch. Fold into the range instead so the voices stay distinct.
+///
+/// @param pitch_class Chord tone as a pitch class (0-11).
+/// @param low Lowest pitch this aux voice may use.
+/// @param high Highest pitch this aux voice may use.
+/// @return Pitch of @p pitch_class inside [low, high].
+uint8_t placeInAuxRange(int pitch_class, uint8_t low, uint8_t high) {
+  const int pitch = normalizeToOctave(pitch_class, static_cast<int>(low));
+  return static_cast<uint8_t>(
+      std::clamp(pitch, static_cast<int>(low), static_cast<int>(std::max(low, high))));
+}
+
+/// Fewest voices a sustained pad may lay down. One held pitch is a drone, not a
+/// pad: the function's whole job is to state the chord underneath the melody, so
+/// density decides how full the voicing is rather than whether there is a chord.
+constexpr int kMinPadVoices = 2;
+
+/// @brief Voice count for a sustained pad at a given density.
+///
+/// AuxDensityBehavior::VoiceCount makes density_ratio the voicing width knob.
+/// Truncating the product collapses every sparse aux profile onto the floor, so
+/// the extra voices are rounded rather than cut and counted upward from
+/// kMinPadVoices.
+///
+/// @param density Effective density (density_ratio x base_density).
+/// @param max_voices Widest voicing this pad function uses.
+/// @return Voice count within [kMinPadVoices, max_voices].
+int padVoiceCount(float density, int max_voices) {
+  const int span = std::max(0, max_voices - kMinPadVoices);
+  const float weight = std::clamp(density, 0.0f, 1.0f);
+  const int extra = static_cast<int>(std::lround(weight * static_cast<float>(span)));
+  return std::clamp(kMinPadVoices + extra, kMinPadVoices, std::max(kMinPadVoices, max_voices));
+}
+
 }  // namespace
 
 const AuxFunctionMeta& getAuxFunctionMeta(AuxFunction func) {
@@ -141,7 +179,12 @@ void AuxGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContext&
   song_ctx.vocal_style = ctx.params->vocal_style;
   song_ctx.vocal_low = ctx.params->vocal_low;
   song_ctx.vocal_high = ctx.params->vocal_high;
-  song_ctx.blueprint_id = ctx.params->blueprint_id;
+  // The caller's blueprint entity wins. Resolving the id here is only for a
+  // caller that never attached one; every value the aux profile carries is read
+  // from the entity below, so this is the one place the two can diverge.
+  song_ctx.blueprint = ctx.params->blueprint_ref != nullptr
+                           ? ctx.params->blueprint_ref
+                           : &getProductionBlueprint(ctx.params->blueprint_id);
 
   generateFromSongContext(track, song_ctx, *ctx.harmony, *ctx.rng);
 }
@@ -213,7 +256,7 @@ MidiTrack AuxGenerator::generate(const AuxConfig& config, const AuxContext& ctx,
 
 void AuxGenerator::generateFromSongContext(MidiTrack& track, const SongContext& song_ctx,
                                            IHarmonyContext& harmony, std::mt19937& rng) {
-  if (!song_ctx.sections || !song_ctx.vocal_track || !song_ctx.progression) {
+  if (!song_ctx.sections || !song_ctx.vocal_track || !song_ctx.progression || !song_ctx.blueprint) {
     return;
   }
 
@@ -226,9 +269,10 @@ void AuxGenerator::generateFromSongContext(MidiTrack& track, const SongContext& 
   // Analyze vocal for MotifCounter generation
   VocalAnalysis vocal_analysis = analyzeVocal(vocal_track);
 
-  // Get blueprint aux profile
-  const auto& bp = getProductionBlueprint(song_ctx.blueprint_id);
-  const auto& aux_profile = bp.aux_profile;
+  // The aux profile comes from the blueprint the caller passed, not from a
+  // second lookup by id: the two are the same object for a shipped blueprint
+  // and different objects for anything the caller adjusted.
+  const auto& aux_profile = song_ctx.blueprint->aux_profile;
 
   // Vocal ceiling: restrict aux range_high using blueprint's range_ceiling offset.
   // range_ceiling is relative to vocal's highest pitch (e.g. -2 = 2 semitones below vocal high).
@@ -274,13 +318,11 @@ void AuxGenerator::generateFromSongContext(MidiTrack& track, const SongContext& 
 
   // Process each section
   for (const auto& section : *song_ctx.sections) {
-    // Skip sections where aux is disabled by track_mask
+    // The track mask is the whole eligibility rule, as it is for every other
+    // track. A second filter by section type overrides the blueprint author:
+    // a flow that puts Aux in an Interlude has asked for it there, and a
+    // blueprint that wants no Aux has already cleared the bit.
     if (!hasTrack(section.track_mask, TrackMask::Aux)) {
-      continue;
-    }
-
-    // Skip interlude and outro (no aux needed)
-    if (section.type == SectionType::Interlude || section.type == SectionType::Outro) {
       continue;
     }
 
@@ -295,7 +337,10 @@ void AuxGenerator::generateFromSongContext(MidiTrack& track, const SongContext& 
     ctx.section_end = section_end;
     ctx.chord_degree = chord_degree;
     ctx.key_offset = 0;  // Always C major internally
-    ctx.base_velocity = section.getModifiedVelocity(80);
+    // The section modifier is applied once, for every track, by
+    // applySectionDynamics() after generation; applying it here as well scaled
+    // aux twice while leaving the other tracks unscaled.
+    ctx.base_velocity = 80;
     ctx.main_tessitura = main_tessitura;
     ctx.main_melody = &vocal_track.notes();
     ctx.phrase_boundaries = song_ctx.phrase_boundaries;
@@ -310,13 +355,8 @@ void AuxGenerator::generateFromSongContext(MidiTrack& track, const SongContext& 
       // Intro: Use cached chorus motif if available, otherwise blueprint intro_function
       if (cached_chorus_motif_.has_value()) {
         // Apply hook-appropriate variation (80% Exact, 20% Fragmented)
-        // WORKAROUND: Use local rng instead of rng reference.
-        // Passing rng directly to applyVariation/selectHookVariation causes Segfault
-        // in Release builds (-O2/-O3). The root cause appears to be compiler optimization
-        // affecting std::mt19937& reference passing across translation units.
-        std::mt19937 variation_rng(static_cast<uint32_t>(rng()));
-        MotifVariation variation = selectHookVariation(variation_rng);
-        Motif varied_motif = applyVariation(*cached_chorus_motif_, variation, 0, variation_rng);
+        MotifVariation variation = selectHookVariation(rng);
+        Motif varied_motif = applyVariation(*cached_chorus_motif_, variation, 0, rng);
 
         // Smooth rhythm for Intro (prevents machine-gun style from UltraVocaloid)
         // Intro should be calm foreshadowing, not aggressive machine-gun
@@ -331,8 +371,7 @@ void AuxGenerator::generateFromSongContext(MidiTrack& track, const SongContext& 
             placeMotifInIntro(varied_motif, section.start_tick, section_end, base_pitch, velocity);
         for (auto note : motif_notes) {
           // Snap pitch to chord tone at this tick to avoid dissonance
-          int8_t note_chord_degree = harmony.getChordDegreeAt(note.start_tick);
-          int snapped_pitch = nearestChordTonePitch(note.note, note_chord_degree);
+          int snapped_pitch = harmony.snapToNearestChordTone(note.note, note.start_tick);
 #ifdef MIDISKETCH_NOTE_PROVENANCE
           uint8_t old_pitch = note.note;
 #endif
@@ -478,9 +517,19 @@ void AuxGenerator::generateFromSongContext(MidiTrack& track, const SongContext& 
   // Track actual output pitches (after collision avoidance) for accurate monotony detection
   uint8_t actual_last_pitch = 0;
   int actual_consecutive_count = 0;
+  Tick previous_onset = 0;
+  bool has_previous_onset = false;
 
   for (const auto& note : all_notes) {
     const bool is_vocal_double = isVocalUnisonDouble(note, vocal_track);
+    // Notes that begin together are voices of one chord, not steps along a
+    // line. Monotony and leap describe a line, so measuring an inner voice
+    // against the voice under it moves the voice off the harmony and the
+    // chord-tone guard below then drops it, leaving a pad sounding as a
+    // single pitch.
+    const bool is_chord_voice = has_previous_onset && note.start_tick == previous_onset;
+    has_previous_onset = true;
+    previous_onset = note.start_tick;
     // Get chord degree for potential pitch variation
     int8_t chord_degree = harmony.getChordDegreeAt(note.start_tick);
 
@@ -502,9 +551,10 @@ void AuxGenerator::generateFromSongContext(MidiTrack& track, const SongContext& 
     PitchMonotonyTracker temp_tracker(/*enable_leap_guard=*/true);
     temp_tracker.last_pitch = actual_last_pitch;
     temp_tracker.consecutive_count = actual_consecutive_count;
-    uint8_t suggested_pitch = is_vocal_double ? note.note
-                                              : temp_tracker.trackAndSuggest(
-                                                    note.note, AUX_LOW, note_ceiling, chord_degree);
+    uint8_t suggested_pitch =
+        (is_vocal_double || is_chord_voice)
+            ? note.note
+            : temp_tracker.trackAndSuggest(note.note, AUX_LOW, note_ceiling, chord_degree);
 
     NoteOptions opts;
     opts.start = note.start_tick;
@@ -537,8 +587,8 @@ void AuxGenerator::generateFromSongContext(MidiTrack& track, const SongContext& 
     // Record original pitch for provenance (before monotony tracker adjustment)
     opts.original_pitch = note.note;
     // Pass monotony info so collision avoidance also avoids consecutive same pitch
-    opts.prev_pitch = actual_last_pitch;
-    opts.consecutive_same_count = actual_consecutive_count;
+    opts.prev_pitch = is_chord_voice ? 0 : actual_last_pitch;
+    opts.consecutive_same_count = is_chord_voice ? 0 : actual_consecutive_count;
 
     // Prevent harmony registration for notes that may be skipped by
     // the leap guard.  We defer registration until after the check.
@@ -549,7 +599,7 @@ void AuxGenerator::generateFromSongContext(MidiTrack& track, const SongContext& 
       // max-leap constraint, skip this note instead of introducing a jarring
       // jump (e.g. 20+ semitones at a section boundary).  Aux notes are
       // non-essential, so dropping one is preferable to a large leap.
-      if (!is_vocal_double && actual_last_pitch > 0) {
+      if (!is_vocal_double && !is_chord_voice && actual_last_pitch > 0) {
         int final_leap =
             std::abs(static_cast<int>(result.final_pitch) - static_cast<int>(actual_last_pitch));
         if (final_leap > kMaxLeapSemitones) {
@@ -565,7 +615,7 @@ void AuxGenerator::generateFromSongContext(MidiTrack& track, const SongContext& 
       // tones), and dropping those notes guts the aux line's density.
       if (!is_vocal_double && result.final_pitch != note.note) {
         int fpc = result.final_pitch % 12;
-        ChordTones fct = getChordTones(chord_degree);
+        ChordTones fct = harmony.getChordTonesAt(note.start_tick);
         bool final_is_chord_tone = false;
         for (uint8_t ci = 0; ci < fct.count; ++ci) {
           if (fct.pitch_classes[ci] == fpc) {
@@ -582,6 +632,9 @@ void AuxGenerator::generateFromSongContext(MidiTrack& track, const SongContext& 
       harmony.registerNote(opts.start, result.note->duration, result.final_pitch, opts.role);
 
       track.addNote(*result.note);
+      // An inner chord voice must not become the line's last pitch, or the next
+      // onset is measured against the top of the chord instead of its root.
+      if (is_chord_voice) continue;
       // Update monotony tracking with actual output pitch
       uint8_t actual_pitch = result.final_pitch;
       if (actual_pitch == actual_last_pitch) {
@@ -709,8 +762,8 @@ void AuxGenerator::deisolateNotes(std::vector<NoteEvent>& notes, IHarmonyContext
       if (companion_start < (start / TICKS_PER_BAR) * TICKS_PER_BAR) continue;
     }
 
-    int8_t degree = harmony.getChordDegreeAt(companion_start);
-    int companion_pitch = nearestChordTonePitch(static_cast<int>(notes[i].note) - 2, degree);
+    int companion_pitch =
+        harmony.snapToNearestChordTone(static_cast<int>(notes[i].note) - 2, companion_start);
     companion_pitch =
         std::clamp(companion_pitch, static_cast<int>(AUX_LOW), static_cast<int>(AUX_HIGH));
 
@@ -745,7 +798,7 @@ std::vector<NoteEvent> AuxGenerator::generatePulseLoop(const AuxContext& ctx,
   calculateAuxRange(config, ctx.main_tessitura, aux_low, aux_high);
 
   // Get chord tones for the section
-  ChordTones ct = getChordTones(ctx.chord_degree);
+  ChordTones ct = harmony.getChordTonesAt(ctx.section_start);
   if (ct.count == 0) return result;
 
   // Create a short repeating pattern (2-4 notes)
@@ -841,9 +894,8 @@ std::vector<NoteEvent> AuxGenerator::generatePulseLoop(const AuxContext& ctx,
 
     // Keep the rhythm cell, but map its chord-tone contour to the chord that
     // is active at this onset. A section may span multiple harmony changes.
-    uint8_t pitch = static_cast<uint8_t>(
-        nearestChordTonePitch(pattern_pitches[pattern_idx % pattern_pitches.size()],
-                              harmony.getChordDegreeAt(current_tick)));
+    uint8_t pitch = static_cast<uint8_t>(harmony.snapToNearestChordTone(
+        pattern_pitches[pattern_idx % pattern_pitches.size()], current_tick));
 
     // A7: Check for collision with function-specific tolerance
     pitch = resolveAuxPitch(pitch, current_tick, note_duration, ctx.main_melody, harmony, aux_low,
@@ -931,7 +983,7 @@ std::vector<NoteEvent> AuxGenerator::generateTargetHint(const AuxContext& ctx,
     if (hint_start < ctx.section_start) continue;
 
     // Get a chord tone from the harmony active where the hint actually lands.
-    ChordTones ct = getChordTones(harmony.getChordDegreeAt(hint_start));
+    ChordTones ct = harmony.getChordTonesAt(hint_start);
     if (ct.count == 0) continue;
 
     int pc = ct.pitch_classes[rng_util::rollRange(rng, 0, ct.count - 1)];
@@ -967,7 +1019,7 @@ std::vector<NoteEvent> AuxGenerator::generateGrooveAccent(const AuxContext& ctx,
 
   int octave = aux_low / 12;
   auto chordTonePitchAt = [&](Tick tick, uint8_t tone_index, bool raise_octave = false) {
-    ChordTones ct = getChordTones(harmony.getChordDegreeAt(tick));
+    ChordTones ct = harmony.getChordTonesAt(tick);
     if (ct.count == 0) return std::optional<uint8_t>{};
     int pc = ct.pitch_classes[tone_index % ct.count];
     int pitch = (octave + (raise_octave ? 1 : 0)) * 12 + pc;
@@ -1072,8 +1124,7 @@ std::vector<NoteEvent> AuxGenerator::generateGrooveAccent(const AuxContext& ctx,
       }
 
       // Get chord tones at this specific tick
-      int8_t rest_chord_degree = harmony.getChordDegreeAt(rest_start);
-      ChordTones rest_ct = getChordTones(rest_chord_degree);
+      ChordTones rest_ct = harmony.getChordTonesAt(rest_start);
       if (rest_ct.count == 0) continue;
 
       // Use root for strong accent
@@ -1191,43 +1242,35 @@ std::vector<NoteEvent> AuxGenerator::generateEmotionalPad(const AuxContext& ctx,
   uint8_t velocity = vel::scale(ctx.base_velocity, config.velocity_ratio);
 
   // Get chord tones for sustained pad
-  ChordTones ct = getChordTones(ctx.chord_degree);
+  ChordTones ct = harmony.getChordTonesAt(ctx.section_start);
   if (ct.count < 2) return result;
 
   // Create sustained tones on root and fifth
   int root_pc = ct.pitch_classes[0];
   int fifth_pc = (ct.count >= 3) ? ct.pitch_classes[2] : ct.pitch_classes[1];
 
-  int octave = aux_low / 12;
-  uint8_t root_pitch = static_cast<uint8_t>(octave * 12 + root_pc);
-  uint8_t fifth_pitch = static_cast<uint8_t>(octave * 12 + fifth_pc);
-
-  root_pitch = std::clamp(root_pitch, aux_low, aux_high);
-  fifth_pitch = std::clamp(fifth_pitch, aux_low, aux_high);
+  uint8_t root_pitch = placeInAuxRange(root_pc, aux_low, aux_high);
+  uint8_t fifth_pitch = placeInAuxRange(fifth_pc, aux_low, aux_high);
 
   // Place sustained tones - check safety per bar to avoid clashes
   // with melody changes during long sustain
   Tick pad_duration = TICKS_PER_BAR;  // Check per bar instead of 2 bars
   Tick current_tick = ctx.section_start;
 
-  // A2: VoiceCount behavior - calculate how many voices based on density
-  int voice_count = static_cast<int>(2.0f * config.density_ratio * meta.base_density);
-  voice_count = std::clamp(voice_count, 1, 3);
+  // A2: VoiceCount behavior - root and fifth, with a tension voice when dense
+  const int voice_count = padVoiceCount(config.density_ratio * meta.base_density, 3);
 
   while (current_tick < ctx.section_end) {
     Tick actual_duration = std::min(pad_duration, ctx.section_end - current_tick);
 
-    // Update chord degree for current position (may change mid-section)
-    int8_t current_chord_degree = harmony.getChordDegreeAt(current_tick);
-    ChordTones current_ct = getChordTones(current_chord_degree);
+    // Update chord tones for current position (may change mid-section)
+    ChordTones current_ct = harmony.getChordTonesAt(current_tick);
     if (current_ct.count >= 2) {
       root_pc = current_ct.pitch_classes[0];
       fifth_pc =
           (current_ct.count >= 3) ? current_ct.pitch_classes[2] : current_ct.pitch_classes[1];
-      root_pitch = static_cast<uint8_t>(octave * 12 + root_pc);
-      fifth_pitch = static_cast<uint8_t>(octave * 12 + fifth_pc);
-      root_pitch = std::clamp(root_pitch, aux_low, aux_high);
-      fifth_pitch = std::clamp(fifth_pitch, aux_low, aux_high);
+      root_pitch = placeInAuxRange(root_pc, aux_low, aux_high);
+      fifth_pitch = placeInAuxRange(fifth_pc, aux_low, aux_high);
     }
 
     // A6: Check if this is near section end for tension notes
@@ -1251,20 +1294,23 @@ std::vector<NoteEvent> AuxGenerator::generateEmotionalPad(const AuxContext& ctx,
     }
 
     // A6: Add tension note (9th or sus4) at section ending
-    if (is_section_ending && voice_count >= 2) {
-      if (rng_util::rollProbability(rng, 0.5f)) {  // 50% chance of tension
+    if (is_section_ending) {
+      // Same ordering rule as the pad fifth below: roll first, then decide, so
+      // the voicing width does not move the random stream.
+      if (rng_util::rollProbability(rng, 0.5f) && voice_count >= 3) {
         // Add 9th (2 semitones above root) or sus4 (5 semitones above root)
         int tension_pc =
             rng_util::rollProbability(rng, 0.5f) ? (root_pc + 2) % 12 : (root_pc + 5) % 12;
-        uint8_t tension_pitch = static_cast<uint8_t>(octave * 12 + tension_pc);
-        tension_pitch = std::clamp(tension_pitch, aux_low, aux_high);
+        uint8_t tension_pitch = placeInAuxRange(tension_pc, aux_low, aux_high);
 
         // Tension notes use higher dissonance tolerance
         uint8_t safe_tension = resolveAuxPitch(tension_pitch, current_tick, actual_duration,
                                                ctx.main_melody, harmony, aux_low, aux_high, 0.5f);
         if (safe_tension != safe_root && safe_tension != fifth_pitch) {
-          result.push_back({current_tick, actual_duration, safe_tension,
-                            static_cast<uint8_t>(velocity * 0.7f)});  // Softer tension
+          // Softer than the voices it colours, but not so soft that it drops out
+          // of the mix: an inaudible tension note is the same as no tension.
+          result.push_back(
+              {current_tick, actual_duration, safe_tension, static_cast<uint8_t>(velocity * 0.8f)});
         }
       }
     }
@@ -1385,8 +1431,8 @@ uint8_t AuxGenerator::resolveAuxPitch(uint8_t desired, Tick start, Tick duration
     }
   }
 
-  // Get actual chord degree at this tick (not section start)
-  int8_t actual_chord_degree = harmony.getChordDegreeAt(start);
+  // Get the chord tones sounding at this tick (not at the section start)
+  const ChordTones actual_chord_tones = harmony.getChordTonesAt(start);
 
   // Check if this is a strong beat (beat 1 or 3)
   // Use full beat range to catch notes slightly off the beat
@@ -1397,7 +1443,7 @@ uint8_t AuxGenerator::resolveAuxPitch(uint8_t desired, Tick start, Tick duration
   // Strong beats: prefer chord tones for harmonic stability
   if (is_strong_beat) {
     // Find nearest chord tone
-    ChordTones ct = getChordTones(actual_chord_degree);
+    const ChordTones& ct = actual_chord_tones;
     int octave = desired / 12;
     int best_pitch = desired;
     int best_dist = 100;
@@ -1434,7 +1480,7 @@ uint8_t AuxGenerator::resolveAuxPitch(uint8_t desired, Tick start, Tick duration
   }
 
   // Try chord tones nearby
-  ChordTones ct = getChordTones(actual_chord_degree);
+  const ChordTones& ct = actual_chord_tones;
   int octave = desired / 12;
 
   int best_safe_pitch = -1;
@@ -1565,8 +1611,7 @@ std::vector<NoteEvent> AuxGenerator::generateHarmony(const AuxContext& ctx, cons
 
     // Apply interval and snap to chord tone at the ACTUAL placement tick
     int new_pitch = note.note + interval;
-    int8_t chord_degree = harmony.getChordDegreeAt(harm.start_tick);
-    new_pitch = nearestChordTonePitch(new_pitch, chord_degree);
+    new_pitch = harmony.snapToNearestChordTone(new_pitch, harm.start_tick);
 
     // Clamp to reasonable range
     harm.note = static_cast<uint8_t>(
@@ -1608,9 +1653,7 @@ std::vector<NoteEvent> AuxGenerator::generateMelodicHook(const AuxContext& ctx,
 
   // Generate base hook pattern (first 2 bars)
   std::vector<NoteEvent> base_hook;
-  int8_t chord_degree = harmony.getChordDegreeAt(ctx.section_start);
-
-  ChordTones chord_tones = getChordTones(chord_degree);
+  ChordTones chord_tones = harmony.getChordTonesAt(ctx.section_start);
   int root_pc = chord_tones.pitch_classes[0];
   int third_pc = (chord_tones.count >= 2) ? chord_tones.pitch_classes[1] : root_pc;
   int fifth_pc = (chord_tones.count >= 3) ? chord_tones.pitch_classes[2] : root_pc;
@@ -1705,7 +1748,10 @@ std::vector<NoteEvent> AuxGenerator::generateMelodicHook(const AuxContext& ctx,
 #ifdef MIDISKETCH_NOTE_PROVENANCE
         if (old_pitch != hook_note.note) {
           hook_note.prov_original_pitch = old_pitch;
-          hook_note.addTransformStep(TransformStepType::MotionAdjust, old_pitch, hook_note.note, 0,
+          // A deliberate variation of the hook shape, not an adaptation to
+          // another part's motion; recording it as the latter sends whoever
+          // reads the provenance looking for a vocal that never moved.
+          hook_note.addTransformStep(TransformStepType::PatternOffset, old_pitch, hook_note.note, 0,
                                      0);
         }
 #endif
@@ -1830,12 +1876,11 @@ std::vector<NoteEvent> AuxGenerator::generateMotifCounter(const AuxContext& ctx,
       int8_t vocal_direction = getVocalDirectionAt(vocal_analysis, current_tick);
       int vocal_pitch = getVocalPitchAt(vocal_analysis, current_tick);
 
-      // Get chord degree at current tick (not section start)
-      int8_t current_chord_degree = harmony.getChordDegreeAt(current_tick);
+      // Get chord tones at current tick (not section start)
+      ChordTones ct = harmony.getChordTonesAt(current_tick);
 
       // Determine counter pitch using contrary motion
       int counter_pitch;
-      ChordTones ct = getChordTones(current_chord_degree);
 
       if (vocal_pitch > 0 && ct.count > 0) {
         // Calculate target based on contrary motion
@@ -1851,12 +1896,12 @@ std::vector<NoteEvent> AuxGenerator::generateMotifCounter(const AuxContext& ctx,
         // vocal_direction == 0: static → use middle register
 
         // Snap to nearest chord tone at current tick
-        counter_pitch = nearestChordTonePitch(target_pitch, current_chord_degree);
+        counter_pitch = harmony.snapToNearestChordTone(target_pitch, current_tick);
         counter_pitch =
             std::clamp(counter_pitch, static_cast<int>(aux_low), static_cast<int>(aux_high));
       } else {
         // Fallback: use middle of range on chord tone
-        counter_pitch = nearestChordTonePitch((aux_low + aux_high) / 2, current_chord_degree);
+        counter_pitch = harmony.snapToNearestChordTone((aux_low + aux_high) / 2, current_tick);
       }
 
       // Get safe pitch (avoid collisions)
@@ -1870,11 +1915,9 @@ std::vector<NoteEvent> AuxGenerator::generateMotifCounter(const AuxContext& ctx,
           next_chord_change < current_tick + note_duration &&
           next_chord_change - current_tick < kAnticipationThreshold) {
         // This note anticipates the next chord - use new chord's tones
-        int8_t next_chord_degree = harmony.getChordDegreeAt(next_chord_change);
-        counter_pitch = nearestChordTonePitch(counter_pitch, next_chord_degree);
+        counter_pitch = harmony.snapToNearestChordTone(counter_pitch, next_chord_change);
         counter_pitch =
             std::clamp(counter_pitch, static_cast<int>(aux_low), static_cast<int>(aux_high));
-        current_chord_degree = next_chord_degree;  // Update for resolveAuxPitch
       }
 
       uint8_t safe_pitch =
@@ -1901,11 +1944,8 @@ std::vector<NoteEvent> AuxGenerator::generateMotifCounter(const AuxContext& ctx,
         continue;
       }
 
-      // Get chord degree at current tick
-      int8_t current_chord_degree = harmony.getChordDegreeAt(rest_start);
-
       // Get chord tone for this position
-      int counter_pitch = nearestChordTonePitch((aux_low + aux_high) / 2, current_chord_degree);
+      int counter_pitch = harmony.snapToNearestChordTone((aux_low + aux_high) / 2, rest_start);
       counter_pitch =
           std::clamp(counter_pitch, static_cast<int>(aux_low), static_cast<int>(aux_high));
 
@@ -2043,19 +2083,14 @@ std::vector<NoteEvent> AuxGenerator::generateSustainPad(const AuxContext& ctx,
 
   Tick current_tick = ctx.section_start;
 
-  // Voice count: typically 1-2 voices for gentle pad effect
-  int voice_count = static_cast<int>(1.5f * config.density_ratio * meta.base_density);
-  voice_count = std::clamp(voice_count, 1, 2);
-
-  // Use warm pad register (lower than EmotionalPad)
-  int octave = std::max(3, (aux_low / 12) - 1);  // One octave below aux range base
+  // Voice count: root and third, with a fifth on top when density allows
+  const int voice_count = padVoiceCount(config.density_ratio * meta.base_density, 3);
 
   while (current_tick < ctx.section_end) {
     Tick actual_duration = std::min(PAD_DURATION, ctx.section_end - current_tick);
 
-    // Get current chord degree for this bar
-    int8_t current_chord_degree = harmony.getChordDegreeAt(current_tick);
-    ChordTones current_ct = getChordTones(current_chord_degree);
+    // Get the chord tones sounding in this bar
+    ChordTones current_ct = harmony.getChordTonesAt(current_tick);
 
     if (current_ct.count < 1) {
       current_tick += PAD_DURATION;
@@ -2066,14 +2101,8 @@ std::vector<NoteEvent> AuxGenerator::generateSustainPad(const AuxContext& ctx,
     int root_pc = current_ct.pitch_classes[0];
     int third_pc = (current_ct.count >= 2) ? current_ct.pitch_classes[1] : root_pc;
 
-    uint8_t root_pitch = static_cast<uint8_t>(
-        std::clamp(octave * 12 + root_pc, static_cast<int>(AUX_LOW), static_cast<int>(AUX_HIGH)));
-    uint8_t third_pitch = static_cast<uint8_t>(
-        std::clamp(octave * 12 + third_pc, static_cast<int>(AUX_LOW), static_cast<int>(AUX_HIGH)));
-
-    // Ensure pitches are in valid range
-    root_pitch = std::clamp(root_pitch, aux_low, aux_high);
-    third_pitch = std::clamp(third_pitch, aux_low, aux_high);
+    uint8_t root_pitch = placeInAuxRange(root_pc, aux_low, aux_high);
+    uint8_t third_pitch = placeInAuxRange(third_pc, aux_low, aux_high);
 
     // Root note (always play)
     uint8_t safe_root = resolveAuxPitch(root_pitch, current_tick, actual_duration, ctx.main_melody,
@@ -2096,12 +2125,12 @@ std::vector<NoteEvent> AuxGenerator::generateSustainPad(const AuxContext& ctx,
     }
 
     // Optional: Add subtle variation every other bar
-    if (rng_util::rollProbability(rng, 0.3f) && voice_count >= 2) {
+    // The roll is taken first so that a pad's voicing width does not change how
+    // much of the random stream this bar consumes.
+    if (rng_util::rollProbability(rng, 0.3f) && voice_count >= 3) {
       // Occasionally add fifth for richer texture
       int fifth_pc = (current_ct.count >= 3) ? current_ct.pitch_classes[2] : root_pc;
-      uint8_t fifth_pitch = static_cast<uint8_t>(std::clamp(
-          octave * 12 + fifth_pc + 12, static_cast<int>(AUX_LOW), static_cast<int>(AUX_HIGH)));
-      fifth_pitch = std::clamp(fifth_pitch, aux_low, aux_high);
+      uint8_t fifth_pitch = placeInAuxRange(fifth_pc, aux_low, aux_high);
 
       if (fifth_pitch != safe_root && fifth_pitch != third_pitch) {
         uint8_t safe_fifth =

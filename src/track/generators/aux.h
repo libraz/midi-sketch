@@ -27,6 +27,7 @@ namespace midisketch {
 
 class IHarmonyContext;
 struct ChordProgression;
+struct ProductionBlueprint;
 
 // ============================================================================
 // Aux Enums and Types
@@ -169,7 +170,10 @@ class AuxGenerator : public TrackBase {
     VocalStylePreset vocal_style = VocalStylePreset::CityPop;  ///< For template selection
     uint8_t vocal_low = 60;                                    ///< Vocal range low
     uint8_t vocal_high = 72;                                   ///< Vocal range high
-    uint8_t blueprint_id = 0;                                  ///< Blueprint ID for aux profile
+    /// Blueprint the caller is generating with. The aux profile is read from
+    /// this entity; looking it up again by id would read the shipped table and
+    /// silently ignore whatever the caller passed.
+    const ProductionBlueprint* blueprint = nullptr;
   };
 
   AuxGenerator() = default;

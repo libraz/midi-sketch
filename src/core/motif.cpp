@@ -104,7 +104,10 @@ Motif applyVariation(const Motif& original, MotifVariation variation, int8_t par
     case MotifVariation::Embellished:
       // Add passing tones (simplified: just add some variation to degrees)
       {
-        for (size_t i = 1; i < result.contour_degrees.size() - 1; ++i) {
+        // Interior degrees only (the outer notes anchor the contour), and never
+        // past the rhythm pattern: a Motif may carry fewer rhythm slots than
+        // degrees, and an empty motif must not wrap the unsigned bound around.
+        for (size_t i = 1; i + 1 < result.contour_degrees.size() && i < result.rhythm.size(); ++i) {
           if (!result.rhythm[i].strong) {
             int8_t delta = static_cast<int8_t>(rng_util::rollRange(rng, -1, 1));
             result.contour_degrees[i] += delta;
