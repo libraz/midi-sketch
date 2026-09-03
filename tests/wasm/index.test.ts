@@ -2,6 +2,7 @@ import path from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 import {
   ArpeggioPattern,
+  ArpeggioSpeed,
   createDefaultConfig,
   GenerationParadigm,
   getBlueprintCount,
@@ -48,6 +49,16 @@ describe('MidiSketch JS API', () => {
         PedalRoot: 5,
         Alberti: 6,
         BrokenChord: 7,
+        Auto: 255,
+      });
+    });
+
+    it('should expose every implemented arpeggio speed', () => {
+      expect(ArpeggioSpeed).toEqual({
+        Eighth: 0,
+        Sixteenth: 1,
+        Triplet: 2,
+        Auto: 255,
       });
     });
 
@@ -117,7 +128,9 @@ describe('MidiSketch JS API', () => {
         expect(getBlueprintParadigm(6)).toBe(GenerationParadigm.MelodyDriven);
         expect(getBlueprintParadigm(7)).toBe(GenerationParadigm.RhythmSync);
         expect(getBlueprintParadigm(8)).toBe(GenerationParadigm.MelodyDriven);
-        expect(getBlueprintParadigm(9)).toBe(GenerationParadigm.Traditional);
+        // BehavioralLoop is built around a fixed riff, and Traditional skips the Motif
+        // track outright, so its LockedPitch policy only means anything under RhythmSync.
+        expect(getBlueprintParadigm(9)).toBe(GenerationParadigm.RhythmSync);
       });
     });
 
@@ -189,7 +202,7 @@ describe('MidiSketch JS API', () => {
         expect(blueprints[9]).toEqual({
           id: 9,
           name: 'BehavioralLoop',
-          paradigm: GenerationParadigm.Traditional,
+          paradigm: GenerationParadigm.RhythmSync,
           riffPolicy: RiffPolicy.LockedPitch,
           weight: 0,
           tempoMin: 100,
@@ -297,6 +310,17 @@ describe('MidiSketch JS API', () => {
       } finally {
         sketch.destroy();
       }
+    });
+
+    it('reports an unusable handle instead of failing to parse an empty payload', () => {
+      const sketch = new MidiSketch();
+      sketch.generateFromConfig({ ...createDefaultConfig(0), seed: 12345 });
+      sketch.destroy();
+
+      // A destroyed handle makes the C API hand back a null string; the wrapper
+      // has to name that cause rather than surface a JSON syntax error.
+      expect(() => sketch.getMelody()).toThrow(/No melody data available/);
+      expect(() => sketch.getMelody()).not.toThrow(SyntaxError);
     });
   });
 

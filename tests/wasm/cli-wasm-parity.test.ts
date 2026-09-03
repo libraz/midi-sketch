@@ -1,36 +1,37 @@
 /**
  * CLI/WASM Parity Test
  *
- * Verifies that the WASM (JSON API) and CLI produce equivalent MIDI output
- * for the same logical configuration. Generated event streams must be
- * byte-for-byte equivalent at the JSON field level.
+ * Verifies that the WASM build and the CLI produce equivalent MIDI output for
+ * the same logical configuration. Generated event streams must be equivalent
+ * at the JSON field level.
+ *
+ * The WASM side goes through the published TypeScript surface
+ * (createDefaultConfig -> SongConfig -> generateFromConfig), so a defect in the
+ * package's own camelCase/snake_case serializers fails this test instead of
+ * being bypassed by a hand-built JSON payload.
  *
  * Strategy:
- * 1. Get full default config JSON from WASM C API (createDefaultSongConfig)
- * 2. Apply CLI's unconditional arg defaults (bpm=0, etc.) to align paths
+ * 1. Build a SongConfig with the public createDefaultConfig()
+ * 2. Apply the CLI's unconditional arg defaults to align both paths
  * 3. Apply test-specific overrides
- * 4. Generate via WASM with the full JSON
- * 5. Run CLI with matching flags
- * 6. Compare events JSON note-by-note
+ * 4. Generate via the public MidiSketch API
+ * 5. Run the CLI with matching flags
+ * 6. Assert both sides actually produced music, then compare note-by-note
  */
 import { execSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import createModule from '../../dist/midisketch.js';
+import { createDefaultConfig, init, MidiSketch, type SongConfig } from '../../js/src/index';
 
 const CLI_PATH = path.resolve(__dirname, '../../build/bin/midisketch_cli');
 
-interface WasmModule {
-  cwrap: (
-    name: string,
-    returnType: string | null,
-    argTypes: string[],
-  ) => (...args: unknown[]) => unknown;
-  UTF8ToString: (ptr: number) => string;
-  HEAPU8: Uint8Array;
-  HEAPU32: Uint32Array;
-}
+/**
+ * Fewest sounding tracks a generated arrangement may have. A pop sketch always
+ * carries at least a vocal, a bass and a chord track; anything less means
+ * generation collapsed and the note-by-note comparison would be vacuous.
+ */
+const MIN_SOUNDING_TRACKS = 3;
 
 interface ParityTestCase {
   name: string;
@@ -63,94 +64,50 @@ interface EventsData {
 }
 
 describe('CLI/WASM Parity', () => {
-  let module: WasmModule;
-  let handle: number;
-  let destroyFn: (h: number) => void;
-  let generateFromJsonFn: (h: number, json: string, len: number) => number;
-  let getEventsFn: (h: number) => number;
-  let freeEventsFn: (ptr: number) => void;
-  let createDefaultConfigJsonFn: (styleId: number) => number;
+  let sketch: MidiSketch;
 
   beforeAll(async () => {
-    module = (await createModule()) as WasmModule;
-
-    const createFn = module.cwrap('midisketch_create', 'number', []) as () => number;
-    destroyFn = module.cwrap('midisketch_destroy', null, ['number']) as (h: number) => void;
-    generateFromJsonFn = module.cwrap('midisketch_generate_from_json', 'number', [
-      'number',
-      'string',
-      'number',
-    ]) as (h: number, json: string, len: number) => number;
-    getEventsFn = module.cwrap('midisketch_get_events', 'number', ['number']) as (
-      h: number,
-    ) => number;
-    freeEventsFn = module.cwrap('midisketch_free_events', null, ['number']) as (
-      ptr: number,
-    ) => void;
-    createDefaultConfigJsonFn = module.cwrap('midisketch_create_default_config_json', 'number', [
-      'number',
-    ]) as (styleId: number) => number;
-
-    handle = createFn();
+    await init({ wasmPath: path.resolve(__dirname, '../../dist/midisketch.wasm') });
+    sketch = new MidiSketch();
   });
 
   afterAll(() => {
-    if (handle && module) {
-      destroyFn(handle);
-    }
+    sketch?.destroy();
   });
-
-  /**
-   * Get full default SongConfig JSON from C API (matches createDefaultSongConfig).
-   */
-  function getDefaultConfigJson(styleId: number): Record<string, unknown> {
-    const ptr = createDefaultConfigJsonFn(styleId);
-    const jsonStr = module.UTF8ToString(ptr);
-    return JSON.parse(jsonStr);
-  }
 
   /**
    * Apply the same unconditional defaults that CLI's runGenerateMode applies
    * from ParsedArgs defaults. The CLI leaves BPM untouched unless --bpm is
-   * supplied, so the style default from createDefaultSongConfig is retained.
+   * supplied, so the style default from createDefaultConfig is retained.
    * Returns a new config object.
    */
-  function withCliArgDefaults(config: Record<string, unknown>): Record<string, unknown> {
+  function withCliArgDefaults(config: SongConfig): SongConfig {
     return {
       ...config,
       // CLI unconditionally sets these from ParsedArgs defaults:
       mood: 0,
-      mood_explicit: false,
-      vocal_style: 0,
-      target_duration_seconds: 0,
-      skip_vocal: false,
-      addictive_mode: false,
-      arpeggio_enabled: false,
-      composition_style: 0,
-      modulation_timing: 0,
-      enable_syncopation: false,
-      // CLI unconditionally sets chord_extension sub-fields
-      chord_extension: {
-        ...((config.chord_extension ?? {}) as Record<string, unknown>),
-        enable_sus: false,
-        enable_9th: false,
-      },
+      moodExplicit: false,
+      vocalStyle: 0,
+      targetDurationSeconds: 0,
+      skipVocal: false,
+      addictiveMode: false,
+      arpeggioEnabled: false,
+      compositionStyle: 0,
+      modulationTiming: 0,
+      enableSyncopation: false,
+      // CLI unconditionally sets the chord extension toggles
+      chordExtSus: false,
+      chordExt9th: false,
     };
   }
 
   /**
-   * Generate via WASM using raw JSON config string.
+   * Generate through the published TypeScript surface, which serializes the
+   * SongConfig with the package's own serializer.
    */
-  function generateViaWasm(configJson: string): EventsData {
-    const result = generateFromJsonFn(handle, configJson, configJson.length);
-    expect(result).toBe(0);
-
-    const eventDataPtr = getEventsFn(handle);
-    const jsonPtr = module.HEAPU32[eventDataPtr >> 2];
-    const json = module.UTF8ToString(jsonPtr);
-    const data = JSON.parse(json) as EventsData;
-    freeEventsFn(eventDataPtr);
-    return data;
+  function generateViaWasm(config: SongConfig): EventsData {
+    sketch.generateFromConfig(config);
+    return sketch.getEvents() as unknown as EventsData;
   }
 
   /**
@@ -194,41 +151,65 @@ describe('CLI/WASM Parity', () => {
   }
 
   /**
-   * Build WASM config JSON that matches CLI behavior for a given test case.
+   * Build the SongConfig that matches CLI behavior for a given test case.
    */
-  function buildWasmConfig(tc: ParityTestCase): string {
+  function buildWasmConfig(tc: ParityTestCase): SongConfig {
     // Apply CLI's unconditional arg defaults first
-    const config = withCliArgDefaults(getDefaultConfigJson(tc.stylePresetId));
+    const config = withCliArgDefaults(createDefaultConfig(tc.stylePresetId));
 
     // Apply test-specific overrides (same as what CLI flags would set)
     config.seed = tc.seed;
     if (tc.blueprintId !== undefined) {
-      config.blueprint_id = tc.blueprintId;
+      config.blueprintId = tc.blueprintId;
     }
     if (tc.chordProgressionId !== undefined) {
-      config.chord_progression_id = tc.chordProgressionId;
+      config.chordProgressionId = tc.chordProgressionId;
     }
     if (tc.bpm !== undefined) {
       config.bpm = tc.bpm;
     }
     if (tc.formId !== undefined) {
-      config.form = tc.formId;
-      config.form_explicit = true;
+      config.formId = tc.formId;
+      config.formExplicit = true;
     }
     if (tc.key !== undefined) {
       config.key = tc.key;
     }
     if (tc.vocalStyle !== undefined) {
-      config.vocal_style = tc.vocalStyle;
+      config.vocalStyle = tc.vocalStyle;
     }
     if (tc.vocalLow !== undefined) {
-      config.vocal_low = tc.vocalLow;
+      config.vocalLow = tc.vocalLow;
     }
     if (tc.vocalHigh !== undefined) {
-      config.vocal_high = tc.vocalHigh;
+      config.vocalHigh = tc.vocalHigh;
     }
 
-    return JSON.stringify(config);
+    return config;
+  }
+
+  /** Total number of notes across every track. */
+  function totalNotes(data: EventsData): number {
+    return data.tracks.reduce((sum, track) => sum + track.notes.length, 0);
+  }
+
+  /** Names of the tracks that actually carry notes. */
+  function soundingTrackNames(data: EventsData): string[] {
+    return data.tracks.filter((track) => track.notes.length > 0).map((track) => track.name);
+  }
+
+  /**
+   * Assert a side produced an actual arrangement. Without this, two silent
+   * outputs would satisfy the note-by-note comparison and report parity.
+   */
+  function expectSoundingOutput(data: EventsData, label: string) {
+    expect(totalNotes(data), `[${label}] produced no notes at all`).toBeGreaterThan(0);
+    const sounding = soundingTrackNames(data);
+    expect(
+      sounding.length,
+      `[${label}] only these tracks carry notes: ${JSON.stringify(sounding)}`,
+    ).toBeGreaterThanOrEqual(MIN_SOUNDING_TRACKS);
+    expect(sounding, `[${label}] the vocal track is silent`).toContain('Vocal');
   }
 
   /**
@@ -255,6 +236,21 @@ describe('CLI/WASM Parity', () => {
       );
     }
   }
+
+  it('treats a silent arrangement as a failure rather than as parity', () => {
+    const silent: EventsData = {
+      tracks: [
+        { name: 'Vocal', notes: [] },
+        { name: 'Chord', notes: [] },
+        { name: 'Bass', notes: [] },
+      ],
+    };
+
+    // Note-by-note equality alone accepts two silent outputs as equivalent,
+    // which is exactly why every case also asserts that music was produced.
+    expect(() => compareEvents(silent, silent, 'silent fixture')).not.toThrow();
+    expect(() => expectSoundingOutput(silent, 'silent fixture')).toThrow();
+  });
 
   // =========================================================================
   // Test cases: sweep each parameter axis independently
@@ -439,9 +435,10 @@ describe('CLI/WASM Parity', () => {
   // Run all test cases
   describe.each(testCases)('$name', (tc) => {
     it('WASM and CLI produce identical output', () => {
-      const configJson = buildWasmConfig(tc);
-      const wasmData = generateViaWasm(configJson);
+      const wasmData = generateViaWasm(buildWasmConfig(tc));
       const cliData = generateViaCli(tc);
+      expectSoundingOutput(wasmData, `${tc.name} / WASM`);
+      expectSoundingOutput(cliData, `${tc.name} / CLI`);
       compareEvents(wasmData, cliData, tc.name);
     }, 60_000);
   });
