@@ -70,8 +70,42 @@ bool hasParallelFifthsOrOctaves(const VoicedChord& prev, const VoicedChord& curr
   return false;
 }
 
+/// @brief Whether the chord's own stacking places two tones a step apart.
+///
+/// Compares the intervals as written, not their pitch classes: a major seventh
+/// is a pitch class away from the root but eleven semitones above it, and is
+/// exactly the tone a close voicing must not fold down next to the root.
+bool chordDefinesAdjacentPair(const Chord& chord) {
+  for (uint8_t i = 0; i < chord.note_count; ++i) {
+    if (chord.intervals[i] < 0) continue;
+    for (uint8_t j = i + 1; j < chord.note_count; ++j) {
+      if (chord.intervals[j] < 0) continue;
+      int diff = std::abs(chord.intervals[i] - chord.intervals[j]);
+      if (diff == 1 || diff == 2) return true;
+    }
+  }
+  return false;
+}
+
+bool hasAdjacentSecond(const VoicedChord& voicing) {
+  for (uint8_t i = 0; i < voicing.count; ++i) {
+    for (uint8_t j = i + 1; j < voicing.count; ++j) {
+      int diff =
+          std::abs(static_cast<int>(voicing.pitches[i]) - static_cast<int>(voicing.pitches[j]));
+      if (diff == 1 || diff == 2) return true;
+    }
+  }
+  return false;
+}
+
 std::vector<VoicedChord> generateCloseVoicings(uint8_t root, const Chord& chord) {
   std::vector<VoicedChord> voicings;
+
+  // A close voicing packs the chord into one octave, which for a seventh chord
+  // puts two of its tones a whole step apart in the inner voices. A major second
+  // between adjacent voices is dissonant in close position, so those inversions
+  // are rejected unless the chord itself is built on that interval (sus2, add9).
+  const bool cluster_is_the_chord = chordDefinesAdjacentPair(chord);
 
   for (int inversion = 0; inversion < chord.note_count; ++inversion) {
     for (uint8_t base_octave = CHORD_LOW; base_octave <= CHORD_HIGH - 12; base_octave += 12) {
@@ -106,7 +140,7 @@ std::vector<VoicedChord> generateCloseVoicings(uint8_t root, const Chord& chord)
         v.pitches[i] = static_cast<uint8_t>(pitch);
       }
 
-      if (valid && v.count >= 3) {
+      if (valid && v.count >= 3 && (cluster_is_the_chord || !hasAdjacentSecond(v))) {
         voicings.push_back(v);
       }
     }
@@ -295,62 +329,55 @@ std::vector<VoicedChord> generateRootlessVoicings(uint8_t root, const Chord& cho
                                                   uint16_t bass_pitch_mask) {
   std::vector<VoicedChord> voicings;
 
-  // Rootless voicing: omit root, use 3rd + 5th + 7th + optional 9th
-  // Key principle: avoid notes that clash with bass (minor 2nd / major 7th)
+  // Rootless voicing: drop the root the bass is already holding and keep the
+  // upper structure of the chord that was passed in. The intervals come from
+  // the chord itself; deriving them from a major/minor/dominant guess put a
+  // major third into a suspended chord and a seventh into a plain triad the
+  // caller never asked for.
   for (uint8_t base_octave = CHORD_LOW; base_octave <= CHORD_HIGH - 12; base_octave += 12) {
     VoicedChord v{};
     v.type = VoicingType::Rootless;
 
-    bool is_minor = (chord.note_count >= 2 && chord.intervals[1] == 3);
-    bool is_dominant =
-        (chord.note_count >= 4 && chord.intervals[3] == 10 && chord.intervals[1] == 4);
     int root_pc = root % 12;
 
-    // Build rootless voicing: 3rd, 5th, 7th, + optional 9th (C4 enhancement)
     std::array<int, 5> intervals_rootless{};
-    int voice_count = 3;
-
-    if (is_dominant) {
-      // Dominant 7th: M3, P5, m7, 9th
-      intervals_rootless = {4, 7, 10, 14, -1};  // 14 = 9th (octave + 2)
-      voice_count = 4;
-    } else if (is_minor) {
-      // Minor: m3, P5, m7, optional 9th or 11th
-      int extension = 14;  // 9th (sounds natural on minor)
-      // Check if 9th clashes with bass
-      if (bass_pitch_mask != 0) {
-        int ninth_pc = (root_pc + 2) % 12;
-        if (clashesWithBassMask(ninth_pc, bass_pitch_mask, root, chord)) {
-          extension = 17;  // Use 11th instead (octave + 5)
+    int voice_count = 0;
+    for (uint8_t i = 1; i < chord.note_count && voice_count < 5; ++i) {
+      if (chord.intervals[i] < 0) break;
+      int interval = chord.intervals[i];
+      if (bass_pitch_mask != 0 &&
+          clashesWithBassMask((root_pc + interval) % 12, bass_pitch_mask, root, chord)) {
+        // A major seventh sits a semitone under the root the bass is holding.
+        // Restating it as the major sixth keeps the chord's colour without the
+        // clash; any other colliding voice is simply left out.
+        if (interval == 11 &&
+            !clashesWithBassMask((root_pc + 9) % 12, bass_pitch_mask, root, chord)) {
+          interval = 9;
+        } else {
+          continue;
         }
       }
-      intervals_rootless = {3, 7, 10, extension, -1};
-      voice_count = 4;
-    } else {
-      // Major: M3, P5, + choose safe 7th + optional 9th
-      // M7 (11 semitones) clashes with bass if bass is on root
-      int seventh = 9;  // Default to 6th (safe)
-      int ninth = 14;   // 9th
+      intervals_rootless[voice_count++] = interval;
+    }
 
-      // If bass pitch class is known, check if M7 would clash
-      if (bass_pitch_mask != 0) {
-        int m7_pc = (root_pc + 11) % 12;
-        if (!clashesWithBassMask(m7_pc, bass_pitch_mask, root, chord)) {
-          seventh = 11;  // M7 is safe, use it for richer sound
+    // A rootless triad is only two voices, which is not a chord. Add an upper
+    // tone above it: the natural 9th, or the 11th when the 9th collides with
+    // the bass or merely doubles a tone the chord already has.
+    if (voice_count > 0 && voice_count < 3) {
+      auto already_present = [&](int interval) {
+        for (int i = 0; i < voice_count; ++i) {
+          if (intervals_rootless[i] % 12 == interval % 12) return true;
         }
-        // Check 9th clash
-        int ninth_pc = (root_pc + 2) % 12;
-        if (clashesWithBassMask(ninth_pc, bass_pitch_mask, root, chord)) {
-          ninth = -1;  // Skip 9th
-        }
+        return false;
+      };
+      int extension = 14;  // 9th
+      if (already_present(extension) ||
+          (bass_pitch_mask != 0 &&
+           clashesWithBassMask((root_pc + 2) % 12, bass_pitch_mask, root, chord))) {
+        extension = 17;  // 11th
       }
-
-      if (ninth > 0) {
-        intervals_rootless = {4, 7, seventh, ninth, -1};
-        voice_count = 4;
-      } else {
-        intervals_rootless = {4, 7, seventh, -1, -1};
-        voice_count = 3;
+      if (!already_present(extension)) {
+        intervals_rootless[voice_count++] = extension;
       }
     }
 
