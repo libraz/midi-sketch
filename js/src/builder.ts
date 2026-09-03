@@ -488,7 +488,6 @@ export class SongConfigBuilder {
    */
   setMotif(opts: {
     repeatScope?: number;
-    fixedProgression?: boolean;
     maxChordCount?: number;
     length?: number;
     noteCount?: number;
@@ -498,9 +497,6 @@ export class SongConfigBuilder {
   }): this {
     if (opts.repeatScope !== undefined) {
       this.setField('motifRepeatScope', opts.repeatScope, 'motif');
-    }
-    if (opts.fixedProgression !== undefined) {
-      this.setField('motifFixedProgression', opts.fixedProgression, 'motif');
     }
     if (opts.maxChordCount !== undefined) {
       this.setField('motifMaxChordCount', opts.maxChordCount, 'motif');

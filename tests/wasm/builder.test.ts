@@ -146,7 +146,6 @@ describe('SongConfigBuilder', () => {
     it('should set motif settings', () => {
       const builder = new SongConfigBuilder(0).setMotif({
         repeatScope: 1,
-        fixedProgression: false,
         maxChordCount: 6,
         length: 4,
         noteCount: 5,
@@ -156,7 +155,6 @@ describe('SongConfigBuilder', () => {
       });
       const config = builder.build();
       expect(config.motifRepeatScope).toBe(1);
-      expect(config.motifFixedProgression).toBe(false);
       expect(config.motifMaxChordCount).toBe(6);
       expect(config.motifLength).toBe(4);
       expect(config.motifNoteCount).toBe(5);

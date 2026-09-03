@@ -108,7 +108,6 @@ function* generateCombinations(
       arrangementGrowth: pick(PARAM_RANGES.arrangementGrowth, rng),
       arpeggioSyncChord: rng() > 0.5,
       motifRepeatScope: pick(PARAM_RANGES.motifRepeatScope, rng),
-      motifFixedProgression: rng() > 0.5,
       motifMaxChordCount: pick([0, 2, 3, 4, 5, 6, 7, 8], rng),
       melodicComplexity: pick(PARAM_RANGES.melodicComplexity, rng),
       hookIntensity: pick(PARAM_RANGES.hookIntensity, rng),
@@ -456,7 +455,6 @@ describe('MidiSketch WASM - Exhaustive Parameter Tests', () => {
             compositionStyle: 1,
             motifRepeatScope,
             motifMaxChordCount,
-            motifFixedProgression: true,
           });
           expect(result).toBe(0);
         }

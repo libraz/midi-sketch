@@ -161,12 +161,6 @@ const CHORD_EXT_FIELDS: readonly ConfigField[] = [
 // MotifChord nested struct fields
 const MOTIF_CHORD_FIELDS: readonly ConfigField[] = [
   {
-    js: 'motifFixedProgression',
-    cpp: 'fixed_progression',
-    default: true,
-    type: 'boolean',
-  },
-  {
     js: 'motifMaxChordCount',
     cpp: 'max_chord_count',
     default: 4,

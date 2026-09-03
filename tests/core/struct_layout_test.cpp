@@ -244,7 +244,6 @@ TEST(SongConfigJsonTest, RoundtripDefaultConfig) {
   EXPECT_FLOAT_EQ(restored.chord_extension.sus_probability,
                   original.chord_extension.sus_probability);
   // Nested: motif_chord
-  EXPECT_EQ(restored.motif_chord.fixed_progression, original.motif_chord.fixed_progression);
   EXPECT_EQ(restored.motif_chord.max_chord_count, original.motif_chord.max_chord_count);
 }
 

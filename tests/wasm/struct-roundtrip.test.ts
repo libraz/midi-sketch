@@ -131,7 +131,6 @@ describe('Struct Roundtrip Tests', () => {
         arpeggioSyncChord: false,
         compositionStyle: 1,
         motifRepeatScope: 1,
-        motifFixedProgression: true,
         motifMaxChordCount: 3,
         melodicComplexity: 2,
         hookIntensity: HookIntensity.Strong,

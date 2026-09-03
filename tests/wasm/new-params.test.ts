@@ -97,15 +97,6 @@ describe('MidiSketch WASM - New Parameters', () => {
       });
       expect(result).toBe(0);
     });
-
-    it('should generate with fixed progression', () => {
-      const result = ctx.generateFromConfig({
-        seed: 77777,
-        compositionStyle: 1, // BackgroundMotif
-        motifFixedProgression: true,
-      });
-      expect(result).toBe(0);
-    });
   });
 
   describe('Vocal Density Parameters', () => {

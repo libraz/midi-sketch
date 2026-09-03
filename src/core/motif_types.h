@@ -150,16 +150,13 @@ struct MotifContext {
 
 /// @brief Background motif specific chord constraints.
 struct MotifChordParams {
-  bool fixed_progression = true;  ///< Same progression all sections
-  uint8_t max_chord_count = 4;    ///< Max 4 for motif style
+  uint8_t max_chord_count = 4;  ///< Max 4 for motif style
 
   void writeTo(json::Writer& w) const {
-    w.write("fixed_progression", fixed_progression)
-        .write("max_chord_count", static_cast<int>(max_chord_count));
+    w.write("max_chord_count", static_cast<int>(max_chord_count));
   }
 
   void readFrom(const json::Parser& p) {
-    fixed_progression = p.getBool("fixed_progression", true);
     max_chord_count = static_cast<uint8_t>(p.getInt("max_chord_count", 4));
   }
 };

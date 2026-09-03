@@ -137,8 +137,6 @@ export interface SongConfig {
   // Motif settings (for BackgroundMotif style)
   /** Motif repeat scope: 0=FullSong, 1=Section */
   motifRepeatScope: number;
-  /** Same progression for all sections (default=true) */
-  motifFixedProgression: boolean;
   /** Max chord count (0=no limit, 2-8) */
   motifMaxChordCount: number;
 

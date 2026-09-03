@@ -296,8 +296,6 @@ midisketch::SongConfig configFromMetadata(const std::string& metadata,
   // Motif chord parameters
   if (p.has("motif_chord")) {
     midisketch::json::Parser mc = p.getObject("motif_chord");
-    if (mc.has("fixed_progression"))
-      config.motif_chord.fixed_progression = mc.getBool("fixed_progression");
     if (mc.has("max_chord_count"))
       config.motif_chord.max_chord_count = static_cast<uint8_t>(mc.getInt("max_chord_count"));
     if (!mc.isValid()) p.markConversionInvalid();

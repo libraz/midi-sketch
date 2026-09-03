@@ -61,7 +61,6 @@ export interface SongConfigOptions {
   arpeggioSyncChord?: boolean;
   // Motif settings
   motifRepeatScope?: number;
-  motifFixedProgression?: boolean;
   motifMaxChordCount?: number;
   // Melodic complexity and hook control
   melodicComplexity?: number;
