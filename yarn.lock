@@ -2,7 +2,7 @@
 # Manual changes might be lost - proceed with caution!
 
 __metadata:
-  version: 8
+  version: 10
   cacheKey: 10c0
 
 "@biomejs/biome@npm:^2.5.6":
@@ -338,11 +338,19 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@libraz/libcantus@npm:^1.0.1":
+  version: 1.0.1
+  resolution: "@libraz/libcantus@npm:1.0.1"
+  checksum: 10c0/e2a34e6389a42bb4d73ae2797d84027070c73450fed32484dc3719a86b1ff992d53dc85659d2a9e1fdf55eb58148856a73f2cb41a980951c8afc62e0e7898cc6
+  languageName: node
+  linkType: hard
+
 "@libraz/midi-sketch@workspace:.":
   version: 0.0.0-use.local
   resolution: "@libraz/midi-sketch@workspace:."
   dependencies:
     "@biomejs/biome": "npm:^2.5.6"
+    "@libraz/libcantus": "npm:^1.0.1"
     esbuild: "npm:^0.28.1"
     lint-staged: "npm:^17.2.0"
     simple-git-hooks: "npm:^2.13.1"

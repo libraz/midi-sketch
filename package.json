@@ -2,7 +2,7 @@
   "name": "@libraz/midi-sketch",
   "version": "0.2.1",
   "type": "module",
-  "packageManager": "yarn@4.12.0",
+  "packageManager": "yarn@4.18.0",
   "description": "MIDI auto-generation library for pop music sketches",
   "main": "dist/index.cjs",
   "module": "dist/index.mjs",
@@ -25,10 +25,11 @@
     "build:wasm": "cmake -E remove -f build-wasm/CMakeCache.txt && cmake -E remove_directory build-wasm/CMakeFiles && cmake -E remove_directory build-wasm/bin && emcmake cmake -B build-wasm -DBUILD_WASM=ON && cmake --build build-wasm --parallel 1",
     "build:js": "node scripts/build-js.mjs",
     "clean": "rm -rf dist",
-    "lint": "biome check js/ tests/wasm/",
-    "lint:fix": "biome check --write js/ tests/wasm/",
-    "format": "biome format --write js/ tests/wasm/",
+    "lint": "biome check js/ tests/wasm/ tests/oracle/",
+    "lint:fix": "biome check --write js/ tests/wasm/ tests/oracle/",
+    "format": "biome format --write js/ tests/wasm/ tests/oracle/",
     "test": "vitest run",
+    "test:oracle": "vitest run --config vitest.oracle.config.ts",
     "test:watch": "vitest",
     "prepublishOnly": "yarn lint && yarn build"
   },
@@ -55,15 +56,12 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.6",
+    "@libraz/libcantus": "^1.0.1",
     "esbuild": "^0.28.1",
     "lint-staged": "^17.2.0",
     "simple-git-hooks": "^2.13.1",
     "typescript": "^6.0.3",
     "vitest": "^4.1.10"
-  },
-  "volta": {
-    "node": "22.22.3",
-    "yarn": "4.12.0"
   },
   "simple-git-hooks": {
     "pre-commit": "yarn lint-staged"

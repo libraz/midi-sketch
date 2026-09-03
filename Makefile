@@ -1,4 +1,4 @@
-.PHONY: help build test test-cpp test-js test-python test-readme clean rebuild format format-check lint wasm wasm-clean serve demo
+.PHONY: help build test test-cpp test-js test-oracle test-python test-readme clean rebuild format format-check lint wasm wasm-clean serve demo
 
 BUILD_DIR := build
 WASM_BUILD_DIR := build-wasm
@@ -11,7 +11,7 @@ help:
 	@echo "midi-sketch Build System"
 	@echo ""
 	@echo "  make build     - Build the project"
-	@echo "  make test      - Run C++, WASM/JS, Python, and README example tests"
+	@echo "  make test      - Run C++, WASM/JS, oracle, Python, and README example tests"
 	@echo "  make clean     - Clean build"
 	@echo "  make rebuild   - Clean and rebuild"
 	@echo "  make format    - Format code (C++ + js/ TS bindings)"
@@ -29,13 +29,16 @@ configure:
 build: configure
 	cmake --build $(BUILD_DIR) --parallel
 
-test: test-cpp test-js test-python test-readme
+test: test-cpp test-js test-oracle test-python test-readme
 
 test-cpp: build
 	ctest --test-dir $(BUILD_DIR) --output-on-failure
 
 test-js: wasm
 	yarn test
+
+test-oracle: build
+	yarn test:oracle
 
 test-python:
 	$(PYTHON) -m unittest discover -s scripts/tests -p 'test_*.py'
