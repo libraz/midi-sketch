@@ -94,17 +94,19 @@ export const CONFIG_FIELDS: readonly ConfigField[] = [
   { js: 'chordExtProbExplicit', cpp: 'chord_ext_prob_explicit', default: false, type: 'boolean' },
 ] as const;
 
-// Arpeggio nested struct fields
+// Arpeggio nested struct fields.
+// pattern/speed/gate default to the "style decides" sentinels that ArpeggioParams
+// is default-constructed with in C++, not to a concrete pattern.
 const ARPEGGIO_FIELDS: readonly ConfigField[] = [
-  { js: 'arpeggioPattern', cpp: 'pattern', default: 0, type: 'number' },
-  { js: 'arpeggioSpeed', cpp: 'speed', default: 1, type: 'number' },
+  { js: 'arpeggioPattern', cpp: 'pattern', default: 255, type: 'number' },
+  { js: 'arpeggioSpeed', cpp: 'speed', default: 255, type: 'number' },
   {
     js: 'arpeggioOctaveRange',
     cpp: 'octave_range',
     default: 2,
     type: 'number',
   },
-  { js: 'arpeggioGate', cpp: 'gate', default: 0.8, type: 'number' },
+  { js: 'arpeggioGate', cpp: 'gate', default: -1, type: 'number' },
   {
     js: 'arpeggioSyncChord',
     cpp: 'sync_chord',
@@ -335,13 +337,13 @@ export function deserializeConfig(json: string): SongConfig {
     config.callEnabled = undefined;
   }
 
-  // Nested structs: unflatten from C++ nested objects to JS top-level fields
+  // Nested structs: unflatten from C++ nested objects to JS top-level fields.
+  // A missing nested object means "all of its fields defaulted", so every
+  // SongConfig property stays defined regardless of how partial the JSON is.
   for (const { cpp: nestedKey, fields } of NESTED_STRUCTS) {
     const nested = obj[nestedKey] as Record<string, unknown> | undefined;
-    if (nested) {
-      for (const { js, cpp, default: def } of fields) {
-        config[js] = nested[cpp] ?? def;
-      }
+    for (const { js, cpp, default: def } of fields) {
+      config[js] = nested?.[cpp] ?? def;
     }
   }
 

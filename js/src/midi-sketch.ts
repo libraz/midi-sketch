@@ -27,6 +27,15 @@ import type {
 /** sizeof(MidiSketchPianoRollInfo) - must match C++ struct layout */
 const PIANO_ROLL_INFO_SIZE = 784;
 
+/** sizeof(MidiSketchCollisionInfo) - three uint8_t fields, no padding */
+const COLLISION_INFO_SIZE = 3;
+
+/**
+ * Largest number of ticks a single getPianoRollSafety() call may sample.
+ * Mirrors the batch cap the C API enforces.
+ */
+export const MAX_PIANO_ROLL_SAMPLES = 100000;
+
 // Most piano-roll slots have no collision. Reuse this immutable value instead
 // of allocating 128 identical objects for every sampled tick.
 const NO_COLLISION: Readonly<CollisionInfo> = Object.freeze({
@@ -238,7 +247,13 @@ export class MidiSketch {
    * The returned value can be restored later with setMelody().
    */
   getMelody(): MelodyData {
-    const melody = JSON.parse(getApi().getMelodyJson(this.handle)) as {
+    const json = getApi().getMelodyJson(this.handle);
+    // The C API reports an unusable handle as a null string. Distinguish that
+    // from a payload that came back but failed to parse.
+    if (!json) {
+      throw new Error('No melody data available');
+    }
+    let melody: {
       seed: number;
       notes: Array<{
         start_tick: number;
@@ -247,6 +262,11 @@ export class MidiSketch {
         velocity: number;
       }>;
     };
+    try {
+      melody = JSON.parse(json);
+    } catch (error) {
+      throw new Error(`Malformed melody data: ${(error as Error).message}`);
+    }
     return {
       seed: melody.seed,
       notes: melody.notes.map((note) => ({
@@ -446,10 +466,16 @@ export class MidiSketch {
    *
    * Useful for visualizing safe notes over time in a piano roll editor.
    *
+   * At most {@link MAX_PIANO_ROLL_SAMPLES} samples may be requested. The limit is
+   * checked against the requested range before any work happens, so an oversized
+   * request costs nothing.
+   *
    * @param startTick Start tick
-   * @param endTick End tick
+   * @param endTick End tick (must be >= startTick)
    * @param step Step size in ticks (e.g., 120 for 16th notes, 480 for quarter notes)
    * @returns Array of piano roll safety info for each step
+   * @throws {RangeError} If step is not positive, the range is inverted, or the
+   *   request would exceed the sample limit
    *
    * @example
    * ```typescript
@@ -466,6 +492,24 @@ export class MidiSketch {
     const a = getApi();
     const m = getModule();
 
+    if (!Number.isInteger(step) || step <= 0) {
+      throw new RangeError(`Piano roll safety step must be a positive integer, got ${step}`);
+    }
+    if (endTick < startTick) {
+      throw new RangeError(
+        `Piano roll safety range is inverted: startTick ${startTick} is after endTick ${endTick}`,
+      );
+    }
+    // Reject before the call rather than after: the C API would otherwise fill
+    // and allocate a full capped batch that this wrapper cannot return.
+    const requestedSamples = Math.floor((endTick - startTick) / step) + 1;
+    if (requestedSamples > MAX_PIANO_ROLL_SAMPLES) {
+      throw new RangeError(
+        `Piano roll safety requests are limited to ${MAX_PIANO_ROLL_SAMPLES} samples, ` +
+          `got ${requestedSamples}; increase the step size or narrow the range.`,
+      );
+    }
+
     const dataPtr = a.getPianoRollSafety(this.handle, startTick, endTick, step);
     if (!dataPtr) {
       throw new Error('Failed to get piano roll safety data. Generate MIDI first.');
@@ -478,8 +522,10 @@ export class MidiSketch {
       const infoArrayPtr = m.HEAPU32[dataPtr >> 2];
       const count = a.getPianoRollDataCount(dataPtr);
       if (a.pianoRollDataWasTruncated(dataPtr) !== 0) {
+        // Unreachable while the pre-call check holds: the core clamps endTick to
+        // the song length, so it can only sample fewer ticks than requested.
         throw new RangeError(
-          'Piano roll safety requests are limited to 100,000 samples; increase the step size.',
+          `Piano roll safety data was truncated to ${MAX_PIANO_ROLL_SAMPLES} samples.`,
         );
       }
 
@@ -505,6 +551,31 @@ export class MidiSketch {
   reasonToString(reason: NoteReasonFlags): string {
     const a = getApi();
     return a.reasonToString(reason);
+  }
+
+  /**
+   * Convert collision info to human-readable string.
+   *
+   * @param collision Collision entry from PianoRollInfo.collision
+   * @returns Human-readable string like "Bass F3 minor 2nd", or an empty
+   *   string when the entry records no collision
+   */
+  collisionToString(collision: CollisionInfo): string {
+    const a = getApi();
+    const m = getModule();
+
+    const ptr = m._malloc(COLLISION_INFO_SIZE);
+    if (!ptr) {
+      throw new Error('Failed to allocate memory for collision info');
+    }
+    try {
+      m.HEAPU8[ptr] = collision.trackRole;
+      m.HEAPU8[ptr + 1] = collision.collidingPitch;
+      m.HEAPU8[ptr + 2] = collision.intervalSemitones;
+      return a.collisionToString(ptr);
+    } finally {
+      m._free(ptr);
+    }
   }
 
   /**

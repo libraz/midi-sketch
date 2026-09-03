@@ -37,13 +37,13 @@ export interface SongConfig {
   arpeggioEnabled: boolean;
   /** Enable guitar track */
   guitarEnabled: boolean;
-  /** Arpeggio pattern: 0=Up, 1=Down, 2=UpDown, 3=Random, 4=Pinwheel, 5=PedalRoot, 6=Alberti, 7=BrokenChord */
+  /** Arpeggio pattern: 0=Up, 1=Down, 2=UpDown, 3=Random, 4=Pinwheel, 5=PedalRoot, 6=Alberti, 7=BrokenChord, 255=Auto (default) */
   arpeggioPattern: number;
-  /** Arpeggio speed: 0=Eighth, 1=Sixteenth, 2=Triplet */
+  /** Arpeggio speed: 0=Eighth, 1=Sixteenth, 2=Triplet, 255=Auto (default) */
   arpeggioSpeed: number;
   /** Arpeggio octave range (1-3) */
   arpeggioOctaveRange: number;
-  /** Arpeggio gate length (0.0-1.0) */
+  /** Arpeggio gate length (0.0-1.0), or -1 for the style default (default) */
   arpeggioGate: number;
 
   // Vocal settings
@@ -145,7 +145,7 @@ export interface SongConfig {
   // Melodic complexity and hook control
   /** Melodic complexity: 0=Simple, 1=Standard, 2=Complex */
   melodicComplexity: number;
-  /** Hook intensity: 0=Off, 1=Light, 2=Normal, 3=Strong */
+  /** Hook intensity: 0=Off, 1=Light, 2=Normal, 3=Strong, 4=Maximum */
   hookIntensity: number;
   /** Vocal groove feel: 0=Straight, 1=OffBeat, 2=Swing, 3=Syncopated, 4=Driving16th, 5=Bouncy8th */
   vocalGroove: number;
@@ -259,7 +259,7 @@ export interface VocalConfig {
   melodyTemplate?: number;
   /** Melodic complexity: 0=Simple, 1=Standard, 2=Complex */
   melodicComplexity?: number;
-  /** Hook intensity: 0=Off, 1=Light, 2=Normal, 3=Strong */
+  /** Hook intensity: 0=Off, 1=Light, 2=Normal, 3=Strong, 4=Maximum */
   hookIntensity?: number;
   /** Vocal groove feel: 0=Straight, 1=OffBeat, 2=Swing, etc. */
   vocalGroove?: number;

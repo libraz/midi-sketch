@@ -14,6 +14,8 @@ export interface EmscriptenModule {
     argTypes: string[],
   ) => (...args: unknown[]) => unknown;
   UTF8ToString: (ptr: number) => string;
+  _malloc: (size: number) => number;
+  _free: (ptr: number) => void;
   HEAPU8: Uint8Array;
   HEAPU32: Uint32Array;
 }
@@ -61,6 +63,7 @@ export interface Api {
   getPianoRollDataCount: (ptr: number) => number;
   pianoRollDataWasTruncated: (ptr: number) => number;
   reasonToString: (reason: number) => string;
+  collisionToString: (collisionPtr: number) => string;
   // JSON Config API
   generateFromJson: (handle: number, json: string, length: number) => number;
   createDefaultConfigJson: (styleId: number) => string;
@@ -145,11 +148,15 @@ export function init(options?: { wasmPath?: string }): Promise<void> {
 async function initialize(options?: { wasmPath?: string }): Promise<void> {
   const createModule = await import('../midisketch.js');
   moduleInstance = await createModule.default({
-    locateFile: (path: string) => {
+    // `scriptDirectory` is the directory of the shipped glue module, which is
+    // where the .wasm binary sits next to it. Resolving against it keeps
+    // initialization independent of the process CWD and of bundler layout.
+    // A bare relative path would be resolved against the CWD instead.
+    locateFile: (path: string, scriptDirectory: string) => {
       if (path.endsWith('.wasm') && options?.wasmPath) {
         return options.wasmPath;
       }
-      return path;
+      return scriptDirectory + path;
     },
   });
 
@@ -260,6 +267,9 @@ async function initialize(options?: { wasmPath?: string }): Promise<void> {
     ]) as (ptr: number) => number,
     reasonToString: m.cwrap('midisketch_reason_to_string', 'string', ['number']) as (
       reason: number,
+    ) => string,
+    collisionToString: m.cwrap('midisketch_collision_to_string', 'string', ['number']) as (
+      collisionPtr: number,
     ) => string,
     // JSON Config API
     generateFromJson: m.cwrap('midisketch_generate_from_json', 'number', [

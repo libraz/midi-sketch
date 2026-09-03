@@ -12,12 +12,22 @@ import {
   RiffPolicy,
 } from './blueprint';
 import { createDefaultConfig } from './config';
-import { CompositionStyle, HookIntensity } from './constants';
+import { CompositionStyle, HookIntensity, VocalStylePreset } from './constants';
 import type { SongConfig } from './types';
 
 function clampUnitInterval(value: number): number {
   return Math.max(0, Math.min(1, value));
 }
+
+/**
+ * Vocal style presets whose arrangement expects an audience call track.
+ * The core applies call-oriented post-processing to exactly these styles.
+ */
+const CALL_ORIENTED_VOCAL_STYLES: readonly number[] = [
+  VocalStylePreset.Idol,
+  VocalStylePreset.BrightKira,
+  VocalStylePreset.CuteAffected,
+];
 
 // ============================================================================
 // Types for Change Tracking
@@ -269,8 +279,8 @@ export class SongConfigBuilder {
   /**
    * Set vocal style preset with cascade detection
    *
-   * Idol-style vocalStyles (4=Idol, 9=BrightKira, 11=CuteAffected) will
-   * auto-enable call system if callSetting/callEnabled is not explicitly set.
+   * Call-oriented vocal styles (Idol, BrightKira, CuteAffected) auto-enable the
+   * call system if callSetting/callEnabled is not explicitly set.
    *
    * @param style Vocal style ID (0=Auto, 1=Standard, 2=Vocaloid, etc.)
    */
@@ -282,11 +292,9 @@ export class SongConfigBuilder {
     this.explicitFields.add('vocalStyle');
     tracker.addChange('vocal', 'vocalStyle', oldStyle, style, 'User set vocal style');
 
-    // Idol-style vocalStyles auto-enable call if not explicitly set
-    // vocalStyle: 4=Idol, 9=BrightKira, 11=CuteAffected
-    const idolStyles = [4, 9, 11];
+    // Call-oriented vocal styles auto-enable call if not explicitly set
     if (
-      idolStyles.includes(style) &&
+      CALL_ORIENTED_VOCAL_STYLES.includes(style) &&
       !this.explicitFields.has('callSetting') &&
       !this.explicitFields.has('callEnabled')
     ) {
@@ -299,7 +307,7 @@ export class SongConfigBuilder {
           'callEnabled',
           oldCall,
           true,
-          `Idol-style vocalStyle (${style}) auto-enables call system`,
+          `Call-oriented vocalStyle (${style}) auto-enables call system`,
         );
       }
     }
@@ -567,7 +575,7 @@ export class SongConfigBuilder {
 
   /**
    * Set hook intensity
-   * @param intensity 0=Off, 1=Light, 2=Normal, 3=Strong
+   * @param intensity 0=Off, 1=Light, 2=Normal, 3=Strong, 4=Maximum
    */
   setHookIntensity(intensity: number): this {
     this.setField('hookIntensity', intensity, 'hook');
@@ -602,7 +610,13 @@ export class SongConfigBuilder {
   }
 
   /**
-   * Set target duration
+   * Set target duration.
+   *
+   * The duration has to reach between 12 and 144 bars at the resolved tempo, so the
+   * accepted range in seconds depends on the BPM. A value outside it is rejected when
+   * the config is validated rather than being shortened to fit, which is the same
+   * answer the native CLI gives for the same config.
+   *
    * @param seconds Target duration in seconds (0 = use formId)
    */
   setTargetDuration(seconds: number): this {

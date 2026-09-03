@@ -66,6 +66,7 @@ const dtsFiles = [
   'presets.d.ts',
   'internal.d.ts',
   'config.d.ts',
+  'config-fields.d.ts',
   'builder.d.ts',
   'midi-sketch.d.ts',
   'utils.d.ts',
@@ -81,29 +82,76 @@ let combinedDts = `/**
 // Read index.d.ts to get the exports
 const indexDts = readFileSync(join(distDir, 'index.d.ts'), 'utf-8');
 
-// Extract all exports and their sources
+// Extract the re-exported names. These, and only these, are the identifiers the
+// bundled declaration file may export: the runtime bundles are built from the
+// same index.ts, so keeping the two derived from one list is what stops the
+// declared surface and the runtime surface from drifting apart.
 const reExports = [];
 for (const line of indexDts.split('\n')) {
-  const match = line.match(/export \{ (.+) \} from ['"]\.\/(.+)['"]/);
-  if (match) {
-    reExports.push({ exports: match[1], from: match[2] });
+  const match = line.match(/^export (type )?\{(.+?),?\s*\} from ['"]\.\/([^'"]+)['"];/);
+  if (!match) {
+    continue;
+  }
+  const [, typeOnly, names, from] = match;
+  for (const raw of names.split(',')) {
+    const name = raw.trim();
+    if (!name) {
+      continue;
+    }
+    reExports.push({
+      name: typeOnly && !name.startsWith('type ') ? `type ${name}` : name,
+      from: `${from}.d.ts`,
+    });
   }
 }
 
-// Read each source file and inline the types
+// The default export is re-exported by name, so the declaration bundle has to
+// resolve which local declaration it refers to.
+function resolveDefaultExport(file) {
+  const match = readFileSync(join(distDir, file), 'utf-8').match(/^export default (\w+);/m);
+  if (!match) {
+    throw new Error(`${file} is re-exported as default but declares no default export`);
+  }
+  return match[1];
+}
+
+// Read each source file and inline the declarations without their own export
+// keywords, so that nothing leaks into the public surface implicitly.
 for (const file of dtsFiles) {
   const filePath = join(distDir, file);
-  try {
-    let content = readFileSync(filePath, 'utf-8');
-    // Remove import statements (they reference other local files)
-    content = content.replace(/^import .+ from ['"]\.\/[^'"]+['"];?\n/gm, '');
-    // Remove "export {}" lines that re-export from other files
-    content = content.replace(/^export \{ .+ \} from ['"]\.\/[^'"]+['"];?\n/gm, '');
-    combinedDts += `// From ${file.replace('.d.ts', '.ts')}\n`;
-    combinedDts += content + '\n';
-  } catch (e) {
-    // File might not exist, skip
+  if (!existsSync(filePath)) {
+    throw new Error(`Expected declaration file ${file} was not emitted`);
   }
+  let content = readFileSync(filePath, 'utf-8');
+  // Remove import statements (they reference other local files)
+  content = content.replace(/^import .+ from ['"]\.\/[^'"]+['"];?\n/gm, '');
+  // Remove re-export and export-marker lines that reference other files
+  content = content.replace(/^export (?:type )?\{[^}]*\} from ['"]\.\/[^'"]+['"];?\n/gm, '');
+  content = content.replace(/^export \{\};?\n/gm, '');
+  content = content.replace(/^export default \w+;?\n/gm, '');
+  // Demote the remaining declarations to file-local ones
+  content = content.replace(
+    /^export (?=declare |type |interface |enum |abstract |class |function |const )/gm,
+    '',
+  );
+  combinedDts += `// From ${file.replace('.d.ts', '.ts')}\n`;
+  combinedDts += content + '\n';
+}
+
+const namedExports = [];
+let defaultExport = null;
+for (const { name, from } of reExports) {
+  if (name === 'default') {
+    defaultExport = resolveDefaultExport(from);
+  } else {
+    namedExports.push(name);
+  }
+}
+
+combinedDts += `// Public surface, mirroring the re-exports of index.ts\n`;
+combinedDts += `export {\n${namedExports.map((name) => `  ${name},`).join('\n')}\n};\n`;
+if (defaultExport) {
+  combinedDts += `export default ${defaultExport};\n`;
 }
 
 writeFileSync(join(distDir, 'index.d.ts'), combinedDts);

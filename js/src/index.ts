@@ -46,7 +46,9 @@ export {
 } from './config-fields';
 // Constants
 export {
+  ARPEGGIO_GATE_AUTO,
   ArpeggioPattern,
+  ArpeggioSpeed,
   ArrangementGrowth,
   ATTITUDE_CLEAN,
   ATTITUDE_EXPRESSIVE,
@@ -72,7 +74,7 @@ export {
 // Internal (init only)
 export { init } from './internal';
 // MidiSketch class
-export { default, MidiSketch } from './midi-sketch';
+export { default, MAX_PIANO_ROLL_SAMPLES, MidiSketch } from './midi-sketch';
 // Presets
 export {
   getChords,
@@ -85,7 +87,9 @@ export {
 // Types
 export type {
   AccompanimentConfig,
+  ChordEvent,
   CollisionInfo,
+  DissonanceReport,
   EventData,
   MelodyData,
   NoteInput,

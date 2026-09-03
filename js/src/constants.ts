@@ -43,6 +43,9 @@ export const ConfigError = {
   InvalidArpeggioRange: 30,
   InvalidMelodyOverride: 31,
   InvalidMotifOverride: 32,
+  InvalidJson: 33,
+  InvalidMood: 34,
+  InvalidTargetDuration: 35,
 } as const;
 
 export type ConfigErrorCode = (typeof ConfigError)[keyof typeof ConfigError];
@@ -155,7 +158,21 @@ export const ArpeggioPattern = {
   PedalRoot: 5,
   Alberti: 6,
   BrokenChord: 7,
+  /** Let the mood/blueprint style pick the pattern. This is the SongConfig default. */
+  Auto: 255,
 } as const;
+
+/** Arpeggio note speeds accepted by SongConfig and AccompanimentConfig. */
+export const ArpeggioSpeed = {
+  Eighth: 0,
+  Sixteenth: 1,
+  Triplet: 2,
+  /** Let the mood/blueprint style pick the speed. This is the SongConfig default. */
+  Auto: 255,
+} as const;
+
+/** Sentinel for SongConfig.arpeggioGate meaning "use the style default gate". */
+export const ARPEGGIO_GATE_AUTO = -1;
 
 // Arrangement growth constants
 export const ArrangementGrowth = {
