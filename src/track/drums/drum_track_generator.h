@@ -13,6 +13,7 @@
 #include <functional>
 #include <optional>
 #include <random>
+#include <vector>
 
 #include "core/midi_track.h"
 #include "core/preset_data.h"
@@ -21,6 +22,7 @@
 #include "core/song.h"
 #include "core/types.h"
 #include "track/drums/hihat_control.h"
+#include "track/drums/percussion_generator.h"
 #include "track/vocal/vocal_analysis.h"
 
 namespace midisketch {
@@ -49,13 +51,27 @@ struct DrumGenerationParams {
   uint8_t drum_style_hint = 0;   ///< 0=auto, otherwise DrumStyle enum + 1
   bool humanize = false;         ///< Master humanize switch
   float humanize_timing = 1.0f;  ///< Global humanization scaling (0.0-1.0)
+
+  /// @brief The blueprint the caller is running.
+  ///
+  /// Every blueprint value the drum generator reads comes from this entity, so
+  /// a caller that builds or overrides a blueprint sees its own values in the
+  /// output. When it is null the generator falls back to the shipped table
+  /// entry for @ref blueprint_id, once, at the single resolution point.
+  const ProductionBlueprint* blueprint = nullptr;
 };
 
 /// @brief Section-level context for drum generation.
+///
+/// Every quantity that decides how many events a section plays, and where in
+/// the bar they land, is resolved here once. Beat processors read this context
+/// and never re-derive groove, feel or density on their own.
 struct DrumSectionContext {
   DrumStyle style = DrumStyle::Standard;
   DrumGrooveFeel groove = DrumGrooveFeel::Swing;
+  TimeFeel time_feel = TimeFeel::OnBeat;  ///< Feel shared by every voice in the section
   float density_mult;
+  float density_scale = 1.0f;  ///< Note-density scale from the section density percent
   bool add_crash_accent;
   bool use_ghost_notes;
   bool use_ride;
@@ -64,16 +80,37 @@ struct DrumSectionContext {
   bool use_foot_hh = false;
   HiHatLevel hh_level = HiHatLevel::Eighth;
   bool is_background_motif = false;
+  bool has_drums = false;         ///< Whether the section plays drums at all
+  PercussionConfig percussion{};  ///< Auxiliary percussion layers for the section
 };
 
 /// @brief Compute section-level drum generation context.
 /// @param section Current section
 /// @param params Generation parameters
+/// @param blueprint The blueprint the caller is running
 /// @param style Base drum style
 /// @param rng Random number generator
 /// @return Section context for drum generation
 DrumSectionContext computeSectionContext(const Section& section, const DrumGenerationParams& params,
-                                         DrumStyle style, std::mt19937& rng);
+                                         const ProductionBlueprint& blueprint, DrumStyle style,
+                                         std::mt19937& rng);
+
+/// @brief Resolve the context of every section before any note is written.
+///
+/// Sections are resolved together because the energy arc is a relation between
+/// them: a B section may not put more events in a bar than the chorus it leads
+/// into, and that comparison needs the chorus settings up front.
+///
+/// @param sections Song sections in arrangement order
+/// @param params Generation parameters
+/// @param blueprint The blueprint the caller is running
+/// @param style Base drum style
+/// @param rng Random number generator
+/// @return One context per section, aligned with @p sections
+std::vector<DrumSectionContext> resolveSectionContexts(const std::vector<Section>& sections,
+                                                       const DrumGenerationParams& params,
+                                                       const ProductionBlueprint& blueprint,
+                                                       DrumStyle style, std::mt19937& rng);
 
 /// @brief Unified drum track generation implementation.
 ///

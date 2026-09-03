@@ -21,6 +21,7 @@
 #include "track/drums/beat_processors.h"
 #include "track/drums/drum_constants.h"
 #include "track/drums/fill_generator.h"
+#include "track/drums/ghost_notes.h"
 #include "track/drums/hihat_control.h"
 #include "track/drums/kick_patterns.h"
 #include "track/drums/percussion_generator.h"
@@ -32,6 +33,10 @@ float calculateSwingAmount(SectionType section, int bar_in_section, int total_ba
                            float swing_override);
 
 namespace drums {
+
+/// Below this section density scale a section drops a layer rather than only
+/// playing the same layers more quietly.
+constexpr float kThinnedDensity = 0.70f;
 
 // ============================================================================
 // Drum Playability Checker (using DrumPerformer)
@@ -110,7 +115,11 @@ void addKickAnchorIfAbsent(MidiTrack& track, Tick start, Tick duration, uint8_t 
 
 bool shouldThinRhythmSyncTexture(const NoteEvent& note) {
   Tick pos = positionInBar(note.start_tick);
-  int sixteenth = static_cast<int>(pos / SIXTEENTH);
+  // Classify by the subdivision the note names, not by the tick it is played
+  // at: swing and time feel move a note away from its nominal position, and a
+  // texture rule that reads the played tick would thin a different slot in a
+  // swung bar than in a straight one.
+  int sixteenth = std::min(15, static_cast<int>((pos + SIXTEENTH / 2) / SIXTEENTH));
 
   if (note.note == SHAKER) {
     // Fixed per-beat 16th slot: keep the hole in the same place every bar.
@@ -120,7 +129,7 @@ bool shouldThinRhythmSyncTexture(const NoteEvent& note) {
   if (note.note == RIDE) {
     // Keep downbeats stable, thin a fixed light offbeat and the last 16th of each beat.
     bool last_sixteenth_in_beat = (sixteenth % 4 == 3);
-    bool light_off_eighth = (pos % EIGHTH == 0) && ((pos / EIGHTH) % 4 == 3);
+    bool light_off_eighth = (sixteenth % 2 == 0) && ((sixteenth / 2) % 4 == 3);
     return last_sixteenth_in_beat || light_off_eighth;
   }
 
@@ -242,11 +251,23 @@ class DrumPlayabilityChecker {
 };
 
 DrumSectionContext computeSectionContext(const Section& section, const DrumGenerationParams& params,
-                                         DrumStyle style, std::mt19937& rng) {
+                                         const ProductionBlueprint& blueprint, DrumStyle style,
+                                         std::mt19937& rng) {
   DrumSectionContext ctx;
+  ctx.has_drums = true;
   ctx.style = style;
   ctx.groove = resolveSectionDrumGroove(params.mood, params.paradigm, section.swing_amount);
+  // A blueprint can deliberately change its feel between sections (for example,
+  // a laid-back verse followed by a pushed final chorus). The arrangement is
+  // the source of truth, and the whole kit shares the one value.
+  ctx.time_feel = section.time_feel;
   ctx.is_background_motif = params.composition_style == CompositionStyle::BackgroundMotif;
+
+  // Section note density is a blueprint control the same way it is for the
+  // pitched tracks: it scales how many events are written, not how loud they
+  // are.
+  ctx.density_scale =
+      static_cast<float>(section.getModifiedDensity(section.density_percent)) / 100.0f;
 
   // Override style for BackgroundMotif
   if (ctx.is_background_motif && params.motif_drum.hihat_drive) {
@@ -311,11 +332,22 @@ DrumSectionContext computeSectionContext(const Section& section, const DrumGener
     ctx.hh_level = HiHatLevel::Eighth;
   }
 
+  // A thinned section drops a subdivision of timekeeping before it drops any
+  // other layer, which is what "fewer notes" means for a drum kit.
+  if (ctx.density_scale < kThinnedDensity) {
+    ctx.hh_level = adjustHiHatSparser(ctx.hh_level);
+  }
+
   // Ghost notes
   ctx.use_ghost_notes = (section.type == SectionType::B || section.type == SectionType::Chorus ||
                          section.type == SectionType::Bridge) &&
                         ctx.style != DrumStyle::Sparse;
   if (ctx.is_background_motif) {
+    ctx.use_ghost_notes = false;
+  }
+  // A section whose role silences the snare must not grow snare-family notes
+  // back through the ghost layer.
+  if (getDrumRoleSnareProbability(section.getEffectiveDrumRole()) <= 0.0f) {
     ctx.use_ghost_notes = false;
   }
 
@@ -326,7 +358,169 @@ DrumSectionContext computeSectionContext(const Section& section, const DrumGener
   ctx.ohh_bar_interval = getOpenHiHatBarInterval(section.type, ctx.style);
   ctx.use_foot_hh = shouldUseFootHiHat(section.type, section.getEffectiveDrumRole());
 
+  // Auxiliary percussion
+  if (!ctx.is_background_motif) {
+    ctx.percussion = getPercussionConfig(params.mood, section.type, blueprint.percussion_policy);
+    if (ctx.density_scale < kThinnedDensity) {
+      ctx.percussion.shaker_16th = false;
+    }
+  }
+
   return ctx;
+}
+
+namespace {
+
+/// Counts the bar loop writes regardless of the section context, used to
+/// estimate a section's event density.
+constexpr float kSteadyKickPerBar = 3.0f;
+constexpr float kSteadySnarePerBar = 2.0f;
+constexpr float kHalfTimeSnarePerBar = 1.0f;
+constexpr float kFillEventsPerBeat = 3.0f;
+
+/// Expected ghost hits per bar at full ghost density: four beats times the
+/// ghost positions a mood selects, weighted by how often a position fires.
+constexpr float kGhostSlotsPerBar = 2.2f;
+
+/// Events per bar the arc cap keeps in hand, so that the spread of the layers
+/// it cannot predict exactly cannot invert the realized order.
+constexpr float kArcMargin = 1.0f;
+
+/// @brief Timekeeping hits one bar of a hi-hat level writes.
+float timekeepingEventsPerBar(HiHatLevel level) {
+  switch (level) {
+    case HiHatLevel::Quarter:
+      return 4.0f;
+    case HiHatLevel::Eighth:
+      return 8.0f;
+    case HiHatLevel::Sixteenth:
+      return 16.0f;
+  }
+  return 8.0f;
+}
+
+/// @brief Estimate the events one bar of a section writes, averaged over the
+///        whole section.
+///
+/// The steady groove is only part of a section's density: a pre-chorus trades
+/// its last bars for a snare buildup, and the bar before a transition gives
+/// its later beats to a fill. Both are written by the bar loop whatever the
+/// section context says, so the average has to include them or a comparison
+/// between sections measures the wrong thing.
+float estimateEventsPerBar(const DrumSectionContext& ctx, const std::vector<Section>& sections,
+                           size_t index, const DrumGenerationParams& params) {
+  const Mood mood = params.mood;
+  const uint16_t bpm = params.bpm;
+  const Section& section = sections[index];
+  const float bars = std::max(1.0f, static_cast<float>(section.bars));
+
+  const float timekeeping = timekeepingEventsPerBar(ctx.hh_level);
+
+  float ghosts = 0.0f;
+  if (ctx.use_ghost_notes) {
+    ghosts = kGhostSlotsPerBar *
+             getGhostDensity(mood, section.type, section.getEffectiveBackingDensity(), bpm) *
+             ctx.density_scale;
+  }
+
+  float percussion = 0.0f;
+  if (ctx.percussion.tambourine) percussion += 2.0f;
+  if (ctx.percussion.handclap) percussion += 2.0f;
+  if (ctx.percussion.shaker) percussion += ctx.percussion.shaker_16th ? 16.0f : 8.0f;
+
+  const float backbeat = (ctx.style == DrumStyle::Trap) ? kHalfTimeSnarePerBar : kSteadySnarePerBar;
+  const float steady = timekeeping + ghosts + percussion + kSteadyKickPerBar + backbeat;
+  float total = steady * bars;
+
+  if (isInPreChorusLift(section, static_cast<uint8_t>(section.bars - 1), sections, index)) {
+    // The lift replaces the groove with the snare crescendo. The kick keeps
+    // coming from the vocal-driven paradigms, which own it through a callback.
+    const float lift_kick =
+        params.paradigm == GenerationParadigm::Traditional ? 0.0f : kSteadyKickPerBar;
+    const float lift_timekeeping = timekeepingEventsPerBar(adjustHiHatSparser(ctx.hh_level));
+    for (uint8_t lift_bar = 0; lift_bar < kPreChorusLiftBars; ++lift_bar) {
+      total += lift_timekeeping + percussion + lift_kick +
+               static_cast<float>(preChorusBuildupHitsPerBar(lift_bar)) - steady;
+    }
+  } else if (index + 1 < sections.size() &&
+             (sections[index + 1].fill_before || sections[index + 1].type == SectionType::Chorus)) {
+    const float filled_beats = 4.0f - static_cast<float>(getFillStartBeat(section.energy));
+    total += (kFillEventsPerBeat - steady / 4.0f) * filled_beats;
+  }
+
+  return total / bars;
+}
+
+/// @brief Turn one layer of a section down by a single step.
+///
+/// Ordered by how much of the section's character each step costs, cheapest
+/// first, so a small overshoot does not halve the timekeeping.
+/// @return false when no layer can be thinned further
+bool thinSectionOneStep(DrumSectionContext& ctx) {
+  if (ctx.percussion.shaker && ctx.percussion.shaker_16th) {
+    ctx.percussion.shaker_16th = false;
+    return true;
+  }
+  if (ctx.use_ghost_notes) {
+    ctx.use_ghost_notes = false;
+    return true;
+  }
+  if (ctx.hh_level != HiHatLevel::Quarter) {
+    ctx.hh_level = adjustHiHatSparser(ctx.hh_level);
+    return true;
+  }
+  if (ctx.percussion.shaker) {
+    ctx.percussion.shaker = false;
+    return true;
+  }
+  return false;
+}
+
+}  // namespace
+
+std::vector<DrumSectionContext> resolveSectionContexts(const std::vector<Section>& sections,
+                                                       const DrumGenerationParams& params,
+                                                       const ProductionBlueprint& blueprint,
+                                                       DrumStyle style, std::mt19937& rng) {
+  std::vector<DrumSectionContext> contexts(sections.size());
+  for (size_t i = 0; i < sections.size(); ++i) {
+    if (!hasTrack(sections[i].track_mask, TrackMask::Drums)) {
+      continue;
+    }
+    contexts[i] = computeSectionContext(sections[i], params, blueprint, style, rng);
+  }
+
+  // The chorus a B section leads into is where its arc lands, so B may not put
+  // more events in a bar than that chorus does.
+  for (size_t i = 0; i < sections.size(); ++i) {
+    if (!contexts[i].has_drums || sections[i].type != SectionType::B) {
+      continue;
+    }
+
+    size_t chorus_index = sections.size();
+    for (size_t j = i + 1; j < sections.size(); ++j) {
+      if (contexts[j].has_drums && sections[j].type == SectionType::Chorus) {
+        chorus_index = j;
+        break;
+      }
+    }
+    if (chorus_index == sections.size()) {
+      continue;
+    }
+
+    // The estimate stands in for a stochastic pass, so the cap leaves a margin
+    // rather than aiming exactly at the chorus and letting the roll decide.
+    const float chorus_events =
+        estimateEventsPerBar(contexts[chorus_index], sections, chorus_index, params) - kArcMargin;
+    // Keep B clearly subordinate in weight as well as in count.
+    contexts[i].density_mult =
+        std::min(contexts[i].density_mult, contexts[chorus_index].density_mult * 0.9f);
+    while (estimateEventsPerBar(contexts[i], sections, i, params) > chorus_events &&
+           thinSectionOneStep(contexts[i])) {
+    }
+  }
+
+  return contexts;
 }
 
 void generateDrumsTrackImpl(MidiTrack& track, const Song& song, const DrumGenerationParams& params,
@@ -334,8 +528,13 @@ void generateDrumsTrackImpl(MidiTrack& track, const Song& song, const DrumGenera
   DrumStyle style = resolveDrumStyle(params.mood, params.drum_style_hint);
   const auto& all_sections = song.arrangement().sections();
 
+  // Every blueprint value below comes from the entity the caller is running.
+  // This is the one place an id is resolved against the shipped table, and only
+  // when the caller supplied no blueprint of its own.
+  const ProductionBlueprint& blueprint =
+      params.blueprint != nullptr ? *params.blueprint : getProductionBlueprint(params.blueprint_id);
+
   // Euclidean rhythm settings
-  const auto& blueprint = getProductionBlueprint(params.blueprint_id);
   bool use_euclidean = false;
   if (blueprint.euclidean_drums_percent > 0) {
     use_euclidean = rng_util::rollRange(rng, 0, 99) < blueprint.euclidean_drums_percent;
@@ -344,53 +543,30 @@ void generateDrumsTrackImpl(MidiTrack& track, const Song& song, const DrumGenera
   const GrooveTemplate groove_template = getMoodGrooveTemplate(params.mood);
   const FullGroovePattern& groove_pattern = getGroovePattern(groove_template);
 
-  // Pre-scan: find max Chorus density_mult for B-section density cap.
-  // B sections should not exceed Chorus density to maintain proper energy arc.
-  float max_chorus_density = 0.0f;
-  for (const auto& sec : all_sections) {
-    if (sec.type != SectionType::Chorus) continue;
-    if (!hasTrack(sec.track_mask, TrackMask::Drums)) continue;
-    // Replicate density calculation from computeSectionContext()
-    float density = 1.0f;  // Chorus base density
-    switch (sec.getEffectiveBackingDensity()) {
-      case BackingDensity::Thin:
-        density *= 0.75f;
-        break;
-      case BackingDensity::Normal:
-        break;
-      case BackingDensity::Thick:
-        density *= 1.15f;
-        break;
-    }
-    max_chorus_density = std::max(max_chorus_density, density);
-  }
+  // Every section's settings are resolved before any note is written, because
+  // the energy arc is a relation between sections rather than a property of
+  // one.
+  const std::vector<DrumSectionContext> section_contexts =
+      resolveSectionContexts(all_sections, params, blueprint, style, rng);
 
   for (size_t sec_idx = 0; sec_idx < all_sections.size(); ++sec_idx) {
     const auto& section = all_sections[sec_idx];
-    // A blueprint can deliberately change its feel between sections (for
-    // example, a laid-back verse followed by a pushed final chorus).  The
-    // arrangement is therefore the source of truth, not the song-wide mood.
-    const TimeFeel time_feel = section.time_feel;
+    const DrumSectionContext& ctx = section_contexts[sec_idx];
 
-    if (!hasTrack(section.track_mask, TrackMask::Drums)) {
+    if (!ctx.has_drums) {
       continue;
     }
 
     bool is_last_section = (sec_idx == all_sections.size() - 1);
-    DrumSectionContext ctx = computeSectionContext(section, params, style, rng);
-
-    // Cap B-section density to not exceed Chorus density.
-    // Use 90% of chorus max to keep B clearly subordinate in energy.
-    if (section.type == SectionType::B && max_chorus_density > 0.0f) {
-      float cap = max_chorus_density * 0.9f;
-      ctx.density_mult = std::min(ctx.density_mult, cap);
-    }
 
     // Add crash cymbal accent at start of Chorus
     if (ctx.add_crash_accent && sec_idx > 0) {
       uint8_t crash_vel =
           static_cast<uint8_t>(std::min(127, static_cast<int>(105 * ctx.density_mult)));
-      addCrashIfAbsent(track, section.start_tick, TICKS_PER_BEAT / 2, crash_vel);
+      const GrooveGrid entry_grid =
+          makeGrooveGrid(section, 0, ctx.groove, ctx.time_feel, params.bpm);
+      addCrashIfAbsent(track, entry_grid.resolve(section.start_tick), TICKS_PER_BEAT / 2,
+                       crash_vel);
     }
 
     bool reuse_section_kick = shouldReuseSectionKickPattern(section.type, ctx.style);
@@ -401,8 +577,8 @@ void generateDrumsTrackImpl(MidiTrack& track, const Song& song, const DrumGenera
       Tick bar_start = section.start_tick + bar * TICKS_PER_BAR;
       Tick bar_end = bar_start + TICKS_PER_BAR;
       bool is_section_last_bar = (bar == section.bars - 1);
-      const float swing_amount =
-          calculateSwingAmount(section.type, bar, section.bars, section.swing_amount);
+      // One grid per bar; every voice below places its onsets through it.
+      const GrooveGrid grid = makeGrooveGrid(section, bar, ctx.groove, ctx.time_feel, params.bpm);
 
       // Crash on section starts
       if (bar == 0) {
@@ -414,7 +590,7 @@ void generateDrumsTrackImpl(MidiTrack& track, const Song& song, const DrumGenera
         }
         if (add_crash) {
           uint8_t crash_vel = calculateVelocity(section.type, 0, params.mood);
-          addCrashIfAbsent(track, bar_start, EIGHTH, crash_vel);
+          addCrashIfAbsent(track, grid.resolve(bar_start), EIGHTH, crash_vel);
         }
       }
 
@@ -422,7 +598,7 @@ void generateDrumsTrackImpl(MidiTrack& track, const Song& song, const DrumGenera
       if (section.peak_level == PeakLevel::Max && bar > 0 && bar % 4 == 0) {
         uint8_t crash_vel =
             static_cast<uint8_t>(calculateVelocity(section.type, 0, params.mood) * 0.9f);
-        addCrashIfAbsent(track, bar_start, EIGHTH, crash_vel);
+        addCrashIfAbsent(track, grid.resolve(bar_start), EIGHTH, crash_vel);
       }
 
       if (section.peak_level == PeakLevel::Max &&
@@ -432,8 +608,7 @@ void generateDrumsTrackImpl(MidiTrack& track, const Song& song, const DrumGenera
         bool minimal_tambourine = (blueprint.percussion_policy == PercussionPolicy::Minimal);
         for (uint8_t beat = 0; beat < 4; ++beat) {
           if (minimal_tambourine && beat % 2 == 0) continue;  // skip beats 1 & 3
-          Tick offbeat_tick = quantizeDrumSwing(bar_start + beat * TICKS_PER_BEAT + EIGHTH,
-                                                ctx.groove, swing_amount);
+          Tick offbeat_tick = grid.resolve(bar_start + beat * TICKS_PER_BEAT + EIGHTH);
           uint8_t tam_vel = static_cast<uint8_t>(std::min(90.0f, 65.0f * ctx.density_mult));
           addDrumNote(track, offbeat_tick, EIGHTH, TAMBOURINE, tam_vel);
         }
@@ -446,7 +621,7 @@ void generateDrumsTrackImpl(MidiTrack& track, const Song& song, const DrumGenera
       uint8_t open_hh_beat = 3;
       if (ctx.ohh_bar_interval > 0 && (bar % ctx.ohh_bar_interval == (ctx.ohh_bar_interval - 1))) {
         open_hh_beat = getOpenHiHatBeat(section.type, bar, rng);
-        Tick ohh_check_tick = bar_start + open_hh_beat * TICKS_PER_BEAT;
+        Tick ohh_check_tick = grid.resolve(bar_start + open_hh_beat * TICKS_PER_BEAT);
         bar_has_open_hh = !hasCrashAtTick(track, ohh_check_tick);
       }
 
@@ -474,8 +649,13 @@ void generateDrumsTrackImpl(MidiTrack& track, const Song& song, const DrumGenera
       // otherwise its phrase-aware kicks and the base pattern both emit the
       // same strong beats. RhythmSync remains additive because its callback
       // only contributes supporting syncopations around a stable anchor.
+      // An intro that turns the kick off turns it off for every path that can
+      // place one, the vocal-driven callbacks included.
+      const bool intro_kick_disabled =
+          (section.type == SectionType::Intro && !blueprint.intro_kick_enabled);
+
       bool melody_driven_kicks_generated = false;
-      if (vocal_sync_callback) {
+      if (vocal_sync_callback && !intro_kick_disabled) {
         uint8_t kick_velocity = calculateVelocity(section.type, 0, params.mood);
         const size_t first_callback_note = track.notes().size();
         const bool callback_generated_kicks =
@@ -483,15 +663,13 @@ void generateDrumsTrackImpl(MidiTrack& track, const Song& song, const DrumGenera
         for (size_t note_idx = first_callback_note; note_idx < track.notes().size(); ++note_idx) {
           NoteEvent& note = track.notes()[note_idx];
           if (note.note == BD) {
-            note.start_tick = quantizeDrumSwing(note.start_tick, ctx.groove, swing_amount);
+            note.start_tick = grid.resolve(note.start_tick);
           }
         }
         melody_driven_kicks_generated =
             params.paradigm == GenerationParadigm::MelodyDriven && callback_generated_kicks;
       }
 
-      bool intro_kick_disabled =
-          (section.type == SectionType::Intro && !blueprint.intro_kick_enabled);
       const DrumRole drum_role = section.getEffectiveDrumRole();
       const float kick_probability = getDrumRoleKickProbability(drum_role);
       if (params.paradigm == GenerationParadigm::RhythmSync && !intro_kick_disabled &&
@@ -503,14 +681,15 @@ void generateDrumsTrackImpl(MidiTrack& track, const Song& song, const DrumGenera
         const bool play_downbeat_anchor =
             drum_role == DrumRole::Full || rng_util::rollProbability(rng, kick_probability);
         if (play_downbeat_anchor) {
-          addKickAnchorIfAbsent(track, bar_start, EIGHTH, anchor_velocity);
+          addKickAnchorIfAbsent(track, grid.resolve(bar_start), EIGHTH, anchor_velocity);
         }
         // Ambient must make exactly one downbeat decision per bar; otherwise
         // the regular pattern can reintroduce a beat-3 kick after the anchor
         // path intentionally omitted it.
         kick.beat1 = false;
         if (drum_role == DrumRole::Full) {
-          addKickAnchorIfAbsent(track, bar_start + TICKS_PER_BEAT * 2, EIGHTH, anchor_velocity);
+          addKickAnchorIfAbsent(track, grid.resolve(bar_start + TICKS_PER_BEAT * 2), EIGHTH,
+                                anchor_velocity);
         }
         kick.beat3 = false;
       }
@@ -535,10 +714,14 @@ void generateDrumsTrackImpl(MidiTrack& track, const Song& song, const DrumGenera
         // Pre-chorus buildup
         bool in_prechorus_lift = isInPreChorusLift(section, bar, all_sections, sec_idx);
 
+        const float snare_prob = getDrumRoleSnareProbability(section.getEffectiveDrumRole());
+        const bool allow_snare_family = snare_prob > 0.0f;
+
         bool did_buildup = false;
         if (in_prechorus_lift) {
-          did_buildup = generatePreChorusBuildup(track, beat_tick, beat, velocity, bar,
-                                                 section.bars, is_section_last_bar, ctx.style);
+          did_buildup =
+              generatePreChorusBuildup(track, grid, beat_tick, beat, velocity, bar, section.bars,
+                                       is_section_last_bar, ctx.style, allow_snare_family);
         }
 
         // Fill handling
@@ -546,31 +729,34 @@ void generateDrumsTrackImpl(MidiTrack& track, const Song& song, const DrumGenera
         bool should_fill = is_section_last_bar && !is_last_section && beat >= fill_start_beat &&
                            (next_wants_fill || next_section == SectionType::Chorus) && !did_buildup;
 
+        // Common beat context (shared across all beat processors)
+        BeatContext beat_ctx{beat_tick,         beat,       velocity, section.type,
+                             params.mood,       params.bpm, bar,      section.bars,
+                             in_prechorus_lift, grid,       rng};
+
         if (should_fill) {
           if (beat == fill_start_beat) {
             current_fill = selectFillType(section.type, next_section, ctx.style, next_energy, rng);
           }
-          generateFill(track, beat_tick, beat, current_fill, velocity);
-          continue;
+          if (generateFill(track, grid, beat_tick, beat, current_fill, velocity,
+                           !intro_kick_disabled)) {
+            continue;
+          }
+          // The chosen fill has no material on this beat. Fall through to the
+          // ordinary pattern so the beat handed to the next section is not
+          // silent.
         }
 
-        // Common beat context (shared across all beat processors)
-        BeatContext beat_ctx{beat_tick,  beat, velocity,     section.type,      params.mood,
-                             params.bpm, bar,  section.bars, in_prechorus_lift, rng};
         // Kick drum
         // Check intro_kick_enabled from blueprint
         if (!intro_kick_disabled && !melody_driven_kicks_generated) {
           float kick_prob = getDrumRoleKickProbability(section.getEffectiveDrumRole());
-          Tick adjusted_beat_tick = ::midisketch::applyTimeFeel(beat_tick, time_feel, params.bpm);
-          KickBeatParams kick_params{
-              adjusted_beat_tick, kick,
-              kick_prob,          params.humanize ? params.humanize_timing : 0.0f,
-              swing_amount,       ctx.groove};
+          KickBeatParams kick_params{kick, kick_prob,
+                                     params.humanize ? params.humanize_timing : 0.0f};
           generateKickForBeat(track, beat_ctx, kick_params);
         }
 
         // Snare drum
-        float snare_prob = getDrumRoleSnareProbability(section.getEffectiveDrumRole());
         bool is_intro_first = (section.type == SectionType::Intro && bar == 0);
         bool use_groove_snare = use_euclidean && (groove_template == GrooveTemplate::HalfTime ||
                                                   groove_template == GrooveTemplate::Trap);
@@ -588,26 +774,20 @@ void generateDrumsTrackImpl(MidiTrack& track, const Song& song, const DrumGenera
         // Ghost notes
         if (ctx.use_ghost_notes) {
           GhostBeatParams ghost_params{section.getEffectiveBackingDensity(), use_euclidean,
-                                       groove_pattern.ghost_density / 100.0f, swing_amount,
-                                       ctx.groove};
+                                       groove_pattern.ghost_density / 100.0f, ctx.density_scale};
           generateGhostNotesForBeat(track, beat_ctx, ghost_params);
         }
 
         // Hi-hat
-        HiHatBeatParams hh_params{section.getEffectiveDrumRole(),
-                                  ctx.density_mult,
-                                  bar_has_open_hh,
-                                  open_hh_beat,
-                                  peak_open_hh_24,
-                                  swing_amount,
-                                  ctx.groove};
+        HiHatBeatParams hh_params{section.getEffectiveDrumRole(), ctx.density_mult, bar_has_open_hh,
+                                  open_hh_beat, peak_open_hh_24};
         generateHiHatForBeat(track, beat_ctx, ctx, hh_params);
       }
 
       // Foot hi-hat (independent pedal timekeeping)
       if (ctx.use_foot_hh && shouldPlayHiHat(section.getEffectiveDrumRole())) {
         for (uint8_t fhh_beat = 0; fhh_beat < 4; fhh_beat += 2) {
-          Tick fhh_tick = bar_start + fhh_beat * TICKS_PER_BEAT;
+          Tick fhh_tick = grid.resolve(bar_start + fhh_beat * TICKS_PER_BEAT);
           if (hasDrumAtTick(track, fhh_tick, FHH)) {
             continue;
           }
@@ -616,12 +796,8 @@ void generateDrumsTrackImpl(MidiTrack& track, const Song& song, const DrumGenera
       }
 
       // Auxiliary percussion
-      if (!ctx.is_background_motif) {
-        PercussionConfig perc_config =
-            getPercussionConfig(params.mood, section.type, blueprint.percussion_policy);
-        generateAuxPercussionForBar(track, bar_start, perc_config, section.getEffectiveDrumRole(),
-                                    ctx.density_mult, rng, params.bpm, ctx.groove, swing_amount);
-      }
+      generateAuxPercussionForBar(track, bar_start, ctx.percussion, section.getEffectiveDrumRole(),
+                                  ctx.density_mult, rng, params.bpm, grid);
     }
   }
 

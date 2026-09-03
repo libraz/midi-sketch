@@ -12,6 +12,7 @@
 #include "core/preset_data.h"
 #include "core/section_types.h"
 #include "core/types.h"
+#include "track/drums/groove_grid.h"
 
 namespace midisketch {
 namespace drums {
@@ -49,13 +50,21 @@ FillType selectFillType(SectionType from, SectionType to, DrumStyle style,
                         SectionEnergy next_energy, std::mt19937& rng);
 
 /// @brief Generate a fill at the given beat.
+///
+/// A fill type does not have to cover every beat of the fill window. When it
+/// has nothing to say on a beat it reports so, and the caller keeps the
+/// section's ordinary pattern on that beat instead of leaving it silent.
+///
 /// @param track Target track
-/// @param beat_tick Tick position of beat
+/// @param grid Beat grid shared by every voice in the bar
+/// @param beat_tick Nominal tick position of beat
 /// @param beat Beat number (0-3)
 /// @param fill_type Type of fill to generate
 /// @param velocity Base velocity
-void generateFill(MidiTrack& track, Tick beat_tick, uint8_t beat, FillType fill_type,
-                  uint8_t velocity);
+/// @param allow_kick Whether the section admits a bass drum
+/// @return true when the fill placed at least one note on this beat
+bool generateFill(MidiTrack& track, const GrooveGrid& grid, Tick beat_tick, uint8_t beat,
+                  FillType fill_type, uint8_t velocity, bool allow_kick = true);
 
 }  // namespace drums
 }  // namespace midisketch

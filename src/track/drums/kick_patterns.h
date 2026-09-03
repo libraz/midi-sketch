@@ -28,6 +28,9 @@ struct KickPattern {
   bool beat4_and;  ///< Beat 4&
 };
 
+/// @brief Number of bars a pre-chorus lift covers.
+constexpr uint8_t kPreChorusLiftBars = 2;
+
 /// @brief Check if this bar is in the pre-chorus lift zone.
 /// @param section Current section
 /// @param bar Bar within section (0-based)
@@ -36,6 +39,16 @@ struct KickPattern {
 /// @return true if in pre-chorus lift zone
 bool isInPreChorusLift(const Section& section, uint8_t bar, const std::vector<Section>& sections,
                        size_t sec_idx);
+
+/// @brief Snare hits the pre-chorus buildup writes in one bar of the lift.
+///
+/// The buildup is a crescendo in rhythm as well as in volume: the earlier lift
+/// bars mark quarters and the last one doubles to eighths, so the section
+/// accelerates into the chorus instead of holding one flat pulse.
+///
+/// @param bar_in_lift Bar index within the lift (0-based)
+/// @return Number of snare hits written in that bar
+uint8_t preChorusBuildupHitsPerBar(uint8_t bar_in_lift);
 
 /// @brief Convert Euclidean bitmask (16-step) to KickPattern.
 /// @param pattern Euclidean rhythm pattern

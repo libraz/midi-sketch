@@ -13,6 +13,7 @@
 #include "core/production_blueprint.h"
 #include "core/section_types.h"
 #include "core/types.h"
+#include "track/drums/groove_grid.h"
 
 namespace midisketch {
 
@@ -54,10 +55,10 @@ PercussionConfig getPercussionConfig(Mood mood, SectionType section,
 /// @param density_mult Density multiplier for velocity
 /// @param rng Random number generator
 /// @param bpm Tempo in BPM (shaker switches to 8th notes at high tempos)
+/// @param grid Beat grid shared by every voice in the bar
 void generateAuxPercussionForBar(MidiTrack& track, Tick bar_start, const PercussionConfig& config,
                                  DrumRole drum_role, float density_mult, std::mt19937& rng,
-                                 uint16_t bpm = 0, DrumGrooveFeel groove = DrumGrooveFeel::Straight,
-                                 float swing_amount = 0.0f);
+                                 uint16_t bpm, const GrooveGrid& grid);
 
 }  // namespace drums
 }  // namespace midisketch

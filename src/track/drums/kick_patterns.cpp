@@ -28,7 +28,11 @@ bool isInPreChorusLift(const Section& section, uint8_t bar, const std::vector<Se
     return false;
   }
 
-  return bar >= (section.bars - 2);
+  return bar >= (section.bars - kPreChorusLiftBars);
+}
+
+uint8_t preChorusBuildupHitsPerBar(uint8_t bar_in_lift) {
+  return (bar_in_lift + 1 >= kPreChorusLiftBars) ? 8 : 4;
 }
 
 KickPattern euclideanToKickPattern(uint16_t pattern) {

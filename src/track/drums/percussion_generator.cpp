@@ -19,6 +19,10 @@ namespace drums {
 
 // Percussion activation table
 // [mood_category][section_index]
+//
+// A peak section (Chorus, MixBreak) always keeps every layer the sections
+// leading into it carry and adds to them, so percussion can only widen the
+// energy arc, never invert it.
 // clang-format off
 struct PercActivation {
   bool tambourine;
@@ -29,7 +33,7 @@ struct PercActivation {
 static constexpr PercActivation PERC_TABLE[5][9] = {
   //            Intro              A                  B                  Chorus             Bridge             Inter              Outro              Chant              Mix
   /* Calm */  {{false,false,false},{false,false,false},{false,false,false},{false,false,false},{false,false,false},{false,false,false},{false,false,false},{false,false,false},{false,false,false}},
-  /* Std  */  {{false,false,false},{false,false,false},{false,true, false},{true, false,true },{false,false,false},{false,false,false},{false,false,false},{false,false,false},{true, false,true }},
+  /* Std  */  {{false,false,false},{false,false,false},{false,true, false},{true, true, true },{false,false,false},{false,false,false},{false,false,false},{false,false,false},{true, true, true }},
   /* Ener */  {{false,false,false},{false,true, false},{false,true, false},{true, true, true },{false,false,false},{false,false,false},{false,false,false},{false,false,false},{true, true, true }},
   /* Idol */  {{false,false,false},{false,true, false},{false,true, false},{true, true, true },{false,false,false},{false,false,false},{false,false,false},{false,false,false},{true, true, true }},
   /* Rock */  {{false,false,false},{false,false,false},{false,false,false},{false,false,true },{false,false,false},{false,false,false},{false,false,false},{false,false,false},{false,false,true }},
@@ -96,7 +100,7 @@ PercussionConfig getPercussionConfig(Mood mood, SectionType section, PercussionP
 
 void generateAuxPercussionForBar(MidiTrack& track, Tick bar_start, const PercussionConfig& config,
                                  DrumRole drum_role, float density_mult, std::mt19937& rng,
-                                 uint16_t bpm, DrumGrooveFeel groove, float swing_amount) {
+                                 uint16_t bpm, const GrooveGrid& grid) {
   if (drum_role == DrumRole::Minimal || drum_role == DrumRole::FXOnly) {
     return;
   }
@@ -104,7 +108,7 @@ void generateAuxPercussionForBar(MidiTrack& track, Tick bar_start, const Percuss
   // Tambourine: backbeat on beats 2 and 4
   if (config.tambourine) {
     for (int beat = 1; beat <= 3; beat += 2) {
-      Tick beat_tick = quantizeDrumSwing(bar_start + beat * TICKS_PER_BEAT, groove, swing_amount);
+      Tick beat_tick = grid.resolve(bar_start + beat * TICKS_PER_BEAT);
       float raw_vel = 70.0f * density_mult * rng_util::rollFloat(rng, 0.90f, 1.10f);
       uint8_t tam_vel = static_cast<uint8_t>(std::clamp(raw_vel, 40.0f, 90.0f));
       addDrumNote(track, beat_tick, EIGHTH, TAMBOURINE, tam_vel);
@@ -122,8 +126,7 @@ void generateAuxPercussionForBar(MidiTrack& track, Tick bar_start, const Percuss
       constexpr float SHAKER_16TH_VEL[4] = {0.75f, 0.45f, 0.60f, 0.45f};
       for (int beat = 0; beat < 4; ++beat) {
         for (int sub = 0; sub < 4; ++sub) {
-          Tick sub_tick = quantizeDrumSwing(bar_start + beat * TICKS_PER_BEAT + sub * SIXTEENTH,
-                                            groove, swing_amount);
+          Tick sub_tick = grid.resolve(bar_start + beat * TICKS_PER_BEAT + sub * SIXTEENTH);
           float raw_vel =
               80.0f * SHAKER_16TH_VEL[sub] * density_mult * rng_util::rollFloat(rng, 0.90f, 1.10f);
           uint8_t shk_vel = static_cast<uint8_t>(std::clamp(raw_vel, 25.0f, 85.0f));
@@ -135,8 +138,7 @@ void generateAuxPercussionForBar(MidiTrack& track, Tick bar_start, const Percuss
       constexpr float SHAKER_8TH_VEL[2] = {0.75f, 0.55f};
       for (int beat = 0; beat < 4; ++beat) {
         for (int sub = 0; sub < 2; ++sub) {
-          Tick sub_tick = quantizeDrumSwing(bar_start + beat * TICKS_PER_BEAT + sub * TICK_EIGHTH,
-                                            groove, swing_amount);
+          Tick sub_tick = grid.resolve(bar_start + beat * TICKS_PER_BEAT + sub * TICK_EIGHTH);
           float raw_vel =
               80.0f * SHAKER_8TH_VEL[sub] * density_mult * rng_util::rollFloat(rng, 0.90f, 1.10f);
           uint8_t shk_vel = static_cast<uint8_t>(std::clamp(raw_vel, 25.0f, 85.0f));
@@ -149,7 +151,7 @@ void generateAuxPercussionForBar(MidiTrack& track, Tick bar_start, const Percuss
   // Hand Clap: backbeat on beats 2 and 4, layered with snare
   if (config.handclap) {
     for (int beat = 1; beat <= 3; beat += 2) {
-      Tick beat_tick = bar_start + beat * TICKS_PER_BEAT;
+      Tick beat_tick = grid.resolve(bar_start + beat * TICKS_PER_BEAT);
       float raw_vel = 85.0f * density_mult * rng_util::rollFloat(rng, 0.90f, 1.10f);
       uint8_t clap_vel = static_cast<uint8_t>(std::clamp(raw_vel, 50.0f, 100.0f));
       addDrumNote(track, beat_tick, EIGHTH, HANDCLAP, clap_vel);

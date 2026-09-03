@@ -28,31 +28,6 @@ using drums::getKickPattern;
 using drums::KickPattern;
 
 // ============================================================================
-// Hi-Hat Swing Factor API
-// ============================================================================
-
-float getHiHatSwingFactor(Mood mood) {
-  switch (mood) {
-    case Mood::CityPop:
-    case Mood::RnBNeoSoul:
-    case Mood::Lofi:
-      return 0.7f;
-    case Mood::IdolPop:
-    case Mood::AnimeHighEnergy:
-      return 0.3f;
-    case Mood::Ballad:
-    case Mood::Sentimental:
-      return 0.4f;
-    case Mood::LatinPop:
-      return 0.35f;
-    case Mood::Trap:
-      return 0.0f;
-    default:
-      return 0.5f;
-  }
-}
-
-// ============================================================================
 // Swing Control API Implementation
 // ============================================================================
 
@@ -174,28 +149,6 @@ Tick applyTimeFeel(Tick base_tick, TimeFeel feel, uint16_t bpm) {
   return base_tick + offset_ticks;
 }
 
-TimeFeel getMoodTimeFeel(Mood mood) {
-  switch (mood) {
-    // Laid back feels - relaxed, groovy
-    case Mood::Ballad:
-    case Mood::Chill:
-    case Mood::Sentimental:
-    case Mood::CityPop:  // City pop has that laid back groove
-      return TimeFeel::LaidBack;
-
-    // Pushed feels - driving, energetic
-    case Mood::EnergeticDance:
-    case Mood::AnimeHighEnergy:
-    case Mood::ElectroPop:
-    case Mood::FutureBass:
-      return TimeFeel::Pushed;
-
-    // On beat - standard timing
-    default:
-      return TimeFeel::OnBeat;
-  }
-}
-
 void generateDrumsTrack(MidiTrack& track, const Song& song, const GeneratorParams& params,
                         std::mt19937& rng) {
   // Delegate to unified implementation without vocal sync
@@ -209,6 +162,7 @@ void generateDrumsTrack(MidiTrack& track, const Song& song, const GeneratorParam
   const auto& blueprint = params.blueprint_ref != nullptr
                               ? *params.blueprint_ref
                               : getProductionBlueprint(params.blueprint_id);
+  drum_params.blueprint = &blueprint;
   drum_params.drum_style_hint = blueprint.constraints.drum_style_hint;
   drum_params.humanize = params.humanize;
   drum_params.humanize_timing = params.humanize_timing;
@@ -229,6 +183,7 @@ void generateDrumsTrackWithVocal(MidiTrack& track, const Song& song, const Gener
   const auto& blueprint = params.blueprint_ref != nullptr
                               ? *params.blueprint_ref
                               : getProductionBlueprint(params.blueprint_id);
+  drum_params.blueprint = &blueprint;
   drum_params.drum_style_hint = blueprint.constraints.drum_style_hint;
   drum_params.humanize = params.humanize;
   drum_params.humanize_timing = params.humanize_timing;
@@ -251,6 +206,7 @@ void generateDrumsTrackMelodyDriven(MidiTrack& track, const Song& song,
   const auto& blueprint = params.blueprint_ref != nullptr
                               ? *params.blueprint_ref
                               : getProductionBlueprint(params.blueprint_id);
+  drum_params.blueprint = &blueprint;
   drum_params.drum_style_hint = blueprint.constraints.drum_style_hint;
   drum_params.humanize = params.humanize;
   drum_params.humanize_timing = params.humanize_timing;

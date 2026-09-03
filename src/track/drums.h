@@ -100,18 +100,6 @@ Tick getSwingOffsetContinuous(DrumGrooveFeel groove, Tick subdivision, SectionTy
                               int bar_in_section, int total_bars, float swing_override = -1.0f);
 
 /**
- * @brief Get hi-hat swing factor based on mood.
- *
- * Returns a mood-dependent swing factor for 16th note hi-hats.
- * Jazz/CityPop get stronger swing (0.7), IdolPop/AnimeHighEnergy get lighter swing (0.3),
- * and most other moods use standard swing (0.5).
- *
- * @param mood Current mood
- * @return Swing factor (0.0-1.0) to multiply with base swing offset
- */
-float getHiHatSwingFactor(Mood mood);
-
-/**
  * @brief Apply time feel offset to a tick position.
  *
  * Applies micro-timing adjustments based on the time feel setting.
@@ -124,19 +112,6 @@ float getHiHatSwingFactor(Mood mood);
  * @return Adjusted tick position
  */
 Tick applyTimeFeel(Tick base_tick, TimeFeel feel, uint16_t bpm);
-
-/**
- * @brief Get the default time feel for a mood.
- *
- * Maps moods to appropriate time feels:
- * - Ballad, Chill -> LaidBack (relaxed)
- * - EnergeticDance, AnimeHighEnergy -> Pushed (driving)
- * - Most others -> OnBeat (standard)
- *
- * @param mood Mood preset
- * @return TimeFeel appropriate for the mood
- */
-TimeFeel getMoodTimeFeel(Mood mood);
 
 // ============================================================================
 // Kick Pattern Pre-computation (for Bass-Kick sync)
