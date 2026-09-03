@@ -15,20 +15,24 @@ from ..helpers import note_name, tick_to_bar
 from ..models import Issue
 from .base import BaseAnalyzer
 
+# A tessitura centre in the outer sixth of the song's vocal range at either end
+# means half the melody sits against an edge of the range it was written for.
+TESSITURA_EDGE_FRACTION = 6
+
 
 class VocalAnalyzer(BaseAnalyzer):
     """Analyzer for vocal track musical quality.
 
-    Checks phrase breathability, tessitura comfort, climax positioning,
-    interval distribution for singability, verse-chorus contrast,
-    climax-in-chorus verification, and phrase repetition balance.
+    Checks phrase breathability, tessitura comfort, interval distribution for
+    singability, verse-chorus contrast, climax placement, and phrase repetition
+    balance. Climax placement is asked once, by the blueprint-aware check: a
+    single musical fact must not be deducted for twice.
     """
 
     def analyze(self) -> List[Issue]:
         """Run all vocal analyses and return collected issues."""
         self._analyze_vocal_breathability()
         self._analyze_vocal_tessitura()
-        self._analyze_vocal_climax()
         self._analyze_vocal_interval_distribution()
         self._analyze_vocal_section_contrast()
         self._analyze_climax_placement()
@@ -93,7 +97,15 @@ class VocalAnalyzer(BaseAnalyzer):
             )
 
     def _analyze_vocal_tessitura(self):
-        """Analyze where most vocal notes concentrate (tessitura)."""
+        """Analyze where most vocal notes concentrate (tessitura).
+
+        The comfortable centre is judged against the range the song was written
+        for, not a fixed window. A median sitting in the outer sixth of that
+        range means half the melody lives at an edge of it, which is where a
+        singer runs out of voice. For the generator's default range of C4-G5
+        that outer sixth starts at E5, the upper bound this check has always
+        named.
+        """
         vocal = self.notes_by_channel.get(0, [])
         if len(vocal) < 8:
             return
@@ -103,16 +115,22 @@ class VocalAnalyzer(BaseAnalyzer):
         median = pitches[len(pitches) // 2]
         q3_val = pitches[3 * len(pitches) // 4]
 
-        # Comfortable tessitura: centered around A3(57)-E5(76)
-        if median < 55 or median > 79:
+        low, high = self.vocal_range()
+        margin = (high - low) // TESSITURA_EDGE_FRACTION
+        comfortable_low, comfortable_high = low + margin, high - margin
+
+        if median < comfortable_low or median > comfortable_high:
             self.add_issue(
                 severity=Severity.INFO,
                 category=Category.MELODIC,
                 subcategory="tessitura",
-                message=f"Tessitura center ({note_name(median)}) outside comfortable range",
+                message=(f"Tessitura center ({note_name(median)}) outside the "
+                         f"comfortable part of {note_name(low)}-{note_name(high)}"),
                 tick=0,
                 track="Vocal",
-                details={"median": median, "q1": q1_val, "q3": q3_val},
+                details={"median": median, "q1": q1_val, "q3": q3_val,
+                         "comfortable_low": comfortable_low,
+                         "comfortable_high": comfortable_high},
             )
 
         # Check for bimodal distribution (notes at extremes)
@@ -126,34 +144,6 @@ class VocalAnalyzer(BaseAnalyzer):
                 tick=0,
                 track="Vocal",
                 details={"iqr": iqr},
-            )
-
-    def _analyze_vocal_climax(self):
-        """Check if melodic peak is in chorus sections."""
-        vocal = self.notes_by_channel.get(0, [])
-        if len(vocal) < 8:
-            return
-
-        peak_note = max(vocal, key=lambda n: n.pitch)
-        peak_bar = tick_to_bar(peak_note.start)
-
-        # Check if peak is in a chorus section
-        chorus_sections = [s for s in self.sections if s['type'] == 'chorus']
-        in_chorus = any(
-            s['start_bar'] <= peak_bar <= s['end_bar']
-            for s in chorus_sections
-        )
-
-        if not in_chorus and chorus_sections:
-            self.add_issue(
-                severity=Severity.INFO,
-                category=Category.MELODIC,
-                subcategory="climax_position",
-                message=(f"Peak note ({note_name(peak_note.pitch)}) "
-                         f"not in chorus (bar {peak_bar})"),
-                tick=peak_note.start,
-                track="Vocal",
-                details={"peak_pitch": peak_note.pitch, "peak_bar": peak_bar},
             )
 
     def _analyze_vocal_interval_distribution(self):

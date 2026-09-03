@@ -88,6 +88,17 @@ def load_json_metadata(filepath: str) -> dict:
         with open(filepath, 'r') as file_handle:
             data = json.load(file_handle)
         meta = data.get('metadata', {})
+        tracks = data.get('tracks', [])
+        # Channels the generator says it transposed. Absent from output written
+        # before the flag existed, in which case the reader falls back to the
+        # channels that were untransposed then.
+        transposed_channels = None
+        if any(isinstance(track, dict) and 'transposed' in track for track in tracks):
+            transposed_channels = {
+                int(track['channel']) for track in tracks
+                if isinstance(track, dict) and track.get('transposed')
+                and track.get('channel') is not None
+            }
         return {
             'blueprint': meta.get('blueprint'),
             'style': meta.get('style'),
@@ -95,6 +106,16 @@ def load_json_metadata(filepath: str) -> dict:
             'sections': data.get('sections', []),
             'chords': data.get('chords', []),
             'vocal_style': data.get('vocal_style') if data.get('vocal_style') is not None else meta.get('vocal_style'),
+            # Key and modulation as the generator declared them: the shift from
+            # the internal C major space, with no reconstruction needed.
+            'key': meta.get('key'),
+            'modulation_tick': meta.get('modulation_tick'),
+            'modulation_semitones': meta.get('modulation_semitones'),
+            # The range the vocal was written against. Absent from output that
+            # does not state it, in which case the documented default applies.
+            'vocal_low': meta.get('vocal_low'),
+            'vocal_high': meta.get('vocal_high'),
+            'transposed_channels': transposed_channels,
         }
     except Exception:
         return {}

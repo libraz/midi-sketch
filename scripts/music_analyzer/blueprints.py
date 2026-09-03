@@ -18,7 +18,9 @@ class BlueprintProfile:
     """
     name: str
     paradigm: str  # Traditional, RhythmSync, MelodyDriven
-    riff_policy: str  # Free, Locked, Evolving
+    # Free, Locked (= LockedContour: rhythm held, pitches re-voiced), Evolving,
+    # LockedPitch (verbatim repeat).
+    riff_policy: str
     weight_melodic: float = 0.25
     weight_harmonic: float = 0.25
     weight_rhythm: float = 0.25
@@ -140,7 +142,9 @@ BLUEPRINT_PROFILES = {
         bonus_cap_melodic=12.0,
     ),
     9: BlueprintProfile(
-        "BehavioralLoop", "RhythmSync", "Locked",
+        # The only blueprint that fixes the riff verbatim: Locked elsewhere is
+        # LockedContour, which holds the rhythm and re-voices the pitches.
+        "BehavioralLoop", "RhythmSync", "LockedPitch",
         weight_melodic=0.25, weight_harmonic=0.20, weight_rhythm=0.30,
         weight_arrangement=0.15, weight_structure=0.10,
         density_tolerance=1.3, rhythm_sync_required=True,

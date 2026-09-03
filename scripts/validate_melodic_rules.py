@@ -43,8 +43,17 @@ def load_vocal_sequences(include_excluded: bool = False) -> list[dict]:
     Tracks flagged `melody_exclude` in track_roles.json (e.g. piano
     arrangements where skyline cannot isolate the melody) are skipped
     unless include_excluded is set.
+
+    Raises:
+        FileNotFoundError: when the local-only reference corpus is absent.
     """
-    roles = json.loads((REFERENCE_DIR / "track_roles.json").read_text())
+    roles_path = REFERENCE_DIR / "track_roles.json"
+    if not roles_path.exists():
+        raise FileNotFoundError(
+            f"reference corpus labels not found at {roles_path}; the corpus is "
+            "local-only and is not distributed with the repository"
+        )
+    roles = json.loads(roles_path.read_text())
     categories = {
         fname: cat
         for cat, info in roles.get("_blueprint_categories", {}).items()
@@ -62,7 +71,11 @@ def load_vocal_sequences(include_excluded: bool = False) -> list[dict]:
         ]
         if not vocal_keys:
             continue
-        smf = parse_smf(REFERENCE_DIR / fname)
+        path = REFERENCE_DIR / fname
+        if not path.exists():
+            print(f"skipping {fname}: labeled but missing from the corpus", file=sys.stderr)
+            continue
+        smf = parse_smf(path)
         for key in vocal_keys:
             trk, ch = key.split("ch")
             trk, ch = int(trk[3:]), int(ch)
@@ -86,8 +99,14 @@ def main() -> None:
     parser.add_argument("--json", action="store_true", help="JSON output")
     args = parser.parse_args()
 
+    try:
+        entries = load_vocal_sequences()
+    except FileNotFoundError as exc:
+        print(exc, file=sys.stderr)
+        sys.exit(1)
+
     rows = []
-    for entry in load_vocal_sequences():
+    for entry in entries:
         seq, division, bpm = entry["seq"], entry["division"], entry["bpm"]
         profile = mm.melody_profile(seq, division, bpm)
         rows.append({

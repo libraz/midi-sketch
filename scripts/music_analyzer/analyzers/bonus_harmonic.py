@@ -12,7 +12,7 @@ from ..constants import (
     TICKS_PER_BEAT,
     Category,
     DEGREE_TO_ROOT_PC,
-    CHORD_FUNCTION_MAP,
+    chord_function,
 )
 from ..models import Bonus
 from ..helpers import tick_to_bar
@@ -31,26 +31,6 @@ _MIN_DISTINCT_ROOTS = 4       # Need at least 4 distinct root PCs
 _MIN_DISTINCT_VOICINGS = 6    # Need at least 6 distinct voicing fingerprints
 
 
-def _get_chord_function(degree: int) -> Optional[str]:
-    """Map a chord degree to its harmonic function (T, S, or D).
-
-    Converts the degree to its root pitch class via DEGREE_TO_ROOT_PC,
-    then looks up the function in CHORD_FUNCTION_MAP.
-
-    Args:
-        degree: Chord degree (0-6), or -1 if unknown.
-
-    Returns:
-        Harmonic function string ('T', 'S', 'D') or None if unknown.
-    """
-    if degree < 0 or degree > 6:
-        return None
-    root_pc = DEGREE_TO_ROOT_PC.get(degree)
-    if root_pc is None:
-        return None
-    return CHORD_FUNCTION_MAP.get(root_pc)
-
-
 def _tension_value(degree: int) -> Optional[float]:
     """Get the numeric tension value for a chord degree.
 
@@ -61,7 +41,7 @@ def _tension_value(degree: int) -> Optional[float]:
         Tension value (0.0 for tonic, 0.5 for subdominant, 1.0 for dominant)
         or None if degree is invalid.
     """
-    func = _get_chord_function(degree)
+    func = chord_function(degree)
     if func is None:
         return None
     return _FUNCTION_TENSION.get(func, 0.0)
@@ -162,7 +142,7 @@ class BonusHarmonicAnalyzer(BaseBonusAnalyzer):
         for bar_num in range(section['start_bar'], section['end_bar'] + 1):
             # Beat 1 tick for this bar.
             beat_one_tick = (bar_num - 1) * TICKS_PER_BAR
-            degree = self._get_chord_degree_near_tick(beat_one_tick)
+            degree = self.get_chord_degree_at(beat_one_tick)
             if degree >= 0:
                 tension = _tension_value(degree)
                 if tension is not None:
@@ -171,30 +151,6 @@ class BonusHarmonicAnalyzer(BaseBonusAnalyzer):
         if not tensions:
             return None
         return sum(tensions) / len(tensions)
-
-    def _get_chord_degree_near_tick(self, tick: int) -> int:
-        """Get chord degree from provenance at or near a tick.
-
-        Searches all notes for the closest provenance chord_degree within
-        a half-bar window of the target tick.
-
-        Args:
-            tick: Target tick position.
-
-        Returns:
-            Chord degree (0-6) or -1 if not found.
-        """
-        best_degree = -1
-        best_dist = TICKS_PER_BAR // 2  # Max search window: half a bar.
-        for note in self.notes:
-            if note.provenance and 'chord_degree' in note.provenance:
-                dist = abs(note.start - tick)
-                if dist < best_dist:
-                    best_dist = dist
-                    best_degree = note.provenance['chord_degree']
-                    if dist == 0:
-                        break
-        return best_degree
 
     def _evaluate_pre_chorus_tension(
         self,
@@ -223,12 +179,21 @@ class BonusHarmonicAnalyzer(BaseBonusAnalyzer):
             if tension is None:
                 continue
 
-            if section['type'] == 'verse':
-                verse_tensions.append(tension)
+            # A chorus running into another chorus is not a build-up: it is the
+            # resolution the build-up leads to, and counting it drags the
+            # pre-chorus average below the baseline it is measured against.
+            leads_into_chorus = (
+                section['type'] != 'chorus'
+                and idx + 1 < len(sections)
+                and sections[idx + 1]['type'] == 'chorus'
+            )
 
-            # Check if the next section is a chorus.
-            if idx + 1 < len(sections) and sections[idx + 1]['type'] == 'chorus':
+            # The two sets stay disjoint: a verse that is itself the run-up to
+            # the chorus cannot also serve as the baseline it is compared with.
+            if leads_into_chorus:
                 pre_chorus_tensions.append(tension)
+            elif section['type'] == 'verse':
+                verse_tensions.append(tension)
 
         if not verse_tensions or not pre_chorus_tensions:
             return 0.0
@@ -267,13 +232,13 @@ class BonusHarmonicAnalyzer(BaseBonusAnalyzer):
             # End of current section: last bar, beat 1.
             end_bar = sections[idx]['end_bar']
             end_tick = (end_bar - 1) * TICKS_PER_BAR
-            end_degree = self._get_chord_degree_near_tick(end_tick)
+            end_degree = self.get_chord_degree_at(end_tick)
             end_bass_pc = self._get_bass_pitch_class_near_tick(end_tick)
 
             # Start of next section: first bar, beat 1.
             start_bar = sections[idx + 1]['start_bar']
             start_tick = (start_bar - 1) * TICKS_PER_BAR
-            start_degree = self._get_chord_degree_near_tick(start_tick)
+            start_degree = self.get_chord_degree_at(start_tick)
             start_bass_pc = self._get_bass_pitch_class_near_tick(start_tick)
 
             cadence_score += self._cadence_strength(
@@ -306,7 +271,11 @@ class BonusHarmonicAnalyzer(BaseBonusAnalyzer):
         return 0.5
 
     def _get_bass_pitch_class_near_tick(self, tick: int) -> Optional[int]:
-        """Get the bass pitch class active at or nearest to a tick."""
+        """Get the bass pitch class active at or nearest to a tick.
+
+        Reported in the internal C major space so it can be compared against
+        the degree root table.
+        """
         bass_notes = self.notes_by_channel.get(2, [])
         if not bass_notes:
             return None
@@ -315,13 +284,13 @@ class BonusHarmonicAnalyzer(BaseBonusAnalyzer):
         best_dist = float('inf')
         for note in bass_notes:
             if note.start <= tick < note.end:
-                return note.pitch % 12
+                return self.internal_pitch_class(note)
             dist = abs(note.start - tick)
             if dist < best_dist and dist <= TICKS_PER_BEAT:
                 best_dist = dist
                 best_note = note
 
-        return best_note.pitch % 12 if best_note else None
+        return self.internal_pitch_class(best_note) if best_note else None
 
     def _evaluate_tension_arc(
         self, section_tensions: list
@@ -502,7 +471,7 @@ class BonusHarmonicAnalyzer(BaseBonusAnalyzer):
 
         for bar_num in range(1, max_bar + 1):
             beat_one_tick = (bar_num - 1) * TICKS_PER_BAR
-            degree = self._get_chord_degree_near_tick(beat_one_tick)
+            degree = self.get_chord_degree_at(beat_one_tick)
             if degree >= 0:
                 root_pc = DEGREE_TO_ROOT_PC.get(degree)
                 if root_pc is not None:

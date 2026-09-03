@@ -4,18 +4,19 @@ Detects melodic issues including isolated notes, consecutive same-pitch
 repetitions, out-of-range pitches, large leaps, monotonous contours,
 phrase arc quality, and singability metrics.
 
-Melody discipline (two-layer) checks compare the vocal against
-backup/reference/target_profiles.json:
+Melody discipline (two-layer) checks compare the vocal against a target profile
+measured from a reference corpus (see melody_targets):
 - Layer 1 (melody_common_rules): corpus-universal prohibitions, applied
   regardless of blueprint.
 - Layer 2 (per-category melody ranges): genre coloring, applied only when
   the blueprint (and thus the genre category) is known. No genre-uniform
   default is ever substituted — unknown genre means Layer 2 is skipped.
+Both layers need the target profile. Without it they are reported as inactive
+rather than skipped in silence, because a check that quietly disappears reads
+as a check that passed.
 """
 
-import json
 import sys
-from functools import lru_cache
 from pathlib import Path
 from typing import List, Optional
 
@@ -31,6 +32,7 @@ from ..constants import (
     Category,
 )
 from ..helpers import note_name, tick_to_bar
+from ..melody_targets import load_targets
 from ..models import Issue
 from .base import BaseAnalyzer
 
@@ -40,22 +42,21 @@ if str(_SCRIPTS_DIR) not in sys.path:
 
 import melodic_metrics as mm  # noqa: E402  (shared measurement library)
 
-_TARGETS_PATH = _SCRIPTS_DIR.parent / "backup" / "reference" / "target_profiles.json"
-
 # A single reference can describe a song, not a genre.  Keep its measurements
 # in the target file for inspection, but do not let them penalize generation.
 MELODY_STYLE_MIN_SAMPLES = 3
 
+# Repeated-pitch run lengths. In pop music 4-5 repeated notes are common for
+# rhythmic delivery (rap-style or syllabic passages), so the run has to be
+# longer than that before it reads as a defect.
+SAME_PITCH_WARN_RUN = 6
+SAME_PITCH_ERROR_RUN = 8
+
+# Widest leap accepted without further inspection (a major 9th). Anything wider
+# is judged on resolution, consonance and repetition before it is reported.
+MAX_UNEXAMINED_LEAP = 14
+
 _SEVERITY_MAP = {"error": Severity.ERROR, "warning": Severity.WARNING}
-
-
-@lru_cache(maxsize=1)
-def _load_melody_targets() -> Optional[dict]:
-    """target_profiles.json content, or None when unavailable."""
-    try:
-        return json.loads(_TARGETS_PATH.read_text())
-    except (OSError, json.JSONDecodeError):
-        return None
 
 
 def _category_for_blueprint(targets: dict, blueprint) -> Optional[str]:
@@ -96,8 +97,21 @@ class MelodicAnalyzer(BaseAnalyzer):
         vocal_notes = self.notes_by_channel.get(0, [])
         if len(vocal_notes) < 20:
             return
-        targets = _load_melody_targets()
+        targets, unavailable = load_targets()
         if targets is None:
+            # Say so. Silence here would be indistinguishable from a vocal that
+            # broke none of the corpus-universal rules.
+            self.add_issue(
+                severity=Severity.INFO,
+                category=Category.MELODIC,
+                subcategory="melody_discipline_inactive",
+                message=(f"Melody discipline checks did not run: {unavailable}. "
+                         f"Neither the common prohibitions nor the genre "
+                         f"coloring were evaluated for this song."),
+                tick=0,
+                track="Vocal",
+                details={"reason": unavailable},
+            )
             return
 
         seq = mm.skyline(sorted((n.start, n.duration, n.pitch) for n in vocal_notes))
@@ -228,15 +242,14 @@ class MelodicAnalyzer(BaseAnalyzer):
                     )
 
     def _analyze_consecutive_same_pitch(self):
-        """Detect consecutive same-pitch notes (6+ warning, 8+ error).
+        """Detect consecutive same-pitch notes.
 
-        In pop music, 4-5 repeated notes are common for rhythmic delivery
-        (e.g., rap-style or syllabic passages). Only flag 6+ as WARNING
-        and 8+ as ERROR.
+        Runs of SAME_PITCH_WARN_RUN are a WARNING and SAME_PITCH_ERROR_RUN an
+        ERROR; shorter runs are ordinary syllabic delivery.
         """
         melodic_channels = [0, 3, 5]
-        warn_threshold = 6
-        error_threshold = 8
+        warn_threshold = SAME_PITCH_WARN_RUN
+        error_threshold = SAME_PITCH_ERROR_RUN
 
         for channel in melodic_channels:
             notes = self.notes_by_channel.get(channel, [])
@@ -290,8 +303,16 @@ class MelodicAnalyzer(BaseAnalyzer):
                 )
 
     def _analyze_melodic_range(self):
-        """Check if melodic lines stay within appropriate ranges."""
+        """Check if melodic lines stay within appropriate ranges.
+
+        The vocal is measured against the range the song was generated with,
+        not a fixed window: a caller who asked for a lower voice must not be
+        told every note is too low.
+        """
+        vocal_low, vocal_high = self.vocal_range()
         for channel, (low, high) in TRACK_RANGES.items():
+            if channel == 0:
+                low, high = vocal_low, vocal_high
             notes = self.notes_by_channel.get(channel, [])
             track_name = TRACK_NAMES.get(channel, f"Ch{channel}")
 
@@ -320,7 +341,7 @@ class MelodicAnalyzer(BaseAnalyzer):
     def _analyze_melodic_leaps(self):
         """Detect awkward melodic leaps. AnimeHighEnergy-aware: resolved/consonant leaps are tolerated."""
         melodic_channels = [0, 3, 5]
-        base_threshold = 14  # Raised from 12 for modern J-pop
+        base_threshold = MAX_UNEXAMINED_LEAP
 
         for channel in melodic_channels:
             notes = self.notes_by_channel.get(channel, [])

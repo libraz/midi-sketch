@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 """Build per-blueprint-category target profiles from labeled reference MIDIs.
 
-Reads backup/reference/track_roles.json (labels + _blueprint_categories),
-profiles every labeled track with confidence high/medium and a non-null
-ms_role, then aggregates min/median/max per (category, ms_role) and writes
-backup/reference/target_profiles.json.
+Reads the corpus labels (track_roles.json with _blueprint_categories), profiles
+every labeled track with confidence high/medium and a non-null ms_role, then
+aggregates min/median/max per (category, ms_role) and writes the target profile
+the analyzer's melody discipline layers read.
+
+The profile is written where the analyzer reads it: the configured path when
+there is one, otherwise its default location next to the corpus.
 
 Usage:
     python3 scripts/build_reference_targets.py            # write + summary table
@@ -19,6 +22,7 @@ from pathlib import Path
 from statistics import median
 
 import melodic_metrics as mm
+from music_analyzer.melody_targets import targets_path
 from reference_motif_report import (
     labeled_tracks,
     load_notes,
@@ -225,7 +229,9 @@ def main() -> int:
             result["categories"][cat]["melody"] = aggregate_melody(melody_grouped[cat])
 
     if not args.dry_run:
-        out_path = REFERENCE_DIR / "target_profiles.json"
+        # Written where the analyzer reads it: the configured path when there is
+        # one, otherwise the default location it looks in.
+        out_path = targets_path()
         out_path.write_text(json.dumps(result, indent=2, ensure_ascii=False) + "\n")
         print(f"wrote {out_path}\n")
 

@@ -147,10 +147,12 @@ class StructureAnalyzer(BaseAnalyzer):
             energy = ((section['avg_velocity'] / 127) * 0.6
                       + min(section['density'] / 8, 1.0) * 0.4)
 
-            if section['type'] == 'verse':
-                verse_energies.append(energy)
-            elif section['type'] == 'chorus':
+            # The loud side is every section the generator drives hard, which
+            # includes the pre-chorus; the quiet side stays the verses.
+            if self.is_high_energy(section):
                 chorus_energies.append(energy)
+            elif section['type'] == 'verse':
+                verse_energies.append(energy)
 
         if not verse_energies or not chorus_energies:
             return
@@ -189,7 +191,7 @@ class StructureAnalyzer(BaseAnalyzer):
         melody_channels = [0, 1, 2, 3, 4, 5]
 
         for section in sections:
-            if section['type'] != 'chorus':
+            if not self.is_high_energy(section):
                 continue
 
             section_start = (section['start_bar'] - 1) * TICKS_PER_BAR

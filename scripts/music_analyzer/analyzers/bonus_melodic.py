@@ -395,14 +395,17 @@ class BonusMelodicAnalyzer(BaseBonusAnalyzer):
         exact_rate = exact_matches / total_pairs
         approx_rate = (exact_matches + approx_matches) / total_pairs
 
-        # Golden ratio: exact_match_rate in 0.15-0.40 is ideal.
-        if _EARWORM_EXACT_RATE_LOW <= exact_rate <= _EARWORM_EXACT_RATE_HIGH:
+        # Golden ratio: exact_match_rate in 0.15-0.40 is ideal. A blueprint
+        # built on simplicity carries more literal repetition by design, so its
+        # upper bound scales with that preference.
+        exact_rate_high = _EARWORM_EXACT_RATE_HIGH * self._get_simplicity_weight()
+        if _EARWORM_EXACT_RATE_LOW <= exact_rate <= exact_rate_high:
             repetition_score = 1.0
         elif exact_rate < _EARWORM_EXACT_RATE_LOW:
             repetition_score = exact_rate / _EARWORM_EXACT_RATE_LOW
         else:
             # Too repetitive.
-            overshoot = exact_rate - _EARWORM_EXACT_RATE_HIGH
+            overshoot = exact_rate - exact_rate_high
             repetition_score = max(0.0, 1.0 - overshoot * 3.0)
 
         # Approximate matches add a softer contribution.
@@ -679,4 +682,14 @@ class BonusMelodicAnalyzer(BaseBonusAnalyzer):
         """
         if self.profile and hasattr(self.profile, 'hook_bonus_weight'):
             return self.profile.hook_bonus_weight
+        return 1.0
+
+    def _get_simplicity_weight(self) -> float:
+        """Get the simplicity bonus weight from the blueprint profile.
+
+        Returns:
+            Weight multiplier (1.0 if no profile set).
+        """
+        if self.profile and hasattr(self.profile, 'simplicity_bonus_weight'):
+            return self.profile.simplicity_bonus_weight
         return 1.0

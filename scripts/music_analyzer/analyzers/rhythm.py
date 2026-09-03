@@ -445,9 +445,11 @@ class RhythmAnalyzer(BaseAnalyzer):
         melodic_channels = [0, 3, 5]
         grid_resolution = TICKS_PER_BEAT // 4
         tolerance = 10
-        if self.profile.name == "RhythmLock":
-            # RhythmLock can use a deliberate small pre-grid attack for vocal
-            # pickup/drive. This is composition timing, not humanization.
+        if self.profile.paradigm == "RhythmSync":
+            # A shared-rhythm arrangement uses a deliberate small pre-grid
+            # attack for pickup and drive. This is composition timing, not
+            # humanization, and it is a property of the paradigm rather than of
+            # any one blueprint.
             tolerance = 35
 
         total_notes = 0
@@ -465,16 +467,16 @@ class RhythmAnalyzer(BaseAnalyzer):
         ratio = on_grid_notes / total_notes
         paradigm = self.profile.paradigm
 
-        if self.profile.name == "RhythmLock":
-            threshold = 0.85
-        elif paradigm == "RhythmSync":
+        if paradigm == "RhythmSync":
             threshold = 0.95
         else:
             threshold = 0.70
 
         if ratio < threshold:
             severity = Severity.WARNING
-            if self.profile.name == "RhythmLock" and ratio >= 0.75:
+            # A shared-rhythm arrangement that is mostly on the grid has drifted
+            # rather than come apart.
+            if paradigm == "RhythmSync" and ratio >= 0.75:
                 severity = Severity.INFO
             self.add_issue(
                 severity=severity,
@@ -597,7 +599,10 @@ class RhythmAnalyzer(BaseAnalyzer):
             note for note in self.notes_by_channel.get(1, [])
             if chorus_start <= note.start < chorus_end
         ]
-        if chord_notes:
+        # A blueprint built on sustained harmony treats long chord notes as its
+        # texture, so a pad-like chord track is not a drive deficit there.
+        prefers_long_notes = bool(self.profile and self.profile.long_note_bonus)
+        if chord_notes and not prefers_long_notes:
             long_notes = sum(
                 1 for note in chord_notes
                 if note.duration > TICKS_PER_BEAT
@@ -785,7 +790,9 @@ class RhythmAnalyzer(BaseAnalyzer):
         if inconsistent_sections > 0:
             ratio = inconsistent_sections / total_sections
             severity = Severity.WARNING if ratio > 0.5 else Severity.INFO
-            if self.profile is not None and self.profile.name == "RhythmLock":
+            # Under RhythmSync the guitar follows the shared rhythm cell, which
+            # changes with the section by design.
+            if self.profile is not None and self.profile.paradigm == "RhythmSync":
                 severity = Severity.INFO
             self.add_issue(
                 severity=severity,

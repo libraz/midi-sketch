@@ -843,7 +843,7 @@ Examples:
 
 Analyze existing files:
   %(prog)s -i output.mid        # Analyze a single file
-  %(prog)s -i backup/*.mid      # Analyze all .mid files in backup/
+  %(prog)s -i renders/*.mid     # Analyze every .mid file in a directory
   %(prog)s -i "**/*.mid"        # Analyze all .mid files recursively
 
 Filters:
@@ -858,7 +858,7 @@ Filters:
     # Analyze existing MIDI files
     parser.add_argument("--input", "-i", type=str, nargs="+",
                         help="Analyze existing MIDI file(s) instead of generating new ones. "
-                             "Supports glob patterns (e.g., 'backup/*.mid')")
+                             "Supports glob patterns (e.g., 'renders/*.mid')")
 
     # Preset modes
     mode = parser.add_mutually_exclusive_group()

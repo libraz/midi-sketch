@@ -285,9 +285,6 @@ class MusicAnalyzer:
                 'tessitura': {
                     Severity.ERROR: 0.5, Severity.WARNING: 0.3, Severity.INFO: 0.1,
                 },
-                'climax_position': {
-                    Severity.ERROR: 0.5, Severity.WARNING: 0.3, Severity.INFO: 0.1,
-                },
                 'interval_distribution': {
                     Severity.ERROR: 0.5, Severity.WARNING: 0.3, Severity.INFO: 0.1,
                 },

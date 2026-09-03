@@ -28,6 +28,11 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CLI_BIN = PROJECT_ROOT / "build" / "bin" / "midisketch_cli"
 WASM_HELPER = PROJECT_ROOT / "scripts" / "wasm_helper.mjs"
 
+# Fewest sounding tracks a generated arrangement may have. A pop sketch always
+# carries at least a vocal, a bass and a chord track; anything less means
+# generation collapsed and the note-by-note comparison would be vacuous.
+MIN_SOUNDING_TRACKS = 3
+
 @dataclass
 class Config:
     """Config params that both CLI and WASM accept.
@@ -74,31 +79,27 @@ class CompareResult:
     errors: list[str] = field(default_factory=list)
 
 
-def get_wasm_defaults(style: int) -> dict:
-    """Get createDefaultConfig() defaults from WASM for a given style."""
-    cmd = [
-        "node", str(WASM_HELPER),
-        "--style", str(style),
-        "--dump-config",
-    ]
-    try:
-        result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=15, cwd=str(PROJECT_ROOT)
-        )
-        if result.returncode == 0:
-            return json.loads(result.stdout)
-    except (subprocess.TimeoutExpired, json.JSONDecodeError):
-        pass
-    return {}
+def optional_flags(cfg: Config) -> list[str]:
+    """Flags for the fields the caller actually set.
 
-
-def run_cli(cfg: Config, work_dir: Path) -> Optional[dict]:
-    """Run native CLI and return events JSON.
-
-    CLI writes output.mid and output.json to cwd, so we run it inside work_dir.
-    Optional config fields are omitted so that the CLI's defaults are exercised.
+    A field left as None is passed to neither side, so each entry point has to
+    resolve it through its own default-config path.
     """
-    cmd = [
+    flags = []
+    for flag, value in (
+        ("--bpm", cfg.bpm),
+        ("--vocal-attitude", cfg.vocal_attitude),
+        ("--vocal-low", cfg.vocal_low),
+        ("--vocal-high", cfg.vocal_high),
+    ):
+        if value is not None:
+            flags += [flag, str(value)]
+    return flags
+
+
+def cli_command(cfg: Config) -> list[str]:
+    """Argument vector for the native CLI."""
+    return [
         str(CLI_BIN),
         "--seed", str(cfg.seed),
         "--style", str(cfg.style),
@@ -110,15 +111,31 @@ def run_cli(cfg: Config, work_dir: Path) -> Optional[dict]:
         # serialization format so that this check can compare the complete
         # MIDI payload, not only the lossy events JSON projection.
         "--format", "smf1",
-    ]
-    if cfg.bpm is not None:
-        cmd += ["--bpm", str(cfg.bpm)]
-    if cfg.vocal_attitude is not None:
-        cmd += ["--vocal-attitude", str(cfg.vocal_attitude)]
-    if cfg.vocal_low is not None:
-        cmd += ["--vocal-low", str(cfg.vocal_low)]
-    if cfg.vocal_high is not None:
-        cmd += ["--vocal-high", str(cfg.vocal_high)]
+    ] + optional_flags(cfg)
+
+
+def wasm_command(cfg: Config, midi_path: Path) -> list[str]:
+    """Argument vector for the WASM helper."""
+    return [
+        "node",
+        str(WASM_HELPER),
+        "--seed", str(cfg.seed),
+        "--style", str(cfg.style),
+        "--chord", str(cfg.chord),
+        "--form", str(cfg.form),
+        "--blueprint", str(cfg.blueprint),
+        "--key", str(cfg.key),
+        "--midi", str(midi_path),
+    ] + optional_flags(cfg)
+
+
+def run_cli(cfg: Config, work_dir: Path) -> Optional[dict]:
+    """Run native CLI and return events JSON.
+
+    CLI writes output.mid and output.json to cwd, so we run it inside work_dir.
+    Optional config fields are omitted so that the CLI's defaults are exercised.
+    """
+    cmd = cli_command(cfg)
     try:
         result = subprocess.run(
             cmd, capture_output=True, text=True, timeout=30, cwd=str(work_dir)
@@ -145,25 +162,7 @@ def run_wasm(cfg: Config, midi_path: Path) -> Optional[dict]:
 
     Optional config fields are omitted so that createDefaultConfig() is exercised.
     """
-    cmd = [
-        "node",
-        str(WASM_HELPER),
-        "--seed", str(cfg.seed),
-        "--style", str(cfg.style),
-        "--chord", str(cfg.chord),
-        "--form", str(cfg.form),
-        "--blueprint", str(cfg.blueprint),
-        "--key", str(cfg.key),
-        "--midi", str(midi_path),
-    ]
-    if cfg.bpm is not None:
-        cmd += ["--bpm", str(cfg.bpm)]
-    if cfg.vocal_attitude is not None:
-        cmd += ["--vocal-attitude", str(cfg.vocal_attitude)]
-    if cfg.vocal_low is not None:
-        cmd += ["--vocal-low", str(cfg.vocal_low)]
-    if cfg.vocal_high is not None:
-        cmd += ["--vocal-high", str(cfg.vocal_high)]
+    cmd = wasm_command(cfg, midi_path)
     try:
         result = subprocess.run(
             cmd, capture_output=True, text=True, timeout=30, cwd=str(PROJECT_ROOT)
@@ -219,23 +218,49 @@ def compare_notes(track_name: str, cli_notes: list, wasm_notes: list) -> list[Di
     return diffs
 
 
+def sounding_track_names(events: dict) -> list[str]:
+    """Names of the tracks that actually carry notes."""
+    return [
+        track.get("name", "?")
+        for track in events.get("tracks", [])
+        if track.get("notes")
+    ]
+
+
+def sounding_output_errors(events: dict, label: str) -> list[str]:
+    """Reasons why a side did not produce a real arrangement.
+
+    Without this, two silent outputs would satisfy the note-by-note comparison
+    and be reported as parity.
+    """
+    errors = []
+    total_notes = sum(len(track.get("notes", [])) for track in events.get("tracks", []))
+    if total_notes == 0:
+        errors.append(f"{label} produced no notes at all")
+        return errors
+
+    sounding = sounding_track_names(events)
+    if len(sounding) < MIN_SOUNDING_TRACKS:
+        errors.append(
+            f"{label} only these tracks carry notes: {sounding}"
+        )
+    if "Vocal" not in sounding:
+        errors.append(f"{label} vocal track is silent")
+    return errors
+
+
 def compare(cfg: Config) -> CompareResult:
     """Run CLI and WASM, compare outputs.
 
-    To ensure both sides use identical configs, we first get WASM defaults
-    for the style, then fill in any None fields in cfg with those defaults.
-    Both CLI and WASM receive all parameters explicitly.
+    Unset fields are passed to neither side, so each one resolves them through
+    its own default-config path. Copying one side's defaults onto the other
+    would make the two agree by construction and hide exactly the kind of
+    default mismatch this check exists to find.
+
+    Both sides are required to have produced an actual arrangement before the
+    note-by-note comparison is trusted.
     """
     res = CompareResult(config=cfg)
-
-    # Fill in unset fields from WASM defaults for this style
-    defaults = get_wasm_defaults(cfg.style)
-    if cfg.vocal_attitude is None:
-        cfg.vocal_attitude = defaults.get("vocalAttitude", 0)
-    if cfg.vocal_low is None:
-        cfg.vocal_low = defaults.get("vocalLow", 60)
-    if cfg.vocal_high is None:
-        cfg.vocal_high = defaults.get("vocalHigh", 79)
 
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp = Path(tmpdir)
@@ -253,6 +278,13 @@ def compare(cfg: Config) -> CompareResult:
         if wasm_events is None:
             res.ok = False
             res.errors.append("WASM execution failed")
+            return res
+
+        silence = (sounding_output_errors(cli_events, "CLI")
+                   + sounding_output_errors(wasm_events, "WASM"))
+        if silence:
+            res.ok = False
+            res.errors.extend(silence)
             return res
 
         # Compare MIDI binary
@@ -380,8 +412,14 @@ def sweep_configs() -> list[Config]:
     styles = [0, 3, 5, 8, 12]
     blueprints = [0, 1, 2, 3, 255]
 
-    # Omit BPM once so both entry points use their default-config path.
-    configs.append(Config(seed=1, style=0, bpm=None))
+    # Nothing optional set: BPM and the whole vocal range resolve through each
+    # side's own default-config path. This case is what catches a CLI/WASM
+    # default that has drifted apart, so the sweep must always contain it.
+    configs.append(Config(seed=1, style=0))
+
+    # The counterpart with an explicit vocal range, so both the default and the
+    # caller-supplied path are covered.
+    configs.append(Config(seed=1, style=0, vocal_attitude=0, vocal_low=60, vocal_high=79))
 
     # Basic sweep: fixed seed across styles
     for style in styles:
@@ -404,11 +442,13 @@ def sweep_configs() -> list[Config]:
         for seed in [42, 999]:
             configs.append(Config(seed=seed, style=style))
 
-    # Deduplicate
+    # Deduplicate. The optional fields are part of the key: a config that leaves
+    # them unset tests a different path from one that sets them explicitly.
     seen = set()
     unique = []
     for c in configs:
-        k = (c.seed, c.style, c.chord, c.form, c.bpm, c.blueprint, c.key)
+        k = (c.seed, c.style, c.chord, c.form, c.bpm, c.blueprint, c.key,
+             c.vocal_attitude, c.vocal_low, c.vocal_high)
         if k not in seen:
             seen.add(k)
             unique.append(c)

@@ -12,10 +12,15 @@ from typing import List
 
 from ..constants import (
     TICKS_PER_BEAT, TICKS_PER_BAR, TRACK_NAMES, TRACK_CHANNELS,
-    DISSONANT_INTERVALS, BASS_PREFERRED_DEGREES, BASS_ACCEPTABLE_DEGREES,
+    BASS_PREFERRED_DEGREES, BASS_ACCEPTABLE_DEGREES,
     DEGREE_TO_ROOT_PC, DEGREE_TO_CHORD_TONES,
     GUITAR_CHANNEL, GUITAR_BASS_MUD_THRESHOLD, GUITAR_STRUM_MIN_VOICES,
-    Severity, Category,
+    Severity, Category, chord_function,
+)
+from ..dissonance_rules import (
+    MAJOR_SEVENTH_COLOUR_DEGREES,
+    classify_interval_dissonance,
+    interval_name,
 )
 from ..helpers import note_name, tick_to_bar
 from .base import BaseAnalyzer
@@ -34,6 +39,7 @@ class HarmonicAnalyzer(BaseAnalyzer):
     def analyze(self) -> List["Issue"]:
         """Run all harmonic analyses and return collected issues."""
         self._analyze_dissonance()
+        self._analyze_dissonance_across_chord_change()
         self._analyze_chord_voicing()
         self._analyze_arpeggio_above_vocal()
         self._analyze_bass_line()
@@ -54,8 +60,8 @@ class HarmonicAnalyzer(BaseAnalyzer):
     # Existing analyses
     # -----------------------------------------------------------------
 
-    def _analyze_dissonance(self):
-        """Detect dissonant intervals between simultaneous notes across channels."""
+    def _overlapping_pairs(self):
+        """Yield (note_a, note_b, overlap_start, overlap_end) across tracks."""
         pitched_notes = [note for note in self.notes if note.channel != 9]
 
         for idx, note_a in enumerate(pitched_notes):
@@ -70,80 +76,87 @@ class HarmonicAnalyzer(BaseAnalyzer):
                 if overlap_start >= overlap_end:
                     continue
 
-                pitch_a = note_a.pitch
-                pitch_b = note_b.pitch
-                channel_a = note_a.channel
-                channel_b = note_b.channel
-                raw_interval = abs(pitch_a - pitch_b)
-                interval = raw_interval % 12
-                interval_key = 13 if raw_interval == 13 else interval
+                yield note_a, note_b, overlap_start, overlap_end
 
-                # Only flag close compound seconds, except the canonical minor 9th.
-                if raw_interval > 12 and interval in [1, 2] and raw_interval != 13:
-                    continue
+    def _add_dissonance_issue(self, subcategory, severity, note_a, note_b,
+                              overlap_start, overlap_end, chord_degree, message_suffix=""):
+        """Record one sounding clash between two tracks."""
+        raw_interval = abs(note_a.pitch - note_b.pitch)
+        track_a = TRACK_NAMES.get(note_a.channel, f"Ch{note_a.channel}")
+        track_b = TRACK_NAMES.get(note_b.channel, f"Ch{note_b.channel}")
+        name = interval_name(raw_interval)
+        normalized_degree = chord_degree % 7 if chord_degree >= 0 else -1
+        self.add_issue(
+            severity=severity,
+            category=Category.HARMONIC,
+            subcategory=subcategory,
+            message=(f"{name}: {track_a} {note_name(note_a.pitch)} vs "
+                     f"{track_b} {note_name(note_b.pitch)}{message_suffix}"),
+            tick=overlap_start,
+            track=f"{track_a}/{track_b}",
+            details={
+                "interval": name,
+                "interval_semitones": raw_interval,
+                "overlap_ticks": overlap_end - overlap_start,
+                "track1": track_a,
+                "track2": track_b,
+                "pitch1": note_a.pitch,
+                "pitch2": note_b.pitch,
+                "chord_degree": chord_degree,
+                "intentional_maj7": (raw_interval % 12 == 11
+                                     and raw_interval <= 12
+                                     and normalized_degree in MAJOR_SEVENTH_COLOUR_DEGREES),
+            },
+        )
 
-                if interval_key not in DISSONANT_INTERVALS:
-                    continue
-                chord_degree = self.get_chord_degree_at(overlap_start)
-                normalized_degree = chord_degree % 7 if chord_degree >= 0 else -1
-                intentional_maj7 = False
+    def _analyze_dissonance(self):
+        """Detect dissonant intervals between simultaneous notes across channels.
 
-                # Tritones define V/vii harmony; elsewhere they are notable.
-                # Keep the register treatment in sync with C++ dissonance.cpp.
-                if interval_key == 6:
-                    if normalized_degree in (4, 6) or raw_interval > 24:
-                        continue
-                    severity = (Severity.INFO if raw_interval > 12
-                                else Severity.WARNING)
-                # Major 7th: wider voicings (24+ semitones) are less harsh
-                elif interval_key == 11:
-                    if raw_interval >= 36:
-                        continue  # 3+ octaves: not perceptually dissonant
-                    elif raw_interval > 23:
-                        severity = Severity.INFO  # 2-3 octaves: notable but acceptable
-                    elif normalized_degree in (0, 3):
-                        # I/IV Maj7 is a conventional color tone.  Mirror the
-                        # C++ Medium classification even on a downbeat.
-                        severity = Severity.WARNING
-                        intentional_maj7 = True
-                    else:
-                        is_bass_collision = (
-                            (channel_a == 2 or channel_b == 2)
-                            and min(pitch_a, pitch_b) < 60
-                        )
-                        severity = (Severity.ERROR if is_bass_collision
-                                    else Severity.WARNING)
-                else:
-                    is_bass_collision = (
-                        (channel_a == 2 or channel_b == 2)
-                        and min(pitch_a, pitch_b) < 60
+        The generator refuses to place a note that clashes with what is already
+        sounding, so on generated material this check mostly confirms that
+        contract; it earns its keep on imported MIDI and on notes that later
+        passes moved. Classification is shared with the shipped analyzer so the
+        two reports cannot disagree about the same interval.
+        """
+        for note_a, note_b, overlap_start, overlap_end in self._overlapping_pairs():
+            raw_interval = abs(note_a.pitch - note_b.pitch)
+            chord_degree = self.get_chord_degree_at(overlap_start)
+            severity = classify_interval_dissonance(raw_interval, chord_degree)
+            if severity is None:
+                continue
+
+            self._add_dissonance_issue(
+                "dissonance", severity, note_a, note_b,
+                overlap_start, overlap_end, chord_degree,
+            )
+
+    def _analyze_dissonance_across_chord_change(self):
+        """Detect pairs that only turn dissonant once the harmony moves under them.
+
+        Placement is judged against the chord active when the note starts, so a
+        pair that is legal there stays in place even when it sustains into the
+        next chord and becomes a clash. Nothing in the placement path can see
+        this, which is why it is asked separately from the interval check above.
+        """
+        for note_a, note_b, overlap_start, overlap_end in self._overlapping_pairs():
+            raw_interval = abs(note_a.pitch - note_b.pitch)
+            start_degree = self.get_chord_degree_at(overlap_start)
+            if classify_interval_dissonance(raw_interval, start_degree) is not None:
+                continue  # Already reported by the interval check.
+
+            boundary = self.get_next_chord_change(overlap_start)
+            while boundary is not None and boundary < overlap_end:
+                degree = self.get_chord_degree_at(boundary)
+                severity = classify_interval_dissonance(raw_interval, degree)
+                if severity is not None:
+                    self._add_dissonance_issue(
+                        "dissonance_after_chord_change", severity, note_a, note_b,
+                        boundary, overlap_end, degree,
+                        message_suffix=(f" sustains from degree {start_degree} "
+                                        f"into degree {degree}"),
                     )
-                    severity = (Severity.ERROR if is_bass_collision
-                                else Severity.WARNING)
-
-                track_a = TRACK_NAMES.get(channel_a, f"Ch{channel_a}")
-                track_b = TRACK_NAMES.get(channel_b, f"Ch{channel_b}")
-                self.add_issue(
-                    severity=severity,
-                    category=Category.HARMONIC,
-                    subcategory="dissonance",
-                    message=(f"{DISSONANT_INTERVALS[interval_key]}: "
-                             f"{track_a} {note_name(pitch_a)} vs "
-                             f"{track_b} {note_name(pitch_b)}"),
-                    tick=overlap_start,
-                    track=f"{track_a}/{track_b}",
-                    details={
-                        "interval": DISSONANT_INTERVALS[interval_key],
-                        "interval_semitones": raw_interval,
-                        "overlap_ticks": overlap_end - overlap_start,
-                        "track1": track_a,
-                        "track2": track_b,
-                        "pitch1": pitch_a,
-                        "pitch2": pitch_b,
-                        "chord_degree": chord_degree,
-                        "intentional_maj7": intentional_maj7,
-                    },
-                )
+                    break
+                boundary = self.get_next_chord_change(boundary)
 
     def _analyze_chord_voicing(self):
         """Analyze chord track for voicing issues.
@@ -504,7 +517,13 @@ class HarmonicAnalyzer(BaseAnalyzer):
                     )
 
     def _analyze_chord_function(self):
-        """Analyze chord function progression (T/D/S), flag D->S retrograde."""
+        """Analyze chord function progression (T/D/S), flag D->S retrograde.
+
+        The harmony at each bar comes from the chord timeline, and its function
+        from the one shared degree table. Reading the function off the bass
+        pitch class instead would call a chord by whichever of its notes the
+        bass happened to play.
+        """
         bass_notes = self.notes_by_channel.get(2, [])
         if len(bass_notes) < 4:
             return
@@ -514,25 +533,17 @@ class HarmonicAnalyzer(BaseAnalyzer):
             bar = tick_to_bar(note.start)
             bass_by_bar[bar].append(note)
 
-        def get_function(root: int) -> str:
-            if root in [0, 9, 4]:
-                return "T"
-            elif root in [7, 11]:
-                return "D"
-            elif root in [5, 2]:
-                return "S"
-            return "?"
-
         bars = sorted(bass_by_bar.keys())
         prev_func = None
         for bar in bars:
             bar_notes = bass_by_bar[bar]
             if not bar_notes:
                 continue
-            # Use the pitch class of the note closest to beat 1
             first_note = min(bar_notes, key=lambda n: n.start)
-            root = first_note.pitch % 12
-            func = get_function(root)
+            func = chord_function(self.get_chord_degree_at(first_note.start))
+            if func is None:
+                prev_func = None
+                continue
 
             if prev_func == "D" and func == "S":
                 self.add_issue(
@@ -660,7 +671,7 @@ class HarmonicAnalyzer(BaseAnalyzer):
                 continue
 
             total_checked += 1
-            bass_pc = note.pitch % 12
+            bass_pc = self.internal_pitch_class(note)
             root_pc = DEGREE_TO_ROOT_PC[degree]
             chord_tones = DEGREE_TO_CHORD_TONES.get(degree, set())
 
@@ -745,7 +756,7 @@ class HarmonicAnalyzer(BaseAnalyzer):
                 continue
 
             total_beat1 += 1
-            bass_pc = note.pitch % 12
+            bass_pc = self.internal_pitch_class(note)
             root_pc = DEGREE_TO_ROOT_PC[degree]
             fifth_pc = (root_pc + 7) % 12
             if degree == 6:

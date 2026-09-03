@@ -30,6 +30,11 @@ TRACK_NAMES = {
 
 TRACK_CHANNELS = {v: k for k, v in TRACK_NAMES.items()}
 
+# Fallback for output written before each track declared whether the key was
+# applied to it: drums are a percussion map, and SE cues were fixed pitches at
+# the time. Current output states this per track and is believed over this set.
+NON_TRANSPOSED_CHANNELS = {9, 15}
+
 # Guitar analysis constants
 GUITAR_CHANNEL = 6
 GUITAR_BASS_MUD_THRESHOLD = 52   # E3: below this overlaps bass register
@@ -90,9 +95,15 @@ DISSONANT_INTERVALS = {
 CONSONANT_LEAPS = {5, 7, 12}  # P4, P5, P8
 SEMI_CONSONANT_LEAPS = {3, 4, 8, 9}  # m3, M3, m6, M6
 
+# Vocal range the generator uses when the caller does not ask for one
+# (`--vocal-low` / `--vocal-high` in src/cli/args.cpp). A song generated with a
+# different range states it in its metadata; this is the fallback, and it is
+# what the vocal is written against when nothing else is known.
+DEFAULT_VOCAL_RANGE = (60, 79)  # C4-G5
+
 # Track ranges (approximate expected pitch ranges)
 TRACK_RANGES = {
-    0: (55, 84),   # Vocal: G3-C6
+    0: DEFAULT_VOCAL_RANGE,  # Vocal: overridden by the song's own range
     3: (48, 84),   # Motif: C3-C6
     4: (48, 84),   # Arpeggio: C3-C6
     5: (48, 84),   # Aux: C3-C6
@@ -123,9 +134,21 @@ DEGREE_TO_CHORD_TONES = {
     6: {11, 2, 5},   # vii: B, D, F
 }
 
-# Chord function mapping: root pitch class -> harmonic function
-# T=Tonic, S=Subdominant, D=Dominant
-CHORD_FUNCTION_MAP = {0: 'T', 2: 'S', 4: 'S', 5: 'T', 7: 'D', 9: 'T', 11: 'D'}
+# Harmonic function of each scale degree: T=Tonic, S=Subdominant, D=Dominant.
+# I, iii and vi share the tonic's notes and stand in for it; ii and IV are the
+# subdominant pair; V and vii carry the leading tone and pull back to the tonic.
+# Keyed by degree rather than by root pitch class: a degree is what the chord
+# timeline and the note provenance both speak in, and going through a pitch
+# class invites reading a chord by whichever of its notes the bass happens to
+# be playing.
+DEGREE_TO_FUNCTION = {0: 'T', 1: 'S', 2: 'T', 3: 'S', 4: 'D', 5: 'T', 6: 'D'}
+
+
+def chord_function(degree: int):
+    """Harmonic function of a scale degree, or None when it is unknown."""
+    if degree < 0:
+        return None
+    return DEGREE_TO_FUNCTION.get(degree % 7)
 
 # Beat strength weights (1-indexed beat positions in 4/4)
 BEAT_STRENGTH = {1: 1.0, 2: 0.4, 3: 0.7, 4: 0.4}

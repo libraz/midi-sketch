@@ -20,6 +20,61 @@ from ..models import Issue
 from .base import BaseAnalyzer
 
 
+# How much of a motif a repeat has to keep across same-type sections, per riff
+# policy. LockedPitch repeats the riff verbatim and is bounded accordingly.
+# Locked is LockedContour: the rhythm is what is held fixed, while the pitches
+# are re-voiced against the new harmony, so Locked is strict on the rhythm axis
+# and its contour bound only has to catch a riff that stopped being the same
+# riff. Evolving transforms the motif on purpose and therefore sits below Locked
+# on both axes, and Free starts fresh each section. Every policy must resolve to
+# a different bound on each axis, ordered LockedPitch >= Locked >= Evolving >=
+# Free, or the scoring cannot tell the policies apart.
+RIFF_CONTOUR_MIN_SIMILARITY = {
+    "LockedPitch": 0.95,
+    "Locked": 0.70,
+    "Evolving": 0.45,
+    "Free": 0.30,
+}
+RIFF_RHYTHM_MIN_SIMILARITY = {
+    "LockedPitch": 0.95,
+    "Locked": 0.90,
+    "Evolving": 0.70,
+    "Free": 0.30,
+}
+
+# Bound for output whose riff policy is unknown: the loosest one, so an
+# unlabelled song is never judged against a policy it never declared.
+UNKNOWN_POLICY_MIN_SIMILARITY = 0.30
+
+
+def riff_min_similarity(profile, bounds: dict) -> float:
+    """Similarity bound for a profile's riff policy on one axis."""
+    if profile is None:
+        return UNKNOWN_POLICY_MIN_SIMILARITY
+    return bounds.get(profile.riff_policy, UNKNOWN_POLICY_MIN_SIMILARITY)
+
+
+def best_window_similarity(pattern_a: list, pattern_b: list) -> float:
+    """Similarity of two patterns that may cover different spans of time.
+
+    Sections of the same type are not always the same length: a 16-bar chorus
+    holding the same riff twice yields twice the pattern of an 8-bar one. Length
+    alone then costs half the score under a straight edit-distance comparison,
+    which reads as a riff that changed when nothing changed. Comparing the
+    shorter pattern against its best-matching window of the longer measures
+    whether the riff is still there, independently of how long the section runs.
+    """
+    if not pattern_a or not pattern_b:
+        return 0.0
+    shorter, longer = ((pattern_a, pattern_b) if len(pattern_a) <= len(pattern_b)
+                       else (pattern_b, pattern_a))
+    span = len(shorter)
+    return max(
+        _pattern_similarity(shorter, longer[start:start + span])
+        for start in range(len(longer) - span + 1)
+    )
+
+
 class ArrangementAnalyzer(BaseAnalyzer):
     """Analyzer for arrangement qualities across all tracks.
 
@@ -237,9 +292,12 @@ class ArrangementAnalyzer(BaseAnalyzer):
             for entry in entries[1:]:
                 sim = _pattern_similarity(reference['intervals'], entry['intervals'])
                 rhythm_sim = _pattern_similarity(reference['rhythm_cell'], entry['rhythm_cell'])
+                # A LockedContour riff holds its rhythm and re-voices its
+                # pitches, so a chord-pulse cell that kept its rhythm has not
+                # broken the policy. A verbatim (LockedPitch) riff has.
                 harmonic_variation_ok = (
                     self.profile is not None
-                    and self.profile.name == "RhythmLock"
+                    and self.profile.riff_policy == "Locked"
                     and rhythm_sim >= 0.85
                     and reference['chord_pulse_like']
                     and entry['chord_pulse_like']
@@ -639,10 +697,12 @@ class ArrangementAnalyzer(BaseAnalyzer):
     # -----------------------------------------------------------------
 
     def _analyze_blueprint_rhythm_sync(self):
-        """Check rhythm sync compliance for RhythmSync blueprints."""
+        """Check rhythm sync compliance for RhythmSync blueprints.
+
+        Every blueprint that declares rhythm_sync_required is checked. A
+        declaration that exempts the blueprint declaring it measures nothing.
+        """
         if not self.profile or not self.profile.rhythm_sync_required:
-            return
-        if self.profile.name == "RhythmLock":
             return
         motif = self.notes_by_channel.get(3, [])
         vocal = self.notes_by_channel.get(0, [])
@@ -693,17 +753,7 @@ class ArrangementAnalyzer(BaseAnalyzer):
         if len(motif) < 8 or len(sections) < 2:
             return
 
-        # Determine threshold based on riff_policy
-        if self.profile:
-            policy = self.profile.riff_policy
-            if policy == "Locked":
-                min_similarity = 0.70
-            elif policy == "Evolving":
-                min_similarity = 0.7
-            else:
-                min_similarity = 0.3
-        else:
-            min_similarity = 0.3
+        min_similarity = riff_min_similarity(self.profile, RIFF_CONTOUR_MIN_SIMILARITY)
 
         def contour_sign(delta):
             if delta > 0:
@@ -781,7 +831,10 @@ class ArrangementAnalyzer(BaseAnalyzer):
                     )
                     if sim < min_similarity:
                         severity = Severity.WARNING
-                        if self.profile is not None and self.profile.name == "RhythmLock":
+                        # A policy that re-voices the pitches on purpose reports
+                        # contour drift as a note, not a fault.
+                        if (self.profile is not None
+                                and self.profile.riff_policy == "Locked"):
                             severity = Severity.INFO
                         self.add_issue(
                             severity=severity,
@@ -813,17 +866,7 @@ class ArrangementAnalyzer(BaseAnalyzer):
         if len(motif) < 8 or len(sections) < 2:
             return
 
-        # Determine threshold based on riff_policy
-        if self.profile:
-            policy = self.profile.riff_policy
-            if policy == "Locked":
-                min_similarity = 0.9
-            elif policy == "Evolving":
-                min_similarity = 0.7
-            else:
-                min_similarity = 0.3
-        else:
-            min_similarity = 0.3
+        min_similarity = riff_min_similarity(self.profile, RIFF_RHYTHM_MIN_SIMILARITY)
 
         sixteenth = TICKS_PER_BEAT // 4  # 120 ticks
 
@@ -857,7 +900,7 @@ class ArrangementAnalyzer(BaseAnalyzer):
                 continue
             for idx_a in range(len(sec_list)):
                 for idx_b in range(idx_a + 1, len(sec_list)):
-                    sim = _pattern_similarity(
+                    sim = best_window_similarity(
                         sec_list[idx_a]['ioi'],
                         sec_list[idx_b]['ioi'],
                     )
@@ -897,7 +940,7 @@ class ArrangementAnalyzer(BaseAnalyzer):
 
         paradigm = self.profile.paradigm
 
-        if paradigm == "RhythmSync" and self.profile.name != "RhythmLock":
+        if paradigm == "RhythmSync":
             self._check_rhythm_sync_correlation()
         elif paradigm == "MelodyDriven":
             self._check_melody_driven_dominance()
@@ -1130,10 +1173,12 @@ class ArrangementAnalyzer(BaseAnalyzer):
                 continue
 
             avg_vel = sum(n.velocity for n in sec_guitar) / len(sec_guitar)
-            if sec['type'] == 'verse':
-                verse_vels.append(avg_vel)
-            elif sec['type'] == 'chorus':
+            # Loud side by energy, quiet side by structural role, so the
+            # pre-chorus is measured with the chorus rather than against it.
+            if self.is_high_energy(sec):
                 chorus_vels.append(avg_vel)
+            elif sec['type'] == 'verse':
+                verse_vels.append(avg_vel)
 
         if not verse_vels or not chorus_vels:
             return
@@ -1255,7 +1300,10 @@ class ArrangementAnalyzer(BaseAnalyzer):
                                 prev_density / density)
                     if ratio > 4.0:
                         severity = Severity.WARNING
-                        if self.profile is not None and self.profile.name == "RhythmLock":
+                        # Under RhythmSync the motif is the coordinate axis, so
+                        # it drops in and out between sections by design.
+                        if (self.profile is not None
+                                and self.profile.paradigm == "RhythmSync"):
                             severity = Severity.WARNING if ratio > 8.0 else Severity.INFO
                         self.add_issue(
                             severity=severity,

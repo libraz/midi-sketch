@@ -124,7 +124,7 @@ def print_timing_report(results: list[dict]):
     BP_NAMES = {
         0: "Traditional", 1: "RhythmLock", 2: "StoryPop", 3: "Ballad",
         4: "IdolStandard", 5: "IdolHyper", 6: "IdolKawaii",
-        7: "IdolCoolPop", 8: "IdolEmo", 9: "IdolRock",
+        7: "IdolCoolPop", 8: "IdolEmo", 9: "BehavioralLoop",
     }
 
     print(f"\n{'Blueprint':<20} {'Mean':>8} {'Med':>8} {'Max':>8} {'P95':>8} {'Count':>6}")
@@ -178,7 +178,11 @@ def print_timing_report(results: list[dict]):
 
 
 def run_with_sample_profiler(seeds: int, blueprints: list[int], duration: int):
-    """Run generation in a subprocess and attach macOS sample profiler."""
+    """Run generation in a subprocess and attach macOS sample profiler.
+
+    Returns the path of the sample output file, or None when the generation
+    loop could not be started.
+    """
     print(f"Running sample profiler for {duration}s during batch generation...")
 
     # Repeat the dedicated in-process benchmark. Sampling a short-lived CLI
@@ -196,14 +200,20 @@ done
         loop_path = f.name
     os.chmod(loop_path, 0o755)
 
+    # Started outside the try block: if the loop cannot be spawned at all, the
+    # cleanup path must not shadow the real failure with a missing-process error.
     try:
-        # Start the generation loop
         proc = subprocess.Popen(
             ["/bin/bash", loop_path],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
+    except OSError as exc:
+        os.unlink(loop_path)
+        print(f"  Could not start the generation loop ({loop_path}): {exc}")
+        return None
 
+    try:
         # Wait a moment for CLI to start
         time.sleep(0.5)
 

@@ -12,10 +12,13 @@ import argparse
 import subprocess
 
 from .constants import (
+    Category,
     Severity,
     STYLE_PRESET_COUNT,
     PRODUCTION_BLUEPRINT_IDS,
+    TRACK_NAMES,
 )
+from .melody_targets import TARGETS_ENV_VAR, set_targets_path
 from .models import Note
 from .analyzer import MusicAnalyzer
 from .formatter import apply_filters, OutputFormatter
@@ -131,7 +134,9 @@ Examples:
     filter_group = parser.add_argument_group("Filters")
     filter_group.add_argument(
         "--track", type=str,
-        help="Filter by track (Vocal, Chord, Bass, Motif, Aux)",
+        help=("Filter by track name, matched as a case-insensitive substring "
+              "so cross-track issues such as Guitar/Bass match either name "
+              f"({', '.join(TRACK_NAMES.values())})"),
     )
     filter_group.add_argument(
         "--bar-range", type=str,
@@ -139,7 +144,7 @@ Examples:
     )
     filter_group.add_argument(
         "--category", type=str,
-        choices=["melodic", "harmonic", "rhythm", "arrangement", "structure"],
+        choices=[category.value for category in Category],
         help="Filter by category",
     )
     filter_group.add_argument(
@@ -176,8 +181,18 @@ Examples:
         "--cli", default="./build/bin/midisketch_cli",
         help="Path to CLI (default: ./build/bin/midisketch_cli)",
     )
+    parser.add_argument(
+        "--melody-targets", default=None,
+        help=("Path to the melody discipline target profile, overriding "
+              f"{TARGETS_ENV_VAR} and the default location. When the profile "
+              "cannot be read the melody discipline layers are reported as "
+              "inactive instead of being evaluated."),
+    )
 
     args = parser.parse_args()
+
+    if args.melody_targets:
+        set_targets_path(args.melody_targets)
 
     # Build filters
     filters = {

@@ -287,17 +287,20 @@ class BonusRhythmAnalyzer(BaseBonusAnalyzer):
             density = self._compute_section_melodic_density(section)
             section_densities.append({
                 'type': section['type'],
+                'high_energy': self.is_high_energy(section),
                 'density': density,
             })
 
-        # Separate verse and chorus densities.
+        # Separate verse and chorus densities. The dense side is every section
+        # the generator drives hard, the sparse side the verses.
         verse_densities = [
             entry['density'] for entry in section_densities
-            if entry['type'] == 'verse' and entry['density'] > 0
+            if entry['type'] == 'verse' and not entry['high_energy']
+            and entry['density'] > 0
         ]
         chorus_densities = [
             entry['density'] for entry in section_densities
-            if entry['type'] == 'chorus' and entry['density'] > 0
+            if entry['high_energy'] and entry['density'] > 0
         ]
 
         if verse_densities and chorus_densities:
