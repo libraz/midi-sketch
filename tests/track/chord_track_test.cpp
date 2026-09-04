@@ -671,6 +671,68 @@ TEST_F(ChordTrackTest, OpenVoicingKeepsAllNinthChordTones) {
 }
 
 // ============================================================================
+// What a voicing sounds like versus what built it
+// ============================================================================
+
+TEST_F(ChordTrackTest, TriadAndSeventhCloseVoicingsFitInsideAnOctave) {
+  // Up to four voices a close voicing is packed into one octave, so the spread
+  // measurement separates the two textures exactly where they differ. Five
+  // voices cannot fit -- a ninth in close position spans past the octave by
+  // construction -- and the measurement calls it spread because the ear does.
+  for (uint8_t degree = 0; degree < 7; ++degree) {
+    const uint8_t root = degreeToRoot(degree, Key::C);
+    for (ChordExtension ext : {ChordExtension::None, ChordExtension::Maj7, ChordExtension::Dom7}) {
+      auto voicings = chord_voicing::generateCloseVoicings(
+          root, getExtendedChord(static_cast<int8_t>(degree), ext));
+      ASSERT_FALSE(voicings.empty());
+      for (const auto& voicing : voicings) {
+        ASSERT_LE(voicing.count, 4u);
+        EXPECT_TRUE(
+            chord_voicing::voicingHasTexture(voicing, root, chord_voicing::VoicingType::Close))
+            << "a close voicing of degree " << static_cast<int>(degree) << " spans more than an "
+            << "octave, so the spread measurement cannot tell the two textures apart";
+      }
+    }
+  }
+}
+
+TEST_F(ChordTrackTest, TextureIsReadFromThePitchesNotTheLabel) {
+  // The passes between generation and selection remove voices and keep the
+  // label. A spread voicing that lost its displaced voice is close, and a gate
+  // that reads the label keeps it while discarding the ones that are still
+  // spread -- which is how a section that asked for an open texture stops
+  // getting one.
+  chord_voicing::VoicedChord narrowed{};
+  narrowed.type = chord_voicing::VoicingType::Open;
+  narrowed.pitches = {MIDI_C4, static_cast<uint8_t>(MIDI_C4 + 4), static_cast<uint8_t>(MIDI_C4 + 7),
+                      0, 0};
+  narrowed.count = 3;
+  EXPECT_FALSE(
+      chord_voicing::voicingHasTexture(narrowed, MIDI_C4, chord_voicing::VoicingType::Open))
+      << "a voicing inside one octave is close whatever built it";
+  EXPECT_TRUE(
+      chord_voicing::voicingHasTexture(narrowed, MIDI_C4, chord_voicing::VoicingType::Close));
+
+  chord_voicing::VoicedChord spread{};
+  spread.type = chord_voicing::VoicingType::Close;
+  spread.pitches = {static_cast<uint8_t>(MIDI_C4 - 12), static_cast<uint8_t>(MIDI_C4 + 4),
+                    static_cast<uint8_t>(MIDI_C4 + 7), 0, 0};
+  spread.count = 3;
+  EXPECT_TRUE(chord_voicing::voicingHasTexture(spread, MIDI_C4, chord_voicing::VoicingType::Open));
+
+  // Rootless asks a different question of the same notes: whether the root's
+  // pitch class sounds at all.
+  EXPECT_FALSE(
+      chord_voicing::voicingHasTexture(narrowed, MIDI_C4, chord_voicing::VoicingType::Rootless));
+  chord_voicing::VoicedChord no_root{};
+  no_root.pitches = {static_cast<uint8_t>(MIDI_C4 + 4), static_cast<uint8_t>(MIDI_C4 + 7),
+                     static_cast<uint8_t>(MIDI_C4 + 11), 0, 0};
+  no_root.count = 3;
+  EXPECT_TRUE(
+      chord_voicing::voicingHasTexture(no_root, MIDI_C4, chord_voicing::VoicingType::Rootless));
+}
+
+// ============================================================================
 // C4 Rootless 4-Voice Tests
 // ============================================================================
 

@@ -12,6 +12,26 @@
 namespace midisketch {
 namespace chord_voicing {
 
+bool voicingHasTexture(const VoicedChord& voicing, uint8_t root, VoicingType type) {
+  if (voicing.count == 0) return false;
+
+  if (type == VoicingType::Rootless) {
+    for (uint8_t i = 0; i < voicing.count; ++i) {
+      if (voicing.pitches[i] % 12 == root % 12) return false;
+    }
+    return true;
+  }
+
+  int lowest = voicing.pitches[0];
+  int highest = voicing.pitches[0];
+  for (uint8_t i = 1; i < voicing.count; ++i) {
+    lowest = std::min(lowest, static_cast<int>(voicing.pitches[i]));
+    highest = std::max(highest, static_cast<int>(voicing.pitches[i]));
+  }
+  const bool spread = (highest - lowest) > 12;
+  return (type == VoicingType::Open) ? spread : !spread;
+}
+
 int voicingDistance(const VoicedChord& prev, const VoicedChord& next) {
   int total = 0;
   size_t min_count = std::min(prev.count, next.count);

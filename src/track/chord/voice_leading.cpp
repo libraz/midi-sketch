@@ -196,7 +196,7 @@ VoicedChord selectVoicing(uint8_t root, const Chord& chord, const VoicedChord& p
     int best_score = -1000;
     for (size_t i = 0; i < candidates.size(); ++i) {
       int dist = std::abs(candidates[i].pitches[0] - MIDI_C4);  // Distance from C4
-      int type_bonus = (candidates[i].type == preferred_type) ? 50 : 0;
+      int type_bonus = voicingHasTexture(candidates[i], root, preferred_type) ? 50 : 0;
       int score = type_bonus - dist;
       if (score > best_score) {
         tied_indices.clear();
@@ -218,7 +218,7 @@ VoicedChord selectVoicing(uint8_t root, const Chord& chord, const VoicedChord& p
   for (size_t i = 0; i < candidates.size(); ++i) {
     int common = countCommonTones(prev_voicing, candidates[i]);
     int distance = voicingDistance(prev_voicing, candidates[i]);
-    int type_bonus = (candidates[i].type == preferred_type) ? 30 : 0;
+    int type_bonus = voicingHasTexture(candidates[i], root, preferred_type) ? 30 : 0;
 
     // Penalize parallel fifths/octaves based on mood
     int parallel_penalty =

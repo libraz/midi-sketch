@@ -1304,7 +1304,7 @@ struct ChordBarContext {
   VoicedChord voicing{};
 };
 
-/// @brief Keep only the candidates that have the requested voicing type.
+/// @brief Keep only the candidates that sound like the requested voicing type.
 ///
 /// The type bonus alone cannot express the request: a spread voicing is
 /// structurally further from the previous chord than a close one, and the
@@ -1312,11 +1312,17 @@ struct ChordBarContext {
 /// voicing wins it becomes the reference for the next bar and keeps winning, so
 /// a section that asked for an open texture never gets one. Falls back to the
 /// full list when the requested type produced nothing playable.
+///
+/// The question is put to the pitches rather than to `VoicedChord::type`. The
+/// candidates arrive here already through the collision filter, which removes
+/// voices; an open voicing that lost its displaced voice is close, and keeping
+/// it because its label still says Open crowds out the candidates that are
+/// still spread.
 std::vector<VoicedChord> restrictToRequestedType(const std::vector<VoicedChord>& candidates,
-                                                 VoicingType requested) {
+                                                 VoicingType requested, uint8_t root) {
   std::vector<VoicedChord> matching;
   for (const auto& candidate : candidates) {
-    if (candidate.type == requested) {
+    if (chord_voicing::voicingHasTexture(candidate, root, requested)) {
       matching.push_back(candidate);
     }
   }
@@ -1356,7 +1362,7 @@ std::vector<VoicedChord> restrictPreservingExtension(const std::vector<VoicedCho
       coloured.push_back(candidate);
     }
   }
-  return restrictToRequestedType(coloured.empty() ? candidates : coloured, requested);
+  return restrictToRequestedType(coloured.empty() ? candidates : coloured, requested, root);
 }
 
 /// @brief Reward a voicing for keeping the tones that make the chord extended.
@@ -1434,7 +1440,8 @@ void selectBarVoicing(ChordBarContext& ctx) {
       for (size_t i = 0; i < filtered.size(); ++i) {
         int common = chord_voicing::countCommonTones(ctx.prev_voicing, filtered[i]);
         int distance = chord_voicing::voicingDistance(ctx.prev_voicing, filtered[i]);
-        int type_bonus = (filtered[i].type == ctx.voicing_type) ? 30 : 0;
+        int type_bonus =
+            chord_voicing::voicingHasTexture(filtered[i], ctx.root, ctx.voicing_type) ? 30 : 0;
         int fullness_bonus = (filtered[i].count >= 3) ? 50 : 0;
         int colour_bonus = extensionColourBonus(filtered[i], ctx.chord, ctx.root);
         int score = type_bonus + fullness_bonus + colour_bonus + common * 100 - distance;
@@ -1475,7 +1482,8 @@ void selectBarVoicing(ChordBarContext& ctx) {
       int best_score = -1000;
       for (size_t i = 0; i < filtered.size(); ++i) {
         int dist = std::abs(filtered[i].pitches[0] - MIDI_C4);
-        int type_bonus = (filtered[i].type == ctx.voicing_type) ? 50 : 0;
+        int type_bonus =
+            chord_voicing::voicingHasTexture(filtered[i], ctx.root, ctx.voicing_type) ? 50 : 0;
         int score = type_bonus + extensionColourBonus(filtered[i], ctx.chord, ctx.root) - dist;
         if (score > best_score) {
           tied_indices.clear();
@@ -1494,7 +1502,8 @@ void selectBarVoicing(ChordBarContext& ctx) {
       for (size_t i = 0; i < filtered.size(); ++i) {
         int common = chord_voicing::countCommonTones(ctx.prev_voicing, filtered[i]);
         int distance = chord_voicing::voicingDistance(ctx.prev_voicing, filtered[i]);
-        int type_bonus = (filtered[i].type == ctx.voicing_type) ? 30 : 0;
+        int type_bonus =
+            chord_voicing::voicingHasTexture(filtered[i], ctx.root, ctx.voicing_type) ? 30 : 0;
         int parallel_penalty =
             chord_voicing::hasParallelFifthsOrOctaves(ctx.prev_voicing, filtered[i])
                 ? chord_voicing::getParallelPenalty(ctx.params.mood)

@@ -35,14 +35,13 @@ struct VoicedChord {
 
   /// @brief Which generator built this candidate.
   ///
-  /// One candidate pool holds the close voicings and the voicings of whichever
-  /// texture the bar asked for, and this is how the requested-texture gate
-  /// finds its own family again. It records the shape the candidate was built
-  /// as, not a measurement of the pitches: the passes that run after generation
-  /// -- the collision filter, the minimum-voice fill, the bass-clash removal,
-  /// the keyboard playability adjustment -- rewrite the pitches and carry the
-  /// label with them, so on a voicing that has been through any of them the
-  /// name states where the notes came from rather than how they now sit.
+  /// Provenance, not a property of the pitches. The passes that run after
+  /// generation -- the collision filter, the minimum-voice fill, the bass-clash
+  /// removal, the keyboard playability adjustment -- rewrite the pitches and
+  /// carry the label with them, so on a voicing that has been through any of
+  /// them the name states where the notes came from rather than how they now
+  /// sit. Ask voicingHasTexture() when the question is what the voicing
+  /// sounds like; this field answers a different question.
   VoicingType type = VoicingType::Close;
 
   OpenVoicingType open_subtype = OpenVoicingType::Drop2;  ///< Open voicing variant
@@ -57,6 +56,28 @@ inline bool areVoicingsIdentical(const VoicedChord& a, const VoicedChord& b) {
   }
   return true;
 }
+
+/// @brief Whether a voicing's pitches carry the texture a type names.
+///
+/// Every place that asks "is this candidate the texture the bar asked for?" has
+/// to ask the pitches, because `VoicedChord::type` records the generator that
+/// built the candidate and the passes that run afterwards rewrite the pitches
+/// while carrying the old label along. A spread voicing whose displaced voice
+/// was removed by the collision filter still says Open and is not open, and the
+/// requested-texture gate that believes it discards the candidates that are.
+///
+/// What each name asserts about the notes:
+///  - Open: the voices span more than an octave. A stack that wide sounds
+///    spread whatever built it, which is the point -- a ninth chord in close
+///    position has five tones and cannot fit inside an octave, so it answers
+///    yes here and it should.
+///  - Close: the complement of the above.
+///  - Rootless: no voice sounds the root's pitch class.
+///
+/// @param voicing Candidate to measure
+/// @param root Chord root as a MIDI pitch; only its pitch class is read
+/// @param type The texture being asked about
+bool voicingHasTexture(const VoicedChord& voicing, uint8_t root, VoicingType type);
 
 /// @name Voice Leading Metrics
 /// @{
