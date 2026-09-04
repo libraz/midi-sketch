@@ -61,7 +61,7 @@
 
 namespace midisketch {
 
-void trimClashingNoteTails(Song& song, const IHarmonyContext& harmony);
+void trimClashingNoteTails(Song& song, IHarmonyContext& harmony);
 
 namespace {
 
@@ -914,8 +914,9 @@ void Generator::applyPostProcessingEffects() {
   harmony_context_->registerTrack(song_.bass(), TrackRole::Bass);
 
   // Very last note-mutating step: every pass above can leave a short
-  // always-dissonant tail overlap (durations only are changed here, so no
-  // re-registration ordering issues can follow).
+  // always-dissonant tail overlap, and a same-onset pair one of them has to
+  // give way to. The gate re-registers what it leaves behind, so the context
+  // still describes the song after it runs.
   trimClashingNoteTails(song_, *harmony_context_);
 }
 
@@ -1810,8 +1811,9 @@ void trimBassBoundaryOverhangs(MidiTrack& bass, const IHarmonyContext& harmony) 
 /// applyPostProcessingEffects().
 ///
 /// @param song The song with generated tracks
-/// @param harmony Harmony context, read for the chord at each clash
-void trimClashingNoteTails(Song& song, const IHarmonyContext& harmony) {
+/// @param harmony Harmony context, read for the chord at each clash and left
+///                describing the notes this pass emitted
+void trimClashingNoteTails(Song& song, IHarmonyContext& harmony) {
   constexpr Tick kMaxTailOverlap = TICK_QUARTER;  // longer overlaps were
                                                   // visible at creation time
   // A 32nd-note stub is the shortest musically acceptable remainder (a bass
@@ -1947,6 +1949,14 @@ void trimClashingNoteTails(Song& song, const IHarmonyContext& harmony) {
                                    }),
                     a_notes.end());
     }
+  }
+
+  // Leave the registry describing what the song now contains. This pass shortens
+  // notes and deletes them, and a consumer that reads the registry afterwards
+  // would otherwise be answered about pitches and lengths that no longer sound.
+  for (const auto& [track, role] : tracks) {
+    harmony.clearNotesForTrack(role);
+    harmony.registerTrack(*track, role);
   }
 }
 

@@ -21,7 +21,7 @@
 
 namespace midisketch {
 
-void trimClashingNoteTails(Song& song, const IHarmonyContext& harmony);
+void trimClashingNoteTails(Song& song, IHarmonyContext& harmony);
 
 namespace {
 
@@ -83,6 +83,47 @@ TEST(ClashGateTest, ASustainedNoteIsTrimmedForAShortClashInsideIt) {
       << "the motif should end where the stab begins; measuring the overlap to "
          "the motif's own end reports a clash far longer than the two notes share";
   EXPECT_EQ(song.chord().notes().size(), 1u) << "the chord stab is not the note to shorten";
+}
+
+TEST(ClashGateTest, TheRegistryDescribesTheNotesTheGateLeaves) {
+  Arrangement arrangement = singleSection();
+  HarmonyContext harmony;
+  harmony.initialize(arrangement, getChordProgression(0), Mood::StraightPop);
+
+  Tick clash_tick = 0;
+  bool found = false;
+  for (Tick tick = 0; tick < 4 * TICKS_PER_BAR; tick += TICK_QUARTER) {
+    const int normalized = ((degreeAt(harmony, tick) % 7) + 7) % 7;
+    if (normalized != 4 && normalized != 6) {
+      clash_tick = tick;
+      found = true;
+      break;
+    }
+  }
+  ASSERT_TRUE(found);
+
+  // A short arpeggio stab against a longer motif note at the same onset. The
+  // gate has no way to move either, so it drops the more decorative of the two.
+  Song song;
+  song.motif().addNote(NoteEventBuilder::create(clash_tick, TICK_QUARTER, 71, 90));
+  song.arpeggio().addNote(NoteEventBuilder::create(clash_tick, TICK_EIGHTH, 65, 90));
+  harmony.registerTrack(song.motif(), TrackRole::Motif);
+  harmony.registerTrack(song.arpeggio(), TrackRole::Arpeggio);
+  ASSERT_FALSE(
+      harmony.getSoundingPitches(clash_tick, clash_tick + TICK_EIGHTH, TrackRole::Motif).empty())
+      << "the arpeggio stab has to be registered for the test to mean anything";
+
+  trimClashingNoteTails(song, harmony);
+
+  ASSERT_TRUE(song.arpeggio().notes().empty()) << "the decorative stab should have been dropped";
+  // Reading from any other track's point of view, the dropped pitch must be gone
+  // from the registry too: a pass that answers about notes it no longer holds
+  // sends the next consumer to avoid a clash that is not there.
+  const auto sounding =
+      harmony.getSoundingPitches(clash_tick, clash_tick + TICK_EIGHTH, TrackRole::Motif);
+  for (uint8_t pitch : sounding) {
+    EXPECT_NE(pitch, 65) << "the registry still reports the note the gate deleted";
+  }
 }
 
 TEST(ClashGateTest, AConsonantStabInsideASustainIsLeftAlone) {
