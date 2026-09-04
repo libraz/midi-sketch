@@ -929,7 +929,11 @@ TEST_F(BassTest, PedalToneDominantInBridge) {
   int pedal_like_bridges = 0;
   int total_bridges = 0;
 
-  for (uint32_t seed = 1; seed <= 50; ++seed) {
+  // Pedal selection is a low-probability roll, so the seed window has to be
+  // wide enough that drawing none of them is not an ordinary outcome. Over 50
+  // seeds the expected count is only a couple, and an empty draw says nothing
+  // about whether the pattern is still reachable.
+  for (uint32_t seed = 1; seed <= 200; ++seed) {
     params_.seed = seed;
     Generator gen;
     gen.generate(params_);
@@ -960,10 +964,9 @@ TEST_F(BassTest, PedalToneDominantInBridge) {
     }
   }
 
-  // At least some bridges should show pedal-like characteristics
-  // (low diversity = static bass pattern). Pedal selection is a low-probability
-  // roll, so a ratio bound over 50 seeds is noisy (observed 1-4 occurrences
-  // depending on the RNG stream); assert the pattern stays reachable instead.
+  // A pedal-like bridge is low pitch-class diversity, that is, a static bass.
+  // The claim is reachability, not a rate: how often the roll succeeds is a
+  // tuning decision, but a pattern that can no longer occur at all is a break.
   EXPECT_GT(total_bridges, 0) << "Should have Bridge sections to test";
   EXPECT_GE(pedal_like_bridges, 1) << "Pedal-like bridge bass should remain reachable (found "
                                    << pedal_like_bridges << "/" << total_bridges << ")";
