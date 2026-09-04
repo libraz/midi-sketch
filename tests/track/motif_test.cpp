@@ -2586,5 +2586,53 @@ TEST_F(MotifVarietyTest, LocalVocalCeilingKeepsMinimumMotifRange) {
       << "A low local vocal note should not collapse motif range to a single pitch";
 }
 
+// A rhythm template supplies its own onsets, and one of them states two bars.
+// MotifParams::length is a request made before the template was chosen and can
+// disagree with it. When it does, the last note of the pattern is asked to fill
+// the distance to an end it has already passed; on an unsigned tick that is not
+// a short note but a note some four billion ticks long, which then survives as
+// far as the section boundary and sounds over the whole rest of the riff.
+TEST(MotifPatternSpanTest, LastNoteStaysInsideItsCycleWhenTheTemplateOutlastsTheRequest) {
+  // Four bars is the longest cycle MotifLength can name, so nothing a caller
+  // can ask for justifies a longer note. An underflowed gap does not read as an
+  // obviously wrong number anywhere it is used - it is silently clamped to
+  // whatever span it is measured against - so the pattern is where it has to be
+  // caught.
+  constexpr Tick kLongestExpressibleCycle = 4 * TICKS_PER_BAR;
+
+  for (uint8_t bars : {1, 2, 4}) {
+    GeneratorParams params{};
+    params.motif.rhythm_template = MotifRhythmTemplate::HalfNoteSparse;
+    params.motif.length = static_cast<MotifLength>(bars);
+    std::mt19937 rng(12345);
+
+    std::vector<NoteEvent> pattern = generateMotifPattern(params, rng);
+    ASSERT_FALSE(pattern.empty()) << "bars=" << static_cast<int>(bars);
+
+    for (const auto& note : pattern) {
+      EXPECT_LE(note.duration, kLongestExpressibleCycle)
+          << "bars=" << static_cast<int>(bars) << ": the note at " << note.start_tick
+          << " lasts longer than any cycle the configuration can ask for";
+    }
+  }
+
+  // The template states two bars. Asked for one, the pattern still has to
+  // occupy the two it needs: reporting a shorter span is what makes a caller
+  // lay the next statement over this one.
+  GeneratorParams cramped{};
+  cramped.motif.rhythm_template = MotifRhythmTemplate::HalfNoteSparse;
+  cramped.motif.length = MotifLength::Bars1;
+  std::mt19937 rng(12345);
+  std::vector<NoteEvent> pattern = generateMotifPattern(cramped, rng);
+  ASSERT_FALSE(pattern.empty());
+
+  Tick span = 0;
+  for (const auto& note : pattern) {
+    span = std::max(span, note.start_tick + note.duration);
+  }
+  EXPECT_GT(span, TICKS_PER_BAR) << "a two-bar rhythm collapsed into one bar";
+  EXPECT_LE(span, 2 * TICKS_PER_BAR) << "a two-bar rhythm spilled past its second bar";
+}
+
 }  // namespace
 }  // namespace midisketch

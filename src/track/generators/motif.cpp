@@ -197,6 +197,37 @@ std::vector<Tick> generateRhythmPositionsFromTemplate(MotifRhythmTemplate tmpl) 
   return positions;
 }
 
+/// @brief The span one statement of a motif occupies, in ticks.
+///
+/// A rhythm template carries its own length: most state one bar, the half-note
+/// template states two. `MotifParams::length` describes the cycle the legacy
+/// rhythm generator was asked for and knows nothing about which template was
+/// chosen, so a two-bar template measured by it alone restarts every bar - each
+/// statement sounding over the one before - and asks its last note to fill a gap
+/// that has already elapsed, which underflows an unsigned tick into a note that
+/// runs to the end of the section. Such a note then swallows every later onset
+/// it shares a pitch with, and since the pitches are corrected per section, two
+/// sections lose different onsets and a locked riff stops being recognisable as
+/// one riff. Taking the span from the onsets themselves keeps the tiling, the
+/// variation window and the final note's length in agreement with whatever
+/// supplied the rhythm.
+Tick motifCycleLength(Tick last_onset, MotifLength configured_bars) {
+  Tick configured = static_cast<Tick>(std::max<uint8_t>(static_cast<uint8_t>(configured_bars), 1)) *
+                    TICKS_PER_BAR;
+  Tick spanned = (last_onset / TICKS_PER_BAR + 1) * TICKS_PER_BAR;
+  return std::max(configured, spanned);
+}
+
+/// @brief The span of a generated pattern, for callers that hold notes rather
+/// than the onset list they were built from.
+Tick motifCycleLengthOf(const std::vector<NoteEvent>& pattern, MotifLength configured_bars) {
+  Tick last_onset = 0;
+  for (const auto& note : pattern) {
+    last_onset = std::max(last_onset, note.start_tick);
+  }
+  return motifCycleLength(last_onset, configured_bars);
+}
+
 // M1: Determine appropriate scale type based on chord quality and mood
 ScaleType selectScaleType(bool is_minor, Mood mood) {
   if (is_minor) {
@@ -681,8 +712,10 @@ std::vector<NoteEvent> generateMotifPattern(const GeneratorParams& params, std::
                             : gap;  // Very short gaps: fill completely
       }
     } else {
-      // Last note: fill to end of cycle with articulation
-      Tick cycle_length = static_cast<Tick>(motif_params.length) * TICKS_PER_BAR;
+      // Last note: fill to end of cycle with articulation. The cycle is as long
+      // as the rhythm actually spans, which a template decides, not the
+      // configured bar count.
+      Tick cycle_length = motif_detail::motifCycleLength(pos, motif_params.length);
       Tick gap_to_end = cycle_length - pos;
       if (use_template && motif_params.rhythm_template == MotifRhythmTemplate::ChordPulseStabs) {
         note_duration = std::min(gap_to_end, static_cast<Tick>(TICK_SIXTEENTH));
@@ -1463,7 +1496,7 @@ std::vector<NoteEvent>* resolveCurrentPattern(
             state.hint_patterns.emplace(section.type, generateMotifPattern(hint_params, rng)).first;
         state.hint_patterns_original[section.type] = iter->second;
       } else if (!reprise_original_evolving_riff) {
-        Tick cycle_length = static_cast<Tick>(motif_params.length) * TICKS_PER_BAR;
+        Tick cycle_length = motif_detail::motifCycleLengthOf(iter->second, motif_params.length);
         evolveRiffPattern(iter->second, cycle_length, rng);
       }
       hint_pattern_ptr = &iter->second;
@@ -1497,7 +1530,8 @@ std::vector<NoteEvent>* resolveCurrentPattern(
     // Gradual transform: mutate the cached riff once per section instead of
     // occasional full regeneration. The riff keeps its identity while its
     // onset cell drifts across the song (Evolving semantics).
-    Tick cycle_length = static_cast<Tick>(motif_params.length) * TICKS_PER_BAR;
+    Tick cycle_length =
+        motif_detail::motifCycleLengthOf(state.riff_cache.pattern, motif_params.length);
     evolveRiffPattern(state.riff_cache.pattern, cycle_length, rng);
     current_pattern = &state.riff_cache.pattern;
   } else if (policy == RiffPolicy::Free) {
@@ -1914,7 +1948,6 @@ void generateMotifForSection(MidiTrack& track, const Section& section, const Ful
   IHarmonyCoordinator* harmony = ctx.harmony;
   const MotifContext* vocal_ctx = ctx.vocal_ctx;
   const MotifParams& motif_params = params.motif;
-  Tick motif_length = static_cast<Tick>(motif_params.length) * TICKS_PER_BAR;
 
   Tick section_end = section.endTick();
   bool is_chorus = (section.type == SectionType::Chorus);
@@ -1927,6 +1960,11 @@ void generateMotifForSection(MidiTrack& track, const Section& section, const Ful
   std::vector<NoteEvent>* current_pattern = resolveCurrentPattern(
       pattern, section, params, motif_params, state, is_locked, policy,
       reprise_original_evolving_riff, role_meta, rng, section_pattern, hint_pattern);
+
+  // The statement being tiled is the one that decides the stride. Advancing by
+  // the configured bar count instead would restart a longer pattern before it
+  // finished, sounding each statement over the previous one.
+  Tick motif_length = motif_detail::motifCycleLengthOf(*current_pattern, motif_params.length);
 
   // Repeat motif across the section
   size_t cycle_idx = 0;

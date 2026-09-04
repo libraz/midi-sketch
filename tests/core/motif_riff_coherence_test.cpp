@@ -178,5 +178,42 @@ TEST(MotifRiffCoherenceTest, PlainRhythmLockRiffKeepsIdentityThroughPostProcessi
   EXPECT_GE(total_repetition / 3.0, 0.70);
 }
 
+// A locked riff is a cell the listener is meant to recognise on its return, so
+// one statement of it has to finish before the next begins. A statement that
+// runs on under its own repeat is not a longer riff, it is two riffs at once:
+// the sustained note masks the onsets it covers, and which onsets survive into
+// the audible result then depends on the pitches the per-section correction
+// passes happen to choose, so the two choruses stop stating the same thing.
+//
+// Not every seed picks a rhythm whose statement is long enough to reach its own
+// repeat, which is why this sweeps a range rather than naming one song.
+TEST(MotifRiffCoherenceTest, ALockedRiffStatementEndsBeforeTheNextOneStarts) {
+  for (uint32_t seed = 1; seed <= 24; ++seed) {
+    GeneratorParams params{};
+    params.blueprint_id = 9;  // BehavioralLoop: RhythmSync paradigm, LockedPitch riff
+    params.seed = seed;
+    params.vocal_low = 57;
+    params.vocal_high = 79;
+    params.drums_enabled = true;
+
+    Generator gen;
+    gen.generate(params);
+    const MidiTrack& motif = gen.getSong().motif();
+    ASSERT_GT(motif.noteCount(), 0u) << "seed " << seed;
+
+    // Notes sharing an onset are one chord or an octave doubling, not a
+    // statement sounding over its successor, so only later onsets count.
+    for (const auto& note : motif.notes()) {
+      const Tick note_end = note.start_tick + note.duration;
+      for (const auto& other : motif.notes()) {
+        if (other.start_tick <= note.start_tick || other.start_tick >= note_end) continue;
+        ADD_FAILURE() << "seed " << seed << ": the riff note at " << note.start_tick
+                      << " still sounds at " << other.start_tick << ", where the riff moves on";
+        break;
+      }
+    }
+  }
+}
+
 }  // namespace
 }  // namespace midisketch

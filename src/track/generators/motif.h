@@ -57,6 +57,7 @@ std::vector<NoteEvent> generateMotifPattern(const GeneratorParams& params, std::
 // Forward declarations for motif_detail functions used by generator.cpp
 enum class MotifRhythmTemplate : uint8_t;
 enum class MotifRhythmDensity : uint8_t;
+enum class MotifLength : uint8_t;
 
 namespace motif_detail {
 
@@ -75,6 +76,17 @@ MotifRhythmTemplate selectRhythmSyncTemplate(uint16_t bpm, std::mt19937& rng,
 
 /// @brief Get the template config for a given template ID.
 const MotifRhythmTemplateConfig& getTemplateConfig(MotifRhythmTemplate tmpl);
+
+/// @brief The span one statement of a pattern occupies, in ticks.
+///
+/// Anything that lays a motif pattern end to end has to advance by the span the
+/// pattern actually covers. `MotifParams::length` is a request, not a
+/// measurement: a rhythm template supplies its own onsets and one of them spans
+/// two bars, so a caller that strides by the configured bar count restarts that
+/// pattern before it has finished and sounds each statement over the previous
+/// one. Measuring the pattern keeps the two in agreement whatever chose the
+/// rhythm.
+Tick motifCycleLengthOf(const std::vector<NoteEvent>& pattern, MotifLength configured_bars);
 
 }  // namespace motif_detail
 
