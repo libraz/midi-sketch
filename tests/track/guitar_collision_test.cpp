@@ -15,8 +15,10 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <vector>
 
+#include "core/chord_utils.h"
 #include "core/generator.h"
 #include "core/i_harmony_context.h"
 #include "core/preset_data.h"
@@ -200,15 +202,28 @@ TEST_F(GuitarCollisionGenTest, IdolStandardGuitarSustainedClashesLow) {
 }
 
 // Count close m2/M2 clashes between guitar and another track using the
-// role-aware CollisionTestHelper snapshot path. The role-aware tolerance fix
+// role-aware CollisionTestHelper snapshot path. The role-aware tolerance
 // targets sustained seconds specifically; tritones and major sevenths are
-// context-sensitive harmony colors and are covered by H21-specific tests.
-static size_t countCloseGuitarClashes(const CollisionTestHelper& helper, TrackRole other,
-                                      Tick total) {
+// context-sensitive harmony colors and are checked elsewhere.
+//
+// A major second between two tones of the chord being sounded is not one of
+// these: it is the distance a seventh sits from its root, so a guitar doubling
+// a seventh chord states one by construction. That is chordExcusesFlaggedPair's
+// question, the same one the sweeps and the report ask, and counting raw
+// intervals here instead made a guitar that follows the harmony look worse than
+// one that ignores it. The minor second is excused by nothing.
+static size_t countCloseGuitarClashes(const CollisionTestHelper& helper,
+                                      const IHarmonyContext& harmony, TrackRole other, Tick total) {
   auto clashes = helper.findClashesBetween(TrackRole::Guitar, other, total);
   size_t close = 0;
   for (const auto& c : clashes) {
-    if (c.interval_semitones == 1 || c.interval_semitones == 2) close++;
+    if (c.interval_semitones != 1 && c.interval_semitones != 2) continue;
+    const Tick overlap_start = std::max(c.note_a.start, c.note_b.start);
+    if (chordExcusesFlaggedPair(c.interval_semitones, c.note_a.pitch, c.note_b.pitch,
+                                harmony.getChordTonesAt(overlap_start))) {
+      continue;
+    }
+    close++;
   }
   return close;
 }
@@ -230,11 +245,14 @@ TEST_F(GuitarCollisionGenTest, IdolStandardSnapshotGuitarClashesLow) {
     CollisionTestHelper helper(gen.getHarmonyContext());
     Tick total = totalTicks(gen.getSong());
 
-    EXPECT_LE(countCloseGuitarClashes(helper, TrackRole::Motif, total), kMaxClashes)
+    EXPECT_LE(countCloseGuitarClashes(helper, gen.getHarmonyContext(), TrackRole::Motif, total),
+              kMaxClashes)
         << "bp=4 seed=" << seed << " Guitar/Motif close clashes";
-    EXPECT_LE(countCloseGuitarClashes(helper, TrackRole::Aux, total), kMaxClashes)
+    EXPECT_LE(countCloseGuitarClashes(helper, gen.getHarmonyContext(), TrackRole::Aux, total),
+              kMaxClashes)
         << "bp=4 seed=" << seed << " Guitar/Aux close clashes";
-    EXPECT_LE(countCloseGuitarClashes(helper, TrackRole::Chord, total), kMaxClashes)
+    EXPECT_LE(countCloseGuitarClashes(helper, gen.getHarmonyContext(), TrackRole::Chord, total),
+              kMaxClashes)
         << "bp=4 seed=" << seed << " Guitar/Chord close clashes";
   }
 }

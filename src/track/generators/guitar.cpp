@@ -33,6 +33,26 @@ static constexpr uint8_t kGuitarHigh = 76;  // E5
 // Base octave for chord voicings (C3)
 static constexpr uint8_t kBaseOctave = 48;
 
+/// @brief The chord to strum at a tick, as the shared timeline states it.
+///
+/// The progression array is what the song was planned from, not what it ends
+/// up playing: secondary dominants, tritone substitutions and the chord
+/// extensions are all registered on the timeline before any track generates,
+/// and reading the array instead strums the chord that was replaced. Every
+/// other pitched track asks the timeline, so a guitar that does not is the one
+/// voice stating a different harmony from the rest of the band.
+struct StrummedChord {
+  int8_t degree;
+  uint8_t root;
+  Chord chord;
+};
+
+StrummedChord chordToStrumAt(const IHarmonyContext& harmony, Tick tick) {
+  const int8_t degree = harmony.getChordDegreeAt(tick);
+  return {degree, degreeToRoot(degree, Key::C),
+          getExtendedChord(degree, harmony.getChordExtensionAt(tick))};
+}
+
 // ============================================================================
 // Style helpers
 // ============================================================================
@@ -787,21 +807,13 @@ void GuitarGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackConte
                                 ? static_cast<GuitarStyle>(bc.section.guitar_style_hint - 1)
                                 : base_style;
 
-        int abs_bar = static_cast<int>(tickToBar(bc.bar_start));
-        bool slow_harmonic = (bc.harmonic.density == HarmonicDensity::Slow);
         Tick half_bar = bc.bar_start + TICKS_PER_BAR / 2;
 
-        // Get chord for this bar
-        int chord_idx;
-        if (bc.harmonic.subdivision == 2) {
-          chord_idx = getChordIndexForSubdividedBar(abs_bar, 0, progression.length);
-        } else {
-          chord_idx = getChordIndexForBar(abs_bar, slow_harmonic, progression.length);
-        }
-        int8_t degree = progression.at(chord_idx);
-        uint8_t root = degreeToRoot(degree, Key::C);
-        Chord chord = getChordNotes(degree);
-        auto pitches = buildGuitarChordPitches(root, chord, style);
+        // The chord this bar plays, read from the timeline rather than from the
+        // progression it was planned from.
+        StrummedChord bar_chord = chordToStrumAt(*ctx.harmony, bc.bar_start);
+        uint8_t root = bar_chord.root;
+        auto pitches = buildGuitarChordPitches(root, bar_chord.chord, style);
 
         // Phrase tail rest: reduce density in tail bars, silence last bar's second half
         if (bc.section.phrase_tail_rest && isPhraseTail(bc.bar_index, bc.section.bars)) {
@@ -815,13 +827,9 @@ void GuitarGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackConte
           generateHalf(bc.bar_start, half_bar, pitches, root, bc.section.type, bc.section.energy,
                        style);
 
-          int next_idx = bc.harmonic.subdivision == 2
-                             ? getChordIndexForSubdividedBar(abs_bar, 1, progression.length)
-                             : getChordIndexForBar(abs_bar + 1, slow_harmonic, progression.length);
-          int8_t deg2 = progression.at(next_idx);
-          uint8_t root2 = degreeToRoot(deg2, Key::C);
-          Chord chord2 = getChordNotes(deg2);
-          auto pitches_2nd = buildGuitarChordPitches(root2, chord2, style);
+          StrummedChord half_chord = chordToStrumAt(*ctx.harmony, half_bar);
+          uint8_t root2 = half_chord.root;
+          auto pitches_2nd = buildGuitarChordPitches(root2, half_chord.chord, style);
           generateHalf(half_bar, bc.bar_end, pitches_2nd, root2, bc.section.type, bc.section.energy,
                        style);
           return;
@@ -837,16 +845,9 @@ void GuitarGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackConte
 
         // Generate second half with next chord if split
         if (split) {
-          int next_idx;
-          if (bc.harmonic.subdivision == 2) {
-            next_idx = getChordIndexForSubdividedBar(abs_bar, 1, progression.length);
-          } else {
-            next_idx = getChordIndexForBar(abs_bar + 1, slow_harmonic, progression.length);
-          }
-          int8_t deg2 = progression.at(next_idx);
-          uint8_t root2 = degreeToRoot(deg2, Key::C);
-          Chord chord2 = getChordNotes(deg2);
-          auto pitches_2nd = buildGuitarChordPitches(root2, chord2, style);
+          StrummedChord half_chord = chordToStrumAt(*ctx.harmony, half_bar);
+          uint8_t root2 = half_chord.root;
+          auto pitches_2nd = buildGuitarChordPitches(root2, half_chord.chord, style);
           generateHalf(half_bar, bc.bar_end, pitches_2nd, root2, bc.section.type, bc.section.energy,
                        style);
         }
