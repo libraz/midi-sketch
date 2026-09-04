@@ -240,8 +240,11 @@ void applyPhrasePairCadence(std::vector<NoteEvent>& notes, PhrasePairRole pair_r
   }
 
   NoteEvent& last_note = notes.back();
-  int8_t chord_degree = harmony.getChordDegreeAt(last_note.start_tick);
-  const ChordTones chord_tones = getChordTones(chord_degree);
+  // The cadence resolves onto the chord the timeline states at this tick, not
+  // onto the triad the degree would build: where a secondary dominant is
+  // registered, its raised third is the tone the phrase is asking to land on,
+  // and the degree's own diatonic third is a semitone away from it.
+  const ChordTones chord_tones = harmony.getChordTonesAt(last_note.start_tick);
   int pitch_class = getPitchClass(last_note.note);
 
   // Root pitch class for the current chord degree
