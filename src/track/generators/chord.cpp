@@ -1609,6 +1609,37 @@ void tryAnticipation(ChordBarContext& ctx) {
                                       : ChordExtension::None;
   ctx.harmony.registerChordReplacement(ant_tick, bar_end, next_degree, next_extension);
 
+  // Vacate the span the replacement just claimed.
+  //
+  // The bar's entries were voiced before this replacement existed, so the eighth
+  // the anticipation takes over still holds notes of the chord being left --
+  // a comping push, or a voicing sustaining through the bar. Sounding those
+  // beside the anticipation states the outgoing chord and the incoming one at
+  // the same instant: the dominant's third under the tonic's root is a major
+  // seventh nobody chose, and it is invisible to every check made while the
+  // notes were placed, since both belong to this track.
+  {
+    auto& notes = ctx.track.notes();
+    bool vacated = false;
+    for (size_t i = notes.size(); i-- > 0;) {
+      NoteEvent& note = notes[i];
+      if (note.start_tick >= bar_end) continue;
+      if (note.start_tick + note.duration <= ant_tick) continue;
+      if (note.start_tick >= ant_tick) {
+        notes.erase(notes.begin() + static_cast<std::ptrdiff_t>(i));
+      } else {
+        note.duration = ant_tick - note.start_tick;
+      }
+      vacated = true;
+    }
+    if (vacated) {
+      // The anticipation's own voices are placed against the registry below, so
+      // it has to describe the track as it now stands rather than as it was.
+      ctx.harmony.clearNotesForTrack(TrackRole::Chord);
+      ctx.harmony.registerTrack(ctx.track, TrackRole::Chord);
+    }
+  }
+
   uint8_t next_root = degreeToRoot(next_degree, Key::C);
   Chord next_chord = getExtendedChord(next_degree, next_extension);
 
