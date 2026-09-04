@@ -168,8 +168,15 @@ const MOTIF_CHORD_FIELDS: readonly ConfigField[] = [
   },
 ] as const;
 
-// Nested struct definitions
-const NESTED_STRUCTS: readonly NestedField[] = [
+/**
+ * Nested SongConfig structs, by their C++ object key.
+ *
+ * Exported so a test can ask whether every key the core writes is one the
+ * table knows about: a nested group is a key in the JSON without being a field
+ * in CONFIG_FIELDS, so a check that only knows the flat list reads three of
+ * them as unmapped.
+ */
+export const NESTED_STRUCTS: readonly NestedField[] = [
   { cpp: 'arpeggio', fields: ARPEGGIO_FIELDS },
   { cpp: 'chord_extension', fields: CHORD_EXT_FIELDS },
   { cpp: 'motif_chord', fields: MOTIF_CHORD_FIELDS },

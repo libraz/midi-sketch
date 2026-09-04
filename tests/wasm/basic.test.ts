@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { ACCOMPANIMENT_FIELDS, CONFIG_FIELDS } from '../../js/src/config-fields';
+import { ACCOMPANIMENT_FIELDS, CONFIG_FIELDS, NESTED_STRUCTS } from '../../js/src/config-fields';
 import { WasmTestContext } from './test-helpers';
 
 describe('MidiSketch WASM - Basic', () => {
@@ -57,5 +57,34 @@ describe('MidiSketch WASM - Basic', () => {
     const defaultKeys = new Set(Object.keys(defaultConfig));
 
     expect(CONFIG_FIELDS.map(({ cpp }) => cpp).filter((cpp) => !defaultKeys.has(cpp))).toEqual([]);
+  });
+
+  it('maps every C++ default-config key to a public SongConfig field', () => {
+    // The other direction. A field added to the core without its entry in the
+    // TypeScript table is invisible to every JS caller and silently absent from
+    // a serialized config, which is the direction the three-place edit in
+    // CLAUDE.md actually drifts.
+    const getDefaultConfigJson = ctx.module.cwrap(
+      'midisketch_create_default_config_json',
+      'string',
+      ['number'],
+    ) as (styleId: number) => string;
+    const defaultConfig = JSON.parse(getDefaultConfigJson(0)) as Record<string, unknown>;
+    const mapped = new Set<string>([
+      ...CONFIG_FIELDS.map(({ cpp }) => cpp),
+      ...NESTED_STRUCTS.map(({ cpp }) => cpp),
+    ]);
+
+    expect(Object.keys(defaultConfig).filter((key) => !mapped.has(key))).toEqual([]);
+
+    for (const group of NESTED_STRUCTS) {
+      const nested = defaultConfig[group.cpp] as Record<string, unknown> | undefined;
+      if (nested === undefined) continue;
+      const known = new Set(group.fields.map(({ cpp }) => cpp));
+      expect(
+        Object.keys(nested).filter((key) => !known.has(key)),
+        group.cpp,
+      ).toEqual([]);
+    }
   });
 });
