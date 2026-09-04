@@ -38,6 +38,9 @@ uint8_t getVocalCeilingForRange(const IHarmonyContext& harmony, Tick start, Tick
 bool wouldCreateVoicingCluster(const chord_voicing::VoicedChord& voicing, uint8_t candidate_pitch,
                                const ChordTones& tones);
 bool removeVoicingClusters(MidiTrack& track, IHarmonyContext& harmony);
+chord_voicing::VoicedChord filterVoicingByCollision(const IHarmonyContext& harmony,
+                                                    const chord_voicing::VoicedChord& v, Tick start,
+                                                    Tick duration, uint8_t vocal_ceiling_hint);
 
 namespace {
 
@@ -180,6 +183,69 @@ TEST_F(ChordTrackTest, VocalCeilingUsesHighRegisterNotLowOrnament) {
   EXPECT_GT(max_pitch, 52)
       << "A low vocal ornament must not collapse the whole chord voicing below C3.";
   EXPECT_LE(max_pitch, 73) << "Chord voicing should still respect the high vocal register margin.";
+}
+
+// ============================================================================
+// A voice over the vocal ceiling is folded, not given up on
+// ============================================================================
+//
+// The seventh sits at the top of a close voicing, so it is the voice the vocal
+// ceiling reaches first, and most often by only a semitone or two. Dropping it
+// silences the tone the chord was extended for; an octave down clears the
+// ceiling with room to spare and keeps the chord a seventh chord.
+
+TEST_F(ChordTrackTest, AVoiceOverTheCeilingIsFoldedRatherThanDropped) {
+  test::StubHarmonyContext harmony;
+  harmony.setAllPitchesSafe(true);
+  harmony.setChordDegree(0);
+  harmony.setChordTones({0, 4, 7, 11});  // Cmaj7
+  // A vocal high of 74 puts the ceiling at 71, one semitone under the seventh.
+  harmony.setLowestPitchForTrack(74);
+  harmony.setHighestPitchForTrack(74);
+
+  chord_voicing::VoicedChord voicing;
+  voicing.pitches = {60, 64, 67, 72, 0};  // C4 E4 G4 with the seventh's octave above
+  voicing.count = 4;
+  voicing.type = chord_voicing::VoicingType::Close;
+  // B4 (71) is inside the ceiling; B5 (83) is well over it.
+  voicing.pitches[3] = 83;
+
+  const chord_voicing::VoicedChord safe =
+      filterVoicingByCollision(harmony, voicing, 0, TICK_QUARTER, 0);
+
+  bool seventh_present = false;
+  for (uint8_t i = 0; i < safe.count; ++i) {
+    if (safe.pitches[i] % 12 == 11) seventh_present = true;
+  }
+  EXPECT_TRUE(seventh_present)
+      << "The seventh was over the ceiling and was dropped instead of folded down an octave";
+  for (uint8_t i = 0; i < safe.count; ++i) {
+    EXPECT_LE(safe.pitches[i], 71) << "A folded voice must still respect the ceiling";
+  }
+}
+
+TEST_F(ChordTrackTest, AFoldedVoiceThatWouldClusterIsStillGivenUp) {
+  // Folding is not unconditional: an octave down can land the voice a step from
+  // one already placed, which is the cluster the fold exists to avoid creating.
+  test::StubHarmonyContext harmony;
+  harmony.setAllPitchesSafe(true);
+  harmony.setChordDegree(0);
+  harmony.setChordTones({0, 4, 7});  // plain C major, so D is no chord tone
+  harmony.setLowestPitchForTrack(74);
+  harmony.setHighestPitchForTrack(74);
+
+  chord_voicing::VoicedChord voicing;
+  voicing.pitches = {62, 86, 0, 0, 0};  // D4 placed first, D6 over the ceiling
+  voicing.count = 2;
+  voicing.type = chord_voicing::VoicingType::Close;
+
+  const chord_voicing::VoicedChord safe =
+      filterVoicingByCollision(harmony, voicing, 0, TICK_QUARTER, 0);
+
+  EXPECT_EQ(safe.count, 1u) << "A voice that folds onto one already placed is not a voice";
+  if (safe.count > 0) {
+    EXPECT_EQ(safe.pitches[0], 62);
+  }
 }
 
 TEST_F(ChordTrackTest, LowLocalVocalCeilingKeepsChordMidRegister) {

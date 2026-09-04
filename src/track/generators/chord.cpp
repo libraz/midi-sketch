@@ -275,6 +275,11 @@ bool wouldClashWithRegisteredTracks(const IHarmonyContext& harmony, uint8_t pitc
 /// @param duration Duration for collision check
 /// @param vocal_ceiling_hint Vocal ceiling from bar-level analysis (0 to disable)
 /// @return Filtered voicing (may have fewer notes than input)
+///
+/// Reachable from the tests, like the other voicing rules in this file: what it
+/// keeps and what it gives up on decides whether a chord's extension is heard.
+}  // namespace
+
 VoicedChord filterVoicingByCollision(const IHarmonyContext& harmony, const VoicedChord& v,
                                      Tick start, Tick duration, uint8_t vocal_ceiling_hint) {
   // Per-onset vocal ceiling: follow the local lead register while ignoring
@@ -298,19 +303,45 @@ VoicedChord filterVoicingByCollision(const IHarmonyContext& harmony, const Voice
     }
   }
 
+  const ChordTones tones = harmony.getChordTonesAt(start);
+
   VoicedChord safe = input;
   safe.count = 0;
   for (uint8_t i = 0; i < input.count; ++i) {
-    // Vocal ceiling: chord should not exceed the calculated ceiling
-    if (effective_ceiling > 0 && input.pitches[i] > effective_ceiling) {
+    // A voice over the ceiling is asked to sing an octave lower before it is
+    // given up on. Dropping it outright silences the tone the voicing was
+    // extended for: the seventh sits at the top of a close voicing, so it is
+    // the voice the ceiling reaches first, and it was most often over by a
+    // single semitone -- a distance an octave answers with room to spare.
+    // The whole-voicing case a few lines above already worked this way; only
+    // the individual voice was still being deleted.
+    uint8_t pitch = input.pitches[i];
+    while (effective_ceiling > 0 && pitch > effective_ceiling && pitch >= CHORD_LOW + 12) {
+      pitch = static_cast<uint8_t>(pitch - 12);
+    }
+    if (effective_ceiling > 0 && pitch > effective_ceiling) {
       continue;
     }
-    if (!wouldClashWithRegisteredTracks(harmony, input.pitches[i], start, duration)) {
-      safe.pitches[safe.count++] = input.pitches[i];
+    if (wouldClashWithRegisteredTracks(harmony, pitch, start, duration)) {
+      continue;
     }
+    if (pitch != input.pitches[i]) {
+      // Only a voice that was moved has to answer for where it landed. An
+      // octave down puts the seventh next to the root it belongs to as easily
+      // as under it, and a duplicate of a voice already placed is not a voice
+      // at all.
+      bool unusable = false;
+      for (uint8_t j = 0; j < safe.count && !unusable; ++j) {
+        unusable = safe.pitches[j] == pitch || isVoicingCluster(pitch, safe.pitches[j], tones);
+      }
+      if (unusable) continue;
+    }
+    safe.pitches[safe.count++] = pitch;
   }
   return safe;
 }
+
+namespace {
 
 /// @brief Build a fallback voicing when all candidates are filtered out.
 ///
