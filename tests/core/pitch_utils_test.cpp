@@ -233,6 +233,11 @@ TEST(PitchUtilsTest, IsDissonantActualInterval_ConsonantIntervals) {
   EXPECT_FALSE(isDissonantActualInterval(9, 0));   // Major 6th
   EXPECT_FALSE(isDissonantActualInterval(10, 0));  // Minor 7th (acceptable in pop)
   EXPECT_FALSE(isDissonantActualInterval(12, 0));  // Octave
+  // A major 9th is a major 2nd only after an octave is divided out, and the two
+  // are not interchangeable: the 9th is a standard pop extension. Every screen
+  // that judged the interval class instead of the interval itself called it a
+  // clash.
+  EXPECT_FALSE(isDissonantActualInterval(14, 0));  // Major 9th
 }
 
 TEST(PitchUtilsTest, IsDissonantActualInterval_CompoundMinor2nd) {

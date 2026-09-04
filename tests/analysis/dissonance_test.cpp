@@ -261,6 +261,132 @@ TEST(DissonanceTest, ExactHarmonyTimelinePreservesChordReplacement) {
   EXPECT_EQ(analyzeDissonance(song, params).summary.non_chord_tones, 1u);
 }
 
+// ============================================================================
+// Close interval between a non-chord tone and a sounding chord voice
+// ============================================================================
+//
+// A non-chord tone is graded by where in the bar it falls, and then raised when
+// it also states a close interval against a chord voice sounding underneath it.
+// The severity that rule hands out depends on the interval the two voices
+// actually state, not on that interval reduced by an octave: a minor seventh
+// and a major ninth are ordinary colour over a triad, while their close-range
+// relatives are not.
+//
+// No generated song currently reaches this rule, so these fixtures are the only
+// thing exercising it.
+
+// Beat 2 and a half: an offbeat non-chord tone in a melodic track is graded Low
+// on position alone, so a higher verdict can only come from the interval rule.
+constexpr Tick kOffbeatTick = TICKS_PER_BEAT + TICK_EIGHTH;
+constexpr Tick kSecondaryBeatTick = TICKS_PER_BEAT * 2;
+
+// One vocal note against one chord voice over a plain I triad lasting a bar.
+// C, E and G are its chord tones and D and A its available tensions, so any
+// other pitch class reaches the analyzer as a non-chord tone.
+DissonanceReport analyzeVocalAgainstChordVoice(Tick tick, uint8_t vocal_pitch,
+                                               uint8_t chord_pitch) {
+  Section verse;
+  verse.type = SectionType::A;
+  verse.start_tick = 0;
+  verse.bars = 1;
+  verse.name = "Verse";
+  Arrangement arrangement({verse});
+
+  Song song;
+  song.setArrangement(arrangement);
+  song.vocal().addNote(NoteEventTestHelper::create(tick, TICKS_PER_BEAT, vocal_pitch, 100));
+  song.chord().addNote(NoteEventTestHelper::create(tick, TICKS_PER_BEAT, chord_pitch, 80));
+
+  ChordProgression progression{};
+  progression.degrees = {0, -1, -1, -1, -1, -1, -1, -1};
+  progression.length = 1;
+  ChordProgressionTracker timeline;
+  timeline.initialize(arrangement, progression, Mood::StraightPop);
+
+  GeneratorParams params{};
+  params.chord_id = 0;
+  params.mood = Mood::StraightPop;
+  return analyzeDissonance(song, params, timeline);
+}
+
+const DissonanceIssue* findVocalNonChordTone(const DissonanceReport& report) {
+  for (const auto& issue : report.issues) {
+    if (issue.type == DissonanceType::NonChordTone && issue.track_name == "vocal") {
+      return &issue;
+    }
+  }
+  return nullptr;
+}
+
+TEST(DissonanceTest, MinorSecondAgainstChordVoiceRaisesNonChordToneToHigh) {
+  // F4 a semitone above the chord's E4.
+  const auto report = analyzeVocalAgainstChordVoice(kOffbeatTick, 65, 64);
+  const DissonanceIssue* issue = findVocalNonChordTone(report);
+  ASSERT_NE(issue, nullptr) << "F over C major was not reported as a non-chord tone";
+  EXPECT_EQ(issue->severity, DissonanceSeverity::High)
+      << "A minor 2nd against a sounding chord voice must reach High";
+}
+
+TEST(DissonanceTest, MinorNinthAgainstChordVoiceRaisesNonChordToneToHigh) {
+  // F4 a minor ninth above the chord's E3: a compound minor 2nd, harsh at any
+  // spacing, so the octave between the voices does not soften it.
+  const auto report = analyzeVocalAgainstChordVoice(kOffbeatTick, 65, 52);
+  const DissonanceIssue* issue = findVocalNonChordTone(report);
+  ASSERT_NE(issue, nullptr) << "F over C major was not reported as a non-chord tone";
+  EXPECT_EQ(issue->severity, DissonanceSeverity::High)
+      << "A minor 9th against a sounding chord voice must reach High";
+}
+
+TEST(DissonanceTest, MajorSeventhAgainstChordVoiceRaisesNonChordToneToHigh) {
+  // B4 a major seventh above the chord's C4. The timeline registers no seventh,
+  // so the B is neither a chord tone nor an available tension of I.
+  const auto report = analyzeVocalAgainstChordVoice(kOffbeatTick, 71, 60);
+  const DissonanceIssue* issue = findVocalNonChordTone(report);
+  ASSERT_NE(issue, nullptr) << "B over a plain C triad was not reported as a non-chord tone";
+  EXPECT_EQ(issue->severity, DissonanceSeverity::High)
+      << "A major 7th against a sounding chord voice must reach High";
+}
+
+TEST(DissonanceTest, MajorSecondAgainstChordVoiceRaisesNonChordToneOnStrongBeats) {
+  // F4 a whole tone below the chord's G4. Unlike the semitone intervals, this
+  // one is graded by position: High where the bar exposes it, Medium elsewhere.
+  for (Tick tick : {static_cast<Tick>(0), kSecondaryBeatTick}) {
+    const auto report = analyzeVocalAgainstChordVoice(tick, 65, 67);
+    const DissonanceIssue* issue = findVocalNonChordTone(report);
+    ASSERT_NE(issue, nullptr) << "F over C major was not reported as a non-chord tone at tick "
+                              << tick;
+    EXPECT_EQ(issue->severity, DissonanceSeverity::High)
+        << "A major 2nd against a sounding chord voice must reach High at tick " << tick;
+  }
+
+  const auto offbeat = analyzeVocalAgainstChordVoice(kOffbeatTick, 65, 67);
+  const DissonanceIssue* offbeat_issue = findVocalNonChordTone(offbeat);
+  ASSERT_NE(offbeat_issue, nullptr) << "F over C major was not reported as a non-chord tone";
+  EXPECT_EQ(offbeat_issue->severity, DissonanceSeverity::Medium)
+      << "Off the beat the same major 2nd is raised only to Medium";
+}
+
+TEST(DissonanceTest, MinorSeventhAgainstChordVoiceDoesNotRaiseNonChordTone) {
+  // F4 a minor seventh above the chord's G3. The F is still a non-chord tone
+  // over C major and is still reported, but a minor 7th is ordinary colour in
+  // pop and must not be graded as if the two voices were a step apart.
+  const auto report = analyzeVocalAgainstChordVoice(0, 65, 55);
+  const DissonanceIssue* issue = findVocalNonChordTone(report);
+  ASSERT_NE(issue, nullptr) << "F over C major must still be reported as a non-chord tone";
+  EXPECT_NE(issue->severity, DissonanceSeverity::High)
+      << "A minor 7th was escalated as though it were a second";
+}
+
+TEST(DissonanceTest, MajorNinthAgainstChordVoiceDoesNotRaiseNonChordTone) {
+  // F4 a major ninth below the chord's G5. Reducing that by an octave would
+  // read it as a major 2nd on a downbeat and hand it the top severity.
+  const auto report = analyzeVocalAgainstChordVoice(0, 65, 79);
+  const DissonanceIssue* issue = findVocalNonChordTone(report);
+  ASSERT_NE(issue, nullptr) << "F over C major must still be reported as a non-chord tone";
+  EXPECT_NE(issue->severity, DissonanceSeverity::High)
+      << "A major 9th was escalated as though it were a second";
+}
+
 TEST(DissonanceTest, JsonOutputFormat) {
   DissonanceReport report;
   report.summary.total_issues = 2;

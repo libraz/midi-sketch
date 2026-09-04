@@ -674,13 +674,19 @@ std::tuple<bool, uint8_t, uint8_t> checkCloseIntervalWithChord(const NoteEvent& 
 
     int interval =
         std::abs(static_cast<int>(melodic_note.note) - static_cast<int>(chord_note.note));
-    int interval_class = interval % 12;
 
-    if (interval_class == 1 || interval_class == 2 || interval_class == 10 ||
-        interval_class == 11) {
-      if (interval <= 14) {
-        return {true, static_cast<uint8_t>(interval_class), chord_note.note};
-      }
+    // Judge the interval the two voices actually state, not what it becomes
+    // once an octave is divided out. A second and a seventh are close; their
+    // compounds are not, and reducing modulo an octave made a minor seventh
+    // (10) and a major ninth (14) answer as one. Those are the two most
+    // ordinary colour tones a riff or a melody states over a triad, so every
+    // one of them was raised to the top severity. isDissonantActualInterval,
+    // which is where this model's interval rule lives, says so outright:
+    // "Minor 7th (10), major 9th (14), perfect 12th (19), etc.: acceptable in
+    // Pop". The minor ninth stays, being a compound minor second and harsh at
+    // any spacing.
+    if (interval == 1 || interval == 2 || interval == 11 || interval == 13) {
+      return {true, static_cast<uint8_t>(interval % 12), chord_note.note};
     }
   }
   return {false, 0, 0};
@@ -729,7 +735,7 @@ void detectNonChordTonesInTrack(const MidiTrack& track, TrackRole role, bool is_
     if (has_close_interval) {
       if (interval_semitones == 1 || interval_semitones == 11) {
         severity = DissonanceSeverity::High;
-      } else if (interval_semitones == 2 || interval_semitones == 10) {
+      } else if (interval_semitones == 2) {
         if (metric_position == MetricPosition::Downbeat ||
             metric_position == MetricPosition::SecondaryBeat) {
           severity = DissonanceSeverity::High;
