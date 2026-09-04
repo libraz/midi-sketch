@@ -79,7 +79,7 @@ describe('MidiSketch WASM - Basic', () => {
 
     for (const group of NESTED_STRUCTS) {
       const nested = defaultConfig[group.cpp] as Record<string, unknown> | undefined;
-      if (nested === undefined) continue;
+      expect(nested, `${group.cpp} is missing from the default config`).toBeDefined();
       const known = new Set(group.fields.map(({ cpp }) => cpp));
       expect(
         Object.keys(nested).filter((key) => !known.has(key)),
