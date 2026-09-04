@@ -7,6 +7,8 @@
 
 #include <gtest/gtest.h>
 
+#include "core/preset_data.h"
+
 namespace midisketch {
 namespace {
 
@@ -325,6 +327,43 @@ TEST(ChordTest, ReharmonizeVerseIVToii) {
   auto result_v = reharmonizeForSection(4, SectionType::A, false, true);
   EXPECT_EQ(result_v.degree, 4);  // V stays V
   EXPECT_FALSE(result_v.extension_overridden);
+}
+
+TEST(ChordTest, SomeShippedProgressionReachesTheVerseSubstitution) {
+  // The verse substitution is gated twice over: a IV that resolves to V or I is
+  // cadential and stays, and a IV next to ii would make two ii chords in a row.
+  // Both gates read the neighbours inside the progression, so whether the rule
+  // can fire at all is a property of the shipped progression table rather than
+  // of any song. A rule no shipped input can reach is a rule that is not there,
+  // and it would keep passing the unit test above while the timeline never
+  // changed a single degree.
+  int reachable = 0;
+  for (uint8_t id = 0; id < CHORD_COUNT; ++id) {
+    const auto& prog = getChordProgression(id);
+    for (int i = 0; i < prog.length; ++i) {
+      if (prog.degrees[i] != 3) continue;
+      int8_t next = prog.degrees[(i + 1) % prog.length];
+      int8_t prev = prog.degrees[(i + prog.length - 1) % prog.length];
+      if (reharmonizeForSection(3, SectionType::A, false, false, false, next, prev).degree == 1) {
+        ++reachable;
+      }
+    }
+  }
+  EXPECT_GT(reachable, 0) << "no shipped progression can trigger the verse IV->ii substitution, "
+                             "so the rule cannot change any song's harmony";
+}
+
+TEST(ChordTest, ReharmonizeVerseKeepsACadentialFour) {
+  // The gates are the reason the substitution is rare, so they are worth stating
+  // separately from the substitution itself: a IV that resolves to V or to I is
+  // doing cadential work and keeps its own identity.
+  EXPECT_EQ(reharmonizeForSection(3, SectionType::A, false, false, false, 4, 0).degree, 3);
+  EXPECT_EQ(reharmonizeForSection(3, SectionType::A, false, false, false, 0, 5).degree, 3);
+  // A IV adjacent to ii would otherwise become a second ii in a row.
+  EXPECT_EQ(reharmonizeForSection(3, SectionType::A, false, false, false, 1, 0).degree, 3);
+  EXPECT_EQ(reharmonizeForSection(3, SectionType::A, false, false, false, 5, 1).degree, 3);
+  // Neither gate applies here, so the substitution stands.
+  EXPECT_EQ(reharmonizeForSection(3, SectionType::A, false, false, false, 5, 0).degree, 1);
 }
 
 TEST(ChordTest, ReharmonizeOtherSectionsUnchanged) {
