@@ -197,6 +197,55 @@ void enforceSectionCeiling(std::vector<NoteEvent>& notes, const IHarmonyContext&
                            uint8_t vocal_low, uint8_t vocal_high);
 
 /**
+ * @brief Highest pitch the hook sections (Chorus/Drop) actually reached.
+ *
+ * The register ladder gives the Chorus headroom, but a conjunct Chorus melody
+ * may never use it. What the Chorus sang, not what it was allowed to sing, is
+ * what a Verse or Pre-chorus has to stay under.
+ *
+ * @param notes Vocal notes to measure
+ * @param sections Arrangement sections
+ * @return The realized peak, or 0 when no note falls in a hook section
+ */
+uint8_t realizedChorusPeak(const std::vector<NoteEvent>& notes,
+                           const std::vector<Section>& sections);
+
+/**
+ * @brief Upper bound a vocal note may occupy for the peak to stay in the hook.
+ *
+ * Hook sections keep the configured ceiling; every other section stops one
+ * semitone below the realized Chorus peak, so a tie cannot move the global
+ * melodic peak out of the hook. A tick outside every section has no register
+ * ladder to reason about and keeps the configured ceiling.
+ *
+ * Every pass that may RAISE a vocal pitch on the finished line asks this
+ * instead of using the song-wide ceiling; bounding the search is what keeps
+ * this constraint from fighting the passes that run after it.
+ *
+ * @param tick Note position
+ * @param sections Arrangement sections
+ * @param chorus_peak Realized Chorus peak (see realizedChorusPeak); 0 disables
+ * @param vocal_high Configured vocal range high limit
+ */
+uint8_t vocalCeilingAt(Tick tick, const std::vector<Section>& sections, uint8_t chorus_peak,
+                       uint8_t vocal_high);
+
+/**
+ * @brief Keep the global melodic peak inside a Chorus.
+ *
+ * Lowers every note that sits at or above the realized Chorus peak outside a
+ * hook section, delegating the clamp to enforceSectionCeiling so the octave
+ * drop, the scale snap and the collision-safety walk stay in one place.
+ *
+ * @param notes Notes to modify (in-place)
+ * @param harmony Harmony context for collision-safety verification
+ * @param sections Arrangement sections, used to identify the hook sections
+ * @param vocal_low Vocal range low limit
+ */
+void capNonChorusBelowChorusPeak(std::vector<NoteEvent>& notes, const IHarmonyContext& harmony,
+                                 const std::vector<Section>& sections, uint8_t vocal_low);
+
+/**
  * @brief Merge same-pitch notes with short gaps (tie/legato).
  *
  * In pop vocals, same-pitch notes with tiny gaps should be connected

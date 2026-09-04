@@ -57,6 +57,7 @@
 #include "track/generators/se.h"
 #include "track/generators/vocal.h"
 #include "track/vocal/vocal_analysis.h"
+#include "track/vocal/vocal_helpers.h"
 
 namespace midisketch {
 
@@ -99,7 +100,8 @@ void reregisterTracks(IHarmonyCoordinator& harmony,
   }
 }
 void breakLongPitchRuns(MidiTrack& track, const IHarmonyContext& harmony, uint8_t low, uint8_t high,
-                        int max_run, TrackRole role);
+                        int max_run, TrackRole role, const std::vector<Section>& sections,
+                        uint8_t chorus_peak);
 void trimBassBoundaryOverhangs(MidiTrack& bass, const IHarmonyContext& harmony);
 void trimVocalSustainsAtUnsafeChordChanges(MidiTrack& vocal, const IHarmonyContext& harmony);
 void trimClashingNoteTails(Song& song, const IHarmonyContext& harmony);
@@ -624,7 +626,8 @@ void Generator::applyPostProcessingEffects() {
     // Max run of 4: 3-4 repeated pitches work as emphasis, 5+ reads as
     // monotony in a pop vocal line.
     breakLongPitchRuns(song_.vocal(), *harmony_context_, params_.vocal_low, params_.vocal_high, 4,
-                       TrackRole::Vocal);
+                       TrackRole::Vocal, song_.arrangement().sections(),
+                       realizedChorusPeak(song_.vocal().notes(), song_.arrangement().sections()));
     // breakLongPitchRuns may have changed vocal pitches; refresh once more so
     // the accompaniment-side clash fixes below see the final vocal.
     harmony_context_->clearNotesForTrack(TrackRole::Vocal);
@@ -795,7 +798,8 @@ void Generator::applyPostProcessingEffects() {
   // Max run of 4 matches the post-DNA guard above: 3-4 repeated pitches work
   // as emphasis, 5+ reads as monotony in a pop vocal line.
   breakLongPitchRuns(song_.vocal(), *harmony_context_, params_.vocal_low, params_.vocal_high, 4,
-                     TrackRole::Vocal);
+                     TrackRole::Vocal, song_.arrangement().sections(),
+                     realizedChorusPeak(song_.vocal().notes(), song_.arrangement().sections()));
   harmony_context_->clearNotesForTrack(TrackRole::Vocal);
   harmony_context_->registerTrack(song_.vocal(), TrackRole::Vocal);
 
@@ -2453,6 +2457,31 @@ bool doublesVocalWithinTwoOctaves(const IHarmonyContext& harmony, uint8_t pitch,
   return nearest_double - static_cast<int>(pitch) < kMinVocalOctaveSeparation;
 }
 
+/// @brief Whether the bass would double a vocal pitch too closely.
+///
+/// The mirror of doublesVocalWithinTwoOctaves, for the other side of the same
+/// rule. The bass is voiced against the vocal as it stood when the bass was
+/// generated, so a pass that moves a vocal pitch afterwards can create the
+/// doubling the bass generator was careful to avoid. Only the highest bass
+/// pitch that could carry the pitch class counts, which keeps a bass note two
+/// octaves down from rejecting the candidate.
+bool bassDoublesVocalWithinTwoOctaves(const IHarmonyContext& harmony, uint8_t pitch, Tick start,
+                                      Tick duration) {
+  constexpr int kMinVocalOctaveSeparation = 24;
+  Tick end = start + duration;
+  uint8_t bass_high = harmony.getHighestPitchForTrackInRange(start, end, TrackRole::Bass);
+  if (bass_high == 0) {
+    return false;
+  }
+  uint8_t bass_low = harmony.getLowestPitchForTrackInRange(start, end, TrackRole::Bass);
+  int nearest_double = static_cast<int>(bass_high);
+  nearest_double -= ((nearest_double - static_cast<int>(pitch % 12)) % 12 + 12) % 12;
+  if (nearest_double < static_cast<int>(bass_low)) {
+    return false;
+  }
+  return static_cast<int>(pitch) - nearest_double < kMinVocalOctaveSeparation;
+}
+
 void anchorBassStrongBeats(MidiTrack& bass, const std::vector<Section>& sections,
                            IHarmonyContext& harmony) {
   TrackPitchEditor editor(bass, harmony, TrackRole::Bass);
@@ -2520,7 +2549,8 @@ void anchorBassStrongBeats(MidiTrack& bass, const std::vector<Section>& sections
 }
 
 void breakLongPitchRuns(MidiTrack& track, const IHarmonyContext& harmony, uint8_t low, uint8_t high,
-                        int max_run, TrackRole role) {
+                        int max_run, TrackRole role, const std::vector<Section>& sections,
+                        uint8_t chorus_peak) {
   auto& notes = track.notes();
   if (notes.size() < static_cast<size_t>(max_run + 1)) {
     return;
@@ -2569,17 +2599,31 @@ void breakLongPitchRuns(MidiTrack& track, const IHarmonyContext& harmony, uint8_
     // then increasingly wide leaps. Breaking a run with a step preserves the
     // melodic line; a leap should be the last resort.
     static constexpr int kOffsets[] = {2, -2, 1, -1, 4, -4, 5, -5, 7, -7, 9, -9};
+    // The first offset tried is a whole step UP, so an unbounded search can lift
+    // a Verse or Pre-chorus note over the pitch the Chorus reached and take the
+    // global melodic peak out of the hook. Bounding the search keeps that
+    // constraint and the run limit from having to undo each other.
+    const uint8_t note_high =
+        std::max(vocalCeilingAt(notes[idx].start_tick, sections, chorus_peak, high), low);
     for (int offset : kOffsets) {
       int target = static_cast<int>(original) + offset;
-      if (target < static_cast<int>(low) || target > static_cast<int>(high)) {
+      if (target < static_cast<int>(low) || target > static_cast<int>(note_high)) {
         continue;
       }
       uint8_t candidate =
-          clampScalePitchAvoidingChord(target, notes[idx].start_tick, harmony, low, high);
+          clampScalePitchAvoidingChord(target, notes[idx].start_tick, harmony, low, note_high);
       if (candidate == original) {
         continue;
       }
       if (landsCloseSecond(candidate)) {
+        continue;
+      }
+      // The bass was voiced against the vocal as it stood before this pass, so
+      // moving the vocal onto the bass's pitch class creates the close doubling
+      // the bass generator avoided at note creation.
+      if (role == TrackRole::Vocal &&
+          bassDoublesVocalWithinTwoOctaves(harmony, candidate, notes[idx].start_tick,
+                                           notes[idx].duration)) {
         continue;
       }
       // The chord-aware clamp alone is not enough: a chord/scale tone two

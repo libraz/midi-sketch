@@ -95,6 +95,27 @@ std::set<int> soundingIntervals(const Song& song, const ChordSpan& span) {
   return intervals;
 }
 
+/// @brief Whether some other track already sounds this exact pitch.
+///
+/// When the chord voicer cannot fit its own pitch it doubles one another track
+/// is already playing, which reinforces what is sounding rather than adding to
+/// it. Such a note can therefore sit outside the planned chord without the
+/// harmony having changed, and only such a note can.
+bool doublesAnotherTrack(const Song& song, const NoteEvent& chord_note) {
+  const Tick note_end = chord_note.start_tick + chord_note.duration;
+  const MidiTrack* others[] = {&song.vocal(), &song.bass(),   &song.motif(),
+                               &song.aux(),   &song.guitar(), &song.arpeggio()};
+  for (const MidiTrack* track : others) {
+    for (const auto& note : track->notes()) {
+      if (note.note != chord_note.note) continue;
+      if (chord_note.start_tick >= note.start_tick + note.duration) continue;
+      if (note_end <= note.start_tick) continue;
+      return true;
+    }
+  }
+  return false;
+}
+
 /// @brief Intervals of the plain triad on a degree, with no added colour.
 std::set<int> triadIntervals(int8_t degree) {
   const Chord chord = getExtendedChord(degree, ChordExtension::None);
@@ -169,10 +190,15 @@ TEST(SectionColourTest, VerseChordsStayPlainTriads) {
             << " at tick " << span.start << " carries colour the verse should not have";
 
         const std::set<int> plain = triadIntervals(span.degree);
-        for (int interval : soundingIntervals(song, span)) {
-          EXPECT_TRUE(plain.count(interval) > 0)
+        const int root = degreeToSemitone(span.degree);
+        for (const auto& note : song.chord().notes()) {
+          if (note.start_tick < span.start || note.start_tick >= span.end) continue;
+          const int interval = ((static_cast<int>(note.note) - root) % 12 + 12) % 12;
+          if (plain.count(interval) > 0) continue;
+          EXPECT_TRUE(doublesAnotherTrack(song, note))
               << "seed " << seed << ", verse chord degree " << static_cast<int>(span.degree)
-              << " sounds interval " << interval << " outside its triad";
+              << " sounds interval " << interval
+              << " outside its triad without doubling any other track";
         }
       }
     }

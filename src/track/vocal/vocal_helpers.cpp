@@ -427,6 +427,12 @@ void applyCollisionAvoidanceWithIntervalConstraint(std::vector<NoteEvent>& notes
   // melody::getEffectiveMaxInterval narrows it by the blueprint's own budget.
   const int max_vocal_interval = melody::getEffectiveMaxInterval(section_type, ctx_max_leap);
 
+  // The previous note's pitch before the chord-tone snap moved it. The snap
+  // reads this rather than the pitch it wrote so that the interval it tries to
+  // preserve is the one the melody generator wrote, not one already bent by the
+  // previous note's own correction.
+  int prev_pre_snap_pitch = -1;
+
   for (size_t i = 0; i < notes.size(); ++i) {
     auto& note = notes[i];
 
@@ -487,8 +493,16 @@ void applyCollisionAvoidanceWithIntervalConstraint(std::vector<NoteEvent>& notes
     const ChordTones snap_tones = melody::vocalSnapTonesAt(harmony, note.start_tick);
     uint8_t snapped_pitch = safe_pitch;
     if (!keep_as_nct) {
-      // Snap to chord tone (to maintain harmonic stability)
-      int snapped = melody::nearestPitchInSet(snap_tones, safe_pitch, vocal_low, vocal_high);
+      // Snap to chord tone (to maintain harmonic stability), keeping the
+      // interval the phrase intended. Snapping to the nearest chord tone moves
+      // both endpoints of an interval independently, which hands the melodic
+      // distance over to the spacing of the chord-tone lattice; the declared
+      // leap budget below then has nothing left to enforce.
+      const int prev_final_pitch = (prev_pre_snap_pitch >= 0) ? notes[i - 1].note : -1;
+      const int intended_interval =
+          (prev_pre_snap_pitch >= 0) ? static_cast<int>(safe_pitch) - prev_pre_snap_pitch : 0;
+      int snapped = melody::contourPitchInSet(snap_tones, safe_pitch, prev_final_pitch,
+                                              intended_interval, vocal_low, vocal_high);
       snapped = std::clamp(snapped, static_cast<int>(vocal_low), static_cast<int>(vocal_high));
       // Re-snap to scale if clamp moved us off a chord tone
       snapped = snapToNearestScaleTone(snapped, 0);  // Always C major internally
@@ -560,6 +574,8 @@ void applyCollisionAvoidanceWithIntervalConstraint(std::vector<NoteEvent>& notes
 #endif
       }
     }
+
+    prev_pre_snap_pitch = safe_pitch;
   }
 }
 
@@ -626,6 +642,51 @@ void enforceSectionCeiling(std::vector<NoteEvent>& notes, const IHarmonyContext&
                             static_cast<int16_t>(vocal_low), static_cast<int16_t>(vocal_high));
     }
 #endif
+  }
+}
+
+uint8_t realizedChorusPeak(const std::vector<NoteEvent>& notes,
+                           const std::vector<Section>& sections) {
+  uint8_t peak = 0;
+  for (const auto& note : notes) {
+    for (const auto& section : sections) {
+      if (note.start_tick < section.start_tick || note.start_tick >= section.endTick()) continue;
+      if (section.type == SectionType::Chorus || section.type == SectionType::Drop) {
+        peak = std::max(peak, note.note);
+      }
+      break;
+    }
+  }
+  return peak;
+}
+
+uint8_t vocalCeilingAt(Tick tick, const std::vector<Section>& sections, uint8_t chorus_peak,
+                       uint8_t vocal_high) {
+  if (chorus_peak == 0) return vocal_high;
+  for (const auto& section : sections) {
+    if (tick < section.start_tick || tick >= section.endTick()) continue;
+    if (section.type == SectionType::Chorus || section.type == SectionType::Drop) {
+      return vocal_high;
+    }
+    return static_cast<uint8_t>(std::min(static_cast<int>(vocal_high), chorus_peak - 1));
+  }
+  return vocal_high;
+}
+
+void capNonChorusBelowChorusPeak(std::vector<NoteEvent>& notes, const IHarmonyContext& harmony,
+                                 const std::vector<Section>& sections, uint8_t vocal_low) {
+  const uint8_t chorus_peak = realizedChorusPeak(notes, sections);
+  if (chorus_peak == 0) return;
+
+  for (auto& note : notes) {
+    const uint8_t ceiling = vocalCeilingAt(note.start_tick, sections, chorus_peak, 127);
+    if (note.note <= ceiling) continue;
+    const uint8_t cap = std::max(ceiling, vocal_low);
+    std::vector<NoteEvent> one{note};
+    enforceSectionCeiling(one, harmony, vocal_low, cap);
+    // Whole-note assignment keeps the transform enforceSectionCeiling recorded;
+    // copying the pitch alone would drop it and leave the move untraceable.
+    note = one.front();
   }
 }
 

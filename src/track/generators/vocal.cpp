@@ -362,41 +362,9 @@ void VocalGenerator::postProcessVocalNotes(
     }
   }
 
-  // Guarantee the global melodic peak lands in a Chorus. The Chorus headroom
-  // in the register ladder makes this likely but not certain: a conjunct Chorus
-  // melody may never reach its lifted ceiling while a Verse/Pre-chorus note
-  // touches the base ceiling and ties (or beats) the actual Chorus peak.
-  // Cap non-Chorus notes strictly below the realized Chorus peak.
-  uint8_t chorus_peak = 0;
-  for (const auto& note : all_notes) {
-    for (const auto& sc : section_ceilings) {
-      if (!sc.is_chorus) continue;
-      if (note.start_tick >= sc.start_tick && note.start_tick < sc.end_tick) {
-        chorus_peak = std::max(chorus_peak, note.note);
-        break;
-      }
-    }
-  }
-  if (chorus_peak > 0) {
-    for (auto& note : all_notes) {
-      if (note.note < chorus_peak) continue;
-      const SectionCeiling* owner = nullptr;
-      for (const auto& sc : section_ceilings) {
-        if (note.start_tick >= sc.start_tick && note.start_tick < sc.end_tick) {
-          owner = &sc;
-          break;
-        }
-      }
-      if (owner == nullptr || owner->is_chorus) continue;
-      uint8_t cap = std::max<uint8_t>(static_cast<uint8_t>(chorus_peak - 1), owner->low);
-      std::vector<NoteEvent> one{note};
-      enforceSectionCeiling(one, harmony, owner->low, cap);
-      note.note = one.front().note;
-#ifdef MIDISKETCH_NOTE_PROVENANCE
-      note.prov_original_pitch = one.front().prov_original_pitch;
-#endif
-    }
-  }
+  // Guarantee the global melodic peak lands in a Chorus.
+  capNonChorusBelowChorusPeak(all_notes, harmony, song.arrangement().sections(),
+                              effective_vocal_low);
 
   // Develop repeated Chorus heads after the global constraint passes. Cached
   // and rhythm-locked material can otherwise absorb its occurrence register

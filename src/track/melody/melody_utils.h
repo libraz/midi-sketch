@@ -132,6 +132,34 @@ bool isPitchClassInSet(const ChordTones& pcs, int pitch_class);
 ///         set has no representative in it
 int nearestPitchInSet(const ChordTones& pcs, int target, int low, int high);
 
+/// @brief Pitch in `pcs` that best reproduces an intended melodic interval.
+///
+/// Nearest-in-absolute-pitch is the wrong choice when both endpoints of an
+/// interval are moved onto a chord tone independently: adjacent chord tones sit
+/// 3-5 semitones apart, so the surviving interval is decided by the spacing of
+/// the chord-tone lattice rather than by the melody, and every wide interval
+/// collapses towards a step. Scoring candidates by how closely they reproduce
+/// `intended_interval` above `prev` keeps the shape the phrase was written
+/// with; proximity to `target` only breaks ties. A candidate that erases the
+/// motion or reverses its direction additionally pays what the gesture was
+/// worth, so a wide interval is never traded for a repeated note while a step
+/// still settles on the nearest chord tone.
+///
+/// `prev` is the previous note's final pitch and `intended_interval` is
+/// measured from its pitch *before* it was moved, so a displaced predecessor
+/// does not carry its displacement into the rest of the phrase.
+///
+/// @param pcs Allowed pitch classes
+/// @param target Desired pitch, used as the tie-breaker
+/// @param prev Previous pitch, or negative when the note starts a phrase
+/// @param intended_interval Signed interval the phrase intended from `prev`
+/// @param low Lowest allowed pitch
+/// @param high Highest allowed pitch
+/// @return The best-scoring such pitch; falls back to nearestPitchInSet when
+///         the set has no representative in the range or `prev` is negative
+int contourPitchInSet(const ChordTones& pcs, int target, int prev, int intended_interval, int low,
+                      int high);
+
 /// @brief Nearest pitch in `pcs` that also stays within `max_interval` of `prev`.
 ///
 /// Scores candidates by proximity to `target` with a singability bonus for

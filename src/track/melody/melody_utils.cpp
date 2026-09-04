@@ -190,6 +190,44 @@ int nearestPitchInSetWithinInterval(const ChordTones& pcs, int target, int prev,
   return best_pitch;
 }
 
+int contourPitchInSet(const ChordTones& pcs, int target, int prev, int intended_interval, int low,
+                      int high) {
+  if (prev < 0) {
+    return nearestPitchInSet(pcs, target, low, high);
+  }
+
+  int best_pitch = -1;
+  int best_error = 0;
+  int best_dist = 0;
+
+  for (int pc : pcs) {
+    if (pc < 0) continue;
+    for (int oct = low / 12; oct <= (high / 12) + 1; ++oct) {
+      int candidate = oct * 12 + pc;
+      if (candidate < low || candidate > high) continue;
+      if (candidate < 0 || candidate > 127) continue;
+
+      const int delta = candidate - prev;
+      int error = std::abs(delta - intended_interval);
+      // Losing the gesture costs what the gesture was worth. A candidate that
+      // erases the motion or reverses its direction pays the intended interval
+      // on top of its size error, so a wide interval is never traded away for a
+      // repeated note, while a step still settles on the nearest chord tone.
+      if (intended_interval != 0 && (delta == 0 || (delta > 0) != (intended_interval > 0))) {
+        error += std::abs(intended_interval);
+      }
+      const int dist = std::abs(candidate - target);
+      if (best_pitch < 0 || error < best_error || (error == best_error && dist < best_dist)) {
+        best_pitch = candidate;
+        best_error = error;
+        best_dist = dist;
+      }
+    }
+  }
+
+  return best_pitch < 0 ? nearestPitchInSet(pcs, target, low, high) : best_pitch;
+}
+
 ToneLegality classifyVocalTone(const IChordLookup& harmony, int pitch, const MelodicNeighborhood& n,
                                int key) {
   const int pitch_pc = getPitchClass(static_cast<uint8_t>(pitch));
