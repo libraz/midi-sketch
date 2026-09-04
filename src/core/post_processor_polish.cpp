@@ -116,9 +116,19 @@ uint8_t findSafeChordTone(uint8_t original_pitch, int8_t degree, Tick start, Tic
 }
 
 // Remove notes from track that clash with a reference melodic line.
+//
+// A pair in which both voices are tones of the chord the timeline states there
+// is the chord being sounded, not a clash, and survives. Without that, the tone
+// an extension is named for is the one this pass takes: a seventh stands a major
+// seventh from its own root and a whole step from the ninth, so a chord answering
+// a melody that sings either of them loses exactly what made it a seventh chord.
+// The rule was stated at one of the three passes here and not at the other two.
+//
 // @param opts Dissonance policy for the pair being checked.
+// @param chord_lookup Registered harmony timeline, or nullptr to judge by interval alone.
 void removeClashingNotesAgainstReference(MidiTrack& track, const MidiTrack& reference,
-                                         const DissonanceCheckOptions& opts) {
+                                         const DissonanceCheckOptions& opts,
+                                         const IChordLookup* chord_lookup = nullptr) {
   auto& notes = track.notes();
   const auto& reference_notes = reference.notes();
   if (notes.empty() || reference_notes.empty()) return;
@@ -126,7 +136,18 @@ void removeClashingNotesAgainstReference(MidiTrack& track, const MidiTrack& refe
   eraseNotesMatchingOverlappingReference(
       notes, reference_notes, [&](const NoteEvent& note, const NoteEvent& ref_note) {
         int interval = std::abs(static_cast<int>(note.note) - static_cast<int>(ref_note.note));
-        return isDissonantSemitoneInterval(interval, opts);
+        if (!isDissonantSemitoneInterval(interval, opts)) return false;
+        if (chord_lookup == nullptr) return true;
+
+        const Tick overlap_start = std::max(note.start_tick, ref_note.start_tick);
+        const ChordTones chord_tones = chord_lookup->getChordTonesAt(overlap_start);
+        const int note_pc = note.note % 12;
+        const int reference_pc = ref_note.note % 12;
+        const bool note_is_chord_tone =
+            std::find(chord_tones.begin(), chord_tones.end(), note_pc) != chord_tones.end();
+        const bool reference_is_chord_tone =
+            std::find(chord_tones.begin(), chord_tones.end(), reference_pc) != chord_tones.end();
+        return !(note_is_chord_tone && reference_is_chord_tone);
       });
 }
 
@@ -570,49 +591,33 @@ void PostProcessor::fixMotifRepeatedPitches(MidiTrack& motif, const MidiTrack& v
   }
 }
 
-void PostProcessor::fixTrackVocalClashes(MidiTrack& track, const MidiTrack& vocal, TrackRole role) {
+void PostProcessor::fixTrackVocalClashes(MidiTrack& track, const MidiTrack& vocal, TrackRole role,
+                                         const IChordLookup* chord_lookup) {
   // Bass tracks skip close major 2nd detection because octave separation
   // makes the interval acceptable.
   auto opts = (role == TrackRole::Bass) ? DissonanceCheckOptions::minimalClash()
                                         : DissonanceCheckOptions::fullWithTritone();
-  removeClashingNotesAgainstReference(track, vocal, opts);
+  removeClashingNotesAgainstReference(track, vocal, opts, chord_lookup);
 }
 
 void PostProcessor::fixTrackReferenceClashes(MidiTrack& track, const MidiTrack& reference,
-                                             TrackRole role) {
+                                             TrackRole role, const IChordLookup* chord_lookup) {
   if (role == TrackRole::Motif) {
     return;
   }
 
   auto opts = DissonanceCheckOptions::closeVoicing();
-  removeClashingNotesAgainstReference(track, reference, opts);
+  removeClashingNotesAgainstReference(track, reference, opts, chord_lookup);
 }
 
 void PostProcessor::fixInterTrackClashes(MidiTrack& chord, const MidiTrack& bass,
                                          const MidiTrack& motif, const IChordLookup* chord_lookup) {
-  auto& notes = chord.notes();
-  if (notes.empty()) return;
+  if (chord.notes().empty()) return;
 
-  auto remove_clashes = [&](const MidiTrack& reference, const DissonanceCheckOptions& opts) {
-    eraseNotesMatchingOverlappingReference(
-        notes, reference.notes(), [&](const NoteEvent& note, const NoteEvent& ref_note) {
-          int interval = std::abs(static_cast<int>(note.note) - static_cast<int>(ref_note.note));
-          if (!isDissonantSemitoneInterval(interval, opts)) return false;
-          if (chord_lookup == nullptr) return true;
-
-          const Tick overlap_start = std::max(note.start_tick, ref_note.start_tick);
-          const ChordTones chord_tones = chord_lookup->getChordTonesAt(overlap_start);
-          const int note_pc = note.note % 12;
-          const int reference_pc = ref_note.note % 12;
-          const bool note_is_chord_tone =
-              std::find(chord_tones.begin(), chord_tones.end(), note_pc) != chord_tones.end();
-          const bool reference_is_chord_tone =
-              std::find(chord_tones.begin(), chord_tones.end(), reference_pc) != chord_tones.end();
-          return !(note_is_chord_tone && reference_is_chord_tone);
-        });
-  };
-  remove_clashes(bass, DissonanceCheckOptions::fullWithTritone());
-  remove_clashes(motif, DissonanceCheckOptions::closeVoicing());
+  removeClashingNotesAgainstReference(chord, bass, DissonanceCheckOptions::fullWithTritone(),
+                                      chord_lookup);
+  removeClashingNotesAgainstReference(chord, motif, DissonanceCheckOptions::closeVoicing(),
+                                      chord_lookup);
 }
 
 void PostProcessor::synchronizeBassKick(MidiTrack& bass, const MidiTrack& drums,

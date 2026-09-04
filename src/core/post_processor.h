@@ -205,7 +205,11 @@ class PostProcessor {
   /// @param track Track to adjust (in-place)
   /// @param vocal Vocal track (read-only reference)
   /// @param role TrackRole of the track being adjusted (Bass skips close major 2nd)
-  static void fixTrackVocalClashes(MidiTrack& track, const MidiTrack& vocal, TrackRole role);
+  /// @param chord_lookup Exact registered harmony timeline (optional). With it,
+  ///   a pair in which both voices are tones of the chord being sounded is the
+  ///   chord rather than a clash and is left alone.
+  static void fixTrackVocalClashes(MidiTrack& track, const MidiTrack& vocal, TrackRole role,
+                                   const IChordLookup* chord_lookup = nullptr);
 
   /// @brief Fix support-track clashes against a protected reference track.
   ///
@@ -215,8 +219,11 @@ class PostProcessor {
   /// @param track Support track to adjust (in-place)
   /// @param reference Reference track (read-only)
   /// @param role TrackRole of the support track
-  static void fixTrackReferenceClashes(MidiTrack& track, const MidiTrack& reference,
-                                       TrackRole role);
+  /// @param chord_lookup Exact registered harmony timeline (optional). With it,
+  ///   a pair in which both voices are tones of the chord being sounded is the
+  ///   chord rather than a clash and is left alone.
+  static void fixTrackReferenceClashes(MidiTrack& track, const MidiTrack& reference, TrackRole role,
+                                       const IChordLookup* chord_lookup = nullptr);
 
   /// @brief Fix inter-track clashes between non-vocal tracks after humanization.
   ///

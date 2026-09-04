@@ -671,13 +671,18 @@ void Generator::applyPostProcessingEffects() {
   // Must run AFTER humanization (which shifts note timing) and all duration
   // extensions (applyEnhancedFinalHit, ritardando, etc.).
   trimBassBoundaryOverhangs(song_.bass(), *harmony_context_);
-  PostProcessor::fixTrackVocalClashes(song_.chord(), song_.vocal(), TrackRole::Chord);
-  PostProcessor::fixTrackVocalClashes(song_.aux(), song_.vocal(), TrackRole::Aux);
-  PostProcessor::fixTrackVocalClashes(song_.bass(), song_.vocal(), TrackRole::Bass);
-  PostProcessor::fixTrackVocalClashes(song_.guitar(), song_.vocal(), TrackRole::Guitar);
+  PostProcessor::fixTrackVocalClashes(song_.chord(), song_.vocal(), TrackRole::Chord,
+                                      harmony_context_.get());
+  PostProcessor::fixTrackVocalClashes(song_.aux(), song_.vocal(), TrackRole::Aux,
+                                      harmony_context_.get());
+  PostProcessor::fixTrackVocalClashes(song_.bass(), song_.vocal(), TrackRole::Bass,
+                                      harmony_context_.get());
+  PostProcessor::fixTrackVocalClashes(song_.guitar(), song_.vocal(), TrackRole::Guitar,
+                                      harmony_context_.get());
   if (isRhythmSyncLeadSetting(params_, resolved_blueprint_id_)) {
     strengthenRhythmLockBassDrive(song_.bass(), song_.arrangement().sections());
-    PostProcessor::fixTrackVocalClashes(song_.bass(), song_.vocal(), TrackRole::Bass);
+    PostProcessor::fixTrackVocalClashes(song_.bass(), song_.vocal(), TrackRole::Bass,
+                                        harmony_context_.get());
     // Duck the riff under the lead FIRST, as a bar-coherent transposition.
     // Running the per-note clash fixer before the duck would rewrite motif
     // pitches individually against a vocal the riff is about to move away
@@ -737,8 +742,10 @@ void Generator::applyPostProcessingEffects() {
     harmony_context_->clearNotesForTrack(TrackRole::Aux);
     harmony_context_->registerTrack(song_.aux(), TrackRole::Aux);
   }
-  PostProcessor::fixTrackReferenceClashes(song_.aux(), song_.motif(), TrackRole::Aux);
-  PostProcessor::fixTrackReferenceClashes(song_.aux(), song_.chord(), TrackRole::Aux);
+  PostProcessor::fixTrackReferenceClashes(song_.aux(), song_.motif(), TrackRole::Aux,
+                                          harmony_context_.get());
+  PostProcessor::fixTrackReferenceClashes(song_.aux(), song_.chord(), TrackRole::Aux,
+                                          harmony_context_.get());
   PostProcessor::fixInterTrackClashes(song_.chord(), song_.bass(), song_.motif(),
                                       harmony_context_.get());
 
@@ -769,20 +776,28 @@ void Generator::applyPostProcessingEffects() {
       params_.vocal_style == VocalStylePreset::Idol ||
       params_.vocal_style == VocalStylePreset::BrightKira ||
       params_.vocal_style == VocalStylePreset::CuteAffected) {
-    PostProcessor::fixTrackReferenceClashes(song_.arpeggio(), song_.vocal(), TrackRole::Arpeggio);
-    PostProcessor::fixTrackReferenceClashes(song_.arpeggio(), song_.motif(), TrackRole::Arpeggio);
-    PostProcessor::fixTrackReferenceClashes(song_.arpeggio(), song_.chord(), TrackRole::Arpeggio);
-    PostProcessor::fixTrackReferenceClashes(song_.arpeggio(), song_.aux(), TrackRole::Arpeggio);
+    PostProcessor::fixTrackReferenceClashes(song_.arpeggio(), song_.vocal(), TrackRole::Arpeggio,
+                                            harmony_context_.get());
+    PostProcessor::fixTrackReferenceClashes(song_.arpeggio(), song_.motif(), TrackRole::Arpeggio,
+                                            harmony_context_.get());
+    PostProcessor::fixTrackReferenceClashes(song_.arpeggio(), song_.chord(), TrackRole::Arpeggio,
+                                            harmony_context_.get());
+    PostProcessor::fixTrackReferenceClashes(song_.arpeggio(), song_.aux(), TrackRole::Arpeggio,
+                                            harmony_context_.get());
     removeComfortClashesAgainstReference(song_.arpeggio(), song_.vocal(), *harmony_context_);
     removeComfortClashesAgainstReference(song_.arpeggio(), song_.motif(), *harmony_context_);
     removeComfortClashesAgainstReference(song_.arpeggio(), song_.chord(), *harmony_context_);
     removeComfortClashesAgainstReference(song_.arpeggio(), song_.aux(), *harmony_context_);
     deduplicatePitchOnsets(song_.arpeggio());
 
-    PostProcessor::fixTrackReferenceClashes(song_.guitar(), song_.vocal(), TrackRole::Guitar);
-    PostProcessor::fixTrackReferenceClashes(song_.guitar(), song_.motif(), TrackRole::Guitar);
-    PostProcessor::fixTrackReferenceClashes(song_.guitar(), song_.chord(), TrackRole::Guitar);
-    PostProcessor::fixTrackReferenceClashes(song_.guitar(), song_.aux(), TrackRole::Guitar);
+    PostProcessor::fixTrackReferenceClashes(song_.guitar(), song_.vocal(), TrackRole::Guitar,
+                                            harmony_context_.get());
+    PostProcessor::fixTrackReferenceClashes(song_.guitar(), song_.motif(), TrackRole::Guitar,
+                                            harmony_context_.get());
+    PostProcessor::fixTrackReferenceClashes(song_.guitar(), song_.chord(), TrackRole::Guitar,
+                                            harmony_context_.get());
+    PostProcessor::fixTrackReferenceClashes(song_.guitar(), song_.aux(), TrackRole::Guitar,
+                                            harmony_context_.get());
     separateGuitarFromBass(song_.guitar(), song_.bass(), *harmony_context_);
     removeComfortClashesAgainstReference(song_.guitar(), song_.vocal(), *harmony_context_);
     removeComfortClashesAgainstReference(song_.guitar(), song_.motif(), *harmony_context_);
@@ -888,10 +903,14 @@ void Generator::applyPostProcessingEffects() {
   // The crossing pass above can octave-shift Guitar into a close second with
   // Aux/Chord/Motif after the earlier reference-clash cleanup. Re-run the
   // collision-safe reference pass against the final accompaniment pitches.
-  PostProcessor::fixTrackReferenceClashes(song_.guitar(), song_.vocal(), TrackRole::Guitar);
-  PostProcessor::fixTrackReferenceClashes(song_.guitar(), song_.motif(), TrackRole::Guitar);
-  PostProcessor::fixTrackReferenceClashes(song_.guitar(), song_.chord(), TrackRole::Guitar);
-  PostProcessor::fixTrackReferenceClashes(song_.guitar(), song_.aux(), TrackRole::Guitar);
+  PostProcessor::fixTrackReferenceClashes(song_.guitar(), song_.vocal(), TrackRole::Guitar,
+                                          harmony_context_.get());
+  PostProcessor::fixTrackReferenceClashes(song_.guitar(), song_.motif(), TrackRole::Guitar,
+                                          harmony_context_.get());
+  PostProcessor::fixTrackReferenceClashes(song_.guitar(), song_.chord(), TrackRole::Guitar,
+                                          harmony_context_.get());
+  PostProcessor::fixTrackReferenceClashes(song_.guitar(), song_.aux(), TrackRole::Guitar,
+                                          harmony_context_.get());
   harmony_context_->clearNotesForTrack(TrackRole::Guitar);
   harmony_context_->registerTrack(song_.guitar(), TrackRole::Guitar);
 

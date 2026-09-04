@@ -16,6 +16,7 @@
 #include "core/chord.h"
 #include "core/emotion_curve.h"
 #include "core/harmony_context.h"
+#include "core/i_chord_lookup.h"
 #include "core/midi_track.h"
 #include "core/note_source.h"
 #include "core/post_processing_pipeline.h"
@@ -1659,6 +1660,162 @@ TEST(PostProcessorTest, FixTrackVocalClashesPreservesConsonantInterval) {
   EXPECT_EQ(chord.notes().size(), 1u) << "Consonant interval (perfect 5th) should not be removed";
 }
 
+// ============================================================================
+// Chord-tone exemption in the vocal/reference clash passes
+// ============================================================================
+
+/// @brief Two chords in sequence so the sounding chord depends on the tick.
+class ChordChangeLookup : public IChordLookup {
+ public:
+  ChordChangeLookup(std::vector<int> first_tones, std::vector<int> second_tones, Tick boundary)
+      : first_tones_(std::move(first_tones)),
+        second_tones_(std::move(second_tones)),
+        boundary_(boundary) {}
+
+  int8_t getChordDegreeAt(Tick tick) const override { return tick < boundary_ ? 4 : 0; }
+
+  ChordTones getChordTonesAt(Tick tick) const override {
+    const std::vector<int>& tones = tick < boundary_ ? first_tones_ : second_tones_;
+    ChordTones result{};
+    result.pitch_classes.fill(-1);
+    result.count = static_cast<uint8_t>(std::min<size_t>(tones.size(), 5));
+    std::copy_n(tones.begin(), result.count, result.pitch_classes.begin());
+    return result;
+  }
+
+  Tick getNextChordChangeTick(Tick /*after*/) const override { return boundary_; }
+
+ private:
+  std::vector<int> first_tones_;
+  std::vector<int> second_tones_;
+  Tick boundary_;
+};
+
+TEST(PostProcessorTest, FixTrackVocalClashesKeepsTritoneInsideDominantSeventh) {
+  // A dominant seventh carries a tritone between its third and its seventh.
+  // Over G7 (G-B-D-F) the chord's F4 (65) stands a tritone from the vocal's
+  // B3 (59), but both are tones of the chord being sounded, so the pair is the
+  // seventh chord rather than a clash.
+  MidiTrack chord, vocal;
+  chord.addNote(NoteEventBuilder::create(0, 480, 65, 80));  // F4 - seventh of G7
+  vocal.addNote(NoteEventBuilder::create(0, 480, 59, 80));  // B3 - third of G7
+
+  test::StubHarmonyContext harmony;
+  harmony.setChordDegree(4);             // V chord
+  harmony.setChordTones({7, 11, 2, 5});  // G-B-D-F
+
+  PostProcessor::fixTrackVocalClashes(chord, vocal, TrackRole::Chord, &harmony);
+
+  EXPECT_EQ(chord.notes().size(), 1u)
+      << "The seventh of the sounding chord should survive its tritone against the vocal";
+  if (!chord.notes().empty()) {
+    EXPECT_EQ(chord.notes()[0].note, 65) << "The surviving note should be the original F4";
+  }
+}
+
+TEST(PostProcessorTest, FixTrackVocalClashesRemovesTritoneWithoutChordLookup) {
+  // Same fixture as the previous test with no harmony timeline supplied. The
+  // interval alone decides, so the tone that made the chord a seventh chord is
+  // taken. This is what shows the exemption is what saved it above.
+  MidiTrack chord, vocal;
+  chord.addNote(NoteEventBuilder::create(0, 480, 65, 80));  // F4
+  vocal.addNote(NoteEventBuilder::create(0, 480, 59, 80));  // B3
+
+  PostProcessor::fixTrackVocalClashes(chord, vocal, TrackRole::Chord);
+
+  EXPECT_EQ(chord.notes().size(), 0u)
+      << "Without a chord lookup the tritone should be removed by interval alone";
+}
+
+TEST(PostProcessorTest, FixTrackVocalClashesRemovesClashWhenOnlyOneVoiceIsChordTone) {
+  // Over G7 the vocal's B3 (59) is the chord's third but the chord track's
+  // C4 (60) is not a chord tone at all, so their minor 2nd is a genuine clash
+  // and the exemption must not cover it.
+  MidiTrack chord, vocal;
+  chord.addNote(NoteEventBuilder::create(0, 480, 60, 80));  // C4 - not in G7
+  vocal.addNote(NoteEventBuilder::create(0, 480, 59, 80));  // B3 - third of G7
+
+  test::StubHarmonyContext harmony;
+  harmony.setChordDegree(4);             // V chord
+  harmony.setChordTones({7, 11, 2, 5});  // G-B-D-F
+
+  PostProcessor::fixTrackVocalClashes(chord, vocal, TrackRole::Chord, &harmony);
+
+  EXPECT_EQ(chord.notes().size(), 0u)
+      << "A clash in which only one voice is a chord tone should still be removed";
+}
+
+TEST(PostProcessorTest, FixTrackVocalClashesReadsChordAtOverlapStart) {
+  // The chord note begins under G7, where it and the vocal are both chord
+  // tones, but the two voices only meet after the chord has turned to C major,
+  // where neither pitch belongs. The chord sounding where they overlap is the
+  // one that decides.
+  constexpr Tick kBoundary = 480;
+  MidiTrack chord, vocal;
+  chord.addNote(NoteEventBuilder::create(0, 960, 65, 80));          // F4 across the change
+  vocal.addNote(NoteEventBuilder::create(kBoundary, 480, 59, 80));  // B3 after the change
+
+  ChordChangeLookup lookup({7, 11, 2, 5}, {0, 4, 7}, kBoundary);  // G7 then C major
+
+  PostProcessor::fixTrackVocalClashes(chord, vocal, TrackRole::Chord, &lookup);
+
+  EXPECT_EQ(chord.notes().size(), 0u)
+      << "The exemption should read the chord where the notes overlap, not where the note starts";
+}
+
+// ============================================================================
+// fixTrackReferenceClashes Tests
+// ============================================================================
+
+TEST(PostProcessorTest, FixTrackReferenceClashesKeepsMajorSeventhInsideChord) {
+  // A major seventh chord stands a major 7th between its root and its seventh.
+  // Over Cmaj7 the arpeggio's B4 (71) against the reference's C4 (60) is that
+  // interval, and both are chord tones, so the seventh survives.
+  MidiTrack arpeggio, reference;
+  arpeggio.addNote(NoteEventBuilder::create(0, 480, 71, 80));   // B4 - seventh of Cmaj7
+  reference.addNote(NoteEventBuilder::create(0, 480, 60, 80));  // C4 - root of Cmaj7
+
+  test::StubHarmonyContext harmony;
+  harmony.setChordDegree(0);             // I chord
+  harmony.setChordTones({0, 4, 7, 11});  // C-E-G-B
+
+  PostProcessor::fixTrackReferenceClashes(arpeggio, reference, TrackRole::Arpeggio, &harmony);
+
+  EXPECT_EQ(arpeggio.notes().size(), 1u)
+      << "The seventh of the sounding chord should survive its major 7th against the reference";
+  if (!arpeggio.notes().empty()) {
+    EXPECT_EQ(arpeggio.notes()[0].note, 71) << "The surviving note should be the original B4";
+  }
+}
+
+TEST(PostProcessorTest, FixTrackReferenceClashesRemovesMajorSeventhWithoutChordLookup) {
+  // Same fixture with no harmony timeline: the major 7th decides on its own.
+  MidiTrack arpeggio, reference;
+  arpeggio.addNote(NoteEventBuilder::create(0, 480, 71, 80));   // B4
+  reference.addNote(NoteEventBuilder::create(0, 480, 60, 80));  // C4
+
+  PostProcessor::fixTrackReferenceClashes(arpeggio, reference, TrackRole::Arpeggio);
+
+  EXPECT_EQ(arpeggio.notes().size(), 0u)
+      << "Without a chord lookup the major 7th should be removed by interval alone";
+}
+
+TEST(PostProcessorTest, FixTrackReferenceClashesRemovesClashWhenOnlyOneVoiceIsChordTone) {
+  // Over Cmaj7 the reference's C4 (60) is the root but the arpeggio's C#4 (61)
+  // is foreign, so their minor 2nd is a genuine clash.
+  MidiTrack arpeggio, reference;
+  arpeggio.addNote(NoteEventBuilder::create(0, 480, 61, 80));   // C#4 - not in Cmaj7
+  reference.addNote(NoteEventBuilder::create(0, 480, 60, 80));  // C4 - root of Cmaj7
+
+  test::StubHarmonyContext harmony;
+  harmony.setChordDegree(0);             // I chord
+  harmony.setChordTones({0, 4, 7, 11});  // C-E-G-B
+
+  PostProcessor::fixTrackReferenceClashes(arpeggio, reference, TrackRole::Arpeggio, &harmony);
+
+  EXPECT_EQ(arpeggio.notes().size(), 0u)
+      << "A clash in which only one voice is a chord tone should still be removed";
+}
 // ============================================================================
 // fixInterTrackClashes Tests (goto removal verification)
 // ============================================================================
