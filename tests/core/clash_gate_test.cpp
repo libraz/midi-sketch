@@ -15,6 +15,7 @@
 #include "core/arrangement.h"
 #include "core/basic_types.h"
 #include "core/chord.h"
+#include "core/chord_utils.h"
 #include "core/harmony_context.h"
 #include "core/song.h"
 #include "core/timing_constants.h"
@@ -83,6 +84,88 @@ TEST(ClashGateTest, ASustainedNoteIsTrimmedForAShortClashInsideIt) {
       << "the motif should end where the stab begins; measuring the overlap to "
          "the motif's own end reports a clash far longer than the two notes share";
   EXPECT_EQ(song.chord().notes().size(), 1u) << "the chord stab is not the note to shorten";
+}
+
+TEST(ClashGateTest, TheGateLeavesTheTritoneASeventhChordIsBuiltOn) {
+  // The scale degree alone cannot answer for a chord the timeline has replaced.
+  // Registering a dominant seventh on vi makes A7, whose third and seventh are
+  // a tritone apart -- the interval that makes it a dominant. Judging by degree
+  // says vi is not V, so the gate shortened the very note the extension was
+  // planned for. Asking whether both voices belong to the sounding chord is
+  // what the analyzer does, and a gate stricter than the report takes music
+  // nobody asked it to take.
+  Arrangement arrangement = singleSection();
+  HarmonyContext harmony;
+  harmony.initialize(arrangement, getChordProgression(0), Mood::StraightPop);
+
+  Tick chord_tick = 0;
+  bool found = false;
+  for (Tick tick = 0; tick < 4 * TICKS_PER_BAR; tick += TICKS_PER_BAR) {
+    if (((degreeAt(harmony, tick) % 7) + 7) % 7 == 5) {
+      chord_tick = tick;
+      found = true;
+      break;
+    }
+  }
+  ASSERT_TRUE(found) << "the fixture progression must state a vi chord somewhere";
+  harmony.registerChordExtension(chord_tick, chord_tick + TICKS_PER_BAR, ChordExtension::Dom7);
+
+  const ChordTones tones = harmony.getChordTonesAt(chord_tick);
+  const uint8_t third = 73;    // C#5, the third of A7
+  const uint8_t seventh = 67;  // G4, its seventh
+  ASSERT_TRUE(bothVoicesAreChordTones(third, seventh, tones))
+      << "the fixture must put both voices inside the registered chord";
+
+  const Tick stab_tick = chord_tick + TICK_QUARTER;
+  Song song;
+  song.motif().addNote(NoteEventBuilder::create(chord_tick, 4 * TICK_QUARTER, seventh, 90));
+  song.chord().addNote(NoteEventBuilder::create(stab_tick, TICK_EIGHTH, third, 90));
+  harmony.registerTrack(song.motif(), TrackRole::Motif);
+  harmony.registerTrack(song.chord(), TrackRole::Chord);
+
+  trimClashingNoteTails(song, harmony);
+
+  ASSERT_EQ(song.motif().notes().size(), 1u);
+  EXPECT_EQ(song.motif().notes()[0].duration, 4 * TICK_QUARTER)
+      << "the seventh should keep its length: the stab under it is the chord";
+  EXPECT_EQ(song.chord().notes().size(), 1u);
+}
+
+TEST(ClashGateTest, TheGateStillTakesASemitoneBetweenChordTones) {
+  // The one interval the sounding chord does not account for. Cmaj7 owns a B
+  // and the C above it, and the pair still beats however the chord is spelled.
+  Arrangement arrangement = singleSection();
+  HarmonyContext harmony;
+  harmony.initialize(arrangement, getChordProgression(0), Mood::StraightPop);
+
+  Tick chord_tick = 0;
+  bool found = false;
+  for (Tick tick = 0; tick < 4 * TICKS_PER_BAR; tick += TICKS_PER_BAR) {
+    if (((degreeAt(harmony, tick) % 7) + 7) % 7 == 0) {
+      chord_tick = tick;
+      found = true;
+      break;
+    }
+  }
+  ASSERT_TRUE(found) << "the fixture progression must state a I chord somewhere";
+  harmony.registerChordExtension(chord_tick, chord_tick + TICKS_PER_BAR, ChordExtension::Maj7);
+
+  const uint8_t root = 72;     // C5
+  const uint8_t seventh = 71;  // B4, a semitone under it
+  ASSERT_TRUE(bothVoicesAreChordTones(root, seventh, harmony.getChordTonesAt(chord_tick)));
+
+  const Tick stab_tick = chord_tick + TICK_QUARTER;
+  Song song;
+  song.motif().addNote(NoteEventBuilder::create(chord_tick, 4 * TICK_QUARTER, root, 90));
+  song.chord().addNote(NoteEventBuilder::create(stab_tick, TICK_EIGHTH, seventh, 90));
+  harmony.registerTrack(song.motif(), TrackRole::Motif);
+  harmony.registerTrack(song.chord(), TrackRole::Chord);
+
+  trimClashingNoteTails(song, harmony);
+
+  ASSERT_EQ(song.motif().notes().size(), 1u);
+  EXPECT_EQ(song.motif().notes()[0].duration, TICK_QUARTER)
+      << "belonging to the chord does not excuse a minor 2nd";
 }
 
 TEST(ClashGateTest, TheRegistryDescribesTheNotesTheGateLeaves) {

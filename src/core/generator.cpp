@@ -1976,6 +1976,14 @@ void trimClashingNoteTails(Song& song, IHarmonyContext& harmony) {
                                       uint8_t pitch_b, TrackRole role_b, Tick at) {
     const int8_t degree = harmony.getChordDegreeAt(at);
     if (semitones <= 24) {
+      // The analyzer this gate mirrors excuses a flagged pair whose voices both
+      // belong to the sounding chord, and a gate that shortens notes the report
+      // never asked about is a gate taking music for nothing. Most of what this
+      // reaches is the tritone a dominant is built on, which the scale degree
+      // alone calls a clash whenever the chord is a registered substitution.
+      if (chordExcusesFlaggedPair(semitones, pitch_a, pitch_b, harmony.getChordTonesAt(at))) {
+        return false;
+      }
       return isDissonantActualInterval(semitones, degree);
     }
     // Past two octaves the analyzer keeps exactly one rule: a major seventh
