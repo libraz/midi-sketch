@@ -13,31 +13,51 @@
 namespace midisketch {
 namespace melody {
 
-int findStepwiseResolutionPitch(int current_pitch, const ChordTones& chord_tones,
-                                int resolution_direction, uint8_t vocal_low, uint8_t vocal_high) {
+namespace {
+
+/// @brief Nearest chord tone a step (1-3 semitones) away in one direction.
+///
+/// Both rules in this file ask the same question, so they ask it here.
+///
+/// The octaves to search come from the range the caller allows. Fixing the span
+/// at octaves 4-6 covers MIDI 48-83, while a vocal range is accepted anywhere
+/// in 36-96: a voice sitting outside that window lost the resolutions the rules
+/// exist to make, and lost them silently, since a search that finds nothing is
+/// indistinguishable from a melody that needed nothing.
+int nearestStepInDirection(int current_pitch, const ChordTones& chord_tones, int direction,
+                           uint8_t vocal_low, uint8_t vocal_high) {
   int best_pitch = -1;
   int best_interval = 127;
 
+  const int lowest_octave = vocal_low / 12;
+  const int highest_octave = vocal_high / 12;
+
   for (int ct : chord_tones) {
-    for (int oct = 4; oct <= 6; ++oct) {
+    for (int oct = lowest_octave; oct <= highest_octave; ++oct) {
       int candidate = oct * 12 + ct;
       if (candidate < vocal_low || candidate > vocal_high) continue;
 
       int candidate_interval = candidate - current_pitch;
       int candidate_direction = (candidate_interval > 0) ? 1 : (candidate_interval < 0) ? -1 : 0;
+      if (candidate_direction != direction) continue;
 
-      // Must be in resolution direction and be stepwise (1-3 semitones)
-      if (candidate_direction == resolution_direction) {
-        int abs_step = std::abs(candidate_interval);
-        if (abs_step >= 1 && abs_step <= 3 && abs_step < best_interval) {
-          best_interval = abs_step;
-          best_pitch = candidate;
-        }
+      int abs_step = std::abs(candidate_interval);
+      if (abs_step >= 1 && abs_step <= 3 && abs_step < best_interval) {
+        best_interval = abs_step;
+        best_pitch = candidate;
       }
     }
   }
 
   return best_pitch;
+}
+
+}  // namespace
+
+int findStepwiseResolutionPitch(int current_pitch, const ChordTones& chord_tones,
+                                int resolution_direction, uint8_t vocal_low, uint8_t vocal_high) {
+  return nearestStepInDirection(current_pitch, chord_tones, resolution_direction, vocal_low,
+                                vocal_high);
 }
 
 // Section-type and phrase-position dependent reversal probability.
@@ -103,27 +123,8 @@ int applyLeapReversalRule(int new_pitch, int current_pitch, int prev_interval,
   // Try to find a chord tone in the opposite direction (step motion)
   int preferred_direction = (prev_interval > 0) ? -1 : 1;  // Opposite of leap
 
-  int best_reversal_pitch = -1;
-  int best_reversal_interval = 127;
-
-  for (int ct : chord_tones) {
-    for (int oct = 4; oct <= 6; ++oct) {
-      int candidate = oct * 12 + ct;
-      if (candidate < vocal_low || candidate > vocal_high) continue;
-
-      int interval_from_current = candidate - current_pitch;
-      int direction = (interval_from_current > 0) ? 1 : (interval_from_current < 0) ? -1 : 0;
-
-      // Must be in preferred direction and be a step (1-3 semitones)
-      if (direction == preferred_direction) {
-        int abs_interval = std::abs(interval_from_current);
-        if (abs_interval >= 1 && abs_interval <= 3 && abs_interval < best_reversal_interval) {
-          best_reversal_interval = abs_interval;
-          best_reversal_pitch = candidate;
-        }
-      }
-    }
-  }
+  int best_reversal_pitch = nearestStepInDirection(current_pitch, chord_tones, preferred_direction,
+                                                   vocal_low, vocal_high);
 
   // Apply reversal if found a good candidate
   // If prefer_stepwise is set (IdolKawaii), force 100% stepwise motion

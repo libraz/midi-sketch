@@ -117,4 +117,28 @@ TEST(LeapResolutionTest, SmallIntervalSkipsReversal) {
   EXPECT_EQ(result, 65);  // No reversal for small intervals
 }
 
+// A vocal range is accepted anywhere in MIDI 36-96, so the resolution search has
+// to reach wherever the caller put the voice. A fixed octave span covers 48-83
+// and answers "no step available" for every voice outside it -- an answer no
+// caller can tell apart from a melody that did not need a resolution.
+TEST(LeapResolutionTest, TheSearchReachesTheWholeRangeTheCallerAllows) {
+  // C major above the old fixed window: 84 (C), 88 (E), 91 (G), 96 (C).
+  EXPECT_EQ(findStepwiseResolutionPitch(90, kCMajChordTones, 1, 84, 96), 91)
+      << "A voice above MIDI 83 must still be offered its own chord tones";
+  EXPECT_EQ(findStepwiseResolutionPitch(93, kCMajChordTones, -1, 84, 96), 91)
+      << "A voice above MIDI 83 must still be offered its own chord tones";
+
+  // C major below it: 36 (C), 40 (E), 43 (G).
+  EXPECT_EQ(findStepwiseResolutionPitch(41, kCMajChordTones, -1, 36, 47), 40)
+      << "A voice below MIDI 48 must still be offered its own chord tones";
+  EXPECT_EQ(findStepwiseResolutionPitch(41, kCMajChordTones, 1, 36, 47), 43)
+      << "A voice below MIDI 48 must still be offered its own chord tones";
+
+  // The reversal rule asks the same question and must reach the same pitches.
+  // Leaping up into 93 and continuing up to 95 asks for a step back down.
+  std::mt19937 rng(42);
+  EXPECT_EQ(applyLeapReversalRule(95, 93, 5, kCMajChordTones, 84, 96, true, rng, 1, 0.5f), 91)
+      << "The reversal rule must search the caller's range, not a fixed window";
+}
+
 }  // namespace
