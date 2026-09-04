@@ -15,6 +15,7 @@
 #include "core/chord.h"
 #include "core/generator.h"
 #include "core/harmony_context.h"
+#include "core/note_source.h"
 #include "core/production_blueprint.h"
 #include "core/song.h"
 #include "core/structure.h"
@@ -1186,6 +1187,67 @@ TEST_F(ChordTrackTest, CompingDoesNotCollapseToSingleNoteOnsets) {
             kMaxSingleNoteShare)
       << single_note_onsets << " of " << total_onsets
       << " chord onsets across the comping blueprints carry a single note";
+}
+
+TEST_F(ChordTrackTest, EveryChordNoteSoundsAToneOfTheChordItSitsOn) {
+  // When the cross-track check refuses a voice, the chord track fills it by
+  // sounding a pitch another track already holds. What that other track is
+  // holding is not the harmony's to choose -- a vocal passing tone is a pitch
+  // like any other -- so a fill allowed to land on a different pitch class puts
+  // a tone nothing planned into the one track whose job is to state the chord.
+  //
+  // The chord tones come from the harmony context rather than from the degree,
+  // because the answer has to hold over a secondary dominant and a locally
+  // recoloured chord as well, and rebuilding a triad from the degree would ask
+  // about a chord that is not sounding.
+  //
+  // The frozen-bar copy is the one placement this does not speak for: it is
+  // textural rather than harmonic, and it is allowed a consonant scale tone
+  // when the bar it was copied from lands under a chord that has no consonant
+  // tone here. Those notes carry a post-processing source and are counted
+  // separately so the check cannot quietly become vacuous.
+  const uint8_t blueprints[] = {0, 3, 5, 8};
+  for (uint8_t blueprint : blueprints) {
+    for (uint32_t seed : {42u, 4242u, 20260905u}) {
+      params_.blueprint_id = blueprint;
+      params_.seed = seed;
+      params_.chord_extension.enable_7th = true;
+      params_.chord_extension.enable_9th = true;
+
+      Generator gen;
+      gen.generate(params_);
+      const auto& harmony = gen.getHarmonyContext();
+
+      const auto& notes = gen.getSong().chord().notes();
+      ASSERT_FALSE(notes.empty()) << "blueprint " << static_cast<int>(blueprint) << " seed " << seed
+                                  << " voiced no chords";
+
+      size_t checked = 0;
+      for (const auto& note : notes) {
+        if (note.prov_source == static_cast<uint8_t>(NoteSource::PostProcess)) continue;
+        const ChordTones tones = harmony.getChordTonesAt(note.start_tick);
+        if (tones.count == 0) continue;
+        ++checked;
+        bool sounds_a_chord_tone = false;
+        for (int pc : tones) {
+          if (pc >= 0 && pc % 12 == note.note % 12) {
+            sounds_a_chord_tone = true;
+            break;
+          }
+        }
+        EXPECT_TRUE(sounds_a_chord_tone)
+            << "blueprint " << static_cast<int>(blueprint) << " seed " << seed << ": chord note "
+            << static_cast<int>(note.note) << " at tick " << note.start_tick
+            << " is not a tone of the chord sounding there (source "
+            << static_cast<int>(note.prov_source) << ", from pitch "
+            << static_cast<int>(note.prov_original_pitch) << ")";
+      }
+
+      EXPECT_GT(checked, 0u) << "blueprint " << static_cast<int>(blueprint) << " seed " << seed
+                             << ": every chord note came from post-processing, so this song "
+                                "says nothing about what the voicing places";
+    }
+  }
 }
 
 TEST_F(ChordTrackTest, ChordOnsetsHaveNoStepClusters) {

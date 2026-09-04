@@ -644,6 +644,16 @@ void addChordNoteWithState(MidiTrack& track, IHarmonyContext& harmony, Tick star
   //    Even though we're doubling one note, we must check for clashes with OTHER notes
   auto sounding_pitches = harmony.getSoundingPitches(start, start + duration, TrackRole::Chord);
   for (uint8_t sounding : sounding_pitches) {
+    // A doubling sounds the tone this voice was asked for at another octave.
+    // Any other pitch class is a substitution: it fills the voice with a tone
+    // the chord already states, in the place the missing one belonged, so the
+    // voice count is met and the chord loses the tone it was voiced for. The
+    // third is what that costs most often -- it is the voice the cross-track
+    // check rejects first, and trading it for a root or fifth already sounding
+    // leaves a chord with no major or minor identity. A voice that cannot be
+    // doubled falls through to the minimum guarantee below, which offers every
+    // chord tone the voicing does not yet sound before it doubles anything.
+    if (sounding % 12 != pitch % 12) continue;
     // Only use pitches within chord range and below vocal ceiling
     if (sounding < CHORD_LOW || sounding > effective_high) continue;
     // Skip if already added at this tick
@@ -958,10 +968,17 @@ void generateChordSegment(MidiTrack& track, Tick bar_start, Tick segment_start,
         tick += duration;
         continue;
       }
-      constexpr size_t kShellVoices = 2;
-      for (size_t i = 0; i < emission_order.size() && i < kShellVoices; ++i) {
-        addChordNoteWithState(track, harmony, tick, duration, voicing.pitches[emission_order[i]],
-                              note_velocity, state, note_ceiling);
+      // Two voices are what the push is for, not the first two the voicing
+      // happens to list: a voice can be refused here -- it clashes, or it
+      // clusters with the one already placed -- and offering exactly two leaves
+      // the push stating a single tone. The order is guide-tone first, so
+      // reading further down it after a refusal still fills the push with the
+      // voices that carry most of the chord.
+      constexpr uint8_t kShellVoices = 2;
+      for (uint8_t idx : emission_order) {
+        if (state.distinctPitchClassCount() >= kShellVoices) break;
+        addChordNoteWithState(track, harmony, tick, duration, voicing.pitches[idx], note_velocity,
+                              state, note_ceiling);
       }
       tick += duration;
       continue;
