@@ -220,7 +220,7 @@ TEST_F(ChordProgressionTrackerTest, CollisionDetectorAllowsRegisteredSecondaryDo
       << "E-Bb tritone should be allowed inside a registered C7 secondary dominant";
 }
 
-TEST_F(ChordProgressionTrackerTest, CollisionDetectorAllowsOnlyRegisteredWideRootMajorSeventh) {
+TEST_F(ChordProgressionTrackerTest, CollisionDetectorAllowsOnlyRegisteredRootMajorSeventh) {
   TrackCollisionDetector detector;
   detector.registerNote(0, TICKS_PER_BEAT, 36, TrackRole::Bass);  // C2
 
@@ -232,7 +232,7 @@ TEST_F(ChordProgressionTrackerTest, CollisionDetectorAllowsOnlyRegisteredWideRoo
 
   EXPECT_FALSE(
       detector.isConsonantWithOtherTracks(47, 0, TICKS_PER_BEAT, TrackRole::Motif, &tracker_))
-      << "A registered Maj7 still needs at least an octave of separation";
+      << "Against a bass below C3 the chord excuses its own seventh only two octaves up";
   EXPECT_TRUE(
       detector.isConsonantWithOtherTracks(59, 0, TICKS_PER_BEAT, TrackRole::Motif, &tracker_))
       << "B3 over C2 is a registered Imaj7 chord tone with wide separation";
@@ -242,12 +242,43 @@ TEST_F(ChordProgressionTrackerTest, CollisionDetectorAllowsOnlyRegisteredWideRoo
   EXPECT_FALSE(info.has_collision) << "Diagnostic collision reporting must match generation";
 }
 
+// The interval a maj7 chord is named for, at the spacing it is normally voiced
+// at. The chord voicer places the seventh in the chord register while the bass
+// states the root below it, so this pair is asked about once per entry; refusing
+// it left the planned colour unplayable in most of the songs that asked for it.
+// The low-register guard is what keeps the muddy case out, and it answers first.
+TEST_F(ChordProgressionTrackerTest, CollisionDetectorAllowsAMajorSeventhOverItsOwnRoot) {
+  tracker_.registerChordExtension(0, TICKS_PER_BAR, ChordExtension::Maj7);
+
+  TrackCollisionDetector low_bass;
+  low_bass.registerNote(0, TICKS_PER_BAR, 36, TrackRole::Bass);  // C2
+  EXPECT_FALSE(
+      low_bass.isConsonantWithOtherTracks(47, 0, TICKS_PER_BAR, TrackRole::Chord, &tracker_))
+      << "Below C3 the bass overtones make the seventh muddy however the chord is spelled";
+
+  TrackCollisionDetector chord_register;
+  chord_register.registerNote(0, TICKS_PER_BAR, 48, TrackRole::Bass);  // C3
+  EXPECT_TRUE(
+      chord_register.isConsonantWithOtherTracks(59, 0, TICKS_PER_BAR, TrackRole::Chord, &tracker_))
+      << "B3 over C3 is the seventh of the chord the timeline states";
+
+  TrackCollisionDetector unregistered;
+  unregistered.registerNote(0, TICKS_PER_BAR, 48, TrackRole::Bass);
+  ChordProgressionTracker plain;
+  plain.initialize(arrangement_, getChordProgression(0), Mood::StraightPop);
+  EXPECT_FALSE(
+      unregistered.isConsonantWithOtherTracks(59, 0, TICKS_PER_BAR, TrackRole::Chord, &plain))
+      << "A plain triad does not own a seventh, so nothing excuses the interval";
+}
+
 // The cross-track half of the rule isVoicingCluster() states between the voices
-// of one chord: two voices a whole step apart that both belong to the sounding
-// chord are that chord. Bar 0 is I, so registering Maj9 there states Cmaj9
-// (C E G B D) and gives the timeline a chord that owns both a whole step
-// (D over C) and a half step (B under C) between its own tones.
-TEST_F(ChordProgressionTrackerTest, CollisionDetectorAllowsAWholeStepInsideTheSoundingChord) {
+// of one chord: two voices that both belong to the sounding chord are that
+// chord. Bar 0 is I, so registering Maj9 there states Cmaj9 (C E G B D) and
+// gives the timeline a chord that owns a whole step (D over C), a major seventh
+// (B over C) and a half step (B under C) between its own tones. The first two
+// are the chord; the last two orderings of B against C are not, and the
+// exemption has to tell them apart by spacing rather than by pitch class.
+TEST_F(ChordProgressionTrackerTest, CollisionDetectorAllowsWhatTheSoundingChordOwns) {
   tracker_.registerChordExtension(0, TICKS_PER_BAR, ChordExtension::Maj9);
   const ChordTones tones = tracker_.getChordTonesAt(0);
   ASSERT_EQ(std::vector<int>(tones.begin(), tones.end()), (std::vector<int>{0, 4, 7, 11, 2}))
@@ -272,9 +303,10 @@ TEST_F(ChordProgressionTrackerTest, CollisionDetectorAllowsAWholeStepInsideTheSo
       detector.isConsonantWithOtherTracks(59, 0, TICKS_PER_BAR, TrackRole::Motif, &tracker_))
       << "B3 under C5 is a minor ninth, which the chord never excuses";
 
-  EXPECT_FALSE(
+  EXPECT_TRUE(
       detector.isConsonantWithOtherTracks(83, 0, TICKS_PER_BAR, TrackRole::Motif, &tracker_))
-      << "B5 over C5 is a major seventh, which this rule deliberately leaves alone";
+      << "B5 over C5 is the major seventh above its own root, which is the chord "
+         "the timeline states rather than a clash against it";
 }
 
 TEST_F(ChordProgressionTrackerTest, CollisionDetectorKeepsWholeStepsAgainstNonChordTones) {

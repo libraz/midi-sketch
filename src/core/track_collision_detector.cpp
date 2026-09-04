@@ -48,10 +48,21 @@ bool isRootMajorSeventhContext(uint8_t a, uint8_t b, int8_t chord_degree) {
   return (a_pc == root_pc && b_pc == maj7_pc) || (b_pc == root_pc && a_pc == maj7_pc);
 }
 
+/// @brief Whether the chord sounding here is the one this major seventh names.
+///
+/// The interval is only asked about at 11, 23 or 35 semitones, so the lower
+/// voice is the root and the upper is the seventh above it; the other ordering
+/// is a minor second or a minor ninth and never reaches here. Eleven semitones
+/// is the spacing a maj7 chord is ordinarily voiced at -- the bass states the
+/// root and the chord register carries the seventh -- and requiring nearly two
+/// octaves left the tone the chord is named for unplayable wherever the plan
+/// asked for it. The low-register mud that a wide separation used to stand in
+/// for is answered by the bass-register rule at the caller, which keeps its own
+/// threshold.
 bool isRegisteredRootMajorSeventhContext(uint8_t a, uint8_t b, int actual_semitones,
                                          int8_t chord_degree,
                                          const ChordProgressionTracker* chord_tracker, Tick tick) {
-  if (actual_semitones < 23 || chord_tracker == nullptr ||
+  if (actual_semitones < 11 || actual_semitones % 12 != 11 || chord_tracker == nullptr ||
       !isRootMajorSeventhContext(a, b, chord_degree)) {
     return false;
   }
@@ -69,9 +80,10 @@ bool isRegisteredRootMajorSeventhContext(uint8_t a, uint8_t b, int actual_semito
 //
 // Only the major second is asked about. The minor second and the minor ninth
 // are harsh at any spacing and between any pair of notes, and the major seventh
-// is already settled at each of the callers by rules that read the bass
-// register and the registered extension -- a blanket exemption here would
-// quietly undo them.
+// is answered by the registered-extension rule above, which knows which pair of
+// pitch classes the chord is named for. Widening this one to every interval the
+// report forgives also relaxes the melodic tracks against each other, which is
+// a different question from what a chord owns.
 bool isSoundingChordItself(int actual_semitones, uint8_t a, uint8_t b,
                            const ChordProgressionTracker* chord_tracker, Tick tick) {
   if (actual_semitones != 2 || chord_tracker == nullptr) {
@@ -230,11 +242,17 @@ bool TrackCollisionDetector::isConsonantWithOtherTracks(
         // Major-7th pitch class against a low bass note (< C3): the low
         // register overtone content makes this clash audible even with
         // 2+ octaves of separation.
+        //
+        // Being the chord's own seventh does not answer this one. Down there
+        // the beating is a property of the register rather than of the harmony,
+        // so the chord only excuses it at the wide separation that has always
+        // been the exception here; in the chord register the chord decides.
         if (pc_interval == 11) {
           uint8_t bass_side_pitch = 128;
           if (note.track == TrackRole::Bass) bass_side_pitch = note.pitch;
           if (exclude == TrackRole::Bass) bass_side_pitch = std::min(bass_side_pitch, pitch);
-          if (bass_side_pitch < 48 && !registered_root_major_seventh) {
+          const bool wide_registered = registered_root_major_seventh && actual_semitones >= 23;
+          if (bass_side_pitch < 48 && !wide_registered) {
             return false;
           }
         }
