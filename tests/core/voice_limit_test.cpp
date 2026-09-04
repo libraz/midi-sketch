@@ -598,14 +598,25 @@ TEST(VoiceLimitRequantizeTest, UsesArpeggioPhysicalModelRange) {
   EXPECT_LE(bar1_notes.front().note, PhysicalModels::kArpeggioSynth.pitch_high);
 }
 
-TEST(VoiceLimitRequantizeTest, UsesGuitarPhysicalModelRange) {
+TEST(VoiceLimitRequantizeTest, KeepsAGuitarNoteInsideThePhysicalModel) {
+  Song song;
+  const auto bar1_notes = applyVoiceLimitToFrozenHighTrack(song, TrackRole::Guitar, 71);
+
+  ASSERT_EQ(bar1_notes.size(), 1u);
+  EXPECT_EQ(bar1_notes.front().note, 71)
+      << "B4 is a G-major chord tone inside the guitar's range and must not be "
+         "truncated by a stale lower limit in the re-quantization path";
+}
+
+TEST(VoiceLimitRequantizeTest, PullsAGuitarNoteBackIntoThePhysicalModel) {
   Song song;
   const auto bar1_notes = applyVoiceLimitToFrozenHighTrack(song, TrackRole::Guitar, 83);
 
   ASSERT_EQ(bar1_notes.size(), 1u);
-  EXPECT_EQ(bar1_notes.front().note, 83)
-      << "B5 is a G-major chord tone and must not be truncated to the old guitar ceiling";
-  EXPECT_LE(bar1_notes.front().note, PhysicalModels::kElectricGuitar.pitch_high);
+  EXPECT_LE(bar1_notes.front().note, PhysicalModels::kElectricGuitar.pitch_high)
+      << "The freeze copies a bar from elsewhere in the song, so re-quantization "
+         "is the one pass that can place a guitar note the generator would never "
+         "write. Its bound is the guitar's own range, which stops at E5.";
 }
 
 }  // namespace test

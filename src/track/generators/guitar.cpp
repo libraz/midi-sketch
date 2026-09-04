@@ -25,10 +25,13 @@ namespace midisketch {
 // Guitar range constants
 // ============================================================================
 
-// Guitar plays in mid register to avoid vocal collision.
-// E2 (40) to E5 (76) covers the practical strumming range.
-static constexpr uint8_t kGuitarLow = 40;   // E2
-static constexpr uint8_t kGuitarHigh = 76;  // E5
+// Guitar plays in mid register to avoid vocal collision. E2 (40) to E5 (76)
+// covers the practical strumming range. The bounds come from the physical
+// model rather than repeating the numbers: passes that run after generation
+// read the model, so a second copy here would let this track leave a range its
+// own generator never writes in.
+static constexpr uint8_t kGuitarLow = PhysicalModels::kElectricGuitar.pitch_low;    // E2
+static constexpr uint8_t kGuitarHigh = PhysicalModels::kElectricGuitar.pitch_high;  // E5
 
 // Base octave for chord voicings (C3)
 static constexpr uint8_t kBaseOctave = 48;
@@ -696,6 +699,19 @@ static void generateSweepArpeggioBar(MidiTrack& track, IHarmonyContext& harmony,
 
     uint8_t pitch = sweep_pitches[idx];
 
+    // Per-onset vocal ceiling. The sweep material spans two octaves above and
+    // below the chord tones, so a sweep that starts under the vocal still
+    // reaches over it near the top of its arc. Fold the note down an octave
+    // rather than dropping it -- a hole in a 32nd-note sweep is audible where
+    // an octave displacement is not -- and skip only when the folded note
+    // would leave the instrument.
+    uint8_t effective_high = getEffectiveHighForVocal(harmony, pos, pos + note_dur, section_high);
+    if (pitch > effective_high) {
+      if (pitch < kGuitarLow + 12) continue;
+      pitch -= 12;
+      if (pitch > effective_high) continue;
+    }
+
     // Velocity: accent on sweep start (first note of each 8-note group)
     int beat_pos = beat;
     uint8_t vel = calculateGuitarVelocity(base_vel, section, GuitarStyle::SweepArpeggio, beat_pos);
@@ -716,7 +732,7 @@ static void generateSweepArpeggioBar(MidiTrack& track, IHarmonyContext& harmony,
     opts.role = TrackRole::Guitar;
     opts.preference = PitchPreference::NoCollisionCheck;  // Already verified safe
     opts.range_low = kGuitarLow;
-    opts.range_high = kGuitarHigh;
+    opts.range_high = effective_high;
     opts.source = NoteSource::Guitar;
     opts.chord_boundary = ChordBoundaryPolicy::ClipAtBoundary;
 

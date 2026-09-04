@@ -72,8 +72,12 @@ inline constexpr PhysicalModel kElectricPiano = {48, 84, 40, 110, 60, true};
 /// Acoustic Guitar: E2 (40) to B5 (83)
 inline constexpr PhysicalModel kAcousticGuitar = {40, 83, 30, 100, 120, true};
 
-/// Electric Guitar: E2 (40) to E6 (88)
-inline constexpr PhysicalModel kElectricGuitar = {40, 88, 40, 110, 60, true};
+/// Electric Guitar: E2 (40) to E5 (76), the practical strumming range the
+/// guitar generator writes within. The instrument reaches higher, but a range
+/// wider than the generator's own lets a later pass -- bar freezing re-quantizes
+/// against this model -- place a note the generator would never have written,
+/// in the register the vocal occupies.
+inline constexpr PhysicalModel kElectricGuitar = {40, 76, 40, 110, 60, true};
 
 /// Synth Pad: C2 (36) to C7 (96)
 inline constexpr PhysicalModel kSynthPad = {36, 96, 40, 100, 480, true};

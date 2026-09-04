@@ -98,10 +98,14 @@ TEST(GuitarTrackTest, TrackMaskNotGuitar) {
 // Physical Model Tests
 // ============================================================================
 
-TEST(GuitarTrackTest, ElectricGuitarPhysicalModel) {
+// The model states the range the guitar generator writes within, because every
+// pass that runs after generation -- bar-freeze re-quantization above all --
+// reads the model rather than the generator. A model wider than the generator
+// is a licence for those passes to place notes the guitar never plays.
+TEST(GuitarTrackTest, ElectricGuitarPhysicalModelMatchesTheGeneratorRange) {
   const auto& model = PhysicalModels::kElectricGuitar;
   EXPECT_EQ(model.pitch_low, 40);   // E2
-  EXPECT_EQ(model.pitch_high, 88);  // E6
+  EXPECT_EQ(model.pitch_high, 76);  // E5
   EXPECT_TRUE(model.supports_legato);
 }
 
@@ -111,9 +115,9 @@ TEST(GuitarTrackTest, ElectricGuitarPhysicalModel) {
 
 namespace {
 
-/// Guitar's own physical bounds, mirroring the constants in guitar.cpp.
-constexpr uint8_t kGuitarRangeLow = 40;   // E2
-constexpr uint8_t kGuitarRangeHigh = 76;  // E5
+/// Guitar's own physical bounds, read from the model the generator reads.
+constexpr uint8_t kGuitarRangeLow = PhysicalModels::kElectricGuitar.pitch_low;    // E2
+constexpr uint8_t kGuitarRangeHigh = PhysicalModels::kElectricGuitar.pitch_high;  // E5
 
 test::StubHarmonyContext harmonyWithVocalAt(uint8_t vocal_pitch) {
   test::StubHarmonyContext harmony;
