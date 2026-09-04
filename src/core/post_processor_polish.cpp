@@ -60,10 +60,13 @@ bool clashesWithVocal(uint8_t pitch, Tick start, Tick end, const MidiTrack& voca
 //        equally-preferred candidates the one closest to the original pitch
 //        wins. When 0 (e.g. stub unit tests with no vocal ceiling) the original
 //        closest-distance behavior is used.
-uint8_t findSafeChordTone(uint8_t original_pitch, int8_t degree, Tick start, Tick duration,
-                          const MidiTrack& vocal, const ICollisionDetector& harmony,
-                          uint8_t vocal_ceiling = 0) {
-  ChordTones ct = getChordTones(degree);
+uint8_t findSafeChordTone(uint8_t original_pitch, Tick start, Tick duration, const MidiTrack& vocal,
+                          const ICollisionDetector& harmony, uint8_t vocal_ceiling = 0) {
+  // The chord to relocate into is the one the timeline states, not the one the
+  // scale degree would build: a note moved onto a triad tone while the entry
+  // was planned as a seventh loses the colour it could have landed on for no
+  // reason, since a tone of the sounding chord is exactly as safe.
+  ChordTones ct = harmony.getChordTonesAt(start);
   int base_octave = original_pitch / 12;
   Tick end = start + duration;
 
@@ -174,11 +177,13 @@ uint8_t lowestOverlappingVocal(Tick start, Tick end, const MidiTrack& vocal) {
 // the dissonance pass's careful resolution is preserved. This runs in
 // post-processing (after humanization) so the timing comparison is final and
 // exactly mirrors the crossing check.
-uint8_t resolveMotifAboveVocalImpl(uint8_t original_pitch, uint8_t ceiling, int8_t degree,
-                                   Tick start, Tick duration, const MidiTrack& vocal,
+uint8_t resolveMotifAboveVocalImpl(uint8_t original_pitch, uint8_t ceiling, Tick start,
+                                   Tick duration, const MidiTrack& vocal,
                                    const ICollisionDetector& harmony, int floor_limit) {
   Tick end = start + duration;
-  ChordTones ct = getChordTones(degree);
+  // Tones of the chord the timeline states, so the highest one under the
+  // ceiling can be the seventh the entry was planned with.
+  ChordTones ct = harmony.getChordTonesAt(start);
 
   // Strategy 1: highest chord tone <= ceiling that is consonant with the vocal
   // and other tracks.
@@ -243,11 +248,10 @@ uint8_t resolveMotifAboveVocalImpl(uint8_t original_pitch, uint8_t ceiling, int8
   return original_pitch;
 }
 
-uint8_t resolveMotifAboveVocal(uint8_t original_pitch, uint8_t ceiling, int8_t degree, Tick start,
-                               Tick duration, const MidiTrack& vocal,
-                               const ICollisionDetector& harmony) {
-  uint8_t fixed = resolveMotifAboveVocalImpl(original_pitch, ceiling, degree, start, duration,
-                                             vocal, harmony, MOTIF_LOW);
+uint8_t resolveMotifAboveVocal(uint8_t original_pitch, uint8_t ceiling, Tick start, Tick duration,
+                               const MidiTrack& vocal, const ICollisionDetector& harmony) {
+  uint8_t fixed = resolveMotifAboveVocalImpl(original_pitch, ceiling, start, duration, vocal,
+                                             harmony, MOTIF_LOW);
   if (fixed != original_pitch) return fixed;
 
   // Pinched-range relaxation: when the vocal floor sits at or near MOTIF_LOW,
@@ -256,8 +260,8 @@ uint8_t resolveMotifAboveVocal(uint8_t original_pitch, uint8_t ceiling, int8_t d
   // C4/E4 below the ceiling, so the crossing A4 stayed). Allow one octave
   // below the static floor; the vocal-clash and consonance checks still guard
   // the low register.
-  return resolveMotifAboveVocalImpl(original_pitch, ceiling, degree, start, duration, vocal,
-                                    harmony, MOTIF_LOW - 12);
+  return resolveMotifAboveVocalImpl(original_pitch, ceiling, start, duration, vocal, harmony,
+                                    MOTIF_LOW - 12);
 }
 
 }  // namespace
@@ -318,7 +322,6 @@ void PostProcessor::fixMotifVocalClashes(MidiTrack& motif, const MidiTrack& voca
             }
           }
 
-          int8_t degree = harmony.getChordDegreeAt(m_note.start_tick);
           uint8_t original_pitch = m_note.note;
 
           // Prefer a resolution at or below the vocal so dissonance avoidance
@@ -326,8 +329,8 @@ void PostProcessor::fixMotifVocalClashes(MidiTrack& motif, const MidiTrack& voca
           uint8_t vocal_ceiling = lowestOverlappingVocal(m_note.start_tick, m_end, vocal);
 
           // Find a chord tone that doesn't clash with vocal or any registered track
-          uint8_t new_pitch = findSafeChordTone(original_pitch, degree, m_note.start_tick,
-                                                m_note.duration, vocal, harmony, vocal_ceiling);
+          uint8_t new_pitch = findSafeChordTone(original_pitch, m_note.start_tick, m_note.duration,
+                                                vocal, harmony, vocal_ceiling);
 
           // If still clashing with vocal, try using getSafePitchCandidates as last resort.
           // Cap the search at the vocal ceiling first: an unconstrained range lets the
@@ -364,7 +367,7 @@ void PostProcessor::fixMotifVocalClashes(MidiTrack& motif, const MidiTrack& voca
             m_note.prov_source = static_cast<uint8_t>(NoteSource::CollisionAvoid);
           }
           m_note.prov_lookup_tick = m_note.start_tick;
-          m_note.prov_chord_degree = degree;
+          m_note.prov_chord_degree = harmony.getChordDegreeAt(m_note.start_tick);
 #endif
 
           m_note.note = new_pitch;
@@ -394,10 +397,9 @@ void PostProcessor::fixMotifVocalClashes(MidiTrack& motif, const MidiTrack& voca
     if (vocal_floor == 0) continue;            // vocal rest: nothing to clear
     if (m_note.note <= vocal_floor) continue;  // already at or below vocal
 
-    int8_t degree = harmony.getChordDegreeAt(m_note.start_tick);
     uint8_t original_pitch = m_note.note;
-    uint8_t new_pitch = resolveMotifAboveVocal(original_pitch, vocal_floor, degree,
-                                               m_note.start_tick, m_note.duration, vocal, harmony);
+    uint8_t new_pitch = resolveMotifAboveVocal(original_pitch, vocal_floor, m_note.start_tick,
+                                               m_note.duration, vocal, harmony);
     if (new_pitch == original_pitch) continue;
 
 #ifdef MIDISKETCH_NOTE_PROVENANCE
@@ -406,7 +408,7 @@ void PostProcessor::fixMotifVocalClashes(MidiTrack& motif, const MidiTrack& voca
     m_note.prov_original_pitch = original_pitch;
     m_note.prov_source = static_cast<uint8_t>(NoteSource::CollisionAvoid);
     m_note.prov_lookup_tick = m_note.start_tick;
-    m_note.prov_chord_degree = degree;
+    m_note.prov_chord_degree = harmony.getChordDegreeAt(m_note.start_tick);
 #endif
     m_note.note = new_pitch;
   }
@@ -417,39 +419,37 @@ void PostProcessor::fixMotifHarmonyClashes(MidiTrack& motif, const MidiTrack& vo
   auto& motif_notes = motif.notes();
 
   motif_notes.erase(
-      std::remove_if(motif_notes.begin(), motif_notes.end(),
-                     [&](NoteEvent& note) {
-                       if (harmony.isConsonantWithOtherTracks(note.note, note.start_tick,
-                                                              note.duration, TrackRole::Motif)) {
-                         return false;
-                       }
+      std::remove_if(
+          motif_notes.begin(), motif_notes.end(),
+          [&](NoteEvent& note) {
+            if (harmony.isConsonantWithOtherTracks(note.note, note.start_tick, note.duration,
+                                                   TrackRole::Motif)) {
+              return false;
+            }
 
-                       const uint8_t original_pitch = note.note;
-                       const int8_t degree = harmony.getChordDegreeAt(note.start_tick);
-                       const uint8_t vocal_ceiling = lowestOverlappingVocal(
-                           note.start_tick, note.start_tick + note.duration, vocal);
-                       const uint8_t new_pitch =
-                           findSafeChordTone(original_pitch, degree, note.start_tick, note.duration,
-                                             vocal, harmony, vocal_ceiling);
+            const uint8_t original_pitch = note.note;
+            const uint8_t vocal_ceiling =
+                lowestOverlappingVocal(note.start_tick, note.start_tick + note.duration, vocal);
+            const uint8_t new_pitch = findSafeChordTone(
+                original_pitch, note.start_tick, note.duration, vocal, harmony, vocal_ceiling);
 
-                       if (new_pitch == original_pitch ||
-                           (vocal_ceiling > 0 && new_pitch > vocal_ceiling) ||
-                           !harmony.isConsonantWithOtherTracks(new_pitch, note.start_tick,
-                                                               note.duration, TrackRole::Motif)) {
-                         return true;
-                       }
+            if (new_pitch == original_pitch || (vocal_ceiling > 0 && new_pitch > vocal_ceiling) ||
+                !harmony.isConsonantWithOtherTracks(new_pitch, note.start_tick, note.duration,
+                                                    TrackRole::Motif)) {
+              return true;
+            }
 
 #ifdef MIDISKETCH_NOTE_PROVENANCE
-                       note.addTransformStep(TransformStepType::CollisionAvoid, original_pitch,
-                                             new_pitch, 0, 0);
-                       note.prov_original_pitch = original_pitch;
-                       note.prov_source = static_cast<uint8_t>(NoteSource::CollisionAvoid);
-                       note.prov_lookup_tick = note.start_tick;
-                       note.prov_chord_degree = degree;
+            note.addTransformStep(TransformStepType::CollisionAvoid, original_pitch, new_pitch, 0,
+                                  0);
+            note.prov_original_pitch = original_pitch;
+            note.prov_source = static_cast<uint8_t>(NoteSource::CollisionAvoid);
+            note.prov_lookup_tick = note.start_tick;
+            note.prov_chord_degree = harmony.getChordDegreeAt(note.start_tick);
 #endif
-                       note.note = new_pitch;
-                       return false;
-                     }),
+            note.note = new_pitch;
+            return false;
+          }),
       motif_notes.end());
 }
 
@@ -512,8 +512,9 @@ void PostProcessor::fixMotifRepeatedPitches(MidiTrack& motif, const MidiTrack& v
     uint8_t original_pitch = note.note;
     Tick note_end = note.start_tick + note.duration;
     uint8_t ceiling = lowestOverlappingVocal(note.start_tick, note_end, vocal);
-    int8_t degree = harmony.getChordDegreeAt(note.start_tick);
-    ChordTones ct = getChordTones(degree);
+    // From the timeline, so the run is broken onto a tone of the chord actually
+    // sounding there rather than onto its triad alone.
+    ChordTones ct = harmony.getChordTonesAt(note.start_tick);
 
     struct Candidate {
       uint8_t pitch;
@@ -581,7 +582,7 @@ void PostProcessor::fixMotifRepeatedPitches(MidiTrack& motif, const MidiTrack& v
 #ifdef MIDISKETCH_NOTE_PROVENANCE
     note.addTransformStep(TransformStepType::ChordToneSnap, original_pitch, new_pitch, 0, 0);
     note.prov_lookup_tick = note.start_tick;
-    note.prov_chord_degree = degree;
+    note.prov_chord_degree = harmony.getChordDegreeAt(note.start_tick);
 #endif
     note.note = new_pitch;
     last_pitch = new_pitch;

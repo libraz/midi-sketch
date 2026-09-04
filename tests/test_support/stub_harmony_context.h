@@ -10,6 +10,7 @@
 #include <string>
 #include <vector>
 
+#include "core/chord_utils.h"
 #include "core/i_harmony_coordinator.h"
 #include "core/midi_track.h"
 
@@ -32,7 +33,10 @@ class StubHarmonyContext : public IHarmonyCoordinator {
  public:
   // Configuration methods
   void setChordDegree(int8_t degree) { chord_degree_ = degree; }
-  void setChordTones(std::vector<int> tones) { chord_tones_ = std::move(tones); }
+  void setChordTones(std::vector<int> tones) {
+    chord_tones_ = std::move(tones);
+    chord_tones_configured_ = true;
+  }
   void setAllPitchesSafe(bool safe) { all_pitches_safe_ = safe; }
   void setNextChordChangeTick(Tick tick) { next_chord_change_ = tick; }
 
@@ -48,6 +52,13 @@ class StubHarmonyContext : public IHarmonyCoordinator {
   int8_t getChordDegreeAt(Tick /*tick*/) const override { return chord_degree_; }
 
   ChordTones getChordTonesAt(Tick /*tick*/) const override {
+    // The degree and the tone set name one chord. A stub that answers G for
+    // the degree and C major for the tones lets a caller reading both see a
+    // chord that never existed, so the tones follow the configured degree
+    // unless a test states a tone set of its own.
+    if (!chord_tones_configured_) {
+      return getChordTones(chord_degree_);
+    }
     ChordTones result{};
     result.pitch_classes.fill(-1);
     result.count = static_cast<uint8_t>(std::min<size_t>(chord_tones_.size(), 5));
@@ -202,6 +213,7 @@ class StubHarmonyContext : public IHarmonyCoordinator {
   uint8_t lowest_pitch_for_track_ = 0;
   int8_t chord_degree_ = 0;
   std::vector<int> chord_tones_ = {0, 4, 7};  // C major triad by default
+  bool chord_tones_configured_ = false;       // true once a test states its own tones
   std::vector<int> sounding_pitch_classes_;   // Configured sounding pitch classes
   std::vector<uint8_t> sounding_pitches_;     // Configured sounding pitches
   bool all_pitches_safe_ = true;

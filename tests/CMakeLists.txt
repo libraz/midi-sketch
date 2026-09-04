@@ -61,6 +61,7 @@ set(TEST_SOURCES
   core/velocity_clamp_test.cpp
   core/section_dynamics_test.cpp
   core/post_processor_test.cpp
+  core/motif_relocation_palette_test.cpp
   core/tempo_map_test.cpp
   core/modulation_calculator_test.cpp
   core/modulation_bgm_test.cpp
