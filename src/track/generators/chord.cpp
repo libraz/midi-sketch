@@ -100,6 +100,41 @@ bool isDissonantVoicingGap(int semitones) {
 
 }  // namespace
 
+/// @brief Whether two voices of the chord sounding at one onset form a cluster.
+///
+/// The gap rule alone cannot answer this, for the same reason the major seventh
+/// is absent from it: a major second between two tones of the chord being voiced
+/// is the chord. A seventh sits a whole step under the root and a ninth a whole
+/// step over it, so a rule that calls the pair a cluster removes one of them --
+/// and both the screen that places the voices and the pass that cleans them up
+/// rank the seventh below the root, so the tone that makes the chord extended is
+/// the one that goes. A whole step against a tone the chord does not contain is
+/// still a cluster, and the minor second and minor ninth stay dissonant wherever
+/// they appear.
+///
+/// This is the one place the question is answered. The rule used to be spelled
+/// out at each screen that asks it, and a screen stating it separately can be
+/// corrected on its own while the others keep undoing the correction.
+///
+/// @param pitch_a One voice
+/// @param pitch_b The other voice, sounding at the same onset
+/// @param tones Tones of the chord the timeline states at that onset
+/// @return true when the pair is a cluster and one of the two has to give way
+bool isVoicingCluster(uint8_t pitch_a, uint8_t pitch_b, const ChordTones& tones) {
+  const int gap = static_cast<int>(pitch_a) - static_cast<int>(pitch_b);
+  if (!isDissonantVoicingGap(gap)) return false;
+  if (std::abs(gap) != 2) return true;
+
+  bool a_is_chord_tone = false;
+  bool b_is_chord_tone = false;
+  for (int pc : tones) {
+    if (pc < 0) continue;
+    if (pitch_a % 12 == pc % 12) a_is_chord_tone = true;
+    if (pitch_b % 12 == pc % 12) b_is_chord_tone = true;
+  }
+  return !(a_is_chord_tone && b_is_chord_tone);
+}
+
 bool wouldCreateVoicingCluster(const VoicedChord& voicing, uint8_t candidate_pitch) {
   for (uint8_t idx = 0; idx < voicing.count; ++idx) {
     if (isDissonantVoicingGap(static_cast<int>(candidate_pitch) -
@@ -123,6 +158,7 @@ struct ChordVoicingState {
   uint8_t safe_count = 0;         ///< Number of safe notes added at current_tick
   uint8_t added_pitches[8] = {};  ///< Pitches added at current_tick (max 8)
   uint8_t added_pitch_count = 0;  ///< Number of entries in added_pitches
+  ChordTones chord_tones{};       ///< Tones of the chord sounding at current_tick
 
   static constexpr uint8_t kMinRequired = 3;  ///< Minimum notes for full chord voicing
 
@@ -131,6 +167,7 @@ struct ChordVoicingState {
     current_tick = tick;
     safe_count = 0;
     added_pitch_count = 0;
+    chord_tones = ChordTones{};
   }
 
   /// Number of distinct pitch classes sounding at this tick.
@@ -179,11 +216,13 @@ struct ChordVoicingState {
   ///
   /// The collision detector only compares this track against the others, so a
   /// cluster built entirely out of this track's own voices passes it unseen.
+  ///
+  /// Whether the two voices are a cluster is decided by isVoicingCluster(), so
+  /// this screen and the cleanup pass cannot answer the same question
+  /// differently.
   bool wouldCluster(uint8_t pitch) const {
     for (uint8_t i = 0; i < added_pitch_count; ++i) {
-      if (isDissonantVoicingGap(static_cast<int>(pitch) - static_cast<int>(added_pitches[i]))) {
-        return true;
-      }
+      if (isVoicingCluster(pitch, added_pitches[i], chord_tones)) return true;
     }
     return false;
   }
@@ -535,6 +574,10 @@ void addChordNoteWithState(MidiTrack& track, IHarmonyContext& harmony, Tick star
   if (start != state.current_tick) {
     state.reset(start);
   }
+
+  // The cluster rule has to know which tones make up the chord being voiced,
+  // since a step between two of them is the chord and not a cluster.
+  state.chord_tones = harmony.getChordTonesAt(start);
 
   // Skip if this exact pitch was already added at this tick
   if (state.hasPitch(pitch)) return;
@@ -906,17 +949,22 @@ void generateChordSegment(MidiTrack& track, Tick bar_start, Tick segment_start,
   }
 }
 
-/// @brief Drop chord voices that sit a step away from another voice at the same onset.
+}  // namespace
+
+/// @brief Drop chord voices that cluster with another voice at the same onset.
 ///
-/// A minor second, its compound minor ninth, and an adjacent major second are
-/// dissonant by the interval model this project works to, but the collision
-/// detector only compares a track against the *other* tracks, so a cluster made
-/// entirely of this track's own voices is invisible to every check made while
-/// the notes are placed. Several placement paths -- candidate selection, the
-/// minimum-voice fill, the keyboard playability adjustment, the register fold
-/// under the vocal -- can each land on a pitch that is clear when it is chosen
-/// and clustered once its neighbour arrives, so the guarantee is settled once,
-/// at the end, on the notes that actually exist.
+/// The collision detector only compares a track against the *other* tracks, so
+/// a cluster made entirely of this track's own voices is invisible to every
+/// check made while the notes are placed. Several placement paths -- candidate
+/// selection, the minimum-voice fill, the keyboard playability adjustment, the
+/// register fold under the vocal -- can each land on a pitch that is clear when
+/// it is chosen and clustered once its neighbour arrives, so the guarantee is
+/// settled once, at the end, on the notes that actually exist.
+///
+/// What counts as a cluster is isVoicingCluster()'s to decide, and it has to be:
+/// this pass ranks the seventh below the root, so a rule of its own that called
+/// the two a cluster would take the seventh out of every close-voiced seventh
+/// chord the placement screens had just agreed to let through.
 ///
 /// The voice that survives is the one that carries more of the chord's
 /// identity, so the reduction never removes the third to keep the fifth.
@@ -955,8 +1003,8 @@ bool removeVoicingClusters(MidiTrack& track, IHarmonyContext& harmony) {
     if (drop[i]) continue;
     for (size_t j = i + 1; j < notes.size(); ++j) {
       if (drop[j] || notes[j].start_tick != notes[i].start_tick) continue;
-      if (!isDissonantVoicingGap(static_cast<int>(notes[i].note) -
-                                 static_cast<int>(notes[j].note))) {
+      if (!isVoicingCluster(notes[i].note, notes[j].note,
+                            harmony.getChordTonesAt(notes[i].start_tick))) {
         continue;
       }
       // Keep the voice that says more about the chord; on a tie keep the lower
@@ -983,6 +1031,8 @@ bool removeVoicingClusters(MidiTrack& track, IHarmonyContext& harmony) {
   harmony.registerTrack(track, TrackRole::Chord);
   return true;
 }
+
+namespace {
 
 bool enforceChordBelowVocal(MidiTrack& track, const MidiTrack& vocal, IHarmonyContext& harmony) {
   if (track.empty() || vocal.empty()) return false;

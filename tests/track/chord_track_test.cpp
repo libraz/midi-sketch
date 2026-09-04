@@ -36,6 +36,8 @@ namespace midisketch {
 uint8_t getVocalCeilingForRange(const IHarmonyContext& harmony, Tick start, Tick end,
                                 uint8_t fallback_ceiling);
 bool wouldCreateVoicingCluster(const chord_voicing::VoicedChord& voicing, uint8_t candidate_pitch);
+bool isVoicingCluster(uint8_t pitch_a, uint8_t pitch_b, const ChordTones& tones);
+bool removeVoicingClusters(MidiTrack& track, IHarmonyContext& harmony);
 
 namespace {
 
@@ -1070,17 +1072,118 @@ TEST_F(ChordTrackTest, ChordOnsetsHaveNoStepClusters) {
     onsets[note.start_tick].push_back(note.note);
   }
 
+  // A major second is only a cluster when at least one of the two voices is
+  // outside the chord. Two chord tones a whole step apart are what a seventh or
+  // a ninth chord is, and this configuration asks for both.
   for (const auto& [tick, pitches] : onsets) {
+    const ChordTones tones = harmony.getChordTonesAt(tick);
+    std::set<int> chord_pcs;
+    for (int pc : tones) {
+      if (pc >= 0) chord_pcs.insert(pc % 12);
+    }
     for (size_t i = 0; i < pitches.size(); ++i) {
       for (size_t j = i + 1; j < pitches.size(); ++j) {
         int gap = std::abs(static_cast<int>(pitches[i]) - static_cast<int>(pitches[j]));
-        EXPECT_FALSE(gap == 1 || gap == 2 || gap == 13)
+        const bool both_chord_tones =
+            chord_pcs.count(pitches[i] % 12) > 0 && chord_pcs.count(pitches[j] % 12) > 0;
+        EXPECT_FALSE(gap == 1 || gap == 13 || (gap == 2 && !both_chord_tones))
             << "tick " << tick << ": " << static_cast<int>(pitches[i]) << " and "
             << static_cast<int>(pitches[j])
             << " form a cluster the cross-track collision check cannot see";
       }
     }
   }
+}
+
+TEST_F(ChordTrackTest, TheClusterCleanupKeepsASeventhVoicedUnderItsRoot) {
+  Section section{};
+  section.type = SectionType::A;
+  section.name = "A";
+  section.bars = 1;
+  section.start_bar = 0;
+  section.start_tick = 0;
+  section.track_mask = TrackMask::Chord;
+
+  Song song;
+  song.setArrangement(Arrangement({section}));
+
+  HarmonyContext harmony;
+  harmony.initialize(song.arrangement(), getChordProgression(params_.chord_id), params_.mood);
+  harmony.registerChordExtension(0, TICKS_PER_BAR, ChordExtension::Dom7);
+  const int8_t degree = harmony.getChordDegreeAt(0);
+  const int root_pc = ((degreeToSemitone(degree) % 12) + 12) % 12;
+  const uint8_t seventh = static_cast<uint8_t>(60 + (root_pc + 10) % 12);
+  const uint8_t root_above = static_cast<uint8_t>(seventh + 2);
+
+  // The seventh a whole step under the root is the shape a close-voiced seventh
+  // chord takes. The cleanup pass ranks the seventh below the root, so a rule
+  // that called this pair a cluster would remove exactly the tone that tells the
+  // chord apart from the triad underneath it.
+  MidiTrack track;
+  for (uint8_t pitch : {seventh, root_above}) {
+    track.addNote(NoteEventBuilder::create(0, TICKS_PER_BAR, pitch, 90));
+  }
+  harmony.registerTrack(track, TrackRole::Chord);
+
+  removeVoicingClusters(track, harmony);
+
+  bool seventh_survived = false;
+  bool root_survived = false;
+  for (const auto& note : track.notes()) {
+    if (note.note == seventh) seventh_survived = true;
+    if (note.note == root_above) root_survived = true;
+  }
+  EXPECT_TRUE(seventh_survived) << "the planned seventh " << static_cast<int>(seventh)
+                                << " was removed for standing under its own root";
+  EXPECT_TRUE(root_survived) << "the root " << static_cast<int>(root_above) << " was removed";
+}
+
+TEST_F(ChordTrackTest, TheClusterCleanupStillRemovesAHalfStep) {
+  Section section{};
+  section.type = SectionType::A;
+  section.name = "A";
+  section.bars = 1;
+  section.start_bar = 0;
+  section.start_tick = 0;
+  section.track_mask = TrackMask::Chord;
+
+  Song song;
+  song.setArrangement(Arrangement({section}));
+
+  HarmonyContext harmony;
+  harmony.initialize(song.arrangement(), getChordProgression(params_.chord_id), params_.mood);
+  const int8_t degree = harmony.getChordDegreeAt(0);
+  const int root_pc = ((degreeToSemitone(degree) % 12) + 12) % 12;
+  const uint8_t root = static_cast<uint8_t>(60 + root_pc);
+
+  MidiTrack track;
+  for (uint8_t pitch : {root, static_cast<uint8_t>(root + 1)}) {
+    track.addNote(NoteEventBuilder::create(0, TICKS_PER_BAR, pitch, 90));
+  }
+  harmony.registerTrack(track, TrackRole::Chord);
+
+  EXPECT_TRUE(removeVoicingClusters(track, harmony));
+  EXPECT_EQ(track.notes().size(), 1u) << "a half step between two voices is still a cluster";
+}
+
+TEST_F(ChordTrackTest, AWholeStepBetweenTwoChordTonesIsTheChordNotACluster) {
+  // C7: the seventh sits a whole step under the octave root, which is what a
+  // dominant seventh sounds like and not something to take one voice out of.
+  const ChordTones c7{{0, 4, 7, 10, -1}, 4};
+  EXPECT_FALSE(isVoicingCluster(70, 72, c7)) << "Bb4 under C5 is the seventh and the root";
+  EXPECT_FALSE(isVoicingCluster(72, 70, c7)) << "the rule cannot depend on which voice arrives";
+
+  // A tone the chord does not contain is still a cluster at the same distance.
+  EXPECT_TRUE(isVoicingCluster(74, 72, c7)) << "D5 over C5 is a ninth the chord never asked for";
+
+  // The half step and its compound stay dissonant however the chord is spelled.
+  const ChordTones cmaj7{{0, 4, 7, 11, -1}, 4};
+  EXPECT_TRUE(isVoicingCluster(71, 72, cmaj7)) << "B4 under C5 is a minor second";
+  EXPECT_TRUE(isVoicingCluster(59, 72, cmaj7)) << "B3 under C5 is a minor ninth";
+
+  // Consonant spacings are unaffected.
+  EXPECT_FALSE(isVoicingCluster(64, 72, c7));
+  EXPECT_FALSE(isVoicingCluster(67, 72, c7));
 }
 
 TEST_F(ChordTrackTest, RootlessVoicingKeepsTheSuspendedQuality) {
