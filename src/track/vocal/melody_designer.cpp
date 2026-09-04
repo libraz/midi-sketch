@@ -251,6 +251,19 @@ void applyPhrasePairCadence(std::vector<NoteEvent>& notes, PhrasePairRole pair_r
   int root_pc = chord_tones.empty() ? 0 : chord_tones[0];
   bool is_root = (pitch_class == root_pc);
 
+  // The cadence can move the phrase's last note by up to a tritone. A note that
+  // arrives at a pitch its own history does not reach is unreadable in
+  // provenance: the analyzer attributes the landing tone to the phrase's
+  // melodic decisions, and the pass that actually chose it leaves no mark.
+  auto landOn = [&last_note](uint8_t new_pitch) {
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+    if (last_note.note != new_pitch) {
+      last_note.addTransformStep(TransformStepType::ChordToneSnap, last_note.note, new_pitch, 0, 0);
+    }
+#endif
+    last_note.note = new_pitch;
+  };
+
   if (pair_role == PhrasePairRole::Antecedent && is_root && chord_tones.size() >= 2) {
     // Antecedent ends on root -> move to nearest 3rd or 5th
     int target_pc = chord_tones[1];  // 3rd is usually chord_tones[1]
@@ -263,7 +276,7 @@ void applyPhrasePairCadence(std::vector<NoteEvent>& notes, PhrasePairRole pair_r
         auto new_pitch = static_cast<uint8_t>(up_pitch);
         if (harmony.isConsonantWithOtherTracks(new_pitch, last_note.start_tick, last_note.duration,
                                                TrackRole::Vocal)) {
-          last_note.note = new_pitch;
+          landOn(new_pitch);
           return;
         }
       }
@@ -271,7 +284,7 @@ void applyPhrasePairCadence(std::vector<NoteEvent>& notes, PhrasePairRole pair_r
         auto new_pitch = static_cast<uint8_t>(down_pitch);
         if (harmony.isConsonantWithOtherTracks(new_pitch, last_note.start_tick, last_note.duration,
                                                TrackRole::Vocal)) {
-          last_note.note = new_pitch;
+          landOn(new_pitch);
           return;
         }
       }
@@ -286,7 +299,7 @@ void applyPhrasePairCadence(std::vector<NoteEvent>& notes, PhrasePairRole pair_r
         auto new_pitch = static_cast<uint8_t>(up_pitch);
         if (harmony.isConsonantWithOtherTracks(new_pitch, last_note.start_tick, last_note.duration,
                                                TrackRole::Vocal)) {
-          last_note.note = new_pitch;
+          landOn(new_pitch);
           return;
         }
       }
@@ -294,7 +307,7 @@ void applyPhrasePairCadence(std::vector<NoteEvent>& notes, PhrasePairRole pair_r
         auto new_pitch = static_cast<uint8_t>(down_pitch);
         if (harmony.isConsonantWithOtherTracks(new_pitch, last_note.start_tick, last_note.duration,
                                                TrackRole::Vocal)) {
-          last_note.note = new_pitch;
+          landOn(new_pitch);
           return;
         }
       }

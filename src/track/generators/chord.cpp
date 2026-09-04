@@ -1119,6 +1119,14 @@ bool enforceChordBelowVocal(MidiTrack& track, const MidiTrack& vocal, IHarmonyCo
       // against every other registered track before committing it.
       if (harmony.isConsonantWithOtherTracks(candidate, note.start_tick, note.duration,
                                              TrackRole::Chord)) {
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+        // The fold happens after the voicing has been emitted, so the note's
+        // own history ends at the register the voicing chose. Recording the
+        // step is what keeps the sounding pitch attributable: without it the
+        // forensics read an octave drop as a decision the chord generator made.
+        note.addTransformStep(TransformStepType::VocalAvoid, note.note, candidate,
+                              static_cast<int8_t>(ceiling > 127 ? 127 : ceiling), 0);
+#endif
         note.note = candidate;
       } else {
         // Neither the original high note nor its safe register-folded

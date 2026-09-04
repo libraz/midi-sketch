@@ -6,7 +6,7 @@
  * - TrackPitchEditor rejects a pitch the harmony state does not accept, records
  *   the moves it does apply, and refreshes the collision registry so a later
  *   query cannot answer from a pitch that is no longer sounding.
- * - In a finished song, no accompaniment note whose pitch differs from the one
+ * - In a finished song, no note on any track whose pitch differs from the one
  *   it was created with is missing a transform step explaining the difference.
  *   Such a note is invisible to every later pass and to the analysis output.
  */
@@ -186,13 +186,21 @@ class PitchWritebackTest : public ::testing::Test {
   MidiSketch sketch_;
 };
 
-// Bass microvariation and the guitar/bass separation pass both move pitches on
-// finished tracks. Every such move has to leave a trace, otherwise the pitch
-// that sounds cannot be explained from the note itself.
-TEST_F(PitchWritebackTest, AccompanimentPitchMovesLeaveATrace) {
+// Bass microvariation, the guitar/bass separation pass, the chord track's fold
+// under the vocal and the phrase-pair cadence all move pitches on finished or
+// nearly finished lines. Every such move has to leave a trace, otherwise the
+// pitch that sounds cannot be explained from the note itself.
+//
+// The question is asked of every track that carries provenance. Asking it of
+// two of them is what let the vocal and the chord track move pitches silently:
+// a pass is only covered here if its track is named, so naming a subset makes
+// the check look like a guarantee it is not making.
+TEST_F(PitchWritebackTest, PitchMovesLeaveATrace) {
   constexpr uint32_t kSeeds[] = {12345, 777, 20260903, 424242, 31337};
   constexpr uint8_t kBlueprints[] = {0, 1, 2, 3, 4, 9};
-  const std::vector<TrackRole> kRoles = {TrackRole::Bass, TrackRole::Guitar};
+  const std::vector<TrackRole> kRoles = {TrackRole::Vocal,   TrackRole::Motif, TrackRole::Aux,
+                                         TrackRole::Bass,    TrackRole::Chord, TrackRole::Guitar,
+                                         TrackRole::Arpeggio};
 
   size_t songs_scanned = 0;
   for (uint8_t blueprint : kBlueprints) {

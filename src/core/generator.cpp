@@ -1909,6 +1909,14 @@ void resolveSameTrackClusters(Song& song, IHarmonyContext& harmony) {
           clearOfOnsetVoices(harmony, note.note, note.start_tick, placed, band_low, band_high);
       if (resolved != note.note) {
         if (harmony.isConsonantWithOtherTracks(resolved, note.start_tick, note.duration, role)) {
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+          // This pass runs after every generator has stopped moving pitches, so
+          // a voice it relocates carries a history that ends at the pitch the
+          // generator chose. Without a step recorded here the note reads as a
+          // silent mover: the forensics attribute the sounding pitch to the
+          // emitter, and the pass that actually chose it leaves no mark.
+          note.addTransformStep(TransformStepType::ChordToneSnap, note.note, resolved, 0, 0);
+#endif
           note.note = resolved;
         } else {
           // Nothing this onset can state clears both its own neighbour and the
