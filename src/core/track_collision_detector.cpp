@@ -596,7 +596,15 @@ Tick TrackCollisionDetector::getMaxSafeEnd(Tick note_start, uint8_t pitch, Track
         low_bass_major_seventh || isDissonantActualInterval(actual_semitones, chord_degree);
 
     if (is_dissonant) {
-      if (note.start > note_start && note.start < safe_end) {
+      if (note.start <= note_start) {
+        // The clash is already sounding when this note begins, so no prefix of
+        // it is safe. Pulling back only to a *later* onset leaves the full span
+        // reported as safe in exactly this case, which is how a caller looking
+        // for the longest consonant prefix ends up keeping a note that was
+        // never consonant for a single tick.
+        return note_start;
+      }
+      if (note.start < safe_end) {
         safe_end = note.start;
       }
     }

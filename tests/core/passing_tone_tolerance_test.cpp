@@ -244,6 +244,30 @@ TEST_F(PassingToneCollisionTest, MaxSafeEndPreservesBriefPassingSecond) {
             TICKS_PER_BEAT * 2);
 }
 
+// getMaxSafeEnd answers "how long may this note sound before it clashes", and
+// callers use it to trim a note to its consonant prefix rather than move it.
+// A clash that is already sounding at the onset leaves no such prefix, so the
+// answer has to be the onset itself. Reporting the full span instead reads as
+// "consonant throughout" and lets a caller keep a pitch that was never
+// consonant for a single tick.
+TEST_F(PassingToneCollisionTest, MaxSafeEndLeavesNoRoomForAClashAlreadySounding) {
+  constexpr Tick kDuration = 420;
+  detector_.registerNote(0, 480, 55, TrackRole::Chord);  // G3
+
+  // F3 under it is a major 2nd in the low register against a sustained
+  // harmonic track: dissonant from the first tick by either guard.
+  ASSERT_FALSE(detector_.isConsonantWithOtherTracks(53, 0, kDuration, TrackRole::Aux));
+  EXPECT_EQ(detector_.getMaxSafeEnd(0, 53, TrackRole::Aux, kDuration), 0u);
+}
+
+// The same clash entering mid-note still leaves a usable prefix, which is the
+// case the trimming exists for.
+TEST_F(PassingToneCollisionTest, MaxSafeEndKeepsThePrefixBeforeAClashEnters) {
+  detector_.registerNote(240, 480, 55, TrackRole::Chord);  // G3 enters late
+
+  EXPECT_EQ(detector_.getMaxSafeEnd(0, 53, TrackRole::Aux, 720), 240u);
+}
+
 TEST_F(PassingToneCollisionTest, LowRegisterNotTolerated) {
   // Bass holds C3 (48)
   detector_.registerNote(0, 1920, 48, TrackRole::Bass);
