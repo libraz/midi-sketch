@@ -32,8 +32,14 @@ struct SectionProperties {
 
   // === Chord (chord.cpp, chord_track.cpp) ===
   float slash_chord_threshold;  ///< Slash chord probability (0.0-0.55)
-  float secondary_tension;      ///< Tension for secondary dominant insertion (0.25-0.75)
-  bool allows_anticipation;     ///< Allow chord anticipation
+  /// @brief Tension the secondary dominant planner reads for this section.
+  ///
+  /// Not a probability. `checkSecondaryDominant` refuses outright at or below
+  /// 0.5, so a section whose value sits there gets no secondary dominant at
+  /// all, however the dice fall; above it the value scales the roll. Six of
+  /// the ten sections below are on the refusing side, the verse among them.
+  float secondary_tension;
+  bool allows_anticipation;  ///< Allow chord anticipation
 
   // === Drums (drums.cpp) ===
   bool use_ride;  ///< Use ride cymbal instead of hi-hat

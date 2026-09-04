@@ -13,11 +13,46 @@
 #include "core/harmonic_rhythm.h"
 #include "core/harmony_context.h"
 #include "core/pitch_utils.h"
+#include "core/section_properties.h"
 #include "core/timing_constants.h"
 #include "core/types.h"
 
 namespace midisketch {
 namespace {
+
+// The tension in the section table is a threshold, not a weight, so a section
+// on the refusing side of it can never carry a secondary dominant. Six of the
+// ten section types are on that side; describing the field as a probability
+// (which is what its comment used to do) hides that from anyone tuning it.
+TEST(SecondaryDominantPlannerTest, SectionsAtOrBelowTheTensionCutoffNeverGetOne) {
+  for (uint8_t type = 0; type < kSectionProperties.size(); ++type) {
+    const auto section_type = static_cast<SectionType>(type);
+    const float tension = getSectionProperties(section_type).secondary_tension;
+    if (tension > 0.5f) continue;
+
+    // Every target degree the eligibility rule accepts, so the refusal cannot
+    // be mistaken for an unlucky target.
+    for (int8_t next_degree = 0; next_degree < 7; ++next_degree) {
+      EXPECT_FALSE(checkSecondaryDominant(next_degree, tension).should_insert)
+          << "section type " << static_cast<int>(type) << " has tension " << tension
+          << " and still offered a secondary dominant before degree "
+          << static_cast<int>(next_degree);
+    }
+  }
+}
+
+// The complement: above the cutoff the eligible targets are offered, so the
+// test above is measuring the cutoff and not a rule that refuses everything.
+TEST(SecondaryDominantPlannerTest, SectionsAboveTheTensionCutoffOfferTheEligibleTargets) {
+  const float chorus_tension = getSectionProperties(SectionType::Chorus).secondary_tension;
+  ASSERT_GT(chorus_tension, 0.5f);
+
+  int offered = 0;
+  for (int8_t next_degree = 0; next_degree < 7; ++next_degree) {
+    if (checkSecondaryDominant(next_degree, chorus_tension).should_insert) ++offered;
+  }
+  EXPECT_GT(offered, 0) << "no target is eligible even at the highest tension in the table";
+}
 
 // Verify that secondary dominants are pre-registered in the harmony context
 // before any track generation, so coordinate axis tracks (Motif in RhythmSync)

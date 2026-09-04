@@ -436,8 +436,10 @@ int8_t getSecondaryDominantDegree(int8_t target_degree) {
 SecondaryDominantInfo checkSecondaryDominant(int8_t next_degree, float tension_level) {
   SecondaryDominantInfo info = {false, 0, ChordExtension::None, 0};
 
-  // Don't insert if tension is too low (must be > 0.5)
-  if (tension_level <= 0.5f) {
+  // A hard cutoff, not a weight: a section at or below this gets none at all.
+  // Named so the section table's own comment can point at one number.
+  constexpr float kMinTensionForSecondaryDominant = 0.5f;
+  if (tension_level <= kMinTensionForSecondaryDominant) {
     return info;
   }
 

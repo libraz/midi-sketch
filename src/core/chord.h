@@ -221,7 +221,11 @@ struct SecondaryDominantInfo {
  * exactly them.
  *
  * @param next_degree Next chord degree
- * @param tension_level Emotional tension level 0.0-1.0 (higher = more likely to insert)
+ * @param tension_level Emotional tension of the section, 0.0-1.0. This is a
+ *   threshold and not a weight: at or below 0.5 the answer is always no, and
+ *   above it the caller's own roll decides. A section that wants secondary
+ *   dominants only rarely therefore cannot ask for them at a low tension --
+ *   it has to clear the cutoff and let the roll thin them out.
  * @return SecondaryDominantInfo with insertion recommendation
  */
 SecondaryDominantInfo checkSecondaryDominant(int8_t next_degree, float tension_level);
