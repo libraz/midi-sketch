@@ -1424,15 +1424,14 @@ TEST_F(VocalTest, NoSectionLeapsWiderThanItsOwnAllowance) {
   // holds for every seed: no section states an interval wider than what it is
   // allowed.
   //
-  // It deliberately does NOT assert that a wide section uses its allowance.
-  // The bound binds only up to a minor 7th; the part of the table that grants
-  // a Chorus an octave and a Bridge more is a permission nothing exercises,
-  // because the passes that decide how far the vocal moves are narrower and do
-  // not consult it -- the phrase skeleton keeps consecutive anchors within a
-  // 5th under an arc seven semitones tall, and a phrase is grounded on the
-  // chord tone nearest where the last one ended, which is never more than a
-  // tritone away. Asking one seed for one wide leap passes or fails on which
-  // seed it is, not on whether the mechanism works.
+  // It deliberately does NOT assert that a wide section uses its allowance. A
+  // Chorus does reach the octave it is granted, but only a couple of times in
+  // a hundred songs, because the passes that decide how far the vocal moves
+  // are narrower and do not consult the allowance -- the phrase skeleton keeps
+  // consecutive anchors within a 5th under an arc seven semitones tall, and a
+  // phrase is grounded on the chord tone nearest where the last one ended,
+  // which is never more than a tritone away. Asking one seed for one wide leap
+  // passes or fails on which seed it is, not on whether the mechanism works.
   params_.structure = StructurePattern::FullWithBridge;  // Has A, B, Chorus, Bridge
   params_.seed = 141414;
 

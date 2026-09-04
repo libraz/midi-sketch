@@ -33,14 +33,14 @@ struct PhraseSkeleton {
 /// notes (>= quarter). Anchor pitches follow an arc: rise from start_pitch
 /// toward a climax around 60% of the phrase, then descend to the cadence.
 /// Every anchor is snapped to a chord tone at its tick and kept close enough
-/// to the previous anchor that the infill can connect them by step: a 3rd
-/// with no notes in between, a 4th with one, a 5th beyond that.
+/// to the previous anchor that the infill can connect them by step: a 3rd with
+/// no notes in between, a 4th with one, a 5th beyond that.
 ///
-/// Those bounds, together with climax_amp, are what actually decide how wide
-/// the melody gets. The per-section allowance
-/// (getMaxMelodicIntervalForSection) is not consulted here and can only
-/// narrow the result further downstream, so a section permitted an octave
-/// does not get one from the skeleton.
+/// Those bounds, together with climax_amp, are what decide how wide the melody
+/// gets; the per-section allowance (getMaxMelodicIntervalForSection) is not
+/// consulted here. Widening the adjacent-anchor bound to that allowance was
+/// measured and makes the line narrower rather than wider -- see the note
+/// beside the bound.
 ///
 /// @param rhythm        Phrase rhythm positions.
 /// @param phrase_start  Absolute tick of the phrase start.

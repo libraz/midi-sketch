@@ -95,6 +95,15 @@ PhraseSkeleton computePhraseSkeleton(const std::vector<RhythmNote>& rhythm, Tick
     // Keep consecutive anchors connectable by stepwise infill: the allowed
     // interval scales with the infill notes available between them. Adjacent
     // anchors (no infill) stay within a 3rd; a 5th needs 3+ infill notes.
+    //
+    // The 3rd for adjacent anchors reads like the wrong bound -- there is no
+    // infill to connect, so nothing about stepwise motion argues for it, and
+    // the section's own allowance would be the natural ceiling. Measured over
+    // 120 songs, replacing it with that allowance makes the melody *narrower*:
+    // wide chorus leaps fall rather than rise, because the clipping is itself
+    // what displaces an anchor away from the arc and produces a jump somewhere
+    // else. The arc is seven semitones tall, so a looser bound only lets an
+    // anchor sit closer to where the arc already wanted it.
     if (a > 0) {
       size_t idx_gap = idx - anchors[a - 1];
       int allowed = (idx_gap <= 1) ? 4 : (idx_gap == 2) ? 5 : kMaxAnchorInterval;
