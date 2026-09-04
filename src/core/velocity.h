@@ -666,6 +666,11 @@ float getPhraseNoteVelocityCurve(int note_index, int total_notes, ContourType co
  * Higher resolution_need means melody should favor chord tones over
  * non-chord tones for more stable, resolved sound.
  *
+ * The curve is planned after the arrangement is fixed, which is after the
+ * melody has chosen its pitches, so nothing in the generation path calls this.
+ * It states the mapping the curve's resolution_need was designed for; wiring it
+ * up means moving the decision to a point where notes are still being chosen.
+ *
  * @param resolution_need Resolution need from EmotionCurve (0.0-1.0)
  * @return Chord tone probability boost (0.0-0.3)
  */

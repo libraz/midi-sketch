@@ -33,10 +33,19 @@ namespace midisketch {
  * during generation, before the curve is planned.
  */
 struct SectionEmotion {
-  float tension;          ///< Tension level 0.0-1.0 (0=relaxed, 1=maximum tension)
-  float energy;           ///< Energy level 0.0-1.0 (0=calm, 1=explosive)
-  float resolution_need;  ///< Need for resolution 0.0-1.0 (0=stable, 1=desperate for resolution)
-  int8_t pitch_tendency;  ///< Pitch direction tendency -3..+3 (-=down, +=up)
+  float tension;  ///< Tension level 0.0-1.0 (0=relaxed, 1=maximum tension)
+  float energy;   ///< Energy level 0.0-1.0 (0=calm, 1=explosive)
+  /// @brief Need for resolution 0.0-1.0 (0=stable, 1=desperate for resolution).
+  ///
+  /// Carried by the curve's own rules and not read by any track.
+  /// getChordTonePreferenceBoost() converts it into a chord-tone bias, but
+  /// nothing in the generation path calls that function.
+  float resolution_need;
+  /// @brief Pitch direction tendency -3..+3 (-=down, +=up), not read by any track.
+  ///
+  /// The run-up into the next section is driven by SectionTransition, which
+  /// carries a field of the same name that the vocal transition pass does read.
+  int8_t pitch_tendency;
   /// @brief Planned density weight 0.5-1.5, carried by the curve's own rules.
   ///
   /// Section note counts are set by Section::density_percent during generation.
@@ -47,30 +56,39 @@ struct SectionEmotion {
 
 /**
  * @brief Hints for handling section transitions.
+ *
+ * Two of these reach the song: use_fill marks the next section for a drum fill
+ * while the arrangement is still being built, and velocity_ramp shapes the last
+ * two beats of the section during post-processing. The rest are intermediate
+ * values of the curve's own rules -- crescendo is what velocity_ramp is derived
+ * from, and the two pitch hints have no reader.
  */
 struct TransitionHint {
-  bool crescendo;         ///< Should crescendo into next section
+  bool crescendo;         ///< Energy is rising into the next section; sets velocity_ramp
   bool use_fill;          ///< Should add drum fill at boundary
-  int8_t approach_pitch;  ///< Pitch approach direction (-1=down, 0=any, +1=up)
+  int8_t approach_pitch;  ///< Pitch approach direction (-1=down, 0=any, +1=up), not read
   float velocity_ramp;    ///< Velocity change rate (>1 = increase, <1 = decrease)
-  bool use_leading_tone;  ///< Insert leading tone before next section
+  bool use_leading_tone;  ///< Insert leading tone before next section, not read
 };
 
 /**
  * @brief Plans and tracks the emotional arc of a song.
+ *
+ * The curve is planned once the arrangement is fixed, so it cannot guide
+ * generation: every note it shapes already exists by the time it is read.
  *
  * Usage:
  * @code
  * EmotionCurve curve;
  * curve.plan(sections, Mood::ModernPop);
  *
- * // During generation:
+ * // During post-processing, to shape the dynamics of existing notes:
  * const auto& emotion = curve.getEmotion(section_index);
- * // Use emotion.tension, emotion.energy, etc. to guide generation
+ * // emotion.energy sets the level, emotion.tension the ceiling above it
  *
  * // At section boundaries:
  * auto hint = curve.getTransitionHint(from_index);
- * // Use hint to guide transition handling
+ * // hint.use_fill and hint.velocity_ramp are the two the song reads
  * @endcode
  */
 class EmotionCurve {
