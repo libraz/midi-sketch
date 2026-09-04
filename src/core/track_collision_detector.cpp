@@ -14,6 +14,7 @@
 
 #include "core/chord.h"
 #include "core/chord_progression_tracker.h"
+#include "core/chord_utils.h"
 #include "core/midi_track.h"
 #include "core/pitch_utils.h"
 
@@ -57,6 +58,26 @@ bool isRegisteredRootMajorSeventhContext(uint8_t a, uint8_t b, int actual_semito
 
   ChordExtension extension = chord_tracker->getChordExtensionAt(tick);
   return extension == ChordExtension::Maj7 || extension == ChordExtension::Maj9;
+}
+
+// A major second between two voices that both belong to the chord being sounded
+// is that chord, not a clash: it is the distance a seventh sits from the root
+// above it, and a ninth from the root below. Asked between the voices of a
+// single chord this is isVoicingCluster()'s question and it answers the same
+// way; this is the cross-track half of the same rule, and it shares the
+// predicate so the two halves cannot drift apart.
+//
+// Only the major second is asked about. The minor second and the minor ninth
+// are harsh at any spacing and between any pair of notes, and the major seventh
+// is already settled at each of the callers by rules that read the bass
+// register and the registered extension -- a blanket exemption here would
+// quietly undo them.
+bool isSoundingChordItself(int actual_semitones, uint8_t a, uint8_t b,
+                           const ChordProgressionTracker* chord_tracker, Tick tick) {
+  if (actual_semitones != 2 || chord_tracker == nullptr) {
+    return false;
+  }
+  return bothVoicesAreChordTones(a, b, chord_tracker->getChordTonesAt(tick));
 }
 
 // Debug snapshots do not carry a chord timeline, so use the same conservative
@@ -227,6 +248,11 @@ bool TrackCollisionDetector::isConsonantWithOtherTracks(
         }
       }
 
+      if (isSoundingChordItself(actual_semitones, pitch, note.pitch, chord_tracker,
+                                overlap_start)) {
+        continue;
+      }
+
       if (isDissonantActualInterval(actual_semitones, chord_degree)) {
         return false;
       }
@@ -302,6 +328,11 @@ CollisionInfo TrackCollisionDetector::getCollisionInfo(
         }
       }
       if (pc_interval == 6 && isDominantFunctionContext(chord_degree, chord_tracker, start)) {
+        continue;
+      }
+
+      if (isSoundingChordItself(actual_semitones, pitch, note.pitch, chord_tracker,
+                                overlap_start)) {
         continue;
       }
 
@@ -591,6 +622,9 @@ Tick TrackCollisionDetector::getMaxSafeEnd(Tick note_start, uint8_t pitch, Track
       if (note.track == TrackRole::Bass) bass_side_pitch = note.pitch;
       if (exclude == TrackRole::Bass) bass_side_pitch = std::min(bass_side_pitch, pitch);
       low_bass_major_seventh = bass_side_pitch < 48;
+    }
+    if (isSoundingChordItself(actual_semitones, pitch, note.pitch, chord_tracker, overlap_start)) {
+      continue;
     }
     bool is_dissonant =
         low_bass_major_seventh || isDissonantActualInterval(actual_semitones, chord_degree);

@@ -380,5 +380,67 @@ TEST(ChordUtilsBorrowedTest, GuideToneBorrowedRootCorrectness) {
   EXPECT_NE(std::find(g_biii.begin(), g_biii.end(), 7), g_biii.end()) << "bIII 3rd should be G (7)";
 }
 
+// ============================================================================
+// bothVoicesAreChordTones
+// ============================================================================
+
+TEST(ChordUtilsVoicingTest, BothVoicesInTheChord) {
+  // Cmaj9: the ninth and the root are both tones of the chord being sounded.
+  const ChordTones cmaj9{{0, 4, 7, 11, 2}, 5};
+  EXPECT_TRUE(bothVoicesAreChordTones(72, 74, cmaj9)) << "C5 and D5 are the root and the ninth";
+  EXPECT_TRUE(bothVoicesAreChordTones(74, 72, cmaj9))
+      << "the answer cannot depend on which voice is named first";
+}
+
+TEST(ChordUtilsVoicingTest, OneVoiceOutsideTheChord) {
+  // C7 has no D, so the same pair the ninth chord owns is one tone short here.
+  const ChordTones c7{{0, 4, 7, 10, -1}, 4};
+  EXPECT_FALSE(bothVoicesAreChordTones(72, 74, c7));
+  EXPECT_FALSE(bothVoicesAreChordTones(74, 72, c7));
+}
+
+TEST(ChordUtilsVoicingTest, NeitherVoiceInTheChord) {
+  const ChordTones c_major{{0, 4, 7, -1, -1}, 3};
+  EXPECT_FALSE(bothVoicesAreChordTones(73, 75, c_major)) << "C#5 and D#5 are outside C major";
+}
+
+TEST(ChordUtilsVoicingTest, ComparesPitchClassesNotPitches) {
+  const ChordTones c_major{{0, 4, 7, -1, -1}, 3};
+  // Octave displacement does not take a voice out of the chord.
+  EXPECT_TRUE(bothVoicesAreChordTones(36, 79, c_major)) << "C2 and G5 are the root and the fifth";
+  EXPECT_TRUE(bothVoicesAreChordTones(60, 60, c_major)) << "a unison on a chord tone qualifies";
+  EXPECT_FALSE(bothVoicesAreChordTones(36, 74, c_major)) << "D is a chord tone in no octave";
+}
+
+TEST(ChordUtilsVoicingTest, UnusedChordToneSlotsMatchNothing) {
+  // A -1 slot inside the counted range must be stepped over rather than
+  // compared: it is the absence of a tone, not a tone every pitch matches.
+  const ChordTones with_gap{{0, -1, 7, -1, -1}, 3};
+  EXPECT_TRUE(bothVoicesAreChordTones(60, 67, with_gap)) << "the scan continues past the gap";
+  EXPECT_FALSE(bothVoicesAreChordTones(60, 64, with_gap)) << "E is not among the stated tones";
+
+  const ChordTones all_unused{{-1, -1, -1, -1, -1}, 5};
+  EXPECT_FALSE(bothVoicesAreChordTones(60, 62, all_unused));
+
+  const ChordTones none{{-1, -1, -1, -1, -1}, 0};
+  EXPECT_FALSE(bothVoicesAreChordTones(60, 62, none)) << "a chord with no tones excuses nothing";
+}
+
+TEST(ChordUtilsVoicingTest, VoicingClusterAnswersOnTheSamePredicate) {
+  const ChordTones cmaj9{{0, 4, 7, 11, 2}, 5};
+
+  ASSERT_TRUE(bothVoicesAreChordTones(72, 74, cmaj9));
+  EXPECT_FALSE(isVoicingCluster(72, 74, cmaj9))
+      << "a whole step between two tones of the chord is the chord";
+
+  ASSERT_TRUE(bothVoicesAreChordTones(71, 72, cmaj9));
+  EXPECT_TRUE(isVoicingCluster(71, 72, cmaj9))
+      << "a half step stays a cluster however the chord is spelled";
+
+  const ChordTones c7{{0, 4, 7, 10, -1}, 4};
+  ASSERT_FALSE(bothVoicesAreChordTones(72, 74, c7));
+  EXPECT_TRUE(isVoicingCluster(72, 74, c7)) << "the same whole step over C7 has no ninth to be";
+}
+
 }  // namespace
 }  // namespace midisketch

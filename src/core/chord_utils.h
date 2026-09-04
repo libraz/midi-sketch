@@ -249,6 +249,21 @@ bool isDissonantVoicingGap(int semitones);
 /// @return true when the pair is a cluster and one of the two has to give way
 bool isVoicingCluster(uint8_t pitch_a, uint8_t pitch_b, const ChordTones& tones);
 
+/// @brief Whether both voices belong to the chord the timeline states.
+///
+/// This answers only that question; which intervals it then excuses is the
+/// caller's to decide, and they do not all decide the same way. It is the
+/// condition under which a major second is a seventh sitting next to its root
+/// rather than a clash, and it is asked both between the voices of one chord
+/// and between a chord voice and whatever else is sounding, which is why it is
+/// named here instead of being written out at each of those screens.
+///
+/// @param pitch_a One voice
+/// @param pitch_b The other voice, sounding at the same time
+/// @param tones Tones of the chord the timeline states there
+/// @return true when both pitch classes appear among the chord's tones
+bool bothVoicesAreChordTones(uint8_t pitch_a, uint8_t pitch_b, const ChordTones& tones);
+
 class IChordLookup;
 
 /// @brief Pitch for one voice of an onset that clears the voices beside it.

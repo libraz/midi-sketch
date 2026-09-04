@@ -372,6 +372,17 @@ bool isDissonantVoicingGap(int semitones) {
   return gap == 1 || gap == 2 || gap == 13;
 }
 
+bool bothVoicesAreChordTones(uint8_t pitch_a, uint8_t pitch_b, const ChordTones& tones) {
+  bool a_is_chord_tone = false;
+  bool b_is_chord_tone = false;
+  for (int pc : tones) {
+    if (pc < 0) continue;
+    if (pitch_a % 12 == pc % 12) a_is_chord_tone = true;
+    if (pitch_b % 12 == pc % 12) b_is_chord_tone = true;
+  }
+  return a_is_chord_tone && b_is_chord_tone;
+}
+
 bool isVoicingCluster(uint8_t pitch_a, uint8_t pitch_b, const ChordTones& tones) {
   const int gap = static_cast<int>(pitch_a) - static_cast<int>(pitch_b);
   const int abs_gap = std::abs(gap);
@@ -382,14 +393,7 @@ bool isVoicingCluster(uint8_t pitch_a, uint8_t pitch_b, const ChordTones& tones)
   if (!isDissonantVoicingGap(gap) && !conditional) return false;
   if (!conditional) return true;
 
-  bool a_is_chord_tone = false;
-  bool b_is_chord_tone = false;
-  for (int pc : tones) {
-    if (pc < 0) continue;
-    if (pitch_a % 12 == pc % 12) a_is_chord_tone = true;
-    if (pitch_b % 12 == pc % 12) b_is_chord_tone = true;
-  }
-  return !(a_is_chord_tone && b_is_chord_tone);
+  return !bothVoicesAreChordTones(pitch_a, pitch_b, tones);
 }
 
 uint8_t clearOfOnsetVoices(const IChordLookup& harmony, uint8_t desired, Tick tick,

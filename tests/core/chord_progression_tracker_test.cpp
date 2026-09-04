@@ -242,6 +242,76 @@ TEST_F(ChordProgressionTrackerTest, CollisionDetectorAllowsOnlyRegisteredWideRoo
   EXPECT_FALSE(info.has_collision) << "Diagnostic collision reporting must match generation";
 }
 
+// The cross-track half of the rule isVoicingCluster() states between the voices
+// of one chord: two voices a whole step apart that both belong to the sounding
+// chord are that chord. Bar 0 is I, so registering Maj9 there states Cmaj9
+// (C E G B D) and gives the timeline a chord that owns both a whole step
+// (D over C) and a half step (B under C) between its own tones.
+TEST_F(ChordProgressionTrackerTest, CollisionDetectorAllowsAWholeStepInsideTheSoundingChord) {
+  tracker_.registerChordExtension(0, TICKS_PER_BAR, ChordExtension::Maj9);
+  const ChordTones tones = tracker_.getChordTonesAt(0);
+  ASSERT_EQ(std::vector<int>(tones.begin(), tones.end()), (std::vector<int>{0, 4, 7, 11, 2}))
+      << "Cmaj9 tones";
+
+  TrackCollisionDetector detector;
+  detector.registerNote(0, TICKS_PER_BAR, 72, TrackRole::Chord);  // C5, the root
+
+  EXPECT_TRUE(
+      detector.isConsonantWithOtherTracks(74, 0, TICKS_PER_BAR, TrackRole::Motif, &tracker_))
+      << "D5 over C5 is the ninth of the chord the timeline states, not a clash";
+  CollisionInfo info = detector.getCollisionInfo(74, 0, TICKS_PER_BAR, TrackRole::Motif, &tracker_);
+  EXPECT_FALSE(info.has_collision) << "Diagnostic reporting must reach the same verdict";
+
+  EXPECT_FALSE(
+      detector.isConsonantWithOtherTracks(71, 0, TICKS_PER_BAR, TrackRole::Motif, &tracker_))
+      << "B4 under C5 is a half step and stays a clash inside its own chord";
+  EXPECT_TRUE(
+      detector.getCollisionInfo(71, 0, TICKS_PER_BAR, TrackRole::Motif, &tracker_).has_collision);
+
+  EXPECT_FALSE(
+      detector.isConsonantWithOtherTracks(59, 0, TICKS_PER_BAR, TrackRole::Motif, &tracker_))
+      << "B3 under C5 is a minor ninth, which the chord never excuses";
+
+  EXPECT_FALSE(
+      detector.isConsonantWithOtherTracks(83, 0, TICKS_PER_BAR, TrackRole::Motif, &tracker_))
+      << "B5 over C5 is a major seventh, which this rule deliberately leaves alone";
+}
+
+TEST_F(ChordProgressionTrackerTest, CollisionDetectorKeepsWholeStepsAgainstNonChordTones) {
+  tracker_.registerChordExtension(0, TICKS_PER_BAR, ChordExtension::Maj9);
+
+  TrackCollisionDetector detector;
+  detector.registerNote(0, TICKS_PER_BAR, 72, TrackRole::Chord);  // C5, the root
+
+  EXPECT_FALSE(
+      detector.isConsonantWithOtherTracks(70, 0, TICKS_PER_BAR, TrackRole::Motif, &tracker_))
+      << "Cmaj9 has no Bb, so Bb4 under C5 is one voice short of being the chord";
+  CollisionInfo info = detector.getCollisionInfo(70, 0, TICKS_PER_BAR, TrackRole::Motif, &tracker_);
+  EXPECT_TRUE(info.has_collision);
+  EXPECT_EQ(info.interval_semitones, 2);
+
+  // The same pair over the plain triad the progression states: without the
+  // registered ninth, D is no longer a tone of the chord either.
+  ChordProgressionTracker triad;
+  triad.initialize(arrangement_, progression_, Mood::StraightPop);
+  EXPECT_FALSE(detector.isConsonantWithOtherTracks(74, 0, TICKS_PER_BAR, TrackRole::Motif, &triad))
+      << "A plain C triad does not authorize its own added ninth";
+}
+
+TEST_F(ChordProgressionTrackerTest, MaxSafeEndKeepsAWholeStepInsideTheSoundingChord) {
+  tracker_.registerChordExtension(0, TICKS_PER_BAR, ChordExtension::Maj9);
+
+  TrackCollisionDetector detector;
+  const Tick chord_entry = TICKS_PER_BAR / 2;
+  detector.registerNote(chord_entry, TICKS_PER_BAR / 2, 72, TrackRole::Chord);  // C5
+
+  EXPECT_EQ(detector.getMaxSafeEnd(0, 74, TrackRole::Motif, TICKS_PER_BAR, &tracker_),
+            TICKS_PER_BAR)
+      << "A ninth held over its own root must not be cut back to the chord's entry";
+  EXPECT_EQ(detector.getMaxSafeEnd(0, 70, TrackRole::Motif, TICKS_PER_BAR, &tracker_), chord_entry)
+      << "A whole step against a tone the chord does not contain still shortens the note";
+}
+
 // ============================================================================
 // getNextChordChangeTick
 // ============================================================================

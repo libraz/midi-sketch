@@ -7,7 +7,10 @@
 
 #include <gtest/gtest.h>
 
+#include <string>
+
 #include "core/chord_extension_planner.h"
+#include "core/chord_utils.h"
 #include "core/preset_data.h"
 #include "core/structure.h"
 #include "core/track_collision_detector.h"
@@ -774,6 +777,13 @@ TEST(CollisionDetectorTest, DetectsMotifChordClash) {
 }
 
 // Test to check how many Chord notes are registered before Motif generation
+//
+// Whether a close interval between the two is a clash is isVoicingCluster()'s
+// to answer, not this fixture's. Counting every major second made the test
+// demand that the riff avoid the note that spells the chord under it: an added
+// ninth is a major second from the root by construction, so a motif landing on
+// the root of an add9 was reported as a collision-detection failure while the
+// two notes were sounding the chord the timeline asked for.
 TEST(CollisionDetectorTest, ChordRegistrationBeforeMotif) {
   // This test verifies that Chord track gets registered before Motif generation
   // by checking the HarmonyContext state
@@ -790,6 +800,7 @@ TEST(CollisionDetectorTest, ChordRegistrationBeforeMotif) {
   const auto& motif_notes = song.motif().notes();
 
   int clash_count = 0;
+  std::string detail;
   for (const auto& motif_note : motif_notes) {
     Tick motif_start = motif_note.start_tick;
     Tick motif_end = motif_start + motif_note.duration;
@@ -802,18 +813,26 @@ TEST(CollisionDetectorTest, ChordRegistrationBeforeMotif) {
       if (motif_start < chord_end && chord_start < motif_end) {
         int interval =
             std::abs(static_cast<int>(motif_note.note) - static_cast<int>(chord_note.note));
-        // Minor 2nd (1) or Major 2nd (2) in close range is dissonant
-        if (interval == 1 || interval == 2) {
-          clash_count++;
-        }
+        // Minor 2nd (1) or Major 2nd (2) in close range is dissonant, unless
+        // the chord sounding there is made of both of them.
+        if (interval != 1 && interval != 2) continue;
+        const Tick ov = std::max(motif_start, chord_start);
+        const ChordTones tones = sketch.getHarmonyContext().getChordTonesAt(ov);
+        if (!isVoicingCluster(motif_note.note, chord_note.note, tones)) continue;
+
+        clash_count++;
+        detail += "\n  tick " + std::to_string(ov) + ": motif " + std::to_string(motif_note.note) +
+                  " vs chord " + std::to_string(chord_note.note) + " = " +
+                  std::to_string(interval) + " semitones over degree " +
+                  std::to_string(sketch.getHarmonyContext().getChordDegreeAt(ov));
       }
     }
   }
 
   // We expect no close-interval clashes if collision detection is working
-  // Note: This test may fail due to CLI/test discrepancy, which is being investigated
   EXPECT_EQ(clash_count, 0) << "Found " << clash_count
-                            << " minor/major 2nd clashes - collision detection may not be working";
+                            << " minor/major 2nd clashes - collision detection may not be working"
+                            << detail;
 }
 
 TEST(GeneratorTest, Blueprint8MotifChordNoClash) {
