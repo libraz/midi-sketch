@@ -131,6 +131,69 @@ TEST(BassDensityAdjustmentTest, PreservesHintedSyncopatedTresilloAndSlapPopOffbe
   }
 }
 
+// A syncopated pattern reached by any route -- a genre table, a riff policy, a
+// paradigm adjustment -- keeps its off-beats. Only a blueprint sets a hint, so
+// a rule that reads the hint exempts none of the others.
+TEST(BassDensityAdjustmentTest, PreservesOffbeatsOfAnUnhintedGeneratedPattern) {
+  MidiTrack track;
+  track.addNote(NoteEventBuilder::create(0, TICK_EIGHTH, 48, 100));
+  track.addNote(NoteEventBuilder::create(TICK_EIGHTH, TICK_EIGHTH, 55, 80));
+
+  Section section;
+  section.type = SectionType::A;
+  section.start_tick = 0;
+  section.bars = 1;
+  section.density_percent = 60;
+  ASSERT_EQ(section.bass_style_hint, 0);
+
+  std::vector<BassSectionPattern> section_patterns = {{0, TICKS_PER_BAR, BassPattern::Tresillo}};
+  applyDensityAdjustment(track, section, section_patterns);
+
+  ASSERT_EQ(track.notes().size(), 2u);
+  EXPECT_EQ(track.notes()[1].start_tick, TICK_EIGHTH);
+}
+
+// The section played what the record says, whatever the hint asked for.
+TEST(BassDensityAdjustmentTest, GeneratedPatternOverridesTheStyleHint) {
+  MidiTrack track;
+  track.addNote(NoteEventBuilder::create(0, TICK_EIGHTH, 48, 100));
+  track.addNote(NoteEventBuilder::create(TICK_EIGHTH, TICK_EIGHTH, 55, 80));
+
+  Section section;
+  section.type = SectionType::A;
+  section.start_tick = 0;
+  section.bars = 1;
+  section.density_percent = 60;
+  section.bass_style_hint = static_cast<uint8_t>(BassPattern::Syncopated) + 1;
+
+  std::vector<BassSectionPattern> section_patterns = {{0, TICKS_PER_BAR, BassPattern::RootFifth}};
+  applyDensityAdjustment(track, section, section_patterns);
+
+  ASSERT_EQ(track.notes().size(), 1u);
+  EXPECT_EQ(track.notes()[0].start_tick, 0);
+}
+
+// A record for a different section says nothing about this one.
+TEST(BassDensityAdjustmentTest, ReadsTheRecordCoveringThisSection) {
+  MidiTrack track;
+  track.addNote(NoteEventBuilder::create(TICKS_PER_BAR, TICK_EIGHTH, 48, 100));
+  track.addNote(NoteEventBuilder::create(TICKS_PER_BAR + TICK_EIGHTH, TICK_EIGHTH, 55, 80));
+
+  Section section;
+  section.type = SectionType::A;
+  section.start_tick = TICKS_PER_BAR;
+  section.bars = 1;
+  section.density_percent = 60;
+
+  std::vector<BassSectionPattern> section_patterns = {
+      {0, TICKS_PER_BAR, BassPattern::Tresillo},
+      {TICKS_PER_BAR, 2 * TICKS_PER_BAR, BassPattern::Driving}};
+  applyDensityAdjustment(track, section, section_patterns);
+
+  ASSERT_EQ(track.notes().size(), 1u);
+  EXPECT_EQ(track.notes()[0].start_tick, TICKS_PER_BAR);
+}
+
 TEST(BassDensityAdjustmentTest, LowDensityStillThinsUnhintedOffbeats) {
   MidiTrack track;
   track.addNote(NoteEventBuilder::create(0, TICK_EIGHTH, 48, 100));

@@ -179,13 +179,36 @@ void generateBassTrack(MidiTrack& track, const Song& song, const GeneratorParams
 void applyBassArticulation(MidiTrack& track, BassPattern pattern, Mood mood,
                            const IHarmonyContext* harmony = nullptr, bool legato_eighths = false);
 
+/// @brief The pattern a section actually generated, recorded for later passes.
+///
+/// A pattern comes from a genre table, a riff policy, a paradigm adjustment or
+/// a blueprint hint, and only the generator knows which. Passes that run after
+/// the notes exist read the record rather than re-deriving the choice.
+struct BassSectionPattern {
+  Tick start_tick;
+  Tick end_tick;
+  BassPattern pattern;
+};
+
 /// @brief Adjust bass density based on section density_percent.
 ///
 /// - < 70%: simplify 8th patterns to quarter notes (thin out)
 /// - > 90%: more active patterns (handled in generation)
 ///
+/// Patterns whose identity is their off-beat placement (Syncopated, Tresillo,
+/// SlapPop) are exempt from the thinning: flattening one to quarter notes makes
+/// it a different pattern rather than a sparser one. The record covering the
+/// section decides that; `Section::bass_style_hint` is read only where no
+/// record exists, since a hint states what was asked for and not what the
+/// section played.
+///
 /// @param track Bass track to modify (in-place)
 /// @param section Section with density_percent field
+/// @param section_patterns Patterns the sections generated (may be empty)
+void applyDensityAdjustment(MidiTrack& track, const Section& section,
+                            const std::vector<BassSectionPattern>& section_patterns);
+
+/// @brief Density adjustment with no generation record available.
 void applyDensityAdjustment(MidiTrack& track, const Section& section);
 
 // ============================================================================

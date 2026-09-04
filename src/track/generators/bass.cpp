@@ -41,10 +41,6 @@
 
 namespace midisketch {
 
-// Forward declaration for density adjustment with collision checking
-void applyDensityAdjustmentWithHarmony(MidiTrack& track, const Section& section,
-                                       const IHarmonyContext* harmony);
-
 /// @brief Motion adjustment against an explicit chord-tone set.
 ///
 /// Which pitches count as chord tones comes from the caller, so a bar carrying
@@ -1881,12 +1877,7 @@ struct BassTrackContext {
   const std::vector<Section>& sections;
   BassRiffCache riff_cache;
 
-  struct SectionPattern {
-    Tick start_tick;
-    Tick end_tick;
-    BassPattern pattern;
-  };
-  std::vector<SectionPattern> section_patterns;
+  std::vector<BassSectionPattern> section_patterns;
 
   BassTrackContext(MidiTrack& track, const Song& song, const GeneratorParams& params,
                    std::mt19937& rng, IHarmonyContext& harmony, const KickPatternCache* kick_cache,
@@ -1903,9 +1894,19 @@ struct BassTrackContext {
         sections(song.arrangement().sections()) {}
 };
 
-void applyBassArticulationBySection(
-    MidiTrack& track, const std::vector<BassTrackContext::SectionPattern>& section_patterns,
-    BassPattern fallback_pattern, Mood mood, const IHarmonyContext* harmony, bool legato_eighths);
+void applyBassArticulationBySection(MidiTrack& track,
+                                    const std::vector<BassSectionPattern>& section_patterns,
+                                    BassPattern fallback_pattern, Mood mood,
+                                    const IHarmonyContext* harmony, bool legato_eighths);
+
+/// @brief Density adjustment with collision checking.
+///
+/// @param section_patterns Patterns the sections actually generated. The
+///        low-density thinning exemption is decided from the record covering
+///        this section; an empty list falls back to the section's style hint.
+void applyDensityAdjustmentWithHarmony(MidiTrack& track, const Section& section,
+                                       const std::vector<BassSectionPattern>& section_patterns,
+                                       const IHarmonyContext* harmony);
 
 // Check if a section should be skipped for bass generation
 bool shouldSkipSection(const Section& section, const GeneratorParams& params) {
@@ -2229,7 +2230,7 @@ void generateBassTrack(MidiTrack& track, const Song& song, const GeneratorParams
   applyPlayabilityPostProcess(ctx);
   applyArticulationPostProcess(ctx);
   for (const auto& section : ctx.sections) {
-    applyDensityAdjustmentWithHarmony(track, section, &harmony);
+    applyDensityAdjustmentWithHarmony(track, section, ctx.section_patterns, &harmony);
   }
   applyKickSyncPostProcess(ctx);
 }
@@ -2602,9 +2603,8 @@ BassArticulation determineArticulation(BassPattern pattern, Mood mood, Tick note
   return BassArticulation::Normal;
 }
 
-BassPattern findSectionPattern(
-    Tick tick, const std::vector<BassTrackContext::SectionPattern>& section_patterns,
-    BassPattern fallback_pattern) {
+BassPattern findSectionPattern(Tick tick, const std::vector<BassSectionPattern>& section_patterns,
+                               BassPattern fallback_pattern) {
   for (const auto& section_pattern : section_patterns) {
     if (tick >= section_pattern.start_tick && tick < section_pattern.end_tick) {
       return section_pattern.pattern;
@@ -2702,9 +2702,10 @@ void applyBassArticulation(MidiTrack& track, BassPattern pattern, Mood mood,
       track, [pattern](Tick) { return pattern; }, mood, harmony, legato_eighths);
 }
 
-void applyBassArticulationBySection(
-    MidiTrack& track, const std::vector<BassTrackContext::SectionPattern>& section_patterns,
-    BassPattern fallback_pattern, Mood mood, const IHarmonyContext* harmony, bool legato_eighths) {
+void applyBassArticulationBySection(MidiTrack& track,
+                                    const std::vector<BassSectionPattern>& section_patterns,
+                                    BassPattern fallback_pattern, Mood mood,
+                                    const IHarmonyContext* harmony, bool legato_eighths) {
   applyBassArticulationResolved(
       track,
       [&section_patterns, fallback_pattern](Tick tick) {
@@ -2720,7 +2721,38 @@ void applyBassArticulationBySection(
 // - < 70%: simplify 8th patterns to quarter notes (thin out)
 // - > 90%: increase approach note frequency
 
+/// @brief Patterns whose identity is the off-beat placement itself.
+///
+/// Thinning one of these to quarter-note positions does not make it sparser,
+/// it makes it a different pattern, so low-density sections leave them alone.
+bool isOffBeatBassPattern(BassPattern pattern) {
+  return pattern == BassPattern::Syncopated || pattern == BassPattern::Tresillo ||
+         pattern == BassPattern::SlapPop;
+}
+
+/// @brief Whether low-density thinning skips this section.
+///
+/// The pattern the section actually generated decides this, not the hint that
+/// asked for one: a mood-derived Tresillo -- LatinPop selects it from its own
+/// genre table with no hint set anywhere -- is as off-beat as a hinted one, and
+/// a section that fell to low density through a modifier is exactly where the
+/// thinning would flatten it. The hint is read only when no record covers the
+/// section, which is the standalone entry point below.
+bool isExemptFromLowDensityThinning(const Section& section,
+                                    const std::vector<BassSectionPattern>& section_patterns) {
+  for (const auto& record : section_patterns) {
+    if (section.start_tick >= record.start_tick && section.start_tick < record.end_tick) {
+      return isOffBeatBassPattern(record.pattern);
+    }
+  }
+  if (section.bass_style_hint > 0) {
+    return isOffBeatBassPattern(static_cast<BassPattern>(section.bass_style_hint - 1));
+  }
+  return false;
+}
+
 void applyDensityAdjustmentWithHarmony(MidiTrack& track, const Section& section,
+                                       const std::vector<BassSectionPattern>& section_patterns,
                                        const IHarmonyContext* harmony) {
   // Apply SectionModifier to density
   uint8_t effective_density = section.getModifiedDensity(section.density_percent);
@@ -2730,12 +2762,8 @@ void applyDensityAdjustmentWithHarmony(MidiTrack& track, const Section& section,
     return;
   }
 
-  if (effective_density < 70 && section.bass_style_hint > 0) {
-    BassPattern hinted_pattern = static_cast<BassPattern>(section.bass_style_hint - 1);
-    if (hinted_pattern == BassPattern::Syncopated || hinted_pattern == BassPattern::Tresillo ||
-        hinted_pattern == BassPattern::SlapPop) {
-      return;
-    }
+  if (effective_density < 70 && isExemptFromLowDensityThinning(section, section_patterns)) {
+    return;
   }
 
   auto& notes = track.notes();
@@ -2793,9 +2821,15 @@ void applyDensityAdjustmentWithHarmony(MidiTrack& track, const Section& section,
   // Note: density > 90% adjustment (more approach notes) is handled in pattern generation
 }
 
-// Legacy function for backward compatibility
+void applyDensityAdjustment(MidiTrack& track, const Section& section,
+                            const std::vector<BassSectionPattern>& section_patterns) {
+  applyDensityAdjustmentWithHarmony(track, section, section_patterns, nullptr);
+}
+
 void applyDensityAdjustment(MidiTrack& track, const Section& section) {
-  applyDensityAdjustmentWithHarmony(track, section, nullptr);
+  // No generation record to read, so the section's own style hint states the
+  // pattern.
+  applyDensityAdjustment(track, section, {});
 }
 
 // ============================================================================
