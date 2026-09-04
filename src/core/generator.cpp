@@ -1808,10 +1808,38 @@ void trimClashingNoteTails(Song& song, const IHarmonyContext& harmony) {
   // 2-octave separation, so the tail trim must use exactly the same rule.
   // (The previous narrower rule let micro tail overlaps through: a laid-back
   // bass G3 spilling 42 ticks into a motif A3 = M2 the analyzer counts.)
-  auto isAlwaysDissonant = [&harmony](int semitones, uint8_t lower_pitch, Tick at) {
-    (void)lower_pitch;
-    if (semitones > 24) return false;  // Wide separation: analyzer ignores
-    return isDissonantActualInterval(semitones, harmony.getChordDegreeAt(at));
+  auto isAlwaysDissonant = [&harmony](int semitones, uint8_t pitch_a, TrackRole role_a,
+                                      uint8_t pitch_b, TrackRole role_b, Tick at) {
+    const int8_t degree = harmony.getChordDegreeAt(at);
+    if (semitones <= 24) {
+      return isDissonantActualInterval(semitones, degree);
+    }
+    // Past two octaves the analyzer keeps exactly one rule: a major seventh
+    // over a bass note below C3 stays audible through the low register's
+    // overtones. Stopping at 24 here left that clash reported by the gate with
+    // nothing able to remove it.
+    if (semitones % 12 != 11) return false;
+    const bool involves_bass = role_a == TrackRole::Bass || role_b == TrackRole::Bass;
+    if (!involves_bass) return false;
+    const uint8_t bass_pitch = (role_a == TrackRole::Bass) ? pitch_a : pitch_b;
+    if (bass_pitch >= 48) return false;
+    // A tonic or subdominant major-seventh chord the timeline actually asked
+    // for is the chord itself, not a clash, and the analyzer exempts it.
+    if (semitones >= 23) {
+      const ChordExtension extension = harmony.getChordExtensionAt(at);
+      if (extension == ChordExtension::Maj7 || extension == ChordExtension::Maj9) {
+        const int normalized = ((degree % 7) + 7) % 7;
+        if (normalized == 0 || normalized == 3) {
+          const int root_pc = ((degreeToSemitone(degree) % 12) + 12) % 12;
+          const int seventh_pc = (root_pc + 11) % 12;
+          if ((pitch_a % 12 == root_pc && pitch_b % 12 == seventh_pc) ||
+              (pitch_b % 12 == root_pc && pitch_a % 12 == seventh_pc)) {
+            return false;
+          }
+        }
+      }
+    }
+    return true;
   };
 
   for (const auto& [earlier_track, earlier_role] : tracks) {
@@ -1827,8 +1855,10 @@ void trimClashingNoteTails(Song& song, const IHarmonyContext& harmony) {
           Tick remainder = b.start_tick - a.start_tick;
           if (remainder < kMinRemainder) continue;
           int semitones = std::abs(static_cast<int>(a.note) - static_cast<int>(b.note));
-          uint8_t lower_pitch = std::min(a.note, b.note);
-          if (!isAlwaysDissonant(semitones, lower_pitch, b.start_tick)) continue;
+          if (!isAlwaysDissonant(semitones, a.note, earlier_role, b.note, later_role,
+                                 b.start_tick)) {
+            continue;
+          }
           a.duration = remainder;
           a_end = a.start_tick + a.duration;
 #ifdef MIDISKETCH_NOTE_PROVENANCE
@@ -1873,23 +1903,21 @@ void trimClashingNoteTails(Song& song, const IHarmonyContext& harmony) {
       if (decorativeness(pair_a.second) <= decorativeness(pair_b.second)) continue;
       if (decorativeness(pair_a.second) == 0) continue;
       auto& a_notes = track_a->notes();
-      a_notes.erase(
-          std::remove_if(a_notes.begin(), a_notes.end(),
-                         [&](const NoteEvent& a) {
-                           if (a.duration > TICK_EIGHTH) return false;
-                           for (const auto& b : track_b->notes()) {
-                             if (b.start_tick != a.start_tick) continue;
-                             if (b.duration < a.duration) continue;
-                             int semitones =
-                                 std::abs(static_cast<int>(a.note) - static_cast<int>(b.note));
-                             uint8_t lower_pitch = std::min(a.note, b.note);
-                             if (isAlwaysDissonant(semitones, lower_pitch, a.start_tick)) {
-                               return true;
-                             }
-                           }
-                           return false;
-                         }),
-          a_notes.end());
+      a_notes.erase(std::remove_if(a_notes.begin(), a_notes.end(),
+                                   [&](const NoteEvent& a) {
+                                     if (a.duration > TICK_EIGHTH) return false;
+                                     for (const auto& b : track_b->notes()) {
+                                       if (b.start_tick != a.start_tick) continue;
+                                       int semitones = std::abs(static_cast<int>(a.note) -
+                                                                static_cast<int>(b.note));
+                                       if (isAlwaysDissonant(semitones, a.note, pair_a.second,
+                                                             b.note, pair_b.second, a.start_tick)) {
+                                         return true;
+                                       }
+                                     }
+                                     return false;
+                                   }),
+                    a_notes.end());
     }
   }
 }

@@ -141,6 +141,29 @@ TEST_F(TrackClashIntegrationTest, AllKeys_NoDissonantClashes) {
   }
 }
 
+// The sweeps here vary composition style, key, mood and progression while the
+// blueprint stays at its default. A blueprint decides the generation paradigm,
+// the riff policy and which tracks sound at all, so it produces track pairings
+// none of the other axes reach. That matters because the clashes that survive
+// to the output are not the ones a single generator writes -- they are the ones
+// two independent correction passes create by resolving into each other, which
+// only happens when both tracks are present and both need correcting.
+TEST_F(TrackClashIntegrationTest, EveryBlueprint_NoDissonantClashes) {
+  for (uint8_t blueprint = 0; blueprint < 10; ++blueprint) {
+    for (uint32_t seed : {6u, 14u, 20u, 12345u}) {
+      params_.blueprint_id = blueprint;
+      params_.seed = seed;
+
+      Generator gen;
+      gen.generate(params_);
+
+      expectNoSimultaneousClashes(gen, params_,
+                                  "blueprint=" + std::to_string(static_cast<int>(blueprint)) +
+                                      " seed=" + std::to_string(seed));
+    }
+  }
+}
+
 TEST_F(TrackClashIntegrationTest, AllMoods_NoDissonantClashes) {
   params_.composition_style = CompositionStyle::BackgroundMotif;
   params_.seed = 12345;

@@ -1237,6 +1237,73 @@ std::vector<VoicedChord> restrictToRequestedType(const std::vector<VoicedChord>&
   return matching.empty() ? candidates : matching;
 }
 
+/// @brief Check whether a voicing sounds any tone above the triad.
+bool carriesExtensionColour(const VoicedChord& voicing, const Chord& chord, uint8_t root) {
+  if (chord.note_count < 4) return false;
+  for (uint8_t interval_idx = 3; interval_idx < chord.note_count; ++interval_idx) {
+    const int8_t interval = chord.intervals[interval_idx];
+    if (interval < 0) continue;
+    const int pitch_class = (static_cast<int>(root) + interval) % 12;
+    for (uint8_t i = 0; i < voicing.count; ++i) {
+      if (voicing.pitches[i] % 12 == pitch_class) return true;
+    }
+  }
+  return false;
+}
+
+/// @brief Narrow the candidates to the requested texture without losing the
+///        chord the harmony asked for.
+///
+/// Texture and identity are two different requests and only one of them can be
+/// answered by discarding candidates. A close voicing where an open one was
+/// asked for is the same chord in a different spacing; a voicing that dropped
+/// the seventh is a different chord, and nothing downstream can recover the
+/// plan from it. So the type restriction applies within the voicings that keep
+/// the colour, and only widens past the requested type when keeping the colour
+/// leaves no other choice.
+std::vector<VoicedChord> restrictPreservingExtension(const std::vector<VoicedChord>& candidates,
+                                                     VoicingType requested, const Chord& chord,
+                                                     uint8_t root) {
+  std::vector<VoicedChord> coloured;
+  for (const auto& candidate : candidates) {
+    if (carriesExtensionColour(candidate, chord, root)) {
+      coloured.push_back(candidate);
+    }
+  }
+  return restrictToRequestedType(coloured.empty() ? candidates : coloured, requested);
+}
+
+/// @brief Reward a voicing for keeping the tones that make the chord extended.
+///
+/// A seventh or ninth is what separates the chord from the triad underneath it;
+/// a voicing that drops it does not sound like a plainer version of the plan,
+/// it sounds like a different chord, and nothing downstream can tell that the
+/// harmony ever asked for the colour. Voice leading may still prefer a smoother
+/// move -- a common tone is worth more than one colour tone here -- but with no
+/// term at all the two are indistinguishable and the smoother move always wins.
+///
+/// Suspensions are excluded: sus2 and sus4 replace the third rather than adding
+/// above it, so their characteristic tone is already part of the triad the
+/// generator voices.
+int extensionColourBonus(const VoicedChord& voicing, const Chord& chord, uint8_t root) {
+  constexpr int kPerColourTone = 60;
+  if (chord.note_count < 4) return 0;
+
+  int bonus = 0;
+  for (uint8_t interval_idx = 3; interval_idx < chord.note_count; ++interval_idx) {
+    const int8_t interval = chord.intervals[interval_idx];
+    if (interval < 0) continue;
+    const int pitch_class = (static_cast<int>(root) + interval) % 12;
+    for (uint8_t i = 0; i < voicing.count; ++i) {
+      if (voicing.pitches[i] % 12 == pitch_class) {
+        bonus += kPerColourTone;
+        break;
+      }
+    }
+  }
+  return bonus;
+}
+
 /// @brief Select the voicing for the current timeline entry.
 void selectBarVoicing(ChordBarContext& ctx) {
   // === Diff #14: Filtering thresholds ===
@@ -1259,7 +1326,8 @@ void selectBarVoicing(ChordBarContext& ctx) {
       }
     }
     std::vector<VoicedChord>& tier = filtered_3plus.empty() ? filtered_2 : filtered_3plus;
-    std::vector<VoicedChord> filtered = restrictToRequestedType(tier, ctx.voicing_type);
+    std::vector<VoicedChord> filtered =
+        restrictPreservingExtension(tier, ctx.voicing_type, ctx.chord, ctx.root);
 
     // === Diff #15: Fallback voicing ===
     if (filtered.empty()) {
@@ -1282,7 +1350,8 @@ void selectBarVoicing(ChordBarContext& ctx) {
         int distance = chord_voicing::voicingDistance(ctx.prev_voicing, filtered[i]);
         int type_bonus = (filtered[i].type == ctx.voicing_type) ? 30 : 0;
         int fullness_bonus = (filtered[i].count >= 3) ? 50 : 0;
-        int score = type_bonus + fullness_bonus + common * 100 - distance;
+        int colour_bonus = extensionColourBonus(filtered[i], ctx.chord, ctx.root);
+        int score = type_bonus + fullness_bonus + colour_bonus + common * 100 - distance;
         score += chord_voicing::voicingRepetitionPenalty(
             filtered[i], ctx.prev_voicing, ctx.has_prev, ctx.consecutive_same_voicing);
         if (score > best_score) {
@@ -1306,7 +1375,8 @@ void selectBarVoicing(ChordBarContext& ctx) {
         safe_candidates.push_back(safe);
       }
     }
-    std::vector<VoicedChord> filtered = restrictToRequestedType(safe_candidates, ctx.voicing_type);
+    std::vector<VoicedChord> filtered =
+        restrictPreservingExtension(safe_candidates, ctx.voicing_type, ctx.chord, ctx.root);
 
     // === Diff #15: Fallback voicing ===
     if (filtered.empty()) {
@@ -1320,7 +1390,7 @@ void selectBarVoicing(ChordBarContext& ctx) {
       for (size_t i = 0; i < filtered.size(); ++i) {
         int dist = std::abs(filtered[i].pitches[0] - MIDI_C4);
         int type_bonus = (filtered[i].type == ctx.voicing_type) ? 50 : 0;
-        int score = type_bonus - dist;
+        int score = type_bonus + extensionColourBonus(filtered[i], ctx.chord, ctx.root) - dist;
         if (score > best_score) {
           tied_indices.clear();
           tied_indices.push_back(i);
@@ -1343,7 +1413,8 @@ void selectBarVoicing(ChordBarContext& ctx) {
             chord_voicing::hasParallelFifthsOrOctaves(ctx.prev_voicing, filtered[i])
                 ? chord_voicing::getParallelPenalty(ctx.params.mood)
                 : 0;
-        int score = type_bonus + common * 100 + parallel_penalty - distance;
+        int colour_bonus = extensionColourBonus(filtered[i], ctx.chord, ctx.root);
+        int score = type_bonus + colour_bonus + common * 100 + parallel_penalty - distance;
         score += chord_voicing::voicingRepetitionPenalty(
             filtered[i], ctx.prev_voicing, ctx.has_prev, ctx.consecutive_same_voicing);
         if (score > best_score) {
