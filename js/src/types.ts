@@ -464,7 +464,14 @@ export interface ChordEvent {
 /**
  * Event data from generation
  */
-/** Dissonance analysis result returned by MidiSketch.getDissonanceReport(). */
+/**
+ * Dissonance analysis result returned by MidiSketch.getDissonanceReport().
+ *
+ * Pitches are the ones the generator reasoned about, which is a key of C. The
+ * summary states the offset to the key the song sounds in:
+ * `sounding = pitch + key + (modulation_tick > 0 && tick >= modulation_tick ?
+ * modulation_amount : 0)`.
+ */
 export interface DissonanceReport {
   summary: {
     total_issues: number;
@@ -475,6 +482,10 @@ export interface DissonanceReport {
     high_severity: number;
     medium_severity: number;
     low_severity: number;
+    /** Key the song sounds in, as a semitone offset from the reported pitches. */
+    key: number;
+    /** Name of that key, e.g. "E major". */
+    key_name: string;
     modulation_tick: number;
     modulation_amount: number;
     pre_modulation_issues: number;

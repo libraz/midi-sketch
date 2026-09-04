@@ -35,56 +35,31 @@ constexpr const char* INTERVAL_NAMES[12] = {"unison",    "minor 2nd",   "major 2
 
 // isDiatonicToCMajor is now replaced by isDiatonic() from pitch_utils.h
 
-// Check if a pitch class is part of any common secondary dominant chord.
-// Secondary dominants (V/x) are dominant 7th chords that resolve to a diatonic chord.
-// These chords intentionally contain non-diatonic tones that are musically valid.
+// Whether a pitch class belongs to the dominant seventh of the chord it moves
+// to. A secondary dominant borrows a tone from outside the key to pull towards
+// one diatonic chord, so the tone is justified by the chord it resolves into
+// and by no other: C# tonicises ii and says nothing about a bar of IV.
 //
-// In C major:
-//   V/ii = A7  (A, C#, E, G)  -> non-diatonic: C# (1)
-//   V/iii = B7 (B, D#, F#, A) -> non-diatonic: D# (3), F# (6)
-//   V/IV = C7  (C, E, G, Bb)  -> non-diatonic: Bb (10)
-//   V/V = D7   (D, F#, A, C)  -> non-diatonic: F# (6)
-//   V/vi = E7  (E, G#, B, D)  -> non-diatonic: G# (8)
-//
-// Returns true if pitch_class is a chord tone of any secondary dominant.
-bool isSecondaryDominantTone(int pitch_class) {
-  // Define chord tones for each secondary dominant (root, 3rd, 5th, 7th)
-  // All intervals are pitch classes (0-11)
+// Asking the question without a target answers yes to every chromatic note
+// there is. The five secondary dominants of a major key are A7, B7, C7, D7 and
+// E7, and between them they contain C#, D#, F#, G# and Bb -- which is the whole
+// complement of the scale. A gate spelled as a target-free set of pitch classes
+// is a gate that never closes.
+bool isSecondaryDominantTone(int pitch_class, int8_t target_degree) {
+  if (target_degree < 0) return false;
 
-  // V/ii = A7: root=9(A), 3rd=1(C#), 5th=4(E), 7th=7(G)
-  constexpr int V_of_ii[] = {9, 1, 4, 7};
-
-  // V/iii = B7: root=11(B), 3rd=3(D#), 5th=6(F#), 7th=9(A)
-  constexpr int V_of_iii[] = {11, 3, 6, 9};
-
-  // V/IV = C7: root=0(C), 3rd=4(E), 5th=7(G), 7th=10(Bb)
-  constexpr int V_of_IV[] = {0, 4, 7, 10};
-
-  // V/V = D7: root=2(D), 3rd=6(F#), 5th=9(A), 7th=0(C)
-  constexpr int V_of_V[] = {2, 6, 9, 0};
-
-  // V/vi = E7: root=4(E), 3rd=8(G#), 5th=11(B), 7th=2(D)
-  constexpr int V_of_vi[] = {4, 8, 11, 2};
-
-  // Check all secondary dominants
-  for (int pc : V_of_ii) {
-    if (pc == pitch_class) return true;
+  const int dominant_root = (degreeToSemitone(target_degree) + 7) % 12;
+  constexpr int kDominantSeventhIntervals[] = {0, 4, 7, 10};
+  for (int interval : kDominantSeventhIntervals) {
+    if ((dominant_root + interval) % 12 == pitch_class) return true;
   }
-  for (int pc : V_of_iii) {
-    if (pc == pitch_class) return true;
-  }
-  for (int pc : V_of_IV) {
-    if (pc == pitch_class) return true;
-  }
-  for (int pc : V_of_V) {
-    if (pc == pitch_class) return true;
-  }
-  for (int pc : V_of_vi) {
-    if (pc == pitch_class) return true;
-  }
-
   return false;
 }
+
+// The key a report built from a Song is written in. Notes reach this analyzer
+// before the output transposition, so every pitch it reads and every pitch it
+// prints is a C major one; the song's own key is carried once, in the summary.
+constexpr Key kAnalysisKey = Key::C;
 
 // Get key name for display.
 std::string getKeyName(Key key) {
@@ -872,9 +847,15 @@ void detectSustainedOverChordChange(const DetectionContext& ctx, DissonanceRepor
   detectSustainedInTrack(ctx.song.chord(), TrackRole::Chord, chord_timeline, ctx, report);
 }
 
-// Detect non-diatonic notes in a single track
-void detectNonDiatonicInTrack(const MidiTrack& track, TrackRole role, Key key,
-                              const DetectionContext& ctx, DissonanceReport& report) {
+// Detect non-diatonic notes in a single track.
+//
+// The test is `isDiatonic` on the internal pitch, so the scale the note is
+// measured against is the internal one, and the reported pitch is the one that
+// was measured. The song's own key reaches the reader through the summary --
+// see DissonanceIssue -- rather than by shifting one issue type out of the
+// space its three siblings and its own provenance are written in.
+void detectNonDiatonicInTrack(const MidiTrack& track, TrackRole role, const DetectionContext& ctx,
+                              DissonanceReport& report) {
   for (const auto& note : track.notes()) {
     int pitch_class = getPitchClass(note.note);
 
@@ -888,20 +869,24 @@ void detectNonDiatonicInTrack(const MidiTrack& track, TrackRole role, Key key,
       }
     }
 
-    if (!is_borrowed_chord_tone) {
-      Tick next_tick = ctx.chord_lookup.getNextChordChangeTick(note.start_tick);
-      if (next_tick != 0) {
-        for (int chord_tone : ctx.chord_lookup.getChordTonesAt(next_tick)) {
-          if (chord_tone == pitch_class) {
-            is_borrowed_chord_tone = true;
-            break;
-          }
+    const Tick next_tick = ctx.chord_lookup.getNextChordChangeTick(note.start_tick);
+    if (!is_borrowed_chord_tone && next_tick != 0) {
+      for (int chord_tone : ctx.chord_lookup.getChordTonesAt(next_tick)) {
+        if (chord_tone == pitch_class) {
+          is_borrowed_chord_tone = true;
+          break;
         }
       }
     }
 
     if (is_borrowed_chord_tone) continue;
-    if (isSecondaryDominantTone(pitch_class)) continue;
+    // The chord the note moves into is the only one its chromaticism can be
+    // pulling towards, so it is the only target the secondary-dominant
+    // exemption may be asked about.
+    if (next_tick != 0 &&
+        isSecondaryDominantTone(pitch_class, ctx.chord_lookup.getChordDegreeAt(next_tick))) {
+      continue;
+    }
 
     MetricPosition metric_position = getMetricPosition(note.start_tick);
     DissonanceSeverity severity;
@@ -918,9 +903,6 @@ void detectNonDiatonicInTrack(const MidiTrack& track, TrackRole role, Key key,
     }
 
     uint32_t bar = tickToBar(note.start_tick);
-    int key_offset = static_cast<int>(key);
-    uint8_t transposed_pitch =
-        static_cast<uint8_t>(std::clamp(static_cast<int>(note.note) + key_offset, 0, 127));
 
     DissonanceIssue issue;
     issue.type = DissonanceType::NonDiatonicNote;
@@ -929,10 +911,10 @@ void detectNonDiatonicInTrack(const MidiTrack& track, TrackRole role, Key key,
     issue.bar = bar + 1;  // 1-indexed to match --bar command
     issue.beat = 1.0f + static_cast<float>(positionInBar(note.start_tick)) / TICKS_PER_BEAT;
     issue.track_name = trackRoleToString(role);
-    issue.pitch = transposed_pitch;
-    issue.pitch_name = midiNoteToNameInternal(transposed_pitch);
-    issue.key_name = getKeyName(key);
-    issue.scale_tones = getScaleTones(key);
+    issue.pitch = note.note;
+    issue.pitch_name = midiNoteToNameInternal(note.note);
+    issue.key_name = getKeyName(kAnalysisKey);
+    issue.scale_tones = getScaleTones(kAnalysisKey);
 #ifdef MIDISKETCH_NOTE_PROVENANCE
     issue.has_provenance = note.hasValidProvenance();
     issue.prov_chord_degree = note.prov_chord_degree;
@@ -948,14 +930,14 @@ void detectNonDiatonicInTrack(const MidiTrack& track, TrackRole role, Key key,
 }
 
 // Detect non-diatonic notes in all tracks
-void detectNonDiatonicNotes(const DetectionContext& ctx, Key key, DissonanceReport& report) {
-  detectNonDiatonicInTrack(ctx.song.vocal(), TrackRole::Vocal, key, ctx, report);
-  detectNonDiatonicInTrack(ctx.song.chord(), TrackRole::Chord, key, ctx, report);
-  detectNonDiatonicInTrack(ctx.song.bass(), TrackRole::Bass, key, ctx, report);
-  detectNonDiatonicInTrack(ctx.song.motif(), TrackRole::Motif, key, ctx, report);
-  detectNonDiatonicInTrack(ctx.song.arpeggio(), TrackRole::Arpeggio, key, ctx, report);
-  detectNonDiatonicInTrack(ctx.song.aux(), TrackRole::Aux, key, ctx, report);
-  detectNonDiatonicInTrack(ctx.song.guitar(), TrackRole::Guitar, key, ctx, report);
+void detectNonDiatonicNotes(const DetectionContext& ctx, DissonanceReport& report) {
+  detectNonDiatonicInTrack(ctx.song.vocal(), TrackRole::Vocal, ctx, report);
+  detectNonDiatonicInTrack(ctx.song.chord(), TrackRole::Chord, ctx, report);
+  detectNonDiatonicInTrack(ctx.song.bass(), TrackRole::Bass, ctx, report);
+  detectNonDiatonicInTrack(ctx.song.motif(), TrackRole::Motif, ctx, report);
+  detectNonDiatonicInTrack(ctx.song.arpeggio(), TrackRole::Arpeggio, ctx, report);
+  detectNonDiatonicInTrack(ctx.song.aux(), TrackRole::Aux, ctx, report);
+  detectNonDiatonicInTrack(ctx.song.guitar(), TrackRole::Guitar, ctx, report);
 }
 
 }  // namespace
@@ -992,14 +974,15 @@ DissonanceReport analyzeDissonance(const Song& song, const GeneratorParams& para
   detectSimultaneousClashes(all_notes, ctx, report);
   detectNonChordTones(ctx, report);
   detectSustainedOverChordChange(ctx, report);
-  detectNonDiatonicNotes(ctx, params.key, report);
+  detectNonDiatonicNotes(ctx, report);
 
   // Calculate total
   report.summary.total_issues =
       report.summary.simultaneous_clashes + report.summary.non_chord_tones +
       report.summary.sustained_over_chord_change + report.summary.non_diatonic_notes;
 
-  // Add modulation info
+  // The offset from the pitches above to the ones a listener hears.
+  report.summary.key = params.key;
   report.summary.modulation_tick = song.modulationTick();
   report.summary.modulation_amount = song.modulationAmount();
 
@@ -1234,6 +1217,8 @@ std::string dissonanceReportToJson(const DissonanceReport& report) {
       .write("high_severity", report.summary.high_severity)
       .write("medium_severity", report.summary.medium_severity)
       .write("low_severity", report.summary.low_severity)
+      .write("key", static_cast<int>(report.summary.key))
+      .write("key_name", getKeyName(report.summary.key))
       .write("modulation_tick", report.summary.modulation_tick)
       .write("modulation_amount", static_cast<int>(report.summary.modulation_amount))
       .write("pre_modulation_issues", report.summary.pre_modulation_issues)

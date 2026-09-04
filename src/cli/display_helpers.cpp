@@ -301,6 +301,20 @@ void printDissonanceSummary(const midisketch::DissonanceReport& report,
 
   std::cout << "\n=== Dissonance Analysis ===\n";
 
+  // The pitches below are the ones the generator reasoned about, so they match a
+  // key of C. Anyone comparing them with a DAW needs the offset to the sounding
+  // key, and a modulated song needs the second half of it as well.
+  const int key_offset = static_cast<int>(report.summary.key);
+  if (key_offset != 0 || report.summary.modulation_amount != 0) {
+    std::cout << "\nPitches are internal (C major). Sounding key is " << key_offset
+              << " semitones up";
+    if (report.summary.modulation_tick > 0 && report.summary.modulation_amount != 0) {
+      std::cout << ", plus " << static_cast<int>(report.summary.modulation_amount) << " from tick "
+                << report.summary.modulation_tick;
+    }
+    std::cout << ".\n";
+  }
+
   // Action-oriented summary
   std::cout << "\nAction Summary:\n";
   if (critical > 0) {

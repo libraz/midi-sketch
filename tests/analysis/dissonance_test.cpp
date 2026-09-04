@@ -1315,18 +1315,12 @@ TEST(DissonanceContextTest, InternalAnalysisUsesFullContext) {
 
 // Test: Secondary dominant tones should not be flagged as non-diatonic
 TEST(DissonanceContextTest, SecondaryDominantTonesNotFlagged) {
-  // Secondary dominants (V/ii, V/iii, V/IV, V/V, V/vi) contain non-diatonic
-  // tones that are intentional. These should not be flagged as issues.
-  //
-  // In C major, the non-diatonic tones in secondary dominants are:
-  // - V/ii (A7): C# (pitch class 1)
-  // - V/iii (B7): D# (3), F# (6)
-  // - V/IV (C7): Bb (10)
-  // - V/V (D7): F# (6)
-  // - V/vi (E7): G# (8)
-  //
-  // This test uses multiple seeds to verify that G#, C#, F#, D#, Bb are
-  // not flagged as non-diatonic notes when they appear as secondary dominant tones.
+  // A secondary dominant is registered on the harmony timeline, so its borrowed
+  // third is a tone of the chord that is playing and the analyzer sees it as
+  // one. That only holds for a report built from the timeline the song was
+  // generated against: the compatibility overload rebuilds the progression from
+  // the preset and the registered dominant is not in it, which turns every one
+  // of these chord-track notes into a note out of the key.
 
   Generator gen;
   GeneratorParams params{};
@@ -1346,7 +1340,7 @@ TEST(DissonanceContextTest, SecondaryDominantTonesNotFlagged) {
     gen.generate(params);
     const auto& song = gen.getSong();
 
-    auto report = analyzeDissonance(song, params);
+    auto report = analyzeDissonance(song, params, gen.getHarmonyContext());
 
     // Count non-diatonic issues that are secondary dominant tones
     // These should be zero after the fix

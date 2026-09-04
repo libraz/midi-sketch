@@ -9,13 +9,52 @@
 #include <gtest/gtest.h>
 
 #include "analysis/dissonance.h"
+#include "core/arrangement.h"
+#include "core/chord.h"
+#include "core/chord_progression_tracker.h"
 #include "core/generator.h"
 #include "core/song.h"
 #include "core/types.h"
+#include "test_helpers/note_event_test_helper.h"
 #include "test_support/generator_test_fixture.h"
 
 namespace midisketch {
 namespace {
+
+// A two-bar song with one note, over a progression the caller names. Nothing
+// here is generated, so the note is exactly the one the analyzer is asked
+// about and the chord under it and the chord after it are both known.
+struct TwoChordFixture {
+  Song song;
+  ChordProgressionTracker timeline;
+
+  TwoChordFixture(int8_t first_degree, int8_t second_degree, uint8_t pitch, Tick start_tick) {
+    Section verse;
+    verse.type = SectionType::A;
+    verse.start_tick = 0;
+    verse.bars = 2;
+    verse.name = "Verse";
+    Arrangement arrangement({verse});
+
+    song.setArrangement(arrangement);
+    song.motif().addNote(NoteEventTestHelper::create(start_tick, TICKS_PER_BEAT, pitch, 100));
+
+    ChordProgression progression{};
+    progression.degrees = {first_degree, second_degree, -1, -1, -1, -1, -1, -1};
+    progression.length = 2;
+    timeline.initialize(arrangement, progression, Mood::StraightPop);
+  }
+};
+
+// The issues of one type, so a test can say how many there are rather than
+// whether there are any.
+std::vector<DissonanceIssue> issuesOfType(const DissonanceReport& report, DissonanceType type) {
+  std::vector<DissonanceIssue> selected;
+  for (const auto& issue : report.issues) {
+    if (issue.type == type) selected.push_back(issue);
+  }
+  return selected;
+}
 
 class NonDiatonicDetectionTest : public test::GeneratorTestFixture {
  protected:
@@ -120,27 +159,74 @@ TEST_F(NonDiatonicDetectionTest, SeverityBasedOnBeatStrength) {
   }
 }
 
-// Test: Transposed pitch name is shown (not internal pitch)
-TEST_F(NonDiatonicDetectionTest, ShowsTransposedPitchName) {
-  // Use key E (offset 4) to verify transposition
-  params_.key = Key::E;
+// A chromatic note that no chord accounts for is reported. Every gate in this
+// detector is an exemption, so without a case that reaches the end of them the
+// tests below cannot tell a detector that is right from one that is silent.
+TEST(NonDiatonicGateTest, ReportsAChromaticNoteNoChordAccountsFor) {
+  // D#4 in a bar of V moving to I: not in G, not in C, and the dominant of the
+  // chord it moves to is G7, which does not contain it either.
+  TwoChordFixture fixture(4, 0, 63, 0);
 
-  Generator gen;
-  gen.generate(params_);
-  const auto& song = gen.getSong();
+  GeneratorParams params{};
+  params.chord_id = 0;
+  params.mood = Mood::StraightPop;
+  const auto report = analyzeDissonance(fixture.song, params, fixture.timeline);
 
-  auto report = analyzeDissonance(song, params_);
+  const auto issues = issuesOfType(report, DissonanceType::NonDiatonicNote);
+  ASSERT_EQ(issues.size(), 1u) << "the one chromatic note in the song was not reported";
+  EXPECT_EQ(issues[0].pitch, 63);
+  EXPECT_EQ(issues[0].track_name, "motif");
+  EXPECT_EQ(report.summary.non_diatonic_notes, 1u);
+}
 
-  for (const auto& issue : report.issues) {
-    if (issue.type == DissonanceType::NonDiatonicNote) {
-      // The key_name should show E major
-      EXPECT_EQ(issue.key_name, "E major");
+// The exemption for a borrowed tone names the chord the tone pulls towards, so
+// it has to be able to answer no. Spelled as a set of pitch classes with no
+// target it answers yes to all five chromatic notes a major key has and the
+// detector reports nothing at all.
+TEST(NonDiatonicGateTest, ExemptsABorrowedToneOnlyForTheChordItLeadsTo) {
+  // F# is the third of D7, which is the dominant of V.
+  TwoChordFixture leads_to_five(0, 4, 66, 0);
+  TwoChordFixture leads_to_one(4, 0, 66, 0);
 
-      // Scale tones should be E major scale
-      std::vector<std::string> expected_scale = {"E", "F#", "G#", "A", "B", "C#", "D#"};
-      EXPECT_EQ(issue.scale_tones, expected_scale);
-    }
-  }
+  GeneratorParams params{};
+  params.chord_id = 0;
+  params.mood = Mood::StraightPop;
+
+  const auto exempt = analyzeDissonance(leads_to_five.song, params, leads_to_five.timeline);
+  EXPECT_EQ(exempt.summary.non_diatonic_notes, 0u)
+      << "F# tonicises the V that follows it and is the reason the exemption exists";
+
+  const auto reported = analyzeDissonance(leads_to_one.song, params, leads_to_one.timeline);
+  EXPECT_EQ(reported.summary.non_diatonic_notes, 1u)
+      << "the same F# leads into I, which is not tonicised by a chord containing it";
+}
+
+// Every pitch in one report belongs to one space, and the report says how far
+// that space is from the one a listener hears.
+TEST(NonDiatonicGateTest, ReportsTheInternalPitchAndStatesTheKeyOnce) {
+  TwoChordFixture fixture(4, 0, 63, 0);
+
+  GeneratorParams params{};
+  params.chord_id = 0;
+  params.mood = Mood::StraightPop;
+  params.key = Key::E;
+  const auto report = analyzeDissonance(fixture.song, params, fixture.timeline);
+
+  const auto issues = issuesOfType(report, DissonanceType::NonDiatonicNote);
+  ASSERT_EQ(issues.size(), 1u);
+
+  // The note the song holds, not the note the song will sound. Transposing this
+  // one issue type would leave it in a different space from the provenance
+  // beside it, from the chord names on its sibling issues, and from the pitch
+  // classes the detection itself was run on.
+  EXPECT_EQ(issues[0].pitch, 63);
+  EXPECT_EQ(issues[0].pitch_name, "D#4");
+  EXPECT_EQ(issues[0].key_name, "C major");
+
+  // The sounding pitch is recoverable because the report states the offset.
+  EXPECT_EQ(report.summary.key, Key::E);
+  EXPECT_EQ(report.summary.modulation_amount, 0);
+  EXPECT_EQ(issues[0].pitch + static_cast<int>(report.summary.key), 67);
 }
 
 // Test: JSON output includes non-diatonic notes
@@ -158,20 +244,26 @@ TEST_F(NonDiatonicDetectionTest, JsonOutputIncludesNonDiatonic) {
   issue.bar = 1;
   issue.beat = 1.0f;
   issue.track_name = "bass";
-  issue.pitch = 58;  // A#3 (transposed)
+  issue.pitch = 58;  // A#3
   issue.pitch_name = "A#3";
-  issue.key_name = "E major";
-  issue.scale_tones = {"E", "F#", "G#", "A", "B", "C#", "D#"};
+  issue.key_name = "C major";
+  issue.scale_tones = {"C", "D", "E", "F", "G", "A", "B"};
   report.issues.push_back(issue);
+  report.summary.key = Key::E;
 
   std::string json = dissonanceReportToJson(report);
 
   // Verify JSON contains the non-diatonic issue
   EXPECT_NE(json.find("non_diatonic_note"), std::string::npos);
   EXPECT_NE(json.find("\"non_diatonic_notes\":1"), std::string::npos);
-  EXPECT_NE(json.find("E major"), std::string::npos);
+  EXPECT_NE(json.find("C major"), std::string::npos);
   EXPECT_NE(json.find("A#3"), std::string::npos);
   EXPECT_NE(json.find("scale_tones"), std::string::npos);
+
+  // A consumer reading only the JSON still learns where the pitches sit
+  // relative to the sounding key.
+  EXPECT_NE(json.find("\"key\":4"), std::string::npos);
+  EXPECT_NE(json.find("\"key_name\":\"E major\""), std::string::npos);
 }
 
 // Test: Clean generation produces minimal non-diatonic notes

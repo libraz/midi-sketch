@@ -47,6 +47,21 @@ struct DissonanceNoteInfo {
 };
 
 /// @brief A single dissonance issue.
+///
+/// Every pitch and every pitch name in one report belongs to one space, and
+/// `DissonanceSummary::key` together with the modulation fields states the
+/// offset from that space to the sounding one:
+///
+///   sounding = pitch + key + (modulation_tick > 0 && tick >= modulation_tick
+///                             ? modulation_amount : 0)
+///
+/// A report built from a Song therefore speaks the internal C major space every
+/// generation rule reasons in, which is also the space of `chord_degree`,
+/// `chord_name`, `chord_tones` and the `prov_*` fields -- so a reader may
+/// compare `pitch` with `prov_original_pitch` and get an answer about the note
+/// rather than about the key. A report built from parsed MIDI is already in the
+/// sounding space and leaves the offset at zero, which makes the same formula
+/// true there.
 struct DissonanceIssue {
   DissonanceType type;          ///< Issue type
   DissonanceSeverity severity;  ///< Severity level
@@ -75,8 +90,14 @@ struct DissonanceIssue {
   Tick note_start_tick;             ///< When note started
   std::string original_chord_name;  ///< Chord when note started
   // NonDiatonicNote fields
-  std::string key_name;                  ///< Current key (e.g., "E major")
-  std::vector<std::string> scale_tones;  ///< Expected scale tones
+  /// @brief The key `pitch` was judged against, named in the report's own space.
+  ///
+  /// Not the key the song sounds in -- that is `DissonanceSummary::key`. The two
+  /// differ for every song generated in another key, and naming the sounding one
+  /// here would put the note and the scale it is measured against in different
+  /// spaces, which is the one thing a "not in this scale" message cannot afford.
+  std::string key_name;
+  std::vector<std::string> scale_tones;  ///< Tones of `key_name`, same space as `pitch`
 };
 
 /// @brief Summary statistics.
@@ -89,6 +110,7 @@ struct DissonanceSummary {
   uint32_t high_severity;                ///< High severity count
   uint32_t medium_severity;              ///< Medium severity count
   uint32_t low_severity;                 ///< Low severity count
+  Key key;                               ///< Key the song sounds in (see DissonanceIssue)
   Tick modulation_tick;                  ///< Modulation position
   int8_t modulation_amount;              ///< Modulation semitones
   uint32_t pre_modulation_issues;        ///< Issues before modulation
