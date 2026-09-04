@@ -112,21 +112,10 @@ constexpr const char* CHORD_NAMES[12] = {"C",  "C#", "D",     "D#/Eb", "E",     
 // ChordTones struct and getChordTones() are now in chord_utils.h.
 // getRootPitchClass() logic is handled by degreeToSemitone() in chord.h.
 
-// Check if a pitch class is an available tension for the chord.
-// Delegates to getAvailableTensionPitchClasses() from chord_utils.h.
-bool isAvailableTension(int pitch_class, int8_t degree) {
-  auto tensions = getAvailableTensionPitchClasses(degree);
-  for (int t : tensions) {
-    if (t == pitch_class) return true;
-  }
-  return false;
-}
-
-// Check the tone set from the exact timeline entry, including its planned extension.
-bool isPitchClassChordTone(int pitch_class, Tick tick, const IChordLookup& chord_lookup) {
-  const auto chord_tones = chord_lookup.getChordTonesAt(tick);
-  return std::find(chord_tones.begin(), chord_tones.end(), pitch_class) != chord_tones.end();
-}
+// Whether a sounding pitch belongs over the chord at a tick -- its own tones
+// from the timeline entry, or a tension it makes available -- is answered by
+// chordOrTensionContains() in chord_utils.h, which the pass that shortens a
+// vocal sustain at a chord change asks too.
 
 // Intervals whose consonance depends on the chord underneath them: the tritone
 // is a chord tone on V and vii, and the major 7th is a chord tone on any
@@ -696,8 +685,7 @@ void detectNonChordTonesInTrack(const MidiTrack& track, TrackRole role, bool is_
     int8_t degree = ctx.chord_lookup.getChordDegreeAt(note.start_tick);
     int pitch_class = getPitchClass(note.note);
 
-    if (isPitchClassChordTone(pitch_class, note.start_tick, ctx.chord_lookup)) continue;
-    if (isAvailableTension(pitch_class, degree)) continue;
+    if (chordOrTensionContains(pitch_class, note.start_tick, ctx.chord_lookup)) continue;
 
     MetricPosition metric_position = getMetricPosition(note.start_tick);
     DissonanceSeverity severity;
@@ -816,8 +804,7 @@ void detectSustainedInTrack(const MidiTrack& track, TrackRole role,
 
     int8_t start_degree = ctx.chord_lookup.getChordDegreeAt(note_start);
 
-    if (!isPitchClassChordTone(pitch_class, note_start, ctx.chord_lookup) &&
-        !isAvailableTension(pitch_class, start_degree)) {
+    if (!chordOrTensionContains(pitch_class, note_start, ctx.chord_lookup)) {
       continue;
     }
 
@@ -826,8 +813,7 @@ void detectSustainedInTrack(const MidiTrack& track, TrackRole role,
       if (change.tick >= note_end) break;
 
       int8_t new_degree = change.degree;
-      if (!isPitchClassChordTone(pitch_class, change.tick, ctx.chord_lookup) &&
-          !isAvailableTension(pitch_class, new_degree)) {
+      if (!chordOrTensionContains(pitch_class, change.tick, ctx.chord_lookup)) {
         MetricPosition metric_position = getMetricPosition(change.tick);
         DissonanceSeverity severity;
         if (role == TrackRole::Vocal) {

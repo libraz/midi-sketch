@@ -63,6 +63,7 @@ namespace midisketch {
 
 void resolveSameTrackClusters(Song& song, IHarmonyContext& harmony);
 void trimClashingNoteTails(Song& song, IHarmonyContext& harmony);
+void trimVocalSustainsAtUnsafeChordChanges(MidiTrack& vocal, const IHarmonyContext& harmony);
 
 namespace {
 
@@ -107,7 +108,6 @@ void breakLongPitchRuns(MidiTrack& track, const IHarmonyContext& harmony, uint8_
                         int max_run, TrackRole role, const std::vector<Section>& sections,
                         uint8_t chorus_peak);
 void trimBassBoundaryOverhangs(MidiTrack& bass, const IHarmonyContext& harmony);
-void trimVocalSustainsAtUnsafeChordChanges(MidiTrack& vocal, const IHarmonyContext& harmony);
 void applyRhythmSyncLeadDna(MidiTrack& vocal, MidiTrack& motif,
                             const std::vector<Section>& sections, const GeneratorParams& params,
                             const IHarmonyContext& harmony);
@@ -2109,6 +2109,54 @@ void trimClashingNoteTails(Song& song, IHarmonyContext& harmony) {
   }
 }
 
+/// @brief Release a vocal note that is held into a chord it does not belong to.
+///
+/// A melody note sustained across a chord change is only a problem when the new
+/// chord has no place for it. Whether it does is chordOrTensionContains()'s
+/// question, and the report that raises such a sustain asks the same predicate,
+/// so the two cannot disagree about which held note is worth cutting.
+///
+/// The note is released a hair before the change rather than at it, and only
+/// when an eighth of it would still sound; a melody note reduced below that is
+/// worse than the sustain it was trimmed for.
+///
+/// Public so the pass can be tested with a crafted vocal line; normally invoked
+/// from applyPostProcessingEffects().
+///
+/// @param vocal Vocal track whose sustains may be shortened
+/// @param harmony Harmony context read for the chord at each change
+void trimVocalSustainsAtUnsafeChordChanges(MidiTrack& vocal, const IHarmonyContext& harmony) {
+  for (auto& note : vocal.notes()) {
+    if (note.duration <= TICK_QUARTER) {
+      continue;
+    }
+
+    Tick note_end = note.start_tick + note.duration;
+    int8_t start_degree = harmony.getChordDegreeAt(note.start_tick);
+    for (Tick tick = note.start_tick + TICK_SIXTEENTH; tick < note_end; tick += TICK_SIXTEENTH) {
+      int8_t degree = harmony.getChordDegreeAt(tick);
+      if (degree == start_degree) {
+        continue;
+      }
+
+      // Building the tone set from the scale degree here instead missed every
+      // extension the timeline had registered, and knew about no tension at
+      // all, so this pass shortened melody the report never asked about.
+      if (chordOrTensionContains(static_cast<int>(note.note % 12), tick, harmony)) {
+        start_degree = degree;
+        continue;
+      }
+
+      constexpr Tick kReleaseGap = 30;
+      constexpr Tick kMinRemaining = TICK_EIGHTH;
+      if (tick > note.start_tick + kMinRemaining + kReleaseGap) {
+        note.duration = tick - note.start_tick - kReleaseGap;
+      }
+      break;
+    }
+  }
+}
+
 namespace {
 
 void duckMotifUnderLead(MidiTrack& motif, const MidiTrack& vocal, const IHarmonyContext& harmony) {
@@ -2819,44 +2867,6 @@ void breakLongPitchRuns(MidiTrack& track, const IHarmonyContext& harmony, uint8_
 #endif
       run_pitch = notes[idx].note;
       run_count = 1;
-    }
-  }
-}
-
-void trimVocalSustainsAtUnsafeChordChanges(MidiTrack& vocal, const IHarmonyContext& harmony) {
-  for (auto& note : vocal.notes()) {
-    if (note.duration <= TICK_QUARTER) {
-      continue;
-    }
-
-    Tick note_end = note.start_tick + note.duration;
-    int8_t start_degree = harmony.getChordDegreeAt(note.start_tick);
-    for (Tick tick = note.start_tick + TICK_SIXTEENTH; tick < note_end; tick += TICK_SIXTEENTH) {
-      int8_t degree = harmony.getChordDegreeAt(tick);
-      if (degree == start_degree) {
-        continue;
-      }
-
-      ChordTones tones = getChordTones(degree);
-      int pitch_class = static_cast<int>(note.note % 12);
-      bool is_chord_tone = false;
-      for (uint8_t idx = 0; idx < tones.count; ++idx) {
-        if (tones.pitch_classes[idx] == pitch_class) {
-          is_chord_tone = true;
-          break;
-        }
-      }
-      if (is_chord_tone) {
-        start_degree = degree;
-        continue;
-      }
-
-      constexpr Tick kReleaseGap = 30;
-      constexpr Tick kMinRemaining = TICK_EIGHTH;
-      if (tick > note.start_tick + kMinRemaining + kReleaseGap) {
-        note.duration = tick - note.start_tick - kReleaseGap;
-      }
-      break;
     }
   }
 }

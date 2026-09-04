@@ -404,6 +404,16 @@ bool isVoicingCluster(uint8_t pitch_a, uint8_t pitch_b, const ChordTones& tones)
   return !bothVoicesAreChordTones(pitch_a, pitch_b, tones);
 }
 
+bool chordOrTensionContains(int pitch_class, Tick tick, const IChordLookup& chord_lookup) {
+  const ChordTones tones = chord_lookup.getChordTonesAt(tick);
+  for (int pc : tones) {
+    if (pc >= 0 && pc == pitch_class) return true;
+  }
+  const std::vector<int> tensions =
+      getAvailableTensionPitchClasses(chord_lookup.getChordDegreeAt(tick));
+  return std::find(tensions.begin(), tensions.end(), pitch_class) != tensions.end();
+}
+
 uint8_t clearOfOnsetVoices(const IChordLookup& harmony, uint8_t desired, Tick tick,
                            const std::vector<uint8_t>& placed, uint8_t range_low,
                            uint8_t range_high) {

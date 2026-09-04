@@ -293,6 +293,28 @@ bool chordExcusesFlaggedPair(int actual_semitones, uint8_t pitch_a, uint8_t pitc
 
 class IChordLookup;
 
+/// @brief Whether the chord sounding at a tick accounts for a pitch class.
+///
+/// A pitch belongs over a chord when it is one of the chord's own tones or a
+/// tension the chord makes available. Both halves are needed: the tone set
+/// comes from the timeline entry, so it carries whatever extension or
+/// replacement was planned there rather than what the bare scale degree would
+/// build, and the tensions are the notes a chord accepts without being one of
+/// its tones.
+///
+/// This is the question asked of a note that is already sounding -- the report
+/// asks it of every note and again of a note held across a chord change, and
+/// the pass that shortens a vocal sustain at such a change asks it to decide
+/// whether there is anything to shorten. Written out separately, that pass
+/// judged by scale degree alone and knew about no tension at all, so it cut
+/// notes the report was never going to raise.
+///
+/// @param pitch_class Pitch class of the sounding note (0-11)
+/// @param tick Position whose chord the note is judged against
+/// @param chord_lookup Tick-accurate chord timeline
+/// @return true when the chord there accounts for the pitch
+bool chordOrTensionContains(int pitch_class, Tick tick, const IChordLookup& chord_lookup);
+
 /// @brief Pitch for one voice of an onset that clears the voices beside it.
 ///
 /// Wherever a pass decides pitches one note at a time and several of them land

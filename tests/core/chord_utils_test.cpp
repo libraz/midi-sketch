@@ -12,8 +12,11 @@
 #include <set>
 #include <vector>
 
+#include "core/arrangement.h"
 #include "core/chord.h"
+#include "core/chord_progression_tracker.h"
 #include "core/pitch_utils.h"
+#include "core/timing_constants.h"
 
 namespace midisketch {
 namespace {
@@ -461,6 +464,105 @@ TEST(ChordUtilsVoicingTest, VoicingClusterAnswersOnTheSamePredicate) {
   const ChordTones c7{{0, 4, 7, 10, -1}, 4};
   ASSERT_FALSE(bothVoicesAreChordTones(72, 74, c7));
   EXPECT_TRUE(isVoicingCluster(72, 74, c7)) << "the same whole step over C7 has no ninth to be";
+}
+
+// ============================================================================
+// chordOrTensionContains
+// ============================================================================
+//
+// The question asked of a note that is already sounding: does the chord under
+// it have a place for this pitch? A chord accounts for its own tones and for
+// the tensions it makes available, and its own tones are the ones the timeline
+// states there -- an extension registered over a bar is part of the chord being
+// played, not a colour the bare scale degree can be asked about.
+
+namespace {
+
+Arrangement singleSection() {
+  Section section{};
+  section.type = SectionType::A;
+  section.name = "A";
+  section.bars = 4;
+  section.start_bar = 0;
+  section.start_tick = 0;
+  return Arrangement({section});
+}
+
+/// @brief A timeline over I - V - vi - IV, the chords these tests read.
+ChordProgressionTracker fourChordPop() {
+  ChordProgressionTracker tracker;
+  tracker.initialize(singleSection(), getChordProgression(0), Mood::StraightPop);
+  return tracker;
+}
+
+bool containsPitchClass(const std::vector<int>& pcs, int pitch_class) {
+  return std::find(pcs.begin(), pcs.end(), pitch_class) != pcs.end();
+}
+
+bool isChordToneOf(int8_t degree, int pitch_class) {
+  const ChordTones tones = getChordTones(degree);
+  return std::find(tones.begin(), tones.end(), pitch_class) != tones.end();
+}
+
+}  // namespace
+
+TEST(ChordOrTensionTest, ATonOfTheSoundingTriadBelongs) {
+  const ChordProgressionTracker tracker = fourChordPop();
+  ASSERT_EQ(tracker.getChordDegreeAt(0), 0) << "the fixture progression opens on I";
+
+  // C, E and G are the chord being played; nothing else has to be consulted.
+  EXPECT_TRUE(chordOrTensionContains(0, 0, tracker)) << "the root of I";
+  EXPECT_TRUE(chordOrTensionContains(4, 0, tracker)) << "its third";
+  EXPECT_TRUE(chordOrTensionContains(7, 0, tracker)) << "its fifth";
+}
+
+TEST(ChordOrTensionTest, ARegisteredExtensionIsPartOfTheChordItColours) {
+  ChordProgressionTracker tracker = fourChordPop();
+  const int8_t degree = tracker.getChordDegreeAt(0);
+  ASSERT_EQ(degree, 0) << "the fixture progression opens on I";
+
+  // C7 is a dominant seventh built on I, so its Bb is one of the chord's tones
+  // even though no diatonic reading of the first degree produces one: the triad
+  // has no Bb, and I offers a ninth and a thirteenth, not a flat seventh.
+  constexpr int kFlatSeventh = 10;
+  ASSERT_FALSE(isChordToneOf(degree, kFlatSeventh));
+  ASSERT_FALSE(containsPitchClass(getAvailableTensionPitchClasses(degree), kFlatSeventh));
+  ASSERT_FALSE(chordOrTensionContains(kFlatSeventh, 0, tracker))
+      << "with no extension planned there is no Bb over I";
+
+  tracker.registerChordExtension(0, TICKS_PER_BAR, ChordExtension::Dom7);
+
+  EXPECT_TRUE(chordOrTensionContains(kFlatSeventh, 0, tracker))
+      << "the tones have to come from the timeline, which carries the "
+         "extension, and not from the scale degree, which cannot know of it";
+}
+
+TEST(ChordOrTensionTest, ATensionBelongsWithoutBeingAToneOfTheChord) {
+  const ChordProgressionTracker tracker = fourChordPop();
+  const int8_t degree = tracker.getChordDegreeAt(0);
+  ASSERT_EQ(degree, 0) << "the fixture progression opens on I";
+
+  // The ninth and the thirteenth are the colours I accepts. Neither is in the
+  // triad, and a melody stating one over the chord is not stating a wrong note.
+  for (int tension : {2, 9}) {
+    ASSERT_FALSE(isChordToneOf(degree, tension))
+        << "pitch class " << tension << " must not already be a chord tone";
+    EXPECT_TRUE(chordOrTensionContains(tension, 0, tracker))
+        << "pitch class " << tension << " is a tension I makes available";
+  }
+}
+
+TEST(ChordOrTensionTest, APitchTheChordHasNoPlaceForDoesNotBelong) {
+  const ChordProgressionTracker tracker = fourChordPop();
+  ASSERT_EQ(tracker.getChordDegreeAt(0), 0) << "the fixture progression opens on I";
+
+  // Db, F#, Ab and Bb over a plain C major: neither the chord nor a colour it
+  // offers, and the predicate has to keep saying so, or every screen that asks
+  // it stops raising anything at all.
+  for (int pitch_class : {1, 6, 8, 10}) {
+    EXPECT_FALSE(chordOrTensionContains(pitch_class, 0, tracker))
+        << "pitch class " << pitch_class << " is neither a tone of I nor a tension over it";
+  }
 }
 
 }  // namespace
