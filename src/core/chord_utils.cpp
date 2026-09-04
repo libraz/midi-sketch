@@ -364,6 +364,30 @@ bool hasTritoneWithChord(int pitch_pc, const ChordTones& chord_pcs) {
 }
 
 // ============================================================================
+// Voices of one track sounding together
+// ============================================================================
+
+bool isDissonantVoicingGap(int semitones) {
+  int gap = std::abs(semitones);
+  return gap == 1 || gap == 2 || gap == 13;
+}
+
+bool isVoicingCluster(uint8_t pitch_a, uint8_t pitch_b, const ChordTones& tones) {
+  const int gap = static_cast<int>(pitch_a) - static_cast<int>(pitch_b);
+  if (!isDissonantVoicingGap(gap)) return false;
+  if (std::abs(gap) != 2) return true;
+
+  bool a_is_chord_tone = false;
+  bool b_is_chord_tone = false;
+  for (int pc : tones) {
+    if (pc < 0) continue;
+    if (pitch_a % 12 == pc % 12) a_is_chord_tone = true;
+    if (pitch_b % 12 == pc % 12) b_is_chord_tone = true;
+  }
+  return !(a_is_chord_tone && b_is_chord_tone);
+}
+
+// ============================================================================
 // Diatonic Fifth Utilities
 // ============================================================================
 

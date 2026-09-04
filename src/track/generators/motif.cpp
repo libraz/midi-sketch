@@ -1334,6 +1334,55 @@ uint8_t computeVocalCeilingForNote(uint8_t base_range_high, bool enforce_vocal_c
   return std::min(base_range_high, ceiling);
 }
 
+/// @brief Pitch for one voice of a replayed pulse that clears the voices beside it.
+///
+/// A cached entry is one voice, not a whole pulse: the octave double and the
+/// chord stab are separate entries sharing the lead's relative tick, and every
+/// correction a replay applies -- avoid-note, vocal ceiling, contour resolution
+/// -- answers for one entry at a time. Correcting the lead and leaving the stab
+/// where it was (or the reverse) leaves the two sounding whatever interval falls
+/// out of the pair of decisions. Nothing downstream notices, because the two
+/// belong to the same track and the collision detector compares across tracks.
+///
+/// The lead is cached first, so screening each voice against the ones already
+/// placed keeps the pulse's most important voice and moves the layer under it,
+/// which is the order the emitter chose them in.
+///
+/// @param harmony Tick-accurate chord lookup
+/// @param desired Pitch this voice would take on its own
+/// @param tick Onset the voices share
+/// @param placed Pitches already placed at this onset
+/// @param range_low Lowest pitch the motif may state
+/// @param range_high Highest pitch the motif may state here
+/// @return A chord tone in range that clears `placed`, else `desired` unchanged
+///         -- a pulse that cannot be voiced cleanly keeps the riff's own pitch
+uint8_t clearOfOnsetVoices(const IHarmonyCoordinator& harmony, uint8_t desired, Tick tick,
+                           const std::vector<uint8_t>& placed, uint8_t range_low,
+                           uint8_t range_high) {
+  if (placed.empty()) return desired;
+
+  const ChordTones tones = harmony.getChordTonesAt(tick);
+  auto clusters = [&placed, &tones](uint8_t pitch) {
+    for (uint8_t other : placed) {
+      if (isVoicingCluster(pitch, other, tones)) return true;
+    }
+    return false;
+  };
+  if (!clusters(desired)) return desired;
+
+  ChordToneHelper helper(harmony.getChordDegreeAt(tick));
+  std::vector<uint8_t> candidates = helper.allInRange(range_low, range_high);
+  std::stable_sort(candidates.begin(), candidates.end(), [desired](uint8_t a, uint8_t b) {
+    const int da = std::abs(static_cast<int>(a) - static_cast<int>(desired));
+    const int db = std::abs(static_cast<int>(b) - static_cast<int>(desired));
+    return da != db ? da < db : a < b;
+  });
+  for (uint8_t candidate : candidates) {
+    if (!clusters(candidate)) return candidate;
+  }
+  return desired;
+}
+
 namespace {
 
 /// @brief Replay cached notes for Locked mode (non-coordinate-axis).
@@ -1351,6 +1400,9 @@ bool replayCachedNotesLocked(MidiTrack& track, const Section& section, IHarmonyC
   const LockedNoteCache& cache = cache_it->second;
   Tick tile_length =
       cache.source_length > 0 ? cache.source_length : section.endTick() - section.start_tick;
+  std::vector<uint8_t> onset_pitches;
+  Tick onset_tick = 0;
+  bool has_onset = false;
   for (Tick tile_start = section.start_tick; tile_start < section.endTick();
        tile_start += tile_length) {
     for (const auto& entry : cache.entries) {
@@ -1364,6 +1416,14 @@ bool replayCachedNotesLocked(MidiTrack& track, const Section& section, IHarmonyC
           computeVocalCeilingForNote(motif_range_high, enforce_vocal_ceiling, harmony,
                                      absolute_tick, entry.duration, motif_range_low);
       uint8_t desired = std::min<uint8_t>(entry.pitch, eff_range_high);
+
+      if (!has_onset || absolute_tick != onset_tick) {
+        onset_pitches.clear();
+        onset_tick = absolute_tick;
+        has_onset = true;
+      }
+      desired = clearOfOnsetVoices(*harmony, desired, absolute_tick, onset_pitches, motif_range_low,
+                                   eff_range_high);
 
       // Two-stage strategy for consistency:
       // - If cached pitch is safe AND a chord tone at replay tick: keep as-is (100% consistency)
@@ -1391,6 +1451,7 @@ bool replayCachedNotesLocked(MidiTrack& track, const Section& section, IHarmonyC
 
       auto result = createNoteAndAdd(track, *harmony, opts);
       if (result) {
+        onset_pitches.push_back(result->note);
         if (result->note == state.motif_prev_pitch) {
           state.motif_consecutive_same++;
         } else {
@@ -1416,11 +1477,20 @@ bool replayCachedNotesCoordinateAxis(MidiTrack& track, const Section& section,
   const LockedNoteCache& cache = cache_it->second;
   Tick tile_length =
       cache.source_length > 0 ? cache.source_length : section.endTick() - section.start_tick;
+  std::vector<uint8_t> onset_pitches;
+  Tick onset_tick = 0;
+  bool has_onset = false;
   for (Tick tile_start = section.start_tick; tile_start < section.endTick();
        tile_start += tile_length) {
     for (const auto& entry : cache.entries) {
       Tick absolute_tick = tile_start + entry.relative_tick;
       if (absolute_tick >= section.endTick()) continue;
+
+      if (!has_onset || absolute_tick != onset_tick) {
+        onset_pitches.clear();
+        onset_tick = absolute_tick;
+        has_onset = true;
+      }
 
       // Re-apply avoid note correction for the replay position's chord.
       // Use nearestInRange to stay within range while avoiding the note.
@@ -1444,6 +1514,9 @@ bool replayCachedNotesCoordinateAxis(MidiTrack& track, const Section& section,
                                                 motif_range_high);
       }
 
+      replay_pitch = clearOfOnsetVoices(*harmony, static_cast<uint8_t>(replay_pitch), absolute_tick,
+                                        onset_pitches, motif_range_low, motif_range_high);
+
       NoteOptions opts;
       opts.start = absolute_tick;
       opts.duration = entry.duration;
@@ -1454,7 +1527,10 @@ bool replayCachedNotesCoordinateAxis(MidiTrack& track, const Section& section,
       opts.range_low = motif_range_low;
       opts.range_high = motif_range_high;
       opts.source = NoteSource::Motif;
-      createNoteAndAdd(track, *harmony, opts);
+      auto replayed = createNoteAndAdd(track, *harmony, opts);
+      if (replayed) {
+        onset_pitches.push_back(replayed->note);
+      }
     }
   }
   return true;

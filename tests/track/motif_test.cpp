@@ -35,6 +35,9 @@ void evolveRiffPattern(std::vector<NoteEvent>& pattern, Tick cycle_length, std::
 uint8_t computeVocalCeilingForNote(uint8_t base_range_high, bool enforce_vocal_ceiling,
                                    IHarmonyCoordinator* harmony, Tick note_start,
                                    Tick note_duration, uint8_t range_low);
+uint8_t clearOfOnsetVoices(const IHarmonyCoordinator& harmony, uint8_t desired, Tick tick,
+                           const std::vector<uint8_t>& placed, uint8_t range_low,
+                           uint8_t range_high);
 
 namespace motif_detail {
 std::vector<int> generatePitchSequence(uint8_t note_count, MotifMotion motion, std::mt19937& rng,
@@ -2632,6 +2635,72 @@ TEST(MotifPatternSpanTest, LastNoteStaysInsideItsCycleWhenTheTemplateOutlastsThe
   }
   EXPECT_GT(span, TICKS_PER_BAR) << "a two-bar rhythm collapsed into one bar";
   EXPECT_LE(span, 2 * TICKS_PER_BAR) << "a two-bar rhythm spilled past its second bar";
+}
+
+// ============================================================================
+// Voices a replayed pulse states together
+// ============================================================================
+
+bool chordContains(const ChordTones& tones, int pitch_class) {
+  for (int pc : tones) {
+    if (pc >= 0 && pc % 12 == pitch_class % 12) return true;
+  }
+  return false;
+}
+
+/// @brief One bar of I in C so a test can name the chord tones it expects.
+HarmonyCoordinator singleBarHarmony(Song& song) {
+  Section section{};
+  section.type = SectionType::A;
+  section.name = "A";
+  section.bars = 1;
+  section.start_bar = 0;
+  section.start_tick = 0;
+  section.track_mask = TrackMask::Motif;
+  song.setArrangement(Arrangement({section}));
+
+  HarmonyCoordinator harmony;
+  harmony.initialize(song.arrangement(), getChordProgression(0), Mood::StraightPop);
+  return harmony;
+}
+
+TEST(MotifOnsetVoicesTest, AVoiceIsMovedOffAStepAgainstTheOneBesideIt) {
+  Song song;
+  HarmonyCoordinator harmony = singleBarHarmony(song);
+
+  // Bar 1 states I, so its tones are C, E and G. A voice asked for D against a
+  // lead on E is a step from it and D is not one of them: it has to give way.
+  const ChordTones tones = harmony.getChordTonesAt(0);
+  ASSERT_FALSE(chordContains(tones, 2)) << "the test needs a chord that excludes D";
+
+  const std::vector<uint8_t> placed{64};  // lead on E
+  const uint8_t resolved = clearOfOnsetVoices(harmony, 62, 0, placed, MOTIF_LOW, MOTIF_HIGH);
+
+  EXPECT_NE(resolved, 62) << "the voice was left a whole step under the lead of its own track, "
+                             "which no cross-track detector ever compares it against";
+  EXPECT_TRUE(chordContains(tones, resolved % 12)) << "the replacement is not a chord tone";
+  EXPECT_GE(std::abs(static_cast<int>(resolved) - 64), 3)
+      << "the replacement is still inside a step of the lead";
+}
+
+TEST(MotifOnsetVoicesTest, AVoiceAlreadyClearOfTheLeadIsLeftWhereItIs) {
+  Song song;
+  HarmonyCoordinator harmony = singleBarHarmony(song);
+
+  // A third below the lead is what the stab is written to be; nothing may move.
+  const std::vector<uint8_t> placed{64};
+  EXPECT_EQ(clearOfOnsetVoices(harmony, 60, 0, placed, MOTIF_LOW, MOTIF_HIGH), 60);
+  // The octave double is the widest of the layers and is never a cluster.
+  EXPECT_EQ(clearOfOnsetVoices(harmony, 76, 0, placed, MOTIF_LOW, MOTIF_HIGH), 76);
+}
+
+TEST(MotifOnsetVoicesTest, TheFirstVoiceOfAnOnsetIsNeverMoved) {
+  Song song;
+  HarmonyCoordinator harmony = singleBarHarmony(song);
+
+  // The lead is placed first and has nothing to clear, so the riff's own pitch
+  // survives even when it is not a chord tone.
+  EXPECT_EQ(clearOfOnsetVoices(harmony, 62, 0, {}, MOTIF_LOW, MOTIF_HIGH), 62);
 }
 
 }  // namespace

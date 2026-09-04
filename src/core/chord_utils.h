@@ -206,6 +206,45 @@ bool hasTritoneWithChord(int pitch_pc, const std::vector<int>& chord_pcs);
 bool hasTritoneWithChord(int pitch_pc, const ChordTones& chord_pcs);
 
 // ============================================================================
+// Voices of one track sounding together
+// ============================================================================
+
+/// @brief Whether two voices sit at an interval the model calls dissonant.
+///
+/// Minor second and its compound minor ninth are dissonant wherever they
+/// appear; a major second is dissonant only when the voices actually sit next
+/// to each other, since the same interval spread over an octave is a ninth.
+/// A major seventh is deliberately absent: it is context dependent, and inside
+/// a seventh chord it is the chord itself, so rejecting it would make every
+/// major-seventh voicing drop either its root or its seventh.
+bool isDissonantVoicingGap(int semitones);
+
+/// @brief Whether two voices of one track sounding at one onset form a cluster.
+///
+/// The cross-track collision detector compares different tracks only, so a pair
+/// a track states against itself -- a chord's own voices, a riff's lead and the
+/// stab under it -- is answered here and nowhere else.
+///
+/// The gap rule alone cannot answer it, for the same reason the major seventh
+/// is absent from that rule: a major second between two tones of the chord
+/// being sounded is the chord. A seventh sits a whole step under the root and a
+/// ninth a whole step over it, so a rule that calls the pair a cluster removes
+/// one of them -- and every screen that asks ranks the seventh below the root,
+/// so the tone that makes the chord extended is the one that goes. A whole step
+/// against a tone the chord does not contain is still a cluster, and the minor
+/// second and minor ninth stay dissonant wherever they appear.
+///
+/// This is the one place the question is answered. The rule used to be spelled
+/// out at each screen that asks it, and a screen stating it separately can be
+/// corrected on its own while the others keep undoing the correction.
+///
+/// @param pitch_a One voice
+/// @param pitch_b The other voice, sounding at the same onset
+/// @param tones Tones of the chord the timeline states at that onset
+/// @return true when the pair is a cluster and one of the two has to give way
+bool isVoicingCluster(uint8_t pitch_a, uint8_t pitch_b, const ChordTones& tones);
+
+// ============================================================================
 // Diatonic Fifth Utilities
 // ============================================================================
 

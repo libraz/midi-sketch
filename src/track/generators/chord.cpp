@@ -83,58 +83,6 @@ uint8_t getVocalCeilingForRange(const IHarmonyContext& harmony, Tick start, Tick
   return fallback_ceiling;
 }
 
-namespace {
-
-/// @brief Whether two voices of one chord sit at an interval the model calls dissonant.
-///
-/// Minor second and its compound minor ninth are dissonant wherever they
-/// appear; a major second is dissonant only when the voices actually sit next
-/// to each other, since the same interval spread over an octave is a ninth.
-/// A major seventh is deliberately absent: it is context dependent, and inside
-/// a seventh chord it is the chord itself, so rejecting it would make every
-/// major-seventh voicing drop either its root or its seventh.
-bool isDissonantVoicingGap(int semitones) {
-  int gap = std::abs(semitones);
-  return gap == 1 || gap == 2 || gap == 13;
-}
-
-}  // namespace
-
-/// @brief Whether two voices of the chord sounding at one onset form a cluster.
-///
-/// The gap rule alone cannot answer this, for the same reason the major seventh
-/// is absent from it: a major second between two tones of the chord being voiced
-/// is the chord. A seventh sits a whole step under the root and a ninth a whole
-/// step over it, so a rule that calls the pair a cluster removes one of them --
-/// and both the screen that places the voices and the pass that cleans them up
-/// rank the seventh below the root, so the tone that makes the chord extended is
-/// the one that goes. A whole step against a tone the chord does not contain is
-/// still a cluster, and the minor second and minor ninth stay dissonant wherever
-/// they appear.
-///
-/// This is the one place the question is answered. The rule used to be spelled
-/// out at each screen that asks it, and a screen stating it separately can be
-/// corrected on its own while the others keep undoing the correction.
-///
-/// @param pitch_a One voice
-/// @param pitch_b The other voice, sounding at the same onset
-/// @param tones Tones of the chord the timeline states at that onset
-/// @return true when the pair is a cluster and one of the two has to give way
-bool isVoicingCluster(uint8_t pitch_a, uint8_t pitch_b, const ChordTones& tones) {
-  const int gap = static_cast<int>(pitch_a) - static_cast<int>(pitch_b);
-  if (!isDissonantVoicingGap(gap)) return false;
-  if (std::abs(gap) != 2) return true;
-
-  bool a_is_chord_tone = false;
-  bool b_is_chord_tone = false;
-  for (int pc : tones) {
-    if (pc < 0) continue;
-    if (pitch_a % 12 == pc % 12) a_is_chord_tone = true;
-    if (pitch_b % 12 == pc % 12) b_is_chord_tone = true;
-  }
-  return !(a_is_chord_tone && b_is_chord_tone);
-}
-
 bool wouldCreateVoicingCluster(const VoicedChord& voicing, uint8_t candidate_pitch) {
   for (uint8_t idx = 0; idx < voicing.count; ++idx) {
     if (isDissonantVoicingGap(static_cast<int>(candidate_pitch) -
