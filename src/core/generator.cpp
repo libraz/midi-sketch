@@ -273,8 +273,14 @@ void Generator::configureAddictiveMotif() {
   if (params_.addictive_mode) {
     // Behavioral Loop: 1-bar dense pattern for maximum repetition
     params_.motif.rhythm_density = MotifRhythmDensity::Driving;
-    params_.motif.note_count = 8;               // Dense eighth-note pattern
-    params_.motif.length = MotifLength::Bars1;  // 1-bar motif for tight loop
+    params_.motif.note_count = 8;  // Dense eighth-note pattern
+    // A tight loop is a request for a short pattern, not a claim about the one
+    // already chosen. The half-note template physically states two bars, and
+    // recording it as one bar does not shorten it - it only leaves every length
+    // read off this field contradicting the notes.
+    if (params_.motif.rhythm_template != MotifRhythmTemplate::HalfNoteSparse) {
+      params_.motif.length = MotifLength::Bars1;
+    }
   }
 }
 
@@ -1609,7 +1615,7 @@ void Generator::rebuildMotifFromPattern() {
   if (pattern.empty()) return;
 
   const MotifParams& motif_params = params_.motif;
-  Tick motif_length = static_cast<Tick>(motif_params.length) * TICKS_PER_BAR;
+  Tick motif_length = motif_detail::motifCycleLengthOf(pattern, motif_params.length);
 
   const auto& sections = song_.arrangement().sections();
 
