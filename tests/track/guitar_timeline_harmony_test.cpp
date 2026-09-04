@@ -20,6 +20,7 @@
 
 #include <algorithm>
 #include <set>
+#include <string>
 #include <vector>
 
 #include "core/chord.h"
@@ -85,6 +86,21 @@ std::set<int> guitarPitchClassesIn(const Song& song, const TimelineSpan& span) {
     }
   }
   return pitch_classes;
+}
+
+const char* pitchClassName(int pitch_class) {
+  static const char* names[] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
+  return names[((pitch_class % 12) + 12) % 12];
+}
+
+/// Pitch classes as a readable list, so a failure names the notes it is about.
+std::string describe(const std::set<int>& pitch_classes) {
+  std::string text;
+  for (int pc : pitch_classes) {
+    if (!text.empty()) text += " ";
+    text += pitchClassName(pc);
+  }
+  return text.empty() ? "(none)" : text;
 }
 
 std::set<int> toPitchClassSet(const ChordTones& tones) {
@@ -219,7 +235,8 @@ TEST_F(GuitarTimelineHarmonyTest, SoundsTheChromaticToneOfEveryOutOfKeyChordItSt
                         [&stated](int pc) { return stated.count(pc) != 0; });
         EXPECT_TRUE(states_chromatic)
             << "mood " << static_cast<int>(mood) << " seed " << seed << " tick " << span.start
-            << ": out-of-key chord strummed with diatonic tones only";
+            << ": out-of-key chord strummed with diatonic tones only. timeline wanted "
+            << describe(chromatic) << ", guitar stated " << describe(stated);
       }
     }
   }

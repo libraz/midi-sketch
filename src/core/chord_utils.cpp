@@ -243,7 +243,10 @@ int nearestChordTonePitch(int pitch, int8_t degree) {
 }
 
 int findNearestChordToneInRange(int pitch, int8_t degree, int range_low, int range_high) {
-  ChordTones ct = getChordTones(degree);
+  return findNearestChordToneInRange(pitch, getChordTones(degree), range_low, range_high);
+}
+
+int findNearestChordToneInRange(int pitch, const ChordTones& ct, int range_low, int range_high) {
   int octave = pitch / 12;
 
   int best_pitch = pitch;

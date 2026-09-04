@@ -327,6 +327,35 @@ TEST_F(HarmonyInterfaceTest, StubUsableAsIHarmonyContextReference) {
   EXPECT_EQ(snapshot.tick, 0u);
 }
 
+// ============================================================================
+// Snapping to the chord that is playing
+// ============================================================================
+
+// A secondary dominant is the degree's chord with its third raised out of the
+// key, and the degree alone cannot say so. Snapping to the triad the degree
+// names puts the minor third under a chord the rest of the band is playing as a
+// dominant -- the one interval a snap to a chord tone exists to rule out.
+TEST_F(HarmonyInterfaceTest, SnapsToTheTimelineChordNotTheDegreesTriad) {
+  stub_->setChordDegree(1);            // ii, whose own triad is D-F-A
+  stub_->setChordTones({2, 6, 9, 0});  // sounding as V7/V: D-F#-A-C
+
+  // G3 sits one semitone above the raised third and two below the fifth.
+  EXPECT_EQ(stub_->snapToNearestChordTone(55, 0), 54)
+      << "the tone a semitone away is the chord's raised third, not the key's F";
+  EXPECT_EQ(stub_->snapToNearestChordToneInRange(55, 0, 40, 76), 54);
+}
+
+// The same question for an added tone: the seventh is registered on the
+// timeline and is absent from the triad the degree names.
+TEST_F(HarmonyInterfaceTest, SnapsToAnExtensionTheDegreeDoesNotName) {
+  stub_->setChordDegree(0);             // I, whose own triad is C-E-G
+  stub_->setChordTones({0, 4, 7, 11});  // sounding as Cmaj7
+
+  EXPECT_EQ(stub_->snapToNearestChordTone(70, 0), 71)
+      << "B is a tone of the chord that is playing, so the nearest chord tone to "
+         "A#3 is the seventh rather than the fifth three semitones below";
+}
+
 TEST_F(HarmonyInterfaceTest, CollisionInfoDefaultImplementation) {
   // Test the default getCollisionInfo implementation in IHarmonyContext
   stub_->setAllPitchesSafe(true);

@@ -93,6 +93,21 @@ int nearestChordTonePitch(int pitch, int8_t degree);
 /// Returns the original pitch if no chord tone is found in range.
 ///
 /// @param pitch Target MIDI pitch
+/// @param tones The chord's tones, as the harmony states them
+/// @param range_low Minimum allowed pitch (inclusive)
+/// @param range_high Maximum allowed pitch (inclusive)
+/// @return Nearest chord tone pitch within range, or pitch if none found
+int findNearestChordToneInRange(int pitch, const ChordTones& tones, int range_low, int range_high);
+
+/// @brief Find the nearest tone of the plain triad a scale degree names.
+///
+/// The degree names the chord the song was planned from. A secondary dominant,
+/// a tritone substitution and every chord extension are registered on the
+/// timeline and are absent from it, so this overload is for callers that have a
+/// degree and nothing else. A caller holding a tick has the harmony, and the
+/// harmony states the chord that is actually playing.
+///
+/// @param pitch Target MIDI pitch
 /// @param degree Scale degree of the chord (0-6 for I-vii)
 /// @param range_low Minimum allowed pitch (inclusive)
 /// @param range_high Maximum allowed pitch (inclusive)

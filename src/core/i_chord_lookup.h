@@ -19,7 +19,7 @@
 namespace midisketch {
 
 // Forward declaration for unified chord tone search
-int findNearestChordToneInRange(int pitch, int8_t degree, int range_low, int range_high);
+int findNearestChordToneInRange(int pitch, const ChordTones& tones, int range_low, int range_high);
 
 /**
  * @brief Interface for chord degree lookup at any tick position.
@@ -99,12 +99,20 @@ class IChordLookup {
    * Combines getChordTonesAt() with nearest-pitch search to find the
    * closest chord tone pitch to the desired pitch.
    *
+   * The tones come from the timeline rather than from the degree it reports.
+   * A secondary dominant raises its third out of the key and an extension adds
+   * a tone the triad has not got, and neither survives being rebuilt from the
+   * degree: snapping to the plain triad moves a note onto a pitch the rest of
+   * the band is not playing -- the minor third of a chord sounding as a
+   * dominant, for instance -- which is the one thing a snap to a chord tone is
+   * supposed to rule out.
+   *
    * @param pitch Target MIDI pitch
    * @param tick Position in ticks (determines which chord is active)
    * @return Nearest chord tone pitch (absolute MIDI pitch)
    */
   virtual int snapToNearestChordTone(int pitch, Tick tick) const {
-    return findNearestChordToneInRange(pitch, getChordDegreeAt(tick), 0, 127);
+    return findNearestChordToneInRange(pitch, getChordTonesAt(tick), 0, 127);
   }
 
   /**
@@ -120,7 +128,7 @@ class IChordLookup {
    */
   virtual int snapToNearestChordToneInRange(int pitch, Tick tick, int range_low,
                                             int range_high) const {
-    return findNearestChordToneInRange(pitch, getChordDegreeAt(tick), range_low, range_high);
+    return findNearestChordToneInRange(pitch, getChordTonesAt(tick), range_low, range_high);
   }
 
   /**
