@@ -1727,6 +1727,42 @@ TEST(PostProcessorTest, FixTrackVocalClashesRemovesTritoneWithoutChordLookup) {
       << "Without a chord lookup the tritone should be removed by interval alone";
 }
 
+TEST(PostProcessorTest, FixTrackVocalClashesTakesASemitoneEvenBetweenChordTones) {
+  // Cmaj7 owns both a B and the C above it, so the pair is two tones of the
+  // sounding chord a semitone apart. The chord excuses the tritone above and
+  // the whole step, but not this: a minor 2nd beats audibly whichever voices
+  // state it, which is what the voicing rule and the cross-track check both
+  // say. Voiced an octave wider the same two tones are a minor 9th and are
+  // taken for the same reason.
+  test::StubHarmonyContext harmony;
+  harmony.setChordDegree(0);             // I chord
+  harmony.setChordTones({0, 4, 7, 11});  // C-E-G-B
+
+  MidiTrack chord, vocal;
+  chord.addNote(NoteEventBuilder::create(0, 480, 72, 80));  // C5 - the root
+  vocal.addNote(NoteEventBuilder::create(0, 480, 71, 80));  // B4 - the seventh
+  PostProcessor::fixTrackVocalClashes(chord, vocal, TrackRole::Chord, &harmony);
+  EXPECT_EQ(chord.notes().size(), 0u)
+      << "A minor 2nd between two tones of the chord is still a pair this pass takes";
+
+  MidiTrack wide_chord, wide_vocal;
+  wide_chord.addNote(NoteEventBuilder::create(0, 480, 72, 80));  // C5
+  wide_vocal.addNote(NoteEventBuilder::create(0, 480, 59, 80));  // B3, a minor 9th below
+  PostProcessor::fixTrackVocalClashes(wide_chord, wide_vocal, TrackRole::Chord, &harmony);
+  EXPECT_EQ(wide_chord.notes().size(), 0u)
+      << "The minor 9th is a compound minor 2nd and the chord does not excuse it either";
+
+  // The whole step the same chord owns between its seventh and its root a
+  // register apart is not taken, which is what shows the exemption still works.
+  MidiTrack kept_chord, kept_vocal;
+  kept_chord.addNote(NoteEventBuilder::create(0, 480, 71, 80));  // B4 - the seventh
+  kept_vocal.addNote(NoteEventBuilder::create(0, 480, 69, 80));  // A4, outside the chord
+  harmony.setChordTones({0, 4, 7, 11, 9});                       // add the sixth so A belongs
+  PostProcessor::fixTrackVocalClashes(kept_chord, kept_vocal, TrackRole::Chord, &harmony);
+  EXPECT_EQ(kept_chord.notes().size(), 1u)
+      << "A whole step between two tones of the chord is the chord and survives";
+}
+
 TEST(PostProcessorTest, FixTrackVocalClashesRemovesClashWhenOnlyOneVoiceIsChordTone) {
   // Over G7 the vocal's B3 (59) is the chord's third but the chord track's
   // C4 (60) is not a chord tone at all, so their minor 2nd is a genuine clash
