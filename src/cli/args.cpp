@@ -399,8 +399,10 @@ void printUsage(const char* program) {
   std::cout << "                    11=CuteAffected, 12=PowerfulShout, 13=KPop)\n";
   std::cout << "  --bpm N           Set BPM (40-240, 0/default: style preset)\n";
   std::cout << "  --duration N      Set target duration in seconds (0 = use pattern).\n";
-  std::cout << "                    Must reach 12-144 bars at the resolved tempo; a value\n";
-  std::cout << "                    outside that is rejected, not silently shortened.\n";
+  std::cout << "                    A song is 12-144 bars, so the length a duration reaches\n";
+  std::cout << "                    depends on the tempo. A value no tempo could build is\n";
+  std::cout << "                    rejected; one this tempo cannot build is adjusted to the\n";
+  std::cout << "                    nearest it can, and the adjustment is reported.\n";
   std::cout << "  --form N          Set form/structure pattern (0-17 or name like StandardPop)\n";
   std::cout << "  --key N           Set key (0-11: C, C#, D, Eb, E, F, F#, G, Ab, A, Bb, B)\n";
   std::cout << "  --input FILE      Analyze existing MIDI file for dissonance\n";

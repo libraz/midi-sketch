@@ -404,6 +404,27 @@ std::vector<Section> Generator::buildSongStructure(uint16_t bpm) {
   // Priority: target_duration > explicit form > Blueprint section_flow > StructurePattern
   std::vector<Section> sections;
   if (params_.target_duration_seconds > 0) {
+    // Say so when the requested length cannot be built at the tempo that was
+    // resolved. Validation passes anything the *whole* permitted tempo range
+    // could reach, and the structure builder then clamps to what this tempo
+    // can, so a request for six minutes at 150 BPM comes back as under four
+    // with the bar count as its only trace. This is the one layer holding both
+    // the request and the resolved tempo, which is why neither of the others
+    // can answer for it.
+    const uint16_t requested_bars = barsForDuration(params_.target_duration_seconds, bpm);
+    const uint16_t buildable_bars =
+        std::clamp(requested_bars, kMinStructureBars, kMaxStructureBars);
+    if (buildable_bars != requested_bars) {
+      const uint32_t buildable_seconds =
+          static_cast<uint32_t>(buildable_bars) * BEATS_PER_BAR * 60u / bpm;
+      warnings_.push_back(
+          "Duration adjusted from " + std::to_string(params_.target_duration_seconds) + "s to " +
+          std::to_string(buildable_seconds) + "s: " + std::to_string(requested_bars) + " bars at " +
+          std::to_string(bpm) + " BPM is outside the buildable range of " +
+          std::to_string(kMinStructureBars) + "-" + std::to_string(kMaxStructureBars) +
+          " bars (a different tempo reaches a different length)");
+    }
+
     sections =
         buildStructureForDuration(params_.target_duration_seconds, bpm, params_.call_enabled,
                                   params_.intro_chant, params_.mix_pattern, params_.structure);

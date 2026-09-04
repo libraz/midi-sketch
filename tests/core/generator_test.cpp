@@ -9,6 +9,7 @@
 
 #include "core/chord_extension_planner.h"
 #include "core/preset_data.h"
+#include "core/structure.h"
 #include "core/track_collision_detector.h"
 #include "midisketch.h"
 
@@ -427,6 +428,58 @@ TEST(GeneratorTest, EachChorusModulationWarnsAboutFinalChorusFallback) {
                           [](const std::string& warning) {
                             return warning.find("EachChorus modulation") != std::string::npos;
                           }));
+}
+
+// ============================================================================
+// Target duration the resolved tempo cannot reach
+// ============================================================================
+//
+// A song is a bounded number of bars, so how long a duration turns out to be
+// depends on the tempo. Validation upstream only rejects a length no permitted
+// tempo could build, which leaves the ordinary case -- a length this tempo
+// cannot build -- to be adjusted during generation. Saying nothing about it
+// hands back a song minutes away from the one that was asked for, with the bar
+// count as the only trace.
+
+TEST(GeneratorTest, DurationTheTempoCannotReachIsReported) {
+  Generator gen;
+  GeneratorParams params{};
+  params.structure = StructurePattern::StandardPop;
+  params.mood = Mood::StraightPop;
+  params.seed = 42;
+  params.bpm = 150;
+  params.bpm_explicit = true;
+  params.target_duration_seconds = 400;  // 250 bars at 150 BPM, past the ceiling
+
+  gen.generate(params);
+
+  EXPECT_LE(calculateTotalBars(gen.getSong().arrangement().sections()), kMaxStructureBars);
+  EXPECT_TRUE(std::any_of(gen.getWarnings().begin(), gen.getWarnings().end(),
+                          [](const std::string& warning) {
+                            return warning.find("Duration adjusted") != std::string::npos;
+                          }))
+      << "A song built shorter than the duration asked for said nothing about it";
+}
+
+TEST(GeneratorTest, DurationTheTempoCanReachIsNotReported) {
+  // The same request at a tempo that can build it, so the warning above cannot
+  // pass by firing for every duration.
+  Generator gen;
+  GeneratorParams params{};
+  params.structure = StructurePattern::StandardPop;
+  params.mood = Mood::StraightPop;
+  params.seed = 42;
+  params.bpm = 60;
+  params.bpm_explicit = true;
+  params.target_duration_seconds = 400;  // 100 bars at 60 BPM, inside the range
+
+  gen.generate(params);
+
+  EXPECT_FALSE(std::any_of(gen.getWarnings().begin(), gen.getWarnings().end(),
+                           [](const std::string& warning) {
+                             return warning.find("Duration adjusted") != std::string::npos;
+                           }))
+      << "A duration the tempo builds exactly was reported as adjusted";
 }
 
 TEST(GeneratorTest, ChordExtension9thAndSusSimultaneous) {

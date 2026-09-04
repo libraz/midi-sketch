@@ -464,9 +464,11 @@ std::vector<Section> buildStructureForDuration(uint16_t target_seconds, uint16_t
                                                StructurePattern pattern) {
   uint16_t target_bars = barsForDuration(target_seconds, bpm);
 
-  // Clamp to valid range. Entry points that validate their input reject an
-  // out-of-range duration before reaching here; this is the backstop for callers
-  // that build a structure directly.
+  // Clamp to valid range. Validation upstream only rejects a duration no
+  // permitted tempo could build, so a length this tempo cannot reach does
+  // arrive here and is shortened or lengthened silently. The caller holding the
+  // resolved tempo is the one that reports the adjustment; this stays a
+  // backstop, including for callers that build a structure directly.
   target_bars = std::max(target_bars, kMinStructureBars);
   target_bars = std::min(target_bars, kMaxStructureBars);
 
