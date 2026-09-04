@@ -700,17 +700,17 @@ void applyAccentPatterns(MidiTrack& track, const std::vector<Section>& sections)
 // EmotionCurve-based Velocity Calculations
 // ============================================================================
 
-uint8_t calculateVelocityCeiling(uint8_t base_velocity, float tension) {
-  // Tension affects maximum allowed velocity:
-  // - Low tension (0.0-0.3): ceiling is reduced to 80% of base
-  // - Medium tension (0.3-0.7): ceiling stays at 1.0
-  // - High tension (0.7-1.0): ceiling can exceed base by up to 20%
+uint8_t calculateVelocityCeiling(uint8_t base_velocity, float level) {
+  // The section level affects maximum allowed velocity:
+  // - Low (0.0-0.3): ceiling is reduced to 80% of base
+  // - Medium (0.3-0.7): ceiling stays at 1.0
+  // - High (0.7-1.0): ceiling can exceed base by up to 20%
   float ceiling_multiplier = velocity::calculateTieredMultiplier(
-      tension, velocity::kTensionLowThreshold, velocity::kTensionHighThreshold,
-      velocity::kTensionLowCeilingMin,                // 0.8 at tension=0
+      level, velocity::kTensionLowThreshold, velocity::kTensionHighThreshold,
+      velocity::kTensionLowCeilingMin,                // 0.8 at level=0
       1.0f,                                           // 1.0 at low_threshold and mid range
       1.0f,                                           // 1.0 at high_threshold
-      1.0f + velocity::kTensionHighCeilingMaxBonus);  // 1.2 at tension=1
+      1.0f + velocity::kTensionHighCeilingMaxBonus);  // 1.2 at level=1
 
   int ceiling = static_cast<int>(base_velocity * ceiling_multiplier);
   return static_cast<uint8_t>(std::clamp(ceiling, 40, 127));

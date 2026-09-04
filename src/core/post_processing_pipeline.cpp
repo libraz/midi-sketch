@@ -294,10 +294,16 @@ uint8_t PostProcessingPipeline::applyEmotionToVelocity(const Context& ctx, uint8
   //    Range: 0.85 (energy=0) to 1.15 (energy=1)
   float energy_factor = 0.85f + emotion.energy * 0.30f;
 
-  // 2. Tension ceiling: high tension allows higher max, low tension caps it
-  uint8_t ceiling = calculateVelocityCeiling(127, emotion.tension);
+  // 2. Ceiling: how loud a section is allowed to get. The curve's tension is
+  //    harmonic unrest, and a pop chorus resolves it while being the loudest
+  //    thing in the song -- reading the resolved chorus as a quiet passage
+  //    capped the section the arrangement made the peak below the verse it is
+  //    meant to rise above, and flattened its loudest tenth onto one value.
+  //    Energy is the field that says how loud the section is, so it is the one
+  //    the ceiling asks; a genuinely quiet section is still capped by it.
+  uint8_t ceiling = calculateVelocityCeiling(127, emotion.energy);
 
-  // 3. Apply energy factor and cap at tension ceiling
+  // 3. Apply energy factor and cap at the ceiling
   int adjusted = static_cast<int>(base_velocity * energy_factor);
   adjusted = std::min(adjusted, static_cast<int>(ceiling));
 

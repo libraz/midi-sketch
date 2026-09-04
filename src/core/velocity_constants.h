@@ -165,6 +165,10 @@ constexpr int kAgogicBoost = 8;
 
 // ============================================================================
 // EmotionCurve Velocity Thresholds
+//
+// The tier shape the velocity ceiling uses. The ceiling reads the section's
+// energy, so these are thresholds on a 0.0-1.0 curve level rather than on
+// tension specifically.
 // ============================================================================
 
 /// Tension threshold for low tension (ceiling reduction).

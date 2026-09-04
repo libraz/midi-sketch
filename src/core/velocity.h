@@ -623,16 +623,17 @@ inline VocalPhysicsParams getVocalPhysicsParams(VocalStylePreset style) {
 // ============================================================================
 
 /**
- * @brief Calculate velocity ceiling based on EmotionCurve tension.
+ * @brief Calculate velocity ceiling from an EmotionCurve level 0.0-1.0.
  *
- * Higher tension allows higher velocity ceiling, while low tension
- * limits the maximum velocity to maintain dynamic range.
+ * A higher level allows a higher ceiling; a low one limits the maximum velocity
+ * to keep the dynamic range. The pipeline passes the section's energy, which is
+ * the curve's statement of how loud the section is.
  *
  * @param base_velocity Base velocity value (0-127)
- * @param tension Tension level from EmotionCurve (0.0-1.0)
+ * @param level Section level from EmotionCurve (0.0-1.0)
  * @return Adjusted velocity ceiling (0-127)
  */
-uint8_t calculateVelocityCeiling(uint8_t base_velocity, float tension);
+uint8_t calculateVelocityCeiling(uint8_t base_velocity, float level);
 
 // ============================================================================
 // Phrase Note Velocity Curve

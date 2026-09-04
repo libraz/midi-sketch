@@ -437,20 +437,76 @@ TEST(ApplyEmotionToVelocityTest, HighEnergyIncreasesVelocity) {
   EXPECT_NEAR(expected_low, 68, 1);
 }
 
-TEST(ApplyEmotionToVelocityTest, TensionAffectsCeiling) {
+TEST(ApplyEmotionToVelocityTest, TheCeilingRisesWithTheSectionLevel) {
   // calculateVelocityCeiling behavior:
-  // Low tension (0.2): ceiling_multiplier ~0.93 -> ceiling ~118
-  // High tension (0.9): ceiling_multiplier ~1.16 -> ceiling ~127 (capped)
+  // Low level (0.2): ceiling_multiplier ~0.93 -> ceiling ~118
+  // High level (0.9): ceiling_multiplier ~1.16 -> ceiling ~127 (capped)
 
-  // With low tension, even high energy shouldn't exceed the ceiling
-  float low_tension = 0.2f;
-  uint8_t ceiling_low = calculateVelocityCeiling(127, low_tension);
+  // A low-level section is capped even when its notes ask for more
+  float low_level = 0.2f;
+  uint8_t ceiling_low = calculateVelocityCeiling(127, low_level);
 
-  float high_tension = 0.9f;
-  uint8_t ceiling_high = calculateVelocityCeiling(127, high_tension);
+  float high_level = 0.9f;
+  uint8_t ceiling_high = calculateVelocityCeiling(127, high_level);
 
-  EXPECT_LT(ceiling_low, ceiling_high) << "Low tension should have lower velocity ceiling";
-  EXPECT_LT(ceiling_low, 127) << "Low tension ceiling should be below max";
+  EXPECT_LT(ceiling_low, ceiling_high) << "A lower level should have a lower velocity ceiling";
+  EXPECT_LT(ceiling_low, 127) << "A low level's ceiling should be below max";
+}
+
+// The pipeline caps each section's velocity against a curve value. Reading that
+// cap off tension made the chorus the hardest-capped section in the song:
+// tension is harmonic unrest, a pop chorus resolves it, so the chorus carries a
+// LOWER tension than the verse it is meant to rise above. A mood that scales the
+// curve down pulls the chorus under the ceiling's low threshold while leaving
+// the verse above it, and the chorus then peaks below the verse with its
+// loudest notes flattened onto the cap.
+//
+// Asked as "can the chorus exceed the ceiling its own tension would impose",
+// the question has an answer that does not depend on which song the seed
+// produced: under a tension-driven cap it is no by construction.
+//
+// The quiet moods are what this needs. At full mood intensity the tension
+// ceiling lands at the maximum anyway, so the same check at the default mood
+// asks nothing.
+TEST_F(EmotionCurveVelocityIntegrationTest, TheChorusIsNotCappedByItsOwnResolution) {
+  const Mood kQuietMoods[] = {Mood::Sentimental, Mood::Chill, Mood::Ballad};
+
+  size_t asked = 0;
+  for (Mood mood : kQuietMoods) {
+    params_.mood = mood;
+    generator_.generate(params_);
+
+    const auto& sections = generator_.getSong().arrangement().sections();
+    const auto& curve = generator_.getEmotionCurve();
+    ASSERT_TRUE(curve.isPlanned());
+
+    for (size_t i = 0; i < sections.size(); ++i) {
+      if (sections[i].type != SectionType::Chorus) continue;
+      uint8_t tension_ceiling = calculateVelocityCeiling(127, curve.getEmotion(i).tension);
+      if (tension_ceiling >= 127) continue;  // Nothing to exceed
+
+      Tick end = sections[i].start_tick + sections[i].bars * TICKS_PER_BAR;
+      uint8_t peak = 0;
+      for (const auto* track : {&generator_.getSong().chord(), &generator_.getSong().vocal(),
+                                &generator_.getSong().bass()}) {
+        for (const auto& note : track->notes()) {
+          if (note.start_tick < sections[i].start_tick || note.start_tick >= end) continue;
+          peak = std::max(peak, note.velocity);
+        }
+      }
+      if (peak == 0) continue;
+
+      EXPECT_GT(peak, tension_ceiling)
+          << "mood=" << static_cast<int>(mood) << " chorus at tick " << sections[i].start_tick
+          << " peaks at " << static_cast<int>(peak)
+          << ", held to the ceiling its own resolved tension would impose ("
+          << static_cast<int>(tension_ceiling) << ")";
+      ++asked;
+    }
+  }
+  // Without a mood that scales the curve below the ceiling's low threshold,
+  // every chorus clears the maximum already and nothing above was asked.
+  EXPECT_GT(asked, 0u);
 }
 
 }  // namespace

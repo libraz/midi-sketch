@@ -28,13 +28,18 @@ namespace midisketch {
  *
  * The curve is planned after the arrangement is fixed and consumed by the
  * post-processing pipeline, so these values shape the dynamics of notes that
- * already exist: tension sets a velocity ceiling and energy sets the level
- * within it. They do not reach note selection or note count, which are decided
- * during generation, before the curve is planned.
+ * already exist: energy sets both the level and the ceiling above it. They do
+ * not reach note selection or note count, which are decided during generation,
+ * before the curve is planned.
  */
 struct SectionEmotion {
-  float tension;  ///< Tension level 0.0-1.0 (0=relaxed, 1=maximum tension)
-  float energy;   ///< Energy level 0.0-1.0 (0=calm, 1=explosive)
+  /// @brief Tension level 0.0-1.0 (0=relaxed, 1=maximum tension), not read by any track.
+  ///
+  /// Harmonic unrest, which a pop chorus resolves at its loudest point. That is
+  /// why the velocity ceiling asks energy instead: the two point opposite ways
+  /// at exactly the section the arrangement made the peak.
+  float tension;
+  float energy;  ///< Energy level 0.0-1.0 (0=calm, 1=explosive)
   /// @brief Need for resolution 0.0-1.0 (0=stable, 1=desperate for resolution).
   ///
   /// Carried by the curve's own rules and not read by any track.
@@ -84,7 +89,7 @@ struct TransitionHint {
  *
  * // During post-processing, to shape the dynamics of existing notes:
  * const auto& emotion = curve.getEmotion(section_index);
- * // emotion.energy sets the level, emotion.tension the ceiling above it
+ * // emotion.energy sets the level and the ceiling above it
  *
  * // At section boundaries:
  * auto hint = curve.getTransitionHint(from_index);
