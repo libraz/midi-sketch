@@ -30,8 +30,7 @@ bool isHarmonicTrack(TrackRole role) {
 
 bool isDominantFunctionContext(int8_t chord_degree, const ChordProgressionTracker* chord_tracker,
                                Tick tick) {
-  int normalized = ((chord_degree % 7) + 7) % 7;
-  return normalized == 4 || normalized == 6 ||
+  return chordDegreeOwnsATritone(chord_degree) ||
          (chord_tracker != nullptr && chord_tracker->isSecondaryDominantAt(tick));
 }
 

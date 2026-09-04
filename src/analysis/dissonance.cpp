@@ -136,11 +136,8 @@ std::pair<bool, DissonanceSeverity> checkIntervalDissonance(uint8_t actual_semit
       is_dissonant = true;
     }
     // Tritone as compound (18 semitones): context-dependent
-    if (pitch_class_interval == 6) {
-      int normalized = ((chord_degree % 7) + 7) % 7;
-      if (normalized != 4 && normalized != 6) {
-        is_dissonant = true;  // Not V or vii - tritone is dissonant
-      }
+    if (pitch_class_interval == 6 && !chordDegreeOwnsATritone(chord_degree)) {
+      is_dissonant = true;
     }
   }
 

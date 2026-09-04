@@ -617,6 +617,25 @@ int constrainInterval(int target_pitch, int prev_pitch, int max_interval, int ra
                       int range_high);
 
 /**
+ * @brief Whether the chord this degree names contains a tritone of its own.
+ *
+ * The tritone exemption exists so a chord is never refused the interval that
+ * defines it: V states its tritone between the third and the seventh, and a
+ * diminished chord states one between its root and its fifth.
+ *
+ * The question has to be asked of the chord, not of where its number lands
+ * after `% 7`. Degrees above 6 are identifiers for borrowed chords rather than
+ * scale steps, so that normalization sent #IVdim (14) to 0 and told it its own
+ * diminished fifth was dissonant, while bIII (11) went to 4 and bII (13) to 6
+ * and both were granted a tritone neither chord has. Diatonic degrees are
+ * unaffected: for 0-6 the normalization was the identity.
+ *
+ * @param chord_degree Scale degree, or a borrowed-chord identifier
+ * @return true when the chord owns a tritone and may sound one
+ */
+bool chordDegreeOwnsATritone(int8_t chord_degree);
+
+/**
  * @brief Check if two pitch classes create a dissonant interval.
  *
  * Minor 2nd (1 semitone) and tritone (6 semitones) are dissonant.

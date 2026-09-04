@@ -211,6 +211,43 @@ TEST(PitchUtilsTest, IsDissonantWithContextTritoneOnNonDominant) {
   EXPECT_TRUE(isDissonantIntervalWithContext(5, 11, 5));  // F-B on vi
 }
 
+TEST(PitchUtilsTest, ABorrowedDegreeIsAskedWhichChordItNames) {
+  // Degrees above 6 identify borrowed chords; they are not scale steps, so
+  // reducing them mod 7 asks about a chord that is not sounding. #IVdim states
+  // a tritone between its root and its fifth and has to be allowed one, while
+  // bIII and bII are plain major triads with no tritone to excuse.
+  EXPECT_TRUE(chordDegreeOwnsATritone(14)) << "#IVdim must be allowed its own diminished fifth";
+  EXPECT_FALSE(chordDegreeOwnsATritone(11)) << "bIII is a major triad";
+  EXPECT_FALSE(chordDegreeOwnsATritone(13)) << "bII is a major triad";
+  EXPECT_FALSE(chordDegreeOwnsATritone(8));   // bVI
+  EXPECT_FALSE(chordDegreeOwnsATritone(10));  // bVII
+  EXPECT_FALSE(chordDegreeOwnsATritone(12));  // iv
+
+  // Diatonic degrees keep the rule they always had.
+  EXPECT_TRUE(chordDegreeOwnsATritone(4));   // V
+  EXPECT_TRUE(chordDegreeOwnsATritone(6));   // vii(o)
+  EXPECT_FALSE(chordDegreeOwnsATritone(0));  // I
+  EXPECT_FALSE(chordDegreeOwnsATritone(3));  // IV
+  EXPECT_FALSE(chordDegreeOwnsATritone(5));  // vi
+  EXPECT_FALSE(chordDegreeOwnsATritone(-1)) << "no chord context excuses nothing";
+}
+
+TEST(PitchUtilsTest, TheTritoneRuleReadsTheSameFromEveryGate) {
+  // The same question was written out at five call sites; a rule spelled more
+  // than once is a rule that can be half-fixed. These are the three gates in
+  // this file, asked about the chord that exposed the difference.
+  EXPECT_FALSE(isDissonantIntervalWithContext(6, 0, 14)) << "F#-C is what #IVdim is";
+  EXPECT_FALSE(isDissonantActualInterval(6, 14));
+  DissonanceCheckOptions opts;
+  opts.chord_degree = 14;
+  EXPECT_FALSE(isDissonantSemitoneInterval(6, opts));
+
+  EXPECT_TRUE(isDissonantIntervalWithContext(6, 0, 13));
+  EXPECT_TRUE(isDissonantActualInterval(6, 13));
+  opts.chord_degree = 13;
+  EXPECT_TRUE(isDissonantSemitoneInterval(6, opts));
+}
+
 // ============================================================================
 // Actual Interval Dissonance Tests (isDissonantActualInterval)
 // ============================================================================

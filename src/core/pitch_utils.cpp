@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "core/chord.h"
 #include "core/midi_track.h"
 
 namespace midisketch {
@@ -190,6 +191,15 @@ bool isDissonantInterval(int pc1, int pc2) {
   return interval == 1 || interval == 6;
 }
 
+bool chordDegreeOwnsATritone(int8_t chord_degree) {
+  if (chord_degree < 0) return false;
+  if (chord_degree > 6) {
+    // A borrowed degree is an identifier, so ask the chord it names.
+    return getChordQuality(chord_degree) == ChordQuality::Diminished;
+  }
+  return chord_degree == 4 || chord_degree == 6;
+}
+
 bool isDissonantIntervalWithContext(int pc1, int pc2, int8_t chord_degree, bool simultaneous) {
   int interval = std::abs(pc1 - pc2);
   if (interval > 6) interval = 12 - interval;
@@ -210,11 +220,7 @@ bool isDissonantIntervalWithContext(int pc1, int pc2, int8_t chord_degree, bool 
   // V: tritone between 3rd and 7th of dominant 7th chord
   // vii°: tritone between root and diminished 5th
   if (interval == 6) {
-    int normalized = ((chord_degree % 7) + 7) % 7;
-    if (normalized == 4 || normalized == 6) {
-      return false;  // V or vii chord - tritone is part of the chord
-    }
-    return true;  // Other chords - tritone is dissonant
+    return !chordDegreeOwnsATritone(chord_degree);
   }
 
   return false;
@@ -255,11 +261,8 @@ bool isDissonantActualInterval(int actual_semitones, int8_t chord_degree) {
   // Tritone (pitch class 6): context-dependent at any octave
   // Allowed on V (dominant) and vii° (diminished) chords
   // Catches: 6, 18, 30 semitones
-  if (pc_interval == 6) {
-    int normalized = ((chord_degree % 7) + 7) % 7;
-    if (normalized != 4 && normalized != 6) {
-      return true;  // Not V or vii - tritone is dissonant
-    }
+  if (pc_interval == 6 && !chordDegreeOwnsATritone(chord_degree)) {
+    return true;
   }
 
   // Minor 7th (10), major 9th (14), perfect 12th (19), etc.: acceptable in Pop
@@ -317,9 +320,8 @@ bool isDissonantSemitoneInterval(int actual_semitones, const DissonanceCheckOpti
       // No chord context: treat tritone as always dissonant.
       return true;
     }
-    int normalized = ((opts.chord_degree % 7) + 7) % 7;
-    if (normalized != 4 && normalized != 6) {
-      return true;  // Not V or vii - tritone is dissonant.
+    if (!chordDegreeOwnsATritone(opts.chord_degree)) {
+      return true;  // The chord has no tritone of its own to excuse this one.
     }
   }
 
