@@ -51,13 +51,15 @@ class StubHarmonyContext : public IHarmonyCoordinator {
 
   int8_t getChordDegreeAt(Tick /*tick*/) const override { return chord_degree_; }
 
-  ChordTones getChordTonesAt(Tick /*tick*/) const override {
+  ChordTones getChordTonesAt(Tick tick) const override {
     // The degree and the tone set name one chord. A stub that answers G for
     // the degree and C major for the tones lets a caller reading both see a
-    // chord that never existed, so the tones follow the configured degree
-    // unless a test states a tone set of its own.
+    // chord that never existed, so the tones follow the degree unless a test
+    // states a tone set of its own. The degree is read through the virtual
+    // getter rather than the member behind it, so a fixture that overrides
+    // only the degree still names one chord with both answers.
     if (!chord_tones_configured_) {
-      return getChordTones(chord_degree_);
+      return getChordTones(getChordDegreeAt(tick));
     }
     ChordTones result{};
     result.pitch_classes.fill(-1);
