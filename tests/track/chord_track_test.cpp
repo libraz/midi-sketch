@@ -35,8 +35,8 @@ namespace midisketch {
 
 uint8_t getVocalCeilingForRange(const IHarmonyContext& harmony, Tick start, Tick end,
                                 uint8_t fallback_ceiling);
-bool wouldCreateVoicingCluster(const chord_voicing::VoicedChord& voicing, uint8_t candidate_pitch);
-bool isVoicingCluster(uint8_t pitch_a, uint8_t pitch_b, const ChordTones& tones);
+bool wouldCreateVoicingCluster(const chord_voicing::VoicedChord& voicing, uint8_t candidate_pitch,
+                               const ChordTones& tones);
 bool removeVoicingClusters(MidiTrack& track, IHarmonyContext& harmony);
 
 namespace {
@@ -1759,19 +1759,35 @@ TEST_F(ChordTrackTest, AugmentVoicingRejectsStepClusterCandidates) {
   chord_voicing::VoicedChord voicing{};
   voicing.pitches = {60, 64, 0, 0, 0};
   voicing.count = 2;
+  const ChordTones c_major{{0, 4, 7, -1, -1}, 3};
 
-  EXPECT_TRUE(wouldCreateVoicingCluster(voicing, 61))
+  EXPECT_TRUE(wouldCreateVoicingCluster(voicing, 61, c_major))
       << "C and Db should be rejected as an internal minor-second cluster";
-  EXPECT_TRUE(wouldCreateVoicingCluster(voicing, 63))
+  EXPECT_TRUE(wouldCreateVoicingCluster(voicing, 63, c_major))
       << "E and Eb should be rejected as an internal minor-second cluster";
-  EXPECT_TRUE(wouldCreateVoicingCluster(voicing, 62))
+  EXPECT_TRUE(wouldCreateVoicingCluster(voicing, 62, c_major))
       << "C and D adjacent in the same octave is a major second in close position";
-  EXPECT_TRUE(wouldCreateVoicingCluster(voicing, 47))
+  EXPECT_TRUE(wouldCreateVoicingCluster(voicing, 47, c_major))
       << "A minor ninth is the compound minor second and stays dissonant";
-  EXPECT_FALSE(wouldCreateVoicingCluster(voicing, 71))
+  EXPECT_FALSE(wouldCreateVoicingCluster(voicing, 71, c_major))
       << "A major seventh above the root is the chord itself in a seventh chord";
-  EXPECT_FALSE(wouldCreateVoicingCluster(voicing, 67))
+  EXPECT_FALSE(wouldCreateVoicingCluster(voicing, 67, c_major))
       << "A fifth above C should remain available for minimum voicing fill";
+}
+
+TEST_F(ChordTrackTest, AugmentVoicingKeepsASeventhBesideItsRoot) {
+  // The fill that brings a voicing up to three distinct tones asks the same
+  // question the emission screen and the cleanup pass ask, so it has to get the
+  // same answer: a whole step between two tones of the chord is the chord.
+  chord_voicing::VoicedChord voicing{};
+  voicing.pitches = {60, 0, 0, 0, 0};  // root only
+  voicing.count = 1;
+  const ChordTones c7{{0, 4, 7, 10, -1}, 4};
+
+  EXPECT_FALSE(wouldCreateVoicingCluster(voicing, 58, c7))
+      << "a dominant seventh a whole step under its root is the chord, not a cluster";
+  EXPECT_TRUE(wouldCreateVoicingCluster(voicing, 62, c7))
+      << "a whole step against a tone the chord does not contain is still a cluster";
 }
 
 // ============================================================================

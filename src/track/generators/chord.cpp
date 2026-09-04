@@ -83,10 +83,24 @@ uint8_t getVocalCeilingForRange(const IHarmonyContext& harmony, Tick start, Tick
   return fallback_ceiling;
 }
 
-bool wouldCreateVoicingCluster(const VoicedChord& voicing, uint8_t candidate_pitch) {
+/// @brief The pitch classes a chord definition states from a given root.
+///
+/// The voicing passes below work from a Chord and a root rather than from the
+/// timeline, so they cannot ask getChordTonesAt; this gives the cluster rule
+/// the same set it would have got there.
+ChordTones chordToneSet(const Chord& chord, uint8_t root) {
+  ChordTones tones{};
+  for (uint8_t i = 0; i < chord.note_count && tones.count < tones.pitch_classes.size(); ++i) {
+    if (chord.intervals[i] < 0) continue;
+    tones.pitch_classes[tones.count++] = (static_cast<int>(root) + chord.intervals[i]) % 12;
+  }
+  return tones;
+}
+
+bool wouldCreateVoicingCluster(const VoicedChord& voicing, uint8_t candidate_pitch,
+                               const ChordTones& tones) {
   for (uint8_t idx = 0; idx < voicing.count; ++idx) {
-    if (isDissonantVoicingGap(static_cast<int>(candidate_pitch) -
-                              static_cast<int>(voicing.pitches[idx]))) {
+    if (isVoicingCluster(candidate_pitch, voicing.pitches[idx], tones)) {
       return true;
     }
   }
@@ -310,6 +324,7 @@ VoicedChord filterVoicingByCollision(const IHarmonyContext& harmony, const Voice
 /// @return Voicing with raw chord-tone pitches (no collision check yet)
 VoicedChord buildFallbackVoicing(const Chord& chord, uint8_t root, uint8_t vocal_high = 0) {
   uint8_t effective_high = (vocal_high > 0 && vocal_high < CHORD_HIGH) ? vocal_high : CHORD_HIGH;
+  const ChordTones tones = chordToneSet(chord, root);
   VoicedChord fallback;
   fallback.count = 0;
   fallback.type = VoicingType::Close;
@@ -324,7 +339,7 @@ VoicedChord buildFallbackVoicing(const Chord& chord, uint8_t root, uint8_t vocal
     int chosen = -1;
     for (int candidate = base; candidate >= CHORD_LOW; candidate -= 12) {
       if (candidate > effective_high) continue;
-      if (wouldCreateVoicingCluster(fallback, static_cast<uint8_t>(candidate))) continue;
+      if (wouldCreateVoicingCluster(fallback, static_cast<uint8_t>(candidate), tones)) continue;
       chosen = candidate;
       break;
     }
@@ -362,6 +377,7 @@ void augmentVoicingToMinimum(VoicedChord& voicing, const Chord& chord, uint8_t r
   if (voicing.count == 0) return;
 
   uint8_t effective_high = getEffectiveChordHigh(vocal_ceiling);
+  const ChordTones tones = chordToneSet(chord, root);
 
   auto distinctTones = [&voicing]() {
     uint16_t seen = 0;
@@ -392,7 +408,7 @@ void augmentVoicingToMinimum(VoicedChord& voicing, const Chord& chord, uint8_t r
         if (pitch < CHORD_LOW || pitch > effective_high) continue;
         if (voicing.count >= voicing.pitches.size()) return;
         if (soundsPitchClass(pitch)) continue;
-        if (wouldCreateVoicingCluster(voicing, static_cast<uint8_t>(pitch))) continue;
+        if (wouldCreateVoicingCluster(voicing, static_cast<uint8_t>(pitch), tones)) continue;
         if (pass == 0 && wouldClashWithRegisteredTracks(harmony, static_cast<uint8_t>(pitch),
                                                         bar_start, check_duration)) {
           continue;

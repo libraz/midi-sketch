@@ -346,14 +346,14 @@ TEST_F(GeneratorIterationSnapshotTest, NoteCountsAreStable) {
 TEST(GeneratorMidiGoldenTest, FixedBlueprintsMatchNormalizedMidiSha256) {
   constexpr std::array<const char*, 10> kExpectedHashes = {
       "eab060d9843db321849bc7d206ed6a4a11365d2e3cece26e27480f3cf918b800",
-      "fcca9b7f70df737426e5c19f2bfa7facb1632adcd821d476e989f4bb5806774a",
+      "02065af339c7084e8de1eba1e909fdda736f86befd01e061c6069395562f2f5b",
       "4a93e7aca6c7283dd0a8939f4a0a1ed8a5322f73b3b05d8d13aa5c95633b7878",
       "4a02fdb471ebe828cea9e283639cab85b35c6ff574865cac07f0ba893c6d3a63",
       "603802678099bcb94d89df63dc9331d230fba8a7859eae89d86ea8654c272878",
       "51f9b1cd62357f256bd0eb265e1558221f33687a313056ddc7554908abce1ad9",
       "e1722df4080418929d39fb016295bf8e30e5355fa8b045ae3de238e87301e2a3",
       "99ba6d4f205bf7c1bef16c8037f98850763d70a50a52765321ae47917ea1ac4d",
-      "14310d7d1b068f24657f071f5d8d89fc185a0c950db4676e38c1fafd8971d0c2",
+      "54f4f3ef46f9e9ef6b1e794f9e5b6f7363c59f20dee9236c597ca62929cfebd8",
       "bd43b21cdcfd0c4ebe1bdeb077c10f45f62f2803a4833e5ce2afa342acf7ff4f",
   };
 
