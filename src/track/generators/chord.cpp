@@ -341,6 +341,39 @@ VoicedChord filterVoicingByCollision(const IHarmonyContext& harmony, const Voice
   return safe;
 }
 
+/// @brief Rank a chord tone by how much of the chord's identity it carries.
+///
+/// The third is what makes a chord major or minor, the root is what names it,
+/// and the seventh is what gives a dominant its pull; the fifth carries no
+/// identity at all and is the voice to give up when there is not room for
+/// everything. Root, third and seventh with no fifth is the shell a pop or jazz
+/// comp is built on, and it states the harmony that a triad cannot.
+///
+/// This is the one place the question is answered. Both places that ask it --
+/// the fill that brings a thin voicing back up to three tones and the emission
+/// order that decides which voice takes the last free slot -- used to rank the
+/// tones themselves, in opposite orders, so a chord could be filled up to a
+/// triad by one and then have its seventh emitted first by the other.
+///
+/// @param interval_from_root Semitones above the chord root, any octave
+/// @return Lower is more important
+int chordToneIdentityRank(int interval_from_root) {
+  switch (((interval_from_root % 12) + 12) % 12) {
+    case 3:
+    case 4:
+      return 0;  // third: major/minor identity
+    case 0:
+      return 1;  // root: names the chord
+    case 10:
+    case 11:
+      return 2;  // seventh: dominant pull and colour
+    case 7:
+      return 4;  // fifth: droppable
+    default:
+      return 3;  // suspensions and upper tensions
+  }
+}
+
 namespace {
 
 /// @brief Build a fallback voicing when all candidates are filtered out.
@@ -428,11 +461,25 @@ void augmentVoicingToMinimum(VoicedChord& voicing, const Chord& chord, uint8_t r
     return false;
   };
 
+  // Fill in the order the tones matter, not the order they sit in the chord
+  // definition. That order is root, third, fifth, seventh, and the fill stops
+  // the moment it has three distinct tones, so the seventh was never reached:
+  // a chord the timeline planned as a seventh was restored to its own triad.
+  std::vector<uint8_t> fill_order;
+  fill_order.reserve(chord.note_count);
+  for (uint8_t idx = 0; idx < chord.note_count; ++idx) {
+    if (chord.intervals[idx] >= 0) fill_order.push_back(idx);
+  }
+  std::stable_sort(fill_order.begin(), fill_order.end(), [&chord](uint8_t lhs, uint8_t rhs) {
+    return chordToneIdentityRank(chord.intervals[lhs]) <
+           chordToneIdentityRank(chord.intervals[rhs]);
+  });
+
   // Pass 0 keeps the voicing clear of the other tracks; pass 1 accepts a clash
   // rather than leave the chord without its identity.
   for (int pass = 0; pass < 2 && distinctTones() < 3; ++pass) {
-    for (uint8_t idx = 0; idx < chord.note_count && distinctTones() < 3; ++idx) {
-      if (chord.intervals[idx] < 0) continue;
+    for (uint8_t idx : fill_order) {
+      if (distinctTones() >= 3) break;
       int candidate_pitch = static_cast<int>(root) + chord.intervals[idx];
       for (int octave_offset = -1; octave_offset <= 1 && distinctTones() < 3; ++octave_offset) {
         int pitch = candidate_pitch + (octave_offset * 12);
@@ -826,31 +873,16 @@ enum class EighthPulseShape : uint8_t {
 /// @brief Order a voicing's voices so the tones that carry the chord's identity go first.
 ///
 /// A voice that cannot be placed safely is dropped, so emission order decides
-/// which voice survives a crowded bar. The third is what makes a chord major or
-/// minor, the root is what names it, and the seventh is what gives a dominant
-/// its pull; the fifth carries no identity at all. Emitting in pitch order let
-/// the fifth take the last free slot and left a chord with no quality.
+/// which voice survives a crowded bar. Emitting in pitch order let the fifth
+/// take the last free slot and left a chord with no quality. The ranking itself
+/// lives in chordToneIdentityRank().
 ///
 /// @param voicing Voicing whose voices are to be ordered
 /// @param root_pitch_class Pitch class of the chord root
 /// @return Indices into voicing.pitches, most important voice first
 std::vector<uint8_t> guideToneFirstOrder(const VoicedChord& voicing, uint8_t root_pitch_class) {
   auto priority = [root_pitch_class](uint8_t pitch) -> int {
-    int interval = ((static_cast<int>(pitch) - static_cast<int>(root_pitch_class)) % 12 + 12) % 12;
-    switch (interval) {
-      case 3:
-      case 4:
-        return 0;  // third: major/minor identity
-      case 0:
-        return 1;  // root: names the chord
-      case 10:
-      case 11:
-        return 2;  // seventh: dominant pull and colour
-      case 7:
-        return 4;  // fifth: droppable
-      default:
-        return 3;  // suspensions and upper tensions
-    }
+    return chordToneIdentityRank(static_cast<int>(pitch) - static_cast<int>(root_pitch_class));
   };
 
   std::vector<uint8_t> order;

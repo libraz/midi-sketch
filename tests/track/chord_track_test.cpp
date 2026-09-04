@@ -38,6 +38,7 @@ uint8_t getVocalCeilingForRange(const IHarmonyContext& harmony, Tick start, Tick
 bool wouldCreateVoicingCluster(const chord_voicing::VoicedChord& voicing, uint8_t candidate_pitch,
                                const ChordTones& tones);
 bool removeVoicingClusters(MidiTrack& track, IHarmonyContext& harmony);
+int chordToneIdentityRank(int interval_from_root);
 chord_voicing::VoicedChord filterVoicingByCollision(const IHarmonyContext& harmony,
                                                     const chord_voicing::VoicedChord& v, Tick start,
                                                     Tick duration, uint8_t vocal_ceiling_hint);
@@ -183,6 +184,29 @@ TEST_F(ChordTrackTest, VocalCeilingUsesHighRegisterNotLowOrnament) {
   EXPECT_GT(max_pitch, 52)
       << "A low vocal ornament must not collapse the whole chord voicing below C3.";
   EXPECT_LE(max_pitch, 73) << "Chord voicing should still respect the high vocal register margin.";
+}
+
+// ============================================================================
+// Which tone a chord gives up when there is not room for all of them
+// ============================================================================
+
+TEST_F(ChordTrackTest, TheFifthIsTheToneAChordGivesUpFirst) {
+  // A three-voice seventh chord is root, third and seventh: the fifth adds no
+  // identity the root does not already imply, while the seventh is the whole
+  // reason the chord is not a triad. Both the fill that brings a thin voicing
+  // back up and the emission order that decides which voice takes the last free
+  // slot read this one ranking, so they cannot disagree about it.
+  EXPECT_LT(chordToneIdentityRank(4), chordToneIdentityRank(0)) << "the third names the quality";
+  EXPECT_LT(chordToneIdentityRank(0), chordToneIdentityRank(10)) << "the root names the chord";
+  EXPECT_LT(chordToneIdentityRank(10), chordToneIdentityRank(7))
+      << "a seventh chord voiced without its seventh is a different chord";
+  EXPECT_LT(chordToneIdentityRank(11), chordToneIdentityRank(7))
+      << "the same holds for a major seventh";
+  EXPECT_EQ(chordToneIdentityRank(3), chordToneIdentityRank(4))
+      << "minor and major third rank alike";
+  // Any octave answers the same.
+  EXPECT_EQ(chordToneIdentityRank(7), chordToneIdentityRank(19));
+  EXPECT_EQ(chordToneIdentityRank(10), chordToneIdentityRank(-2));
 }
 
 // ============================================================================
