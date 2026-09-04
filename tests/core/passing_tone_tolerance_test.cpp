@@ -233,7 +233,10 @@ TEST_F(PassingToneCollisionTest, DebugSnapshotUsesCanonicalActualIntervals) {
 
   ASSERT_EQ(snapshot.clashes.size(), 1u);
   EXPECT_EQ(snapshot.clashes[0].interval_semitones, 6);
-  EXPECT_EQ(snapshot.clashes[0].interval_name, "tritone");
+  // interval_name is a const char*, so EXPECT_EQ would compare addresses. That
+  // passes only while the compiler happens to pool the two literals into one
+  // object, which it does in the shipping build and does not in others.
+  EXPECT_STREQ(snapshot.clashes[0].interval_name, "tritone");
   EXPECT_NE(detector_.dumpNotesAt(0, 480).find("tritone"), std::string::npos);
 }
 
