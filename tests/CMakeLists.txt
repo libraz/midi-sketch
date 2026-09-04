@@ -87,6 +87,7 @@ set(TEST_SOURCES
   core/voice_limit_test.cpp
   core/note_creator_test.cpp
   core/chord_boundary_test.cpp
+  core/clash_gate_test.cpp
   core/select_best_candidate_test.cpp
   core/velocity_helper_test.cpp
   core/constraint_pipeline_test.cpp

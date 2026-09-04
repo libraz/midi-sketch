@@ -61,6 +61,8 @@
 
 namespace midisketch {
 
+void trimClashingNoteTails(Song& song, const IHarmonyContext& harmony);
+
 namespace {
 
 // ============================================================================
@@ -104,7 +106,6 @@ void breakLongPitchRuns(MidiTrack& track, const IHarmonyContext& harmony, uint8_
                         uint8_t chorus_peak);
 void trimBassBoundaryOverhangs(MidiTrack& bass, const IHarmonyContext& harmony);
 void trimVocalSustainsAtUnsafeChordChanges(MidiTrack& vocal, const IHarmonyContext& harmony);
-void trimClashingNoteTails(Song& song, const IHarmonyContext& harmony);
 void applyRhythmSyncLeadDna(MidiTrack& vocal, MidiTrack& motif,
                             const std::vector<Section>& sections, const GeneratorParams& params,
                             const IHarmonyContext& harmony);
@@ -1794,6 +1795,22 @@ void trimBassBoundaryOverhangs(MidiTrack& bass, const IHarmonyContext& harmony) 
 /// and only tail overlaps are handled: the earlier note is shortened to end
 /// at the clashing note's onset. Same-onset clashes are left for the
 /// pitch-level fixers (trimming cannot resolve them).
+}  // namespace
+
+/// @brief Last gate before the notes are emitted: shorten or drop what still clashes.
+///
+/// Every pitch-moving pass runs before this, and a pass that moves a note to
+/// avoid one clash can move it onto another that the track it was reconciled
+/// against had already been voiced around. Nothing re-checks, so this is where
+/// the survivors are found. It can shorten a tail and it can delete a short
+/// decorative note at a shared onset; it cannot move anything, so a same-onset
+/// clash between two notes that both deserve to sound still has no answer.
+///
+/// Public so the gate can be tested with a crafted song; normally invoked from
+/// applyPostProcessingEffects().
+///
+/// @param song The song with generated tracks
+/// @param harmony Harmony context, read for the chord at each clash
 void trimClashingNoteTails(Song& song, const IHarmonyContext& harmony) {
   constexpr Tick kMaxTailOverlap = TICK_QUARTER;  // longer overlaps were
                                                   // visible at creation time
@@ -1854,7 +1871,14 @@ void trimClashingNoteTails(Song& song, const IHarmonyContext& harmony) {
         for (const auto& b : later_track->notes()) {
           if (b.start_tick <= a.start_tick) continue;  // need a true tail overlap
           if (b.start_tick >= a_end) continue;
-          Tick overlap = a_end - b.start_tick;
+          // How long the two actually sound together, which ends when either
+          // one does. Measuring to the end of `a` alone reports an overlap the
+          // analyzer never counts, and the cap below then reads a clash of a
+          // few ticks as one too long to touch: a chord stab under a sustained
+          // motif was skipped for the length of the motif rather than the
+          // length of the stab.
+          Tick b_end = b.start_tick + b.duration;
+          Tick overlap = std::min(a_end, b_end) - b.start_tick;
           if (overlap > kMaxTailOverlap) continue;
           Tick remainder = b.start_tick - a.start_tick;
           if (remainder < kMinRemainder) continue;
@@ -1925,6 +1949,8 @@ void trimClashingNoteTails(Song& song, const IHarmonyContext& harmony) {
     }
   }
 }
+
+namespace {
 
 void duckMotifUnderLead(MidiTrack& motif, const MidiTrack& vocal, const IHarmonyContext& harmony) {
   auto& motif_notes = motif.notes();
