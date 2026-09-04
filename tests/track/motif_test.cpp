@@ -407,11 +407,13 @@ TEST_F(MotifDissonanceTest, BGMGenerationOrderAllowsClashAvoidance) {
 
   const auto& motif_notes = gen.getSong().motif().notes();
   const auto& bass_notes = gen.getSong().bass().notes();
+  const auto& harmony = gen.getHarmonyContext();
 
   ASSERT_FALSE(motif_notes.empty()) << "BGM fixture must generate Motif notes";
   ASSERT_FALSE(bass_notes.empty()) << "BGM fixture must generate Bass notes";
 
   int dissonant_clashes = 0;
+  std::string detail;
 
   for (const auto& motif_note : motif_notes) {
     Tick motif_start = motif_note.start_tick;
@@ -427,22 +429,26 @@ TEST_F(MotifDissonanceTest, BGMGenerationOrderAllowsClashAvoidance) {
       int actual_interval =
           std::abs(static_cast<int>(motif_note.note) - static_cast<int>(bass_note.note));
 
-      // Skip wide separations (2+ octaves)
-      if (actual_interval >= 24) continue;
-
-      int pitch_class_interval = actual_interval % 12;
-
-      // Check for dissonant intervals: minor 2nd (1), tritone (6), major 7th (11)
-      if (pitch_class_interval == 1 || pitch_class_interval == 6 || pitch_class_interval == 11) {
-        dissonant_clashes++;
+      // The chord the timeline states where the two begin to sound together
+      // decides the tritone, which is the interval a dominant is built on.
+      // Counting it without asking made this fixture demand that the riff avoid
+      // the very tone that spells the chord under it.
+      const Tick overlap_start = std::max(motif_start, bass_start);
+      if (!isDissonantActualInterval(actual_interval, harmony.getChordDegreeAt(overlap_start))) {
+        continue;
       }
+      ++dissonant_clashes;
+      detail += "\n  tick " + std::to_string(overlap_start) + ": motif " +
+                std::to_string(motif_note.note) + " against bass " +
+                std::to_string(bass_note.note) + " = " + std::to_string(actual_interval) +
+                " semitones over degree " + std::to_string(harmony.getChordDegreeAt(overlap_start));
     }
   }
 
-  // Before fix: 10+ clashes, After fix: 0
   EXPECT_EQ(dissonant_clashes, 0)
-      << "BGM mode should generate Motif after Bass to enable clash avoidance. "
-      << "Found " << dissonant_clashes << " dissonant clashes";
+      << "BGM mode generates the Motif after the Bass so the riff can be voiced against it, "
+      << "so no motif note may state a dissonant interval against a bass note sounding with it."
+      << detail;
 }
 
 // Test second BGM file parameters

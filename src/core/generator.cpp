@@ -75,7 +75,8 @@ constexpr int kMaxVelocityBoost = 10;                      // Maximum velocity b
 constexpr int kMaxBaseVelocity = 100;                      // Maximum base velocity
 
 void deduplicatePitchOnsets(MidiTrack& track);
-void removeComfortClashesAgainstReference(MidiTrack& track, const MidiTrack& reference);
+void removeComfortClashesAgainstReference(MidiTrack& track, const MidiTrack& reference,
+                                          const IHarmonyContext& harmony);
 uint8_t clampScalePitchAvoidingChord(int pitch, Tick tick, const IHarmonyContext& harmony,
                                      uint8_t low, uint8_t high);
 void duckMotifUnderLead(MidiTrack& motif, const MidiTrack& vocal, const IHarmonyContext& harmony);
@@ -751,10 +752,10 @@ void Generator::applyPostProcessingEffects() {
     PostProcessor::fixTrackReferenceClashes(song_.arpeggio(), song_.motif(), TrackRole::Arpeggio);
     PostProcessor::fixTrackReferenceClashes(song_.arpeggio(), song_.chord(), TrackRole::Arpeggio);
     PostProcessor::fixTrackReferenceClashes(song_.arpeggio(), song_.aux(), TrackRole::Arpeggio);
-    removeComfortClashesAgainstReference(song_.arpeggio(), song_.vocal());
-    removeComfortClashesAgainstReference(song_.arpeggio(), song_.motif());
-    removeComfortClashesAgainstReference(song_.arpeggio(), song_.chord());
-    removeComfortClashesAgainstReference(song_.arpeggio(), song_.aux());
+    removeComfortClashesAgainstReference(song_.arpeggio(), song_.vocal(), *harmony_context_);
+    removeComfortClashesAgainstReference(song_.arpeggio(), song_.motif(), *harmony_context_);
+    removeComfortClashesAgainstReference(song_.arpeggio(), song_.chord(), *harmony_context_);
+    removeComfortClashesAgainstReference(song_.arpeggio(), song_.aux(), *harmony_context_);
     deduplicatePitchOnsets(song_.arpeggio());
 
     PostProcessor::fixTrackReferenceClashes(song_.guitar(), song_.vocal(), TrackRole::Guitar);
@@ -762,10 +763,10 @@ void Generator::applyPostProcessingEffects() {
     PostProcessor::fixTrackReferenceClashes(song_.guitar(), song_.chord(), TrackRole::Guitar);
     PostProcessor::fixTrackReferenceClashes(song_.guitar(), song_.aux(), TrackRole::Guitar);
     separateGuitarFromBass(song_.guitar(), song_.bass(), *harmony_context_);
-    removeComfortClashesAgainstReference(song_.guitar(), song_.vocal());
-    removeComfortClashesAgainstReference(song_.guitar(), song_.motif());
-    removeComfortClashesAgainstReference(song_.guitar(), song_.chord());
-    removeComfortClashesAgainstReference(song_.guitar(), song_.aux());
+    removeComfortClashesAgainstReference(song_.guitar(), song_.vocal(), *harmony_context_);
+    removeComfortClashesAgainstReference(song_.guitar(), song_.motif(), *harmony_context_);
+    removeComfortClashesAgainstReference(song_.guitar(), song_.chord(), *harmony_context_);
+    removeComfortClashesAgainstReference(song_.guitar(), song_.aux(), *harmony_context_);
     deduplicatePitchOnsets(song_.guitar());
   }
 
@@ -1741,19 +1742,24 @@ void deduplicatePitchOnsets(MidiTrack& track) {
               notes.end());
 }
 
-void removeComfortClashesAgainstReference(MidiTrack& track, const MidiTrack& reference) {
+void removeComfortClashesAgainstReference(MidiTrack& track, const MidiTrack& reference,
+                                          const IHarmonyContext& harmony) {
   auto& notes = track.notes();
   const auto& reference_notes = reference.notes();
   if (notes.empty() || reference_notes.empty()) {
     return;
   }
 
+  // This pass deletes rather than moves, so the interval it asks about decides
+  // whether a note is heard at all. Asking about the interval's pitch class
+  // made a major ninth answer as a second and a minor second three octaves up
+  // answer as a close one, and both were silenced. The model's own rule keeps
+  // the ninth and stops treating a minor second as harsh past the minor ninth.
   eraseNotesMatchingOverlappingReference(
-      notes, reference_notes, [](const NoteEvent& note, const NoteEvent& ref) {
+      notes, reference_notes, [&harmony](const NoteEvent& note, const NoteEvent& ref) {
+        const Tick overlap_start = std::max(note.start_tick, ref.start_tick);
         int interval = std::abs(static_cast<int>(note.note) - static_cast<int>(ref.note));
-        int pc_interval = interval % 12;
-        return interval < Interval::THREE_OCTAVES &&
-               (pc_interval == 1 || pc_interval == 2 || pc_interval == 11);
+        return isDissonantActualInterval(interval, harmony.getChordDegreeAt(overlap_start));
       });
 }
 
@@ -2396,38 +2402,28 @@ void tameStandaloneMotifSections(MidiTrack& motif, const MidiTrack& vocal,
   }
 }
 
-bool bassClashesWithMotifPitch(uint8_t pitch, const NoteEvent& motif_note, const MidiTrack& bass) {
+// Whether moving the motif to `pitch` would leave it dissonant against a track
+// sounding underneath it.
+//
+// Both of these used to state the interval rule themselves, in terms of the
+// interval's pitch class: a minor seventh (10) and a major ninth (14) counted
+// as clashes because they reduce to a second. They are the colour tones a riff
+// most often states over the bass, so the riff was being displaced by a fifth
+// or an octave away from exactly the notes it was written to play. Asking the
+// model's own interval rule instead also settles the tritone correctly, which
+// the bass version had hardcoded as always dissonant: on a dominant it is the
+// chord.
+bool clashesWithMotifPitch(uint8_t pitch, const NoteEvent& motif_note, const MidiTrack& other,
+                           const IHarmonyContext& harmony) {
   Tick motif_end = motif_note.start_tick + motif_note.duration;
-  for (const auto& bass_note : bass.notes()) {
-    Tick bass_end = bass_note.start_tick + bass_note.duration;
-    if (motif_note.start_tick >= bass_end || motif_end <= bass_note.start_tick) {
+  for (const auto& other_note : other.notes()) {
+    Tick other_end = other_note.start_tick + other_note.duration;
+    if (motif_note.start_tick >= other_end || motif_end <= other_note.start_tick) {
       continue;
     }
-    int interval = std::abs(static_cast<int>(pitch) - static_cast<int>(bass_note.note));
-    int pc_interval = interval % 12;
-    // Tritone (pc 6) included: the dissonance analyzer flags compound tritones
-    // up to 2 octaves on non-dominant chords (e.g. motif F3 over bass B2).
-    if (interval < Interval::TWO_OCTAVES &&
-        (pc_interval == 1 || pc_interval == 2 || pc_interval == 6 || pc_interval == 10 ||
-         pc_interval == 11)) {
-      return true;
-    }
-  }
-  return false;
-}
-
-bool vocalClashesWithMotifPitch(uint8_t pitch, const NoteEvent& motif_note,
-                                const MidiTrack& vocal) {
-  Tick motif_end = motif_note.start_tick + motif_note.duration;
-  for (const auto& vocal_note : vocal.notes()) {
-    Tick vocal_end = vocal_note.start_tick + vocal_note.duration;
-    if (motif_note.start_tick >= vocal_end || motif_end <= vocal_note.start_tick) {
-      continue;
-    }
-    int interval = std::abs(static_cast<int>(pitch) - static_cast<int>(vocal_note.note));
-    int pc_interval = interval % 12;
-    if (interval < Interval::TWO_OCTAVES &&
-        (pc_interval == 1 || pc_interval == 2 || pc_interval == 10 || pc_interval == 11)) {
+    Tick overlap_start = std::max(motif_note.start_tick, other_note.start_tick);
+    int interval = std::abs(static_cast<int>(pitch) - static_cast<int>(other_note.note));
+    if (isDissonantActualInterval(interval, harmony.getChordDegreeAt(overlap_start))) {
       return true;
     }
   }
@@ -2441,7 +2437,7 @@ void separateMotifFromBass(MidiTrack& motif, const MidiTrack& vocal, const MidiT
   }
 
   for (auto& motif_note : motif.notes()) {
-    if (!bassClashesWithMotifPitch(motif_note.note, motif_note, bass)) {
+    if (!clashesWithMotifPitch(motif_note.note, motif_note, bass, harmony)) {
       continue;
     }
 
@@ -2464,8 +2460,8 @@ void separateMotifFromBass(MidiTrack& motif, const MidiTrack& vocal, const MidiT
       }
       uint8_t candidate = clampScalePitchAvoidingChord(target, motif_note.start_tick, harmony, 55,
                                                        static_cast<uint8_t>(ceiling));
-      if (!bassClashesWithMotifPitch(candidate, motif_note, bass) &&
-          !vocalClashesWithMotifPitch(candidate, motif_note, vocal)) {
+      if (!clashesWithMotifPitch(candidate, motif_note, bass, harmony) &&
+          !clashesWithMotifPitch(candidate, motif_note, vocal, harmony)) {
         if (candidate != motif_note.note) {
 #ifdef MIDISKETCH_NOTE_PROVENANCE
           motif_note.prov_source = static_cast<uint8_t>(NoteSource::PostProcess);
