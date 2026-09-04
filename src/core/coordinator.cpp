@@ -1711,6 +1711,48 @@ void Coordinator::applyVoiceLimit(Song& song, const std::vector<Section>& sectio
       harmony.registerTrack(song.track(fb.role), fb.role);
     }
 
+    // Pass 3: Fit the frozen bars to their neighbours.
+    //
+    // Freezing replaces a bar with a copy of the one before it, and every note
+    // length around the seam was written for music that is no longer there. A
+    // copied note keeps the length it had in the bar it came from: inside the
+    // bar that is exactly right, since the copy reproduces the source's spacing
+    // note for note, but a note running past the bar was fitted to whatever
+    // followed the *source* bar. The note before the bar has the mirror
+    // problem, having been fitted to the content the freeze just discarded. A
+    // riff note written to end on an onset a bar and a half away then sounds
+    // over one half a bar away, which is how a single-line motif ends up
+    // playing over itself. Only lengths change here, so a frozen bar keeps the
+    // rhythm it was copied for.
+    //
+    // Deferred to the end because a neighbouring bar can be frozen too, and its
+    // own copy decides where the onsets around this one actually fall.
+    for (const auto& fb : frozen_bars) {
+      auto& notes = song.track(fb.role).notes();
+      auto clipBefore = [&notes](Tick boundary, Tick region_start, Tick region_end) {
+        Tick onset = 0;
+        bool found = false;
+        for (const auto& note : notes) {
+          if (note.start_tick < boundary) continue;
+          if (!found || note.start_tick < onset) {
+            onset = note.start_tick;
+            found = true;
+          }
+        }
+        if (!found) return;
+        for (auto& note : notes) {
+          if (note.start_tick < region_start || note.start_tick >= region_end) continue;
+          if (note.start_tick >= onset) continue;
+          if (note.start_tick + note.duration <= onset) continue;
+          note.duration = onset - note.start_tick;
+        }
+      };
+      // Notes inside the frozen bar, against the first onset after it.
+      clipBefore(fb.bar_end, fb.bar_start, fb.bar_end);
+      // Notes before the frozen bar, against the first onset the copy placed.
+      clipBefore(fb.bar_start, 0, fb.bar_start);
+    }
+
     // Leave the registry describing what the song now contains, so the next
     // consumer does not evaluate pitches and lengths that no longer exist.
     for (TrackRole role : kVoiceLimitPriority) {

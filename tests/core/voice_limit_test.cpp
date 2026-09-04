@@ -448,6 +448,90 @@ TEST(VoiceLimitRequantizeTest, RequantizedPitchChangesFromNonDiatonicSource) {
   }
 }
 
+namespace {
+
+/// @brief Craft a three-bar song whose motif is fitted to the bar the freeze
+///        is about to replace, and run the limiter over it.
+///
+/// Bar 0 holds one note long enough to reach the first onset of bar 1, and
+/// bar 1 holds two shorter ones. Freezing bar 1 replaces those two with a copy
+/// of bar 0's single long note, so both the note before the seam and the copy
+/// inside it are now longer than the music that follows them.
+std::vector<NoteEvent> applyVoiceLimitToLongMotifNote(Song& song) {
+  auto params = makeVoiceLimitParams();
+  Section sec;
+  sec.type = SectionType::A;
+  sec.name = "A";
+  sec.bars = 3;
+  sec.start_bar = 0;
+  sec.start_tick = 0;
+  sec.max_moving_voices = 1;
+  std::vector<Section> sections{sec};
+  Arrangement arrangement(sections);
+
+  HarmonyCoordinator harmony;
+  harmony.initialize(arrangement, getChordProgression(params.chord_id), params.mood);
+
+  Coordinator coord;
+  std::mt19937 rng(params.seed);
+  coord.initialize(params, arrangement, rng, &harmony);
+
+  // Vocal moves every bar, so it outranks the motif and stays unfrozen.
+  for (int bar = 0; bar < 3; ++bar) {
+    for (int beat = 0; beat < 4; ++beat) {
+      song.vocal().addNote(NoteEventTestHelper::create(bar * TICKS_PER_BAR + beat * TICKS_PER_BEAT,
+                                                       TICKS_PER_BEAT,
+                                                       static_cast<uint8_t>(72 + bar), 90));
+    }
+  }
+
+  // Motif, as a clean single line: every note ends exactly where the next
+  // begins, and the first one is fitted to an onset a bar and a quarter away.
+  song.motif().addNote(NoteEventTestHelper::create(0, 2400, 60, 80));
+  song.motif().addNote(NoteEventTestHelper::create(2400, 480, 62, 80));
+  song.motif().addNote(NoteEventTestHelper::create(2880, 960, 64, 80));
+  song.motif().addNote(NoteEventTestHelper::create(2 * TICKS_PER_BAR, TICKS_PER_BAR, 60, 80));
+
+  coord.applyVoiceLimit(song, sections);
+
+  std::vector<NoteEvent> notes = song.motif().notes();
+  std::sort(notes.begin(), notes.end(),
+            [](const NoteEvent& a, const NoteEvent& b) { return a.start_tick < b.start_tick; });
+  return notes;
+}
+
+}  // namespace
+
+TEST(VoiceLimitRequantizeTest, AFrozenBarLeavesNoNoteSoundingOverTheNextOnset) {
+  Song song;
+  const auto notes = applyVoiceLimitToLongMotifNote(song);
+  ASSERT_FALSE(notes.empty());
+
+  // The freeze has to have happened, or the invariant below is vacuous: bar 1
+  // must no longer hold the two onsets it was written with.
+  std::vector<Tick> bar1_onsets;
+  for (const auto& note : notes) {
+    if (note.start_tick >= TICKS_PER_BAR && note.start_tick < 2 * TICKS_PER_BAR) {
+      bar1_onsets.push_back(note.start_tick - TICKS_PER_BAR);
+    }
+  }
+  ASSERT_EQ(bar1_onsets.size(), 1u) << "bar 1 should hold the single onset copied from bar 0";
+  EXPECT_EQ(bar1_onsets[0], 0u);
+
+  // A motif is one line. No note may still be sounding when a later one starts.
+  for (size_t i = 0; i < notes.size(); ++i) {
+    const Tick end = notes[i].start_tick + notes[i].duration;
+    for (size_t j = i + 1; j < notes.size(); ++j) {
+      if (notes[j].start_tick == notes[i].start_tick) continue;
+      if (notes[j].start_tick >= end) break;
+      ADD_FAILURE() << "motif note " << static_cast<int>(notes[i].note) << " at "
+                    << notes[i].start_tick << " lasts " << notes[i].duration
+                    << " ticks and is still sounding at " << notes[j].start_tick;
+      break;
+    }
+  }
+}
+
 #ifdef MIDISKETCH_NOTE_PROVENANCE
 TEST(VoiceLimitRequantizeTest, RecordsChordToneSnapTransform) {
   Song song;
