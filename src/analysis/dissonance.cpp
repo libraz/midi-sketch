@@ -539,7 +539,18 @@ void detectSimultaneousClashes(const std::vector<TimedNote>& all_notes, const De
       const auto& note_b = all_notes[j];
 
       if (note_b.start >= note_a.end) break;
-      if (note_a.track == note_b.track) continue;
+
+      // A pair inside one track used to be skipped outright, and nothing else
+      // in the engine compares one: the collision detector the generators ask
+      // is cross-track too. That is why a chord voicing's own cluster and a
+      // riff's lead against the stab beneath it could never appear in a report
+      // however wrong they sounded.
+      //
+      // Only voices that begin together are judged. A track's staggered
+      // self-overlap is a legato tail rather than a voicing decision, and where
+      // one crosses a chord change the sustained-note detector below already
+      // answers for it.
+      if (note_a.track == note_b.track && note_a.start != note_b.start) continue;
 
       uint8_t actual_interval = static_cast<uint8_t>(
           std::abs(static_cast<int>(note_a.pitch) - static_cast<int>(note_b.pitch)));

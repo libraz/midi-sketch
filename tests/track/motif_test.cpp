@@ -35,9 +35,6 @@ void evolveRiffPattern(std::vector<NoteEvent>& pattern, Tick cycle_length, std::
 uint8_t computeVocalCeilingForNote(uint8_t base_range_high, bool enforce_vocal_ceiling,
                                    IHarmonyCoordinator* harmony, Tick note_start,
                                    Tick note_duration, uint8_t range_low);
-uint8_t clearOfOnsetVoices(const IHarmonyCoordinator& harmony, uint8_t desired, Tick tick,
-                           const std::vector<uint8_t>& placed, uint8_t range_low,
-                           uint8_t range_high);
 
 namespace motif_detail {
 std::vector<int> generatePitchSequence(uint8_t note_count, MotifMotion motion, std::mt19937& rng,

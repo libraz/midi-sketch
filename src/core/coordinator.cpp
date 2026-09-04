@@ -1546,6 +1546,7 @@ void Coordinator::applyVoiceLimit(Song& song, const std::vector<Section>& sectio
       // this two voices land on the same pitch and the third disappears,
       // leaving a bare fifth that has no major or minor identity.
       std::vector<uint8_t> onset_taken_pcs;
+      std::vector<uint8_t> onset_pitches;
       for (size_t idx : bar_note_indices) {
         auto& note = notes[idx];
 
@@ -1558,6 +1559,7 @@ void Coordinator::applyVoiceLimit(Song& song, const std::vector<Section>& sectio
           prev_onset = note.start_tick;
           onset_note_count = 1;
           onset_taken_pcs.clear();
+          onset_pitches.clear();
         }
 
         // Per-note vocal ceiling for accompaniment tracks: never snap above the
@@ -1662,7 +1664,14 @@ void Coordinator::applyVoiceLimit(Song& song, const std::vector<Section>& sectio
             candidate = static_cast<uint8_t>(distinct);
           }
         }
+        // Keeping the onset's pitch classes distinct is not the same as keeping
+        // them apart: two different chord tones can still land a step or a
+        // half-step from each other once the snap has answered for each voice on
+        // its own, and no detector downstream compares two notes of one track.
+        candidate = clearOfOnsetVoices(harmony, candidate, note.start_tick, onset_pitches,
+                                       range_low, note_range_high);
         onset_taken_pcs.push_back(static_cast<uint8_t>(candidate % 12));
+        onset_pitches.push_back(candidate);
 
         // Break long same-pitch runs: re-quantization collapses copied
         // contours onto the nearest chord tone, producing monotone lines.

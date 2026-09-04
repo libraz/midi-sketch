@@ -374,8 +374,13 @@ bool isDissonantVoicingGap(int semitones) {
 
 bool isVoicingCluster(uint8_t pitch_a, uint8_t pitch_b, const ChordTones& tones) {
   const int gap = static_cast<int>(pitch_a) - static_cast<int>(pitch_b);
-  if (!isDissonantVoicingGap(gap)) return false;
-  if (std::abs(gap) != 2) return true;
+  const int abs_gap = std::abs(gap);
+  // The major seventh is judged here rather than in the gap rule, on the same
+  // condition as the major second and for the same reason: it is the chord when
+  // both voices belong to the chord, and a clash when only one of them does.
+  const bool conditional = (abs_gap == 2 || abs_gap == 11);
+  if (!isDissonantVoicingGap(gap) && !conditional) return false;
+  if (!conditional) return true;
 
   bool a_is_chord_tone = false;
   bool b_is_chord_tone = false;
@@ -385,6 +390,33 @@ bool isVoicingCluster(uint8_t pitch_a, uint8_t pitch_b, const ChordTones& tones)
     if (pitch_b % 12 == pc % 12) b_is_chord_tone = true;
   }
   return !(a_is_chord_tone && b_is_chord_tone);
+}
+
+uint8_t clearOfOnsetVoices(const IChordLookup& harmony, uint8_t desired, Tick tick,
+                           const std::vector<uint8_t>& placed, uint8_t range_low,
+                           uint8_t range_high) {
+  if (placed.empty()) return desired;
+
+  const ChordTones tones = harmony.getChordTonesAt(tick);
+  auto clusters = [&placed, &tones](uint8_t pitch) {
+    for (uint8_t other : placed) {
+      if (isVoicingCluster(pitch, other, tones)) return true;
+    }
+    return false;
+  };
+  if (!clusters(desired)) return desired;
+
+  ChordToneHelper helper(harmony.getChordDegreeAt(tick));
+  std::vector<uint8_t> candidates = helper.allInRange(range_low, range_high);
+  std::stable_sort(candidates.begin(), candidates.end(), [desired](uint8_t a, uint8_t b) {
+    const int da = std::abs(static_cast<int>(a) - static_cast<int>(desired));
+    const int db = std::abs(static_cast<int>(b) - static_cast<int>(desired));
+    return da != db ? da < db : a < b;
+  });
+  for (uint8_t candidate : candidates) {
+    if (!clusters(candidate)) return candidate;
+  }
+  return desired;
 }
 
 // ============================================================================

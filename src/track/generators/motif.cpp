@@ -1334,55 +1334,6 @@ uint8_t computeVocalCeilingForNote(uint8_t base_range_high, bool enforce_vocal_c
   return std::min(base_range_high, ceiling);
 }
 
-/// @brief Pitch for one voice of a replayed pulse that clears the voices beside it.
-///
-/// A cached entry is one voice, not a whole pulse: the octave double and the
-/// chord stab are separate entries sharing the lead's relative tick, and every
-/// correction a replay applies -- avoid-note, vocal ceiling, contour resolution
-/// -- answers for one entry at a time. Correcting the lead and leaving the stab
-/// where it was (or the reverse) leaves the two sounding whatever interval falls
-/// out of the pair of decisions. Nothing downstream notices, because the two
-/// belong to the same track and the collision detector compares across tracks.
-///
-/// The lead is cached first, so screening each voice against the ones already
-/// placed keeps the pulse's most important voice and moves the layer under it,
-/// which is the order the emitter chose them in.
-///
-/// @param harmony Tick-accurate chord lookup
-/// @param desired Pitch this voice would take on its own
-/// @param tick Onset the voices share
-/// @param placed Pitches already placed at this onset
-/// @param range_low Lowest pitch the motif may state
-/// @param range_high Highest pitch the motif may state here
-/// @return A chord tone in range that clears `placed`, else `desired` unchanged
-///         -- a pulse that cannot be voiced cleanly keeps the riff's own pitch
-uint8_t clearOfOnsetVoices(const IHarmonyCoordinator& harmony, uint8_t desired, Tick tick,
-                           const std::vector<uint8_t>& placed, uint8_t range_low,
-                           uint8_t range_high) {
-  if (placed.empty()) return desired;
-
-  const ChordTones tones = harmony.getChordTonesAt(tick);
-  auto clusters = [&placed, &tones](uint8_t pitch) {
-    for (uint8_t other : placed) {
-      if (isVoicingCluster(pitch, other, tones)) return true;
-    }
-    return false;
-  };
-  if (!clusters(desired)) return desired;
-
-  ChordToneHelper helper(harmony.getChordDegreeAt(tick));
-  std::vector<uint8_t> candidates = helper.allInRange(range_low, range_high);
-  std::stable_sort(candidates.begin(), candidates.end(), [desired](uint8_t a, uint8_t b) {
-    const int da = std::abs(static_cast<int>(a) - static_cast<int>(desired));
-    const int db = std::abs(static_cast<int>(b) - static_cast<int>(desired));
-    return da != db ? da < db : a < b;
-  });
-  for (uint8_t candidate : candidates) {
-    if (!clusters(candidate)) return candidate;
-  }
-  return desired;
-}
-
 namespace {
 
 /// @brief Replay cached notes for Locked mode (non-coordinate-axis).

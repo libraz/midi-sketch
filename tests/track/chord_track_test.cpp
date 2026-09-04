@@ -1181,6 +1181,11 @@ TEST_F(ChordTrackTest, AWholeStepBetweenTwoChordTonesIsTheChordNotACluster) {
   EXPECT_TRUE(isVoicingCluster(71, 72, cmaj7)) << "B4 under C5 is a minor second";
   EXPECT_TRUE(isVoicingCluster(59, 72, cmaj7)) << "B3 under C5 is a minor ninth";
 
+  // The major seventh takes the same condition as the whole step: it is the
+  // chord when both voices belong to it, and a clash when only one does.
+  EXPECT_FALSE(isVoicingCluster(71, 60, cmaj7)) << "B4 over C4 is the seventh of Cmaj7";
+  EXPECT_TRUE(isVoicingCluster(71, 60, c7)) << "C7 has no B, so the same pair is a clash";
+
   // Consonant spacings are unaffected.
   EXPECT_FALSE(isVoicingCluster(64, 72, c7));
   EXPECT_FALSE(isVoicingCluster(67, 72, c7));
@@ -1769,10 +1774,15 @@ TEST_F(ChordTrackTest, AugmentVoicingRejectsStepClusterCandidates) {
       << "C and D adjacent in the same octave is a major second in close position";
   EXPECT_TRUE(wouldCreateVoicingCluster(voicing, 47, c_major))
       << "A minor ninth is the compound minor second and stays dissonant";
-  EXPECT_FALSE(wouldCreateVoicingCluster(voicing, 71, c_major))
-      << "A major seventh above the root is the chord itself in a seventh chord";
+  EXPECT_TRUE(wouldCreateVoicingCluster(voicing, 71, c_major))
+      << "B is not a tone of C major, so a major seventh over its root is a clash and not the "
+         "chord";
   EXPECT_FALSE(wouldCreateVoicingCluster(voicing, 67, c_major))
       << "A fifth above C should remain available for minimum voicing fill";
+
+  const ChordTones c_maj7{{0, 4, 7, 11, -1}, 4};
+  EXPECT_FALSE(wouldCreateVoicingCluster(voicing, 71, c_maj7))
+      << "A major seventh above the root is the chord itself in a seventh chord";
 }
 
 TEST_F(ChordTrackTest, AugmentVoicingKeepsASeventhBesideItsRoot) {

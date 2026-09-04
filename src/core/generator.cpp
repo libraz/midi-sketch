@@ -61,6 +61,7 @@
 
 namespace midisketch {
 
+void resolveSameTrackClusters(Song& song, IHarmonyContext& harmony);
 void trimClashingNoteTails(Song& song, IHarmonyContext& harmony);
 
 namespace {
@@ -912,6 +913,10 @@ void Generator::applyPostProcessingEffects() {
   anchorBassStrongBeats(song_.bass(), song_.arrangement().sections(), *harmony_context_);
   harmony_context_->clearNotesForTrack(TrackRole::Bass);
   harmony_context_->registerTrack(song_.bass(), TrackRole::Bass);
+
+  // Settle what each track states against itself before the cross-track gate:
+  // no pass above is responsible for that pair, and any of them can leave one.
+  resolveSameTrackClusters(song_, *harmony_context_);
 
   // Very last note-mutating step: every pass above can leave a short
   // always-dissonant tail overlap, and a same-onset pair one of them has to
@@ -1797,6 +1802,96 @@ void trimBassBoundaryOverhangs(MidiTrack& bass, const IHarmonyContext& harmony) 
 /// at the clashing note's onset. Same-onset clashes are left for the
 /// pitch-level fixers (trimming cannot resolve them).
 }  // namespace
+
+/// @brief Settle what a track states against itself, once, on the notes that exist.
+///
+/// A pair inside one track is nobody's job while the notes are placed: the
+/// collision detector every generator asks compares a track against the *other*
+/// tracks. Each track that voices more than one note at an onset therefore has
+/// to remember to ask, and several places did not -- and even where one does,
+/// a later pass that moves one of the two puts them back at an interval neither
+/// screen ever saw. The question is settled here instead, after every pitch has
+/// stopped moving, so remembering is no longer what it depends on.
+///
+/// Only voices that begin together are judged. A staggered self-overlap is a
+/// legato tail rather than a voicing decision, and the tail gate below answers
+/// for those. The voice that arrives first keeps its pitch, matching the order
+/// the track's own emitter chose them in; a later voice moves to a chord tone
+/// that clears it, and is dropped only when no such pitch is also consonant
+/// with the other tracks.
+///
+/// @param song The song with generated tracks
+/// @param harmony Harmony context, left describing what this pass emitted
+void resolveSameTrackClusters(Song& song, IHarmonyContext& harmony) {
+  const std::pair<MidiTrack*, TrackRole> tracks[] = {
+      {&song.chord(), TrackRole::Chord},   {&song.motif(), TrackRole::Motif},
+      {&song.aux(), TrackRole::Aux},       {&song.arpeggio(), TrackRole::Arpeggio},
+      {&song.guitar(), TrackRole::Guitar}, {&song.bass(), TrackRole::Bass}};
+
+  bool changed = false;
+  for (const auto& [track, role] : tracks) {
+    auto& notes = track->notes();
+    if (notes.size() < 2) continue;
+
+    std::vector<size_t> order(notes.size());
+    for (size_t i = 0; i < order.size(); ++i) order[i] = i;
+    std::stable_sort(order.begin(), order.end(), [&notes](size_t a, size_t b) {
+      if (notes[a].start_tick != notes[b].start_tick) {
+        return notes[a].start_tick < notes[b].start_tick;
+      }
+      return notes[a].note < notes[b].note;
+    });
+
+    std::vector<size_t> doomed;
+    std::vector<uint8_t> placed;
+    Tick onset = 0;
+    bool has_onset = false;
+
+    for (size_t idx : order) {
+      NoteEvent& note = notes[idx];
+      if (!has_onset || note.start_tick != onset) {
+        placed.clear();
+        onset = note.start_tick;
+        has_onset = true;
+      }
+      // Search the voice's own octave rather than the track's full range: the
+      // register a voice sits in was decided for it, and a voice that jumps an
+      // octave to dodge its neighbour has left the chord it was voicing.
+      const uint8_t band_low = static_cast<uint8_t>(std::max(0, note.note - 12));
+      const uint8_t band_high = static_cast<uint8_t>(std::min(127, note.note + 12));
+      const uint8_t resolved =
+          clearOfOnsetVoices(harmony, note.note, note.start_tick, placed, band_low, band_high);
+      if (resolved != note.note) {
+        if (harmony.isConsonantWithOtherTracks(resolved, note.start_tick, note.duration, role)) {
+          note.note = resolved;
+        } else {
+          // Nothing this onset can state clears both its own neighbour and the
+          // other tracks. A voice that cannot be placed is better dropped than
+          // left sounding a cluster its own track chose.
+          doomed.push_back(idx);
+          changed = true;
+          continue;
+        }
+        changed = true;
+      }
+      placed.push_back(note.note);
+    }
+
+    if (!doomed.empty()) {
+      std::sort(doomed.begin(), doomed.end(), std::greater<size_t>());
+      for (size_t idx : doomed) {
+        notes.erase(notes.begin() + static_cast<std::ptrdiff_t>(idx));
+      }
+    }
+  }
+
+  if (changed) {
+    for (const auto& [track, role] : tracks) {
+      harmony.clearNotesForTrack(role);
+      harmony.registerTrack(*track, role);
+    }
+  }
+}
 
 /// @brief Last gate before the notes are emitted: shorten or drop what still clashes.
 ///

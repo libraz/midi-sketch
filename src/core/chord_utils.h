@@ -225,14 +225,19 @@ bool isDissonantVoicingGap(int semitones);
 /// a track states against itself -- a chord's own voices, a riff's lead and the
 /// stab under it -- is answered here and nowhere else.
 ///
-/// The gap rule alone cannot answer it, for the same reason the major seventh
-/// is absent from that rule: a major second between two tones of the chord
-/// being sounded is the chord. A seventh sits a whole step under the root and a
-/// ninth a whole step over it, so a rule that calls the pair a cluster removes
-/// one of them -- and every screen that asks ranks the seventh below the root,
-/// so the tone that makes the chord extended is the one that goes. A whole step
-/// against a tone the chord does not contain is still a cluster, and the minor
-/// second and minor ninth stay dissonant wherever they appear.
+/// The gap rule alone cannot answer it: a major second between two tones of the
+/// chord being sounded is the chord. A seventh sits a whole step under the root
+/// and a ninth a whole step over it, so a rule that calls the pair a cluster
+/// removes one of them -- and every screen that asks ranks the seventh below
+/// the root, so the tone that makes the chord extended is the one that goes.
+/// A whole step against a tone the chord does not contain is still a cluster,
+/// and the minor second and minor ninth stay dissonant wherever they appear.
+///
+/// The major seventh takes the same condition. Calling it consonant outright
+/// is right only for the case it was excused for -- inside a seventh chord it
+/// is the chord -- and a major seventh against a tone the chord does not
+/// contain is as harsh as any other clash; the analyzer has always said so, so
+/// a rule that excused it unconditionally disagreed with the report.
 ///
 /// This is the one place the question is answered. The rule used to be spelled
 /// out at each screen that asks it, and a screen stating it separately can be
@@ -243,6 +248,30 @@ bool isDissonantVoicingGap(int semitones);
 /// @param tones Tones of the chord the timeline states at that onset
 /// @return true when the pair is a cluster and one of the two has to give way
 bool isVoicingCluster(uint8_t pitch_a, uint8_t pitch_b, const ChordTones& tones);
+
+class IChordLookup;
+
+/// @brief Pitch for one voice of an onset that clears the voices beside it.
+///
+/// Wherever a pass decides pitches one note at a time and several of them land
+/// on the same onset of the same track -- a riff replay correcting a lead and
+/// the stab under it, a frozen bar re-quantized voice by voice -- the interval
+/// each decision leaves against its neighbours is nobody's answer unless it is
+/// asked here. `placed` is what the onset already sounds, in the order the
+/// caller chose the voices, so the first voice keeps its pitch and the ones
+/// under it give way.
+///
+/// @param harmony Tick-accurate chord lookup
+/// @param desired Pitch this voice would take on its own
+/// @param tick Onset the voices share
+/// @param placed Pitches already placed at this onset
+/// @param range_low Lowest pitch the track may state
+/// @param range_high Highest pitch the track may state here
+/// @return A chord tone in range that clears `placed`, else `desired` unchanged
+///         -- an onset that cannot be voiced cleanly keeps what it was given
+uint8_t clearOfOnsetVoices(const IChordLookup& harmony, uint8_t desired, Tick tick,
+                           const std::vector<uint8_t>& placed, uint8_t range_low,
+                           uint8_t range_high);
 
 // ============================================================================
 // Diatonic Fifth Utilities
