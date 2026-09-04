@@ -1217,6 +1217,15 @@ Tick durationForChordRhythm(ChordRhythm rhythm) {
   return TICK_WHOLE;
 }
 
+/// @brief Rewrite a voicing into one a pair of hands can reach and reach from.
+///
+/// Most entries come back with different pitches: an unreachable stretch is
+/// re-spaced, and a reachable voicing is still inverted or transposed when the
+/// jump from the previous one costs more than an octave-equivalent position of
+/// the same chord. The returned `type` keeps naming the generator the candidate
+/// came from -- see `VoicedChord::type` -- because the pass has no way to say
+/// which named texture a re-spaced voicing now belongs to, and the only reader
+/// of the name runs before this point.
 VoicedChord ensurePlayableVoicedChord(const VoicedChord& voicing,
                                       KeyboardPlayabilityChecker& keys_playability,
                                       uint8_t root_pitch_class, Tick start, Tick duration) {
@@ -1539,8 +1548,16 @@ void renderChordEntry(ChordBarContext& ctx) {
                        playable, ctx.rhythm, ctx.section->type, ctx.params.mood, ctx.harmony,
                        ctx.root, ctx.bar_vocal_high, pulse_shape);
 
-  ctx.updateConsecutiveVoicing(ctx.voicing);
-  ctx.prev_voicing = ctx.voicing;
+  // Voice leading is a statement about what the listener hears move, so the
+  // next entry is led from the voicing that sounded rather than the one the
+  // selector scored. The playability pass rewrites the pitches of most entries
+  // -- it transposes a voicing the hand cannot reach and inverts one the hand
+  // cannot reach it from -- and leading from the discarded pitches makes the
+  // selector minimise a distance no voice actually travels. The repetition
+  // counter reads the same object for the same reason: two entries that sound
+  // identical are a repetition even when the candidates behind them differed.
+  ctx.updateConsecutiveVoicing(playable);
+  ctx.prev_voicing = playable;
   ctx.has_prev = true;
 }
 

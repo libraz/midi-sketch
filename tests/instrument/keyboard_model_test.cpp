@@ -909,6 +909,27 @@ TEST_F(KeyboardNoteFactoryTest, RevoicesUnreachableTransitionToClosestOctave) {
   EXPECT_EQ(result, previous);
 }
 
+TEST_F(KeyboardNoteFactoryTest, RevoicesAReachableVoicingWhenACloserPositionIsCheaper) {
+  const std::vector<uint8_t> previous = {60, 64, 67};
+  const std::vector<uint8_t> reachable = {72, 76, 79};
+  factory_->ensurePlayableVoicing(previous, 0, 0, 480);
+
+  // Nothing is wrong with the asked-for voicing on its own: the hand can hold
+  // it, and it can get there in time.
+  ASSERT_TRUE(factory_->isVoicingPlayable(reachable));
+  ASSERT_TRUE(factory_->isTransitionFeasible(reachable, 480));
+
+  auto result = factory_->ensurePlayableVoicing(reachable, 0, 480, 480);
+
+  // The transition search still moves it, because an octave-equivalent position
+  // of the same chord costs the hand less. Callers therefore cannot treat the
+  // voicing they asked for as the voicing that will sound -- the note that
+  // reaches the listener is this one, and anything reasoning about what moved
+  // between two chords has to read it rather than the request.
+  EXPECT_NE(result, reachable);
+  EXPECT_EQ(result, previous);
+}
+
 TEST_F(KeyboardNoteFactoryTest, ResetStateClearsPrevious) {
   // Play a voicing
   factory_->ensurePlayableVoicing({60, 64, 67}, 0, 0, 480);

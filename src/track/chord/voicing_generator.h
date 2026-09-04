@@ -20,19 +20,31 @@
 namespace midisketch {
 namespace chord_voicing {
 
-/// Voicing type: Close (<1 octave, warm), Open (1.5-2 octaves, powerful),
-/// Rootless (root omitted, jazz style).
+/// Voicing type: Close (warm, stacked as tightly as the chord allows), Open
+/// (1.5-2 octaves, powerful), Rootless (root omitted, jazz style).
 enum class VoicingType {
-  Close,    ///< Standard close position (within one octave)
-  Open,     ///< Open voicing (wider spread for power)
+  Close,    ///< Stacked in the chord's own interval order from the bass
+  Open,     ///< At least one voice displaced by an octave for a wider spread
   Rootless  ///< Root omitted (bass handles it, jazz style)
 };
 
 /// A voiced chord with absolute MIDI pitches (e.g., C3-E3-G3 for close C major).
 struct VoicedChord {
-  std::array<uint8_t, 5> pitches{};                       ///< MIDI pitches (up to 5 for 9th chords)
-  uint8_t count = 0;                                      ///< Number of notes in this voicing
-  VoicingType type = VoicingType::Close;                  ///< Voicing style used
+  std::array<uint8_t, 5> pitches{};  ///< MIDI pitches (up to 5 for 9th chords)
+  uint8_t count = 0;                 ///< Number of notes in this voicing
+
+  /// @brief Which generator built this candidate.
+  ///
+  /// One candidate pool holds the close voicings and the voicings of whichever
+  /// texture the bar asked for, and this is how the requested-texture gate
+  /// finds its own family again. It records the shape the candidate was built
+  /// as, not a measurement of the pitches: the passes that run after generation
+  /// -- the collision filter, the minimum-voice fill, the bass-clash removal,
+  /// the keyboard playability adjustment -- rewrite the pitches and carry the
+  /// label with them, so on a voicing that has been through any of them the
+  /// name states where the notes came from rather than how they now sit.
+  VoicingType type = VoicingType::Close;
+
   OpenVoicingType open_subtype = OpenVoicingType::Drop2;  ///< Open voicing variant
 };
 
