@@ -318,6 +318,76 @@ const DissonanceIssue* findVocalNonChordTone(const DissonanceReport& report) {
   return nullptr;
 }
 
+// The same fixture over a chord with a registered extension, so both voices can
+// be tones of the chord the timeline states.
+DissonanceReport analyzeVocalAgainstExtendedChordVoice(uint8_t vocal_pitch, uint8_t chord_pitch,
+                                                       ChordExtension extension) {
+  Section verse;
+  verse.type = SectionType::A;
+  verse.start_tick = 0;
+  verse.bars = 1;
+  verse.name = "Verse";
+  Arrangement arrangement({verse});
+
+  Song song;
+  song.setArrangement(arrangement);
+  song.vocal().addNote(
+      NoteEventTestHelper::create(kSecondaryBeatTick, TICKS_PER_BEAT, vocal_pitch, 100));
+  song.chord().addNote(
+      NoteEventTestHelper::create(kSecondaryBeatTick, TICKS_PER_BEAT, chord_pitch, 80));
+
+  ChordProgression progression{};
+  progression.degrees = {0, -1, -1, -1, -1, -1, -1, -1};
+  progression.length = 1;
+  ChordProgressionTracker timeline;
+  timeline.initialize(arrangement, progression, Mood::StraightPop);
+  timeline.registerChordExtension(0, TICKS_PER_BAR, extension);
+
+  GeneratorParams params{};
+  params.chord_id = 0;
+  params.mood = Mood::StraightPop;
+  return analyzeDissonance(song, params, timeline);
+}
+
+bool hasSimultaneousClash(const DissonanceReport& report) {
+  for (const auto& issue : report.issues) {
+    if (issue.type == DissonanceType::SimultaneousClash) return true;
+  }
+  return false;
+}
+
+TEST(DissonanceTest, ChordToneStatusDoesNotExcuseASemitone) {
+  // Cmaj7 owns a B and the C above it, so the pair is two tones of the chord
+  // being sounded a semitone apart. The chord accounts for the wider intervals
+  // its own tones make, but not this one: a minor 2nd beats audibly whichever
+  // voices state it, and the pass that removes such pairs from the tracks says
+  // so. A report that stayed silent here would describe a song the sweep had
+  // already decided was wrong.
+  EXPECT_TRUE(
+      hasSimultaneousClash(analyzeVocalAgainstExtendedChordVoice(71, 72, ChordExtension::Maj7)))
+      << "C5 over B4 inside Cmaj7 is still a minor 2nd to answer for";
+
+  // The compound of the same interval, for the same reason.
+  EXPECT_TRUE(
+      hasSimultaneousClash(analyzeVocalAgainstExtendedChordVoice(59, 72, ChordExtension::Maj7)))
+      << "The minor 9th is a compound minor 2nd and the chord does not excuse it";
+}
+
+TEST(DissonanceTest, ChordToneStatusExcusesAWholeStep) {
+  // Cmaj9 owns both the root and the ninth a whole step above it. Unlike the
+  // semitone, this pair is what the extension was planned for, and reporting it
+  // would make every added ninth a clash.
+  EXPECT_FALSE(
+      hasSimultaneousClash(analyzeVocalAgainstExtendedChordVoice(74, 72, ChordExtension::Maj9)))
+      << "D5 over C5 inside Cmaj9 is the ninth the chord was extended for";
+
+  // The control: the same whole step where the upper voice belongs to no chord
+  // tone. Without a ninth in the chord, D has nothing to be.
+  EXPECT_TRUE(
+      hasSimultaneousClash(analyzeVocalAgainstExtendedChordVoice(74, 72, ChordExtension::Maj7)))
+      << "Cmaj7 has no ninth, so the same pair is one voice short of the chord";
+}
+
 TEST(DissonanceTest, MinorSecondAgainstChordVoiceRaisesNonChordToneToHigh) {
   // F4 a semitone above the chord's E4.
   const auto report = analyzeVocalAgainstChordVoice(kOffbeatTick, 65, 64);

@@ -264,6 +264,33 @@ bool isVoicingCluster(uint8_t pitch_a, uint8_t pitch_b, const ChordTones& tones)
 /// @return true when both pitch classes appear among the chord's tones
 bool bothVoicesAreChordTones(uint8_t pitch_a, uint8_t pitch_b, const ChordTones& tones);
 
+/// @brief Whether the sounding chord accounts for a pair an interval rule flagged.
+///
+/// For the gates that sweep already-placed notes -- the post-processing clash
+/// removal and the analysis report -- a flagged pair is the chord itself when
+/// both voices belong to it. That covers the tritone, which between a dominant's
+/// third and its seventh is not a clash inside the chord but the thing that
+/// makes it one.
+///
+/// The semitone is the exception the chord cannot make. A minor second and its
+/// compound the minor ninth beat audibly whichever voices state them, so a pair
+/// of chord tones that close together is still a pair to answer for. Stating
+/// that at each sweep instead let one of them be corrected while the other kept
+/// excusing the same pair.
+///
+/// The generation-side collision check does not use this: it runs before the
+/// notes exist and excuses only the major second, because the intervals this
+/// leaves to the chord are settled there by register and extension rules of
+/// their own. See isSoundingChordItself in track_collision_detector.cpp.
+///
+/// @param actual_semitones Absolute distance between the two voices
+/// @param pitch_a One voice
+/// @param pitch_b The other voice, sounding at the same time
+/// @param tones Tones of the chord the timeline states there
+/// @return true when the pair should not be counted as a clash
+bool chordExcusesFlaggedPair(int actual_semitones, uint8_t pitch_a, uint8_t pitch_b,
+                             const ChordTones& tones);
+
 class IChordLookup;
 
 /// @brief Pitch for one voice of an onset that clears the voices beside it.

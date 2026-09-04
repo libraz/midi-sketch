@@ -124,13 +124,9 @@ uint8_t findSafeChordTone(uint8_t original_pitch, int8_t degree, Tick start, Tic
 // a melody that sings either of them loses exactly what made it a seventh chord.
 // The rule was stated at one of the three passes here and not at the other two.
 //
-// The minor second and the minor ninth are the exception the chord cannot make.
-// They beat audibly whichever voices state them, so a pair of chord tones a
-// semitone apart is still a pair this pass takes, and excusing them here
-// disagreed with the rule the voicing and the cross-track check both keep.
-// Every other interval the policy calls dissonant does belong to the chord when
-// both voices do -- most of all the tritone, which between a dominant's third
-// and seventh is not a clash in the chord but the chord itself.
+// Which flagged pairs the chord accounts for is chordExcusesFlaggedPair()'s to
+// decide; the analysis report asks the same question and now gets the same
+// answer.
 //
 // @param opts Dissonance policy for the pair being checked.
 // @param chord_lookup Registered harmony timeline, or nullptr to judge by interval alone.
@@ -147,10 +143,8 @@ void removeClashingNotesAgainstReference(MidiTrack& track, const MidiTrack& refe
         if (!isDissonantSemitoneInterval(interval, opts)) return false;
         if (chord_lookup == nullptr) return true;
 
-        if (interval == 1 || interval == 13) return true;
-
         const Tick overlap_start = std::max(note.start_tick, ref_note.start_tick);
-        return !bothVoicesAreChordTones(note.note, ref_note.note,
+        return !chordExcusesFlaggedPair(interval, note.note, ref_note.note,
                                         chord_lookup->getChordTonesAt(overlap_start));
       });
 }

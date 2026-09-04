@@ -573,18 +573,14 @@ void detectSimultaneousClashes(const std::vector<TimedNote>& all_notes, const De
       // A registered extension or chord replacement is authoritative. Intervals
       // such as the tritone inside a secondary dominant are structural chord
       // tones, even when the base scale degree alone would classify them as a
-      // clash.
-      if (is_dissonant) {
-        const auto chord_tones = ctx.chord_lookup.getChordTonesAt(overlap_start);
-        const int pitch_class_a = note_a.pitch % 12;
-        const int pitch_class_b = note_b.pitch % 12;
-        const bool a_is_chord_tone =
-            std::find(chord_tones.begin(), chord_tones.end(), pitch_class_a) != chord_tones.end();
-        const bool b_is_chord_tone =
-            std::find(chord_tones.begin(), chord_tones.end(), pitch_class_b) != chord_tones.end();
-        if (a_is_chord_tone && b_is_chord_tone) {
-          is_dissonant = false;
-        }
+      // clash. What the chord does and does not account for is
+      // chordExcusesFlaggedPair()'s to say, and the pass that removes these
+      // pairs from the tracks asks it too -- stating the rule here as well let
+      // the report stay silent about a semitone the sweep would have taken.
+      if (is_dissonant &&
+          chordExcusesFlaggedPair(actual_interval, note_a.pitch, note_b.pitch,
+                                  ctx.chord_lookup.getChordTonesAt(overlap_start))) {
+        is_dissonant = false;
       }
 
       bool registered_root_major_seventh = isRegisteredRootMajorSeventhContext(

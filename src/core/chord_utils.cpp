@@ -383,6 +383,14 @@ bool bothVoicesAreChordTones(uint8_t pitch_a, uint8_t pitch_b, const ChordTones&
   return a_is_chord_tone && b_is_chord_tone;
 }
 
+bool chordExcusesFlaggedPair(int actual_semitones, uint8_t pitch_a, uint8_t pitch_b,
+                             const ChordTones& tones) {
+  if (actual_semitones == 1 || actual_semitones == 13) {
+    return false;
+  }
+  return bothVoicesAreChordTones(pitch_a, pitch_b, tones);
+}
+
 bool isVoicingCluster(uint8_t pitch_a, uint8_t pitch_b, const ChordTones& tones) {
   const int gap = static_cast<int>(pitch_a) - static_cast<int>(pitch_b);
   const int abs_gap = std::abs(gap);

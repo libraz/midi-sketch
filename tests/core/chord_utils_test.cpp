@@ -426,6 +426,27 @@ TEST(ChordUtilsVoicingTest, UnusedChordToneSlotsMatchNothing) {
   EXPECT_FALSE(bothVoicesAreChordTones(60, 62, none)) << "a chord with no tones excuses nothing";
 }
 
+TEST(ChordUtilsVoicingTest, ChordExcusesEveryFlaggedIntervalButTheSemitone) {
+  // G7 owns the tritone between its third and its seventh: inside the chord it
+  // is not a clash but the thing that makes it a dominant.
+  const ChordTones g7{{7, 11, 2, 5, -1}, 4};
+  EXPECT_TRUE(chordExcusesFlaggedPair(6, 59, 65, g7)) << "B3 and F4 are the third and the seventh";
+  EXPECT_TRUE(chordExcusesFlaggedPair(18, 59, 77, g7)) << "the same pair a register apart";
+
+  // Cmaj7 owns a B and the C above it. The whole step to the ninth is excused
+  // and the semitone to the root is not.
+  const ChordTones cmaj9{{0, 4, 7, 11, 2}, 5};
+  EXPECT_TRUE(chordExcusesFlaggedPair(2, 72, 74, cmaj9)) << "the root and the ninth";
+  EXPECT_TRUE(chordExcusesFlaggedPair(11, 72, 83, cmaj9)) << "the root and the seventh above it";
+  EXPECT_FALSE(chordExcusesFlaggedPair(1, 71, 72, cmaj9))
+      << "a minor 2nd beats audibly whichever voices state it";
+  EXPECT_FALSE(chordExcusesFlaggedPair(13, 59, 72, cmaj9)) << "so does its compound";
+
+  // One voice outside the chord is excused at no interval.
+  EXPECT_FALSE(chordExcusesFlaggedPair(6, 59, 65, cmaj9)) << "Cmaj9 has no F";
+  EXPECT_FALSE(chordExcusesFlaggedPair(2, 72, 70, cmaj9)) << "Cmaj9 has no Bb";
+}
+
 TEST(ChordUtilsVoicingTest, VoicingClusterAnswersOnTheSamePredicate) {
   const ChordTones cmaj9{{0, 4, 7, 11, 2}, 5};
 
