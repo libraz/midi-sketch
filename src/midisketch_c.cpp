@@ -21,6 +21,7 @@
 #include "core/production_blueprint.h"
 #include "core/structure.h"
 #include "midisketch.h"
+#include "track/generators/se.h"
 
 namespace {
 /// @brief Everything a handle owns.
@@ -460,6 +461,10 @@ uint8_t midisketch_blueprint_weight(uint8_t id) {
 uint8_t midisketch_blueprint_drums_required(uint8_t id) {
   const auto& bp = midisketch::getProductionBlueprint(id);
   return bp.drums_required ? 1 : 0;
+}
+
+uint8_t midisketch_vocal_style_call_enabled(uint8_t style) {
+  return midisketch::isCallEnabled(static_cast<midisketch::VocalStylePreset>(style)) ? 1 : 0;
 }
 
 uint16_t midisketch_blueprint_tempo_min(uint8_t id) {

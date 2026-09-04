@@ -12,22 +12,13 @@ import {
   RiffPolicy,
 } from './blueprint';
 import { createDefaultConfig } from './config';
-import { CompositionStyle, HookIntensity, VocalStylePreset } from './constants';
+import { CompositionStyle, HookIntensity } from './constants';
+import { isCallOrientedVocalStyle } from './presets';
 import type { SongConfig } from './types';
 
 function clampUnitInterval(value: number): number {
   return Math.max(0, Math.min(1, value));
 }
-
-/**
- * Vocal style presets whose arrangement expects an audience call track.
- * The core applies call-oriented post-processing to exactly these styles.
- */
-const CALL_ORIENTED_VOCAL_STYLES: readonly number[] = [
-  VocalStylePreset.Idol,
-  VocalStylePreset.BrightKira,
-  VocalStylePreset.CuteAffected,
-];
 
 // ============================================================================
 // Types for Change Tracking
@@ -293,8 +284,11 @@ export class SongConfigBuilder {
     tracker.addChange('vocal', 'vocalStyle', oldStyle, style, 'User set vocal style');
 
     // Call-oriented vocal styles auto-enable call if not explicitly set
+    // Source of truth is the core's isCallEnabled (se.cpp), queried via
+    // midisketch_vocal_style_call_enabled. A copy of the list here would go on
+    // answering after the core had changed its mind.
     if (
-      CALL_ORIENTED_VOCAL_STYLES.includes(style) &&
+      isCallOrientedVocalStyle(style) &&
       !this.explicitFields.has('callSetting') &&
       !this.explicitFields.has('callEnabled')
     ) {

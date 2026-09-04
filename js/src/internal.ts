@@ -83,6 +83,7 @@ export interface Api {
   blueprintRiffPolicy: (id: number) => number;
   blueprintWeight: (id: number) => number;
   blueprintDrumsRequired: (id: number) => number;
+  vocalStyleCallEnabled: (style: number) => number;
   blueprintTempoMin: (id: number) => number;
   blueprintTempoMax: (id: number) => number;
   getResolvedBlueprintId: (handle: number) => number;
@@ -339,6 +340,9 @@ async function initialize(options?: { wasmPath?: string }): Promise<void> {
     blueprintDrumsRequired: m.cwrap('midisketch_blueprint_drums_required', 'number', [
       'number',
     ]) as (id: number) => number,
+    vocalStyleCallEnabled: m.cwrap('midisketch_vocal_style_call_enabled', 'number', ['number']) as (
+      style: number,
+    ) => number,
     blueprintTempoMin: m.cwrap('midisketch_blueprint_tempo_min', 'number', ['number']) as (
       id: number,
     ) => number,

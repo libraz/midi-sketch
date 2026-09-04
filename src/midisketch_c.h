@@ -250,6 +250,13 @@ uint8_t midisketch_blueprint_weight(uint8_t id);
  * otherwise */
 uint8_t midisketch_blueprint_drums_required(uint8_t id);
 
+/**
+ * @brief Whether a vocal style's arrangement expects an audience call track.
+ * @param style Vocal style preset ID
+ * @return 1 if the style enables calls under CallSetting::Auto, 0 otherwise
+ */
+uint8_t midisketch_vocal_style_call_enabled(uint8_t style);
+
 /** @brief Get a blueprint's recommended minimum BPM, or 0 for an invalid ID. */
 uint16_t midisketch_blueprint_tempo_min(uint8_t id);
 

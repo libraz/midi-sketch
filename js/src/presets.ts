@@ -101,3 +101,17 @@ export function getFormsByStyle(styleId: number): number[] {
   }
   return result;
 }
+
+/**
+ * Whether a vocal style's arrangement expects an audience call track.
+ *
+ * Source of truth is `isCallEnabled` in the core (src/track/generators/se.cpp),
+ * which is also what resolves `CallSetting::Auto` during generation. Exposed
+ * via midisketch_vocal_style_call_enabled so a caller does not have to keep a
+ * copy of the list in step with it.
+ *
+ * @param style Vocal style preset ID
+ */
+export function isCallOrientedVocalStyle(style: number): boolean {
+  return getApi().vocalStyleCallEnabled(style) !== 0;
+}

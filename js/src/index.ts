@@ -83,6 +83,7 @@ export {
   getProgressionsByStyle,
   getStructures,
   getStylePresets,
+  isCallOrientedVocalStyle,
 } from './presets';
 // Types
 export type {

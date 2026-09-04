@@ -8,6 +8,7 @@ import {
   getBlueprintDrumsRequired,
   HookIntensity,
   init,
+  isCallOrientedVocalStyle,
   MidiSketch,
   SongConfigBuilder,
   serializeConfig,
@@ -303,6 +304,41 @@ describe('SongConfigBuilder', () => {
         }
       }
       expect(required).toEqual([1, 5, 7]);
+    });
+
+    it('isCallOrientedVocalStyle matches the C++ call table', () => {
+      // Sanity check against isCallEnabled in se.cpp, which is also what
+      // resolves CallSetting::Auto during generation. The builder used to keep
+      // its own copy of this list; the drums_required case above is what that
+      // arrangement turns into once the two drift.
+      const callOriented: number[] = [];
+      for (const style of Object.values(VocalStylePreset)) {
+        if (isCallOrientedVocalStyle(style)) {
+          callOriented.push(style);
+        }
+      }
+      expect(callOriented.sort((a, b) => a - b)).toEqual([
+        VocalStylePreset.Idol,
+        VocalStylePreset.BrightKira,
+        VocalStylePreset.CuteAffected,
+      ]);
+    });
+
+    it('auto-enables the call system for exactly the call-oriented styles', () => {
+      for (const style of Object.values(VocalStylePreset)) {
+        const builder = new SongConfigBuilder(0);
+        builder.setVocalStyle(style);
+        const config = builder.build();
+
+        // callEnabled stays undefined for a style the builder does not touch,
+        // which leaves callSetting on Auto for the core to resolve.
+        expect(Boolean(config.callEnabled), `vocal style ${style}`).toBe(
+          isCallOrientedVocalStyle(style),
+        );
+        if (isCallOrientedVocalStyle(style)) {
+          expect(config.callSetting, `vocal style ${style}`).toBe(1);
+        }
+      }
     });
 
     it('should warn but preserve explicit BPM for RhythmSync blueprints', () => {
