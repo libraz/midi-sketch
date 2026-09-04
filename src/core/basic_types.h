@@ -273,6 +273,33 @@ struct NoteEvent {
     return true;
   }
 
+  /**
+   * @brief Record that a pass moved this note's pitch.
+   *
+   * `prov_original_pitch` answers one question: which pitch did the generator
+   * that created the note choose. Only the first pass to move a note may write
+   * it. A later pass that writes its own input reports an already-transformed
+   * pitch as the generator's choice, and everything downstream reads the moves
+   * that came before it as decisions the melody was written with -- a leap
+   * manufactured by a collision fix becomes a leap the phrase always had.
+   *
+   * This is the only place that rule is stated; a pass that writes the field
+   * directly is stating it a second time.
+   *
+   * @param type Transform step type describing why the note moves
+   * @param from Pitch before this move
+   * @param to Pitch after this move
+   * @param param1 Context value stored with the transform step
+   * @param param2 Context value stored with the transform step
+   */
+  void recordPitchMove(TransformStepType type, uint8_t from, uint8_t to, int8_t param1 = 0,
+                       int8_t param2 = 0) {
+    if (prov_original_pitch == 0) {
+      prov_original_pitch = from;
+    }
+    addTransformStep(type, from, to, param1, param2);
+  }
+
   /// @brief Check if transformation history is available.
   bool hasTransformHistory() const { return transform_count > 0; }
 #else
@@ -281,6 +308,9 @@ struct NoteEvent {
 
   /// @brief Stub: no-op when provenance is disabled.
   bool addTransformStep(int, uint8_t, uint8_t, int8_t = 0, int8_t = 0) { return false; }
+
+  /// @brief Stub: no-op when provenance is disabled.
+  void recordPitchMove(int, uint8_t, uint8_t, int8_t = 0, int8_t = 0) {}
 
   /// @brief Stub: always returns false when provenance is disabled.
   bool hasTransformHistory() const { return false; }

@@ -1390,15 +1390,17 @@ TEST(PostProcessorTest, FixMotifVocalClashesUpdatesProvenance) {
   //    non-clashing in-register chord tone is E4 (64) -> 48 becomes 64.
   // 2. Crossing pass: 64 sits far above the vocal; the relaxed-floor
   //    resolution lowers it to E3 (52) to minimize the register crossing.
-  // prov_original_pitch reflects the input of the LAST modification (64);
-  // the full chain (48 -> 64 -> 52) is preserved in the transform steps.
+  // The chain (48 -> 64 -> 52) is in the transform steps, so recording the
+  // second pass's input in prov_original_pitch would only restate a step the
+  // note already carries -- and would lose the one thing no step records, the
+  // pitch the generator chose. The first pass to move a note owns the field.
   const auto& note = motif.notes()[0];
   EXPECT_EQ(note.note, 52) << "Crossing pass should lower the resolution toward the vocal";
 #ifdef MIDISKETCH_NOTE_PROVENANCE
   EXPECT_EQ(note.prov_source, static_cast<uint8_t>(NoteSource::CollisionAvoid))
       << "Provenance source should be CollisionAvoid";
-  EXPECT_EQ(note.prov_original_pitch, 64)
-      << "Original pitch should reflect the last modification's input";
+  EXPECT_EQ(note.prov_original_pitch, 48)
+      << "Original pitch must stay the pitch the note was created with";
   EXPECT_EQ(note.prov_chord_degree, 0) << "Chord degree should be recorded";
 #endif
 }

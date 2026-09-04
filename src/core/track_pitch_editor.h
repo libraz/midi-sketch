@@ -95,10 +95,7 @@ class TrackPitchEditor {
     const uint8_t previous = note.note;
     note.note = new_pitch;
 #ifdef MIDISKETCH_NOTE_PROVENANCE
-    if (note.prov_original_pitch == 0) {
-      note.prov_original_pitch = previous;
-    }
-    note.addTransformStep(reason, previous, new_pitch, param1, param2);
+    note.recordPitchMove(reason, previous, new_pitch, param1, param2);
 #else
     (void)reason;
     (void)param1;

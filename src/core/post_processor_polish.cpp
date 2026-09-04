@@ -361,9 +361,8 @@ void PostProcessor::fixMotifVocalClashes(MidiTrack& motif, const MidiTrack& voca
 
 #ifdef MIDISKETCH_NOTE_PROVENANCE
           if (new_pitch != original_pitch) {
-            m_note.addTransformStep(TransformStepType::CollisionAvoid, original_pitch, new_pitch,
-                                    static_cast<int8_t>(v_note.note), 0);
-            m_note.prov_original_pitch = original_pitch;
+            m_note.recordPitchMove(TransformStepType::CollisionAvoid, original_pitch, new_pitch,
+                                   static_cast<int8_t>(v_note.note), 0);
             m_note.prov_source = static_cast<uint8_t>(NoteSource::CollisionAvoid);
           }
           m_note.prov_lookup_tick = m_note.start_tick;
@@ -403,9 +402,8 @@ void PostProcessor::fixMotifVocalClashes(MidiTrack& motif, const MidiTrack& voca
     if (new_pitch == original_pitch) continue;
 
 #ifdef MIDISKETCH_NOTE_PROVENANCE
-    m_note.addTransformStep(TransformStepType::CollisionAvoid, original_pitch, new_pitch,
-                            static_cast<int8_t>(vocal_floor), 0);
-    m_note.prov_original_pitch = original_pitch;
+    m_note.recordPitchMove(TransformStepType::CollisionAvoid, original_pitch, new_pitch,
+                           static_cast<int8_t>(vocal_floor), 0);
     m_note.prov_source = static_cast<uint8_t>(NoteSource::CollisionAvoid);
     m_note.prov_lookup_tick = m_note.start_tick;
     m_note.prov_chord_degree = harmony.getChordDegreeAt(m_note.start_tick);
@@ -440,9 +438,8 @@ void PostProcessor::fixMotifHarmonyClashes(MidiTrack& motif, const MidiTrack& vo
             }
 
 #ifdef MIDISKETCH_NOTE_PROVENANCE
-            note.addTransformStep(TransformStepType::CollisionAvoid, original_pitch, new_pitch, 0,
-                                  0);
-            note.prov_original_pitch = original_pitch;
+            note.recordPitchMove(TransformStepType::CollisionAvoid, original_pitch, new_pitch, 0,
+                                 0);
             note.prov_source = static_cast<uint8_t>(NoteSource::CollisionAvoid);
             note.prov_lookup_tick = note.start_tick;
             note.prov_chord_degree = harmony.getChordDegreeAt(note.start_tick);

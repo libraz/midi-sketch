@@ -5,20 +5,20 @@
 
 #include "core/collision_resolver.h"
 
-#include <algorithm>
 #include <cmath>
+#include <cstddef>
 
 #include "core/pitch_utils.h"
+#include "core/track_pitch_editor.h"
 
 namespace midisketch {
 
 void CollisionResolver::resolveArpeggioChordClashes(MidiTrack& arpeggio_track,
                                                     const MidiTrack& chord_track,
-                                                    const IHarmonyContext& harmony) {
+                                                    IHarmonyContext& harmony) {
   constexpr uint8_t kArpeggioLow = 48;
   constexpr uint8_t kArpeggioHigh = 108;
 
-  auto& arp_notes = arpeggio_track.notes();
   const auto& chord_notes = chord_track.notes();
 
   // Check if arpeggio pitch clashes with any chord note in the time range
@@ -36,17 +36,27 @@ void CollisionResolver::resolveArpeggioChordClashes(MidiTrack& arpeggio_track,
     return false;
   };
 
-  for (auto& arp : arp_notes) {
-    Tick arp_end = arp.start_tick + arp.duration;
+  // The editor owns the write-back: it verifies the target against the current
+  // harmony state, records the move without claiming the pitch it found was the
+  // one the arpeggio generator chose, and re-registers the track when it goes
+  // out of scope. Queries inside the loop exclude the arpeggio's own role, so
+  // one refresh at the end is enough.
+  TrackPitchEditor editor(arpeggio_track, harmony, TrackRole::Arpeggio);
 
-    if (!hasClashWithChord(arp.note, arp.start_tick, arp_end)) {
+  for (size_t i = 0; i < editor.size(); ++i) {
+    const Tick arp_start = editor.at(i).start_tick;
+    const Tick arp_duration = editor.at(i).duration;
+    const uint8_t arp_pitch = editor.at(i).note;
+    const Tick arp_end = arp_start + arp_duration;
+
+    if (!hasClashWithChord(arp_pitch, arp_start, arp_end)) {
       continue;  // No clash, keep original
     }
 
     // Find alternative pitch that doesn't clash
-    auto chord_tones = harmony.getChordTonesAt(arp.start_tick);
-    int octave = arp.note / 12;
-    int best_pitch = arp.note;
+    auto chord_tones = harmony.getChordTonesAt(arp_start);
+    int octave = arp_pitch / 12;
+    int best_pitch = arp_pitch;
     int best_dist = 100;
 
     for (int tone : chord_tones) {
@@ -57,15 +67,15 @@ void CollisionResolver::resolveArpeggioChordClashes(MidiTrack& arpeggio_track,
         // The candidate must clear both the explicit chord voicing and every
         // registered harmonic track (bass, motif, guitar, vocal, etc.).
         // Checking only chord_track here could replace one rub with another.
-        if (hasClashWithChord(static_cast<uint8_t>(candidate), arp.start_tick, arp_end)) {
+        if (hasClashWithChord(static_cast<uint8_t>(candidate), arp_start, arp_end)) {
           continue;
         }
-        if (!harmony.isConsonantWithOtherTracks(static_cast<uint8_t>(candidate), arp.start_tick,
-                                                arp.duration, TrackRole::Arpeggio)) {
+        if (!harmony.isConsonantWithOtherTracks(static_cast<uint8_t>(candidate), arp_start,
+                                                arp_duration, TrackRole::Arpeggio)) {
           continue;
         }
 
-        int dist = std::abs(candidate - static_cast<int>(arp.note));
+        int dist = std::abs(candidate - static_cast<int>(arp_pitch));
         if (dist < best_dist) {
           best_dist = dist;
           best_pitch = candidate;
@@ -74,16 +84,7 @@ void CollisionResolver::resolveArpeggioChordClashes(MidiTrack& arpeggio_track,
     }
 
     if (best_dist < 100) {
-#ifdef MIDISKETCH_NOTE_PROVENANCE
-      uint8_t old_pitch = arp.note;
-#endif
-      arp.note = static_cast<uint8_t>(best_pitch);
-#ifdef MIDISKETCH_NOTE_PROVENANCE
-      if (old_pitch != arp.note) {
-        arp.prov_original_pitch = old_pitch;
-        arp.addTransformStep(TransformStepType::CollisionAvoid, old_pitch, arp.note, 0, 0);
-      }
-#endif
+      editor.moveTo(i, static_cast<uint8_t>(best_pitch), TransformStepType::CollisionAvoid);
     }
   }
 }

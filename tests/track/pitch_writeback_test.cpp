@@ -183,6 +183,18 @@ class PitchWritebackTest : public ::testing::Test {
     sketch_.generateFromConfig(config);
   }
 
+  // The arpeggio-chord resolver only runs for the two styles that put the
+  // accompaniment in the foreground, and only with an arpeggio to resolve.
+  void generateArpeggioForwardSong(uint32_t seed, uint8_t blueprint, CompositionStyle style) {
+    SongConfig config = createDefaultSongConfig(0);
+    config.seed = seed;
+    config.blueprint_id = blueprint;
+    config.arpeggio_enabled = true;
+    config.composition_style = style;
+    config.composition_style_explicit = true;
+    sketch_.generateFromConfig(config);
+  }
+
   MidiSketch sketch_;
 };
 
@@ -216,6 +228,108 @@ TEST_F(PitchWritebackTest, PitchMovesLeaveATrace) {
     }
   }
   EXPECT_EQ(songs_scanned, std::size(kSeeds) * std::size(kBlueprints));
+}
+
+// ============================================================================
+// Where a moved note came from
+// ============================================================================
+
+struct RewrittenOrigin {
+  std::string track;
+  Tick tick;
+  int recorded_origin;
+  int first_move_input;
+};
+
+// Steps whose input and output are pitches. Duration, velocity and timing steps
+// carry zero in both fields, so they say nothing about where a pitch came from.
+bool isPitchMove(TransformStepType type) {
+  switch (type) {
+    case TransformStepType::OctaveAdjust:
+    case TransformStepType::MotionAdjust:
+    case TransformStepType::VocalAvoid:
+    case TransformStepType::RangeClamp:
+    case TransformStepType::PatternOffset:
+    case TransformStepType::CollisionAvoid:
+    case TransformStepType::ScaleSnap:
+    case TransformStepType::IntervalFix:
+    case TransformStepType::ChordToneSnap:
+      return true;
+    default:
+      return false;
+  }
+}
+
+// Collect notes whose recorded origin is not the pitch the first pass to move
+// them started from, which means a later pass overwrote it with its own input.
+std::vector<RewrittenOrigin> findRewrittenOrigins(const Song& song, size_t& moved_notes) {
+  std::vector<RewrittenOrigin> out;
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+  const std::pair<const MidiTrack*, const char*> all[] = {
+      {&song.vocal(), "Vocal"},       {&song.motif(), "Motif"}, {&song.aux(), "Aux"},
+      {&song.bass(), "Bass"},         {&song.chord(), "Chord"}, {&song.guitar(), "Guitar"},
+      {&song.arpeggio(), "Arpeggio"},
+  };
+  for (const auto& entry : all) {
+    for (const auto& note : entry.first->notes()) {
+      for (uint8_t i = 0; i < note.transform_count; ++i) {
+        const auto& step = note.transform_steps[i];
+        if (!isPitchMove(step.type)) continue;
+        ++moved_notes;
+        if (note.prov_original_pitch != step.input_pitch) {
+          out.push_back(
+              {entry.second, note.start_tick, note.prov_original_pitch, step.input_pitch});
+        }
+        break;  // Only the first move can answer for where the note came from
+      }
+    }
+  }
+#else
+  (void)song;
+  (void)moved_notes;
+#endif
+  return out;
+}
+
+std::string describeRewrittenOrigins(const std::vector<RewrittenOrigin>& origins) {
+  std::string out;
+  for (const auto& o : origins) {
+    out += o.track + " tick " + std::to_string(o.tick) + ": origin recorded as " +
+           std::to_string(o.recorded_origin) + " but the first move started from " +
+           std::to_string(o.first_move_input) + "\n";
+  }
+  return out;
+}
+
+// A note's recorded origin answers one question: which pitch did the generator
+// that created it choose. A pass that moves an already-moved note and writes
+// its own input reports a transformed pitch as the generator's choice, and the
+// moves that came before it read as decisions the line was written with -- a
+// leap manufactured by a collision fix becomes a leap the phrase always had.
+//
+// The check is asked of every track, not of the pass being fixed: the rule is
+// a property of the field, so a pass added later has to satisfy it too.
+TEST_F(PitchWritebackTest, TheFirstPassToMoveANoteIsTheOneThatRecordsWhereItCameFrom) {
+  constexpr uint32_t kSeeds[] = {11, 22, 55, 12345, 20260903};
+  constexpr uint8_t kBlueprints[] = {0, 3, 5, 8};
+  const CompositionStyle kStyles[] = {CompositionStyle::BackgroundMotif,
+                                      CompositionStyle::SynthDriven};
+
+  size_t moved_notes = 0;
+  for (CompositionStyle style : kStyles) {
+    for (uint8_t blueprint : kBlueprints) {
+      for (uint32_t seed : kSeeds) {
+        generateArpeggioForwardSong(seed, blueprint, style);
+        auto origins = findRewrittenOrigins(sketch_.getSong(), moved_notes);
+        EXPECT_TRUE(origins.empty())
+            << "style=" << static_cast<int>(style) << " blueprint=" << static_cast<int>(blueprint)
+            << " seed=" << seed << "\n"
+            << describeRewrittenOrigins(origins);
+      }
+    }
+  }
+  // Without notes that a pass moved at all, the assertion above is vacuous.
+  EXPECT_GT(moved_notes, 0u);
 }
 
 // ============================================================================
