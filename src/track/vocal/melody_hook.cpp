@@ -46,14 +46,31 @@ constexpr size_t kSabiHeadNotes = 8;
 bool MelodyDesigner::replayHookOccurrence(const MelodyTemplate& tmpl, std::vector<NoteEvent>& notes,
                                           const IHarmonyContext& harmony, std::mt19937& rng,
                                           uint8_t vocal_low, uint8_t vocal_high) {
-  hook_cache_.repetition_count = static_cast<uint8_t>(hook_cache_.repetition_count + 1);
+  // A replayed section sounds the same number of hook statements the generated
+  // one did, so it advances the count by that many. Counting it as one would
+  // make the same music worth a different amount depending on whether it came
+  // from the cache.
+  const uint8_t statements =
+      std::max<uint8_t>(hook_cache_.last_section_statements, static_cast<uint8_t>(1));
+  const uint8_t first_occurrence = static_cast<uint8_t>(hook_cache_.repetition_count + 1);
+  hook_cache_.repetition_count = static_cast<uint8_t>(hook_cache_.repetition_count + statements);
 
   if (tmpl.betrayal_threshold == 0 || notes.empty()) {
     return false;
   }
   const uint8_t threshold = tmpl.betrayal_threshold;
-  const uint8_t occurrence = hook_cache_.repetition_count;
-  if (occurrence < threshold || (occurrence % threshold) != 0) {
+  // The replay hands back one block of notes rather than a statement at a time,
+  // so the head it varies stands for the whole block: a threshold falling
+  // anywhere inside it is a threshold this replay has to answer for.
+  bool reached = false;
+  for (uint8_t i = 0; i < statements; ++i) {
+    const uint8_t occurrence = static_cast<uint8_t>(first_occurrence + i);
+    if (occurrence >= threshold && (occurrence % threshold) == 0) {
+      reached = true;
+      break;
+    }
+  }
+  if (!reached) {
     return false;
   }
 
@@ -82,7 +99,10 @@ bool MelodyDesigner::replayHookOccurrence(const MelodyTemplate& tmpl, std::vecto
         getSafePitchCandidates(harmony, static_cast<uint8_t>(new_pitch), notes[i].start_tick,
                                notes[i].duration, TrackRole::Vocal, vocal_low, vocal_high);
     if (candidates.empty()) {
-      notes[i].note = static_cast<uint8_t>(new_pitch);
+      // No safe pitch for the varied note. Leaving the hook note as it was is a
+      // missed variation; taking the pitch anyway is an unverified mover, and
+      // every clash that has ever reached the output came from one of those.
+      continue;
     } else {
       PitchSelectionHints hints;
       if (i > 0) {
@@ -193,14 +213,20 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& 
   //   - threshold=4 (default): standard "3 times same, 4th different" rule
   //   - threshold=5 (ballad): late variation, more consistency
   //   - threshold=0: no betrayal (exact repetition)
-  HookBetrayal betrayal = HookBetrayal::None;
-  uint8_t threshold = tmpl.betrayal_threshold > 0 ? tmpl.betrayal_threshold : 4;
-  const uint8_t next_repetition = static_cast<uint8_t>(hook_cache_.repetition_count + 1);
-  if (tmpl.betrayal_threshold > 0 && next_repetition >= threshold &&
-      (next_repetition % threshold) == 0) {
-    // Select betrayal type at threshold (and multiples thereof)
-    betrayal = selectBetrayal(1, rng);  // 1 = non-first occurrence
-  }
+  // A threshold counts statements of the hook, and one section states it
+  // repeat_count times, so the statement that reaches the threshold is usually
+  // inside a section rather than at its start. Deciding once per section both
+  // misses the threshold -- three choruses cannot reach four -- and, when it did
+  // fire, varied every statement in the section including the ones the rule
+  // says stay the same.
+  const uint8_t threshold = tmpl.betrayal_threshold;
+  const uint8_t statements_before = hook_cache_.repetition_count;
+  auto betrayalForStatement = [&](uint8_t rep) {
+    if (threshold == 0) return HookBetrayal::None;
+    const uint8_t occurrence = static_cast<uint8_t>(statements_before + rep + 1);
+    if (occurrence < threshold || (occurrence % threshold) != 0) return HookBetrayal::None;
+    return selectBetrayal(1, rng);  // 1 = non-first occurrence
+  };
 
   Tick current_tick = hook_start;
 
@@ -228,8 +254,20 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& 
   // Track overall note index across all repetitions for sabi caching
   size_t total_note_idx = 0;
 
+  // Which stretches of the result are a statement the threshold fell on, and
+  // what variation each one takes.
+  struct BetrayedStatement {
+    size_t begin;
+    size_t end;
+    HookBetrayal kind;
+  };
+  std::vector<BetrayedStatement> betrayed;
+  uint8_t statements_emitted = 0;
+
   for (uint8_t rep = 0; rep < repeat_count; ++rep) {
     if (current_tick >= phrase_end) break;
+    const size_t statement_begin = result.notes.size();
+    const HookBetrayal statement_betrayal = betrayalForStatement(rep);
     for (size_t i = 0; i < contour_limit; ++i, ++total_note_idx) {
       if (current_tick >= phrase_end) break;
       // Get chord at this note's position
@@ -394,32 +432,43 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& 
       current_tick += tick_advance;
     }
 
+    if (result.notes.size() > statement_begin) {
+      ++statements_emitted;
+      if (statement_betrayal != HookBetrayal::None) {
+        betrayed.push_back({statement_begin, result.notes.size(), statement_betrayal});
+      }
+    }
+
     // Add gap after pattern (varies by pattern for natural breathing)
     current_tick += rhythm_pattern.gap_after;
   }
+  hook_cache_.last_section_statements = statements_emitted;
 
   // =========================================================================
-  // APPLY HOOK BETRAYAL: Modify pitches/durations for the 4th occurrence
+  // APPLY HOOK BETRAYAL
   // =========================================================================
-  // Apply betrayal modifications to the generated notes.
-  // This adds subtle variation while maintaining hook recognizability.
-  if (betrayal != HookBetrayal::None && !result.notes.empty()) {
+  // Vary only the statements the threshold fell on. The statements before it
+  // are the repetition the variation is heard against; changing them too would
+  // leave nothing for the change to be a change from.
+  for (const auto& statement : betrayed) {
     std::vector<int8_t> pitches;
     std::vector<Tick> durations;
-    pitches.reserve(result.notes.size());
-    durations.reserve(result.notes.size());
-    for (const auto& note : result.notes) {
-      pitches.push_back(static_cast<int8_t>(note.note));
-      durations.push_back(note.duration);
+    pitches.reserve(statement.end - statement.begin);
+    durations.reserve(statement.end - statement.begin);
+    for (size_t i = statement.begin; i < statement.end; ++i) {
+      pitches.push_back(static_cast<int8_t>(result.notes[i].note));
+      durations.push_back(result.notes[i].duration);
     }
 
-    applyBetrayal(pitches, durations, betrayal, rng);
+    applyBetrayal(pitches, durations, statement.kind, rng);
 
     // Apply modifications back to notes (clamped to vocal range)
     // Also add pitch safety check and record original pitch in provenance
-    for (size_t i = 0; i < result.notes.size() && i < pitches.size(); ++i) {
+    for (size_t i = statement.begin; i < statement.end; ++i) {
+      const size_t offset = i - statement.begin;
+      if (offset >= pitches.size()) break;
       [[maybe_unused]] uint8_t old_pitch = result.notes[i].note;
-      int new_pitch = std::clamp(static_cast<int>(pitches[i]), static_cast<int>(ctx.vocal_low),
+      int new_pitch = std::clamp(static_cast<int>(pitches[offset]), static_cast<int>(ctx.vocal_low),
                                  static_cast<int>(ctx.vocal_high));
 
       // Apply pitch safety check for modified pitch
@@ -439,8 +488,12 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& 
         hints.sub_phrase_index = static_cast<int8_t>(ctx.sub_phrase_index);
         result.notes[i].note =
             selectBestCandidate(candidates, static_cast<uint8_t>(new_pitch), hints);
+      } else {
+        // No safe pitch for the varied note. Leaving the hook note as it was is
+        // a missed variation; taking the pitch anyway is an unverified mover,
+        // and every clash that has ever reached the output came from one of
+        // those. The duration change below still applies.
       }
-      // If candidates is empty, keep the original clamped pitch (new_pitch)
 
 #ifdef MIDISKETCH_NOTE_PROVENANCE
       // Record original pitch before betrayal modification
@@ -451,8 +504,8 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& 
       }
 #endif
 
-      if (i < durations.size()) {
-        result.notes[i].duration = durations[i];
+      if (offset < durations.size()) {
+        result.notes[i].duration = durations[offset];
       }
 
       // Re-check chord boundary after betrayal pitch/duration changes

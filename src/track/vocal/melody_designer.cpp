@@ -633,7 +633,8 @@ std::vector<NoteEvent> MelodyDesigner::generateSection(
     *generated_hook_out = generated_hook;
   }
   if (commit_hook_repetition && generated_hook) {
-    ++hook_cache_.repetition_count;
+    hook_cache_.repetition_count =
+        static_cast<uint8_t>(hook_cache_.repetition_count + hook_cache_.last_section_statements);
   }
   return result;
 }
@@ -757,7 +758,8 @@ std::vector<NoteEvent> MelodyDesigner::generateSectionWithEvaluation(
   auto commitCandidate = [&](Candidate& candidate) {
     hook_cache_ = candidate.hook_cache;
     if (candidate.generated_hook) {
-      ++hook_cache_.repetition_count;
+      hook_cache_.repetition_count =
+          static_cast<uint8_t>(hook_cache_.repetition_count + hook_cache_.last_section_statements);
     }
 
     // The evaluated winner is the source of truth for the chorus head. Hook

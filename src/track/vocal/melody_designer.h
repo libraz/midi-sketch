@@ -404,8 +404,21 @@ class MelodyDesigner {
     /// Cached rhythm pattern index (SIZE_MAX = not yet selected).
     size_t rhythm_pattern_idx = SIZE_MAX;
 
-    /// Hook repetition counter for betrayal strategy (golden ratio: 3 then change).
+    /// How many statements of the hook the song has sounded so far.
+    ///
+    /// The betrayal thresholds describe statements ("three the same, the fourth
+    /// different"), not sections: one hook section states the hook
+    /// hook_repeat_count times, so counting sections leaves the counter short of
+    /// every threshold in a form with three choruses and the variation the
+    /// templates declare never happens.
     uint8_t repetition_count = 0;
+
+    /// Statements the last generated hook section contributed to the count.
+    ///
+    /// Candidates are generated speculatively and only the winner is committed,
+    /// so the count advances at commit time and has to know what the winning
+    /// candidate actually emitted.
+    uint8_t last_section_statements = 0;
 
     /// Cached sabi (chorus) head pitches for consistency (first 8 notes).
     std::array<uint8_t, 8> sabi_pitches{};
@@ -425,6 +438,7 @@ class MelodyDesigner {
       skeleton_later.reset();
       rhythm_pattern_idx = SIZE_MAX;
       repetition_count = 0;
+      last_section_statements = 0;
       pitches_cached = false;
       rhythm_cached = false;
     }
