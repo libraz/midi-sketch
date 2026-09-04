@@ -347,7 +347,7 @@ TEST(GeneratorMidiGoldenTest, FixedBlueprintsMatchNormalizedMidiSha256) {
   constexpr std::array<const char*, 10> kExpectedHashes = {
       "90cf25fa46cfec2c7cdf5caf6b7adcf50d2d93b173bb00d66f3c257bc08e9478",
       "bc1945093a22a2bb166c0767d22055bab4107218ba5c69c21aeee87bca75dba4",
-      "de783ff1a48b5775d50d78c90009a02d42b184f344a2ffa6d1e4592fa52e3e20",
+      "bfb21c6226253d44e3cc697fcdcfadc7244027dba5bff7e59668bd707cc83bce",
       "c9e54fb3ffe589ed0158158403a2024584214cbd0ce43635204764f5f27f4f4c",
       "b9e8f6826aafac55c258a2c26781db9f7a8436d181a29ce60094a71785f6536e",
       "1535bb4cdf639b0ed9491733b5dd37827192781037a49a5b24bc96cc6b6338a2",

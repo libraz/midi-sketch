@@ -335,6 +335,67 @@ TEST_F(NoteCreatorTest, NoCollisionCheckNoClampWhenRangeUnset) {
   EXPECT_EQ(note->note, 90);  // No clamping when range is unset
 }
 
+// A harmony that accepts a stated set of pitches, for tests about which of
+// several safe alternatives is chosen rather than whether one exists.
+class SafeSetHarmony final : public test::StubHarmonyContext {
+ public:
+  explicit SafeSetHarmony(std::vector<uint8_t> safe) : safe_(std::move(safe)) {}
+
+  bool isConsonantWithOtherTracks(uint8_t pitch, Tick /*start*/, Tick /*duration*/,
+                                  TrackRole /*exclude*/,
+                                  bool /*is_weak_beat*/ = false) const override {
+    return std::find(safe_.begin(), safe_.end(), pitch) != safe_.end();
+  }
+
+ private:
+  std::vector<uint8_t> safe_;
+};
+
+TEST(NoteCreatorRankingTest, PrefersAScaleToneOverACloserChromaticOne) {
+  // D4 collides. F4 is in the key and three semitones away; D#4 is out of it
+  // and one semitone away. Distance alone picks D#4, and the note is then
+  // chromatic for a reason no chord in the song gives -- the collision that
+  // moved it says nothing about the key.
+  SafeSetHarmony harmony({63, 65});
+
+  NoteOptions opts;
+  opts.start = 0;
+  opts.duration = TICKS_PER_BEAT;
+  opts.desired_pitch = 62;
+  opts.velocity = 100;
+  opts.role = TrackRole::Motif;
+  opts.preference = PitchPreference::Default;
+  opts.source = NoteSource::Motif;
+
+  const auto note = createNote(harmony, opts);
+
+  ASSERT_TRUE(note.has_value());
+  EXPECT_EQ(note->note, 65) << "the nearest safe pitch was chromatic and was preferred for being "
+                               "nearest";
+}
+
+TEST(NoteCreatorRankingTest, KeepsAChromaticChordToneAheadOfADistantScaleTone) {
+  // Bb is out of the key and is a tone of the chord that is playing, which is
+  // how a borrowed chord and a secondary dominant are spelled. Preferring the
+  // key over the chord would take those apart.
+  SafeSetHarmony harmony({70, 76});
+  harmony.setChordTones({0, 4, 7, 10});  // C7, the dominant of IV
+
+  NoteOptions opts;
+  opts.start = 0;
+  opts.duration = TICKS_PER_BEAT;
+  opts.desired_pitch = 69;
+  opts.velocity = 100;
+  opts.role = TrackRole::Motif;
+  opts.preference = PitchPreference::Default;
+  opts.source = NoteSource::Motif;
+
+  const auto note = createNote(harmony, opts);
+
+  ASSERT_TRUE(note.has_value());
+  EXPECT_EQ(note->note, 70);
+}
+
 TEST(NoteCreatorFallbackTest, FoldsBelowRangeUpwardWhenCandidateSearchHasNoMatch) {
   // No candidate around MIDI 0 is in the requested register. The fallback
   // must still preserve C by folding it upward to C4 instead of failing.

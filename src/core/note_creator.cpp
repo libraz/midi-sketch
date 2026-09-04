@@ -112,14 +112,33 @@ void rankCandidates(std::vector<PitchCandidate>& candidates, PitchPreference pre
             break;
         }
 
-        // Tertiary: prefer smaller interval from desired
+        // Tertiary: a pitch the harmony accounts for beats one it does not.
+        //
+        // Without this the ordering below it decides, and the nearest way out of
+        // a collision is a semitone -- which from a scale tone lands outside the
+        // key every time. The note is then chromatic for no reason any chord in
+        // the song can give, while the scale tone a whole tone away, or the
+        // chord tone a third away, was available and was ranked lower purely for
+        // being further. A chromatic candidate that is a chord tone keeps its
+        // place: a borrowed chord and a secondary dominant are spelled that way.
+        //
+        // The scored path (selectBestCandidate) has always weighed this, and the
+        // vocal generators drop non-scale candidates before they get here. This
+        // is the same question asked once for every caller that ranks instead.
+        bool a_in_harmony = a.is_chord_tone || a.is_scale_tone;
+        bool b_in_harmony = b.is_chord_tone || b.is_scale_tone;
+        if (a_in_harmony != b_in_harmony) {
+          return a_in_harmony;
+        }
+
+        // Quaternary: prefer smaller interval from desired
         int a_dist = std::abs(a.interval_from_desired);
         int b_dist = std::abs(b.interval_from_desired);
         if (a_dist != b_dist) {
           return a_dist < b_dist;
         }
 
-        // Quaternary: guide tones (3rd/7th) break equal-distance ties.
+        // Final: guide tones (3rd/7th) break equal-distance ties.
         // NOTE: this key must apply unconditionally. The previous version
         // compared guide tones only when BOTH candidates were chord tones,
         // which violates strict weak ordering (the "tie" relation is not
