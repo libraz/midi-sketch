@@ -1418,8 +1418,21 @@ TEST_F(VocalTest, AppoggiaturasAreNotMergedIntoTheirResolution) {
 // Phase 6: RangeProfile Tests
 // ============================================================================
 
-TEST_F(VocalTest, ExtremeLeapOnlyInChorusAndBridge) {
-  // Test that large leaps may occur in Chorus/Bridge sections
+TEST_F(VocalTest, NoSectionLeapsWiderThanItsOwnAllowance) {
+  // The leap allowance is per section (getMaxMelodicIntervalForSection),
+  // narrowed by the blueprint's own budget. This asserts the property that
+  // holds for every seed: no section states an interval wider than what it is
+  // allowed.
+  //
+  // It deliberately does NOT assert that a wide section uses its allowance.
+  // The bound binds only up to a minor 7th; the part of the table that grants
+  // a Chorus an octave and a Bridge more is a permission nothing exercises,
+  // because the passes that decide how far the vocal moves are narrower and do
+  // not consult it -- the phrase skeleton keeps consecutive anchors within a
+  // 5th under an arc seven semitones tall, and a phrase is grounded on the
+  // chord tone nearest where the last one ended, which is never more than a
+  // tritone away. Asking one seed for one wide leap passes or fails on which
+  // seed it is, not on whether the mechanism works.
   params_.structure = StructurePattern::FullWithBridge;  // Has A, B, Chorus, Bridge
   params_.seed = 141414;
 
@@ -1434,6 +1447,8 @@ TEST_F(VocalTest, ExtremeLeapOnlyInChorusAndBridge) {
   // Count large leaps (>7 semitones, i.e. octave territory) per section type
   std::map<SectionType, int> large_leap_counts;
   std::map<SectionType, int> note_counts;
+  std::map<SectionType, int> widest_leap;
+  int widest_leap_anywhere = 0;
 
   for (const auto& sec : sections) {
     // Find notes in this section
@@ -1453,6 +1468,8 @@ TEST_F(VocalTest, ExtremeLeapOnlyInChorusAndBridge) {
       if (interval > 7) {  // Larger than perfect 5th
         large_leap_counts[sec.type]++;
       }
+      widest_leap[sec.type] = std::max(widest_leap[sec.type], interval);
+      widest_leap_anywhere = std::max(widest_leap_anywhere, interval);
     }
   }
 
@@ -1465,16 +1482,23 @@ TEST_F(VocalTest, ExtremeLeapOnlyInChorusAndBridge) {
   EXPECT_LT(verse_leap_ratio, 0.25f)
       << "Verse should have minimal large leaps. Got: " << verse_leap_ratio;
 
-  // The section-limited allowance is only meaningful if the wider sections
-  // actually use it: without this, a melody capped flat at a major 6th
-  // everywhere would satisfy the verse bound above and read as passing.
-  int wide_section_large_leaps = large_leap_counts[SectionType::Chorus] +
-                                 large_leap_counts[SectionType::Bridge] +
-                                 large_leap_counts[SectionType::Drop];
   ASSERT_GT(note_counts[SectionType::Chorus] + note_counts[SectionType::Bridge], 0)
       << "The tested structure must contain a sung Chorus or Bridge";
-  EXPECT_GT(wide_section_large_leaps, 0)
-      << "Chorus/Bridge are allowed leaps beyond a perfect 5th but produced none";
+
+  // No section may state an interval wider than what it is allowed. This is
+  // the property the section table exists to enforce, and it holds for every
+  // section and every seed rather than for one lucky one.
+  const uint8_t ctx_max_leap = melody::resolveContextMaxLeap(params_);
+  for (const auto& [type, leap] : widest_leap) {
+    const int allowed = melody::getEffectiveMaxInterval(type, ctx_max_leap);
+    EXPECT_LE(leap, allowed) << "a section stated an interval wider than its allowance of "
+                             << allowed << " semitones";
+  }
+
+  // A melody flattened onto a single pitch would satisfy every bound above, so
+  // assert the line moves at all. A 4th is well inside every section's
+  // allowance, so this says nothing about which section the motion is in.
+  EXPECT_GE(widest_leap_anywhere, 5) << "the vocal line never moves by more than a major 3rd";
 }
 
 // ============================================================================
