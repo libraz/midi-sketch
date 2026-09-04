@@ -948,20 +948,31 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
     // find a chord tone that connects better
     current_pitch = prev_pitch;
 
-    // Check if starting on prev_pitch would create melodic isolation
-    // (phrase boundaries often have different chord contexts)
+    // Ground the phrase on a chord tone rather than wherever the last one
+    // stopped, so a phrase whose chord context changed does not open on a note
+    // belonging to the previous one.
+    //
+    // This is also, in practice, the bound on how far a phrase may open from
+    // the one before it, and the bound is a tritone. nearestPitchInSet searches
+    // every octave, so the chord tone it returns is always the closest
+    // representative of its pitch class -- at most six semitones from
+    // prev_pitch, and for a plain triad two or three. The section allowance
+    // (getMaxMelodicIntervalForSection: an octave in a Chorus, a 14th in a
+    // Bridge) therefore cannot express itself here: the widest interval a
+    // section boundary can state is decided by the spacing of the chord's
+    // tones, not by what the section permits. A chorus that enters an octave
+    // above the verse it follows is not reachable from this code.
     int chord_tone = melody::nearestPitchInSet(start_chord_tones, current_pitch, 0, 127);
     int interval_to_chord = std::abs(chord_tone - prev_pitch);
 
-    // If prev_pitch is far from current chord context, use chord tone instead
-    // This prevents isolated notes at phrase boundaries
+    // Kept as a guard rather than removed: it states the connection this code
+    // is allowed to make, and a future chord-tone lookup that is not
+    // nearest-representative would need it. It does not fire today.
     constexpr int kMaxPhraseConnectionInterval = 7;  // Perfect 5th
     if (interval_to_chord <= kMaxPhraseConnectionInterval) {
-      // Chord tone is reachable - prefer it for harmonic grounding
       current_pitch = chord_tone;
     } else {
-      // Chord tone is too far - find intermediate step
-      // Move toward chord tone by at most kMaxPhraseConnectionInterval
+      // Move toward the chord tone by at most kMaxPhraseConnectionInterval.
       int direction = (chord_tone > prev_pitch) ? 1 : -1;
       int stepped_pitch = prev_pitch + direction * kMaxPhraseConnectionInterval;
       current_pitch = melody::nearestPitchInSet(start_chord_tones, stepped_pitch, 0, 127);

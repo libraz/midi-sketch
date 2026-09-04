@@ -57,6 +57,12 @@ constexpr int kMaxMelodicInterval = 9;
  * - B (Pre-chorus): Up to 10 for tension building
  * - Default (Verse, etc.): Standard 9 semitones for stability
  *
+ * This is a ceiling only. It permits a leap; nothing here produces one, and
+ * the passes that decide how wide the vocal actually moves -- the phrase
+ * skeleton's arc height and its anchor-to-anchor bound, and the chord-tone
+ * grounding at a phrase start -- are narrower and do not consult it. Raising a
+ * value here therefore has no effect on the notes by itself.
+ *
  * @param section Section type
  * @return Maximum allowed melodic interval in semitones
  */
