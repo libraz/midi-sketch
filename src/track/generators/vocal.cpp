@@ -446,14 +446,16 @@ void VocalGenerator::postProcessVocalNotes(
     }
   }
 
-  // FINAL RANGE AUTHORITY.
+  // Backstop for the range contract, not the thing that enforces it.
   //
-  // Every pass above works within a section's own bounds, but the chorus-head
-  // lift and the develop-repeat passes raise pitches, so the configured range
-  // is re-asserted here on the notes that are actually emitted. Nothing the
-  // generator emits may fall outside [vocal_low, vocal_high]: the piano-roll
-  // safety API reports the same bound, and a note outside it makes the two
-  // surfaces contradict each other for the same handle and the same params.
+  // Nothing the generator emits may fall outside [vocal_low, vocal_high]: the
+  // piano-roll safety API reports the same bound, and a note outside it makes
+  // the two surfaces contradict each other for the same handle and the same
+  // params. The bound is applied where the pitches are chosen -- see
+  // effective_high in vocal_range.cpp -- and over a sweep of every blueprint
+  // these two statements move nothing. They are kept because the contract is
+  // shared with a separate surface and is worth asserting on the notes that
+  // are actually emitted; do not read them as the place the range is decided.
   enforceSectionCeiling(all_notes, harmony, effective_vocal_low, effective_vocal_high);
   for (auto& note : all_notes) {
     if (note.note >= effective_vocal_low) continue;
