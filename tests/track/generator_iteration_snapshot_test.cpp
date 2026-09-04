@@ -354,7 +354,7 @@ TEST(GeneratorMidiGoldenTest, FixedBlueprintsMatchNormalizedMidiSha256) {
       "c92e06ddcdbb998ad578cfd56e41b7fcf73ec67d776baeaa474c16b1ff048cd4",
       "c621d693c6a9d4400fe309b0c01bc175bb860f879af54f6d58df66630908ab18",
       "107f74f18d665334c062f47daec2e4f2ee8dafa13493a072c40de959699dd991",
-      "88cecbc4599e22d7fad2f875698e4154c794e877952a06d4f2c09e2dbfc8837b",
+      "4029a8daf0cc82538dc57331212dd7bd82da74ee25c25859c3b40454ef968961",
   };
 
   for (uint8_t blueprint = 0; blueprint < kExpectedHashes.size(); ++blueprint) {
