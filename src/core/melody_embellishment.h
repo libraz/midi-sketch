@@ -16,6 +16,7 @@
 #include <vector>
 
 #include "core/basic_types.h"
+#include "core/chord_utils.h"
 #include "core/section_types.h"
 #include "core/timing_constants.h"
 
@@ -332,22 +333,32 @@ class MelodicEmbellisher {
    * Creates an accented hold from the previous harmony that resolves down by
    * step to the current chord tone.
    *
+   * The tones are supplied rather than derived from a scale degree: the note
+   * being held over belongs to whatever the shared timeline states at its own
+   * tick, which is not the degree's diatonic triad wherever an extension or a
+   * secondary dominant is registered.
+   *
    * @return Pair of notes (suspension, resolution) or nullopt
    */
   static std::optional<std::pair<NoteEvent, NoteEvent>> tryAddSuspension(
-      const NoteEvent& previous, const NoteEvent& resolution, int8_t previous_chord_degree,
-      int key_offset, bool allow_chromatic, std::mt19937& rng);
+      const NoteEvent& previous, const NoteEvent& resolution,
+      const ChordTones& previous_chord_tones, int key_offset, bool allow_chromatic,
+      std::mt19937& rng);
 
   /**
    * @brief Try to add an anticipation before a chord change.
    *
    * Creates syncopation by playing next chord's tone early.
    *
+   * The tones are supplied by the caller, which decides which reading of the
+   * coming chord to anticipate.
+   *
    * @return Anticipation note or nullopt
    */
   static std::optional<NoteEvent> tryAddAnticipation(const NoteEvent& current,
                                                      const NoteEvent& next, Tick next_chord_tick,
-                                                     int8_t next_chord_degree, std::mt19937& rng);
+                                                     const ChordTones& chord_tones,
+                                                     std::mt19937& rng);
 
   /**
    * @brief Get tension pitch for a chord degree.

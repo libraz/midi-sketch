@@ -254,8 +254,9 @@ std::vector<NoteEvent> MelodicEmbellisher::embellish(
         consecutive_ncts < config.max_consecutive_ncts) {
       int8_t previous_chord_degree = harmony.getChordDegreeAt(previous->start_tick);
       if (previous_chord_degree != chord_degree) {
-        auto sus_pair = tryAddSuspension(*previous, current, previous_chord_degree, key_offset,
-                                         config.chromatic_approach, rng);
+        auto sus_pair =
+            tryAddSuspension(*previous, current, harmony.getChordTonesAt(previous->start_tick),
+                             key_offset, config.chromatic_approach, rng);
         if (sus_pair &&
             harmony.isConsonantWithOtherTracks(sus_pair->first.note, sus_pair->first.start_tick,
                                                sus_pair->first.duration, TrackRole::Vocal, true) &&
@@ -337,7 +338,16 @@ std::vector<NoteEvent> MelodicEmbellisher::embellish(
       // Check if chord changes between current and next
       int8_t next_chord_degree = harmony.getChordDegreeAt(next->start_tick);
       if (next_chord_degree != chord_degree) {
-        auto ant = tryAddAnticipation(current, *next, next->start_tick, next_chord_degree, rng);
+        // The degree's own triad, deliberately, rather than the chord the
+        // timeline states at this tick. Reading the timeline here is the more
+        // correct question and it answers it: over 200 songs the notes that
+        // reach into an entry carrying a registered extension state that chord
+        // 98.6% of the time instead of 96.2%. It is two notes. Against them the
+        // melody diverges outright in nine songs, and the corpus lands one
+        // sustained-over-a-change note worse for one issue fewer overall, so
+        // there is no evidence the songs improve. Left as it is until there is.
+        auto ant = tryAddAnticipation(current, *next, next->start_tick,
+                                      getChordTones(next_chord_degree), rng);
         if (ant && !overlaps_protected_range(*ant) && ant->start_tick > current.start_tick &&
             harmony.isConsonantWithOtherTracks(ant->note, ant->start_tick, ant->duration,
                                                TrackRole::Vocal)) {
@@ -678,12 +688,11 @@ std::optional<std::pair<NoteEvent, NoteEvent>> MelodicEmbellisher::tryConvertToA
 }
 
 std::optional<std::pair<NoteEvent, NoteEvent>> MelodicEmbellisher::tryAddSuspension(
-    const NoteEvent& previous, const NoteEvent& resolution, int8_t previous_chord_degree,
+    const NoteEvent& previous, const NoteEvent& resolution, const ChordTones& previous_chord_tones,
     int key_offset, bool allow_chromatic, std::mt19937& rng) {
   if (resolution.duration < MIN_SPLIT_DURATION * 2) return std::nullopt;
   if (getBeatStrength(resolution.start_tick) != BeatStrength::Strong) return std::nullopt;
 
-  const ChordTones previous_chord_tones = getChordTones(previous_chord_degree);
   if (previous_chord_tones.empty()) return std::nullopt;
 
   int sus_pitch = -1;
@@ -733,7 +742,7 @@ std::optional<std::pair<NoteEvent, NoteEvent>> MelodicEmbellisher::tryAddSuspens
 std::optional<NoteEvent> MelodicEmbellisher::tryAddAnticipation(const NoteEvent& current,
                                                                 const NoteEvent& next,
                                                                 Tick next_chord_tick,
-                                                                int8_t next_chord_degree,
+                                                                const ChordTones& chord_tones,
                                                                 std::mt19937& rng) {
   // Anticipation window: just before chord change (probabilistic 8th/16th grid)
   Tick grid = getQuantizationGrid(rng);
@@ -744,7 +753,6 @@ std::optional<NoteEvent> MelodicEmbellisher::tryAddAnticipation(const NoteEvent&
   if (ant_start >= next.start_tick) return std::nullopt;
 
   // Get a chord tone from next chord
-  const ChordTones chord_tones = getChordTones(next_chord_degree);
   if (chord_tones.empty()) return std::nullopt;
 
   // Find chord tone nearest to current pitch
