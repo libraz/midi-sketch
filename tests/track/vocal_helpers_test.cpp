@@ -481,11 +481,13 @@ TEST_F(ApplyGrooveFeelTest, MinimumGapMaintainedBetweenNotes) {
 
   applyGrooveFeel(notes, VocalGrooveFeel::Syncopated);
 
-  // There should be a gap between notes (at least kMinGap = 10)
+  // Ticks are unsigned, so the subtraction that used to stand here turned an
+  // overlap into a gap of about 4.29e9 and then compared it against zero. The
+  // two positions are compared directly instead, which is the claim.
   Tick note_a_end = notes[0].start_tick + notes[0].duration;
-  Tick gap = notes[1].start_tick - note_a_end;
-  EXPECT_GE(gap, 0u) << "There should be no overlap";
-  // Note: Gap may be 0 after final safety pass, but overlap is prevented
+  EXPECT_GE(notes[1].start_tick, note_a_end)
+      << "the second note starts " << (note_a_end - notes[1].start_tick)
+      << " ticks before the first one ends";
 }
 
 TEST_F(ApplyGrooveFeelTest, PositiveShiftDoesNotAffectPreviousNote) {

@@ -529,7 +529,6 @@ TEST_F(VocalTest, HumanizeProducesValidNotes) {
 
   // All notes should still be valid
   for (const auto& note : notes) {
-    EXPECT_GE(note.note, 0);
     EXPECT_LE(note.note, 127);
     EXPECT_GT(note.velocity, 0);
     EXPECT_LE(note.velocity, 127);
@@ -873,7 +872,6 @@ TEST_F(VocalTest, HookIntensityNormalGeneratesValidOutput) {
 
   // All notes should be in valid MIDI range
   for (const auto& note : notes) {
-    EXPECT_GE(note.note, 0);
     EXPECT_LE(note.note, 127);
     EXPECT_GT(note.duration, 0);
   }
@@ -969,7 +967,6 @@ TEST_F(VocalTest, HookIntensityLightOnlyAffectsChorusOpening) {
 
   // Basic validation - notes should be in range
   for (const auto& note : vocal) {
-    EXPECT_GE(note.note, 0);
     EXPECT_LE(note.note, 127);
   }
 }
@@ -1187,7 +1184,6 @@ TEST_F(VocalTest, SyncopatedGrooveGeneratesValidOutput) {
 
   // Basic validation
   for (const auto& note : vocal) {
-    EXPECT_GE(note.note, 0);
     EXPECT_LE(note.note, 127);
   }
 }
@@ -1238,7 +1234,6 @@ TEST_F(VocalTest, AllExtendedVocalStylePresetsGenerateValidOutput) {
 
     // Validate all notes are in range
     for (const auto& note : vocal) {
-      EXPECT_GE(note.note, 0);
       EXPECT_LE(note.note, 127);
       EXPECT_GT(note.duration, 0);
     }
@@ -1582,85 +1577,89 @@ TEST_F(VocalTest, ChorusHasMelodicContent) {
 // Motif Repetition Tests
 // ============================================================================
 
-TEST_F(VocalTest, ChorusHookRepetitionImproved) {
-  // Verify that chorus hook repetition occurs more frequently (75% target)
-  // by checking for similar melodic patterns within a chorus section
-  params_.structure = StructurePattern::FullPop;
-  params_.seed = 12345;
+TEST_F(VocalTest, ChorusStatesItsHookInEveryFourBarPhrase) {
+  // A hook is a skeleton the designer selects rather than writes, and a chorus
+  // is where it is meant to be recognised -- which takes more than one
+  // statement. Collecting two-bar units and counting them cannot tell a chorus
+  // that states the hook twice from one that states it once and wanders, so
+  // this asks the notes which of them the hook produced.
+  for (uint32_t seed : {12345u, 54321u, 42u, 7u}) {
+    params_.structure = StructurePattern::FullPop;
+    params_.seed = seed;
 
-  Generator gen;
-  gen.generate(params_);
+    Generator gen;
+    gen.generate(params_);
 
-  const auto& vocal = gen.getSong().vocal().notes();
-  const auto& sections = gen.getSong().arrangement().sections();
+    const auto& vocal = gen.getSong().vocal().notes();
+    for (const auto& sec : gen.getSong().arrangement().sections()) {
+      if (sec.type != SectionType::Chorus || sec.bars < 8) continue;
 
-  for (const auto& sec : sections) {
-    if (sec.type != SectionType::Chorus || sec.bars < 6) continue;
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+      uint8_t phrases = 0;
+      uint8_t phrases_with_hook = 0;
+      for (uint8_t bar = 0; bar + 4 <= sec.bars; bar += 4) {
+        Tick phrase_start = sec.start_tick + bar * TICKS_PER_BAR;
+        Tick phrase_end = phrase_start + 4 * TICKS_PER_BAR;
+        ++phrases;
 
-    // Collect notes per 2-bar motif
-    std::vector<std::vector<uint8_t>> motif_pitches;
-    for (uint8_t bar = 0; bar < sec.bars; bar += 2) {
-      Tick motif_start = sec.start_tick + bar * TICKS_PER_BAR;
-      Tick motif_end = motif_start + 2 * TICKS_PER_BAR;
-
-      std::vector<uint8_t> pitches;
-      for (const auto& note : vocal) {
-        if (note.start_tick >= motif_start && note.start_tick < motif_end) {
-          pitches.push_back(note.note);
+        for (const auto& note : vocal) {
+          if (note.start_tick < phrase_start || note.start_tick >= phrase_end) continue;
+          if (note.prov_source == static_cast<uint8_t>(NoteSource::Hook)) {
+            ++phrases_with_hook;
+            break;
+          }
         }
       }
-      if (!pitches.empty()) {
-        motif_pitches.push_back(pitches);
-      }
-    }
 
-    // Verify hook repetition mechanism is working.
-    // Post-processing (same-pitch merging) can change note counts,
-    // making position-based matching less reliable.
-    EXPECT_GE(motif_pitches.size(), 2u) << "Chorus should have multiple motif units";
+      ASSERT_GE(phrases, 2u) << "an eight-bar chorus holds two four-bar phrases";
+      EXPECT_EQ(phrases_with_hook, phrases)
+          << "seed " << seed << " chorus at tick " << sec.start_tick << ": only "
+          << static_cast<int>(phrases_with_hook) << " of " << static_cast<int>(phrases)
+          << " four-bar phrases state the hook";
+#endif
+    }
   }
 }
 
-TEST_F(VocalTest, SectionMotifRepetitionInVerse) {
-  // Verify that verse sections also have motif repetition
-  params_.structure = StructurePattern::FullPop;
-  params_.seed = 54321;
+TEST_F(VocalTest, VerseCarriesMelodyInEveryTwoBarUnit) {
+  // The old name here claimed motif repetition and the body only counted the
+  // units that had any notes at all. That is worth asserting -- a verse with a
+  // silent two-bar stretch is a hole in the song -- but it is a different
+  // claim, so it says so, and it now asks about every unit rather than two of
+  // them.
+  for (uint32_t seed : {54321u, 12345u, 42u, 7u}) {
+    params_.structure = StructurePattern::FullPop;
+    params_.seed = seed;
 
-  Generator gen;
-  gen.generate(params_);
+    Generator gen;
+    gen.generate(params_);
 
-  const auto& vocal = gen.getSong().vocal().notes();
-  const auto& sections = gen.getSong().arrangement().sections();
+    const auto& vocal = gen.getSong().vocal().notes();
+    int verse_count = 0;
 
-  int verse_count = 0;
+    for (const auto& sec : gen.getSong().arrangement().sections()) {
+      if (sec.type != SectionType::A || sec.bars < 4) continue;
+      ++verse_count;
 
-  for (const auto& sec : sections) {
-    if (sec.type != SectionType::A || sec.bars < 4) continue;
-    ++verse_count;
+      for (uint8_t bar = 0; bar + 2 <= sec.bars; bar += 2) {
+        Tick unit_start = sec.start_tick + bar * TICKS_PER_BAR;
+        Tick unit_end = unit_start + 2 * TICKS_PER_BAR;
 
-    // Verify verse has multiple motif units (2-bar chunks)
-    int motif_units = 0;
-    for (uint8_t bar = 0; bar < sec.bars; bar += 2) {
-      Tick motif_start = sec.start_tick + bar * TICKS_PER_BAR;
-      Tick motif_end = motif_start + 2 * TICKS_PER_BAR;
-
-      bool has_notes = false;
-      for (const auto& note : vocal) {
-        if (note.start_tick >= motif_start && note.start_tick < motif_end) {
-          has_notes = true;
-          break;
+        bool has_notes = false;
+        for (const auto& note : vocal) {
+          if (note.start_tick >= unit_start && note.start_tick < unit_end) {
+            has_notes = true;
+            break;
+          }
         }
-      }
-      if (has_notes) {
-        motif_units++;
+        EXPECT_TRUE(has_notes) << "seed " << seed << " verse at tick " << sec.start_tick << " bars "
+                               << static_cast<int>(bar + 1) << "-" << static_cast<int>(bar + 2)
+                               << " are silent";
       }
     }
 
-    EXPECT_GE(motif_units, 2) << "Verse section should have multiple motif units";
+    EXPECT_GT(verse_count, 0) << "seed " << seed << " produced no verse to analyse";
   }
-
-  // Verify verse sections exist and motif mechanism is active
-  EXPECT_GT(verse_count, 0) << "Should have verse sections to analyze";
 }
 
 TEST_F(VocalTest, MotifRepetitionMaintainsHarmony) {
@@ -1827,7 +1826,6 @@ TEST_F(VocalTest, AllNotesHaveValidData) {
 
     for (size_t i = 0; i < notes.size(); ++i) {
       // Pitch validation
-      EXPECT_GE(notes[i].note, 0) << "Invalid pitch at seed=" << seed << ", note " << i;
       EXPECT_LE(notes[i].note, 127) << "Invalid pitch at seed=" << seed << ", note " << i;
 
       // Velocity validation

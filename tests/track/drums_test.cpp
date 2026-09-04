@@ -8,6 +8,7 @@
 #include <gtest/gtest.h>
 
 #include <array>
+#include <limits>
 #include <map>
 #include <set>
 #include <vector>
@@ -81,7 +82,6 @@ TEST_F(DrumsTest, DrumsNotesInValidMidiRange) {
 
   const auto& track = gen.getSong().drums();
   for (const auto& note : track.notes()) {
-    EXPECT_GE(note.note, 0) << "Note below 0";
     EXPECT_LE(note.note, 127) << "Note above 127";
     EXPECT_GT(note.velocity, 0) << "Velocity is 0";
     EXPECT_LE(note.velocity, 127) << "Velocity above 127";
@@ -768,9 +768,12 @@ TEST_F(DrumsTest, KickPositionsNonNegative) {
   gen.generate(params_);
 
   const auto& track = gen.getSong().drums();
+  const Tick total = gen.getSong().arrangement().totalTicks();
   for (const auto& note : track.notes()) {
     if (note.note == KICK) {
-      EXPECT_GE(note.start_tick, 0u) << "Kick start_tick should never be negative";
+      // A Tick is unsigned and cannot be negative. What can go wrong is a kick
+      // placed past the end of the arrangement, which is silent and invisible.
+      EXPECT_LT(note.start_tick, total) << "Kick starts past the end of the song";
     }
   }
 }
@@ -1205,9 +1208,12 @@ TEST_F(DrumsTest, LaidBackMoodHasLaterTiming) {
   EXPECT_GT(ballad_drums.notes().size(), 0);
   EXPECT_GT(energetic_drums.notes().size(), 0);
 
-  // Find first kick in each
-  Tick ballad_first_kick = 0;
-  Tick energetic_first_kick = 0;
+  // Find first kick in each. The sentinel has to be outside the tick range: a
+  // zero initialiser is also a legitimate first-kick position, so it cannot say
+  // whether a kick was found.
+  constexpr Tick kNoKick = std::numeric_limits<Tick>::max();
+  Tick ballad_first_kick = kNoKick;
+  Tick energetic_first_kick = kNoKick;
   for (const auto& note : ballad_drums.notes()) {
     if (note.note == KICK) {
       ballad_first_kick = note.start_tick;
@@ -1221,11 +1227,10 @@ TEST_F(DrumsTest, LaidBackMoodHasLaterTiming) {
     }
   }
 
-  // With same seed and structure, LaidBack should be slightly later
-  // Note: Due to different moods affecting pattern selection, this may vary
-  // The key test is that both generate valid drums with different timing characteristics
-  EXPECT_GE(ballad_first_kick, 0u);
-  EXPECT_GE(energetic_first_kick, 0u);
+  // The moods choose different patterns, so where the first kick lands is not
+  // fixed. That both time feels put one there at all is.
+  EXPECT_NE(ballad_first_kick, kNoKick) << "Ballad produced no kick";
+  EXPECT_NE(energetic_first_kick, kNoKick) << "EnergeticDance produced no kick";
 }
 
 TEST_F(DrumsTest, TimeFeelDoesNotBreakGeneration) {
@@ -1250,9 +1255,10 @@ TEST_F(DrumsTest, TimeFeelDoesNotBreakGeneration) {
     EXPECT_GT(drums.notes().size(), 0)
         << "Mood " << static_cast<int>(mood) << " should generate drums";
 
-    // Verify no negative tick values
+    const Tick total = gen.getSong().arrangement().totalTicks();
     for (const auto& note : drums.notes()) {
-      EXPECT_GE(note.start_tick, 0u) << "Mood " << static_cast<int>(mood) << " has invalid tick";
+      EXPECT_LT(note.start_tick, total)
+          << "Mood " << static_cast<int>(mood) << " placed a note past the end of the song";
     }
   }
 }

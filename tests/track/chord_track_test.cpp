@@ -297,7 +297,6 @@ TEST_F(ChordTrackTest, ChordNotesInValidMidiRange) {
 
   const auto& track = gen.getSong().chord();
   for (const auto& note : track.notes()) {
-    EXPECT_GE(note.note, 0) << "Note pitch below 0";
     EXPECT_LE(note.note, 127) << "Note pitch above 127";
     EXPECT_GT(note.velocity, 0) << "Velocity is 0";
     EXPECT_LE(note.velocity, 127) << "Velocity above 127";
@@ -479,7 +478,6 @@ TEST_F(ChordTrackTest, SusChordExtensionGeneratesValidNotes) {
 
   // All notes should be in valid MIDI range
   for (const auto& note : chord_track.notes()) {
-    EXPECT_GE(note.note, 0);
     EXPECT_LE(note.note, 127);
     EXPECT_GT(note.velocity, 0);
   }
@@ -2012,7 +2010,6 @@ TEST_F(ChordKeyboardPlayabilityTest, AllBlueprintsGenerateValidChords) {
         << "Blueprint " << bp_data.name << " should generate chord notes";
 
     for (const auto& note : chord.notes()) {
-      EXPECT_GE(note.note, 0) << "Blueprint " << bp_data.name << " has invalid note";
       EXPECT_LE(note.note, 127) << "Blueprint " << bp_data.name << " has invalid note";
       EXPECT_GT(note.velocity, 0) << "Blueprint " << bp_data.name << " has zero velocity";
     }
@@ -2051,7 +2048,6 @@ TEST_F(ChordKeyboardPlayabilityTest, FullModeProducesValidChords) {
   EXPECT_GT(chord.notes().size(), 0u) << "Chord track should have notes with Full mode";
 
   for (const auto& note : chord.notes()) {
-    EXPECT_GE(note.note, 0);
     EXPECT_LE(note.note, 127);
     EXPECT_GT(note.velocity, 0);
   }

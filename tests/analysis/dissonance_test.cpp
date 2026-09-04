@@ -730,7 +730,6 @@ TEST(DissonanceTest, AuxTrackIssuesAreDetected) {
 
   // The aux track is enabled for this fixture, so it must be part of what was scanned.
   EXPECT_FALSE(song.aux().notes().empty()) << "Aux track produced no notes to analyze";
-  EXPECT_GE(aux_issues, 0);
 }
 
 // ============================================================================

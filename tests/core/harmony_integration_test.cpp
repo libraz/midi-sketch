@@ -5,7 +5,9 @@
 
 #include <gtest/gtest.h>
 
+#include <array>
 #include <set>
+#include <vector>
 
 #include "core/chord.h"
 #include "core/config_converter.h"
@@ -287,43 +289,92 @@ TEST(ChordExtensionTest, NinthIsValidChordTone) {
 // Test 5: 5-chord progression cadence handling
 // =============================================================================
 
-TEST_F(HarmonyIntegrationTest, FiveChordProgressionHasCadence) {
-  // Use a 5-chord progression (ID 20 or 21)
-  params_.chord_id = 20;  // Royal Road (5 chords)
-  params_.structure = StructurePattern::StandardPop;
+// The two progressions declared with five chords. Everything else in the table
+// is four, and the padding in ChordProgression::degrees means a reader that
+// stops at four sees a well-formed progression with the fifth chord missing.
+constexpr std::array<uint8_t, 2> kFiveChordProgressions = {20, 21};
 
-  Generator gen;
-  gen.generate(params_);
+// The degrees the timeline states across a section, sampled at both halves of
+// every bar so a mid-bar change is not read as the bar's only chord.
+std::vector<int8_t> sectionDegrees(const IHarmonyContext& harmony, const Section& section) {
+  std::vector<int8_t> degrees;
+  for (uint8_t bar = 0; bar < section.bars; ++bar) {
+    Tick bar_start = section.start_tick + bar * TICKS_PER_BAR;
+    degrees.push_back(harmony.getChordDegreeAt(bar_start));
+    degrees.push_back(harmony.getChordDegreeAt(bar_start + TICKS_PER_BAR / 2));
+  }
+  return degrees;
+}
 
-  const auto& song = gen.getSong();
-  const auto& chord_notes = song.chord().notes();
-  const auto& sections = song.arrangement().sections();
+TEST_F(HarmonyIntegrationTest, FiveChordProgressionPlacesEveryDeclaredChord) {
+  for (uint8_t chord_id : kFiveChordProgressions) {
+    params_.chord_id = chord_id;
+    Generator gen;
+    gen.generate(params_);
 
-  // For sections with 8 bars and 5-chord progression,
-  // the last bar should contain V chord (G = pitch class 7)
-  // This is a simplified check - we verify V chord appears near section end
+    const auto& progression = getChordProgression(chord_id);
+    ASSERT_EQ(progression.length, 5)
+        << "progression " << static_cast<int>(chord_id) << " is no longer a five-chord progression";
 
-  for (const auto& section : sections) {
-    if (section.bars < 4) continue;  // Skip short sections
-    if (section.type == SectionType::Intro || section.type == SectionType::Outro) continue;
+    for (const auto& section : gen.getSong().arrangement().sections()) {
+      if (section.bars < progression.length) continue;  // too short to hold one cycle
 
-    Tick section_end = section.endTick();
-    Tick last_bar_start = section_end - TICKS_PER_BAR;
+      const auto degrees = sectionDegrees(gen.getHarmonyContext(), section);
+      const std::set<int8_t> stated(degrees.begin(), degrees.end());
 
-    // Check if any chord note in last bar has G as root (V chord indicator)
-    for (const auto& note : chord_notes) {
-      if (note.start_tick >= last_bar_start && note.start_tick < section_end) {
-        // G is pitch class 7 - just verify the search works
-        // It's acceptable if not found (depends on progression alignment)
-        if (getPitchClass(note.note) == 7) {
-          break;  // Found dominant, test passes
-        }
+      for (uint8_t i = 0; i < progression.length; ++i) {
+        EXPECT_GT(stated.count(progression.at(i)), 0u)
+            << "progression " << static_cast<int>(chord_id) << " degree "
+            << static_cast<int>(progression.at(i)) << " never reaches section " << section.name;
       }
     }
   }
+}
 
-  // Generation should complete without issues
-  EXPECT_FALSE(chord_notes.empty());
+TEST_F(HarmonyIntegrationTest, FiveChordProgressionBreaksTheFourBarRepeat) {
+  // Five chords over an eight-bar section cannot line up with the four-bar
+  // phrase, so the second phrase states a different harmony from the first.
+  // That is the whole reason to declare a fifth chord, and it is what a length
+  // silently truncated to four would take away.
+  for (uint8_t chord_id : kFiveChordProgressions) {
+    params_.chord_id = chord_id;
+    Generator gen;
+    gen.generate(params_);
+
+    for (const auto& section : gen.getSong().arrangement().sections()) {
+      if (section.bars < 8) continue;
+
+      const auto degrees = sectionDegrees(gen.getHarmonyContext(), section);
+      const std::vector<int8_t> first(degrees.begin(), degrees.begin() + 8);
+      const std::vector<int8_t> second(degrees.begin() + 8, degrees.begin() + 16);
+      EXPECT_NE(first, second) << "progression " << static_cast<int>(chord_id) << " repeats every "
+                               << "four bars in section " << section.name;
+    }
+  }
+}
+
+TEST_F(HarmonyIntegrationTest, FourChordProgressionRepeatsEveryFourBars) {
+  // The contrast the test above depends on. Without it, "the halves differ"
+  // could be true of every progression and would say nothing about the fifth
+  // chord. Section A states the progression as written; later sections
+  // reharmonise, which is a separate mechanism.
+  for (uint8_t chord_id : {0, 1}) {
+    params_.chord_id = chord_id;
+    Generator gen;
+    gen.generate(params_);
+
+    ASSERT_EQ(getChordProgression(chord_id).length, 4);
+
+    for (const auto& section : gen.getSong().arrangement().sections()) {
+      if (section.type != SectionType::A || section.bars < 8) continue;
+
+      const auto degrees = sectionDegrees(gen.getHarmonyContext(), section);
+      const std::vector<int8_t> first(degrees.begin(), degrees.begin() + 8);
+      const std::vector<int8_t> second(degrees.begin() + 8, degrees.begin() + 16);
+      EXPECT_EQ(first, second) << "progression " << static_cast<int>(chord_id)
+                               << " no longer repeats every four bars in section " << section.name;
+    }
+  }
 }
 
 // =============================================================================
@@ -599,42 +650,34 @@ TEST_F(HarmonyIntegrationTest, RegenerateMotifMaintainsRangeSeparation) {
 // Test 10: 5-chord progression with 8-bar sections inserts ii-V cadence
 // =============================================================================
 
-TEST_F(HarmonyIntegrationTest, FiveChordProgressionCadenceInsertion) {
-  // Use Extended5 (5 chords) with 8-bar section
-  params_.chord_id = 20;                              // Royal Road (5 chords)
-  params_.structure = StructurePattern::StandardPop;  // Has 8-bar sections
+TEST_F(HarmonyIntegrationTest, FiveChordProgressionFillsTheBarsThatDoNotDivideByFive) {
+  // Eight bars do not divide by five. The last three are the ones a layout that
+  // emitted whole cycles only would leave silent, so every bar of the section
+  // has to start a chord, not just the section as a whole.
+  for (uint8_t chord_id : kFiveChordProgressions) {
+    params_.chord_id = chord_id;
+    Generator gen;
+    gen.generate(params_);
 
-  Generator gen;
-  gen.generate(params_);
+    const auto& song = gen.getSong();
+    for (const auto& section : song.arrangement().sections()) {
+      if (section.bars < 8) continue;
 
-  const auto& song = gen.getSong();
-  const auto& sections = song.arrangement().sections();
-  const auto& progression = getChordProgression(params_.chord_id);
-
-  // Verify progression length is 5
-  ASSERT_EQ(progression.length, 5) << "Expected 5-chord progression";
-
-  // For each 8-bar section, check that chord progression is handled
-  for (const auto& section : sections) {
-    if (section.bars != 8) continue;
-    if (section.type == SectionType::Intro || section.type == SectionType::Outro) continue;
-
-    // 5-chord progression in 8 bars means 8 mod 5 = 3 leftover bars
-    // Cadence should be inserted to fill these bars
-    // The test verifies generation completes without issues
-
-    Tick section_end = section.endTick();
-    int chord_notes_in_section = 0;
-
-    for (const auto& note : song.chord().notes()) {
-      if (note.start_tick >= section.start_tick && note.start_tick < section_end) {
-        chord_notes_in_section++;
+      for (uint8_t bar = 0; bar < section.bars; ++bar) {
+        Tick bar_start = section.start_tick + bar * TICKS_PER_BAR;
+        Tick bar_end = bar_start + TICKS_PER_BAR;
+        bool has_onset = false;
+        for (const auto& note : song.chord().notes()) {
+          if (note.start_tick >= bar_start && note.start_tick < bar_end) {
+            has_onset = true;
+            break;
+          }
+        }
+        EXPECT_TRUE(has_onset) << "progression " << static_cast<int>(chord_id) << " section "
+                               << section.name << " bar " << static_cast<int>(bar + 1)
+                               << " starts no chord";
       }
     }
-
-    // Should have chord notes throughout the section
-    EXPECT_GT(chord_notes_in_section, 0)
-        << "Section " << section.name << " should have chord notes";
   }
 }
 
