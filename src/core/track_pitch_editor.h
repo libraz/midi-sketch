@@ -97,6 +97,7 @@ class TrackPitchEditor {
 #ifdef MIDISKETCH_NOTE_PROVENANCE
     note.recordPitchMove(reason, previous, new_pitch, param1, param2);
 #else
+    (void)previous;
     (void)reason;
     (void)param1;
     (void)param2;

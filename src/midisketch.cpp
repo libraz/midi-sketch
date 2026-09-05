@@ -354,6 +354,8 @@ std::string MidiSketch::getEventsJson() const {
 
       w.endObject();
     }
+#else
+    (void)note;  // provenance is the only thing the source event is read for
 #endif  // MIDISKETCH_NOTE_PROVENANCE
 
     w.endObject();
