@@ -30,16 +30,12 @@ struct ParsedMidi2 {
  * Supports:
  * - ktmidi Container File (multi-track, "AAAAAAAAEEEEEEEE" header)
  * - SMF2 Clip File (single track, "SMF2CLIP" header)
+ *
+ * Parses bytes a caller has already read; see MidiReader for why opening the file
+ * stays with the caller.
  */
 class Midi2Reader {
  public:
-  /**
-   * @brief Read a MIDI 2.0 file from disk.
-   * @param path Path to the file
-   * @return true on success, false on error
-   */
-  bool read(const std::string& path);
-
   /**
    * @brief Read from raw bytes.
    * @param data Pointer to data

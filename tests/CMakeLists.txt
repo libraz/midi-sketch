@@ -51,10 +51,12 @@ set(TEST_SOURCES
   cli/display_helpers_test.cpp
   cli/file_input_test.cpp
   cli/generate_mode_test.cpp
+  cli/validate_mode_test.cpp
   ../src/cli/args.cpp
   ../src/cli/generate_mode.cpp
   ../src/cli/regenerate_mode.cpp
   ../src/cli/input_mode.cpp
+  ../src/cli/validate_mode.cpp
   ../src/cli/display_helpers.cpp
   core/music_theory_test.cpp
   core/velocity_test.cpp

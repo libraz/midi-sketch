@@ -6,7 +6,6 @@
 #include "midi/midi2_reader.h"
 
 #include <cstring>
-#include <fstream>
 
 #include "core/timing_constants.h"
 #include "midi/byte_order.h"
@@ -23,25 +22,6 @@ bool Midi2Reader::isMidi2Format(const uint8_t* data, size_t size) {
     return true;
   }
   return false;
-}
-
-bool Midi2Reader::read(const std::string& path) {
-  std::ifstream file(path, std::ios::binary | std::ios::ate);
-  if (!file) {
-    error_ = "Failed to open file: " + path;
-    return false;
-  }
-
-  auto size = file.tellg();
-  file.seekg(0, std::ios::beg);
-
-  std::vector<uint8_t> buffer(static_cast<size_t>(size));
-  if (!file.read(reinterpret_cast<char*>(buffer.data()), static_cast<std::streamsize>(size))) {
-    error_ = "Failed to read file: " + path;
-    return false;
-  }
-
-  return read(buffer.data(), buffer.size());
 }
 
 bool Midi2Reader::read(const uint8_t* data, size_t size) {

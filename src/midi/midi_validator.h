@@ -63,13 +63,11 @@ struct MidiValidationReport {
   std::string toTextReport(const std::string& filename = "") const;
 };
 
-// MIDI file validator
+// MIDI file validator. Validates bytes a caller has already read; see MidiReader
+// for why opening the file stays with the caller.
 class MidiValidator {
  public:
   MidiValidator() = default;
-
-  // Validate MIDI file from path
-  MidiValidationReport validate(const std::string& path) const;
 
   // Validate MIDI from memory buffer
   MidiValidationReport validate(const std::vector<uint8_t>& data) const;

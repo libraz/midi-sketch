@@ -224,8 +224,10 @@ int runRegenerateMode(const ParsedArgs& args) {
 
   if (args.bar_num > 0 && !machine_readable_stdout) {
     if (output_format == midisketch::MidiFormat::SMF1) {
+      std::vector<uint8_t> written;
+      std::string read_error;
       midisketch::MidiReader reader;
-      if (reader.read(midi_output)) {
+      if (readInputFile(midi_output, written, read_error) && reader.read(written)) {
         showBarNotes(reader.getParsedMidi(), args.bar_num);
       } else {
         std::cerr << "Error reading " << midi_output << " for bar inspection\n";

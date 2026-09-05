@@ -6,7 +6,6 @@
 #include "midi/midi_validator.h"
 
 #include <cstring>
-#include <fstream>
 #include <sstream>
 
 #include "core/json_helpers.h"
@@ -146,27 +145,6 @@ std::string MidiValidationReport::toTextReport(const std::string& filename) cons
 }
 
 // MidiValidator methods
-
-MidiValidationReport MidiValidator::validate(const std::string& path) const {
-  MidiValidationReport report;
-
-  std::ifstream file(path, std::ios::binary | std::ios::ate);
-  if (!file) {
-    addError(report, "Cannot open file: " + path);
-    return report;
-  }
-
-  auto size = file.tellg();
-  file.seekg(0, std::ios::beg);
-
-  std::vector<uint8_t> data(static_cast<size_t>(size));
-  if (!file.read(reinterpret_cast<char*>(data.data()), size)) {
-    addError(report, "Cannot read file: " + path);
-    return report;
-  }
-
-  return validate(data);
-}
 
 MidiValidationReport MidiValidator::validate(const std::vector<uint8_t>& data) const {
   return validate(data.data(), data.size());

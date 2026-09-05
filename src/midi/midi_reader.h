@@ -48,6 +48,10 @@ struct ParsedMidi {
 };
 
 /// @brief MIDI file reader (SMF parser).
+///
+/// Parses bytes that a caller has already read. Opening the file is the caller's
+/// job so that one place decides how large an input may be; a reader that opened
+/// paths itself would size its buffer from the file it has not vetted yet.
 class MidiReader {
  public:
   MidiReader() = default;
@@ -69,9 +73,6 @@ class MidiReader {
    *  @param size Size of data
    *  @return true if SMF2 */
   static bool isSMF2Format(const uint8_t* data, size_t size);
-
-  /** @brief Read MIDI from file. @param path File path @return Success */
-  bool read(const std::string& path);
 
   /** @brief Read MIDI from memory. @param data Binary data @return Success */
   bool read(const std::vector<uint8_t>& data);

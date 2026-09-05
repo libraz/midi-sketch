@@ -9,7 +9,6 @@
 #include <array>
 #include <cctype>
 #include <cstring>
-#include <fstream>
 #include <map>
 
 #include "core/note_timeline_utils.h"
@@ -79,25 +78,6 @@ const ParsedTrack* ParsedMidi::getTrack(const std::string& name) const {
     }
   }
   return nullptr;
-}
-
-bool MidiReader::read(const std::string& path) {
-  std::ifstream file(path, std::ios::binary | std::ios::ate);
-  if (!file) {
-    error_ = "Failed to open file: " + path;
-    return false;
-  }
-
-  auto size = file.tellg();
-  file.seekg(0, std::ios::beg);
-
-  std::vector<uint8_t> data(static_cast<size_t>(size));
-  if (!file.read(reinterpret_cast<char*>(data.data()), size)) {
-    error_ = "Failed to read file: " + path;
-    return false;
-  }
-
-  return read(data);
 }
 
 bool MidiReader::read(const std::vector<uint8_t>& data) {
