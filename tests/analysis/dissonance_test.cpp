@@ -19,6 +19,7 @@
 #include "core/generator.h"
 #include "core/preset_data.h"
 #include "core/song.h"
+#include "midi/midi_reader.h"
 #include "midisketch.h"
 #include "test_helpers/note_event_test_helper.h"
 
@@ -1434,9 +1435,10 @@ ParsedMidi makeTwoTrackMidi(const std::vector<NoteEvent>& track_a,
 }
 
 TEST(DissonanceTest, ExternalMidiDoesNotJudgeIntervalsThatNeedAChord) {
-  // A tritone is a chord tone on V and vii, and a major 7th is a chord tone on
-  // any maj7. An external file states no harmony, so neither can be called a
-  // clash without inventing the chord underneath it.
+  // A tritone is a chord tone on V and vii, a major 7th is a chord tone on any
+  // maj7, and a major 2nd is the chord itself on a sus2, an add9 or a 9th. An
+  // external file states no harmony, so none of them can be called a clash
+  // without inventing the chord underneath it.
   const auto tritone = makeTwoTrackMidi({NoteEventTestHelper::create(0, 480, 60, 100)},
                                         {NoteEventTestHelper::create(0, 480, 66, 100)});
   EXPECT_EQ(analyzeDissonanceFromParsedMidi(tritone).summary.simultaneous_clashes, 0u)
@@ -1447,6 +1449,14 @@ TEST(DissonanceTest, ExternalMidiDoesNotJudgeIntervalsThatNeedAChord) {
   EXPECT_EQ(analyzeDissonanceFromParsedMidi(major_seventh).summary.simultaneous_clashes, 0u)
       << "A major 7th was reported against an assumed chord";
 
+  // C and D sounding together is a Csus2 written as its own two lowest voices.
+  // The tracks the notes arrive on say which instrument played them, not which
+  // of them the harmony is built from.
+  const auto major_second = makeTwoTrackMidi({NoteEventTestHelper::create(0, 480, 62, 100)},
+                                             {NoteEventTestHelper::create(0, 480, 60, 100)});
+  EXPECT_EQ(analyzeDissonanceFromParsedMidi(major_second).summary.simultaneous_clashes, 0u)
+      << "A major 2nd was reported against an assumed chord";
+
   // Intervals that are dissonant under every harmony are still reported.
   const auto minor_second = makeTwoTrackMidi({NoteEventTestHelper::create(0, 480, 60, 100)},
                                              {NoteEventTestHelper::create(0, 480, 61, 100)});
@@ -1455,6 +1465,37 @@ TEST(DissonanceTest, ExternalMidiDoesNotJudgeIntervalsThatNeedAChord) {
   const auto minor_ninth = makeTwoTrackMidi({NoteEventTestHelper::create(0, 480, 60, 100)},
                                             {NoteEventTestHelper::create(0, 480, 73, 100)});
   EXPECT_EQ(analyzeDissonanceFromParsedMidi(minor_ninth).summary.simultaneous_clashes, 1u);
+}
+
+TEST(DissonanceTest, ReadingAFileBackInventsNoClashItsGenerationDidNotFind) {
+  // The same notes judged twice: once against the harmony timeline that placed
+  // them, once from the bytes alone. Without the timeline the file states less,
+  // so the second reading may find fewer clashes -- it must never find more,
+  // because a clash only it can see was read off a chord it assumed.
+  size_t compared = 0;
+  for (int blueprint = 0; blueprint < 10; ++blueprint) {
+    for (uint32_t seed : {11u, 22u, 33u}) {
+      SongConfig config = createDefaultSongConfig(0);
+      config.seed = seed;
+      config.blueprint_id = static_cast<uint8_t>(blueprint);
+
+      MidiSketch sketch;
+      sketch.generateFromConfig(config);
+      const DissonanceReport generated =
+          analyzeDissonance(sketch.getSong(), sketch.getParams(), sketch.getHarmonyContext());
+
+      MidiReader reader;
+      ASSERT_TRUE(reader.read(sketch.getMidi())) << reader.getError();
+      const DissonanceReport parsed = analyzeDissonanceFromParsedMidi(reader.getParsedMidi());
+
+      EXPECT_LE(parsed.summary.simultaneous_clashes, generated.summary.simultaneous_clashes)
+          << "blueprint " << blueprint << " seed " << seed << ": reading the file back reported "
+          << parsed.summary.simultaneous_clashes << " clashes where the generation that knew the "
+          << "chords reported " << generated.summary.simultaneous_clashes;
+      ++compared;
+    }
+  }
+  ASSERT_EQ(compared, 30u);
 }
 
 TEST(DissonanceTest, EachOverlapAgainstAHeldNoteIsReportedSeparately) {

@@ -93,10 +93,13 @@ constexpr const char* CHORD_NAMES[12] = {"C",  "C#", "D",     "D#/Eb", "E",     
 // vocal sustain at a chord change asks too.
 
 // Intervals whose consonance depends on the chord underneath them: the tritone
-// is a chord tone on V and vii, and the major 7th is a chord tone on any
-// maj7 voicing. Neither can be judged without knowing the harmony.
+// is a chord tone on V and vii, the major 7th is a chord tone on any maj7
+// voicing, and the major 2nd is the chord itself on a sus2, an add9 or a 9th --
+// isVoicingCluster states the same condition, that the second is the chord when
+// both voices belong to it and a clash when only one does. None of the three can
+// be judged without knowing the harmony.
 bool isContextDependentInterval(uint8_t pitch_class_interval) {
-  return pitch_class_interval == 6 || pitch_class_interval == 11;
+  return pitch_class_interval == 2 || pitch_class_interval == 6 || pitch_class_interval == 11;
 }
 
 // Check if an interval is dissonant, considering both pitch class and register.
@@ -1083,26 +1086,12 @@ DissonanceReport analyzeDissonanceFromParsedMidi(const ParsedMidi& midi) {
       auto [is_dissonant, base_severity] =
           checkIntervalDissonance(actual_interval, 0, /*harmony_known=*/false);
 
-      // Also check for major 2nd (2 semitones actual) between melodic tracks and chord.
-      // This catches Vocal-Chord clashes like F vs G that sound harsh.
-      // Note: Minor 7th (10) and major 9th (14) are acceptable in Pop (7th chords, add9).
-      bool is_melodic_chord_clash = false;
-      if (!is_dissonant && actual_interval == 2) {  // Only actual major 2nd, not compound
-        // Only flag if one track is melodic (Vocal, Motif, Aux) and other is Chord
-        bool a_is_melodic = (note_a.track_name == "Vocal" || note_a.track_name == "Motif" ||
-                             note_a.track_name == "Aux");
-        bool b_is_melodic = (note_b.track_name == "Vocal" || note_b.track_name == "Motif" ||
-                             note_b.track_name == "Aux");
-        bool a_is_chord = (note_a.track_name == "Chord");
-        bool b_is_chord = (note_b.track_name == "Chord");
-
-        if ((a_is_melodic && b_is_chord) || (b_is_melodic && a_is_chord)) {
-          is_dissonant = true;
-          is_melodic_chord_clash = true;
-          base_severity = DissonanceSeverity::Medium;  // Will be elevated on strong beats
-        }
-      }
-
+      // A major second between a melodic track and the chord track used to be
+      // flagged here on the track names alone, which is the same verdict the
+      // rule above just declined to make and is made on no better evidence: a
+      // track called Chord states which instrument plays a note, not which
+      // notes the harmony is built from. Every second this reported over a
+      // sus2, an add9 or a 9th chord was the chord sounding as written.
       if (is_dissonant) {
         reported_clashes.insert(clash_key);
 
@@ -1130,13 +1119,6 @@ DissonanceReport analyzeDissonanceFromParsedMidi(const ParsedMidi& midi) {
           if (base_severity == DissonanceSeverity::Low) {
             severity = DissonanceSeverity::Medium;
           }
-        }
-
-        // Elevate melodic-chord major 2nd clashes on strong/medium beats to High
-        // These sound particularly harsh and are almost always unintentional
-        if (is_melodic_chord_clash && (metric_position == MetricPosition::Downbeat ||
-                                       metric_position == MetricPosition::SecondaryBeat)) {
-          severity = DissonanceSeverity::High;
         }
 
         DissonanceIssue issue;
