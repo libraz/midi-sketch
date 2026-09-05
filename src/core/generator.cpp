@@ -1952,9 +1952,10 @@ void resolveSameTrackClusters(Song& song, IHarmonyContext& harmony) {
 /// Every pitch-moving pass runs before this, and a pass that moves a note to
 /// avoid one clash can move it onto another that the track it was reconciled
 /// against had already been voiced around. Nothing re-checks, so this is where
-/// the survivors are found. It can shorten a tail and it can delete a short
-/// decorative note at a shared onset; it cannot move anything, so a same-onset
-/// clash between two notes that both deserve to sound still has no answer.
+/// the survivors are found. It can shorten a tail -- between two tracks or
+/// within one -- and it can delete a short decorative note at a shared onset;
+/// it cannot move anything, so a same-onset clash between two notes that both
+/// deserve to sound still has no answer.
 ///
 /// Public so the gate can be tested with a crafted song; normally invoked from
 /// applyPostProcessingEffects().
@@ -2022,38 +2023,57 @@ void trimClashingNoteTails(Song& song, IHarmonyContext& harmony) {
     return true;
   };
 
-  for (const auto& [earlier_track, earlier_role] : tracks) {
-    for (const auto& [later_track, later_role] : tracks) {
-      if (earlier_track == later_track) continue;
-      for (auto& a : earlier_track->notes()) {
-        Tick a_end = a.start_tick + a.duration;
-        for (const auto& b : later_track->notes()) {
-          if (b.start_tick <= a.start_tick) continue;  // need a true tail overlap
-          if (b.start_tick >= a_end) continue;
-          // How long the two actually sound together, which ends when either
-          // one does. Measuring to the end of `a` alone reports an overlap the
-          // analyzer never counts, and the cap below then reads a clash of a
-          // few ticks as one too long to touch: a chord stab under a sustained
-          // motif was skipped for the length of the motif rather than the
-          // length of the stab.
-          Tick b_end = b.start_tick + b.duration;
-          Tick overlap = std::min(a_end, b_end) - b.start_tick;
-          if (overlap > kMaxTailOverlap) continue;
-          Tick remainder = b.start_tick - a.start_tick;
-          if (remainder < kMinRemainder) continue;
-          int semitones = std::abs(static_cast<int>(a.note) - static_cast<int>(b.note));
-          if (!isAlwaysDissonant(semitones, a.note, earlier_role, b.note, later_role,
-                                 b.start_tick)) {
-            continue;
-          }
-          a.duration = remainder;
-          a_end = a.start_tick + a.duration;
+  // A track is compared against itself as well. One instrument sustaining a
+  // note into the next one it plays is the same event as two instruments
+  // overlapping, and it is the case resolveSameTrackClusters explicitly leaves
+  // here: that pass judges voices that begin together, so a tail is the shape
+  // it never sees. Voices of one chord struck apart are excused by the chord
+  // test below, the same way they are across tracks.
+  //
+  // The sweep repeats until nothing moves. Shortening a note brings its
+  // remaining overlaps under the cap, so a pair the cap excused a moment
+  // earlier -- as a simultaneity long enough to have been chosen -- can become
+  // the short accidental tail this gate exists to cut. One pass leaves those
+  // sounding, which is the gate declining a clash by its own rule. Every trim
+  // strictly shortens a note, so the repetition ends on its own; the bound only
+  // guards a future edit that stops shortening.
+  constexpr int kMaxTailSweeps = 8;
+  for (int sweep = 0; sweep < kMaxTailSweeps; ++sweep) {
+    bool trimmed_any = false;
+    for (const auto& [earlier_track, earlier_role] : tracks) {
+      for (const auto& [later_track, later_role] : tracks) {
+        for (auto& a : earlier_track->notes()) {
+          Tick a_end = a.start_tick + a.duration;
+          for (const auto& b : later_track->notes()) {
+            if (b.start_tick <= a.start_tick) continue;  // need a true tail overlap
+            if (b.start_tick >= a_end) continue;
+            // How long the two actually sound together, which ends when either
+            // one does. Measuring to the end of `a` alone reports an overlap the
+            // analyzer never counts, and the cap below then reads a clash of a
+            // few ticks as one too long to touch: a chord stab under a sustained
+            // motif was skipped for the length of the motif rather than the
+            // length of the stab.
+            Tick b_end = b.start_tick + b.duration;
+            Tick overlap = std::min(a_end, b_end) - b.start_tick;
+            if (overlap > kMaxTailOverlap) continue;
+            Tick remainder = b.start_tick - a.start_tick;
+            if (remainder < kMinRemainder) continue;
+            int semitones = std::abs(static_cast<int>(a.note) - static_cast<int>(b.note));
+            if (!isAlwaysDissonant(semitones, a.note, earlier_role, b.note, later_role,
+                                   b.start_tick)) {
+              continue;
+            }
+            a.duration = remainder;
+            a_end = a.start_tick + a.duration;
+            trimmed_any = true;
 #ifdef MIDISKETCH_NOTE_PROVENANCE
-          a.addTransformStep(TransformStepType::PostProcessDuration, 0, 0, -1, 0);
+            a.addTransformStep(TransformStepType::PostProcessDuration, 0, 0, -1, 0);
 #endif
+          }
         }
       }
     }
+    if (!trimmed_any) break;
   }
 
   // Same-onset always-dissonant pairs cannot be tail-trimmed. When one side

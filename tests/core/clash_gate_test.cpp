@@ -10,6 +10,9 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <cstdlib>
+#include <utility>
 #include <vector>
 
 #include "core/arrangement.h"
@@ -17,8 +20,11 @@
 #include "core/chord.h"
 #include "core/chord_utils.h"
 #include "core/harmony_context.h"
+#include "core/pitch_utils.h"
+#include "core/preset_types.h"
 #include "core/song.h"
 #include "core/timing_constants.h"
+#include "midisketch.h"
 
 namespace midisketch {
 
@@ -209,6 +215,54 @@ TEST(ClashGateTest, TheRegistryDescribesTheNotesTheGateLeaves) {
   }
 }
 
+TEST(ClashGateTest, ATrackSustainingIntoItsOwnNextNoteIsTrimmed) {
+  // One instrument holding a note into the next note it plays states the same
+  // interval two instruments would, and nothing else answers for it: the
+  // same-track pass ahead of this gate judges voices that begin together, so a
+  // tail is the one shape it never sees.
+  Arrangement arrangement = singleSection();
+  HarmonyContext harmony;
+  harmony.initialize(arrangement, getChordProgression(0), Mood::StraightPop);
+
+  const Tick held_start = TICK_QUARTER;
+  Song song;
+  song.aux().addNote(NoteEventBuilder::create(held_start, 4 * TICK_QUARTER, 72, 90));
+  song.aux().addNote(NoteEventBuilder::create(held_start + TICK_QUARTER, TICK_EIGHTH, 71, 90));
+  harmony.registerTrack(song.aux(), TrackRole::Aux);
+
+  trimClashingNoteTails(song, harmony);
+
+  ASSERT_EQ(song.aux().notes().size(), 2u) << "a tail is shortened, never deleted";
+  EXPECT_EQ(song.aux().notes()[0].duration, TICK_QUARTER)
+      << "the held note should end where the semitone under it begins";
+  EXPECT_EQ(song.aux().notes()[1].duration, TICK_EIGHTH);
+}
+
+TEST(ClashGateTest, ShorteningANoteExposesTheOverlapTheCapHadExcused) {
+  // The cap reads a long overlap as a simultaneity somebody chose rather than a
+  // tail that slipped out, and leaves it. Trimming the same note for a later
+  // neighbour then shortens the first overlap into the cap's range, so a single
+  // sweep walks away from a clash its own rule condemns.
+  Arrangement arrangement = singleSection();
+  HarmonyContext harmony;
+  harmony.initialize(arrangement, getChordProgression(0), Mood::StraightPop);
+
+  Song song;
+  // Held note, then two semitone neighbours. The first overlaps it by 960 ticks
+  // (past the cap), the second by 480 (at the cap, so it is trimmed) -- and that
+  // trim leaves the first overlapping by 480 as well.
+  song.aux().addNote(NoteEventBuilder::create(0, 3 * TICK_QUARTER, 72, 90));
+  song.aux().addNote(NoteEventBuilder::create(TICK_QUARTER, 3 * TICK_QUARTER, 71, 90));
+  song.aux().addNote(NoteEventBuilder::create(TICK_HALF, 3 * TICK_QUARTER, 71, 90));
+  harmony.registerTrack(song.aux(), TrackRole::Aux);
+
+  trimClashingNoteTails(song, harmony);
+
+  ASSERT_EQ(song.aux().notes().size(), 3u);
+  EXPECT_EQ(song.aux().notes()[0].duration, TICK_QUARTER)
+      << "the held note has to end at the first neighbour, not at the second";
+}
+
 TEST(ClashGateTest, AConsonantStabInsideASustainIsLeftAlone) {
   Arrangement arrangement = singleSection();
   HarmonyContext harmony;
@@ -228,6 +282,63 @@ TEST(ClashGateTest, AConsonantStabInsideASustainIsLeftAlone) {
 
   ASSERT_EQ(song.motif().notes().size(), 1u);
   EXPECT_EQ(song.motif().notes()[0].duration, motif_duration);
+}
+
+TEST(ClashGateTest, NoGeneratedSongLeavesAClashTheGateItselfWouldTake) {
+  // The gate's own rule, read off what it emits. A pair it would act on is a
+  // tail short enough to be accidental, an interval the analyzer flags, and no
+  // sounding chord that accounts for both voices -- between two tracks or
+  // inside one. None may survive to the caller: one that does is the rule
+  // spelled but not reaching the output.
+  size_t songs = 0;
+  for (int blueprint = 0; blueprint < 10; ++blueprint) {
+    for (uint32_t seed : {11u, 22u, 33u}) {
+      SongConfig config = createDefaultSongConfig(0);
+      config.seed = seed;
+      config.blueprint_id = static_cast<uint8_t>(blueprint);
+
+      MidiSketch sketch;
+      sketch.generateFromConfig(config);
+      const Song& song = sketch.getSong();
+      const IHarmonyContext& harmony = sketch.getHarmonyContext();
+      ++songs;
+
+      const std::pair<const char*, const MidiTrack*> tracks[] = {
+          {"Vocal", &song.vocal()},  {"Chord", &song.chord()}, {"Bass", &song.bass()},
+          {"Motif", &song.motif()},  {"Aux", &song.aux()},     {"Arpeggio", &song.arpeggio()},
+          {"Guitar", &song.guitar()}};
+
+      for (const auto& [earlier_name, earlier] : tracks) {
+        for (const auto& [later_name, later] : tracks) {
+          for (const NoteEvent& a : earlier->notes()) {
+            const Tick a_end = a.start_tick + a.duration;
+            for (const NoteEvent& b : later->notes()) {
+              if (&a == &b) continue;
+              if (b.start_tick <= a.start_tick || b.start_tick >= a_end) continue;
+              const Tick b_end = b.start_tick + b.duration;
+              if (std::min(a_end, b_end) - b.start_tick > TICK_QUARTER) continue;
+              if (b.start_tick - a.start_tick < TICK_32ND) continue;
+              const int semitones = std::abs(static_cast<int>(a.note) - static_cast<int>(b.note));
+              if (semitones > 24) continue;
+              if (chordExcusesFlaggedPair(semitones, a.note, b.note,
+                                          harmony.getChordTonesAt(b.start_tick))) {
+                continue;
+              }
+              if (!isDissonantActualInterval(semitones, harmony.getChordDegreeAt(b.start_tick))) {
+                continue;
+              }
+              ADD_FAILURE() << "blueprint " << blueprint << " seed " << seed << ": " << earlier_name
+                            << " " << static_cast<int>(a.note) << " at " << a.start_tick
+                            << " still sounds into " << later_name << " "
+                            << static_cast<int>(b.note) << " at " << b.start_tick << " ("
+                            << semitones << " semitones)";
+            }
+          }
+        }
+      }
+    }
+  }
+  ASSERT_EQ(songs, 30u);
 }
 
 }  // namespace midisketch
