@@ -591,6 +591,21 @@ void PostProcessor::applyEnhancedFinalHit(MidiTrack* bass_track, MidiTrack* drum
   if (chord_track != nullptr) {
     auto& chord_notes = chord_track->notes();
 
+    // The chord track states the harmony, and every note in it was created
+    // under ChordBoundaryPolicy::ClipAtBoundary -- it stops where the chord it
+    // spells stops. getMaxSafeEnd answers a different question, "what do the
+    // other tracks allow", so an extension that asks only that one stretches a
+    // voice of the second-to-last chord straight over the last one. Ask the
+    // boundary the same way the note's own creation did.
+    const auto clipAtChordBoundary = [&harmony](const NoteEvent& note, Tick proposed_end) {
+      if (harmony == nullptr || proposed_end <= note.start_tick) return proposed_end;
+      const ChordBoundaryInfo info =
+          harmony->analyzeChordBoundary(note.note, note.start_tick, proposed_end - note.start_tick);
+      if (info.boundary_tick == 0 || info.overlap_ticks == 0) return proposed_end;
+      if (info.safe_duration == 0) return proposed_end;
+      return std::min(proposed_end, note.start_tick + info.safe_duration);
+    };
+
     for (auto& note : chord_notes) {
       if (note.start_tick >= final_beat_start && note.start_tick < section_end) {
         // Extend duration, but check for clashes first
@@ -603,6 +618,7 @@ void PostProcessor::applyEnhancedFinalHit(MidiTrack* bass_track, MidiTrack* drum
           // Fallback: check against vocal only
           safe_end = getMaxSafeEndTick(note, section_end, vocal_track);
         }
+        safe_end = clipAtChordBoundary(note, safe_end);
         if (safe_end > note.start_tick) {
 #ifdef MIDISKETCH_NOTE_PROVENANCE
           if (safe_end - note.start_tick != note.duration) {
@@ -633,6 +649,7 @@ void PostProcessor::applyEnhancedFinalHit(MidiTrack* bass_track, MidiTrack* drum
         } else {
           safe_end = getMaxSafeEndTick(note, section_end, vocal_track);
         }
+        safe_end = clipAtChordBoundary(note, safe_end);
         if (safe_end > note.start_tick + note.duration) {
 #ifdef MIDISKETCH_NOTE_PROVENANCE
           if (safe_end - note.start_tick != note.duration) {

@@ -21,11 +21,13 @@
 #include "core/note_source.h"
 #include "core/post_processing_pipeline.h"
 #include "core/preset_data.h"
+#include "core/preset_types.h"
 #include "core/section_types.h"
 #include "core/song.h"
 #include "core/timing_constants.h"
 #include "core/track_base.h"
 #include "core/types.h"
+#include "midisketch.h"
 #include "test_support/stub_harmony_context.h"
 #include "test_support/test_helpers.h"
 
@@ -439,6 +441,39 @@ TEST_F(EnhancedFinalHitTest, ChordTrackSustainsFinalChord) {
   }
 }
 
+TEST_F(EnhancedFinalHitTest, TheFinalSustainStopsWhereTheChordItSpellsStops) {
+  // The sustain is what the section ends on, so it is written toward the
+  // section end. When the harmony moves again before that, a voice carried the
+  // whole way spells the previous chord over the last one. Every note in this
+  // track was created under ChordBoundaryPolicy::ClipAtBoundary, and the
+  // extension has to answer the same question the creation did.
+  Section section = section_;
+  Arrangement arrangement({section});
+  HarmonyContext harmony;
+  harmony.initialize(arrangement, getChordProgression(0), Mood::StraightPop);
+
+  const Tick section_end = 4 * TICKS_PER_BAR;
+  const Tick last_bar_start = section_end - TICKS_PER_BAR;
+  const Tick change_tick = section_end - TICKS_PER_BEAT;
+  harmony.registerSecondaryDominant(change_tick, section_end, 2);
+  ASSERT_EQ(harmony.getNextChordChangeTick(last_bar_start), change_tick)
+      << "the fixture must move the harmony inside the last bar";
+
+  MidiTrack chord_track;
+  chord_track.addNote(NoteEventBuilder::create(last_bar_start, TICKS_PER_BEAT, 60, 80));
+  harmony.registerTrack(chord_track, TrackRole::Chord);
+
+  PostProcessor::applyEnhancedFinalHit(nullptr, nullptr, &chord_track, nullptr, section, &harmony);
+
+  ASSERT_EQ(chord_track.notes().size(), 1u);
+  const NoteEvent& note = chord_track.notes()[0];
+  EXPECT_LE(note.start_tick + note.duration, change_tick)
+      << "the sustain reached " << note.start_tick + note.duration << ", past the chord change at "
+      << change_tick;
+  EXPECT_GT(note.duration, TICKS_PER_BEAT)
+      << "the note should still be lengthened, just not past the chord it states";
+}
+
 TEST_F(EnhancedFinalHitTest, BoostsBassVelocity) {
   // Bass notes on final beat should have velocity 110+
 
@@ -455,6 +490,45 @@ TEST_F(EnhancedFinalHitTest, BoostsBassVelocity) {
       EXPECT_GE(note.velocity, 110u) << "Bass note on final beat should have velocity 110+";
     }
   }
+}
+
+TEST(EnhancedFinalHitCorpusTest, NoSectionEndsOnAChordVoiceFromTheChordBefore) {
+  // Read off generated songs rather than a fixture: the sustain is written into
+  // the last bar of every section that ends on a final hit, and a voice carried
+  // past the chord change there sounds the previous chord under the last one.
+  size_t songs = 0;
+  size_t notes_in_last_bars = 0;
+  for (int blueprint = 0; blueprint < 10; ++blueprint) {
+    for (uint32_t seed : {11u, 22u, 33u}) {
+      SongConfig config = createDefaultSongConfig(0);
+      config.seed = seed;
+      config.blueprint_id = static_cast<uint8_t>(blueprint);
+
+      MidiSketch sketch;
+      sketch.generateFromConfig(config);
+      const Song& song = sketch.getSong();
+      const IHarmonyContext& harmony = sketch.getHarmonyContext();
+      ++songs;
+
+      for (const Section& section : song.arrangement().sections()) {
+        const Tick end = section.start_tick + static_cast<Tick>(section.bars) * TICKS_PER_BAR;
+        const Tick last_bar = end > TICKS_PER_BAR ? end - TICKS_PER_BAR : 0;
+        for (const NoteEvent& note : song.chord().notes()) {
+          if (note.start_tick < last_bar || note.start_tick >= end) continue;
+          ++notes_in_last_bars;
+          const ChordBoundaryInfo info =
+              harmony.analyzeChordBoundary(note.note, note.start_tick, note.duration);
+          if (info.boundary_tick == 0) continue;
+          EXPECT_EQ(info.overlap_ticks, 0u)
+              << "blueprint " << blueprint << " seed " << seed << ": chord "
+              << static_cast<int>(note.note) << " at " << note.start_tick << " sounds "
+              << info.overlap_ticks << " ticks past the chord change at " << info.boundary_tick;
+        }
+      }
+    }
+  }
+  ASSERT_EQ(songs, 30u);
+  ASSERT_GT(notes_in_last_bars, 0u) << "the corpus must reach the notes this asserts about";
 }
 
 TEST_F(EnhancedFinalHitTest, OnlyAppliesWhenExitPatternIsFinalHit) {
