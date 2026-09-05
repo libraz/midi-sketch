@@ -10,18 +10,23 @@
 #include <map>
 #include <random>
 #include <set>
+#include <sstream>
 #include <string>
+#include <vector>
 
 #include "core/chord.h"
 #include "core/generator.h"
 #include "core/harmony_context.h"
 #include "core/note_source.h"
+#include "core/preset_data.h"
 #include "core/production_blueprint.h"
 #include "core/song.h"
 #include "core/structure.h"
+#include "core/timing_constants.h"
 #include "core/track_generation_context.h"
 #include "core/types.h"
 #include "instrument/keyboard/piano_model.h"
+#include "midisketch.h"
 #include "test_support/generator_test_fixture.h"
 #include "test_support/stub_harmony_context.h"
 #include "test_support/test_constants.h"
@@ -95,6 +100,131 @@ int countDiminishedOnsetsInSection(const MidiTrack& track, const Section& sectio
     if (isDiminishedPitchClassSet(pcs)) ++count;
   }
   return count;
+}
+
+/// One chord the shared timeline names, over the range it covers.
+struct TimelineEntry {
+  Tick start;
+  Tick end;
+  int8_t degree;
+};
+
+/// Walk every chord entry the timeline reports for a generated song.
+std::vector<TimelineEntry> readChordTimeline(const IHarmonyContext& harmony, Tick song_end) {
+  std::vector<TimelineEntry> entries;
+  for (Tick tick = 0; tick < song_end;) {
+    Tick next = harmony.getNextChordEntryTick(tick);
+    if (next <= tick || next > song_end) next = song_end;
+    entries.push_back({tick, next, harmony.getChordDegreeAt(tick)});
+    tick = next;
+  }
+  return entries;
+}
+
+/// Distinct pitch classes the chord track strikes inside [start, end).
+std::set<int> chordTonesStruckIn(const MidiTrack& track, Tick start, Tick end) {
+  std::set<int> pitch_classes;
+  for (const auto& note : track.notes()) {
+    if (note.start_tick >= start && note.start_tick < end) {
+      pitch_classes.insert(note.note % 12);
+    }
+  }
+  return pitch_classes;
+}
+
+/// Generate through the config API, which is the surface every caller reaches.
+void generateSweptSong(MidiSketch& sketch, uint32_t seed, uint8_t mood) {
+  SongConfig config = createDefaultSongConfig(0);
+  config.seed = seed;
+  config.mood = mood;
+  config.mood_explicit = true;
+  config.blueprint_id = 255;
+  config.form = StructurePattern::FullPop;
+  config.form_explicit = true;
+  config.chord_extension.enable_7th = true;
+  sketch.generateFromConfig(config);
+}
+
+// A chromatic approach chord is the one chord in the vocabulary whose root sits
+// outside the key, and the shared timeline hands it to every track. Two of its
+// three tones are the least that tells it apart from the diatonic chords it
+// passes between, so one that reaches the output as a single repeated note
+// announces a harmony the song never plays -- and announces it in the song
+// metadata and the piano-roll safety API too, both of which report the timeline
+// rather than the notes.
+//
+// It is registered on the bar's last quarter, which under an eighth-note pulse
+// is nothing but weak eighths: exactly the positions the thinned pulse shapes
+// take voices away from. Thinning is for a pulse that restates a chord already
+// sounding, so an entry's own first onset has to fall outside it.
+TEST(ChordTimelineTest, TheChromaticApproachChordIsStatedNotJustTouched) {
+  int spans = 0;
+  for (uint32_t index = 0; index < 24; ++index) {
+    for (uint8_t mood : {5, 6, 7, 8, 9}) {
+      const uint32_t seed = 1000 + index * 7;
+      MidiSketch sketch;
+      generateSweptSong(sketch, seed, mood);
+      const Song& song = sketch.getSong();
+      const auto entries =
+          readChordTimeline(sketch.getHarmonyContext(), song.arrangement().totalTicks());
+
+      for (const auto& entry : entries) {
+        if (getChordQuality(entry.degree) != ChordQuality::Diminished) continue;
+        ++spans;
+
+        const std::set<int> struck = chordTonesStruckIn(song.chord(), entry.start, entry.end);
+        std::ostringstream tones;
+        for (int pitch_class : struck) tones << pitch_class << " ";
+        EXPECT_GE(struck.size(), 2u)
+            << "seed=" << seed << " mood=" << static_cast<int>(mood) << " tick=" << entry.start
+            << " degree=" << static_cast<int>(entry.degree) << " struck={ " << tones.str() << "}";
+      }
+    }
+  }
+
+  ASSERT_GT(spans, 20)
+      << "The sweep has to reach the approach chord for the check to mean anything";
+}
+
+// The phrase-end anticipation moves a chord change an eighth earlier and
+// registers it, so from that eighth on every other track voices the incoming
+// chord. That makes it a chord entry like any other, and it needs the same
+// minimum-voice guarantee: a voice offered to an entry is placed at the pitch it
+// was voiced at or not at all, and the guarantee is what goes looking for the
+// same tone in a neighbouring octave. Without it the eighth that announces the
+// change states one note while the harmony behind it has already moved.
+//
+// A voice can genuinely have nowhere to go, so this is a floor on the guarantee
+// being wired rather than a target: the rate sits far below the bound when it
+// runs and far above it when it does not.
+TEST(ChordTimelineTest, AnAnticipationStatesTheChordItBringsForward) {
+  constexpr Tick kAnticipationOffset = TICKS_PER_BAR - TICK_EIGHTH;
+  constexpr double kMaxBareArrivalRate = 0.10;
+
+  int arrivals = 0;
+  int bare = 0;
+  for (uint32_t index = 0; index < 8; ++index) {
+    for (uint8_t mood : {5, 6, 7, 8, 9}) {
+      MidiSketch sketch;
+      generateSweptSong(sketch, 1000 + index * 7, mood);
+      const Song& song = sketch.getSong();
+      const auto entries =
+          readChordTimeline(sketch.getHarmonyContext(), song.arrangement().totalTicks());
+
+      for (size_t i = 1; i < entries.size(); ++i) {
+        if (entries[i].degree == entries[i - 1].degree) continue;
+        if (entries[i].start % TICKS_PER_BAR != kAnticipationOffset) continue;
+        ++arrivals;
+        if (chordTonesStruckIn(song.chord(), entries[i].start, entries[i].end).size() < 2) {
+          ++bare;
+        }
+      }
+    }
+  }
+
+  ASSERT_GT(arrivals, 200) << "The sweep has to reach the anticipation";
+  EXPECT_LT(static_cast<double>(bare) / arrivals, kMaxBareArrivalRate)
+      << bare << " of " << arrivals << " anticipations state fewer than two tones";
 }
 
 TEST_F(ChordTrackTest, ChordTrackGenerated) {

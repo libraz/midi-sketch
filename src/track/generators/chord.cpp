@@ -734,10 +734,11 @@ void addChordNoteWithState(MidiTrack& track, IHarmonyContext& harmony, Tick star
 
 /// Generate chord notes for one bar using HarmonyContext for collision detection
 /// @brief Helper to ensure minimum voices at a single tick.
-/// After trying all voicing pitches, if still < kMinRequired, adds chord tones from root.
+/// After trying all voicing pitches, if still < kMinRequired, adds chord tones
+/// in the register @p voicing_low sits in.
 void ensureMinVoicesAtTick(MidiTrack& track, IHarmonyContext& harmony, Tick tick, Tick duration,
                            uint8_t velocity, ChordVoicingState& state, uint8_t vocal_ceiling,
-                           uint8_t root) {
+                           uint8_t voicing_low) {
   if (!state.needsMore()) return;
 
   uint8_t effective_high = getEffectiveChordHigh(vocal_ceiling);
@@ -748,7 +749,7 @@ void ensureMinVoicesAtTick(MidiTrack& track, IHarmonyContext& harmony, Tick tick
   // with the notes of a chord that is not sounding.
   ChordTones ct = harmony.getChordTonesAt(tick);
 
-  int octave = root / 12;
+  int octave = voicing_low / 12;
 
   // Try each chord tone in nearby octaves, completeness before doubling.
   //
@@ -830,7 +831,7 @@ void ensureMinVoicesAtTick(MidiTrack& track, IHarmonyContext& harmony, Tick tick
   constexpr uint8_t kMinFallbackVoices = 2;
   if (state.safe_count < kMinFallbackVoices) {
     ChordTones fallback_tones = harmony.getChordTonesAt(tick);
-    int octave = root / 12;
+    int octave = voicing_low / 12;
 
     for (uint8_t i = 0; i < fallback_tones.count && state.safe_count < kMinFallbackVoices; ++i) {
       int pc = fallback_tones.pitch_classes[i];
@@ -874,10 +875,13 @@ Tick durationForChordRhythm(ChordRhythm rhythm);
 /// track is a rhythmic bed tracking the motif's grid, where a bare low note on
 /// the weak eighths is the point; everywhere else the chord track is comping,
 /// and a bare low note on six eighths out of eight states no harmony at all.
+/// Both thinned shapes apply only to an eighth that restates the chord already
+/// sounding. An entry's own first onset always carries the whole voicing,
+/// wherever in the bar the harmony happens to change.
 enum class EighthPulseShape : uint8_t {
   Full,     ///< Every eighth carries the whole voicing
   Comping,  ///< Chords on beats 1 and 3, a two-voice shell on the pushes, rests between
-  Stub,     ///< Chords on beats 1 and 3, a single low root on every other eighth
+  Stub,     ///< Chords on beats 1 and 3, the voicing's lowest note on every other eighth
 };
 
 /// @brief Order a voicing's voices so the tones that carry the chord's identity go first.
@@ -921,9 +925,13 @@ void generateChordSegment(MidiTrack& track, Tick bar_start, Tick segment_start,
   const uint8_t vel_weak = static_cast<uint8_t>(vel * 0.8f);
   ChordVoicingState state;
 
-  uint8_t root = (voicing.count > 0) ? voicing.pitches[0] : 60;
+  // The register the voicing sits in, which is what the stub pulse sounds and
+  // what the minimum-voice fill searches around. It is the lowest voice, not the
+  // chord root: an inversion puts another tone there, and calling it the root
+  // reads a bass note as a statement of which chord is sounding.
+  uint8_t voicing_low = (voicing.count > 0) ? voicing.pitches[0] : 60;
   for (size_t idx = 1; idx < voicing.count; ++idx) {
-    root = std::min(root, voicing.pitches[idx]);
+    voicing_low = std::min(voicing_low, voicing.pitches[idx]);
   }
 
   const std::vector<uint8_t> emission_order = guideToneFirstOrder(voicing, root_pitch_class);
@@ -951,10 +959,20 @@ void generateChordSegment(MidiTrack& track, Tick bar_start, Tick segment_start,
         getVocalCeilingForRange(harmony, tick, tick + duration, vocal_ceiling);
     state.reset(tick);
 
-    const bool thinned = pulse_shape != EighthPulseShape::Full && rhythm == ChordRhythm::Eighth &&
-                         eighth_index != 0 && eighth_index != 4;
+    // Both pulse shapes thin an eighth that restates a chord already sounding.
+    // The segment's first onset is not a restatement: it is where the harmony
+    // changes, and it is the only onset that says which chord took over. The
+    // shapes read position in the bar alone, so a chord entering off the beat
+    // was thinned at the moment it arrived -- a comping entry on the eighth
+    // before a beat rested through its own arrival, and a stub entry sounded one
+    // bare voice for its whole length. The chromatic approach chord shows what
+    // that costs: it enters on the bar's last quarter, where no onset is a strong
+    // eighth, so under a stub it arrived as a single repeated tone and the
+    // diminished chord the harmony planned never sounded at all.
+    const bool thinned = tick != segment_start && pulse_shape != EighthPulseShape::Full &&
+                         rhythm == ChordRhythm::Eighth && eighth_index != 0 && eighth_index != 4;
     if (thinned && pulse_shape == EighthPulseShape::Stub) {
-      addChordNoteWithState(track, harmony, tick, duration, root, note_velocity, state,
+      addChordNoteWithState(track, harmony, tick, duration, voicing_low, note_velocity, state,
                             note_ceiling);
       tick += duration;
       continue;
@@ -988,7 +1006,8 @@ void generateChordSegment(MidiTrack& track, Tick bar_start, Tick segment_start,
       addChordNoteWithState(track, harmony, tick, duration, voicing.pitches[idx], note_velocity,
                             state, note_ceiling);
     }
-    ensureMinVoicesAtTick(track, harmony, tick, duration, note_velocity, state, note_ceiling, root);
+    ensureMinVoicesAtTick(track, harmony, tick, duration, note_velocity, state, note_ceiling,
+                          voicing_low);
     tick += duration;
   }
 }
@@ -1790,6 +1809,19 @@ void tryAnticipation(ChordBarContext& ctx) {
       addChordNoteWithState(ctx.track, ctx.harmony, ant_tick, TICK_EIGHTH, ant_voicing.pitches[idx],
                             ant_vel, state, ctx.bar_vocal_high);
     }
+    // The anticipation is a chord entry -- it registered the change on the shared
+    // timeline, so every other track voices the incoming chord from this eighth
+    // on -- and it was the one entry emitted without the guarantee the rest get.
+    // A voice offered here is placed at the pitch it was voiced at or not at all;
+    // the guarantee is what looks for the same tone in a neighbouring octave. An
+    // eighth that carries one note announces a chord change by sounding an
+    // interval of nothing, while the harmony behind it has already moved.
+    uint8_t ant_low = ant_voicing.count > 0 ? ant_voicing.pitches[0] : next_root;
+    for (size_t idx = 1; idx < ant_voicing.count; ++idx) {
+      ant_low = std::min(ant_low, ant_voicing.pitches[idx]);
+    }
+    ensureMinVoicesAtTick(ctx.track, ctx.harmony, ant_tick, TICK_EIGHTH, ant_vel, state,
+                          ctx.bar_vocal_high, ant_low);
   }
 }
 
