@@ -43,6 +43,10 @@ class GuitarGenerator : public TrackBase {
 
   PhysicalModel getPhysicalModel() const override { return PhysicalModels::kElectricGuitar; }
 
+  /// A strum spells the chord the same way the chord track does.
+  static constexpr ChordBoundaryPolicy kChordBoundary = ChordBoundaryPolicy::ClipAtBoundary;
+  ChordBoundaryPolicy getChordBoundaryPolicy() const override { return kChordBoundary; }
+
   /// @brief Generate full guitar track using FullTrackContext.
   void doGenerateFullTrack(MidiTrack& track, const FullTrackContext& ctx) override;
 };

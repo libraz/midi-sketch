@@ -155,9 +155,6 @@ void rankCandidates(std::vector<PitchCandidate>& candidates, PitchPreference pre
       });
 }
 
-// Overlap threshold below which crossing a boundary is treated as a passing tone
-constexpr Tick kPassingToneThreshold = 240;  // 8th note
-
 // Parameters for provenance transform recording, used by recordProvenanceTransforms().
 struct ProvenanceParams {
   uint8_t true_original = 0;       // Pre-adjustment pitch
@@ -330,7 +327,7 @@ CreateNoteResult createNoteWithResult(IHarmonyContext& harmony, const NoteOption
     boundary_info = harmony.analyzeChordBoundary(opts.desired_pitch, opts.start, opts.duration);
 
     // Only process if there's a boundary crossing with significant overlap
-    if (boundary_info.boundary_tick > 0 && boundary_info.overlap_ticks >= kPassingToneThreshold) {
+    if (boundary_info.boundary_tick > 0 && boundary_info.overlap_ticks >= kPassingToneOverlap) {
       switch (opts.chord_boundary) {
         case ChordBoundaryPolicy::ClipAtBoundary:
           // Always clip at boundary
@@ -465,7 +462,7 @@ CreateNoteResult createNoteWithResult(IHarmonyContext& harmony, const NoteOption
   if (is_safe) {
     // For PreferSafe: check if this pitch needs boundary clip
     if (opts.chord_boundary == ChordBoundaryPolicy::PreferSafe && boundary_info.boundary_tick > 0 &&
-        boundary_info.overlap_ticks >= kPassingToneThreshold &&
+        boundary_info.overlap_ticks >= kPassingToneOverlap &&
         (boundary_info.safety == CrossBoundarySafety::NonChordTone ||
          boundary_info.safety == CrossBoundarySafety::AvoidNote)) {
       // Pitch is collision-safe but not boundary-safe: clip as fallback
@@ -502,7 +499,7 @@ CreateNoteResult createNoteWithResult(IHarmonyContext& harmony, const NoteOption
   // Get candidates and select the best one
   bool consider_boundary =
       (opts.chord_boundary == ChordBoundaryPolicy::PreferSafe && boundary_info.boundary_tick > 0 &&
-       boundary_info.overlap_ticks >= kPassingToneThreshold);
+       boundary_info.overlap_ticks >= kPassingToneOverlap);
 
   auto candidates = getSafePitchCandidates(
       harmony, opts.desired_pitch, opts.start, effective_duration, opts.role, opts.range_low,

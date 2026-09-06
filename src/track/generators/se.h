@@ -42,6 +42,10 @@ class SEGenerator : public TrackBase {
     return PhysicalModel{0, 127, 1, 127, 30, false};
   }
 
+  /// Chants and effects are placed against the arrangement, not the harmony.
+  static constexpr ChordBoundaryPolicy kChordBoundary = ChordBoundaryPolicy::None;
+  ChordBoundaryPolicy getChordBoundaryPolicy() const override { return kChordBoundary; }
+
   /// @brief Generate SE track with call system.
   /// @param track Target track
   /// @param song Song containing arrangement

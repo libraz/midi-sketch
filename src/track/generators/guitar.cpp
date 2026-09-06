@@ -298,7 +298,7 @@ static void generateFingerpickBar(MidiTrack& track, IHarmonyContext& harmony, Ti
     opts.range_low = kGuitarLow;
     opts.range_high = effective_high;
     opts.source = NoteSource::Guitar;
-    opts.chord_boundary = ChordBoundaryPolicy::ClipAtBoundary;
+    opts.chord_boundary = GuitarGenerator::kChordBoundary;
 
     createNoteAndAdd(track, harmony, opts);
   }
@@ -382,7 +382,7 @@ static void generateStrumBar(MidiTrack& track, IHarmonyContext& harmony, Tick ba
       opts.range_low = kGuitarLow;
       opts.range_high = effective_high;
       opts.source = NoteSource::Guitar;
-      opts.chord_boundary = ChordBoundaryPolicy::ClipAtBoundary;
+      opts.chord_boundary = GuitarGenerator::kChordBoundary;
 
       createNoteAndAdd(track, harmony, opts);
     }
@@ -433,7 +433,7 @@ static void generatePowerChordBar(MidiTrack& track, IHarmonyContext& harmony, Ti
       opts.range_low = kGuitarLow;
       opts.range_high = effective_high;
       opts.source = NoteSource::Guitar;
-      opts.chord_boundary = ChordBoundaryPolicy::ClipAtBoundary;
+      opts.chord_boundary = GuitarGenerator::kChordBoundary;
 
       createNoteAndAdd(track, harmony, opts);
     }
@@ -503,7 +503,7 @@ static void generatePedalToneBar(MidiTrack& track, IHarmonyContext& harmony, Tic
     opts.range_low = kGuitarLow;
     opts.range_high = effective_high;
     opts.source = NoteSource::Guitar;
-    opts.chord_boundary = ChordBoundaryPolicy::ClipAtBoundary;
+    opts.chord_boundary = GuitarGenerator::kChordBoundary;
 
     createNoteAndAdd(track, harmony, opts);
   }
@@ -554,7 +554,7 @@ static void generateRhythmChordBar(MidiTrack& track, IHarmonyContext& harmony, T
       opts.range_low = kGuitarLow;
       opts.range_high = effective_high;
       opts.source = NoteSource::Guitar;
-      opts.chord_boundary = ChordBoundaryPolicy::ClipAtBoundary;
+      opts.chord_boundary = GuitarGenerator::kChordBoundary;
 
       createNoteAndAdd(track, harmony, opts);
     }
@@ -642,7 +642,7 @@ static void generateTremoloPickBar(MidiTrack& track, IHarmonyContext& harmony, T
     opts.range_low = kGuitarLow;
     opts.range_high = effective_high;
     opts.source = NoteSource::Guitar;
-    opts.chord_boundary = ChordBoundaryPolicy::ClipAtBoundary;
+    opts.chord_boundary = GuitarGenerator::kChordBoundary;
 
     createNoteAndAdd(track, harmony, opts);
   }
@@ -734,7 +734,7 @@ static void generateSweepArpeggioBar(MidiTrack& track, IHarmonyContext& harmony,
     opts.range_low = kGuitarLow;
     opts.range_high = effective_high;
     opts.source = NoteSource::Guitar;
-    opts.chord_boundary = ChordBoundaryPolicy::ClipAtBoundary;
+    opts.chord_boundary = GuitarGenerator::kChordBoundary;
 
     createNoteAndAdd(track, harmony, opts);
   }

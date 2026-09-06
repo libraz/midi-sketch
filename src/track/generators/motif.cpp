@@ -1872,7 +1872,7 @@ bool emitMotifNoteStandard(MidiTrack& track, IHarmonyCoordinator& harmony, const
   opts.range_low = motif_range_low;
   opts.range_high = motif_range_high;
   opts.source = NoteSource::Motif;
-  opts.chord_boundary = ChordBoundaryPolicy::ClipIfUnsafe;
+  opts.chord_boundary = MotifGenerator::kChordBoundary;
   opts.original_pitch = note.note;  // Track pre-adjustment pitch
   opts.prev_pitch = state.motif_prev_pitch;
   opts.consecutive_same_count = state.motif_consecutive_same;

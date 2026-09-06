@@ -175,6 +175,15 @@ class ITrackBase {
   /// @brief Get the physical model for this track's instrument.
   virtual PhysicalModel getPhysicalModel() const = 0;
 
+  /// @brief Get the policy this track's notes are written under at chord boundaries.
+  ///
+  /// Every note this generator creates passes this value to createNote(), so the
+  /// answer here is the track's rule and not a description of it. Passes that
+  /// place or lengthen a note after generation ask this instead of restating the
+  /// choice, which is what keeps a later stage from accepting a crossing the
+  /// generator itself would have clipped.
+  virtual ChordBoundaryPolicy getChordBoundaryPolicy() const = 0;
+
   /// @brief Configure the generator with parameters.
   /// @param config Track configuration
   virtual void configure(const TrackConfig& config) = 0;

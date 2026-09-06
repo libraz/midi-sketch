@@ -40,6 +40,11 @@ class MotifGenerator : public TrackBase {
 
   PhysicalModel getPhysicalModel() const override { return PhysicalModels::kMotifSynth; }
 
+  /// The riff's shape outranks the boundary while the pitch still belongs to
+  /// the chord it lands in.
+  static constexpr ChordBoundaryPolicy kChordBoundary = ChordBoundaryPolicy::ClipIfUnsafe;
+  ChordBoundaryPolicy getChordBoundaryPolicy() const override { return kChordBoundary; }
+
   /// @brief Generate full motif track using FullTrackContext.
   void doGenerateFullTrack(MidiTrack& track, const FullTrackContext& ctx) override;
 };

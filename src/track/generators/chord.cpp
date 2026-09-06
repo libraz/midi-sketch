@@ -526,7 +526,7 @@ std::optional<NoteEvent> addSafeChordNoteAndReturn(MidiTrack& track, IHarmonyCon
   opts.range_low = CHORD_LOW;
   opts.range_high = static_cast<int>(effective_high);
   opts.source = NoteSource::ChordVoicing;
-  opts.chord_boundary = ChordBoundaryPolicy::ClipAtBoundary;
+  opts.chord_boundary = ChordGenerator::kChordBoundary;
   // Resolve before registering so duplicate elimination cannot leave an
   // already-registered phantom chord note in the harmony context.
   opts.register_to_harmony = false;
@@ -789,7 +789,7 @@ void ensureMinVoicesAtTick(MidiTrack& track, IHarmonyContext& harmony, Tick tick
         opts.range_low = CHORD_LOW;
         opts.range_high = static_cast<int>(effective_high);
         opts.source = NoteSource::ChordVoicing;
-        opts.chord_boundary = ChordBoundaryPolicy::ClipAtBoundary;
+        opts.chord_boundary = ChordGenerator::kChordBoundary;
         auto result = addCheckedChordNote(track, harmony, opts, state);
         if (result) {
           state.added(result->note);

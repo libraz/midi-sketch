@@ -540,7 +540,7 @@ void ArpeggioGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackCon
             opts.range_low = 48;
             opts.range_high = computeArpeggioRangeHigh(vocal_at_onset);
             opts.source = NoteSource::Arpeggio;
-            opts.chord_boundary = ChordBoundaryPolicy::ClipAtBoundary;
+            opts.chord_boundary = ArpeggioGenerator::kChordBoundary;
 
             auto add_arp_note = [&](NoteOptions note_opts) {
               note_opts.register_to_harmony = false;

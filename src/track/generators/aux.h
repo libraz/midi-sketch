@@ -189,6 +189,11 @@ class AuxGenerator : public TrackBase {
 
   PhysicalModel getPhysicalModel() const override { return PhysicalModels::kAuxVocal; }
 
+  /// A counter-line may sustain over a change, so the crossing steers the
+  /// pitch choice first and only clips when no safe pitch was available.
+  static constexpr ChordBoundaryPolicy kChordBoundary = ChordBoundaryPolicy::PreferSafe;
+  ChordBoundaryPolicy getChordBoundaryPolicy() const override { return kChordBoundary; }
+
   /// @brief Generate full aux track using FullTrackContext.
   void doGenerateFullTrack(MidiTrack& track, const FullTrackContext& ctx) override;
 

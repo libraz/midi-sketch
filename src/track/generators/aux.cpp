@@ -241,7 +241,7 @@ MidiTrack AuxGenerator::generate(const AuxConfig& config, const AuxContext& ctx,
     opts.range_low = AUX_LOW;
     opts.range_high = AUX_HIGH;
     opts.source = NoteSource::Aux;
-    opts.chord_boundary = ChordBoundaryPolicy::PreferSafe;
+    opts.chord_boundary = AuxGenerator::kChordBoundary;
     opts.register_to_harmony = register_to_harmony;
 
     createNoteAndAdd(track, harmony, opts);
@@ -583,7 +583,7 @@ void AuxGenerator::generateFromSongContext(MidiTrack& track, const SongContext& 
     opts.range_high = is_vocal_double ? 127 : note_ceiling;
     opts.source = NoteSource::Aux;
     opts.chord_boundary =
-        is_vocal_double ? ChordBoundaryPolicy::None : ChordBoundaryPolicy::PreferSafe;
+        is_vocal_double ? ChordBoundaryPolicy::None : AuxGenerator::kChordBoundary;
     // Record original pitch for provenance (before monotony tracker adjustment)
     opts.original_pitch = note.note;
     // Pass monotony info so collision avoidance also avoids consecutive same pitch

@@ -796,7 +796,7 @@ void addBassNotePreferRoot(MidiTrack& track, Tick start, Tick duration, uint8_t 
   opts.range_high = BASS_HIGH;
   opts.register_to_harmony = true;
   opts.source = NoteSource::BassPattern;
-  opts.chord_boundary = ChordBoundaryPolicy::ClipIfUnsafe;
+  opts.chord_boundary = BassGenerator::kChordBoundary;
 
   createNoteAndAdd(track, harmony, opts);
 }
@@ -855,7 +855,7 @@ void addBassNoteWithTritoneCheck(MidiTrack& track, IHarmonyContext& harmony, Tic
   opts.range_high = BASS_HIGH;
   opts.register_to_harmony = true;
   opts.source = NoteSource::BassPattern;
-  opts.chord_boundary = ChordBoundaryPolicy::ClipIfUnsafe;
+  opts.chord_boundary = BassGenerator::kChordBoundary;
 
   if (all_fallbacks_have_tritone) {
     // When all fallback options form tritones, skip note on collision

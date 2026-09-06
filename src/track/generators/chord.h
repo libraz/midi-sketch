@@ -74,6 +74,11 @@ class ChordGenerator : public TrackBase {
 
   PhysicalModel getPhysicalModel() const override { return PhysicalModels::kElectricPiano; }
 
+  /// This track states the harmony, so a voice of one chord may never be
+  /// left sounding over the next.
+  static constexpr ChordBoundaryPolicy kChordBoundary = ChordBoundaryPolicy::ClipAtBoundary;
+  ChordBoundaryPolicy getChordBoundaryPolicy() const override { return kChordBoundary; }
+
   /// @brief Generate full chord track using FullTrackContext.
   void doGenerateFullTrack(MidiTrack& track, const FullTrackContext& ctx) override;
 };

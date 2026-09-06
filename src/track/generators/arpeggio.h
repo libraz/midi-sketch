@@ -35,6 +35,11 @@ class ArpeggioGenerator : public TrackBase {
 
   PhysicalModel getPhysicalModel() const override { return PhysicalModels::kArpeggioSynth; }
 
+  /// A broken chord names the harmony one tone at a time, so a tone left
+  /// sounding past the change names the wrong chord.
+  static constexpr ChordBoundaryPolicy kChordBoundary = ChordBoundaryPolicy::ClipAtBoundary;
+  ChordBoundaryPolicy getChordBoundaryPolicy() const override { return kChordBoundary; }
+
   /// @brief Generate full arpeggio track using FullTrackContext.
   void doGenerateFullTrack(MidiTrack& track, const FullTrackContext& ctx) override;
 };

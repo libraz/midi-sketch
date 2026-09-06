@@ -490,6 +490,15 @@ enum class ChordBoundaryPolicy : uint8_t {
   PreferSafe       ///< Prefer boundary-safe pitch in candidate ranking + fallback clip (Aux)
 };
 
+/// @brief Overlap below which crossing a chord boundary is heard as a passing tone.
+///
+/// A note reaching an eighth past the change is the shortest one that reads as
+/// belonging to the new chord rather than leaning into it, so every policy above
+/// leaves shorter crossings alone. Any pass that places or lengthens a note has
+/// to compare against this same threshold: a second value here would let one
+/// stage accept a crossing the stage that created the note would have clipped.
+constexpr Tick kPassingToneOverlap = 240;
+
 /// @brief Pitch selection preference for createNote().
 ///
 /// Determines how alternative pitches are selected when

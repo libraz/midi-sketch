@@ -233,6 +233,11 @@ class BassGenerator : public TrackBase {
 
   PhysicalModel getPhysicalModel() const override { return PhysicalModels::kElectricBass; }
 
+  /// A root held into the next chord is a pedal point when it belongs there
+  /// and a wrong root when it does not.
+  static constexpr ChordBoundaryPolicy kChordBoundary = ChordBoundaryPolicy::ClipIfUnsafe;
+  ChordBoundaryPolicy getChordBoundaryPolicy() const override { return kChordBoundary; }
+
   /// @brief Generate full bass track using FullTrackContext.
   void doGenerateFullTrack(MidiTrack& track, const FullTrackContext& ctx) override;
 

@@ -38,6 +38,11 @@ class VocalGenerator : public TrackBase {
 
   PhysicalModel getPhysicalModel() const override { return PhysicalModels::kVocal; }
 
+  /// The melody is the axis every other track is voiced against, so it is
+  /// never shortened to fit a chord it sings across.
+  static constexpr ChordBoundaryPolicy kChordBoundary = ChordBoundaryPolicy::None;
+  ChordBoundaryPolicy getChordBoundaryPolicy() const override { return kChordBoundary; }
+
   /// @brief Generate full vocal track using FullTrackContext.
   void doGenerateFullTrack(MidiTrack& track, const FullTrackContext& ctx) override;
 

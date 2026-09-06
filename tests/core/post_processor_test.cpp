@@ -2554,6 +2554,7 @@ class TestTrackForHoles : public TrackBase {
   TrackRole getRole() const override { return role_; }
   TrackPriority getDefaultPriority() const override { return TrackPriority::None; }
   PhysicalModel getPhysicalModel() const override { return {}; }
+  ChordBoundaryPolicy getChordBoundaryPolicy() const override { return ChordBoundaryPolicy::None; }
   void doGenerateFullTrack(MidiTrack&, const FullTrackContext&) override {}
 
   void applyHoles(MidiTrack& track, const FullTrackContext& ctx) {

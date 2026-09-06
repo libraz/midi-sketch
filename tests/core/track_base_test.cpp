@@ -73,6 +73,7 @@ class TestableTrack : public TrackBase {
   TrackRole getRole() const override { return role_; }
   TrackPriority getDefaultPriority() const override { return TrackPriority::Medium; }
   PhysicalModel getPhysicalModel() const override { return PhysicalModels::kVocal; }
+  ChordBoundaryPolicy getChordBoundaryPolicy() const override { return ChordBoundaryPolicy::None; }
 
   // Expose protected method for testing
   using TrackBase::removeArrangementHoleNotes;

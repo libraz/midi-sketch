@@ -33,6 +33,10 @@ class DrumsGenerator : public TrackBase {
     return PhysicalModel{0, 127, 1, 127, 30, false};
   }
 
+  /// Drum hits carry no harmony, so a chord change is nothing for them to cross.
+  static constexpr ChordBoundaryPolicy kChordBoundary = ChordBoundaryPolicy::None;
+  ChordBoundaryPolicy getChordBoundaryPolicy() const override { return kChordBoundary; }
+
   /// @brief Generate full drums track using FullTrackContext.
   void doGenerateFullTrack(MidiTrack& track, const FullTrackContext& ctx) override;
 
