@@ -213,6 +213,12 @@ int contourPitchInSet(const ChordTones& pcs, int target, int prev, int intended_
       // erases the motion or reverses its direction pays the intended interval
       // on top of its size error, so a wide interval is never traded away for a
       // repeated note, while a step still settles on the nearest chord tone.
+      //
+      // The penalty is deliberately proportional rather than absolute. Refusing
+      // to erase a step outright was measured: the repeated notes it removed
+      // came back as same-direction leaps onto the next chord tone, which is
+      // the arpeggio outline kMaxLeapChain exists to prevent, and the melody's
+      // accented dissonances were snapped onto their own resolutions.
       if (intended_interval != 0 && (delta == 0 || (delta > 0) != (intended_interval > 0))) {
         error += std::abs(intended_interval);
       }
