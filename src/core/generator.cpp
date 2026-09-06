@@ -2282,7 +2282,7 @@ void duckMotifUnderLead(MidiTrack& motif, const MidiTrack& vocal, const IHarmony
         if (!harmony.isConsonantWithOtherTracks(ducked, note.start_tick, note.duration,
                                                 TrackRole::Motif)) {
           uint8_t range_high = static_cast<uint8_t>(std::min(84, cand + 7));
-          ChordToneHelper ct_helper(harmony.getChordDegreeAt(note.start_tick));
+          ChordToneHelper ct_helper = chordToneHelperAt(harmony, note.start_tick);
           uint8_t chord_tone = ct_helper.nearestInRange(ducked, 48, range_high);
           if (harmony.isConsonantWithOtherTracks(chord_tone, note.start_tick, note.duration,
                                                  TrackRole::Motif)) {
@@ -2341,7 +2341,7 @@ void duckMotifUnderLead(MidiTrack& motif, const MidiTrack& vocal, const IHarmony
         bool resolved = false;
         uint8_t range_high = static_cast<uint8_t>(std::min(84, cand + 7));
         uint8_t range_low = 48;
-        ChordToneHelper ct_helper(harmony.getChordDegreeAt(note.start_tick));
+        ChordToneHelper ct_helper = chordToneHelperAt(harmony, note.start_tick);
         uint8_t chord_tone = ct_helper.nearestInRange(ducked, range_low, range_high);
         if (harmony.isConsonantWithOtherTracks(chord_tone, note.start_tick, note.duration,
                                                TrackRole::Motif)) {
@@ -3469,7 +3469,7 @@ void restoreMotifRiffFromReference(MidiTrack& motif, const MidiTrack& vocal, con
       uint8_t ceiling =
           (vocal_floor > 0 && vocal_floor < kMotifRestoreHigh) ? vocal_floor : kMotifRestoreHigh;
       if (ceiling < kMotifRestoreLow) continue;
-      ChordToneHelper helper(harmony.getChordDegreeAt(note.start_tick));
+      ChordToneHelper helper = chordToneHelperAt(harmony, note.start_tick);
       uint8_t reference_shifted =
           static_cast<uint8_t>(std::clamp(shifted, kMotifRestoreLow, static_cast<int>(ceiling)));
       uint8_t chord_tone = helper.nearestInRange(reference_shifted, kMotifRestoreLow, ceiling);

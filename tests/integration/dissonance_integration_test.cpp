@@ -607,5 +607,60 @@ TEST(BassApproachNoteCorpusTest, AnApproachNoteDoesNotContradictAnAlteredChordTo
   ASSERT_GT(altered_chords, 0u);
 }
 
+TEST(AlteredChordCorpusTest, NoPitchedTrackStatesTheToneItsChordReplaced) {
+  // A chord tone helper built from a bare scale degree answers with the key's
+  // plain triad, so every snap toward "the nearest chord tone" reached for the
+  // tone an altered chord had moved away from -- and the same snap is what a
+  // motif uses to correct an avoid note, what a monotonous run is broken with,
+  // and what a voice crowded off an onset is moved onto. These are the
+  // configurations where at least one track ended up stating the other spelling.
+  struct Config {
+    uint8_t style;
+    uint8_t blueprint;
+    uint32_t seed;
+  };
+  constexpr Config kConfigs[] = {{2, 5, 3}, {16, 5, 5}, {2, 5, 13}, {3, 5, 20}, {13, 9, 7}};
+
+  size_t songs = 0;
+  size_t altered_chords = 0;
+  for (const Config& c : kConfigs) {
+    SongConfig config = createDefaultSongConfig(c.style);
+    config.seed = c.seed;
+    config.blueprint_id = c.blueprint;
+
+    MidiSketch sketch;
+    sketch.generateFromConfig(config);
+    ++songs;
+
+    const IHarmonyContext& harmony = sketch.getHarmonyContext();
+    const Song& song = sketch.getSong();
+    const struct {
+      const char* name;
+      const MidiTrack* track;
+    } kTracks[] = {{"vocal", &song.vocal()}, {"motif", &song.motif()},   {"bass", &song.bass()},
+                   {"chord", &song.chord()}, {"guitar", &song.guitar()}, {"aux", &song.aux()}};
+
+    for (const auto& entry : kTracks) {
+      for (const auto& note : entry.track->notes()) {
+        const int8_t degree = harmony.getChordDegreeAt(note.start_tick);
+        const ChordTones sounding = harmony.getChordTonesAt(note.start_tick);
+        const ChordTones diatonic = getChordTones(degree);
+        for (uint8_t i = 0; i < std::min(sounding.count, diatonic.count); ++i) {
+          if (sounding.pitch_classes[i] != diatonic.pitch_classes[i]) ++altered_chords;
+        }
+        if (!contradictsAlteredChordTone(note.note % 12, degree, sounding)) continue;
+        ADD_FAILURE() << "style " << static_cast<int>(c.style) << " blueprint "
+                      << static_cast<int>(c.blueprint) << " seed " << c.seed << ": " << entry.name
+                      << " sounds " << static_cast<int>(note.note) << " at " << note.start_tick
+                      << " against the tone degree " << static_cast<int>(degree)
+                      << " was altered to";
+      }
+    }
+  }
+  ASSERT_EQ(songs, 5u);
+  // A corpus with no altered chord cannot exercise the rule at all.
+  ASSERT_GT(altered_chords, 0u);
+}
+
 }  // namespace
 }  // namespace midisketch

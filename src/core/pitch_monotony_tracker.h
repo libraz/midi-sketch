@@ -60,16 +60,20 @@ struct PitchMonotonyTracker {
    * @param desired Original desired pitch
    * @param range_low Lower bound of pitch range
    * @param range_high Upper bound of pitch range
-   * @param chord_degree Current chord degree (-1 to skip chord-tone logic)
+   * @param chord Chord the alternatives are drawn from (nullptr to skip chord-tone
+   *              logic). The caller builds it from the tick the pitch sounds at, so
+   *              an alteration the timeline registered there is part of it -- a
+   *              tracker deriving the chord from a bare degree would answer a
+   *              monotonous run by moving the pitch onto the tone that chord replaced.
    * @return Suggested pitch (may be different if monotony or large leap detected)
    */
   uint8_t trackAndSuggest(uint8_t desired, uint8_t range_low, uint8_t range_high,
-                          int8_t chord_degree) {
+                          const ChordToneHelper* chord) {
     uint8_t result = desired;
 
     // Step 1: Apply leap guard if enabled
     if (max_leap > 0 && last_pitch > 0) {
-      result = applyLeapGuard(result, range_low, range_high, chord_degree);
+      result = applyLeapGuard(result, range_low, range_high, chord);
     }
 
     // Step 2: Track consecutive count
@@ -81,7 +85,7 @@ struct PitchMonotonyTracker {
 
     // Step 3: Resolve monotony if threshold exceeded
     if (consecutive_count > max_consecutive) {
-      uint8_t alternative = resolveMonotony(result, range_low, range_high, chord_degree);
+      uint8_t alternative = resolveMonotony(result, range_low, range_high, chord);
       if (alternative != result) {
         last_pitch = alternative;
         consecutive_count = 1;
@@ -104,14 +108,13 @@ struct PitchMonotonyTracker {
    * @brief Constrain pitch to be within max_leap of last_pitch.
    */
   uint8_t applyLeapGuard(uint8_t desired, uint8_t range_low, uint8_t range_high,
-                         int8_t chord_degree) {
+                         const ChordToneHelper* chord) {
     int leap = std::abs(static_cast<int>(desired) - static_cast<int>(last_pitch));
     if (leap <= max_leap) return desired;
 
     // Try chord tones in nearby octaves within leap constraint
-    if (chord_degree >= 0) {
-      ChordToneHelper helper(chord_degree);
-      auto chord_tones = helper.allInRange(range_low, range_high);
+    if (chord != nullptr) {
+      auto chord_tones = chord->allInRange(range_low, range_high);
 
       int best_pitch = -1;
       int best_distance = 1000;
@@ -139,8 +142,8 @@ struct PitchMonotonyTracker {
     } else {
       clamped = std::max(static_cast<int>(last_pitch) - max_leap, static_cast<int>(range_low));
     }
-    if (chord_degree >= 0) {
-      int snapped = nearestChordTonePitch(clamped, chord_degree);
+    if (chord != nullptr) {
+      int snapped = chord->nearestChordTone(static_cast<uint8_t>(std::clamp(clamped, 0, 127)));
       snapped = std::clamp(snapped, static_cast<int>(range_low), static_cast<int>(range_high));
       // Only use snapped pitch if it still respects leap constraint
       if (std::abs(snapped - static_cast<int>(last_pitch)) <= max_leap) {
@@ -154,11 +157,10 @@ struct PitchMonotonyTracker {
    * @brief Find alternative pitch to break monotony.
    */
   uint8_t resolveMonotony(uint8_t current, uint8_t range_low, uint8_t range_high,
-                          int8_t chord_degree) {
+                          const ChordToneHelper* chord) {
     // Try chord tones first
-    if (chord_degree >= 0) {
-      ChordToneHelper helper(chord_degree);
-      auto chord_tones = helper.allInRange(range_low, range_high);
+    if (chord != nullptr) {
+      auto chord_tones = chord->allInRange(range_low, range_high);
 
       // Find chord tones with different pitch class
       std::vector<uint8_t> close_alternatives;
@@ -197,13 +199,13 @@ struct PitchMonotonyTracker {
     }
 
     // Fallback: snap nearby pitches to chord tones when possible
-    if (chord_degree >= 0) {
+    if (chord != nullptr) {
       // Try snapping ±2 to nearest chord tone
       for (int offset : {2, -2}) {
         int candidate = static_cast<int>(current) + offset;
         if (candidate < range_low || candidate > range_high) continue;
         if (candidate == last_pitch) continue;
-        int snapped = nearestChordTonePitch(candidate, chord_degree);
+        int snapped = chord->nearestChordTone(static_cast<uint8_t>(std::clamp(candidate, 0, 127)));
         snapped = std::clamp(snapped, static_cast<int>(range_low), static_cast<int>(range_high));
         if (snapped != current && isWithinLeap(static_cast<uint8_t>(snapped))) {
           return static_cast<uint8_t>(snapped);

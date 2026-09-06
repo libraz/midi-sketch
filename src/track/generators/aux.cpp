@@ -544,8 +544,8 @@ void AuxGenerator::generateFromSongContext(MidiTrack& track, const SongContext& 
     const bool is_chord_voice = has_previous_onset && note.start_tick == previous_onset;
     has_previous_onset = true;
     previous_onset = note.start_tick;
-    // Get chord degree for potential pitch variation
-    int8_t chord_degree = harmony.getChordDegreeAt(note.start_tick);
+    // Get the sounding chord for potential pitch variation
+    ChordToneHelper note_chord = chordToneHelperAt(harmony, note.start_tick);
 
     // Per-onset vocal ceiling: the section-level aux_vocal_ceiling is derived
     // from the vocal's HIGHEST pitch, so the monotony tracker below could
@@ -568,7 +568,7 @@ void AuxGenerator::generateFromSongContext(MidiTrack& track, const SongContext& 
     uint8_t suggested_pitch =
         (is_vocal_double || is_chord_voice)
             ? note.note
-            : temp_tracker.trackAndSuggest(note.note, AUX_LOW, note_ceiling, chord_degree);
+            : temp_tracker.trackAndSuggest(note.note, AUX_LOW, note_ceiling, &note_chord);
 
     NoteOptions opts;
     opts.start = note.start_tick;

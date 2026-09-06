@@ -221,8 +221,11 @@ ChordBoundaryInfo ChordProgressionTracker::analyzeChordBoundary(uint8_t pitch, T
   info.overlap_ticks = note_end - boundary;
   info.next_degree = getChordDegreeAt(boundary);
 
-  // Classify pitch safety using ChordToneHelper and tension tables
-  ChordToneHelper helper(info.next_degree);
+  // Classify pitch safety using ChordToneHelper and tension tables. The chord
+  // on the far side of the boundary is read from the timeline rather than built
+  // from its degree, or a tone that chord replaced is classified as belonging
+  // to it and the note is held into a cross relation as safe.
+  ChordToneHelper helper = chordToneHelperAt(*this, boundary);
   int pc = pitch % 12;
 
   if (helper.isChordTonePitchClass(pc)) {

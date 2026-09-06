@@ -255,22 +255,29 @@ ScaleType selectScaleType(bool is_minor, Mood mood) {
 // degreeToPitch() is now in pitch_utils.h.
 
 // Adjust pitch to avoid dissonance by resolving to nearest chord tone.
-// Uses ChordToneHelper from chord_utils.h for chord tone lookup.
-int adjustForChord(int pitch, uint8_t chord_root, bool is_minor, int8_t chord_degree) {
-  if (!isAvoidNoteWithContext(pitch, chord_root, is_minor, chord_degree)) {
+// The avoid-note rule is stated in terms of the degree and cannot see an
+// alteration the timeline registered, so the tone a secondary dominant or a
+// suspension replaced passes it untouched; `helper` is what knows the chord is
+// spelled otherwise here.
+int adjustForChord(int pitch, uint8_t chord_root, bool is_minor, int8_t chord_degree,
+                   const ChordToneHelper& helper) {
+  if (!isAvoidNoteWithContext(pitch, chord_root, is_minor, chord_degree) &&
+      !helper.contradictsAlteration(pitch % 12)) {
     return pitch;
   }
-  ChordToneHelper helper(chord_degree);
   return helper.nearestChordTone(static_cast<uint8_t>(std::clamp(pitch, 0, 127)));
 }
 
 // Snap pitch to a safe scale tone using ChordToneHelper.
+// Diatonic-ness is what earns a pitch the right to stay here, and over an
+// altered chord the tone the chord moved away from is the diatonic one, so it
+// has to be excluded by name rather than by that test.
 int snapToSafeScaleTone(int pitch, uint8_t chord_root, bool is_minor, int8_t chord_degree,
-                        float melodic_freedom, std::mt19937& rng) {
-  ChordToneHelper helper(chord_degree);
+                        float melodic_freedom, std::mt19937& rng, const ChordToneHelper& helper) {
   uint8_t clamped = static_cast<uint8_t>(std::clamp(pitch, 0, 127));
 
-  if (isDiatonic(pitch) && !isAvoidNoteWithContext(pitch, chord_root, is_minor, chord_degree)) {
+  if (isDiatonic(pitch) && !isAvoidNoteWithContext(pitch, chord_root, is_minor, chord_degree) &&
+      !helper.contradictsAlteration(pitch % 12)) {
     // Passing tone: diatonic but not a chord tone
     if (!helper.isChordTone(clamped)) {
       if (rng_util::rollProbability(rng, melodic_freedom)) {
@@ -881,9 +888,10 @@ MotifPitchResult calculateMotifPitch(const NoteEvent& note, const MotifNoteConte
     Chord current_chord = getChordNotes(current_degree);
     bool current_is_minor = (current_chord.intervals[1] == 3);
     int pre_avoid = pitch;
+    ChordToneHelper ct_helper = chordToneHelperAt(*harmony, ctx.absolute_tick);
     if (motif_params.rhythm_template == MotifRhythmTemplate::ChordPulseStabs ||
-        isAvoidNoteWithContext(pitch, current_root, current_is_minor, current_degree)) {
-      ChordToneHelper ct_helper(current_degree);
+        isAvoidNoteWithContext(pitch, current_root, current_is_minor, current_degree) ||
+        ct_helper.contradictsAlteration(pitch % 12)) {
       pitch = ct_helper.nearestInRange(static_cast<uint8_t>(std::clamp(pitch, 0, 127)),
                                        ctx.motif_range_low, ctx.motif_range_high);
     }
@@ -898,10 +906,12 @@ MotifPitchResult calculateMotifPitch(const NoteEvent& note, const MotifNoteConte
   uint8_t chord_root = degreeToRoot(degree, Key::C);
   Chord chord = getChordNotes(degree);
   bool is_minor = (chord.intervals[1] == 3);
+  ChordToneHelper ct_helper = chordToneHelperAt(*harmony, ctx.absolute_tick);
 
   ScaleType scale = motif_detail::selectScaleType(is_minor, params.mood);
   int adjusted_pitch = motif_detail::adjustPitchToScale(note.note, 0, scale);
-  adjusted_pitch = motif_detail::adjustForChord(adjusted_pitch, chord_root, is_minor, degree);
+  adjusted_pitch =
+      motif_detail::adjustForChord(adjusted_pitch, chord_root, is_minor, degree, ct_helper);
 
   if (vocal_ctx && motif_params.dynamic_register && base_note_override != 0) {
     int original_base = motif_params.register_high ? 67 : 60;
@@ -938,14 +948,13 @@ MotifPitchResult calculateMotifPitch(const NoteEvent& note, const MotifNoteConte
     Chord chord_for_snap = getChordNotes(degree_for_snap);
     bool is_minor_for_snap = (chord_for_snap.intervals[1] == 3);
     if (motif_params.rhythm_template == MotifRhythmTemplate::ChordPulseStabs) {
-      ChordToneHelper ct_helper(degree_for_snap);
       adjusted_pitch =
           ct_helper.nearestInRange(static_cast<uint8_t>(std::clamp(adjusted_pitch, 0, 127)),
                                    ctx.motif_range_low, ctx.motif_range_high);
     } else {
-      adjusted_pitch =
-          motif_detail::snapToSafeScaleTone(adjusted_pitch, chord_root_for_snap, is_minor_for_snap,
-                                            degree_for_snap, motif_params.melodic_freedom, rng);
+      adjusted_pitch = motif_detail::snapToSafeScaleTone(
+          adjusted_pitch, chord_root_for_snap, is_minor_for_snap, degree_for_snap,
+          motif_params.melodic_freedom, rng, ct_helper);
     }
   }
 
@@ -953,12 +962,17 @@ MotifPitchResult calculateMotifPitch(const NoteEvent& note, const MotifNoteConte
   // Skip for RhythmSync: motif is the coordinate axis (generated first),
   // so there are no other tracks to clash with yet.
   bool is_strong_beat = (ctx.absolute_tick % TICKS_PER_BEAT == 0);
-  if (is_strong_beat && params.paradigm != GenerationParadigm::RhythmSync) {
-    ChordToneHelper ct_helper(degree);
-    uint8_t clamped = static_cast<uint8_t>(std::clamp(adjusted_pitch, 0, 127));
-    if (!ct_helper.isChordTone(clamped)) {
-      adjusted_pitch = ct_helper.nearestInRange(clamped, ctx.motif_range_low, ctx.motif_range_high);
-    }
+  uint8_t clamped = static_cast<uint8_t>(std::clamp(adjusted_pitch, 0, 127));
+  // The register shift, the scale rounding and the octave folding above all
+  // choose by key alone, and the tone an altered chord replaced is in the key --
+  // so whichever of them speaks last can put it back after the chord was
+  // consulted. The question is therefore asked once more here, at the end of the
+  // chain and on every beat: a weak beat is no licence for a cross relation.
+  bool contradicts_chord = ct_helper.contradictsAlteration(clamped % 12);
+  bool snap_on_strong_beat = is_strong_beat && params.paradigm != GenerationParadigm::RhythmSync &&
+                             !ct_helper.isChordTone(clamped);
+  if (contradicts_chord || snap_on_strong_beat) {
+    adjusted_pitch = ct_helper.nearestInRange(clamped, ctx.motif_range_low, ctx.motif_range_high);
   }
 
   result.pitch = adjusted_pitch;
@@ -1020,8 +1034,7 @@ uint8_t calculateMotifVelocity(uint8_t base_vel, bool is_chorus, SectionType sec
 /// @return Alternative pitch, or current_pitch if no better option found
 uint8_t selectBestAlternative(uint8_t current_pitch, IHarmonyCoordinator* harmony, Tick tick,
                               uint8_t range_low, uint8_t range_high) {
-  int8_t degree = harmony->getChordDegreeAt(tick);
-  ChordToneHelper ct_helper(degree);
+  ChordToneHelper ct_helper = chordToneHelperAt(*harmony, tick);
   const auto& pitch_classes = ct_helper.pitchClasses();
   int current_pc = current_pitch % 12;
   int current_octave = current_pitch / 12;
@@ -1277,9 +1290,7 @@ struct MotifGenerationState {
 /// @param tick Tick for chord lookup
 /// @return true if pitch class matches a chord tone at the tick's chord
 bool isChordToneAtTick(uint8_t pitch, IHarmonyCoordinator* harmony, Tick tick) {
-  int8_t degree = harmony->getChordDegreeAt(tick);
-  ChordToneHelper ct_helper(degree);
-  return ct_helper.isChordTone(pitch);
+  return chordToneHelperAt(*harmony, tick).isChordTone(pitch);
 }
 
 }  // namespace
@@ -1458,9 +1469,10 @@ bool replayCachedNotesCoordinateAxis(MidiTrack& track, const Section& section,
       const auto active_tones = harmony->getChordTonesAt(absolute_tick);
       bool is_active_chord_tone = std::find(active_tones.begin(), active_tones.end(),
                                             replay_pitch % 12) != active_tones.end();
+      ChordToneHelper ct_helper = chordToneHelperAt(*harmony, absolute_tick);
       if (!is_active_chord_tone &&
-          isAvoidNoteWithContext(replay_pitch, replay_root, replay_minor, replay_degree)) {
-        ChordToneHelper ct_helper(replay_degree);
+          (isAvoidNoteWithContext(replay_pitch, replay_root, replay_minor, replay_degree) ||
+           ct_helper.contradictsAlteration(replay_pitch % 12))) {
         replay_pitch = ct_helper.nearestInRange(static_cast<uint8_t>(replay_pitch), motif_range_low,
                                                 motif_range_high);
       }
@@ -1692,8 +1704,9 @@ int applyPostCeilingAvoidNote(int adjusted_pitch, Tick absolute_tick, IHarmonyCo
   uint8_t post_root = degreeToRoot(post_degree, Key::C);
   Chord post_chord = getChordNotes(post_degree);
   bool post_minor = (post_chord.intervals[1] == 3);
-  if (isAvoidNoteWithContext(adjusted_pitch, post_root, post_minor, post_degree)) {
-    ChordToneHelper ct_helper(post_degree);
+  ChordToneHelper ct_helper = chordToneHelperAt(*harmony, absolute_tick);
+  if (isAvoidNoteWithContext(adjusted_pitch, post_root, post_minor, post_degree) ||
+      ct_helper.contradictsAlteration(adjusted_pitch % 12)) {
     adjusted_pitch = ct_helper.nearestInRange(static_cast<uint8_t>(adjusted_pitch), motif_range_low,
                                               motif_range_high);
   }
@@ -1764,10 +1777,10 @@ uint8_t resolveMotifFinalPitch(int adjusted_pitch, bool is_rhythm_lock_global,
   }
 
   // Apply monotony tracking to avoid consecutive same pitches
-  // Pass chord degree so alternatives are selected from chord tones
-  int8_t current_degree = harmony->getChordDegreeAt(absolute_tick);
+  // Pass the sounding chord so alternatives are selected from its tones
+  ChordToneHelper current_chord = chordToneHelperAt(*harmony, absolute_tick);
   return state.monotony_tracker.trackAndSuggest(static_cast<uint8_t>(adjusted_pitch),
-                                                motif_range_low, motif_range_high, current_degree);
+                                                motif_range_low, motif_range_high, &current_chord);
 }
 
 /// @brief Emit a motif note in coordinate axis mode (no collision avoidance).
@@ -1839,8 +1852,7 @@ void emitMotifNoteCoordAxis(MidiTrack& track, IHarmonyCoordinator& harmony, cons
   // stabs, not single notes. The voice is the highest chord tone at least a
   // 3rd below the lead, so the dyad is always a consonant triad interval.
   if (add_stab_voice && final_pitch >= motif_range_low + 3) {
-    int8_t stab_degree = harmony.getChordDegreeAt(absolute_tick);
-    ChordToneHelper stab_helper(stab_degree);
+    ChordToneHelper stab_helper = chordToneHelperAt(harmony, absolute_tick);
     auto candidates =
         stab_helper.allInRange(motif_range_low, static_cast<uint8_t>(final_pitch - 3));
     if (!candidates.empty()) {

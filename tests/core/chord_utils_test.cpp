@@ -594,5 +594,58 @@ TEST(AlteredChordToneTest, AnUnalteredChordContradictsNothing) {
   }
 }
 
+TEST(AlteredChordToneTest, RespellingKeepsTheTriadAndCorrectsOnlyWhatMoved) {
+  constexpr int8_t kDegreeVi = 5;
+  ChordTones sounding = getChordTones(kDegreeVi);
+  ASSERT_EQ(sounding.count, 3) << "vi in C major is a triad";
+  const ChordTones plain = sounding;
+  sounding.pitch_classes[1] = 1;  // The secondary dominant's raised third
+
+  const ChordTones respelled = respellAlteredChordTones(kDegreeVi, sounding);
+  EXPECT_EQ(respelled.count, plain.count) << "respelling states the triad, it does not extend it";
+  EXPECT_EQ(respelled.pitch_classes[0], plain.pitch_classes[0]) << "the root did not move";
+  EXPECT_EQ(respelled.pitch_classes[1], 1) << "the third is spelled as the chord spells it";
+  EXPECT_EQ(respelled.pitch_classes[2], plain.pitch_classes[2]) << "the fifth did not move";
+}
+
+TEST(AlteredChordToneTest, ARespelledHelperSnapsToTheChordsOwnThird) {
+  constexpr int8_t kDegreeVi = 5;
+  ChordTones sounding = getChordTones(kDegreeVi);
+  ASSERT_EQ(sounding.pitch_classes[1], 0) << "vi in C major has C as its third";
+  sounding.pitch_classes[1] = 1;
+
+  const ChordToneHelper plain(kDegreeVi);
+  const ChordToneHelper altered(kDegreeVi, respellAlteredChordTones(kDegreeVi, sounding));
+
+  // C4 is the third of vi as the key spells it and a semitone under the third
+  // the chord actually states, so the two helpers have to disagree about it.
+  EXPECT_TRUE(plain.isChordTone(60));
+  EXPECT_FALSE(altered.isChordTone(60)) << "the chord moved away from this tone";
+  EXPECT_TRUE(altered.isChordTone(61)) << "and states the one a semitone above instead";
+  EXPECT_TRUE(altered.contradictsAlteration(0));
+  EXPECT_FALSE(altered.contradictsAlteration(1));
+  EXPECT_FALSE(plain.contradictsAlteration(0)) << "an unaltered chord replaced nothing";
+  EXPECT_EQ(altered.nearestChordTone(60), 61) << "the nearest chord tone is the chord's own third";
+}
+
+TEST(AlteredChordToneTest, AnExtensionThatOnlyAddsATonePlaysNoPartInRespelling) {
+  // A seventh or a ninth sits at an index the triad does not have, so it can
+  // never displace one of its tones. Whether a line may reach for a tension is
+  // a separate question from how the chord is spelled, and this keeps the two
+  // from being answered together by accident.
+  constexpr int8_t kDegreeI = 0;
+  const ChordTones plain = getChordTones(kDegreeI);
+  ChordTones with_seventh = plain;
+  ASSERT_LT(with_seventh.count, with_seventh.pitch_classes.size());
+  with_seventh.pitch_classes[with_seventh.count++] = 11;  // Maj7
+
+  const ChordTones respelled = respellAlteredChordTones(kDegreeI, with_seventh);
+  EXPECT_EQ(respelled.count, plain.count);
+  for (uint8_t i = 0; i < plain.count; ++i) {
+    EXPECT_EQ(respelled.pitch_classes[i], plain.pitch_classes[i]);
+  }
+  EXPECT_FALSE(contradictsAlteredChordTone(11, kDegreeI, with_seventh));
+}
+
 }  // namespace
 }  // namespace midisketch

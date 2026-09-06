@@ -154,6 +154,18 @@ class ChordToneHelper {
   explicit ChordToneHelper(int8_t degree);
 
   /**
+   * @brief Construct helper for a degree whose tones the caller states.
+   *
+   * The degree alone builds the key's plain triad, which is what a caller with
+   * nothing but a degree has to settle for. A caller holding a tick knows what
+   * the chord there is actually spelled as; see chordToneHelperAt().
+   *
+   * @param degree Scale degree (0-6 for I-vii), which names the root
+   * @param tones The tones this helper is to answer for
+   */
+  ChordToneHelper(int8_t degree, const ChordTones& tones);
+
+  /**
    * @brief Check if a MIDI pitch is a chord tone.
    * @param pitch MIDI pitch (0-127)
    * @return true if pitch class matches any chord tone
@@ -203,10 +215,29 @@ class ChordToneHelper {
    */
   const ChordTones& pitchClasses() const { return pitch_classes_; }
 
+  /**
+   * @brief Does a pitch class state the form of a tone this chord replaced?
+   *
+   * The tones this helper answers for are the chord as it is spelled here, so
+   * the question is about the other spelling: the pitch the degree's plain
+   * triad names at the same position. That pitch is still in the key, which is
+   * why a rule testing only for diatonic-ness lets it through, and sounded
+   * against the chord's own form of the same tone it is a cross relation.
+   *
+   * Snapping is not enough on its own to keep one out. A snap only moves a
+   * pitch the caller has already decided to move; a pitch that is diatonic and
+   * not an avoid note is kept where it is, and this is what makes that decision
+   * see the chord.
+   *
+   * @param pitch_class Pitch class to check (0-11)
+   * @return true if this chord replaced a tone whose plain form is pitch_class
+   */
+  bool contradictsAlteration(int pitch_class) const;
+
  private:
-  int8_t degree_;
   int root_pc_;
   ChordTones pitch_classes_;
+  ChordTones displaced_;  ///< Plain-triad tones this chord's spelling replaced
 };
 
 // ============================================================================
@@ -237,6 +268,24 @@ bool hasTritoneWithChord(int pitch_pc, const ChordTones& chord_pcs);
 /// @param sounding Chord tones the timeline states at this tick
 /// @return true if pitch_pc is the natural form of a tone `sounding` altered
 bool contradictsAlteredChordTone(int pitch_pc, int8_t degree, const ChordTones& sounding);
+
+/// @brief The triad a degree names, spelled the way the timeline sounds it.
+///
+/// Rejecting a contradicting pitch is enough for a rule that only filters
+/// candidates, but a rule that snaps to "the nearest chord tone" needs a set to
+/// snap into, and the plain triad is the wrong set for the same reason: over an
+/// altered chord its third is the one the chord moved away from, so the snap
+/// itself is what states the cross relation.
+///
+/// Only tones the chord replaced by their chromatic neighbour are respelled.
+/// The result stays the size of the triad -- a seventh or a ninth the extension
+/// added is not folded in, because whether a line may reach for a tension is a
+/// question about that line, not about how the chord is spelled.
+///
+/// @param degree Chord degree the timeline names at this tick
+/// @param sounding Chord tones the timeline states at this tick
+/// @return The degree's triad with each altered tone stated as the chord states it
+ChordTones respellAlteredChordTones(int8_t degree, const ChordTones& sounding);
 
 // ============================================================================
 // Voices of one track sounding together
@@ -347,6 +396,18 @@ class IChordLookup;
 /// @param chord_lookup Tick-accurate chord timeline
 /// @return true when the chord there accounts for the pitch
 bool chordOrTensionContains(int pitch_class, Tick tick, const IChordLookup& chord_lookup);
+
+/// @brief Chord tone helper for the chord actually sounding at a tick.
+///
+/// Every snap toward "the nearest chord tone" needs a chord to snap into, and
+/// the degree names the chord the song was planned from rather than the one the
+/// timeline states there. This is the construction for a caller that has a tick
+/// -- which is nearly all of them, since a snap happens at a position.
+///
+/// @param harmony Tick-accurate chord timeline
+/// @param tick Position whose chord the helper answers for
+/// @return Helper over the degree's triad as respellAlteredChordTones() states it
+ChordToneHelper chordToneHelperAt(const IChordLookup& harmony, Tick tick);
 
 /// @brief Pitch for one voice of an onset that clears the voices beside it.
 ///

@@ -185,10 +185,33 @@ std::vector<int> getAvailableTensionPitchClasses(int8_t degree) {
 // ChordToneHelper Implementation
 // ============================================================================
 
-ChordToneHelper::ChordToneHelper(int8_t degree)
-    : degree_(degree),
-      root_pc_(((degreeToSemitone(degree) % 12) + 12) % 12),
-      pitch_classes_(getChordTones(degree)) {}
+ChordToneHelper::ChordToneHelper(int8_t degree) : ChordToneHelper(degree, getChordTones(degree)) {}
+
+ChordToneHelper::ChordToneHelper(int8_t degree, const ChordTones& tones)
+    : root_pc_(((degreeToSemitone(degree) % 12) + 12) % 12), pitch_classes_(tones), displaced_{} {
+  displaced_.pitch_classes.fill(-1);
+  const ChordTones plain = getChordTones(degree);
+  // Chord tones are ordered root, third, fifth, seventh, so the same index in
+  // both is the same voice of the chord: comparing them position by position is
+  // what tells an alteration from a different chord.
+  const uint8_t count = std::min(plain.count, tones.count);
+  for (uint8_t i = 0; i < count; ++i) {
+    const int planned = tones.pitch_classes[i];
+    const int natural = plain.pitch_classes[i];
+    if (planned < 0 || natural < 0 || planned == natural) continue;
+    int interval = std::abs(planned - natural);
+    if (interval > 6) interval = 12 - interval;
+    if (interval == 1) displaced_.pitch_classes[displaced_.count++] = natural;
+  }
+}
+
+bool ChordToneHelper::contradictsAlteration(int pitch_class) const {
+  const int normalized = ((pitch_class % 12) + 12) % 12;
+  for (int pc : displaced_) {
+    if (pc == normalized) return true;
+  }
+  return false;
+}
 
 bool ChordToneHelper::isChordTone(uint8_t pitch) const {
   int pitch_class = pitch % 12;
@@ -206,12 +229,12 @@ bool ChordToneHelper::isChordTonePitchClass(int pitch_class) const {
 }
 
 uint8_t ChordToneHelper::nearestChordTone(uint8_t pitch) const {
-  return static_cast<uint8_t>(nearestChordTonePitch(static_cast<int>(pitch), degree_));
+  return nearestInRange(pitch, 0, 127);
 }
 
 uint8_t ChordToneHelper::nearestInRange(uint8_t pitch, uint8_t low, uint8_t high) const {
   return static_cast<uint8_t>(
-      findNearestChordToneInRange(static_cast<int>(pitch), degree_, low, high));
+      findNearestChordToneInRange(static_cast<int>(pitch), pitch_classes_, low, high));
 }
 
 std::vector<uint8_t> ChordToneHelper::allInRange(uint8_t low, uint8_t high) const {
@@ -366,22 +389,20 @@ bool hasTritoneWithChord(int pitch_pc, const ChordTones& chord_pcs) {
   return false;
 }
 
-bool contradictsAlteredChordTone(int pitch_pc, int8_t degree, const ChordTones& sounding) {
-  const ChordTones diatonic = getChordTones(degree);
-  // Chord tones are ordered root, third, fifth, seventh, so the same index in
-  // both is the same voice of the chord: comparing them position by position is
-  // what tells an alteration from a different chord.
-  const uint8_t count = std::min(sounding.count, diatonic.count);
+ChordTones respellAlteredChordTones(int8_t degree, const ChordTones& sounding) {
+  ChordTones tones = getChordTones(degree);
+  const ChordToneHelper alteration(degree, sounding);
+  const uint8_t count = std::min(sounding.count, tones.count);
   for (uint8_t i = 0; i < count; ++i) {
-    const int planned = sounding.pitch_classes[i];
-    const int natural = diatonic.pitch_classes[i];
-    if (planned < 0 || natural < 0 || planned == natural) continue;
-    if (pitch_pc != natural) continue;
-    int interval = std::abs(planned - natural);
-    if (interval > 6) interval = 12 - interval;
-    if (interval == 1) return true;
+    if (alteration.contradictsAlteration(tones.pitch_classes[i])) {
+      tones.pitch_classes[i] = sounding.pitch_classes[i];
+    }
   }
-  return false;
+  return tones;
+}
+
+bool contradictsAlteredChordTone(int pitch_pc, int8_t degree, const ChordTones& sounding) {
+  return ChordToneHelper(degree, sounding).contradictsAlteration(pitch_pc);
 }
 
 // ============================================================================
@@ -435,6 +456,11 @@ bool chordOrTensionContains(int pitch_class, Tick tick, const IChordLookup& chor
   return std::find(tensions.begin(), tensions.end(), pitch_class) != tensions.end();
 }
 
+ChordToneHelper chordToneHelperAt(const IChordLookup& harmony, Tick tick) {
+  const int8_t degree = harmony.getChordDegreeAt(tick);
+  return ChordToneHelper(degree, respellAlteredChordTones(degree, harmony.getChordTonesAt(tick)));
+}
+
 uint8_t clearOfOnsetVoices(const IChordLookup& harmony, uint8_t desired, Tick tick,
                            const std::vector<uint8_t>& placed, uint8_t range_low,
                            uint8_t range_high) {
@@ -449,7 +475,11 @@ uint8_t clearOfOnsetVoices(const IChordLookup& harmony, uint8_t desired, Tick ti
   };
   if (!clusters(desired)) return desired;
 
-  ChordToneHelper helper(harmony.getChordDegreeAt(tick));
+  // The candidates and the cluster test above have to be answering about one
+  // chord: drawn from the plain triad, a candidate could be the very tone the
+  // sounding chord replaced, and moving a voice onto it trades a cluster for a
+  // cross relation.
+  ChordToneHelper helper = chordToneHelperAt(harmony, tick);
   std::vector<uint8_t> candidates = helper.allInRange(range_low, range_high);
   std::stable_sort(candidates.begin(), candidates.end(), [desired](uint8_t a, uint8_t b) {
     const int da = std::abs(static_cast<int>(a) - static_cast<int>(desired));
