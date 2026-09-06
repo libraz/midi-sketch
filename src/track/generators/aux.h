@@ -244,16 +244,6 @@ class AuxGenerator : public TrackBase {
                                             const IHarmonyContext& harmony, std::mt19937& rng);
 
  private:
-  void calculateAuxRange(const AuxConfig& config, const TessituraRange& main_tessitura,
-                         uint8_t& out_low, uint8_t& out_high, int8_t range_ceiling = 0);
-  bool isConsonantWithMelodyAndTracks(uint8_t pitch, Tick start, Tick duration,
-                                      const std::vector<NoteEvent>* main_melody,
-                                      const IHarmonyContext& harmony,
-                                      float dissonance_tolerance = 0.0f);
-  uint8_t resolveAuxPitch(uint8_t desired, Tick start, Tick duration,
-                          const std::vector<NoteEvent>* main_melody, const IHarmonyContext& harmony,
-                          uint8_t low, uint8_t high, float dissonance_tolerance = 0.0f);
-
   /// Post-process notes: fix clashes with other harmonic tracks.
   void postProcessNotes(std::vector<NoteEvent>& notes, IHarmonyContext& harmony);
 
