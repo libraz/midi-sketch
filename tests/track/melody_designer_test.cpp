@@ -22,6 +22,7 @@
 #include "track/melody/melody_utils.h"
 #include "track/melody/motif_support.h"
 #include "track/melody/note_constraints.h"
+#include "track/melody/pitch_resolver.h"
 #include "track/melody/rhythm_generator.h"
 
 namespace midisketch {
@@ -2880,50 +2881,30 @@ TEST(ZombieParamASeriesTest, TensionUsageHighAllowsMoreNonChordTones) {
 }
 
 TEST(ZombieParamASeriesTest, TensionUsageZeroForcesChordTonesOnly) {
-  // tension_usage=0.0 + Expressive should behave like Clean (chord tones only)
-  // Since pitch_resolver gates tension additions, no tension notes should be in candidates
-  MelodyDesigner designer;
-  HarmonyContext harmony;
-  const MelodyTemplate& tmpl = getTemplate(MelodyTemplateId::PlateauTalk);
+  // tension_usage = 0.0 means Expressive offers the same candidates as Clean:
+  // the chord's own tones and nothing else. That is a property of the candidate
+  // set, so it is asked of the function that builds it rather than of a
+  // finished line -- passing tones, neighbour tones and embellishment put
+  // non-chord tones into a melody for reasons that have nothing to do with
+  // this parameter, and counting them measures those instead.
+  //
+  // disable_singability takes the branch that returns a member of the candidate
+  // set directly; the stepwise walk that decides most notes never reads it.
+  const ChordTones c_major = getChordTones(0);
+  constexpr float kLongNote = 4.0f;  // The duration at which tensions unlock.
 
-  int non_chord_count = 0;
-  int total_notes = 0;
+  const int with_tensions =
+      melody::applyPitchChoice(PitchChoice::StepUp, 60, -1, c_major, 0, 48, 84,
+                               VocalAttitude::Expressive, /*disable_singability=*/true, kLongNote,
+                               /*tension_usage=*/1.0f);
+  EXPECT_EQ(with_tensions, 62) << "a full tension budget should offer the ninth above C4";
 
-  for (int trial = 0; trial < 20; ++trial) {
-    auto ctx = createTestContext();
-    ctx.vocal_attitude = VocalAttitude::Expressive;
-    ctx.tension_usage = 0.0f;
-    ctx.section_end = TICKS_PER_BAR * 8;
-    ctx.section_bars = 8;
-    std::mt19937 rng(700 + trial);
-    auto notes = designer.generateSection(tmpl, ctx, harmony, rng);
-    for (const auto& note : notes) {
-      int8_t chord_degree = harmony.getChordDegreeAt(note.start_tick);
-      auto chord_tones = getChordTonePitchClasses(chord_degree);
-      int pc = note.note % 12;
-      bool is_chord_tone = false;
-      for (int ct : chord_tones) {
-        if (pc == ct) {
-          is_chord_tone = true;
-          break;
-        }
-      }
-      // In C major, all scale tones are diatonic, so embellishment can add
-      // non-chord-tone scale tones. We check specifically for tension tones
-      // (7th=11, 9th=2, 11th=5 relative to root)
-      if (!is_chord_tone) non_chord_count++;
-      total_notes++;
-    }
-  }
-
-  EXPECT_GT(total_notes, 0);
-
-  // With tension_usage=0.0, the candidate set in Expressive is chord-tones only
-  // However embellishment and other post-processing can add non-chord tones
-  // So we check that the ratio is low (< 40%) rather than strictly zero
-  float non_chord_ratio = static_cast<float>(non_chord_count) / total_notes;
-  EXPECT_LT(non_chord_ratio, 0.40f) << "tension_usage=0.0 should produce mostly chord tones"
-                                    << " (non-chord ratio=" << non_chord_ratio << ")";
+  const int without_tensions =
+      melody::applyPitchChoice(PitchChoice::StepUp, 60, -1, c_major, 0, 48, 84,
+                               VocalAttitude::Expressive, /*disable_singability=*/true, kLongNote,
+                               /*tension_usage=*/0.0f);
+  EXPECT_EQ(without_tensions, 64)
+      << "tension_usage = 0 must offer the chord's third, not the ninth, however long the note is";
 }
 
 }  // namespace

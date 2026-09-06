@@ -62,7 +62,13 @@ int applyPitchChoice(PitchChoice choice, int current_pitch, int target_pitch,
       {
         float tension_threshold = 1.0f - tension_usage;                // High usage = low threshold
         float note_length_norm = std::min(note_eighths / 4.0f, 1.0f);  // Normalize to 0-1
-        bool add_tensions = (note_length_norm >= tension_threshold);
+        // A zero budget is tested for on its own rather than left to the
+        // comparison. The normalised length saturates at 1.0, which is exactly
+        // the threshold a zero budget produces, so the longest notes cleared it
+        // and the parameter stopped meaning what it says at the one setting
+        // where it has to mean it. Every other value keeps the comparison it
+        // had, including 1.0, which admits notes of any length.
+        bool add_tensions = tension_usage > 0.0f && note_length_norm >= tension_threshold;
         if (add_tensions) {
           int root_pc = chord_tones.empty() ? 0 : chord_tones[0];
           // These are fixed distances from the root, not degrees of the scale
