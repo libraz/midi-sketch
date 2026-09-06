@@ -5,10 +5,15 @@
 
 #include <gtest/gtest.h>
 
+#include <string>
+
 #include "core/arrangement.h"
 #include "core/chord.h"
 #include "core/harmony_context.h"
+#include "core/i_track_base.h"
 #include "core/note_creator.h"
+#include "core/preset_types.h"
+#include "midisketch.h"
 
 using namespace midisketch;
 
@@ -293,4 +298,45 @@ TEST_F(ChordBoundaryPolicyTest, CreateNoteResult_OriginalDuration) {
 
   EXPECT_EQ(result.original_duration, 1920u);
   EXPECT_TRUE(result.was_chord_clipped);
+}
+
+// ============================================================================
+// The policy reaches the sounding notes
+// ============================================================================
+
+TEST(ChordBoundaryCorpusTest, NoChordVoiceOutlivesTheChordItSpells) {
+  // The chord track is written under ClipAtBoundary, so a voice of one chord
+  // may never still be sounding over the next. Every pass that places or
+  // lengthens a note after generation has to hold that: the freeze copies bars
+  // between different harmonic layouts and the closing sustain stretches the
+  // last one, and neither goes through createNote. A crossing here is the
+  // policy stated at creation and revoked downstream.
+  size_t songs = 0;
+  size_t chord_notes = 0;
+  for (int blueprint = 0; blueprint < 10; ++blueprint) {
+    for (uint32_t seed : {11u, 22u, 33u}) {
+      SongConfig config = createDefaultSongConfig(0);
+      config.seed = seed;
+      config.blueprint_id = static_cast<uint8_t>(blueprint);
+
+      MidiSketch sketch;
+      sketch.generateFromConfig(config);
+      const Song& song = sketch.getSong();
+      const IHarmonyContext& harmony = sketch.getHarmonyContext();
+      ++songs;
+
+      for (const NoteEvent& note : song.chord().notes()) {
+        ++chord_notes;
+        const ChordBoundaryInfo info =
+            harmony.analyzeChordBoundary(note.note, note.start_tick, note.duration);
+        if (info.boundary_tick == 0 || info.overlap_ticks < kPassingToneOverlap) continue;
+        ADD_FAILURE() << "blueprint " << blueprint << " seed " << seed << ": chord voice "
+                      << static_cast<int>(note.note) << " at " << note.start_tick << " lasts "
+                      << note.duration << " ticks and is still sounding " << info.overlap_ticks
+                      << " ticks past the change at " << info.boundary_tick;
+      }
+    }
+  }
+  ASSERT_EQ(songs, 30u);
+  ASSERT_GT(chord_notes, 0u);
 }

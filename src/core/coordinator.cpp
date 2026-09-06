@@ -1738,6 +1738,7 @@ void Coordinator::applyVoiceLimit(Song& song, const std::vector<Section>& sectio
     // own copy decides where the onsets around this one actually fall.
     for (const auto& fb : frozen_bars) {
       auto& notes = song.track(fb.role).notes();
+      const ITrackBase* track_generator_for_fit = getTrackGenerator(fb.role);
       auto clipBefore = [&notes](Tick boundary, Tick region_start, Tick region_end) {
         Tick onset = 0;
         bool found = false;
@@ -1760,6 +1761,43 @@ void Coordinator::applyVoiceLimit(Song& song, const std::vector<Section>& sectio
       clipBefore(fb.bar_end, fb.bar_start, fb.bar_end);
       // Notes before the frozen bar, against the first onset the copy placed.
       clipBefore(fb.bar_start, 0, fb.bar_start);
+
+      // A copied length was fitted to the source bar's harmony, and the bar it
+      // lands in does not have to change chord where the source bar did. Pass 2
+      // re-asks the pitch question against this bar; the length question changed
+      // with it, and a note whose source stopped cleanly at its own chord change
+      // can sit straight across the one here. The copy bypasses createNote, so
+      // nothing else asks.
+      //
+      // Ask it the way the note's own track asks: the generator states one
+      // boundary policy and every note it writes is created under that policy,
+      // so reading it back is the same question rather than a stricter one.
+      // Chord and Guitar never leave a voice over the next chord; Bass and Motif
+      // may when the pitch belongs there; Vocal is the axis and is left alone.
+      const ChordBoundaryPolicy policy = track_generator_for_fit
+                                             ? track_generator_for_fit->getChordBoundaryPolicy()
+                                             : ChordBoundaryPolicy::None;
+      if (policy != ChordBoundaryPolicy::None) {
+        for (auto& note : notes) {
+          if (note.start_tick < fb.bar_start || note.start_tick >= fb.bar_end) continue;
+          const ChordBoundaryInfo info =
+              harmony.analyzeChordBoundary(note.note, note.start_tick, note.duration);
+          if (info.boundary_tick == 0 || info.overlap_ticks < kPassingToneOverlap) continue;
+          if (policy != ChordBoundaryPolicy::ClipAtBoundary &&
+              info.safety != CrossBoundarySafety::NonChordTone &&
+              info.safety != CrossBoundarySafety::AvoidNote) {
+            continue;
+          }
+          if (info.safe_duration == 0 || info.safe_duration >= note.duration) continue;
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+          note.addTransformStep(TransformStepType::ChordBoundaryClip,
+                                static_cast<uint8_t>(std::min<Tick>(note.duration, 255)),
+                                static_cast<uint8_t>(std::min<Tick>(info.safe_duration, 255)),
+                                info.next_degree, 0);
+#endif
+          note.duration = info.safe_duration;
+        }
+      }
     }
 
     // Leave the registry describing what the song now contains, so the next

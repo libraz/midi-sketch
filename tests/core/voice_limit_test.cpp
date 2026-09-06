@@ -619,5 +619,103 @@ TEST(VoiceLimitRequantizeTest, PullsAGuitarNoteBackIntoThePhysicalModel) {
          "write. Its bound is the guitar's own range, which stops at E5.";
 }
 
+// ============================================================================
+// Chord boundaries in a frozen bar
+// ============================================================================
+
+namespace {
+
+/// @brief Freeze a chord bar whose destination changes chord where its source
+///        does not, and run the limiter over it.
+///
+/// Bar 0 holds one voicing at the downbeat, bar 1 holds two, so the chord track
+/// is moving and freezes down to a copy of bar 0. A secondary dominant is
+/// registered over the second half of bar 1 only, so the copy lands in a bar
+/// that changes chord where the bar it was written for did not.
+std::vector<NoteEvent> applyVoiceLimitToChordBarWithMidBarChange(Song& song, uint8_t chord_pitch,
+                                                                 Tick source_duration) {
+  auto params = makeVoiceLimitParams();
+  Section sec;
+  sec.type = SectionType::A;
+  sec.name = "A";
+  sec.bars = 2;
+  sec.start_bar = 0;
+  sec.start_tick = 0;
+  sec.max_moving_voices = 1;
+  std::vector<Section> sections{sec};
+  Arrangement arrangement(sections);
+
+  HarmonyCoordinator harmony;
+  harmony.initialize(arrangement, getChordProgression(params.chord_id), params.mood);
+  // The chord changes halfway through bar 1 and nowhere inside bar 0. The
+  // degree has to differ from the one already sounding there, or the timeline
+  // gains an entry without gaining a change.
+  const Tick change = TICKS_PER_BAR + TICKS_PER_BAR / 2;
+  const int8_t held = harmony.getChordDegreeAt(TICKS_PER_BAR);
+  harmony.registerSecondaryDominant(change, 2 * TICKS_PER_BAR, static_cast<int8_t>((held + 1) % 7));
+  EXPECT_EQ(harmony.getNextChordChangeTick(TICKS_PER_BAR), change);
+
+  Coordinator coord;
+  std::mt19937 rng(params.seed);
+  coord.initialize(params, arrangement, rng, &harmony);
+
+  // Vocal moves every bar and outranks the chord track, so the chord bar is the
+  // one that freezes.
+  for (int bar = 0; bar < 2; ++bar) {
+    for (int beat = 0; beat < 4; ++beat) {
+      song.vocal().addNote(NoteEventTestHelper::create(bar * TICKS_PER_BAR + beat * TICKS_PER_BEAT,
+                                                       TICKS_PER_BEAT,
+                                                       static_cast<uint8_t>(72 + bar), 90));
+    }
+  }
+  song.chord().addNote(NoteEventTestHelper::create(0, source_duration, chord_pitch, 70));
+  // Two onsets against bar 0's one: the chord track is moving and gets frozen.
+  song.chord().addNote(
+      NoteEventTestHelper::create(TICKS_PER_BAR, TICKS_PER_BAR / 2, chord_pitch, 70));
+  song.chord().addNote(NoteEventTestHelper::create(TICKS_PER_BAR + TICKS_PER_BAR / 2,
+                                                   TICKS_PER_BAR / 2, chord_pitch, 70));
+
+  coord.applyVoiceLimit(song, sections);
+
+  std::vector<NoteEvent> bar1_notes;
+  for (const auto& note : song.chord().notes()) {
+    if (note.start_tick >= TICKS_PER_BAR && note.start_tick < 2 * TICKS_PER_BAR) {
+      bar1_notes.push_back(note);
+    }
+  }
+  return bar1_notes;
+}
+
+}  // namespace
+
+TEST(VoiceLimitRequantizeTest, AFrozenChordVoiceStopsWhereTheChordItSpellsStops) {
+  Song song;
+  const auto bar1_notes = applyVoiceLimitToChordBarWithMidBarChange(song, 60, TICKS_PER_BAR);
+
+  // The freeze has to have happened or the invariant below is vacuous: bar 1
+  // must no longer hold the two onsets it was written with.
+  ASSERT_EQ(bar1_notes.size(), 1u) << "bar 1 should hold the single voicing copied from bar 0";
+  ASSERT_EQ(bar1_notes.front().start_tick, TICKS_PER_BAR);
+
+  const Tick change = TICKS_PER_BAR + TICKS_PER_BAR / 2;
+  const Tick note_end = bar1_notes.front().start_tick + bar1_notes.front().duration;
+  EXPECT_LE(note_end, change)
+      << "the copy carries a whole-bar length written for a bar that held one chord; "
+         "the bar it lands in changes chord halfway through";
+  EXPECT_GT(bar1_notes.front().duration, TICKS_PER_BEAT)
+      << "clipping at the change must leave the voicing, not erase it";
+}
+
+TEST(VoiceLimitRequantizeTest, AFrozenBarKeepsTheLengthWhenTheHarmonyHolds) {
+  Song song;
+  const auto bar1_notes = applyVoiceLimitToChordBarWithMidBarChange(song, 60, TICKS_PER_BEAT);
+
+  ASSERT_EQ(bar1_notes.size(), 1u);
+  ASSERT_EQ(bar1_notes.front().start_tick, TICKS_PER_BAR);
+  EXPECT_EQ(bar1_notes.front().duration, TICKS_PER_BEAT)
+      << "the copy ends well before the change in the bar it lands in, so the "
+         "fit has nothing to take from it";
+}
+
 }  // namespace test
 }  // namespace midisketch
