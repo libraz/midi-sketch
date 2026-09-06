@@ -201,6 +201,14 @@ enum class ToneLegality : uint8_t {
 /// move a vocal pitch asks it, so a figure one pass deliberately kept cannot be
 /// rejected as illegal by a later pass and flattened onto a chord tone.
 ///
+/// The answer is about the pitch handed in, not about the figure it belongs to.
+/// A passing tone is licensed by where it resolves, so a pass that moves the
+/// note the answer was read against invalidates the answer without ever asking
+/// again: what was a passing tone is now approached by step and quitted by a
+/// leap. Asking about a note therefore says nothing about the notes on either
+/// side of it, and a caller that moves pitches in one forward walk decides each
+/// note against neighbours it is about to change.
+///
 /// The admitted non-chord figures are:
 /// - appoggiatura: any beat, any approach, diatonic, resolving down by one or
 ///   two semitones onto a chord tone of the chord that the resolution lands on;

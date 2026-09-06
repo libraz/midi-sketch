@@ -478,8 +478,18 @@ void applyCollisionAvoidanceWithIntervalConstraint(std::vector<NoteEvent>& notes
     // generator chose into 3-4 semitone leaps, and it destroys the accented
     // dissonances (appoggiaturas, suspensions) that carry the line's tension.
     // The rule that decides this is melody::classifyVocalTone, shared with the
-    // designer and the post-generation passes, so no pass here can reject a
-    // figure another pass deliberately kept.
+    // designer and the post-generation passes.
+    //
+    // What the rule decides here is whether THIS note keeps its pitch. It is
+    // not a guarantee that the figure survives: a passing tone is licensed by
+    // where it resolves, the resolution is the next note, and the next
+    // iteration may snap that note onto a chord tone. The walk moves forward
+    // and never returns, so the figure is left approached by step and quitted
+    // by the leap this comment describes. Re-resolving the stranded note does
+    // not recover the step -- the chord tones flanking a diatonic non-chord
+    // tone are the pitch it came from and the next lattice point, so every
+    // available repair trades the step for a repeated note or a wider leap
+    // than the one it was meant to remove.
     melody::MelodicNeighborhood neighborhood;
     neighborhood.start = note.start_tick;
     neighborhood.duration = note.duration;
