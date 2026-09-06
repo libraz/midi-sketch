@@ -93,6 +93,24 @@ const MotifRhythmTemplateConfig& getTemplateConfig(MotifRhythmTemplate tmpl);
 /// rhythm.
 Tick motifCycleLengthOf(const std::vector<NoteEvent>& pattern, MotifLength configured_bars);
 
+/// @brief How long a riff note sounds inside the space it was given.
+///
+/// Half the space, and never shorter than a sixteenth. Articulation is a
+/// proportion, not a fixed margin: subtracting a constant number of ticks
+/// separates the notes of a slow figure by a hair and leaves the fastest ones
+/// touching, because the constant is a smaller share of a wide gap than of a
+/// narrow one and eventually exceeds it. A riff whose notes fill the space
+/// between their onsets stops being a riff and becomes a pad.
+///
+/// The floor is what keeps the rule from turning a slow figure into a row of
+/// clicks: at sixteenth spacing the two clauses meet and the note fills its
+/// space, which is how a fast run is played, while an eighth-spaced figure
+/// lands on exactly one sixteenth and a quarter-spaced one on an eighth.
+///
+/// @param gap Ticks from this onset to the next
+/// @return Sounding length in ticks
+Tick riffNoteDuration(Tick gap);
+
 }  // namespace motif_detail
 
 }  // namespace midisketch

@@ -649,6 +649,10 @@ int applyContraryMotion(int pitch, int8_t vocal_direction, float strength, std::
   return pitch + adjustment;
 }
 
+Tick riffNoteDuration(Tick gap) {
+  return std::max<Tick>(std::min<Tick>(gap, TICK_SIXTEENTH), gap / 2);
+}
+
 }  // namespace motif_detail
 
 // =============================================================================
@@ -712,11 +716,7 @@ std::vector<NoteEvent> generateMotifPattern(const GeneratorParams& params, std::
                  motif_params.rhythm_template == MotifRhythmTemplate::StraightSixteenth) {
         note_duration = gap;
       } else {
-        // Fill gap with small articulation margin for natural note separation
-        constexpr Tick kArticulationGap = 30;  // ~6% of 8th note (240 ticks)
-        note_duration = (gap > kArticulationGap + TICK_SIXTEENTH)
-                            ? gap - kArticulationGap
-                            : gap;  // Very short gaps: fill completely
+        note_duration = motif_detail::riffNoteDuration(gap);
       }
     } else {
       // Last note: fill to end of cycle with articulation. The cycle is as long
@@ -730,10 +730,8 @@ std::vector<NoteEvent> generateMotifPattern(const GeneratorParams& params, std::
                  motif_params.rhythm_template == MotifRhythmTemplate::StraightSixteenth) {
         note_duration = std::max(gap_to_end, static_cast<Tick>(TICK_SIXTEENTH));
       } else {
-        constexpr Tick kArticulationGap = 30;
-        note_duration = (gap_to_end > kArticulationGap + TICK_SIXTEENTH)
-                            ? gap_to_end - kArticulationGap
-                            : std::max(gap_to_end, static_cast<Tick>(TICK_SIXTEENTH));
+        note_duration =
+            std::max(motif_detail::riffNoteDuration(gap_to_end), static_cast<Tick>(TICK_SIXTEENTH));
       }
     }
 
