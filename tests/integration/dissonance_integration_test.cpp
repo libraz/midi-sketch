@@ -662,5 +662,53 @@ TEST(AlteredChordCorpusTest, NoPitchedTrackStatesTheToneItsChordReplaced) {
   ASSERT_GT(altered_chords, 0u);
 }
 
+TEST(LockedRiffCorpusTest, AReplayedRiffSoundsNoChordItIsNotPlayingOver) {
+  // A locked riff is recorded once and played back wherever its section
+  // recurs, so a pitch that belonged to the chord it was written over arrives
+  // above a different one. Rejecting the dissonances that can be named -- an
+  // avoid note, the tone the chord replaced -- leaves the borrowed chord's
+  // colour tones untouched, because the flat sixth of bVI is neither of those
+  // things when it is heard over bVII. These are configurations whose riff was
+  // recorded over a borrowed chord.
+  struct Config {
+    uint8_t style;
+    uint8_t blueprint;
+    uint32_t seed;
+  };
+  constexpr Config kConfigs[] = {{1, 1, 5}, {1, 1, 9}, {1, 1, 11}, {0, 1, 20}};
+
+  size_t songs = 0;
+  size_t borrowed_chord_notes = 0;
+  for (const Config& c : kConfigs) {
+    SongConfig config = createDefaultSongConfig(c.style);
+    config.seed = c.seed;
+    config.blueprint_id = c.blueprint;
+
+    MidiSketch sketch;
+    sketch.generateFromConfig(config);
+    ++songs;
+
+    const IHarmonyContext& harmony = sketch.getHarmonyContext();
+    for (const auto& note : sketch.getSong().motif().notes()) {
+      const int8_t degree = harmony.getChordDegreeAt(note.start_tick);
+      if (degree > 6) ++borrowed_chord_notes;
+      const ChordTones sounding = harmony.getChordTonesAt(note.start_tick);
+      const int pitch_class = note.note % 12;
+      const bool in_chord =
+          std::find(sounding.begin(), sounding.end(), pitch_class) != sounding.end();
+      if (in_chord || isDiatonic(note.note)) continue;
+      ADD_FAILURE() << "style " << static_cast<int>(c.style) << " blueprint "
+                    << static_cast<int>(c.blueprint) << " seed " << c.seed << ": motif sounds "
+                    << static_cast<int>(note.note) << " at " << note.start_tick
+                    << ", which neither the key nor degree " << static_cast<int>(degree)
+                    << " contains";
+    }
+  }
+  ASSERT_EQ(songs, 4u);
+  // Without a borrowed chord in the timeline the riff has nothing foreign to
+  // carry, so the corpus would pass without exercising the rule.
+  ASSERT_GT(borrowed_chord_notes, 0u);
+}
+
 }  // namespace
 }  // namespace midisketch

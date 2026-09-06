@@ -1426,6 +1426,47 @@ bool replayCachedNotesLocked(MidiTrack& track, const Section& section, IHarmonyC
   return true;
 }
 
+/// @brief Re-seat a cached riff pitch the chord at the replay position rejects.
+///
+/// A locked riff is recorded once and played back over whatever harmony the
+/// section it lands in states, so every cached pitch has to be asked again at
+/// the position it now sounds. A pitch may stay if the chord sounding here
+/// contains it, or if the key does and it is neither an avoid note against that
+/// chord nor the tone the chord replaced by its chromatic neighbour.
+///
+/// The first clause is what keeps the riff intact: the tracker can carry a
+/// secondary dominant or a planned extension whose colour tones are not in the
+/// degree's plain diatonic triad, and moving a note that belongs to the chord
+/// sounding here would change individual notes of the riff and destroy its
+/// contour.
+///
+/// The second is why the question cannot be narrowed to the dissonances that
+/// have names. A riff recorded over a borrowed chord carries that chord's
+/// colour tones with it, and over a different chord they belong to neither the
+/// chord nor the key -- the flat sixth of bVI heard over bVII is not an avoid
+/// note and states no cross relation, and it is still a colour tone of a chord
+/// that is not playing.
+///
+/// @return The cached pitch, or the nearest tone of the sounding chord in range
+uint8_t reseatCachedPitch(uint8_t pitch, const IHarmonyCoordinator& harmony, Tick tick,
+                          uint8_t range_low, uint8_t range_high) {
+  const auto active_tones = harmony.getChordTonesAt(tick);
+  const int pitch_class = pitch % 12;
+  if (std::find(active_tones.begin(), active_tones.end(), pitch_class) != active_tones.end()) {
+    return pitch;
+  }
+  const int8_t degree = harmony.getChordDegreeAt(tick);
+  const uint8_t root = degreeToRoot(degree, Key::C);
+  const Chord chord = getChordNotes(degree);
+  const bool is_minor = (chord.intervals[1] == 3);
+  const ChordToneHelper helper = chordToneHelperAt(harmony, tick);
+  if (isDiatonic(pitch) && !isAvoidNoteWithContext(pitch, root, is_minor, degree) &&
+      !helper.contradictsAlteration(pitch_class)) {
+    return pitch;
+  }
+  return helper.nearestInRange(pitch, range_low, range_high);
+}
+
 /// @brief Replay cached notes for RhythmSync coordinate axis mode.
 /// @return true if notes were replayed, false otherwise
 bool replayCachedNotesCoordinateAxis(MidiTrack& track, const Section& section,
@@ -1454,31 +1495,10 @@ bool replayCachedNotesCoordinateAxis(MidiTrack& track, const Section& section,
         has_onset = true;
       }
 
-      // Re-apply avoid note correction for the replay position's chord.
-      // Use nearestInRange to stay within range while avoiding the note.
-      int replay_pitch = static_cast<int>(entry.pitch);
-      int8_t replay_degree = harmony->getChordDegreeAt(absolute_tick);
-      uint8_t replay_root = degreeToRoot(replay_degree, Key::C);
-      Chord replay_chord = getChordNotes(replay_degree);
-      bool replay_minor = (replay_chord.intervals[1] == 3);
-      // The tracker can carry a secondary dominant or planned extension whose
-      // colour tones are not present in the degree's plain diatonic triad.
-      // Do not "correct" a cached note that is already a tone of that shared
-      // timeline chord: doing so changes individual notes in a locked riff
-      // and destroys its contour on replay.
-      const auto active_tones = harmony->getChordTonesAt(absolute_tick);
-      bool is_active_chord_tone = std::find(active_tones.begin(), active_tones.end(),
-                                            replay_pitch % 12) != active_tones.end();
-      ChordToneHelper ct_helper = chordToneHelperAt(*harmony, absolute_tick);
-      if (!is_active_chord_tone &&
-          (isAvoidNoteWithContext(replay_pitch, replay_root, replay_minor, replay_degree) ||
-           ct_helper.contradictsAlteration(replay_pitch % 12))) {
-        replay_pitch = ct_helper.nearestInRange(static_cast<uint8_t>(replay_pitch), motif_range_low,
-                                                motif_range_high);
-      }
-
-      replay_pitch = clearOfOnsetVoices(*harmony, static_cast<uint8_t>(replay_pitch), absolute_tick,
-                                        onset_pitches, motif_range_low, motif_range_high);
+      uint8_t replay_pitch = reseatCachedPitch(entry.pitch, *harmony, absolute_tick,
+                                               motif_range_low, motif_range_high);
+      replay_pitch = clearOfOnsetVoices(*harmony, replay_pitch, absolute_tick, onset_pitches,
+                                        motif_range_low, motif_range_high);
 
       NoteOptions opts;
       opts.start = absolute_tick;
