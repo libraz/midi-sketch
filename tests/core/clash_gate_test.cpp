@@ -24,12 +24,10 @@
 #include "core/preset_types.h"
 #include "core/song.h"
 #include "core/timing_constants.h"
+#include "core/track_clash_gates.h"
 #include "midisketch.h"
 
 namespace midisketch {
-
-void trimClashingNoteTails(Song& song, IHarmonyContext& harmony);
-
 namespace {
 
 Arrangement singleSection() {

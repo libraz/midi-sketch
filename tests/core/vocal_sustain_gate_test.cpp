@@ -23,11 +23,9 @@
 #include "core/harmony_context.h"
 #include "core/midi_track.h"
 #include "core/timing_constants.h"
+#include "core/track_clash_gates.h"
 
 namespace midisketch {
-
-void trimVocalSustainsAtUnsafeChordChanges(MidiTrack& vocal, const IHarmonyContext& harmony);
-
 namespace {
 
 /// The note is released this far before the chord change, so the release is

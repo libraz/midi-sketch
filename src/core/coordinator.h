@@ -39,15 +39,6 @@ namespace midisketch {
 class Song;
 struct ChordProgression;
 
-/// Register every generation-time harmony decision before track generation.
-///
-/// This is shared by full generation and vocal-first preview so the vocal is
-/// designed against the same secondary dominants, cadence replacements,
-/// tritone substitutions, and chord extensions that accompaniment will use.
-void registerPlannedHarmonyTimeline(const Arrangement& arrangement, const GeneratorParams& params,
-                                    const ChordProgression& progression,
-                                    IHarmonyCoordinator& harmony);
-
 /// @brief Validation result for parameters.
 struct ValidationResult {
   bool valid = true;                  ///< True if all parameters are valid

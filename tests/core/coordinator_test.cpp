@@ -9,6 +9,7 @@
 
 #include "core/chord.h"
 #include "core/harmony_coordinator.h"
+#include "core/harmony_timeline_planner.h"
 #include "core/i_track_base.h"
 #include "core/pitch_utils.h"
 #include "core/preset_data.h"
