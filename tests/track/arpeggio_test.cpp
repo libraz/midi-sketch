@@ -1095,35 +1095,35 @@ TEST_F(ArpeggioTest, NoSwingProducesExactGrid) {
 }
 
 TEST_F(ArpeggioTest, StraightMoodHasExactGrid) {
-  // EnergeticDance has swing_amount=0.0. Verify exact grid for 16ths.
-  params_.mood = Mood::EnergeticDance;
+  // EnergeticDance has swing_amount=0.0, so every onset lands on the 16th grid.
+  //
+  // Grid alignment is the property, not the spacing between one onset and the
+  // next: density filtering may skip a slot, which leaves the pair around it an
+  // eighth apart without moving either note off the grid. The straight-eighth
+  // test above says the same thing about its own grid. Measured over sixty
+  // seeds, roughly one adjacent pair in sixty is a skipped slot while no onset
+  // at all is off the grid, so asserting uniform spacing states how often a
+  // slot happens to be skipped near the start of the track -- which is not what
+  // swing_amount decides, and which changes with the seed.
   params_.arpeggio.speed = ArpeggioSpeed::Sixteenth;
   params_.arpeggio.sync_chord = true;
-  params_.seed = 300;
-
-  Generator gen;
-  gen.generate(params_);
-
-  const auto& track = gen.getSong().arpeggio();
-  ASSERT_GT(track.notes().size(), 4u);
 
   constexpr Tick SIXTEENTH = TICKS_PER_BEAT / 4;  // 120
-  int exact_count = 0;
-  int total_checked = 0;
+  for (uint32_t seed : {300u, 301u, 302u, 303u}) {
+    params_.mood = Mood::EnergeticDance;
+    params_.seed = seed;
 
-  for (size_t i = 1; i < track.notes().size() && i < 20; ++i) {
-    Tick spacing = track.notes()[i].start_tick - track.notes()[i - 1].start_tick;
-    if (spacing > SIXTEENTH * 2) continue;
-    total_checked++;
-    if (spacing == SIXTEENTH) {
-      exact_count++;
+    Generator gen;
+    gen.generate(params_);
+
+    const auto& track = gen.getSong().arpeggio();
+    ASSERT_GT(track.notes().size(), 4u) << "seed " << seed;
+    for (const auto& note : track.notes()) {
+      EXPECT_EQ(note.start_tick % SIXTEENTH, 0u)
+          << "seed " << seed << ": swing_amount=0 arpeggio onset drifted off the 16th grid at tick "
+          << note.start_tick;
     }
   }
-
-  ASSERT_GT(total_checked, 0);
-  EXPECT_EQ(exact_count, total_checked)
-      << "EnergeticDance (swing_amount=0) should produce exact 16th grid, but " << exact_count
-      << "/" << total_checked << " were exact";
 }
 
 // ============================================================================
