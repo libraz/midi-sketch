@@ -541,11 +541,16 @@ TEST_F(PitchWritebackTest, BassDoesNotDoubleAVocalPitchClassWithinTwoOctaves) {
   EXPECT_EQ(songs_scanned, std::size(kSeeds) * std::size(kBlueprints));
 }
 
-// Bass and aux pick chord tones from the shared timeline, so a secondary
+// Every pitched track picks its tones from the shared timeline, so a secondary
 // dominant registered at a tick is voiced with its own third rather than with
 // the diatonic triad that shares its degree. Rebuilding the triad from the
 // degree put the natural third under the chord track's raised one.
-TEST_F(PitchWritebackTest, BassAndAuxDoNotSoundACrossRelationOverASecondaryDominant) {
+//
+// The guitar is asked here too. It is not the track this corpus caught, but it
+// is a track that voices vertical harmony from the timeline, and the property
+// is the same one: the corpus tests are what decide which routes reach it, and
+// leaving a pitched track out of the assertion is how a route stays unwatched.
+TEST_F(PitchWritebackTest, NoTrackSoundsACrossRelationOverASecondaryDominant) {
   constexpr uint32_t kSeeds[] = {12345, 777, 20260903};
   constexpr uint8_t kBlueprints[] = {0, 3, 4, 9};
 
@@ -559,12 +564,16 @@ TEST_F(PitchWritebackTest, BassAndAuxDoNotSoundACrossRelationOverASecondaryDomin
 
       auto bass_relations = findCrossRelations(song, harmony, song.bass(), "Bass");
       auto aux_relations = findCrossRelations(song, harmony, song.aux(), "Aux");
+      auto guitar_relations = findCrossRelations(song, harmony, song.guitar(), "Guitar");
       EXPECT_TRUE(bass_relations.empty())
           << "blueprint=" << static_cast<int>(blueprint) << " seed=" << seed << "\n"
           << describeCrossRelations(bass_relations);
       EXPECT_TRUE(aux_relations.empty())
           << "blueprint=" << static_cast<int>(blueprint) << " seed=" << seed << "\n"
           << describeCrossRelations(aux_relations);
+      EXPECT_TRUE(guitar_relations.empty())
+          << "blueprint=" << static_cast<int>(blueprint) << " seed=" << seed << "\n"
+          << describeCrossRelations(guitar_relations);
 
       Tick total = song.arrangement().totalTicks();
       for (Tick t = 0; t < total; t += TICKS_PER_BEAT) {

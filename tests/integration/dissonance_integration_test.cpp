@@ -8,12 +8,14 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <map>
 #include <sstream>
 #include <string>
 #include <vector>
 
 #include "analysis/dissonance.h"
+#include "core/chord_utils.h"
 #include "core/generator.h"
 #include "core/i_harmony_context.h"
 #include "core/preset_types.h"
@@ -496,6 +498,113 @@ TEST(BlueprintClashCorpusTest, NoTwoVoicesOfOneInstrumentClashAcrossStyles) {
     }
   }
   ASSERT_EQ(songs, 10u);
+}
+
+TEST(GuitarChordLookupCorpusTest, EveryGuitarNoteSpellsTheChordSoundingAtItsOnset) {
+  // A bar is one rhythmic unit and does not have to be one harmonic unit. The
+  // guitar read the chord when it entered the bar and kept strumming it for the
+  // rest of the bar, so a secondary dominant or a half-bar change left it
+  // stating the chord the bar opened with while every other track had moved on.
+  //
+  // The configurations below are ones whose guitar plays chord material
+  // throughout, which makes the property exact rather than approximate: every
+  // note it writes is a tone of some chord, so a note that is not a tone of the
+  // chord at its own onset came from a lookup somewhere else in time.
+  struct Config {
+    uint8_t style;
+    uint8_t blueprint;
+    uint32_t seed;
+  };
+  constexpr Config kConfigs[] = {
+      {5, 0, 39}, {5, 0, 21}, {14, 4, 10}, {5, 4, 28}, {5, 7, 22},
+      {0, 7, 25}, {0, 8, 6},  {14, 9, 40}, {5, 9, 39},
+  };
+
+  size_t songs = 0;
+  size_t onsets_after_a_change = 0;
+  for (const Config& c : kConfigs) {
+    SongConfig config = createDefaultSongConfig(c.style);
+    config.seed = c.seed;
+    config.blueprint_id = c.blueprint;
+
+    MidiSketch sketch;
+    sketch.generateFromConfig(config);
+    ++songs;
+
+    const IHarmonyContext& harmony = sketch.getHarmonyContext();
+    const auto& notes = sketch.getSong().guitar().notes();
+    ASSERT_FALSE(notes.empty()) << "style " << static_cast<int>(c.style) << " blueprint "
+                                << static_cast<int>(c.blueprint) << " seed " << c.seed;
+    for (const auto& note : notes) {
+      const Tick bar = (note.start_tick / TICKS_PER_BAR) * TICKS_PER_BAR;
+      if (harmony.getChordDegreeAt(bar) != harmony.getChordDegreeAt(note.start_tick) ||
+          harmony.getChordExtensionAt(bar) != harmony.getChordExtensionAt(note.start_tick)) {
+        ++onsets_after_a_change;
+      }
+      bool is_chord_tone = false;
+      for (int pitch_class : harmony.getChordTonesAt(note.start_tick)) {
+        if (pitch_class == note.note % 12) is_chord_tone = true;
+      }
+      if (is_chord_tone) continue;
+      ADD_FAILURE() << "style " << static_cast<int>(c.style) << " blueprint "
+                    << static_cast<int>(c.blueprint) << " seed " << c.seed << ": guitar sounds "
+                    << static_cast<int>(note.note) << " at " << note.start_tick
+                    << ", which the chord there does not contain (degree "
+                    << static_cast<int>(harmony.getChordDegreeAt(note.start_tick))
+                    << "); the chord this bar opened with was degree "
+                    << static_cast<int>(harmony.getChordDegreeAt(bar));
+    }
+  }
+  ASSERT_EQ(songs, 9u);
+  // Without a chord change inside a bar the guitar plays over, the assertion
+  // above cannot tell a per-onset lookup from a per-bar one.
+  ASSERT_GT(onsets_after_a_change, 0u);
+}
+
+TEST(BassApproachNoteCorpusTest, AnApproachNoteDoesNotContradictAnAlteredChordTone) {
+  // The bass approach note filters its candidates on "is this pitch diatonic",
+  // which is the wrong question wherever the chord is chromatically altered:
+  // over a secondary dominant the natural third is the diatonic one, so the
+  // filter reached for exactly the tone the chord had moved away from. These
+  // are the configurations where it did.
+  struct Config {
+    uint8_t style;
+    uint8_t blueprint;
+    uint32_t seed;
+  };
+  constexpr Config kConfigs[] = {{0, 0, 19}, {10, 3, 26}, {10, 3, 27}};
+
+  size_t songs = 0;
+  size_t altered_chords = 0;
+  for (const Config& c : kConfigs) {
+    SongConfig config = createDefaultSongConfig(c.style);
+    config.seed = c.seed;
+    config.blueprint_id = c.blueprint;
+
+    MidiSketch sketch;
+    sketch.generateFromConfig(config);
+    ++songs;
+
+    const IHarmonyContext& harmony = sketch.getHarmonyContext();
+    const auto& notes = sketch.getSong().bass().notes();
+    ASSERT_FALSE(notes.empty());
+    for (const auto& note : notes) {
+      const int8_t degree = harmony.getChordDegreeAt(note.start_tick);
+      const ChordTones sounding = harmony.getChordTonesAt(note.start_tick);
+      const ChordTones diatonic = getChordTones(degree);
+      for (uint8_t i = 0; i < std::min(sounding.count, diatonic.count); ++i) {
+        if (sounding.pitch_classes[i] != diatonic.pitch_classes[i]) ++altered_chords;
+      }
+      if (!contradictsAlteredChordTone(note.note % 12, degree, sounding)) continue;
+      ADD_FAILURE() << "style " << static_cast<int>(c.style) << " blueprint "
+                    << static_cast<int>(c.blueprint) << " seed " << c.seed << ": bass sounds "
+                    << static_cast<int>(note.note) << " at " << note.start_tick
+                    << " against the tone degree " << static_cast<int>(degree) << " was altered to";
+    }
+  }
+  ASSERT_EQ(songs, 3u);
+  // A corpus with no altered chord cannot exercise the rule at all.
+  ASSERT_GT(altered_chords, 0u);
 }
 
 }  // namespace
