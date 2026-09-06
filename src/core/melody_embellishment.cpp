@@ -314,6 +314,23 @@ std::vector<NoteEvent> MelodicEmbellisher::embellish(
     if (roll < cumulative && beat == BeatStrength::Strong &&
         current.duration >= MIN_SPLIT_DURATION * 2 &&
         consecutive_ncts < config.max_consecutive_ncts) {
+      // The side is a coin toss, and only one side is a figure this project
+      // admits: melody::classifyVocalTone licenses an accented dissonance that
+      // steps down onto its chord tone and refuses the one that rises. Half of
+      // these are therefore written in full -- accent, split and pitch -- and
+      // then put back onto the chord tone by a later pass, which leaves the
+      // split behind as a repeated note where a single note used to be.
+      //
+      // Taking the dissonance from above was built and measured across the
+      // corpus: the figures that survive to the output rise by about a tenth,
+      // the refused direction falls by about a fifth, and the reference profile
+      // stays where it was. It is not done here because it cannot yet be told
+      // apart from luck. Consuming one extra random number, with every rule
+      // left alone, reddens corpus assertions of the same kind and in the same
+      // quantity as this change does -- and some of those state real invariants
+      // of other tracks, such as the guitar spelling the chord sounding under
+      // it. Those have to hold whatever the stream does before a change to the
+      // melody can be judged by them.
       bool upper = rng_util::rollFloat(rng, 0.0f, 1.0f) > 0.5f;
       auto app_pair =
           tryConvertToAppoggiatura(current, upper, key_offset, config.chromatic_approach, rng);
