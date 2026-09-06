@@ -15,9 +15,12 @@
 #include <vector>
 
 #include "analysis/dissonance.h"
+#include "core/basic_types.h"
+#include "core/chord.h"
 #include "core/chord_utils.h"
 #include "core/generator.h"
 #include "core/i_harmony_context.h"
+#include "core/note_source.h"
 #include "core/preset_types.h"
 #include "core/timing_constants.h"
 #include "core/types.h"
@@ -760,6 +763,62 @@ TEST(LockedRiffCorpusTest, ARiffReplayedOutsideTheCoordinateAxisIsAskedTheSameQu
     }
   }
   ASSERT_EQ(songs, 2u);
+}
+
+TEST(FrozenBarCorpusTest, ARequantizedNoteFallingBackToTheScaleStaysUsableOverItsChord) {
+  // When a frozen bar is re-quantized and the range holds no chord tone that
+  // clears the other tracks, the search widens to the key rather than accept a
+  // known clash. Being in the key is not the same as being usable over the
+  // chord, though: the major seventh above a major triad is a scale tone
+  // everywhere and an avoid note here. These configurations re-quantize enough
+  // notes to reach that fallback repeatedly, so a search that ranks only by
+  // distance lands on the seventh instead of the ninth a step further away.
+  struct Config {
+    uint8_t style;
+    uint8_t blueprint;
+    uint32_t seed;
+  };
+  constexpr Config kConfigs[] = {{8, 2, 7}, {5, 3, 12}};
+
+  size_t requantized_notes = 0;
+  for (const Config& c : kConfigs) {
+    SongConfig config = createDefaultSongConfig(c.style);
+    config.seed = c.seed;
+    config.blueprint_id = c.blueprint;
+
+    MidiSketch sketch;
+    sketch.generateFromConfig(config);
+    const IHarmonyContext& harmony = sketch.getHarmonyContext();
+
+    for (size_t i = 0; i < kTrackCount; ++i) {
+      const TrackRole role = static_cast<TrackRole>(i);
+      if (role == TrackRole::Drums || role == TrackRole::SE) continue;
+
+      for (const NoteEvent& note : sketch.getSong().tracks()[i].notes()) {
+        if (note.prov_source != static_cast<uint8_t>(NoteSource::PostProcess)) continue;
+        ++requantized_notes;
+
+        const int pitch_class = note.note % 12;
+        const ChordTones sounding = harmony.getChordTonesAt(note.start_tick);
+        if (std::find(sounding.begin(), sounding.end(), pitch_class) != sounding.end()) continue;
+        if (!isDiatonic(note.note)) continue;
+
+        const int8_t degree = harmony.getChordDegreeAt(note.start_tick);
+        const Chord chord = getChordNotes(degree);
+        if (!isAvoidNoteWithContext(note.note, degreeToRoot(degree, Key::C),
+                                    chord.intervals[1] == 3, degree)) {
+          continue;
+        }
+        ADD_FAILURE() << "style " << static_cast<int>(c.style) << " blueprint "
+                      << static_cast<int>(c.blueprint) << " seed " << c.seed << ": "
+                      << trackRoleToString(role) << " sounds " << static_cast<int>(note.note)
+                      << " at " << note.start_tick << ", an avoid note over degree "
+                      << static_cast<int>(degree);
+      }
+    }
+  }
+  // The pass has to have placed notes for the loop above to say anything.
+  ASSERT_GT(requantized_notes, 0u);
 }
 
 }  // namespace

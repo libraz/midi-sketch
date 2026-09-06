@@ -1255,6 +1255,8 @@ int findConsonantChordTone(IHarmonyCoordinator& harmony, uint8_t snapped, uint8_
     bool crosses_above_vocal;
     int distance;
     uint8_t pitch;
+    /// Only the scale-tone fallback below can set this; a chord tone never does.
+    bool rejected_by_chord = false;
   };
   std::vector<Candidate> candidates;
   for (int ct_pc : chord_tones) {
@@ -1293,6 +1295,28 @@ int findConsonantChordTone(IHarmonyCoordinator& harmony, uint8_t snapped, uint8_
   // tones in range (a passing-tone pitch is far better than e.g. a minor 9th
   // against the bass). This matters when the vocal ceiling shrinks the range
   // so much that every chord tone clashes with another track.
+  //
+  // Being in the key is not the same as being usable over this chord: the
+  // major 7th above a major triad is a scale tone everywhere and an avoid note
+  // here. Rank on that, so the nearer of two scale tones does not win by two
+  // semitones while stating a note the chord rejects. It stays a candidate --
+  // the alternative at this point is a known clash or a dropped note -- but it
+  // goes last.
+  //
+  // It outranks the duplicate-pitch-class check as well: a doubled voice makes
+  // the chord thin, an avoid note makes it wrong, and thin is the lesser
+  // failure. The vocal crossing stays above both, for the reason given where
+  // that flag is set.
+  const int8_t sounding_degree = harmony.getChordDegreeAt(start);
+  const uint8_t chord_root = degreeToRoot(sounding_degree, Key::C);
+  const Chord sounding_chord = getChordNotes(sounding_degree);
+  auto chordRejects = [&](int pitch) {
+    if (std::find(chord_tones.begin(), chord_tones.end(), pitch % 12) != chord_tones.end()) {
+      return false;
+    }
+    return isAvoidNoteWithContext(static_cast<uint8_t>(pitch), chord_root,
+                                  sounding_chord.intervals[1] == 3, sounding_degree);
+  };
   std::vector<Candidate> scale_candidates;
   for (int pc : {0, 2, 4, 5, 7, 9, 11}) {
     for (int oct = orig_octave - 1; oct <= orig_octave + 1; ++oct) {
@@ -1301,16 +1325,19 @@ int findConsonantChordTone(IHarmonyCoordinator& harmony, uint8_t snapped, uint8_
       int dist = std::abs(p - static_cast<int>(original));
       bool crosses = orig_below_vocal && p >= vocal_ceiling;
       bool dup = pitchClassTaken(taken_pcs, static_cast<uint8_t>(p));
-      scale_candidates.push_back({dup, crosses, dist, static_cast<uint8_t>(p)});
+      scale_candidates.push_back({dup, crosses, dist, static_cast<uint8_t>(p), chordRejects(p)});
     }
   }
   std::stable_sort(scale_candidates.begin(), scale_candidates.end(),
                    [](const Candidate& a, const Candidate& b) {
-                     if (a.duplicates_stack != b.duplicates_stack) {
-                       return !a.duplicates_stack;
-                     }
                      if (a.crosses_above_vocal != b.crosses_above_vocal) {
                        return !a.crosses_above_vocal;
+                     }
+                     if (a.rejected_by_chord != b.rejected_by_chord) {
+                       return !a.rejected_by_chord;
+                     }
+                     if (a.duplicates_stack != b.duplicates_stack) {
+                       return !a.duplicates_stack;
                      }
                      return a.distance < b.distance;
                    });
