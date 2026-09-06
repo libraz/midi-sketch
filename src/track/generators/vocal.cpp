@@ -304,22 +304,21 @@ void VocalGenerator::postProcessVocalNotes(
     melody::enforceMaxPhraseDuration(all_notes, safety_bars, TICK_EIGHTH);
   }
 
-  // Vocal-friendly post-processing:
-  // Merge same-pitch notes with BPM-aware gap threshold.
-  // At fast tempos, gate_ratio creates larger tick gaps that should still be merged.
-  // SKIP for UltraVocaloid: same-pitch rapid-fire is intentional (machine-gun style)
-  // SKIP for RhythmSync locked-rhythm leads: the chanted same-pitch runs ARE the
-  // style (vocaloid/anison references sing 4.87-10.34 notes/bar); merging them
-  // collapsed the lead to ~2 notes/bar.
-  bool keep_same_pitch_runs = params.vocal_style == VocalStylePreset::UltraVocaloid ||
-                              (params.paradigm == GenerationParadigm::RhythmSync &&
-                               params.motif.rhythm_template != MotifRhythmTemplate::None);
-  if (!keep_same_pitch_runs) {
-    // BPM-aware merge gap: ~50ms in real time, minimum 30 ticks
-    Tick merge_gap =
-        static_cast<Tick>(std::max(30.0f, 0.05f * params.bpm * TICKS_PER_BEAT / 60.0f));
-    mergeSamePitchNotes(all_notes, merge_gap);
-  }
+  // Same-pitch neighbours in the vocal are left as separate notes.
+  //
+  // Tying them was described as vocal-friendly, and it is for an instrument;
+  // for a sung line each note is a syllable, and the reference vocals
+  // rearticulate a repeated pitch rather than holding it. Every reference
+  // category sits above the density the tie produced -- the RhythmSync
+  // exemption this replaces recorded the same effect for one paradigm, where
+  // merging "collapsed the lead to ~2 notes/bar". Removing it for the rest
+  // raises the vocal from 2.95-3.00 notes per bar to 3.63-3.74 and brings the
+  // pop category inside its reference band.
+  //
+  // What the tie was collapsing is mostly not a repeat the melody wrote: the
+  // pitches arrive equal because later passes resolve neighbouring notes onto
+  // the same safe pitch. Keeping the onsets keeps the rhythm the phrase was
+  // written with; the convergence itself is a separate question.
 
   // NOTE: resolveIsolatedShortNotes() removed - short notes are often
   // intentional articulation (staccato bursts, rhythmic motifs).
@@ -333,9 +332,16 @@ void VocalGenerator::postProcessVocalNotes(
   // Break up excessive consecutive same-pitch notes (RhythmSync compatibility)
   // This addresses monotonous melody issues in RhythmSync paradigm where
   // collision avoidance can cause long runs of the same pitch.
-  // max_consecutive=3 means 4th note onwards gets alternated for melodic interest.
+  //
+  // The cap is a limit on monotony, not a target: the reference vocals repeat
+  // a pitch 5 to 48 times in a row (median 6.5 for idol, 12 for ballad), so a
+  // cap of three was cutting the chanted figure itself. Breaking a run also
+  // costs a direction change at every alternation, which is why the generated
+  // melodies turned more often than any reference category. Six keeps the
+  // guard against the runs that are genuinely monotonous and stops it from
+  // rewriting the ones that are the hook.
   uint8_t post_process_max_leap = melody::resolveContextMaxLeap(params);
-  breakConsecutiveSamePitch(all_notes, harmony, effective_vocal_low, effective_vocal_high, 3,
+  breakConsecutiveSamePitch(all_notes, harmony, effective_vocal_low, effective_vocal_high, 6,
                             &song.arrangement().sections(), post_process_max_leap);
   breakSameDirectionLeapChains(all_notes, harmony, effective_vocal_low, effective_vocal_high);
 
@@ -432,18 +438,8 @@ void VocalGenerator::postProcessVocalNotes(
           // chord. The lift exists to make a later chorus sound higher, and a
           // pitch the chord rejects buys that at the cost of the harmony the
           // chorus is being lifted inside of.
-          melody::MelodicNeighborhood neighborhood;
-          neighborhood.start = note.start_tick;
-          neighborhood.duration = note.duration;
-          if (note_idx > 0) neighborhood.prev_pitch = all_notes[note_idx - 1].note;
-          if (note_idx + 1 < all_notes.size()) {
-            const NoteEvent& following = all_notes[note_idx + 1];
-            neighborhood.next_pitch = following.note;
-            neighborhood.next_start = following.start_tick;
-            const Tick end = note.start_tick + note.duration;
-            neighborhood.gap_to_next =
-                following.start_tick > end ? following.start_tick - end : Tick{0};
-          }
+          const melody::MelodicNeighborhood neighborhood =
+              melody::neighborhoodAt(all_notes, note_idx);
           if (melody::classifyVocalTone(harmony, candidate, neighborhood) ==
               melody::ToneLegality::Illegal) {
             continue;
@@ -566,6 +562,13 @@ void VocalGenerator::postProcessVocalNotes(
 #endif
     }
   }
+
+  // Last word on harmony. Everything above judges a note against the chord at
+  // the tick it was written for; this asks about the chord it ends up sounding
+  // over, which is not the same question for a pitch the line carries across a
+  // chord change.
+  resolveNotesTheChordRefuses(all_notes, harmony, effective_vocal_low,
+                              &song.arrangement().sections(), post_process_max_leap);
 
   // Final overlap check - ensures no overlaps after all processing
   NoteTimeline::fixOverlapsWithMinDuration(all_notes, min_note_duration);

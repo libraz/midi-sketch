@@ -64,6 +64,30 @@ void breakConsecutiveSamePitch(std::vector<NoteEvent>& all_notes, const IHarmony
 void breakSameDirectionLeapChains(std::vector<NoteEvent>& all_notes, const IHarmonyContext& harmony,
                                   uint8_t vocal_low, uint8_t vocal_high);
 
+/// @brief Move a vocal note the sounding chord refuses onto one it admits.
+///
+/// Every earlier pass judges a note against the chord at the tick it was
+/// written for. A pitch the line keeps across a chord change is judged once,
+/// under the chord it started in, and nothing asks again once the harmony has
+/// moved on -- which is how a fourth held over the tonic reaches output. This
+/// runs last, so the chord it asks about is the one the note finally sounds
+/// over.
+///
+/// Only notes the shared legality rule refuses are moved, and only onto a
+/// diatonic pitch that is consonant with the other tracks, licensed by the same
+/// rule, and inside the section's leap allowance. The nearest such pitch below
+/// wins; when there is none the note keeps what it has, which is the trade
+/// every other vocal pass makes.
+///
+/// @param all_notes Notes to process (modified in place)
+/// @param harmony Harmony context for chord identity and collision safety
+/// @param vocal_low Minimum vocal pitch
+/// @param sections Song sections for section-aware max-leap limits
+/// @param ctx_max_leap Context/blueprint max-leap limit
+void resolveNotesTheChordRefuses(std::vector<NoteEvent>& all_notes, const IHarmonyContext& harmony,
+                                 uint8_t vocal_low, const std::vector<Section>* sections = nullptr,
+                                 uint8_t ctx_max_leap = 9);
+
 /// @brief Apply pitch bend expressions to vocal track.
 /// @param track Track to add pitch bends to
 /// @param all_notes All notes for pitch bend application

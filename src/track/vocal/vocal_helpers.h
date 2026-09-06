@@ -270,6 +270,13 @@ void capNonChorusBelowChorusPeak(std::vector<NoteEvent>& notes, const IHarmonyCo
  * shorter than a 16th note, it's typically notated as a tie and sung
  * as one continuous tone.
  *
+ * The vocal pipeline no longer calls this. A repeated pitch in a sung line is
+ * usually a second syllable rather than a seam, and tying them held the
+ * generated vocal below the density of every reference category; see the note
+ * where postProcessVocalNotes used to do it. Anything that reinstates a tie
+ * has to distinguish a repeat the melody wrote from two notes a later pass
+ * resolved onto one pitch, which this function cannot see.
+ *
  * @param notes Notes to modify (in-place), will be sorted by start_tick
  * @param max_gap Maximum gap in ticks to merge (default: 16th note = 120 ticks)
  */

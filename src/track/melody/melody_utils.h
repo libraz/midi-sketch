@@ -195,6 +195,19 @@ enum class ToneLegality : uint8_t {
   PassingOrNeighbor,  ///< Weak, short, step-connected
 };
 
+/// @brief The surroundings of `line[index]`, read the way the rule reads them.
+///
+/// Two things the caller cannot get right by reading the adjacent entries: a
+/// rearticulated unison is the same note sung again rather than a resolution,
+/// so the figure is licensed by where the run finally goes and the run counts
+/// as one note's worth of duration. Filling the fields from the immediate
+/// neighbour instead makes every repeated syllable look like a figure that
+/// never resolves, and makes a long chanted note look short.
+///
+/// @param line Notes of the one part, sorted by start tick
+/// @param index Position of the note being asked about
+MelodicNeighborhood neighborhoodAt(const std::vector<NoteEvent>& line, size_t index);
+
 /// @brief Classify a vocal pitch against the chord sounding at its tick.
 ///
 /// This is the single legality rule for the vocal line. Every pass that can

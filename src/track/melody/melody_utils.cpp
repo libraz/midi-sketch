@@ -228,6 +228,30 @@ int contourPitchInSet(const ChordTones& pcs, int target, int prev, int intended_
   return best_pitch < 0 ? nearestPitchInSet(pcs, target, low, high) : best_pitch;
 }
 
+MelodicNeighborhood neighborhoodAt(const std::vector<NoteEvent>& line, size_t index) {
+  MelodicNeighborhood n;
+  if (index >= line.size()) return n;
+
+  const NoteEvent& note = line[index];
+  n.start = note.start_tick;
+  n.duration = note.duration;
+  if (index > 0) n.prev_pitch = line[index - 1].note;
+
+  size_t next = index + 1;
+  while (next < line.size() && line[next].note == note.note) ++next;
+  if (next > index + 1) {
+    const NoteEvent& last_of_run = line[next - 1];
+    n.duration = (last_of_run.start_tick + last_of_run.duration) - note.start_tick;
+  }
+  if (next < line.size()) {
+    n.next_pitch = line[next].note;
+    n.next_start = line[next].start_tick;
+    const Tick end = note.start_tick + n.duration;
+    n.gap_to_next = line[next].start_tick > end ? line[next].start_tick - end : Tick{0};
+  }
+  return n;
+}
+
 ToneLegality classifyVocalTone(const IChordLookup& harmony, int pitch, const MelodicNeighborhood& n,
                                int key) {
   const int pitch_pc = getPitchClass(static_cast<uint8_t>(pitch));

@@ -1394,18 +1394,29 @@ TEST_F(VocalTest, AppoggiaturasAreNotMergedIntoTheirResolution) {
   const auto& notes = gen.getSong().vocal().notes();
   ASSERT_GT(notes.size(), 8u);
 
-  int repeats_on_downbeat = 0;
+  // Stated the other way round, so the measurement does not depend on how the
+  // line is broken into onsets: a bar start sung as two syllables on one pitch
+  // is the same melodic move as one held note, and counting the second
+  // syllable as "the note became its own resolution" measures articulation
+  // rather than pitch. The run is read as one note, and what is counted is the
+  // figure itself -- a bar start that steps down into what follows.
+  int steps_down_from_downbeat = 0;
   int downbeats = 0;
   for (size_t i = 0; i + 1 < notes.size(); ++i) {
     if (positionInBar(notes[i].start_tick) >= TICK_SIXTEENTH) continue;
+    if (i > 0 && notes[i - 1].note == notes[i].note) continue;  // inside a run
+    size_t next = i + 1;
+    while (next < notes.size() && notes[next].note == notes[i].note) ++next;
+    if (next >= notes.size()) continue;
     ++downbeats;
-    if (notes[i].note == notes[i + 1].note) ++repeats_on_downbeat;
+    const int fall = static_cast<int>(notes[i].note) - static_cast<int>(notes[next].note);
+    if (fall >= 1 && fall <= 2) ++steps_down_from_downbeat;
   }
   ASSERT_GT(downbeats, 0);
-  EXPECT_LT(static_cast<float>(repeats_on_downbeat) / downbeats, 0.5f)
-      << repeats_on_downbeat << " of " << downbeats
-      << " bar starts repeat into the next note, which is what a collapsed "
-         "appoggiatura looks like";
+  EXPECT_GE(steps_down_from_downbeat * 4, downbeats)
+      << steps_down_from_downbeat << " of " << downbeats
+      << " bar starts step down into what follows; when the passes flatten an "
+         "appoggiatura onto its resolution this is the figure that disappears";
 
   // The figures must survive in quantity, not merely exist: when the passes
   // downstream of the designer reject them, a handful still slip through
@@ -3932,13 +3943,14 @@ TEST(VocalRegisterCorpusTest, APassThatMovesTheLineForRegisterLeavesItSingableOv
   // decide with the other tracks alone. Clearing the other tracks says nothing
   // about the chord the note sings over, so the two register passes were the
   // largest source of downbeats the vocal's own legality rule rejects. These
-  // configurations exercise both.
+  // configurations exercise both, which is what makes the assertion mean
+  // something -- take either guard out and they go red.
   struct Config {
     uint8_t style;
     uint8_t blueprint;
     uint32_t seed;
   };
-  constexpr Config kConfigs[] = {{5, 4, 20}, {11, 4, 12}, {6, 2, 1}};
+  constexpr Config kConfigs[] = {{0, 4, 1}, {0, 4, 4}, {0, 2, 1}};
 
   size_t downbeats = 0;
   for (const Config& c : kConfigs) {
@@ -3950,32 +3962,18 @@ TEST(VocalRegisterCorpusTest, APassThatMovesTheLineForRegisterLeavesItSingableOv
     sketch.generateFromConfig(config);
     const IHarmonyContext& harmony = sketch.getHarmonyContext();
 
-    const std::vector<NoteEvent>& line = sketch.getSong().vocal().notes();
-    std::vector<size_t> order(line.size());
-    for (size_t i = 0; i < order.size(); ++i) order[i] = i;
-    std::sort(order.begin(), order.end(), [&line](size_t a, size_t b) {
-      if (line[a].start_tick != line[b].start_tick) return line[a].start_tick < line[b].start_tick;
-      return line[a].note < line[b].note;
+    std::vector<NoteEvent> line = sketch.getSong().vocal().notes();
+    std::sort(line.begin(), line.end(), [](const NoteEvent& a, const NoteEvent& b) {
+      if (a.start_tick != b.start_tick) return a.start_tick < b.start_tick;
+      return a.note < b.note;
     });
 
-    for (size_t k = 0; k < order.size(); ++k) {
-      const NoteEvent& note = line[order[k]];
+    for (size_t k = 0; k < line.size(); ++k) {
+      const NoteEvent& note = line[k];
       if (note.start_tick % TICKS_PER_BAR >= TICKS_PER_BEAT / 4) continue;
       ++downbeats;
 
-      melody::MelodicNeighborhood neighborhood;
-      neighborhood.start = note.start_tick;
-      neighborhood.duration = note.duration;
-      neighborhood.prev_pitch = (k > 0) ? static_cast<int>(line[order[k - 1]].note) : -1;
-      if (k + 1 < order.size()) {
-        const NoteEvent& following = line[order[k + 1]];
-        neighborhood.next_pitch = following.note;
-        neighborhood.next_start = following.start_tick;
-        const Tick end = note.start_tick + note.duration;
-        neighborhood.gap_to_next =
-            following.start_tick > end ? following.start_tick - end : Tick{0};
-      }
-
+      const melody::MelodicNeighborhood neighborhood = melody::neighborhoodAt(line, k);
       EXPECT_NE(melody::classifyVocalTone(harmony, note.note, neighborhood),
                 melody::ToneLegality::Illegal)
           << "style " << static_cast<int>(c.style) << " blueprint " << static_cast<int>(c.blueprint)

@@ -599,38 +599,6 @@ void applyCollisionAvoidanceWithIntervalConstraint(std::vector<NoteEvent>& notes
   }
 }
 
-namespace {
-
-/// The notes a legality decision about `note` depends on, read out of the line
-/// it belongs to. Callers that clamp one note at a time hand in the whole line
-/// so the figure the note is part of is still visible here.
-melody::MelodicNeighborhood neighborhoodOf(const std::vector<NoteEvent>& line,
-                                           const NoteEvent& note) {
-  melody::MelodicNeighborhood n;
-  n.start = note.start_tick;
-  n.duration = note.duration;
-  const NoteEvent* prev = nullptr;
-  const NoteEvent* next = nullptr;
-  for (const NoteEvent& other : line) {
-    if (&other == &note) continue;
-    if (other.start_tick < note.start_tick) {
-      if (prev == nullptr || other.start_tick > prev->start_tick) prev = &other;
-    } else if (other.start_tick > note.start_tick) {
-      if (next == nullptr || other.start_tick < next->start_tick) next = &other;
-    }
-  }
-  if (prev != nullptr) n.prev_pitch = prev->note;
-  if (next != nullptr) {
-    n.next_pitch = next->note;
-    n.next_start = next->start_tick;
-    const Tick end = note.start_tick + note.duration;
-    n.gap_to_next = next->start_tick > end ? next->start_tick - end : Tick{0};
-  }
-  return n;
-}
-
-}  // namespace
-
 void enforceSectionCeiling(std::vector<NoteEvent>& notes, const IHarmonyContext& harmony,
                            uint8_t vocal_low, uint8_t vocal_high,
                            const std::vector<NoteEvent>* line) {
@@ -678,7 +646,16 @@ void enforceSectionCeiling(std::vector<NoteEvent>& notes, const IHarmonyContext&
     // source of illegal downbeats. A legal pitch is preferred; when the walk
     // finds none, a merely consonant one is still taken, because leaving the
     // note above the ceiling is not an option here.
-    const melody::MelodicNeighborhood neighborhood = neighborhoodOf(context, note);
+    // Callers that clamp one note at a time hand in the whole line as
+    // `context`, so the figure the note belongs to is still visible; find the
+    // note there and let the shared builder read its surroundings.
+    size_t index_in_line = 0;
+    while (index_in_line < context.size() && &context[index_in_line] != &note &&
+           !(context[index_in_line].start_tick == note.start_tick &&
+             context[index_in_line].note == note.note)) {
+      ++index_in_line;
+    }
+    const melody::MelodicNeighborhood neighborhood = melody::neighborhoodAt(context, index_in_line);
     auto clearsOtherTracks = [&](int pitch) {
       return harmony.isConsonantWithOtherTracks(static_cast<uint8_t>(pitch), note.start_tick,
                                                 note.duration, TrackRole::Vocal);

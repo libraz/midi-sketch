@@ -337,6 +337,53 @@ void breakSameDirectionLeapChains(std::vector<NoteEvent>& all_notes, const IHarm
   }
 }
 
+void resolveNotesTheChordRefuses(std::vector<NoteEvent>& all_notes, const IHarmonyContext& harmony,
+                                 uint8_t vocal_low, const std::vector<Section>* sections,
+                                 uint8_t ctx_max_leap) {
+  if (all_notes.empty()) return;
+  NoteTimeline::sortByStartTick(all_notes);
+
+  for (size_t i = 0; i < all_notes.size(); ++i) {
+    NoteEvent& note = all_notes[i];
+    const melody::MelodicNeighborhood neighborhood = melody::neighborhoodAt(all_notes, i);
+    if (melody::classifyVocalTone(harmony, note.note, neighborhood) !=
+        melody::ToneLegality::Illegal) {
+      continue;
+    }
+
+    // The reach is the perfect 5th the ceiling walk uses: past that the
+    // replacement is a different gesture rather than a correction.
+    constexpr int kReach = 7;
+    const int max_interval = effectiveMaxIntervalAt(note.start_tick, sections, ctx_max_leap);
+    const int floor_pitch =
+        std::max(static_cast<int>(vocal_low), static_cast<int>(note.note) - kReach);
+    for (int alt = static_cast<int>(note.note) - 1; alt >= floor_pitch; --alt) {
+      if (!isScaleTone(getPitchClass(static_cast<uint8_t>(alt)))) continue;
+      if (neighborhood.prev_pitch >= 0 && std::abs(alt - neighborhood.prev_pitch) > max_interval) {
+        continue;
+      }
+      if (neighborhood.next_pitch >= 0 && std::abs(alt - neighborhood.next_pitch) > max_interval) {
+        continue;
+      }
+      if (!harmony.isConsonantWithOtherTracks(static_cast<uint8_t>(alt), note.start_tick,
+                                              note.duration, TrackRole::Vocal)) {
+        continue;
+      }
+      if (melody::classifyVocalTone(harmony, alt, neighborhood) == melody::ToneLegality::Illegal) {
+        continue;
+      }
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+      const uint8_t before = note.note;
+#endif
+      note.note = static_cast<uint8_t>(alt);
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+      note.recordPitchMove(TransformStepType::ChordToneSnap, before, note.note);
+#endif
+      break;
+    }
+  }
+}
+
 void applyVocalPitchBendExpressions(MidiTrack& track, const std::vector<NoteEvent>& all_notes,
                                     const GeneratorParams& params, std::mt19937& rng,
                                     const std::vector<Section>* sections) {
