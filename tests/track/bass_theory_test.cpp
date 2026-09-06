@@ -908,11 +908,14 @@ class BassChordToneTest : public test::GeneratorTestFixture {
     params_.bpm = 0;
   }
 
-  bool isChordTone(int pitch_class, int8_t degree) {
-    auto chord_tones_vec = getChordTonePitchClasses(degree);
+  /// The chord a scale degree names is the one the song was planned from, and
+  /// a secondary dominant or a suspension registered on the timeline states a
+  /// different one. Judging by the degree therefore counts the altered chord's
+  /// own third as a note foreign to it, which is the opposite of the truth.
+  bool isChordTone(int pitch_class, const ChordTones& sounding) {
     int normalized_pc = ((pitch_class % 12) + 12) % 12;
-    for (int tone : chord_tones_vec) {
-      if (tone == normalized_pc) return true;
+    for (uint8_t i = 0; i < sounding.count; ++i) {
+      if (sounding.pitch_classes[i] == normalized_pc) return true;
     }
     return false;
   }
@@ -936,9 +939,10 @@ class BassChordToneTest : public test::GeneratorTestFixture {
 
     for (const auto& note : bass_track.notes()) {
       int8_t degree = harmony.getChordDegreeAt(note.start_tick);
+      const ChordTones sounding = harmony.getChordTonesAt(note.start_tick);
       int pc = note.note % 12;
 
-      if (!isChordTone(pc, degree)) {
+      if (!isChordTone(pc, sounding)) {
         NonChordToneInfo info;
         info.tick = note.start_tick;
         info.bar = note.start_tick / TICKS_PER_BAR;
@@ -947,7 +951,7 @@ class BassChordToneTest : public test::GeneratorTestFixture {
         info.pitch = note.note;
         info.pitch_class = pc;
         info.chord_degree = degree;
-        info.chord_tones = getChordTonePitchClasses(degree);
+        info.chord_tones.assign(sounding.begin(), sounding.end());
         info.motif_pitches_at_tick = findSoundingNotes(motif_track, note.start_tick);
         info.vocal_pitches_at_tick = findSoundingNotes(vocal_track, note.start_tick);
         info.is_approach_note = (info.beat_offset >= 3 * TICKS_PER_BEAT);
