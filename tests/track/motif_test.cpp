@@ -2706,5 +2706,33 @@ TEST(MotifOnsetVoicesTest, TheFirstVoiceOfAnOnsetIsNeverMoved) {
   EXPECT_EQ(clearOfOnsetVoices(harmony, 62, 0, {}, MOTIF_LOW, MOTIF_HIGH), 62);
 }
 
+// =============================================================================
+// Riff Articulation
+// =============================================================================
+
+// Half the space, so the separation scales with the figure instead of being a
+// constant number of ticks that is a large share of a narrow gap and a
+// negligible one of a wide gap.
+TEST(MotifRiffArticulationTest, TakesHalfOfWhateverSpaceItHas) {
+  EXPECT_EQ(motif_detail::riffNoteDuration(TICK_QUARTER), TICK_EIGHTH);
+  EXPECT_EQ(motif_detail::riffNoteDuration(TICK_EIGHTH), TICK_SIXTEENTH);
+}
+
+// The floor is what stops the rule turning a slow figure into a row of clicks.
+// At sixteenth spacing the two clauses meet and the note fills its space, which
+// is how a fast run is played.
+TEST(MotifRiffArticulationTest, SixteenthSpacingFillsItsSpace) {
+  EXPECT_EQ(motif_detail::riffNoteDuration(TICK_SIXTEENTH), TICK_SIXTEENTH);
+  EXPECT_EQ(motif_detail::riffNoteDuration(TICK_32ND), TICK_32ND);
+}
+
+// A riff whose notes fill the space between their onsets is a pad. Past the
+// floor, every gap has to leave some of itself silent.
+TEST(MotifRiffArticulationTest, LeavesSpaceOnceThereIsSpaceToLeave) {
+  for (Tick gap = TICK_SIXTEENTH + 1; gap <= TICKS_PER_BAR; ++gap) {
+    EXPECT_LT(motif_detail::riffNoteDuration(gap), gap) << "gap=" << gap;
+  }
+}
+
 }  // namespace
 }  // namespace midisketch

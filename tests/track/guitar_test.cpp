@@ -1523,3 +1523,45 @@ TEST_F(GuitarGenerationTest, HintMapping7IsSweepArpeggio) {
   // Verify hint value 7 maps to SweepArpeggio style
   EXPECT_EQ(static_cast<GuitarStyle>(7 - 1), GuitarStyle::SweepArpeggio);
 }
+
+// ============================================================================
+// Strum Articulation
+// ============================================================================
+
+// The length has to come from the space the stroke was given, not from a
+// constant: a figure that leaves rests hands its downstrokes several times the
+// space a straight-eighth figure does, and one number for both cuts the first
+// off early while filling the second.
+TEST(GuitarStrumArticulationTest, DownstrokeTakesHalfOfWhateverSpaceItHas) {
+  EXPECT_EQ(guitar_detail::strumNoteDuration(false, false, TICK_EIGHTH * 3), TICK_EIGHTH * 3 / 2);
+  EXPECT_EQ(guitar_detail::strumNoteDuration(false, false, TICK_QUARTER), TICK_EIGHTH);
+}
+
+// The floor is the length a straight-eighth strum already sounded. At that
+// spacing half the space would be shorter than the stroke, and the pattern is
+// dense enough that there is nothing to open up.
+TEST(GuitarStrumArticulationTest, EighthSpacingKeepsTheLengthItAlreadyHad) {
+  EXPECT_EQ(guitar_detail::strumNoteDuration(false, true, TICK_EIGHTH), TICK_EIGHTH * 3 / 4);
+  EXPECT_EQ(guitar_detail::strumNoteDuration(false, false, TICK_EIGHTH), TICK_EIGHTH * 3 / 4);
+}
+
+// A continuous figure keeps the hand moving, so the stroke between the beats is
+// damped. That is the same distinction the velocity already makes, and it is
+// what separates a cutting backing from a ringing one.
+TEST(GuitarStrumArticulationTest, OnlyTheContinuousFigureCutsItsUpstroke) {
+  EXPECT_EQ(guitar_detail::strumNoteDuration(true, true, TICK_EIGHTH), TICK_SIXTEENTH);
+  EXPECT_EQ(guitar_detail::strumNoteDuration(true, false, TICK_EIGHTH), TICK_EIGHTH * 3 / 4);
+}
+
+// Nothing may sound past the stroke that follows it, whichever clause decided
+// the length.
+TEST(GuitarStrumArticulationTest, NeverOutlastsTheSpaceItWasGiven) {
+  for (Tick gap = 1; gap <= TICKS_PER_BAR; ++gap) {
+    for (bool up : {false, true}) {
+      for (bool continuous : {false, true}) {
+        EXPECT_LE(guitar_detail::strumNoteDuration(up, continuous, gap), gap)
+            << "gap=" << gap << " upstroke=" << up << " continuous=" << continuous;
+      }
+    }
+  }
+}

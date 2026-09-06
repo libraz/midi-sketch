@@ -394,14 +394,23 @@ static void generateStrumBar(MidiTrack& track, IHarmonyContext& harmony, Tick ba
   const int* strum_positions = dense ? kStrumPositionsDense : kStrumPositionsNormal;
   int strum_count = dense ? 8 : 4;
 
-  Tick strum_dur = static_cast<Tick>(TICK_EIGHTH * 0.75f);
   OnsetVoicing voicing(harmony, GuitarStyle::Strum);
 
   for (int s = 0; s < strum_count; ++s) {
     Tick pos = bar_start + strum_positions[s] * TICK_EIGHTH;
-    if (pos + strum_dur > bar_end) break;
+    // A stroke needs at least a cut's worth of room to be a stroke.
+    if (pos + TICK_SIXTEENTH > bar_end) break;
 
     bool is_upstroke = (strum_positions[s] % 2 == 1);
+
+    // The space is measured against the pattern's next slot, not the next
+    // stroke that survives the skip below. A skipped stroke is a rest in the
+    // figure; letting the previous chord grow into it would turn the variation
+    // into a different rhythm instead of a thinner one.
+    const Tick next_pos =
+        (s + 1 < strum_count) ? bar_start + strum_positions[s + 1] * TICK_EIGHTH : bar_end;
+    const Tick strum_dur =
+        guitar_detail::strumNoteDuration(is_upstroke, dense, std::min(next_pos, bar_end) - pos);
 
     // Occasional skip for groove variation
     // (20% on weak positions normally; 25% on upstrokes in dense mode)
@@ -945,5 +954,17 @@ void GuitarGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackConte
         }
       });
 }
+
+namespace guitar_detail {
+
+Tick strumNoteDuration(bool upstroke, bool continuous_figure, Tick gap) {
+  if (upstroke && continuous_figure) {
+    return std::min<Tick>(gap, TICK_SIXTEENTH);
+  }
+  constexpr Tick kRingFloor = TICK_EIGHTH * 3 / 4;
+  return std::min<Tick>(gap, std::max<Tick>(gap / 2, kRingFloor));
+}
+
+}  // namespace guitar_detail
 
 }  // namespace midisketch
