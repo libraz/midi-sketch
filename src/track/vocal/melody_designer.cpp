@@ -1190,7 +1190,22 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
                                                      ctx.guide_tone_rate, rng, current_pitch);
     }
 
-    // Leap-after-reversal rule: prefer step motion in opposite direction after leaps
+    // Leap-after-reversal rule: prefer step motion in opposite direction after leaps.
+    //
+    // The rule does not act here, and it should not be wired up so that it
+    // does. Each note is appended before current_pitch advances, so
+    // result.notes.back() is the note current_pitch was taken from and
+    // prev_interval is always zero -- below the rule's threshold, so it returns
+    // its argument untouched.
+    //
+    // Reversal after a leap is already enforced by the pending resolution state
+    // above, and that is the spelling of the rule that decides the line. Giving
+    // this one the interval from the note before it instead stacks a second
+    // enforcer on the first, and the line then reverses direction more often
+    // rather than less while its phrases stop peaking inside themselves.
+    // Running this one alone, with the pending resolution disabled, trades the
+    // same amount back the other way: the melody's compass narrows, and the
+    // widest reference melodies are the ones asking for it to open up.
     if (i > 0 && !result.notes.empty()) {
       int prev_note = result.notes.back().note;
       int prev_interval = current_pitch - prev_note;

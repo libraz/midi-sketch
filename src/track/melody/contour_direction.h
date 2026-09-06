@@ -1,6 +1,18 @@
 /**
  * @file contour_direction.h
  * @brief Pitch direction and contour control for melody generation.
+ *
+ * These decide a note's direction one note at a time, from a bias and the
+ * momentum carried out of the notes before it. They are a fallback, not the
+ * melody's shape: a phrase that has a skeleton takes its pitches from the
+ * skeleton's arc and its infill, and nearly every phrase has one, so the choice
+ * these functions return is computed and then discarded for all but a small
+ * fraction of the vocal line. Under a locked rhythm the vocal does not reach
+ * this file at all.
+ *
+ * Retuning a bias or the inertia coefficient therefore moves far less of the
+ * finished melody than the numbers here suggest. A contour that has to change
+ * shape has to change in the skeleton.
  */
 
 #ifndef MIDISKETCH_TRACK_MELODY_CONTOUR_DIRECTION_H
