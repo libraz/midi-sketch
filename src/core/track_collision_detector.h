@@ -150,6 +150,20 @@ class TrackCollisionDetector {
   std::vector<uint8_t> getSoundingPitches(Tick start, Tick end, TrackRole exclude) const;
 
   /**
+   * @brief Get pitches struck inside a time range by all tracks except one.
+   *
+   * A note counts when its start falls in [start, end); one that began earlier
+   * and is still ringing does not. See ICollisionDetector::getOnsetPitches for
+   * why the two questions are separate.
+   *
+   * @param start Start of time range
+   * @param end End of time range
+   * @param exclude Track role to exclude
+   * @return Vector of unique MIDI pitches (may be empty if nothing is struck)
+   */
+  std::vector<uint8_t> getOnsetPitches(Tick start, Tick end, TrackRole exclude) const;
+
+  /**
    * @brief Get the highest MIDI pitch from a specific track within a time range.
    *
    * Returns the highest actual MIDI pitch (0-127) for notes from the specified

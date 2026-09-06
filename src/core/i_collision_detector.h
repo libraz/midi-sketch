@@ -142,6 +142,23 @@ class ICollisionDetector : public IChordLookup {
   virtual std::vector<uint8_t> getSoundingPitches(Tick start, Tick end,
                                                   TrackRole exclude) const = 0;
 
+  /**
+   * @brief Get pitches struck inside a time range by all tracks except one.
+   *
+   * Where getSoundingPitches reports everything audible in the range, this
+   * reports only what is attacked there. A tone already ringing when the range
+   * begins is heard as held over whatever happens next; a tone struck inside it
+   * is heard against it. A pass that changes the harmony of a range other
+   * voices are already written into needs that distinction to tell a suspension
+   * from a voice stating the chord it is leaving.
+   *
+   * @param start Start of time range
+   * @param end End of time range
+   * @param exclude Track role to exclude (typically the track being generated)
+   * @return Vector of unique MIDI pitches (may be empty if nothing is struck)
+   */
+  virtual std::vector<uint8_t> getOnsetPitches(Tick start, Tick end, TrackRole exclude) const = 0;
+
   // =========================================================================
   // Track range queries
   // =========================================================================

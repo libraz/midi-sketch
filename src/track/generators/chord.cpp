@@ -1733,6 +1733,39 @@ void tryAnticipation(ChordBarContext& ctx) {
     return;
   }
 
+  // Decline when a voice already written into this eighth would be left
+  // stating the chord being left.
+  //
+  // The replacement below moves the harmonic change earlier for every track,
+  // and the tracks generated before this one are finished. This track vacates
+  // the span it claims, for the reason spelled out at that step; a bass or a
+  // motif cannot be asked to, so a tone of theirs that the incoming chord
+  // rejects would sound under it as the same clash the vacate exists to
+  // prevent. The anticipation is an embellishment and the line is not, so the
+  // anticipation is what yields.
+  //
+  // Only what is struck inside the span counts. A tone already ringing when
+  // the chord changes is a suspension, which is why the harmony is asked for
+  // onsets rather than for everything audible here.
+  {
+    const ChordTones incoming_tones = ctx.harmony.getChordTonesAt(bar_end);
+    const uint8_t incoming_root = degreeToRoot(next_degree, Key::C);
+    const Chord incoming = getChordNotes(next_degree);
+    const bool incoming_minor = (incoming.intervals[1] == 3);
+    for (uint8_t pitch : ctx.harmony.getOnsetPitches(ant_tick, bar_end, TrackRole::Chord)) {
+      const int pitch_class = pitch % 12;
+      if (std::find(incoming_tones.begin(), incoming_tones.end(), pitch_class) !=
+          incoming_tones.end()) {
+        continue;
+      }
+      if (isDiatonic(pitch) &&
+          !isAvoidNoteWithContext(pitch, incoming_root, incoming_minor, next_degree)) {
+        continue;
+      }
+      return;
+    }
+  }
+
   // The anticipation moves the harmonic change an eighth earlier, so the shared
   // timeline has to say so before the first note is created: otherwise every
   // later chord-tone query still reports the chord being left, and the

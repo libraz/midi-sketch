@@ -227,6 +227,64 @@ TEST(ChordTimelineTest, AnAnticipationStatesTheChordItBringsForward) {
       << bare << " of " << arrivals << " anticipations state fewer than two tones";
 }
 
+TEST(ChordTimelineTest, AnAnticipationDoesNotArriveOverALineWrittenForTheChordItLeaves) {
+  // Bringing the change forward changes the harmony of that eighth for every
+  // track, and the tracks voiced before this one are finished. The chord track
+  // vacates the span it claims; a bass or a motif cannot, so a tone of theirs
+  // struck there that the incoming chord rejects would sound under it. These
+  // configurations put such a tone inside an anticipation's reach.
+  constexpr Tick kAnticipationOffset = TICKS_PER_BAR - TICK_EIGHTH;
+  struct Config {
+    uint8_t style;
+    uint8_t blueprint;
+    uint32_t seed;
+  };
+  constexpr Config kConfigs[] = {{14, 5, 9}, {2, 5, 20}, {6, 4, 1}, {5, 5, 8}};
+
+  size_t arrivals = 0;
+  for (const Config& c : kConfigs) {
+    SongConfig config = createDefaultSongConfig(c.style);
+    config.seed = c.seed;
+    config.blueprint_id = c.blueprint;
+
+    MidiSketch sketch;
+    sketch.generateFromConfig(config);
+    const Song& song = sketch.getSong();
+    const IHarmonyContext& harmony = sketch.getHarmonyContext();
+    const auto entries = readChordTimeline(harmony, song.arrangement().totalTicks());
+
+    for (size_t i = 1; i < entries.size(); ++i) {
+      if (entries[i].degree == entries[i - 1].degree) continue;
+      if (entries[i].start % TICKS_PER_BAR != kAnticipationOffset) continue;
+      ++arrivals;
+
+      const ChordTones tones = harmony.getChordTonesAt(entries[i].start);
+      const uint8_t root = degreeToRoot(entries[i].degree, Key::C);
+      const Chord chord = getChordNotes(entries[i].degree);
+      const bool is_minor = (chord.intervals[1] == 3);
+
+      for (const auto* track : song.getPitchedTracks()) {
+        for (const auto& note : track->notes()) {
+          if (note.start_tick < entries[i].start || note.start_tick >= entries[i].end) continue;
+          const int pitch_class = note.note % 12;
+          if (std::find(tones.begin(), tones.end(), pitch_class) != tones.end()) continue;
+          if (isDiatonic(note.note) &&
+              !isAvoidNoteWithContext(note.note, root, is_minor, entries[i].degree)) {
+            continue;
+          }
+          ADD_FAILURE() << "style " << static_cast<int>(c.style) << " blueprint "
+                        << static_cast<int>(c.blueprint) << " seed " << c.seed << ": "
+                        << static_cast<int>(note.note) << " is struck at " << note.start_tick
+                        << " under degree " << static_cast<int>(entries[i].degree)
+                        << ", brought forward to " << entries[i].start;
+        }
+      }
+    }
+  }
+  // Without an early arrival there is nothing for the rule to decline.
+  ASSERT_GT(arrivals, 0u);
+}
+
 TEST_F(ChordTrackTest, ChordTrackGenerated) {
   Generator gen;
   gen.generate(params_);

@@ -122,6 +122,9 @@ FORWARD_CONST(std::vector<int>, getSoundingPitchClasses, Tick start, Tick end, T
 FORWARD_CONST(std::vector<uint8_t>, getSoundingPitches, Tick start, Tick end, TrackRole exclude) {
   return base_context_.getSoundingPitches(start, end, exclude);
 }
+FORWARD_CONST(std::vector<uint8_t>, getOnsetPitches, Tick start, Tick end, TrackRole exclude) {
+  return base_context_.getOnsetPitches(start, end, exclude);
+}
 FORWARD_CONST(uint8_t, getHighestPitchForTrackInRange, Tick start, Tick end, TrackRole role) {
   return base_context_.getHighestPitchForTrackInRange(start, end, role);
 }

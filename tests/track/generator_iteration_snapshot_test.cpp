@@ -346,15 +346,15 @@ TEST_F(GeneratorIterationSnapshotTest, NoteCountsAreStable) {
 TEST(GeneratorMidiGoldenTest, FixedBlueprintsMatchNormalizedMidiSha256) {
   constexpr std::array<const char*, 10> kExpectedHashes = {
       "b3402d82941c83ca0502b78f111a45739e648727a7dfb23ea57a017e60548ded",
-      "8985c40c9bab3f3929e2b2dcf5f552e8b8896a4c806cfdfb9c18b9caf7eb8696",
+      "1699b2bd0f32dc91d613a4607bfa5696da41b256ec63aba85472293540684ccd",
       "02b89b7becb958f177d7c5fdd126e425ec8fc032441ba7613244565aecabadeb",
-      "b61acabb2cfc0b54ed057a2adf89deb7b940c905278f79b10132c1d215a5ff2c",
+      "6b29d19c1942e1c3133512260a9879f57b7331fefb78020680221111de883876",
       "08f4b9c76a53f247b23d513bc295ec62d39d6cf64d62c77fb9a356621a21c07f",
       "38a37b2c96405a0a0388c62fdb3770d377bedcfced1b42c9010e3abb86f67848",
       "7d5dea1623c87ff8b93f9ed2558b06b0ec00129661852a92b625e4c627bb3e0f",
-      "daf4d40adb7ced3eb26b73238f392fab3f806c84849708ef22be01054c00fcca",
+      "1c469a23c4a775600c300ca2a86010e4bfe0e0776b2d0b88aae8b90618f2745c",
       "6d04930f4c057c6c632d222ab1601317f6578bfec7b071166bf64de1ccd27798",
-      "03970f55ae4703a70a3292be9e3d1bf45bddcc2964a1b6eb9ff289daee89127a",
+      "6833dbe1272c42a32d89235d40ed7c1cd1e5de10aa4b415c3d22487b53b3da87",
   };
 
   for (uint8_t blueprint = 0; blueprint < kExpectedHashes.size(); ++blueprint) {

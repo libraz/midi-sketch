@@ -154,6 +154,11 @@ class StubHarmonyContext : public IHarmonyCoordinator {
     return sounding_pitches_;  // Return configured or empty
   }
 
+  std::vector<uint8_t> getOnsetPitches(Tick /*start*/, Tick /*end*/,
+                                       TrackRole /*exclude*/) const override {
+    return onset_pitches_;  // Return configured or empty
+  }
+
   uint8_t getHighestPitchForTrackInRange(Tick /*start*/, Tick /*end*/,
                                          TrackRole /*role*/) const override {
     return highest_pitch_for_track_;  // Return configured or 0
@@ -169,6 +174,7 @@ class StubHarmonyContext : public IHarmonyCoordinator {
   void setLowestPitchForTrack(uint8_t pitch) { lowest_pitch_for_track_ = pitch; }
   void setSoundingPitchClasses(std::vector<int> pcs) { sounding_pitch_classes_ = std::move(pcs); }
   void setSoundingPitches(std::vector<uint8_t> pitches) { sounding_pitches_ = std::move(pitches); }
+  void setOnsetPitches(std::vector<uint8_t> pitches) { onset_pitches_ = std::move(pitches); }
   void setChordBoundaryInfo(ChordBoundaryInfo info) { chord_boundary_info_ = info; }
 
   // =========================================================================
@@ -218,6 +224,7 @@ class StubHarmonyContext : public IHarmonyCoordinator {
   bool chord_tones_configured_ = false;       // true once a test states its own tones
   std::vector<int> sounding_pitch_classes_;   // Configured sounding pitch classes
   std::vector<uint8_t> sounding_pitches_;     // Configured sounding pitches
+  std::vector<uint8_t> onset_pitches_;        // Configured pitches struck in range
   bool all_pitches_safe_ = true;
   Tick next_chord_change_ = 0;
   ChordBoundaryInfo chord_boundary_info_;

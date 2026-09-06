@@ -491,6 +491,37 @@ std::vector<uint8_t> TrackCollisionDetector::getSoundingPitches(Tick start, Tick
   return pitches;
 }
 
+std::vector<uint8_t> TrackCollisionDetector::getOnsetPitches(Tick start, Tick end,
+                                                             TrackRole exclude) const {
+  std::vector<uint8_t> pitches;
+  pitches.reserve(16);
+
+  auto& indices = noteIndexScratch();
+  collectNoteIndices(start, end, indices);
+
+  for (size_t idx : indices) {
+    const auto& note = notes_[idx];
+    if (note.track == exclude) continue;
+    if (note.track == TrackRole::Drums) continue;
+    if (note.is_phantom) continue;
+
+    if (note.start >= start && note.start < end) {
+      bool found = false;
+      for (uint8_t existing : pitches) {
+        if (existing == note.pitch) {
+          found = true;
+          break;
+        }
+      }
+      if (!found) {
+        pitches.push_back(note.pitch);
+      }
+    }
+  }
+
+  return pitches;
+}
+
 uint8_t TrackCollisionDetector::getHighestPitchForTrackInRange(Tick start, Tick end,
                                                                TrackRole role) const {
   uint8_t highest = 0;
