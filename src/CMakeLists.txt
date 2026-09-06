@@ -67,6 +67,8 @@ set(MIDISKETCH_CORE_SOURCES
   track/vocal/locked_rhythm_generator.cpp
   track/vocal/vocal_pitch_hints.cpp
   track/vocal/vocal_post_process.cpp
+  track/chord/chord_note_writer.cpp
+  track/chord/chord_voicing_choice.cpp
   track/chord/voicing_generator.cpp
   track/chord/voice_leading.cpp
   track/chord/bass_coordination.cpp

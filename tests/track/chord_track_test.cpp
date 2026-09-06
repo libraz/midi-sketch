@@ -32,22 +32,13 @@
 #include "test_support/test_constants.h"
 #include "track/chord/bass_coordination.h"
 #include "track/chord/chord_rhythm.h"
+#include "track/chord/chord_voicing_choice.h"
 #include "track/chord/voice_leading.h"
 #include "track/chord/voicing_generator.h"
 #include "track/generators/chord.h"
 #include "track/vocal/vocal_analysis.h"
 
 namespace midisketch {
-
-uint8_t getVocalCeilingForRange(const IHarmonyContext& harmony, Tick start, Tick end,
-                                uint8_t fallback_ceiling);
-bool wouldCreateVoicingCluster(const chord_voicing::VoicedChord& voicing, uint8_t candidate_pitch,
-                               const ChordTones& tones);
-bool removeVoicingClusters(MidiTrack& track, IHarmonyContext& harmony);
-int chordToneIdentityRank(int interval_from_root);
-chord_voicing::VoicedChord filterVoicingByCollision(const IHarmonyContext& harmony,
-                                                    const chord_voicing::VoicedChord& v, Tick start,
-                                                    Tick duration, uint8_t vocal_ceiling_hint);
 
 namespace {
 
