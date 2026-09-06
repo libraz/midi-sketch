@@ -143,6 +143,7 @@ set(TEST_SOURCES
   integration/dissonance_diagnostic_test.cpp
   integration/cross_paradigm_test.cpp
   integration/harmonic_intent_test.cpp
+  integration/provenance_integrity_test.cpp
   track/chord_merge_characterization_test.cpp
   track/chord_collision_regression_test.cpp
   track/pitch_crossing_regression_test.cpp

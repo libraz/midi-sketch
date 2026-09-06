@@ -244,7 +244,11 @@ void HarmonyCoordinator::applyMotifToSections(const std::vector<NoteEvent>& moti
         NoteEvent new_note = note;
         new_note.start_tick = absolute_tick;
 #ifdef MIDISKETCH_NOTE_PROVENANCE
+        // The pattern is laid down again at every repeat position, so the tick
+        // the record names moves with it. The degree has to move with the tick
+        // or the copy claims the chord of the position it was written at.
         new_note.prov_lookup_tick = absolute_tick;
+        new_note.prov_chord_degree = base_context_.getChordDegreeAt(absolute_tick);
 #endif
 
         // Clip duration to section boundary

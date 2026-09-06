@@ -1662,7 +1662,12 @@ void Coordinator::applyVoiceLimit(Song& song, const std::vector<Section>& sectio
                   tail.duration = note_end - boundary;
                   tail.note = static_cast<uint8_t>(tail_res);
 #ifdef MIDISKETCH_NOTE_PROVENANCE
+                  // The split exists because the two halves answer to different
+                  // chords, and the tail's pitch was resolved against the one at
+                  // the boundary. Copying the head's degree would have the tail
+                  // name the chord it was split away from.
                   tail.prov_lookup_tick = boundary;
+                  tail.prov_chord_degree = harmony.getChordDegreeAt(boundary);
                   if (tail.note != note.note) {
                     tail.addTransformStep(TransformStepType::ChordToneSnap, note.note, tail.note, 0,
                                           0);
