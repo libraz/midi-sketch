@@ -24,6 +24,7 @@
 #include "core/sustain_trimmer.h"
 #include "core/timing_constants.h"
 #include "test_support/stub_harmony_context.h"
+#include "track/bass/bass_bar_writer.h"
 #include "track/generators/aux.h"
 #include "track/generators/bass.h"
 #include "track/vocal/vocal_analysis.h"

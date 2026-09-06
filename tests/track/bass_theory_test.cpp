@@ -32,6 +32,7 @@
 #include "core/types.h"
 #include "test_support/collision_test_helper.h"
 #include "test_support/generator_test_fixture.h"
+#include "track/bass/bass_bar_writer.h"
 #include "track/bass/bass_density.h"
 #include "track/bass/bass_motion.h"
 #include "track/bass/bass_pattern_selection.h"

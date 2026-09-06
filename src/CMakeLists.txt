@@ -95,6 +95,7 @@ set(MIDISKETCH_CORE_SOURCES
   track/generators/vocal.cpp
   track/generators/bass.cpp
   track/bass/bass_articulation.cpp
+  track/bass/bass_bar_writer.cpp
   track/bass/bass_density.cpp
   track/bass/bass_pattern_selection.cpp
   track/bass/bass_motion.cpp

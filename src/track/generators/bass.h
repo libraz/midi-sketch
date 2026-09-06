@@ -63,25 +63,6 @@ enum class BassPattern : uint8_t {
   FastRun      ///< 32nd note diatonic scale run
 };
 
-/// @brief Select a diatonic approach note into the next bar's root.
-uint8_t selectBassApproachNote(uint8_t current_root, uint8_t next_root, int8_t target_degree);
-
-/// @brief Select a playable octave displacement from the root.
-uint8_t selectBassOctaveNote(uint8_t root);
-
-/// @brief Select the next diatonic bass pitch while preserving pitch class at range limits.
-uint8_t selectNextBassDiatonic(uint8_t pitch, int direction);
-
-/// @brief Select a diatonic third above the root while preserving pitch class at range limits.
-uint8_t selectBassDiatonicThird(uint8_t root);
-
-/// Add a bass note while rejecting tritones against the sounding or theoretical chord.
-/// The theoretical fallback is needed because Bass is generated before Chord.
-/// Add a bass approach note after rejecting pitches that clash with the theoretical chord.
-void addBassApproachNoteWithTritoneGuard(MidiTrack& track, IHarmonyContext& harmony, Tick start,
-                                         Tick duration, uint8_t pitch, uint8_t root,
-                                         uint8_t velocity);
-
 // ============================================================================
 // Standalone Generation Functions
 // ============================================================================
