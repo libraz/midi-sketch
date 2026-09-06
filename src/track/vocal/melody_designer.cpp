@@ -151,7 +151,22 @@ std::vector<NoteEvent> subdivideSyllabic(const std::vector<NoteEvent>& notes, fl
   for (size_t i = 0; i < notes.size(); ++i) {
     const auto& note = notes[i];
 
-    // Skip short notes (< quarter note)
+    // Only a note of at least a quarter is re-articulated.
+    //
+    // This shadows the singability floor below: min_ticks is a sixteenth at its
+    // smallest, so the `duration < min_ticks * 2` test can never reject a note
+    // that has passed here, and reads as redundant. It is not. The floor says
+    // what the singer can get out, and a pair of sixteenths is inside it at
+    // idol tempos; this says what the device is for. Splitting a quarter into
+    // two eighths re-articulates a held note, and splitting an eighth into two
+    // sixteenths is a more emphatic figure that belongs to a much smaller share
+    // of a line -- one probability cannot govern both, and with only one
+    // configured, admitting the eighth makes the emphatic figure as common as
+    // the ordinary one. Removing this raised the idol vocal's share of notes at
+    // or under a sixteenth from 0.058 to 0.214 against a reference band that
+    // ends at 0.123, in exchange for bringing its note density inside its own
+    // band: a trade, not a gain. Anything that replaces this floor has to keep
+    // the two figures at different rates.
     if (note.duration < TICK_QUARTER) {
       result.push_back(note);
       continue;
@@ -621,7 +636,20 @@ std::vector<NoteEvent> MelodyDesigner::generateSection(
     prev_final_pitch = note.note;
   }
 
-  // Syllabic subdivision: split long same-pitch notes for lyric syllables
+  // Syllabic subdivision: split long same-pitch notes for lyric syllables.
+  //
+  // A locked rhythm does not pass through here, so the paradigm whose reference
+  // songs want this most never gets it. Under RhythmSync the vocal takes its
+  // onsets from the coordinate-axis track and is built by the locked-rhythm
+  // path instead; the ratio is configured for those blueprints and the split
+  // runs zero times in their output. Their reference vocals put more than half
+  // their notes at or under a sixteenth, and the generated ones put well under
+  // one percent there.
+  //
+  // Moving the call is not the fix on its own. The locked vocal cannot be
+  // denser than the rhythm it is locked to, and that rhythm is the motif's,
+  // which is itself at the bottom of its own reference band. A syllable pair
+  // added here would be a syllable the coordinate axis never played.
   if (ctx.syllabic_sub_ratio > 0.0f && !result.empty()) {
     float min_ms = isHighEnergyVocalStyle(ctx.vocal_style) ? 80.0f : 120.0f;
     float effective_ratio =
