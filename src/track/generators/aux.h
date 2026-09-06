@@ -12,7 +12,6 @@
 #include <array>
 #include <optional>
 #include <random>
-#include <unordered_map>
 #include <vector>
 
 #include "core/midi_track.h"
@@ -108,32 +107,6 @@ struct DerivabilityScore {
 /// @param notes Melody notes to analyze
 /// @returns DerivabilityScore with component scores
 DerivabilityScore analyzeDerivability(const std::vector<NoteEvent>& notes);
-
-/// Cache key for aux phrase reuse (repeated sections like Chorus1/Chorus2).
-struct AuxCacheKey {
-  AuxFunction function;      ///< Which aux function was used
-  SectionType section_type;  ///< What section type (Verse, Chorus, etc.)
-  uint8_t bars;              ///< Section length in bars
-
-  bool operator==(const AuxCacheKey& other) const {
-    return function == other.function && section_type == other.section_type && bars == other.bars;
-  }
-};
-
-struct AuxCacheKeyHash {
-  size_t operator()(const AuxCacheKey& key) const {
-    return std::hash<uint8_t>()(static_cast<uint8_t>(key.function)) ^
-           (std::hash<uint8_t>()(static_cast<uint8_t>(key.section_type)) << 4) ^
-           (std::hash<uint8_t>()(key.bars) << 8);
-  }
-};
-
-/// Cached aux phrase with section-relative timing for reuse.
-struct CachedAuxPhrase {
-  std::vector<NoteEvent> notes;  ///< Notes with section-relative timing
-  uint8_t bars;                  ///< Section length when cached
-  int reuse_count = 0;           ///< How many times this phrase was reused
-};
 
 // ============================================================================
 // AuxGenerator Class (ITrackBase implementation)
@@ -270,8 +243,6 @@ class AuxGenerator : public TrackBase {
   std::vector<NoteEvent> generateSustainPad(const AuxContext& ctx, const AuxConfig& config,
                                             const IHarmonyContext& harmony, std::mt19937& rng);
 
-  void clearCache() { phrase_cache_.clear(); }
-
  private:
   void calculateAuxRange(const AuxConfig& config, const TessituraRange& main_tessitura,
                          uint8_t& out_low, uint8_t& out_high, int8_t range_ceiling = 0);
@@ -282,8 +253,6 @@ class AuxGenerator : public TrackBase {
   uint8_t resolveAuxPitch(uint8_t desired, Tick start, Tick duration,
                           const std::vector<NoteEvent>* main_melody, const IHarmonyContext& harmony,
                           uint8_t low, uint8_t high, float dissonance_tolerance = 0.0f);
-  std::vector<Tick> findBreathPointsInRange(const std::vector<PhraseBoundary>* boundaries,
-                                            Tick start, Tick end);
 
   /// Post-process notes: fix clashes with other harmonic tracks.
   void postProcessNotes(std::vector<NoteEvent>& notes, IHarmonyContext& harmony);
@@ -299,7 +268,6 @@ class AuxGenerator : public TrackBase {
   /// so they never bleed into masked-off (silent) sections.
   void deisolateNotes(std::vector<NoteEvent>& notes, IHarmonyContext& harmony);
 
-  std::unordered_map<AuxCacheKey, CachedAuxPhrase, AuxCacheKeyHash> phrase_cache_;
   std::optional<Motif> cached_chorus_motif_;  ///< Chorus motif for intro placement
 
   /// One-bar loop masks cached per song so PulseLoop/GrooveAccent repeat the

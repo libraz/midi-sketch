@@ -1403,20 +1403,6 @@ void AuxGenerator::calculateAuxRange(const AuxConfig& config, const TessituraRan
   }
 }
 
-// A4: Find breath points (phrase boundaries) within a time range.
-std::vector<Tick> AuxGenerator::findBreathPointsInRange(
-    const std::vector<PhraseBoundary>* boundaries, Tick start, Tick end) {
-  std::vector<Tick> result;
-  if (!boundaries) return result;
-
-  for (const auto& boundary : *boundaries) {
-    if (boundary.is_breath && boundary.tick >= start && boundary.tick < end) {
-      result.push_back(boundary.tick);
-    }
-  }
-  return result;
-}
-
 bool AuxGenerator::isConsonantWithMelodyAndTracks(uint8_t pitch, Tick start, Tick duration,
                                                   const std::vector<NoteEvent>* main_melody,
                                                   const IHarmonyContext& harmony,
