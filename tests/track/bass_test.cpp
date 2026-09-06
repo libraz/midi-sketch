@@ -1211,44 +1211,53 @@ TEST_F(BassTest, DrivingPatternHasStaccatoOnEven8thNotes) {
 }
 
 TEST_F(BassTest, WholeNoteBalladHasLegato) {
-  // WholeNote pattern with Ballad mood should have legato (longer notes)
+  // Legato is how much of its space a note fills, not how many ticks it lasts.
+  // Stated in ticks the claim moves whenever anything changes how often the
+  // bass plays -- an average duration falls when the notes get closer together
+  // even though each one is as connected to the next as before, which is what
+  // made the threshold something to relax rather than something to trust.
+  //
+  // Compared against moods whose bass is articulated rather than sustained, so
+  // the assertion is about what the mood decides.
+  auto meanFill = [this](Mood mood) {
+    double fill_sum = 0.0;
+    int notes = 0;
+    for (uint32_t seed = 40; seed < 60; ++seed) {
+      params_.mood = mood;
+      params_.structure = StructurePattern::BuildUp;  // Has Intro with WholeNote pattern
+      params_.seed = seed;
+      Generator gen;
+      gen.generate(params_);
 
-  params_.mood = Mood::Ballad;
-  params_.structure = StructurePattern::BuildUp;  // Has Intro with WholeNote pattern
-  params_.seed = 42;
-
-  Generator gen;
-  gen.generate(params_);
-
-  const auto& track = gen.getSong().bass();
-  const auto& sections = gen.getSong().arrangement().sections();
-
-  // Find Intro section (where WholeNote pattern is typically used for Ballad)
-  for (const auto& section : sections) {
-    if (section.type != SectionType::Intro) continue;
-
-    Tick section_end = section.endTick();
-
-    // Collect note durations
-    std::vector<Tick> durations;
-    for (const auto& note : track.notes()) {
-      if (note.start_tick >= section.start_tick && note.start_tick < section_end) {
-        durations.push_back(note.duration);
+      const auto& track = gen.getSong().bass();
+      for (const auto& section : gen.getSong().arrangement().sections()) {
+        if (section.type != SectionType::Intro) continue;
+        std::vector<const NoteEvent*> in_section;
+        for (const auto& note : track.notes()) {
+          if (note.start_tick >= section.start_tick && note.start_tick < section.endTick()) {
+            in_section.push_back(&note);
+          }
+        }
+        for (size_t i = 0; i + 1 < in_section.size(); ++i) {
+          const Tick space = in_section[i + 1]->start_tick - in_section[i]->start_tick;
+          if (space == 0) continue;
+          fill_sum += static_cast<double>(in_section[i]->duration) / space;
+          ++notes;
+        }
       }
     }
+    EXPECT_GT(notes, 50) << "too few intro bass notes to judge articulation";
+    return notes > 0 ? fill_sum / notes : 0.0;
+  };
 
-    if (!durations.empty()) {
-      // Calculate average duration
-      Tick total = 0;
-      for (Tick dur : durations) total += dur;
-      double avg_duration = static_cast<double>(total) / durations.size();
+  const double ballad = meanFill(Mood::Ballad);
+  const double dance = meanFill(Mood::EnergeticDance);
+  const double rock = meanFill(Mood::LightRock);
 
-      // WholeNote pattern should have long notes (at least half a beat)
-      // Threshold relaxed to 360 after vocal phrase-end fix changed collision patterns
-      EXPECT_GT(avg_duration, 360) << "Ballad WholeNote should have legato (long) notes "
-                                   << "(avg_duration=" << avg_duration << ")";
-    }
-  }
+  EXPECT_GT(ballad, dance) << "Ballad intro bass fills " << ballad
+                           << " of the space between onsets, EnergeticDance " << dance;
+  EXPECT_GT(ballad, rock) << "Ballad intro bass fills " << ballad
+                          << " of the space between onsets, LightRock " << rock;
 }
 
 TEST_F(BassTest, Beat1HasAccent) {
