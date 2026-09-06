@@ -33,12 +33,23 @@ void enforceVocalPitchConstraints(std::vector<NoteEvent>& all_notes, const Gener
                                   IHarmonyContext& harmony,
                                   const std::vector<Section>* sections = nullptr);
 
+/// @brief Longest run of one pitch a vocal line may keep.
+///
+/// Named because the vocal is walked by more than one run-breaking pass and
+/// they have to agree: whichever runs last decides, so a lower number written
+/// at any one of them silently overrides every other. It is a limit on
+/// monotony rather than a target -- the reference vocals repeat a pitch five to
+/// forty-eight times in a row, so the guard exists for the stuck-note line (a
+/// collision pass resolving neighbours onto one safe pitch), not for the
+/// chanted figure that is often the hook.
+constexpr int kVocalMaxSamePitchRun = 6;
+
 /// @brief Break up excessive consecutive same-pitch notes.
 /// @param all_notes Notes to process (modified in place)
 /// @param harmony Harmony context for finding safe alternative pitches
 /// @param vocal_low Minimum vocal pitch
 /// @param vocal_high Maximum vocal pitch
-/// @param max_consecutive Maximum allowed consecutive same pitch (default: 4)
+/// @param max_consecutive Maximum allowed consecutive same pitch
 /// @param sections Song sections for section-aware max-leap limits
 /// @param ctx_max_leap Context/blueprint max-leap limit
 ///
@@ -47,7 +58,8 @@ void enforceVocalPitchConstraints(std::vector<NoteEvent>& all_notes, const Gener
 /// This is especially important for RhythmSync where collision avoidance
 /// can cause long runs of the same pitch.
 void breakConsecutiveSamePitch(std::vector<NoteEvent>& all_notes, const IHarmonyContext& harmony,
-                               uint8_t vocal_low, uint8_t vocal_high, int max_consecutive = 4,
+                               uint8_t vocal_low, uint8_t vocal_high,
+                               int max_consecutive = kVocalMaxSamePitchRun,
                                const std::vector<Section>* sections = nullptr,
                                uint8_t ctx_max_leap = 9);
 

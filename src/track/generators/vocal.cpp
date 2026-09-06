@@ -337,12 +337,12 @@ void VocalGenerator::postProcessVocalNotes(
   // a pitch 5 to 48 times in a row (median 6.5 for idol, 12 for ballad), so a
   // cap of three was cutting the chanted figure itself. Breaking a run also
   // costs a direction change at every alternation, which is why the generated
-  // melodies turned more often than any reference category. Six keeps the
-  // guard against the runs that are genuinely monotonous and stops it from
-  // rewriting the ones that are the hook.
+  // melodies turned more often than any reference category. See
+  // kVocalMaxSamePitchRun, which the later song-wide guard shares.
   uint8_t post_process_max_leap = melody::resolveContextMaxLeap(params);
-  breakConsecutiveSamePitch(all_notes, harmony, effective_vocal_low, effective_vocal_high, 6,
-                            &song.arrangement().sections(), post_process_max_leap);
+  breakConsecutiveSamePitch(all_notes, harmony, effective_vocal_low, effective_vocal_high,
+                            kVocalMaxSamePitchRun, &song.arrangement().sections(),
+                            post_process_max_leap);
   breakSameDirectionLeapChains(all_notes, harmony, effective_vocal_low, effective_vocal_high);
 
   // Re-enforce per-section ceilings AFTER all song-wide pitch passes. Earlier

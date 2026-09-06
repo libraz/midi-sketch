@@ -58,6 +58,7 @@
 #include "track/generators/vocal.h"
 #include "track/vocal/vocal_analysis.h"
 #include "track/vocal/vocal_helpers.h"
+#include "track/vocal/vocal_post_process.h"
 
 namespace midisketch {
 
@@ -647,10 +648,9 @@ void Generator::applyPostProcessingEffects() {
     harmony_context_->registerTrack(song_.vocal(), TrackRole::Vocal);
     harmony_context_->clearNotesForTrack(TrackRole::Motif);
     harmony_context_->registerTrack(song_.motif(), TrackRole::Motif);
-    // Max run of 4: 3-4 repeated pitches work as emphasis, 5+ reads as
-    // monotony in a pop vocal line.
-    breakLongPitchRuns(song_.vocal(), *harmony_context_, params_.vocal_low, params_.vocal_high, 4,
-                       TrackRole::Vocal, song_.arrangement().sections(),
+    // Same cap as everywhere else the vocal's runs are bounded.
+    breakLongPitchRuns(song_.vocal(), *harmony_context_, params_.vocal_low, params_.vocal_high,
+                       kVocalMaxSamePitchRun, TrackRole::Vocal, song_.arrangement().sections(),
                        realizedChorusPeak(song_.vocal().notes(), song_.arrangement().sections()));
     // breakLongPitchRuns may have changed vocal pitches; refresh once more so
     // the accompaniment-side clash fixes below see the final vocal.
@@ -834,10 +834,12 @@ void Generator::applyPostProcessingEffects() {
   // introduced; the crossing/motif passes below see the corrected vocal.
   harmony_context_->clearNotesForTrack(TrackRole::Vocal);
   harmony_context_->registerTrack(song_.vocal(), TrackRole::Vocal);
-  // Max run of 4 matches the post-DNA guard above: 3-4 repeated pitches work
-  // as emphasis, 5+ reads as monotony in a pop vocal line.
-  breakLongPitchRuns(song_.vocal(), *harmony_context_, params_.vocal_low, params_.vocal_high, 4,
-                     TrackRole::Vocal, song_.arrangement().sections(),
+  // The cap is the vocal's own, not a second opinion: this pass runs last, so
+  // a number written here decides the finished line whatever the vocal's own
+  // run-breaker was told. Holding a lower one here is what kept the longest
+  // run at exactly four in every reference category.
+  breakLongPitchRuns(song_.vocal(), *harmony_context_, params_.vocal_low, params_.vocal_high,
+                     kVocalMaxSamePitchRun, TrackRole::Vocal, song_.arrangement().sections(),
                      realizedChorusPeak(song_.vocal().notes(), song_.arrangement().sections()));
   harmony_context_->clearNotesForTrack(TrackRole::Vocal);
   harmony_context_->registerTrack(song_.vocal(), TrackRole::Vocal);
