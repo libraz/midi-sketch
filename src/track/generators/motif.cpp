@@ -1347,6 +1347,52 @@ uint8_t computeVocalCeilingForNote(uint8_t base_range_high, bool enforce_vocal_c
 
 namespace {
 
+/// @brief Re-seat a cached riff pitch the chord at the replay position rejects.
+///
+/// A locked riff is recorded once and played back over whatever harmony the
+/// section it lands in states, so every cached pitch has to be asked again at
+/// the position it now sounds. A pitch may stay if the chord sounding here
+/// contains it, or if the key does and it is neither an avoid note against that
+/// chord nor the tone the chord replaced by its chromatic neighbour.
+///
+/// The first clause is what keeps the riff intact: the tracker can carry a
+/// secondary dominant or a planned extension whose colour tones are not in the
+/// degree's plain diatonic triad, and moving a note that belongs to the chord
+/// sounding here would change individual notes of the riff and destroy its
+/// contour.
+///
+/// The second is why the question cannot be narrowed to the dissonances that
+/// have names. A riff recorded over a borrowed chord carries that chord's
+/// colour tones with it, and over a different chord they belong to neither the
+/// chord nor the key -- the flat sixth of bVI heard over bVII is not an avoid
+/// note and states no cross relation, and it is still a colour tone of a chord
+/// that is not playing.
+///
+/// Both replay paths ask this. They differ in which section a riff is taken
+/// from, not in whether the harmony it was written over is the harmony it now
+/// sounds against, so a gate on one of them and not the other would leave the
+/// same question unasked wherever the riff policy happens to route.
+///
+/// @return The cached pitch, or the nearest tone of the sounding chord in range
+uint8_t reseatCachedPitch(uint8_t pitch, const IHarmonyCoordinator& harmony, Tick tick,
+                          uint8_t range_low, uint8_t range_high) {
+  const auto active_tones = harmony.getChordTonesAt(tick);
+  const int pitch_class = pitch % 12;
+  if (std::find(active_tones.begin(), active_tones.end(), pitch_class) != active_tones.end()) {
+    return pitch;
+  }
+  const int8_t degree = harmony.getChordDegreeAt(tick);
+  const uint8_t root = degreeToRoot(degree, Key::C);
+  const Chord chord = getChordNotes(degree);
+  const bool is_minor = (chord.intervals[1] == 3);
+  const ChordToneHelper helper = chordToneHelperAt(harmony, tick);
+  if (isDiatonic(pitch) && !isAvoidNoteWithContext(pitch, root, is_minor, degree) &&
+      !helper.contradictsAlteration(pitch_class)) {
+    return pitch;
+  }
+  return helper.nearestInRange(pitch, range_low, range_high);
+}
+
 /// @brief Replay cached notes for Locked mode (non-coordinate-axis).
 /// @return true if notes were replayed (section should be skipped), false otherwise
 bool replayCachedNotesLocked(MidiTrack& track, const Section& section, IHarmonyCoordinator* harmony,
@@ -1378,6 +1424,8 @@ bool replayCachedNotesLocked(MidiTrack& track, const Section& section, IHarmonyC
           computeVocalCeilingForNote(motif_range_high, enforce_vocal_ceiling, harmony,
                                      absolute_tick, entry.duration, motif_range_low);
       uint8_t desired = std::min<uint8_t>(entry.pitch, eff_range_high);
+      desired =
+          reseatCachedPitch(desired, *harmony, absolute_tick, motif_range_low, eff_range_high);
 
       if (!has_onset || absolute_tick != onset_tick) {
         onset_pitches.clear();
@@ -1424,47 +1472,6 @@ bool replayCachedNotesLocked(MidiTrack& track, const Section& section, IHarmonyC
     }
   }
   return true;
-}
-
-/// @brief Re-seat a cached riff pitch the chord at the replay position rejects.
-///
-/// A locked riff is recorded once and played back over whatever harmony the
-/// section it lands in states, so every cached pitch has to be asked again at
-/// the position it now sounds. A pitch may stay if the chord sounding here
-/// contains it, or if the key does and it is neither an avoid note against that
-/// chord nor the tone the chord replaced by its chromatic neighbour.
-///
-/// The first clause is what keeps the riff intact: the tracker can carry a
-/// secondary dominant or a planned extension whose colour tones are not in the
-/// degree's plain diatonic triad, and moving a note that belongs to the chord
-/// sounding here would change individual notes of the riff and destroy its
-/// contour.
-///
-/// The second is why the question cannot be narrowed to the dissonances that
-/// have names. A riff recorded over a borrowed chord carries that chord's
-/// colour tones with it, and over a different chord they belong to neither the
-/// chord nor the key -- the flat sixth of bVI heard over bVII is not an avoid
-/// note and states no cross relation, and it is still a colour tone of a chord
-/// that is not playing.
-///
-/// @return The cached pitch, or the nearest tone of the sounding chord in range
-uint8_t reseatCachedPitch(uint8_t pitch, const IHarmonyCoordinator& harmony, Tick tick,
-                          uint8_t range_low, uint8_t range_high) {
-  const auto active_tones = harmony.getChordTonesAt(tick);
-  const int pitch_class = pitch % 12;
-  if (std::find(active_tones.begin(), active_tones.end(), pitch_class) != active_tones.end()) {
-    return pitch;
-  }
-  const int8_t degree = harmony.getChordDegreeAt(tick);
-  const uint8_t root = degreeToRoot(degree, Key::C);
-  const Chord chord = getChordNotes(degree);
-  const bool is_minor = (chord.intervals[1] == 3);
-  const ChordToneHelper helper = chordToneHelperAt(harmony, tick);
-  if (isDiatonic(pitch) && !isAvoidNoteWithContext(pitch, root, is_minor, degree) &&
-      !helper.contradictsAlteration(pitch_class)) {
-    return pitch;
-  }
-  return helper.nearestInRange(pitch, range_low, range_high);
 }
 
 /// @brief Replay cached notes for RhythmSync coordinate axis mode.

@@ -710,5 +710,57 @@ TEST(LockedRiffCorpusTest, AReplayedRiffSoundsNoChordItIsNotPlayingOver) {
   ASSERT_GT(borrowed_chord_notes, 0u);
 }
 
+TEST(LockedRiffCorpusTest, ARiffReplayedOutsideTheCoordinateAxisIsAskedTheSameQuestion) {
+  // Which section a riff is replayed from decides which routine replays it, and
+  // that is the only thing it decides: the harmony a cached pitch was written
+  // over is no more its harmony here than it is on the coordinate axis. These
+  // configurations replay a riff outside the coordinate axis, so the corpus
+  // fails if only the coordinate-axis routine asks.
+  struct Config {
+    uint8_t style;
+    uint8_t blueprint;
+    uint32_t seed;
+  };
+  constexpr Config kConfigs[] = {{15, 6, 20}, {15, 6, 27}};
+
+  size_t songs = 0;
+  for (const Config& c : kConfigs) {
+    SongConfig config = createDefaultSongConfig(c.style);
+    config.seed = c.seed;
+    config.blueprint_id = c.blueprint;
+
+    MidiSketch sketch;
+    sketch.generateFromConfig(config);
+    ++songs;
+
+    // The routing, not the output, is what makes this corpus the right one: a
+    // locked riff outside RhythmSync is what reaches the replay path under test.
+    const GeneratorParams& params = sketch.getParams();
+    EXPECT_NE(params.paradigm, GenerationParadigm::RhythmSync)
+        << "style " << static_cast<int>(c.style) << " seed " << c.seed;
+    EXPECT_TRUE(params.riff_policy == RiffPolicy::LockedContour ||
+                params.riff_policy == RiffPolicy::LockedPitch ||
+                params.riff_policy == RiffPolicy::LockedAll)
+        << "style " << static_cast<int>(c.style) << " seed " << c.seed << ": riff policy "
+        << static_cast<int>(params.riff_policy);
+
+    const IHarmonyContext& harmony = sketch.getHarmonyContext();
+    for (const auto& note : sketch.getSong().motif().notes()) {
+      const ChordTones sounding = harmony.getChordTonesAt(note.start_tick);
+      const int pitch_class = note.note % 12;
+      const bool in_chord =
+          std::find(sounding.begin(), sounding.end(), pitch_class) != sounding.end();
+      if (in_chord || isDiatonic(note.note)) continue;
+      const int8_t degree = harmony.getChordDegreeAt(note.start_tick);
+      ADD_FAILURE() << "style " << static_cast<int>(c.style) << " blueprint "
+                    << static_cast<int>(c.blueprint) << " seed " << c.seed << ": motif sounds "
+                    << static_cast<int>(note.note) << " at " << note.start_tick
+                    << ", which neither the key nor degree " << static_cast<int>(degree)
+                    << " contains";
+    }
+  }
+  ASSERT_EQ(songs, 2u);
+}
+
 }  // namespace
 }  // namespace midisketch
