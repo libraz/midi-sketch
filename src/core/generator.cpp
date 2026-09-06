@@ -87,7 +87,7 @@ void tameStandaloneMotifSections(MidiTrack& motif, const MidiTrack& vocal,
                                  const std::vector<Section>& sections,
                                  const IHarmonyContext& harmony);
 void separateMotifFromBass(MidiTrack& motif, const MidiTrack& vocal, const MidiTrack& bass,
-                           const IHarmonyContext& harmony);
+                           const MidiTrack& chord, const IHarmonyContext& harmony);
 void separateGuitarFromBass(MidiTrack& guitar, const MidiTrack& bass, IHarmonyContext& harmony);
 void strengthenRhythmLockBassDrive(MidiTrack& bass, const std::vector<Section>& sections);
 void anchorBassStrongBeats(MidiTrack& bass, const std::vector<Section>& sections,
@@ -754,7 +754,8 @@ void Generator::applyPostProcessingEffects() {
   // RhythmSync keeps its motif as the coordinate axis instead.
   if (!isRhythmSyncLeadSetting(params_, resolved_blueprint_id_) &&
       params_.paradigm != GenerationParadigm::RhythmSync) {
-    separateMotifFromBass(song_.motif(), song_.vocal(), song_.bass(), *harmony_context_);
+    separateMotifFromBass(song_.motif(), song_.vocal(), song_.bass(), song_.chord(),
+                          *harmony_context_);
     harmony_context_->clearNotesForTrack(TrackRole::Motif);
     harmony_context_->registerTrack(song_.motif(), TrackRole::Motif);
   }
@@ -2555,7 +2556,7 @@ bool clashesWithMotifPitch(uint8_t pitch, const NoteEvent& motif_note, const Mid
 }
 
 void separateMotifFromBass(MidiTrack& motif, const MidiTrack& vocal, const MidiTrack& bass,
-                           const IHarmonyContext& harmony) {
+                           const MidiTrack& chord, const IHarmonyContext& harmony) {
   if (motif.empty() || bass.empty()) {
     return;
   }
@@ -2584,8 +2585,14 @@ void separateMotifFromBass(MidiTrack& motif, const MidiTrack& vocal, const MidiT
       }
       uint8_t candidate = clampScalePitchAvoidingChord(target, motif_note.start_tick, harmony, 55,
                                                        static_cast<uint8_t>(ceiling));
+      // The chord is asked as well. This runs after every track is voiced, so
+      // the priority order that lets the chord voice itself around the motif no
+      // longer applies: whatever the motif moves onto, the chord is already
+      // holding its own pitches and cannot answer. Leaving it out let the motif
+      // step off a clash with the bass and onto a second against the chord.
       if (!clashesWithMotifPitch(candidate, motif_note, bass, harmony) &&
-          !clashesWithMotifPitch(candidate, motif_note, vocal, harmony)) {
+          !clashesWithMotifPitch(candidate, motif_note, vocal, harmony) &&
+          !clashesWithMotifPitch(candidate, motif_note, chord, harmony)) {
         if (candidate != motif_note.note) {
 #ifdef MIDISKETCH_NOTE_PROVENANCE
           motif_note.prov_source = static_cast<uint8_t>(NoteSource::PostProcess);
