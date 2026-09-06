@@ -197,13 +197,19 @@ void applyCollisionAvoidanceWithIntervalConstraint(std::vector<NoteEvent>& notes
  * to the nearest in-range scale tone while preserving inter-track collision
  * safety where possible.
  *
+ * The replacement is chosen with melody::classifyVocalTone, so the clamp does
+ * not answer the ceiling question by writing a pitch the chord rejects.
+ *
  * @param notes Notes to modify (in-place)
  * @param harmony Harmony context for collision-safety verification
  * @param vocal_low Section vocal range low limit
  * @param vocal_high Section vocal range high limit (the ceiling to enforce)
+ * @param line The whole vocal line, when `notes` is a one-note slice of it;
+ *             the legality rule reads the neighbours from here
  */
 void enforceSectionCeiling(std::vector<NoteEvent>& notes, const IHarmonyContext& harmony,
-                           uint8_t vocal_low, uint8_t vocal_high);
+                           uint8_t vocal_low, uint8_t vocal_high,
+                           const std::vector<NoteEvent>* line = nullptr);
 
 /**
  * @brief Highest pitch the hook sections (Chorus/Drop) actually reached.

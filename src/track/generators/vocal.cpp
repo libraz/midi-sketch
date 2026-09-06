@@ -353,7 +353,7 @@ void VocalGenerator::postProcessVocalNotes(
       // Single-note slice keeps enforceSectionCeiling's octave-drop + scale-snap
       // + collision-safety logic as the single source of truth for the clamp.
       std::vector<NoteEvent> one{note};
-      enforceSectionCeiling(one, harmony, sc.low, sc.high);
+      enforceSectionCeiling(one, harmony, sc.low, sc.high, &all_notes);
       note.note = one.front().note;
 #ifdef MIDISKETCH_NOTE_PROVENANCE
       note.prov_original_pitch = one.front().prov_original_pitch;
@@ -426,6 +426,26 @@ void VocalGenerator::postProcessVocalNotes(
           }
           if (!harmony.isConsonantWithOtherTracks(static_cast<uint8_t>(candidate), note.start_tick,
                                                   note.duration, TrackRole::Vocal)) {
+            continue;
+          }
+          // Clearing the other tracks is not the same as singing over this
+          // chord. The lift exists to make a later chorus sound higher, and a
+          // pitch the chord rejects buys that at the cost of the harmony the
+          // chorus is being lifted inside of.
+          melody::MelodicNeighborhood neighborhood;
+          neighborhood.start = note.start_tick;
+          neighborhood.duration = note.duration;
+          if (note_idx > 0) neighborhood.prev_pitch = all_notes[note_idx - 1].note;
+          if (note_idx + 1 < all_notes.size()) {
+            const NoteEvent& following = all_notes[note_idx + 1];
+            neighborhood.next_pitch = following.note;
+            neighborhood.next_start = following.start_tick;
+            const Tick end = note.start_tick + note.duration;
+            neighborhood.gap_to_next =
+                following.start_tick > end ? following.start_tick - end : Tick{0};
+          }
+          if (melody::classifyVocalTone(harmony, candidate, neighborhood) ==
+              melody::ToneLegality::Illegal) {
             continue;
           }
           if (note.note < best_pitch) {

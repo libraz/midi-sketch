@@ -589,8 +589,42 @@ void applyCollisionAvoidanceWithIntervalConstraint(std::vector<NoteEvent>& notes
   }
 }
 
+namespace {
+
+/// The notes a legality decision about `note` depends on, read out of the line
+/// it belongs to. Callers that clamp one note at a time hand in the whole line
+/// so the figure the note is part of is still visible here.
+melody::MelodicNeighborhood neighborhoodOf(const std::vector<NoteEvent>& line,
+                                           const NoteEvent& note) {
+  melody::MelodicNeighborhood n;
+  n.start = note.start_tick;
+  n.duration = note.duration;
+  const NoteEvent* prev = nullptr;
+  const NoteEvent* next = nullptr;
+  for (const NoteEvent& other : line) {
+    if (&other == &note) continue;
+    if (other.start_tick < note.start_tick) {
+      if (prev == nullptr || other.start_tick > prev->start_tick) prev = &other;
+    } else if (other.start_tick > note.start_tick) {
+      if (next == nullptr || other.start_tick < next->start_tick) next = &other;
+    }
+  }
+  if (prev != nullptr) n.prev_pitch = prev->note;
+  if (next != nullptr) {
+    n.next_pitch = next->note;
+    n.next_start = next->start_tick;
+    const Tick end = note.start_tick + note.duration;
+    n.gap_to_next = next->start_tick > end ? next->start_tick - end : Tick{0};
+  }
+  return n;
+}
+
+}  // namespace
+
 void enforceSectionCeiling(std::vector<NoteEvent>& notes, const IHarmonyContext& harmony,
-                           uint8_t vocal_low, uint8_t vocal_high) {
+                           uint8_t vocal_low, uint8_t vocal_high,
+                           const std::vector<NoteEvent>* line) {
+  const std::vector<NoteEvent>& context = (line != nullptr) ? *line : notes;
   for (auto& note : notes) {
     if (note.note <= vocal_high) continue;
 
@@ -626,17 +660,39 @@ void enforceSectionCeiling(std::vector<NoteEvent>& notes, const IHarmonyContext&
     // The walk stops at a perfect 5th. Past that the replacement is no longer
     // the same melodic gesture, and a transient clash on a diatonic pitch is the
     // lesser problem -- the same trade the ceiling snap above already makes.
-    if (!harmony.isConsonantWithOtherTracks(candidate, note.start_tick, note.duration,
-                                            TrackRole::Vocal)) {
+    //
+    // The walk also asks melody::classifyVocalTone, the rule every other pass
+    // that moves a vocal pitch asks. Clearing the other tracks says nothing
+    // about the chord this note sings over, and the ceiling lands often enough
+    // on a scale tone the chord rejects that the clamp was the largest single
+    // source of illegal downbeats. A legal pitch is preferred; when the walk
+    // finds none, a merely consonant one is still taken, because leaving the
+    // note above the ceiling is not an option here.
+    const melody::MelodicNeighborhood neighborhood = neighborhoodOf(context, note);
+    auto clearsOtherTracks = [&](int pitch) {
+      return harmony.isConsonantWithOtherTracks(static_cast<uint8_t>(pitch), note.start_tick,
+                                                note.duration, TrackRole::Vocal);
+    };
+    auto chordAdmits = [&](int pitch) {
+      return melody::classifyVocalTone(harmony, pitch, neighborhood) !=
+             melody::ToneLegality::Illegal;
+    };
+
+    if (!clearsOtherTracks(candidate) || !chordAdmits(candidate)) {
       constexpr int kMaxCeilingDrop = 7;  // perfect 5th
       const int floor_pitch = std::max(static_cast<int>(vocal_low), snapped - kMaxCeilingDrop);
-      for (int alt = snapped - 1; alt >= floor_pitch; --alt) {
+      int consonant_only = -1;
+      int both = -1;
+      for (int alt = snapped - 1; alt >= floor_pitch && both < 0; --alt) {
         if (!isScaleTone(getPitchClass(static_cast<uint8_t>(alt)))) continue;
-        if (harmony.isConsonantWithOtherTracks(static_cast<uint8_t>(alt), note.start_tick,
-                                               note.duration, TrackRole::Vocal)) {
-          candidate = static_cast<uint8_t>(alt);
-          break;
-        }
+        if (!clearsOtherTracks(alt)) continue;
+        if (consonant_only < 0) consonant_only = alt;
+        if (chordAdmits(alt)) both = alt;
+      }
+      if (both >= 0) {
+        candidate = static_cast<uint8_t>(both);
+      } else if (!clearsOtherTracks(candidate) && consonant_only >= 0) {
+        candidate = static_cast<uint8_t>(consonant_only);
       }
       // Otherwise keep the (diatonic) snapped pitch even if it clashes:
       // a transient clash is preferable to a chromatic vocal note.
@@ -693,7 +749,7 @@ void capNonChorusBelowChorusPeak(std::vector<NoteEvent>& notes, const IHarmonyCo
     if (note.note <= ceiling) continue;
     const uint8_t cap = std::max(ceiling, vocal_low);
     std::vector<NoteEvent> one{note};
-    enforceSectionCeiling(one, harmony, vocal_low, cap);
+    enforceSectionCeiling(one, harmony, vocal_low, cap, &notes);
     // Whole-note assignment keeps the transform enforceSectionCeiling recorded;
     // copying the pitch alone would drop it and leave the move untraceable.
     note = one.front();

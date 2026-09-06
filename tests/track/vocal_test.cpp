@@ -17,11 +17,13 @@
 #include "core/i_track_base.h"
 #include "core/melody_embellishment.h"
 #include "core/pitch_utils.h"
+#include "core/preset_data.h"
 #include "core/production_blueprint.h"
 #include "core/song.h"
 #include "core/timing_constants.h"
 #include "core/types.h"
 #include "core/vocal_style_profile.h"
+#include "midisketch.h"
 #include "test_helpers/note_event_test_helper.h"
 #include "test_support/generator_test_fixture.h"
 #include "test_support/test_constants.h"
@@ -3922,6 +3924,68 @@ TEST_F(VocalTest, GlobalPeakLandsInChorus) {
                            << static_cast<int>(peak->note) << " at tick " << peak->start_tick
                            << ") did not land in a Chorus section.";
   }
+}
+
+TEST(VocalRegisterCorpusTest, APassThatMovesTheLineForRegisterLeavesItSingableOverItsChord) {
+  // The chorus-peak cap and the chorus head lift move vocal pitches to place
+  // the song's register, not to answer a harmonic question, and both used to
+  // decide with the other tracks alone. Clearing the other tracks says nothing
+  // about the chord the note sings over, so the two register passes were the
+  // largest source of downbeats the vocal's own legality rule rejects. These
+  // configurations exercise both.
+  struct Config {
+    uint8_t style;
+    uint8_t blueprint;
+    uint32_t seed;
+  };
+  constexpr Config kConfigs[] = {{5, 4, 20}, {11, 4, 12}, {6, 2, 1}};
+
+  size_t downbeats = 0;
+  for (const Config& c : kConfigs) {
+    SongConfig config = createDefaultSongConfig(c.style);
+    config.seed = c.seed;
+    config.blueprint_id = c.blueprint;
+
+    MidiSketch sketch;
+    sketch.generateFromConfig(config);
+    const IHarmonyContext& harmony = sketch.getHarmonyContext();
+
+    const std::vector<NoteEvent>& line = sketch.getSong().vocal().notes();
+    std::vector<size_t> order(line.size());
+    for (size_t i = 0; i < order.size(); ++i) order[i] = i;
+    std::sort(order.begin(), order.end(), [&line](size_t a, size_t b) {
+      if (line[a].start_tick != line[b].start_tick) return line[a].start_tick < line[b].start_tick;
+      return line[a].note < line[b].note;
+    });
+
+    for (size_t k = 0; k < order.size(); ++k) {
+      const NoteEvent& note = line[order[k]];
+      if (note.start_tick % TICKS_PER_BAR >= TICKS_PER_BEAT / 4) continue;
+      ++downbeats;
+
+      melody::MelodicNeighborhood neighborhood;
+      neighborhood.start = note.start_tick;
+      neighborhood.duration = note.duration;
+      neighborhood.prev_pitch = (k > 0) ? static_cast<int>(line[order[k - 1]].note) : -1;
+      if (k + 1 < order.size()) {
+        const NoteEvent& following = line[order[k + 1]];
+        neighborhood.next_pitch = following.note;
+        neighborhood.next_start = following.start_tick;
+        const Tick end = note.start_tick + note.duration;
+        neighborhood.gap_to_next =
+            following.start_tick > end ? following.start_tick - end : Tick{0};
+      }
+
+      EXPECT_NE(melody::classifyVocalTone(harmony, note.note, neighborhood),
+                melody::ToneLegality::Illegal)
+          << "style " << static_cast<int>(c.style) << " blueprint " << static_cast<int>(c.blueprint)
+          << " seed " << c.seed << ": the vocal sounds " << static_cast<int>(note.note)
+          << " on the downbeat at " << note.start_tick << ", which degree "
+          << static_cast<int>(harmony.getChordDegreeAt(note.start_tick))
+          << " does not license as any figure";
+    }
+  }
+  ASSERT_GT(downbeats, 0u) << "the corpus has no vocal note on a downbeat to judge";
 }
 
 }  // namespace
