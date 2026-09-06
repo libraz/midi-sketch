@@ -32,6 +32,7 @@
 #include "core/song.h"
 #include "core/timing_constants.h"
 #include "test_support/generator_test_fixture.h"
+#include "track/melody/melody_utils.h"
 
 namespace midisketch {
 namespace {
@@ -199,8 +200,16 @@ TEST_F(GuitarTimelineHarmonyTest, StrumsTheReharmonizedChordRatherThanThePlanned
 // The planned progression is diatonic, so a chromatic pitch class cannot come
 // from it under any bar-index arithmetic: hearing it in the guitar is proof the
 // strum was built from the timeline entry rather than the progression array.
-TEST_F(GuitarTimelineHarmonyTest, SoundsTheChromaticToneOfEveryOutOfKeyChordItStrums) {
+//
+// Two claims, because the guitar controls them to different degrees. It cannot
+// state the chromatic tone in every span -- a voice whose every octave clashes
+// with the tracks already placed is dropped from the strum, the same way the
+// seventh is below -- but nothing forces it to reach for the tone the
+// alteration moved away from, and sounding that one against a band playing the
+// altered chord is a cross relation rather than a thinner voicing.
+TEST_F(GuitarTimelineHarmonyTest, StatesTheAlterationAndNeverTheToneItMovedAwayFrom) {
   int spans_checked = 0;
+  int spans_stating_the_alteration = 0;
 
   for (Mood mood : kMoods) {
     for (uint32_t seed : kSeeds) {
@@ -230,19 +239,32 @@ TEST_F(GuitarTimelineHarmonyTest, SoundsTheChromaticToneOfEveryOutOfKeyChordItSt
         if (stated.empty()) continue;
 
         spans_checked++;
-        const bool states_chromatic =
-            std::any_of(chromatic.begin(), chromatic.end(),
-                        [&stated](int pc) { return stated.count(pc) != 0; });
-        EXPECT_TRUE(states_chromatic)
-            << "mood " << static_cast<int>(mood) << " seed " << seed << " tick " << span.start
-            << ": out-of-key chord strummed with diatonic tones only. timeline wanted "
-            << describe(chromatic) << ", guitar stated " << describe(stated);
+        if (std::any_of(chromatic.begin(), chromatic.end(),
+                        [&stated](int pc) { return stated.count(pc) != 0; })) {
+          spans_stating_the_alteration++;
+        }
+
+        const int moved_away_from = melody::crossRelationPitchClassAt(timeline, span.start);
+        if (moved_away_from >= 0) {
+          EXPECT_EQ(stated.count(moved_away_from), 0u)
+              << "mood " << static_cast<int>(mood) << " seed " << seed << " tick " << span.start
+              << ": guitar sounded the tone the alteration moved away from (" << moved_away_from
+              << ") against a chord that wants " << describe(chromatic) << "; it stated "
+              << describe(stated);
+        }
       }
     }
   }
 
   EXPECT_GE(spans_checked, 12) << "no out-of-key chord reached the guitar; the fixture would pass "
                                   "without the guitar reading the timeline at all";
+  // Nine in ten, not all: measured across the fixture the alteration reaches
+  // the strum in all but the occasional span where no octave of it is
+  // consonant. A guitar building its chord from the bare degree would state it
+  // in none of them.
+  EXPECT_GE(spans_stating_the_alteration * 10, spans_checked * 9)
+      << spans_stating_the_alteration << " of " << spans_checked
+      << " out-of-key spans stated the tone that puts the chord outside the key";
 }
 
 // The seventh is the tone that separates the planned triad from the chord the
