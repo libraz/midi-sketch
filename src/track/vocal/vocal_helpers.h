@@ -34,11 +34,20 @@ bool isHighEnergyVocalStyle(VocalStylePreset style);
 
 /**
  * @brief Shift note timings by offset.
+ *
+ * A cached phrase replayed in a later section is a new set of notes at new
+ * positions, so the parts of their history that name a position move with
+ * them: the tick the chord was read at, and the chord that was read there.
+ * Carrying the source section's values would state that these notes were
+ * written against a chord they never sound over.
+ *
  * @param notes Source notes
+ * @param harmony Chord lookup for the shifted positions
  * @param offset Tick offset to add to all start times
  * @return Notes with shifted timing
  */
-std::vector<NoteEvent> shiftTiming(const std::vector<NoteEvent>& notes, Tick offset);
+std::vector<NoteEvent> shiftTiming(const std::vector<NoteEvent>& notes, const IChordLookup& harmony,
+                                   Tick offset);
 
 /**
  * @brief Adjust pitches to new vocal range.

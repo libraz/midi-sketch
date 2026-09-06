@@ -12,6 +12,7 @@
 #include "core/chord_extension_planner.h"
 #include "core/chord_utils.h"
 #include "core/harmony_coordinator.h"
+#include "core/i_chord_lookup.h"
 #include "core/midi_track.h"
 #include "core/note_source.h"
 #include "core/pitch_utils.h"
@@ -1157,11 +1158,13 @@ void removeNotesInBar(std::vector<NoteEvent>& notes, Tick bar_start, Tick bar_en
 /// @brief Copy notes from one bar to another (shift by TICKS_PER_BAR).
 /// @param notes Mutable note list (destination - notes will be appended)
 /// @param all_notes All notes to scan for source bar
+/// @param harmony Chord lookup for the destination position
 /// @param src_bar_start Source bar start tick
 /// @param src_bar_end Source bar end tick
 /// @param offset Tick offset to apply (dst_start - src_start)
 void copyNotesFromBar(std::vector<NoteEvent>& notes, const std::vector<NoteEvent>& all_notes,
-                      Tick src_bar_start, Tick src_bar_end, Tick offset) {
+                      const IChordLookup& harmony, Tick src_bar_start, Tick src_bar_end,
+                      Tick offset) {
   for (const auto& note : all_notes) {
     if (note.start_tick >= src_bar_start && note.start_tick < src_bar_end) {
       NoteEvent copied = note;
@@ -1173,9 +1176,20 @@ void copyNotesFromBar(std::vector<NoteEvent>& notes, const std::vector<NoteEvent
       // pitch to decisions made a bar earlier, under a different chord, and
       // would leave the difference between the pitch that sounds and the pitch
       // the history ends on unexplained. Start the history at this note.
+      //
+      // The chord has to be read at the destination for the same reason. It is
+      // the one field of the history that names a position, so carrying the
+      // source bar's degree across states that the note was written against a
+      // chord it never sounded over -- and since the difference between the
+      // recorded degree and the timeline is what identifies a voice written
+      // against harmony that changed underneath it, a copy that lies here is
+      // indistinguishable from that defect.
+      copied.prov_chord_degree = harmony.getChordDegreeAt(copied.start_tick);
       copied.prov_source = static_cast<uint8_t>(NoteSource::PostProcess);
       copied.prov_original_pitch = copied.note;
       copied.transform_count = 0;
+#else
+      (void)harmony;
 #endif
       notes.push_back(copied);
     }
@@ -1458,7 +1472,8 @@ void Coordinator::applyVoiceLimit(Song& song, const std::vector<Section>& sectio
         removeNotesInBar(notes, curr_bar_start, curr_bar_end);
 
         // Copy previous bar's notes shifted by TICKS_PER_BAR
-        copyNotesFromBar(notes, prev_bar_notes, prev_bar_start, prev_bar_end, TICKS_PER_BAR);
+        copyNotesFromBar(notes, prev_bar_notes, getActiveHarmony(), prev_bar_start, prev_bar_end,
+                         TICKS_PER_BAR);
 
         frozen_bars.push_back({role, curr_bar_start, curr_bar_end});
       }

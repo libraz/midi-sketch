@@ -8,6 +8,7 @@
 #include <algorithm>
 
 #include "core/chord_utils.h"
+#include "core/i_chord_lookup.h"
 #include "core/note_creator.h"
 #include "core/note_source.h"
 #include "core/note_timeline_utils.h"
@@ -31,12 +32,21 @@ bool isHighEnergyVocalStyle(VocalStylePreset style) {
   }
 }
 
-std::vector<NoteEvent> shiftTiming(const std::vector<NoteEvent>& notes, Tick offset) {
+std::vector<NoteEvent> shiftTiming(const std::vector<NoteEvent>& notes, const IChordLookup& harmony,
+                                   Tick offset) {
   std::vector<NoteEvent> result;
   result.reserve(notes.size());
   for (const auto& note : notes) {
     NoteEvent shifted = note;
     shifted.start_tick += offset;
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+    if (shifted.prov_chord_degree >= 0) {
+      shifted.prov_lookup_tick = shifted.start_tick;
+      shifted.prov_chord_degree = harmony.getChordDegreeAt(shifted.start_tick);
+    }
+#else
+    (void)harmony;
+#endif
     result.push_back(shifted);
   }
   return result;

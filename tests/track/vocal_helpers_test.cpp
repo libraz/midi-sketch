@@ -1263,5 +1263,66 @@ TEST(HoldBurstEntryTest, DensitySurgeIsAppliedExactlyOnce) {
   EXPECT_EQ(phrase.target_note_count, target_after_first);
 }
 
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+
+/// A chord lookup that names a different degree in each bar, so a phrase moved
+/// by a whole number of bars lands on a chord its source position did not name.
+class BarWiseChordLookup : public IChordLookup {
+ public:
+  int8_t getChordDegreeAt(Tick tick) const override {
+    static constexpr int8_t kDegrees[] = {0, 3, 4, 5};
+    return kDegrees[(tick / TICKS_PER_BAR) % 4];
+  }
+  ChordTones getChordTonesAt(Tick tick) const override {
+    return getChordTones(getChordDegreeAt(tick));
+  }
+  Tick getNextChordChangeTick(Tick after) const override {
+    return ((after / TICKS_PER_BAR) + 1) * TICKS_PER_BAR;
+  }
+};
+
+TEST(ShiftTimingTest, AReusedPhraseRecordsTheChordItNowSoundsOver) {
+  // The recorded degree is the one field of a note's history that names a
+  // position, and it is how a voice written against harmony that changed
+  // underneath it is told apart from one that was not. A phrase replayed in a
+  // later section carries that field to a bar it was never written for unless
+  // the shift reads it again.
+  BarWiseChordLookup harmony;
+  constexpr Tick kStart = TICK_QUARTER;
+  constexpr Tick kOffset = TICKS_PER_BAR * 2;
+
+  NoteEvent note = NoteEventTestHelper::create(kStart, TICK_QUARTER, 60, 80);
+  note.prov_chord_degree = harmony.getChordDegreeAt(kStart);
+  note.prov_lookup_tick = kStart;
+  note.prov_source = static_cast<uint8_t>(NoteSource::MelodyPhrase);
+
+  // A corpus where both positions name the same chord could not tell the two
+  // behaviours apart.
+  ASSERT_NE(harmony.getChordDegreeAt(kStart), harmony.getChordDegreeAt(kStart + kOffset));
+
+  const std::vector<NoteEvent> shifted = shiftTiming({note}, harmony, kOffset);
+
+  ASSERT_EQ(shifted.size(), 1u);
+  EXPECT_EQ(shifted[0].start_tick, kStart + kOffset);
+  EXPECT_EQ(shifted[0].prov_lookup_tick, kStart + kOffset);
+  EXPECT_EQ(shifted[0].prov_chord_degree, harmony.getChordDegreeAt(kStart + kOffset));
+}
+
+TEST(ShiftTimingTest, ATrackWithoutChordContextKeepsItsUnsetDegree) {
+  // Drums and SE record -1 to say they have no chord context. Reading a degree
+  // for them would replace "this note answers to no chord" with a chord it does
+  // not answer to.
+  BarWiseChordLookup harmony;
+  NoteEvent note = NoteEventTestHelper::create(0, TICK_QUARTER, 36, 100);
+  note.prov_chord_degree = -1;
+
+  const std::vector<NoteEvent> shifted = shiftTiming({note}, harmony, TICKS_PER_BAR);
+
+  ASSERT_EQ(shifted.size(), 1u);
+  EXPECT_EQ(shifted[0].prov_chord_degree, -1);
+}
+
+#endif  // MIDISKETCH_NOTE_PROVENANCE
+
 }  // namespace
 }  // namespace midisketch

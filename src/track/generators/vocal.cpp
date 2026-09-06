@@ -709,7 +709,7 @@ void VocalGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContex
       cached.reuse_count++;
 
       // Shift timing to current section start
-      section_notes = shiftTiming(cached.notes, section_start);
+      section_notes = shiftTiming(cached.notes, harmony, section_start);
 
       // Apply subtle variation for interest while maintaining recognizability
       applyPhraseVariation(section_notes, variation, rng);
