@@ -790,7 +790,7 @@ TEST(CollisionDetectorTest, ChordRegistrationBeforeMotif) {
   MidiSketch sketch;
   SongConfig config = createDefaultSongConfig(1);
   config.blueprint_id = 8;  // IdolEmo
-  config.seed = 12354;
+  config.seed = 12345;
   sketch.generateFromConfig(config);
 
   // After generation, check if there are any minor 2nd or major 2nd clashes
@@ -835,15 +835,21 @@ TEST(CollisionDetectorTest, ChordRegistrationBeforeMotif) {
                             << detail;
 }
 
+// The motif is placed while the chord is already registered, so a motif note
+// the chord refuses is a collision-detection failure rather than a taste
+// question. Which close intervals the chord refuses is isVoicingCluster()'s to
+// answer, the same helper CollisionDetectorTest.ChordRegistrationBeforeMotif
+// asks above: a major second between the motif and a chord voice is the chord
+// itself when both spell it -- the riff landing on the root under a seventh, or
+// on the ninth of an add9 -- and only the semitone is refused unconditionally.
+// Counting every major second made this configuration report a C4 against the
+// Bb3 of the C7 sounding there as a failure.
 TEST(GeneratorTest, Blueprint8MotifChordNoClash) {
-  // Blueprint 8 (IdolEmo) + seed 12345 had a known issue where Motif E3
-  // clashed with sustained Chord D3/F3 at tick 106560.
-  // This test verifies that the collision detection prevents such clashes.
   MidiSketch sketch;
   SongConfig config = createDefaultSongConfig(1);
   config.blueprint_id = 8;  // IdolEmo blueprint
   config.chord_progression_id = 3;
-  config.seed = 12354;
+  config.seed = 12345;
   sketch.generateFromConfig(config);
 
   const auto& song = sketch.getSong();
@@ -851,6 +857,7 @@ TEST(GeneratorTest, Blueprint8MotifChordNoClash) {
   const auto& motif_notes = song.motif().notes();
 
   int clash_count = 0;
+  std::string detail;
   for (const auto& motif_note : motif_notes) {
     Tick motif_start = motif_note.start_tick;
     Tick motif_end = motif_start + motif_note.duration;
@@ -863,16 +870,23 @@ TEST(GeneratorTest, Blueprint8MotifChordNoClash) {
       if (motif_start < chord_end && chord_start < motif_end) {
         int interval =
             std::abs(static_cast<int>(motif_note.note) - static_cast<int>(chord_note.note));
-        if (interval == 1 || interval == 2) {
-          clash_count++;
-        }
+        if (interval != 1 && interval != 2) continue;
+        const Tick ov = std::max(motif_start, chord_start);
+        const ChordTones tones = sketch.getHarmonyContext().getChordTonesAt(ov);
+        if (!isVoicingCluster(motif_note.note, chord_note.note, tones)) continue;
+
+        clash_count++;
+        detail += "\n  tick " + std::to_string(ov) + ": motif " + std::to_string(motif_note.note) +
+                  " vs chord " + std::to_string(chord_note.note) + " = " +
+                  std::to_string(interval) + " semitones over degree " +
+                  std::to_string(sketch.getHarmonyContext().getChordDegreeAt(ov));
       }
     }
   }
 
   // Expect no close-interval clashes between Motif and Chord
   EXPECT_EQ(clash_count, 0) << "Found " << clash_count
-                            << " minor/major 2nd clashes between Motif and Chord";
+                            << " minor/major 2nd clashes between Motif and Chord" << detail;
 }
 
 }  // namespace
