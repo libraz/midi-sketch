@@ -1668,8 +1668,23 @@ void Coordinator::applyVoiceLimit(Song& song, const std::vector<Section>& sectio
         // them apart: two different chord tones can still land a step or a
         // half-step from each other once the snap has answered for each voice on
         // its own, and no detector downstream compares two notes of one track.
-        candidate = clearOfOnsetVoices(harmony, candidate, note.start_tick, onset_pitches,
-                                       range_low, note_range_high);
+        //
+        // What has to be clear of the candidate is every voice of this track
+        // still sounding when it starts, not only the ones that start with it.
+        // A strum is one chord struck across a few ticks and a sustain runs into
+        // the note after it; both are voices heard together, and a stack keyed on
+        // an exact onset sees neither. The bar's notes are resolved in time
+        // order, so the ones before this index are already final.
+        std::vector<uint8_t> sounding = onset_pitches;
+        for (size_t prior : bar_note_indices) {
+          if (prior == idx) break;
+          const NoteEvent& earlier = notes[prior];
+          if (earlier.start_tick >= note.start_tick) break;
+          if (earlier.start_tick + earlier.duration <= note.start_tick) continue;
+          sounding.push_back(earlier.note);
+        }
+        candidate = clearOfOnsetVoices(harmony, candidate, note.start_tick, sounding, range_low,
+                                       note_range_high);
         onset_taken_pcs.push_back(static_cast<uint8_t>(candidate % 12));
         onset_pitches.push_back(candidate);
 

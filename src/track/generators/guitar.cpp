@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "core/chord.h"
+#include "core/chord_utils.h"
 #include "core/harmonic_rhythm.h"
 #include "core/i_harmony_context.h"
 #include "core/note_creator.h"
@@ -130,14 +131,24 @@ static std::vector<uint8_t> buildGuitarChordPitches(uint8_t root, const Chord& c
 /// range. Returns the first consonant candidate, or 0 if none is safe (caller
 /// should then drop the tone).
 ///
+/// Preserving the pitch class is not on its own enough to keep the chord clean.
+/// An octave that clears the other tracks can land a semitone from a voice this
+/// same strum has already placed -- a seventh folded down beside the root it
+/// belongs to is still a semitone -- and no detector downstream compares two
+/// notes of one track at different onsets, which a raked strum always is. The
+/// voices placed so far are therefore part of the question, and the chord
+/// decides what counts as too close, exactly as it does for the chord track.
+///
 /// @param harmony Harmony context for consonance checking
 /// @param desired Desired pitch (chord tone)
 /// @param pos Onset tick
 /// @param dur Note duration
 /// @param range_high Effective upper bound (vocal-aware ceiling)
+/// @param placed Voices of this same hit already resolved
 /// @return Consonant pitch in [kGuitarLow, range_high], or 0 if none found
 static uint8_t resolveSustainedChordPitch(IHarmonyContext& harmony, uint8_t desired, Tick pos,
-                                          Tick dur, uint8_t range_high) {
+                                          Tick dur, uint8_t range_high,
+                                          const std::vector<uint8_t>& placed) {
   // Candidate order: original, octave up, octave down. Pitch class is preserved
   // so the candidate remains a valid chord tone. Octave-up is preferred over
   // octave-down so the alternative keeps headroom for downstream octave
@@ -147,11 +158,20 @@ static uint8_t resolveSustainedChordPitch(IHarmonyContext& harmony, uint8_t desi
   // Floor for octave-down candidates: leave one octave of headroom above
   // kGuitarLow so a later -12 octave shift cannot push below the physical low.
   const int octave_down_floor = kGuitarLow + 12;
+  const ChordTones tones = harmony.getChordTonesAt(pos);
   for (int cand : candidates) {
     if (cand < kGuitarLow || cand > range_high) continue;
     // Octave-down candidate must stay clear of the bottom octave.
     if (cand < static_cast<int>(desired) && cand < octave_down_floor) continue;
     uint8_t p = static_cast<uint8_t>(cand);
+    bool clusters = false;
+    for (uint8_t other : placed) {
+      if (isVoicingCluster(p, other, tones)) {
+        clusters = true;
+        break;
+      }
+    }
+    if (clusters) continue;
     if (harmony.isConsonantWithOtherTracks(p, pos, dur, TrackRole::Guitar)) {
       return p;
     }
@@ -360,7 +380,8 @@ static void generateStrumBar(MidiTrack& track, IHarmonyContext& harmony, Tick ba
     std::vector<uint8_t> placed;
     placed.reserve(pitches.size());
     for (uint8_t pitch : pitches) {
-      uint8_t safe = resolveSustainedChordPitch(harmony, pitch, pos, strum_dur, effective_high);
+      uint8_t safe =
+          resolveSustainedChordPitch(harmony, pitch, pos, strum_dur, effective_high, placed);
       if (safe == 0) continue;  // No consonant octave: drop this tone
 
       // Avoid duplicate pitches within the same strum (octave fold may collide).
@@ -412,7 +433,7 @@ static void generatePowerChordBar(MidiTrack& track, IHarmonyContext& harmony, Ti
     std::vector<uint8_t> placed;
     placed.reserve(pitches.size());
     for (uint8_t pitch : pitches) {
-      uint8_t safe = resolveSustainedChordPitch(harmony, pitch, pos, dur, effective_high);
+      uint8_t safe = resolveSustainedChordPitch(harmony, pitch, pos, dur, effective_high, placed);
       if (safe == 0) continue;
 
       if (std::find(placed.begin(), placed.end(), safe) != placed.end()) continue;

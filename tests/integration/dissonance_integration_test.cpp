@@ -16,8 +16,10 @@
 #include "analysis/dissonance.h"
 #include "core/generator.h"
 #include "core/i_harmony_context.h"
+#include "core/preset_types.h"
 #include "core/timing_constants.h"
 #include "core/types.h"
+#include "midisketch.h"
 #include "test_support/clash_analysis_helper.h"
 
 namespace midisketch {
@@ -400,6 +402,41 @@ TEST_F(TrackClashIntegrationTest, BSectionSustainNoOverlap) {
       }
     }
   }
+}
+
+TEST(BlueprintClashCorpusTest, NoTwoVoicesOfOneInstrumentClash) {
+  // Two voices of one instrument state the interval two instruments would, and
+  // until the analyzer compared them nothing in the engine did. Every gate that
+  // keeps a chord clean is keyed on a shared onset, so the shapes that reach
+  // here are the ones spread across a few ticks: a raked strum, and a frozen bar
+  // whose voices were re-quantized one at a time. The seeds below are the ones
+  // that produced each.
+  size_t songs = 0;
+  for (int blueprint = 0; blueprint < 10; ++blueprint) {
+    for (uint32_t seed : {11u, 22u, 33u, 66u, 211u}) {
+      SongConfig config = createDefaultSongConfig(0);
+      config.seed = seed;
+      config.blueprint_id = static_cast<uint8_t>(blueprint);
+
+      MidiSketch sketch;
+      sketch.generateFromConfig(config);
+      ++songs;
+
+      const auto report =
+          analyzeDissonance(sketch.getSong(), sketch.getParams(), sketch.getHarmonyContext());
+      for (const auto& issue : report.issues) {
+        if (issue.type != DissonanceType::SimultaneousClash) continue;
+        if (issue.notes.size() < 2) continue;
+        if (issue.notes[0].track_name != issue.notes[1].track_name) continue;
+        ADD_FAILURE() << "blueprint " << blueprint << " seed " << seed << ": "
+                      << issue.notes[0].track_name << " sounds "
+                      << static_cast<int>(issue.notes[0].pitch) << " against "
+                      << static_cast<int>(issue.notes[1].pitch) << " at " << issue.tick << " ("
+                      << issue.interval_name << ", overlap " << issue.overlap_duration << ")";
+      }
+    }
+  }
+  ASSERT_EQ(songs, 50u);
 }
 
 }  // namespace
