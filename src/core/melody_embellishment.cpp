@@ -314,26 +314,20 @@ std::vector<NoteEvent> MelodicEmbellisher::embellish(
     if (roll < cumulative && beat == BeatStrength::Strong &&
         current.duration >= MIN_SPLIT_DURATION * 2 &&
         consecutive_ncts < config.max_consecutive_ncts) {
-      // The side is a coin toss, and only one side is a figure this project
-      // admits: melody::classifyVocalTone licenses an accented dissonance that
-      // steps down onto its chord tone and refuses the one that rises. Half of
-      // these are therefore written in full -- accent, split and pitch -- and
-      // then put back onto the chord tone by a later pass, which leaves the
-      // split behind as a repeated note where a single note used to be.
+      // The side used to be a coin toss, and only one side is a figure this
+      // project admits: melody::classifyVocalTone licenses an accented
+      // dissonance that steps down onto its chord tone and refuses the one that
+      // rises. Half of these were therefore written in full -- accent, split and
+      // pitch -- and then put back onto the chord tone by a later pass, which
+      // left the split behind as a repeated note where a single note used to be.
       //
-      // Taking the dissonance from above was built and measured across the
-      // corpus: the figures that survive to the output rise by about a tenth,
-      // the refused direction falls by about a fifth, and the reference profile
-      // stays where it was. It is not done here because it cannot yet be told
-      // apart from luck. Consuming one extra random number, with every rule
-      // left alone, reddens corpus assertions of the same kind and in the same
-      // quantity as this change does -- and some of those state real invariants
-      // of other tracks, such as the guitar spelling the chord sounding under
-      // it. Those have to hold whatever the stream does before a change to the
-      // melody can be judged by them.
-      bool upper = rng_util::rollFloat(rng, 0.0f, 1.0f) > 0.5f;
-      auto app_pair =
-          tryConvertToAppoggiatura(current, upper, key_offset, config.chromatic_approach, rng);
+      // Taking the dissonance from above instead was measured across the corpus:
+      // the figures that survive to the output rise by about a tenth and the
+      // refused direction falls by about a fifth. The reference profile does not
+      // resolve the difference -- reshuffling the random stream alone moves its
+      // aggregate five times as far -- so the corpus measurement is what carries
+      // the decision.
+      auto app_pair = tryConvertToAppoggiatura(current, key_offset, config.chromatic_approach, rng);
       if (app_pair &&
           harmony.isConsonantWithOtherTracks(
               app_pair->first.note, app_pair->first.start_tick, app_pair->first.duration,
@@ -647,23 +641,27 @@ std::optional<std::pair<NoteEvent, NoteEvent>> MelodicEmbellisher::tryAddNeighbo
 }
 
 std::optional<std::pair<NoteEvent, NoteEvent>> MelodicEmbellisher::tryConvertToAppoggiatura(
-    const NoteEvent& chord_tone, bool upper, int key_offset, bool allow_chromatic,
-    std::mt19937& rng) {
+    const NoteEvent& chord_tone, int key_offset, bool allow_chromatic, std::mt19937& rng) {
   if (chord_tone.duration < MIN_SPLIT_DURATION * 2) return std::nullopt;
 
   // Verify strong beat (appoggiaturas are accented dissonances)
   BeatStrength beat = getBeatStrength(chord_tone.start_tick);
   if (beat != BeatStrength::Strong) return std::nullopt;
 
-  int direction = upper ? 1 : -1;
+  // Above the note it resolves to, so the resolution steps down. The side used
+  // to be a coin toss, and the rise is a figure melody::classifyVocalTone does
+  // not admit, so a later pass put the pitch back onto the chord tone and left
+  // the split behind: half of these reached the listener as a repeated note
+  // rather than as an appoggiatura.
+  constexpr int kFromAbove = 1;
 
-  // Appoggiatura: typically a step above or below resolution
+  // Appoggiatura: a step above the resolution.
   // Try whole step first (most common)
-  int app_pitch = chord_tone.note + (direction * 2);  // Whole step
+  int app_pitch = chord_tone.note + (kFromAbove * 2);  // Whole step
 
   if (!isScaleTone(app_pitch % 12, key_offset)) {
     // Whole step is not in scale, try half step
-    int half_step_pitch = chord_tone.note + direction;
+    int half_step_pitch = chord_tone.note + kFromAbove;
 
     if (isScaleTone(half_step_pitch % 12, key_offset)) {
       // Half step is in scale, use it

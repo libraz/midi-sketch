@@ -321,11 +321,16 @@ class MelodicEmbellisher {
    * Creates expressive tension by replacing chord tone with
    * a dissonance that resolves to it.
    *
+   * The dissonance is taken from above, so the figure resolves down by step
+   * onto the chord tone it replaced. That direction is not a preference: it is
+   * the one the shared vocal legality rule admits, and a dissonance placed
+   * below resolves up into a figure the rule refuses, so the accent, the split
+   * and the pitch would all be applied and then taken back.
+   *
    * @return Pair of notes (appoggiatura, resolution) or nullopt
    */
   static std::optional<std::pair<NoteEvent, NoteEvent>> tryConvertToAppoggiatura(
-      const NoteEvent& chord_tone, bool upper, int key_offset, bool allow_chromatic,
-      std::mt19937& rng);
+      const NoteEvent& chord_tone, int key_offset, bool allow_chromatic, std::mt19937& rng);
 
   /**
    * @brief Try to convert a chord-boundary note into a suspension.
