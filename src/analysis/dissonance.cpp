@@ -492,7 +492,7 @@ bool isPreparedResolvingSuspension(const std::vector<TimedNote>& notes, size_t n
   return downward_resolution == 1 || downward_resolution == 2;
 }
 
-// Detect simultaneous clashes between notes from different tracks
+// Detect simultaneous clashes between any two sounding notes, one track or two
 void detectSimultaneousClashes(const std::vector<TimedNote>& all_notes, const DetectionContext& ctx,
                                DissonanceReport& report) {
   std::set<std::tuple<Tick, uint8_t, uint8_t>> reported_clashes;
@@ -504,17 +504,17 @@ void detectSimultaneousClashes(const std::vector<TimedNote>& all_notes, const De
 
       if (note_b.start >= note_a.end) break;
 
-      // A pair inside one track used to be skipped outright, and nothing else
-      // in the engine compares one: the collision detector the generators ask
-      // is cross-track too. That is why a chord voicing's own cluster and a
-      // riff's lead against the stab beneath it could never appear in a report
-      // however wrong they sounded.
-      //
-      // Only voices that begin together are judged. A track's staggered
-      // self-overlap is a legato tail rather than a voicing decision, and where
-      // one crosses a chord change the sustained-note detector below already
-      // answers for it.
-      if (note_a.track == note_b.track && note_a.start != note_b.start) continue;
+      // A pair inside one track is judged the same way a pair across two is,
+      // whether or not the voices begin together. Nothing else in the engine
+      // compares one -- the collision detector the generators ask is cross-track
+      // too -- so a track sustaining into the note it plays next had no reader
+      // at all, and a whole class of clash could sit in a song this report
+      // called clean. Two voices of one instrument state the interval two
+      // instruments would; a strum spreads one chord across a few ticks and a
+      // legato line runs one note into the next, and neither makes a semitone
+      // sound like anything else. The exemptions below are what separate a
+      // chosen simultaneity from an accident, and they read the chord rather
+      // than the track.
 
       uint8_t actual_interval = static_cast<uint8_t>(
           std::abs(static_cast<int>(note_a.pitch) - static_cast<int>(note_b.pitch)));

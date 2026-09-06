@@ -187,6 +187,40 @@ TEST(DissonanceTest, RegisteredSecondaryDominantTritoneIsNotReportedAsClash) {
       << "Both pitches belong to the registered E7 secondary dominant";
 }
 
+TEST(DissonanceTest, OneTrackSustainingIntoItsOwnNextNoteIsReported) {
+  Section verse;
+  verse.type = SectionType::A;
+  verse.start_tick = 0;
+  verse.bars = 1;
+  verse.name = "Verse";
+  Arrangement arrangement({verse});
+
+  Song song;
+  song.setArrangement(arrangement);
+  // One instrument, one held note, and the next note it plays a semitone away.
+  // Two instruments doing this are a clash; one doing it is the same sound, and
+  // no other reader in the engine compares a track against itself.
+  song.chord().addNote(NoteEventTestHelper::create(0, TICKS_PER_BEAT * 2, 60, 80));
+  song.chord().addNote(NoteEventTestHelper::create(TICKS_PER_BEAT, TICKS_PER_BEAT, 61, 80));
+
+  GeneratorParams params{};
+  params.chord_id = 0;
+  params.mood = Mood::StraightPop;
+  const auto report = analyzeDissonance(song, params);
+
+  EXPECT_EQ(report.summary.simultaneous_clashes, 1u);
+  bool found = false;
+  for (const auto& issue : report.issues) {
+    if (issue.type != DissonanceType::SimultaneousClash) continue;
+    EXPECT_EQ(issue.interval_semitones, 1);
+    ASSERT_EQ(issue.notes.size(), 2u);
+    EXPECT_EQ(issue.notes[0].track_name, "chord");
+    EXPECT_EQ(issue.notes[1].track_name, "chord");
+    found = true;
+  }
+  EXPECT_TRUE(found);
+}
+
 TEST(DissonanceTest, BriefVocalPassingToneUsesGenerationCollisionPolicy) {
   Section verse;
   verse.type = SectionType::A;
@@ -1390,7 +1424,12 @@ TEST(DissonanceContextTest, RegressionOriginalBugParameters) {
   gen.generate(params);
   const auto& song = gen.getSong();
 
-  auto report = analyzeDissonance(song, params);
+  // The generation-time timeline, which is what every shipped caller passes.
+  // Reconstructing the harmony from the base progression instead loses the
+  // registered replacements and per-entry extensions this song is built on,
+  // and reports the tritone inside each of them as a clash: the same song
+  // scored twelve beat-1 clashes that way and none of them was audible.
+  auto report = analyzeDissonance(song, params, gen.getHarmonyContext());
 
   // Count issues at beat 1 positions (critical positions)
   int beat1_clashes = 0;
@@ -1403,12 +1442,8 @@ TEST(DissonanceContextTest, RegressionOriginalBugParameters) {
     }
   }
 
-  // The guitar strums the chord the timeline states, so where the chord track
-  // cannot voice that chord cleanly the guitar doubles the pair rather than
-  // covering it with a different chord. This song states one such bar, and the
-  // count that belongs to it is the chord track's to answer for.
-  EXPECT_LE(beat1_clashes, 11) << "Beat 1 clashes should be minimal after regeneration: found "
-                               << beat1_clashes;
+  EXPECT_EQ(beat1_clashes, 0) << "Beat 1 clashes should be minimal after regeneration: found "
+                              << beat1_clashes;
 }
 
 // Builds a two-track ParsedMidi, the shape an external file arrives in.
