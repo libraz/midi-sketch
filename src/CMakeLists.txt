@@ -4,6 +4,9 @@ set(MIDISKETCH_CORE_SOURCES
   midisketch_c.cpp
   core/types.cpp
   core/generator.cpp
+  core/rewrite_pitch_guard.cpp
+  core/track_separation.cpp
+  core/rhythm_sync_lead.cpp
   core/structure.cpp
   core/chord.cpp
   core/chord_extension_planner.cpp
