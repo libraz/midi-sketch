@@ -490,6 +490,21 @@ void applyCollisionAvoidanceWithIntervalConstraint(std::vector<NoteEvent>& notes
     // tone are the pitch it came from and the next lattice point, so every
     // available repair trades the step for a repeated note or a wider leap
     // than the one it was meant to remove.
+    //
+    // Knowing the resolution in advance does not change that, and the cost of
+    // finding out is what makes this walk the right shape. Deciding the run
+    // between two kept notes as one figure -- classify first, choose every
+    // landing afterwards with both ends fixed and the whole figure scored --
+    // was built and measured. It removes the stale neighbour and keeps the
+    // shared grammar rules satisfied, but the reference profile does not move:
+    // whatever the joint choice takes off the repeated-note ratio, it puts back
+    // on direction changes and small leaps, because the chord tones flanking a
+    // step are the pitch it came from and the next lattice point and there is
+    // no third option. Priced low enough to leave the line's directional
+    // consistency intact, the joint choice collapses onto a fixed end anyway;
+    // priced high enough to refuse that, the line zigzags past what the corpus
+    // does. The lever that would help is which notes are forced to move at all,
+    // not which landing they take once they are.
     melody::MelodicNeighborhood neighborhood;
     neighborhood.start = note.start_tick;
     neighborhood.duration = note.duration;
