@@ -439,5 +439,64 @@ TEST(BlueprintClashCorpusTest, NoTwoVoicesOfOneInstrumentClash) {
   ASSERT_EQ(songs, 50u);
 }
 
+TEST(BlueprintClashCorpusTest, NoTwoVoicesOfOneInstrumentClashAcrossStyles) {
+  // The same property as above, over the configurations that reach it by a
+  // different route. A style changes which generators run and how dense they
+  // are, so the passes that place or move a pitch after the voicing is chosen
+  // only meet each other in some of them:
+  //
+  //   - a frozen bar's voices are re-quantized one at a time, and the step that
+  //     keeps the line from repeating a pitch reaches back for the note's own
+  //     pre-snap pitch, which on an extended chord is a chord tone a semitone
+  //     from the voice beside it
+  //   - a frozen bar's voices are re-quantized one at a time and land a whole
+  //     tone apart
+  //   - a guitar voice crowding the bass is lifted an octave, into the voice
+  //     beside it in the same strum
+  //   - aux writes a counter-melody and a doubling a few ticks off the beat, so
+  //     two of its own voices overlap without ever sharing an onset
+  //
+  // Each triple below is one of those, and nothing in the engine compared the
+  // two voices until the analyzer did.
+  struct Config {
+    uint8_t style;
+    uint8_t blueprint;
+    uint32_t seed;
+  };
+  constexpr Config kConfigs[] = {
+      {13, 4, 7},  {2, 8, 10},              // frozen bar, extended chord
+      {3, 3, 6},   {6, 3, 7},  {5, 8, 34},  // frozen bar, whole tone apart
+      {5, 8, 39},                           // guitar lifted over the bass
+      {10, 0, 5},  {10, 7, 3}, {13, 7, 3},  // aux against its own doubling
+      {16, 7, 34},
+  };
+
+  size_t songs = 0;
+  for (const Config& c : kConfigs) {
+    SongConfig config = createDefaultSongConfig(c.style);
+    config.seed = c.seed;
+    config.blueprint_id = c.blueprint;
+
+    MidiSketch sketch;
+    sketch.generateFromConfig(config);
+    ++songs;
+
+    const auto report =
+        analyzeDissonance(sketch.getSong(), sketch.getParams(), sketch.getHarmonyContext());
+    for (const auto& issue : report.issues) {
+      if (issue.type != DissonanceType::SimultaneousClash) continue;
+      if (issue.notes.size() < 2) continue;
+      if (issue.notes[0].track_name != issue.notes[1].track_name) continue;
+      ADD_FAILURE() << "style " << static_cast<int>(c.style) << " blueprint "
+                    << static_cast<int>(c.blueprint) << " seed " << c.seed << ": "
+                    << issue.notes[0].track_name << " sounds "
+                    << static_cast<int>(issue.notes[0].pitch) << " against "
+                    << static_cast<int>(issue.notes[1].pitch) << " at " << issue.tick << " ("
+                    << issue.interval_name << ", overlap " << issue.overlap_duration << ")";
+    }
+  }
+  ASSERT_EQ(songs, 10u);
+}
+
 }  // namespace
 }  // namespace midisketch

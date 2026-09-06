@@ -22,6 +22,7 @@
 #include "core/rng_util.h"
 #include "core/song.h"
 #include "core/timing_constants.h"
+#include "core/track_collision_detector.h"
 #include "core/velocity_helper.h"
 
 namespace midisketch {
@@ -520,6 +521,19 @@ void AuxGenerator::generateFromSongContext(MidiTrack& track, const SongContext& 
   Tick previous_onset = 0;
   bool has_previous_onset = false;
 
+  // Voices this track has already written, so a later one can be asked about
+  // them. Aux is not one line: a counter-melody and a doubling that sits a few
+  // ticks off the beat are both written here, so its own voices overlap without
+  // sharing an onset -- and the consonance check below is asked about every
+  // track except this one.
+  struct PlacedVoice {
+    Tick start;
+    Tick end;
+    uint8_t pitch;
+  };
+  std::vector<PlacedVoice> placed_voices;
+  placed_voices.reserve(all_notes.size());
+
   for (const auto& note : all_notes) {
     const bool is_vocal_double = isVocalUnisonDouble(note, vocal_track);
     // Notes that begin together are voices of one chord, not steps along a
@@ -626,6 +640,43 @@ void AuxGenerator::generateFromSongContext(MidiTrack& track, const SongContext& 
         if (!final_is_chord_tone) {
           continue;
         }
+      }
+
+      // A voice of this same track sounding a semitone away is a clash the
+      // check above cannot see, because it is asked about every track but this
+      // one. The exemption a vocal double carries is from the chord-tone and
+      // collision rules, so that it can follow the vocal's passing tones; it is
+      // not licence to sound against another aux voice, which is not following
+      // the vocal at all. Dropping the later note states the rule the two
+      // guards above already state for this track: an aux note is optional, and
+      // silence beats a clash.
+      //
+      // The doubling offset is what makes the duration half of the question
+      // load-bearing here. Two consecutive melody notes a semitone apart do not
+      // overlap, but their doubles are placed a few ticks either side of the
+      // beat, so the earlier one can run a fraction of a beat into the later.
+      // That is the smear a doubling is made of, not two voices held together,
+      // and the same duration-aware rule every other gate uses says so.
+      {
+        const Tick note_end = opts.start + result.note->duration;
+        const ChordTones voicing = harmony.getChordTonesAt(opts.start);
+        bool clusters = false;
+        for (const auto& placed : placed_voices) {
+          if (placed.start >= note_end || placed.end <= opts.start) continue;
+          if (!isVoicingCluster(result.final_pitch, placed.pitch, voicing)) continue;
+          const Tick overlap_start = std::max(opts.start, placed.start);
+          const Tick overlap = std::min(note_end, placed.end) - overlap_start;
+          const int semitones =
+              std::abs(static_cast<int>(result.final_pitch) - static_cast<int>(placed.pitch));
+          if (isToleratedPassingTone(semitones, overlap, result.final_pitch, placed.pitch,
+                                     overlap_start, TrackRole::Aux, TrackRole::Aux)) {
+            continue;
+          }
+          clusters = true;
+          break;
+        }
+        if (clusters) continue;
+        placed_voices.push_back({opts.start, note_end, result.final_pitch});
       }
 
       // Register to harmony now that the note passed all guards
