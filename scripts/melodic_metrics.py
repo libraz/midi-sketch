@@ -32,7 +32,13 @@ LEAP_LARGE_MIN = 5  # >= 5 semitones = large leap
 # Layer-2 genre-coloring measures.  Both the generated-output comparator and
 # the in-process analyzer use this single list so reference evaluation cannot
 # silently diverge from score evaluation.
+#
+# The four interval ratios share one denominator and sum to 1, so any three of
+# them determine the fourth.  All four are compared anyway: with one left out,
+# an excess of repeated notes can only appear as a deficit somewhere else, and
+# the report names the wrong quantity.
 MELODY_STYLE_METRICS = (
+    "same_ratio",
     "step_ratio",
     "leap_small_ratio",
     "leap_large_ratio",
