@@ -524,12 +524,13 @@ TEST(GuitarChordLookupCorpusTest, EveryGuitarNoteSpellsTheChordSoundingAtItsOnse
   //     against it, which leaves a correctly voiced note answering a question
   //     nobody asked any more.
   //
-  // Neither is visible from a finished song, so a change anywhere in generation
-  // can move a configuration from one group to the other without the guitar's
-  // own lookup changing at all. When one of these starts failing, read the
-  // flagged notes before concluding the lookup regressed: check whether the
-  // pitch spells the chord that begins next, and whether the chord at that tick
-  // is the one the track was voiced against.
+  // Both are now excluded outright rather than avoided by choosing
+  // configurations they happen not to occur in. A pitch that spells the chord
+  // beginning at the next timeline entry is the anticipation working, and a
+  // note a later pass moved is that pass's chord lookup rather than the
+  // guitar's -- this test is about where the guitar read its chord, so a note
+  // it did not place is not evidence either way. What remains is the guitar's
+  // own choice, which is what the configurations were being selected to isolate.
   struct Config {
     uint8_t style;
     uint8_t blueprint;
@@ -566,6 +567,15 @@ TEST(GuitarChordLookupCorpusTest, EveryGuitarNoteSpellsTheChordSoundingAtItsOnse
         if (pitch_class == note.note % 12) is_chord_tone = true;
       }
       if (is_chord_tone) continue;
+      if (note.prov_source != static_cast<uint8_t>(NoteSource::Guitar)) continue;
+      const Tick next_entry = harmony.getNextChordEntryTick(note.start_tick);
+      bool spells_the_next_chord = false;
+      if (next_entry > note.start_tick) {
+        for (int pitch_class : harmony.getChordTonesAt(next_entry)) {
+          if (pitch_class == note.note % 12) spells_the_next_chord = true;
+        }
+      }
+      if (spells_the_next_chord) continue;
       ADD_FAILURE() << "style " << static_cast<int>(c.style) << " blueprint "
                     << static_cast<int>(c.blueprint) << " seed " << c.seed << ": guitar sounds "
                     << static_cast<int>(note.note) << " at " << note.start_tick
