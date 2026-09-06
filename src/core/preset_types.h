@@ -415,7 +415,11 @@ struct GeneratorParams {
   bool form_explicit = false;   ///< True if form was explicitly set (skip Blueprint section_flow)
 
   /// Blueprint-derived generation control
-  /// These are set by Generator from the resolved blueprint
+  /// These are set by Generator from the resolved blueprint, unconditionally
+  /// and before any track is written, so a value assigned by the caller is
+  /// overwritten rather than honoured: blueprint_id is what selects them. They
+  /// are carried here so the tracks can read them, and stored in the metadata
+  /// so a regenerated song reports the blueprint it was actually built with.
   GenerationParadigm paradigm = GenerationParadigm::Traditional;  ///< Generation approach
   RiffPolicy riff_policy = RiffPolicy::Free;                      ///< Riff management policy
   bool drums_sync_vocal = false;        ///< Sync drum kicks/snares to vocal onsets

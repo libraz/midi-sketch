@@ -3434,43 +3434,53 @@ TEST_F(VocalTest, SectionLeapTableIsInEffectRatherThanAFlatBound) {
 }
 
 TEST_F(VocalTest, RhythmSyncMelodyHasMelodicContour) {
-  // Directional consistency is a property of the generator, not of one seed:
-  // the per-song ratio has a wide natural spread, so a single seed only records
-  // where that seed happened to land. Measured over a seed set, the average is
-  // what says the melody travels before it turns rather than zigzagging.
-  params_.paradigm = GenerationParadigm::RhythmSync;
-  params_.riff_policy = RiffPolicy::LockedContour;
-  params_.structure = StructurePattern::StandardPop;
-
-  constexpr uint32_t kSeedCount = 30;
-  double ratio_sum = 0.0;
-  uint32_t songs = 0;
-  float worst_ratio = 0.0f;
-  uint32_t worst_seed = 0;
-
-  for (uint32_t seed = 1; seed <= kSeedCount; ++seed) {
-    params_.seed = seed;
-    Generator gen;
-    gen.generate(params_);
-
-    const auto& notes = gen.getSong().vocal().notes();
-    ASSERT_GT(notes.size(), 10u) << "seed " << seed << " has too few notes to analyze contour";
-    const float ratio = directionChangeRatio(notes);
-    if (ratio <= 0.0f) continue;  // too few directed movements to score
-    ratio_sum += ratio;
-    ++songs;
-    if (ratio > worst_ratio) {
-      worst_ratio = ratio;
-      worst_seed = seed;
+  // Sharing a rhythm makes the melody travel further before it turns. The
+  // claim is comparative because only the comparison is a property of the
+  // paradigm: the absolute ratio is where the generator currently sits, so an
+  // absolute bound states today's value and fails on any change that moves it,
+  // whichever direction the change moves the music.
+  //
+  // The paradigm comes from the blueprint. GeneratorParams::paradigm is
+  // overwritten from it at the start of generation, so setting that field
+  // instead selects nothing and measures whatever blueprint 0 happens to do.
+  auto meanRatio = [this](uint8_t blueprint_id) {
+    constexpr uint32_t kSeedCount = 30;
+    double sum = 0.0;
+    uint32_t songs = 0;
+    for (uint32_t seed = 1; seed <= kSeedCount; ++seed) {
+      params_.blueprint_id = blueprint_id;
+      params_.structure = StructurePattern::StandardPop;
+      params_.seed = seed;
+      Generator gen;
+      gen.generate(params_);
+      const auto& notes = gen.getSong().vocal().notes();
+      EXPECT_GT(notes.size(), 10u) << "blueprint " << static_cast<int>(blueprint_id) << " seed "
+                                   << seed << " has too few notes to analyze contour";
+      const float ratio = directionChangeRatio(notes);
+      if (ratio <= 0.0f) continue;  // too few directed movements to score
+      sum += ratio;
+      ++songs;
     }
-  }
+    EXPECT_GT(songs, kSeedCount / 2)
+        << "blueprint " << static_cast<int>(blueprint_id) << ": too few scorable songs";
+    return songs > 0 ? sum / songs : 0.0;
+  };
 
-  ASSERT_GT(songs, kSeedCount / 2) << "Too few scorable songs to judge the distribution";
-  const double mean_ratio = ratio_sum / songs;
-  EXPECT_LT(mean_ratio, 0.70)
-      << "Melody should have some directional consistency, not random zigzag. Mean ratio "
-      << mean_ratio << " over " << songs << " songs; worst was seed " << worst_seed << " at "
-      << worst_ratio;
+  // Averaged over the blueprints of each kind rather than over one of each:
+  // the gap between an individual pair can be a couple of hundredths, which is
+  // narrower than what a blueprint's own arrangement choices move.
+  double rhythm_sync = 0.0;
+  for (uint8_t bp : {1, 5, 7, 9}) rhythm_sync += meanRatio(bp);
+  rhythm_sync /= 4;
+
+  double independent = 0.0;
+  for (uint8_t bp : {0, 2, 3, 4, 6, 8}) independent += meanRatio(bp);
+  independent /= 6;
+
+  EXPECT_LT(rhythm_sync, independent)
+      << "A shared rhythm should hold the melodic direction longer, not shorter. Direction "
+         "changes per directed move: RhythmSync blueprints "
+      << rhythm_sync << ", blueprints whose tracks are written independently " << independent;
 }
 
 TEST_F(VocalTest, RhythmSyncSameSectionTypeRepeats) {
