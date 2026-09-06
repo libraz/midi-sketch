@@ -6,7 +6,9 @@
 #ifndef MIDISKETCH_TRACK_DRUMS_FILL_GENERATOR_H
 #define MIDISKETCH_TRACK_DRUMS_FILL_GENERATOR_H
 
+#include <cstddef>
 #include <random>
+#include <vector>
 
 #include "core/midi_track.h"
 #include "core/preset_data.h"
@@ -38,6 +40,24 @@ enum class FillType {
 /// @param energy Section energy level
 /// @return Beat index to start fill (0-3)
 uint8_t getFillStartBeat(SectionEnergy energy);
+
+/// @brief Beats the pre-chorus break silences at the end of its bar.
+///
+/// The break is a hold, not a dropped bar: the groove plays the bar as usual
+/// and only the last beat is taken away, so the chorus lands into a gap the
+/// listener has just heard the kit fall out of.
+constexpr uint8_t kPreChorusBreakBeats = 1;
+
+/// @brief Index of the section whose last bar breaks into the final chorus.
+///
+/// Stopping the kit outright is the strongest transition a song has, and it
+/// reads as an event only while it stays rare. It is spent once, on the
+/// approach to the last chorus; every other entry into a chorus keeps its
+/// fill.
+///
+/// @param sections Song sections in order
+/// @return Section index, or sections.size() when no transition qualifies
+size_t preChorusBreakSectionIndex(const std::vector<Section>& sections);
 
 /// @brief Select fill type based on section transition, style, and energy.
 /// @param from Source section type

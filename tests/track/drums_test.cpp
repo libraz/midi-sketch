@@ -24,6 +24,7 @@
 #include "track/drums/beat_processors.h"
 #include "track/drums/drum_constants.h"
 #include "track/drums/drum_track_generator.h"
+#include "track/drums/fill_generator.h"
 #include "track/drums/ghost_notes.h"
 #include "track/drums/hihat_control.h"
 #include "track/drums/kick_patterns.h"
@@ -326,7 +327,6 @@ TEST(DrumBeatProcessorTest, GhostNotesCanFollowBackbeats) {
                                  120,
                                  0,
                                  4,
-                                 false,
                                  grid,
                                  rng};
 
@@ -2347,7 +2347,7 @@ TEST_F(DrumsTest, BridgeCrossStickDoesNotLayerFullSnare) {
 
   const drums::GrooveGrid grid;
   drums::BeatContext beat_ctx{
-      TICKS_PER_BEAT, 1, 90, SectionType::Bridge, Mood::StraightPop, 120, 0, 8, false, grid, rng};
+      TICKS_PER_BEAT, 1, 90, SectionType::Bridge, Mood::StraightPop, 120, 0, 8, grid, rng};
 
   drums::DrumSectionContext ctx;
   ctx.use_ride = true;
@@ -2808,158 +2808,13 @@ TEST_F(DrumsTest, ChorusRideVelocityInRange) {
 }
 
 // ============================================================================
-// Task 3.9: Pre-chorus Lift Tests
+// Pre-chorus transition tests
 // ============================================================================
 
-TEST_F(DrumsTest, PreChorusLiftReducesKickSnareInLastTwoBars) {
-  // B section before Chorus should have reduced kick/snare in last 2 bars
-  // This creates a "lift" effect for anticipation
-  params_.structure = StructurePattern::StandardPop;  // A -> B -> Chorus
-  params_.mood = Mood::StraightPop;                   // Standard style (has kick/snare)
-  params_.seed = 42;
-
-  Generator gen;
-  gen.generate(params_);
-
-  const auto& track = gen.getSong().drums();
-  const auto& sections = gen.getSong().arrangement().sections();
-
-  for (size_t idx = 0; idx + 1 < sections.size(); ++idx) {
-    const auto& section = sections[idx];
-    const auto& next_section = sections[idx + 1];
-
-    // Only B sections followed by Chorus
-    if (section.type != SectionType::B || next_section.type != SectionType::Chorus) {
-      continue;
-    }
-
-    // Skip if section is too short for lift (< 3 bars)
-    if (section.bars < 3) {
-      continue;
-    }
-
-    // Define lift zone: last 2 bars
-    Tick section_end = section.endTick();
-    Tick lift_start = section_end - 2 * TICKS_PER_BAR;
-
-    // Count kick and snare in lift zone vs earlier bars
-    int kick_in_lift = 0;
-    int snare_in_lift = 0;
-    int kick_before_lift = 0;
-    int snare_before_lift = 0;
-
-    for (const auto& note : track.notes()) {
-      if (note.start_tick >= section.start_tick && note.start_tick < section_end) {
-        bool in_lift = (note.start_tick >= lift_start);
-
-        if (note.note == KICK) {
-          if (in_lift)
-            kick_in_lift++;
-          else
-            kick_before_lift++;
-        }
-        if (note.note == SNARE) {
-          if (in_lift)
-            snare_in_lift++;
-          else
-            snare_before_lift++;
-        }
-      }
-    }
-
-    // Calculate bars for normalization
-    int bars_before_lift = section.bars - 2;
-    if (bars_before_lift > 0 && kick_before_lift > 0) {
-      double kick_density_before = static_cast<double>(kick_before_lift) / bars_before_lift;
-      double kick_density_lift = static_cast<double>(kick_in_lift) / 2;
-
-      // Lift zone should have significantly fewer kicks (pre-chorus effect)
-      // Allow some tolerance since we're testing probabilistic output
-      EXPECT_LT(kick_density_lift, kick_density_before * 0.5)
-          << "Lift zone kick density (" << kick_density_lift
-          << "/bar) should be much lower than before (" << kick_density_before << "/bar)";
-    }
-
-    // With the new pre-chorus buildup pattern (Phase 2):
-    // Snare density in lift zone is now HIGHER due to 8th note buildup pattern
-    // The buildup creates driving tension before the chorus drop
-    if (bars_before_lift > 0 && snare_before_lift > 0) {
-      double snare_density_before = static_cast<double>(snare_before_lift) / bars_before_lift;
-      double snare_density_lift = static_cast<double>(snare_in_lift) / 2;
-
-      // Buildup zone should have more snares (8th note pattern = ~8 snares/bar)
-      EXPECT_GT(snare_density_lift, snare_density_before)
-          << "Buildup zone snare density (" << snare_density_lift
-          << "/bar) should be higher than before (" << snare_density_before << "/bar) "
-          << "due to 8th note buildup pattern";
-    }
-  }
-}
-
-TEST_F(DrumsTest, SparsePreChorusAvoidsEightNoteSnareBuildup) {
-  params_.structure = StructurePattern::StandardPop;
-  params_.mood = Mood::Ballad;
-  params_.seed = 42;
-
-  Generator gen;
-  gen.generate(params_);
-
-  const auto& track = gen.getSong().drums();
-  const auto& sections = gen.getSong().arrangement().sections();
-
-  bool checked_section = false;
-  for (size_t idx = 0; idx + 1 < sections.size(); ++idx) {
-    const auto& section = sections[idx];
-    const auto& next_section = sections[idx + 1];
-    if (section.type != SectionType::B || next_section.type != SectionType::Chorus ||
-        section.bars < 3) {
-      continue;
-    }
-
-    Tick section_end = section.endTick();
-    Tick buildup_start = section_end - 2 * TICKS_PER_BAR;
-    int snare_hits = 0;
-    int snares_on_8th = 0;
-
-    for (Tick bar_start = buildup_start; bar_start < section_end; bar_start += TICKS_PER_BAR) {
-      for (int eighth = 0; eighth < 8; ++eighth) {
-        Tick eighth_pos = bar_start + eighth * (TICKS_PER_BEAT / 2);
-        bool has_snare_here = false;
-        for (const auto& note : track.notes()) {
-          if ((note.note == SNARE || note.note == 40) && note.start_tick >= buildup_start &&
-              note.start_tick < section_end &&
-              std::abs(static_cast<int>(note.start_tick) - static_cast<int>(eighth_pos)) < 30) {
-            has_snare_here = true;
-            break;
-          }
-        }
-        if (has_snare_here) {
-          ++snares_on_8th;
-        }
-      }
-    }
-
-    for (const auto& note : track.notes()) {
-      if ((note.note == SNARE || note.note == 40) && note.start_tick >= buildup_start &&
-          note.start_tick < section_end) {
-        ++snare_hits;
-      }
-    }
-
-    EXPECT_LE(snare_hits, 2) << "Sparse/Ballad lift should avoid EDM-style snare roll";
-    EXPECT_LT(snares_on_8th, 4)
-        << "Sparse/Ballad lift should not cover most 8th-note snare positions";
-    checked_section = true;
-    break;
-  }
-
-  EXPECT_TRUE(checked_section) << "StandardPop should contain B -> Chorus";
-}
-
-TEST_F(DrumsTest, PreChorusLiftHiHatContinues) {
-  // Hi-hat should continue even in pre-chorus lift zone
-  // (only kick/snare drop out)
-  params_.structure = StructurePattern::StandardPop;  // A -> B -> Chorus
+TEST_F(DrumsTest, PreChorusKeepsItsGrooveIntoAChorus) {
+  // Approaching a chorus is a matter of arrangement, not of the kit standing
+  // down: the bar before the last one carries the section's ordinary groove.
+  params_.structure = StructurePattern::FullPop;
   params_.mood = Mood::StraightPop;
   params_.seed = 42;
 
@@ -2969,35 +2824,110 @@ TEST_F(DrumsTest, PreChorusLiftHiHatContinues) {
   const auto& track = gen.getSong().drums();
   const auto& sections = gen.getSong().arrangement().sections();
 
+  int checked = 0;
   for (size_t idx = 0; idx + 1 < sections.size(); ++idx) {
     const auto& section = sections[idx];
-    const auto& next_section = sections[idx + 1];
-
-    // Only B sections followed by Chorus with 3+ bars
-    if (section.type != SectionType::B || next_section.type != SectionType::Chorus) {
+    if (section.type != SectionType::B || sections[idx + 1].type != SectionType::Chorus) {
       continue;
     }
-    if (section.bars < 3) {
-      continue;
-    }
+    if (section.bars < 3) continue;
 
-    Tick section_end = section.endTick();
-    Tick lift_start = section_end - 2 * TICKS_PER_BAR;
+    // The bar before the last one carries neither a fill nor a break, so it
+    // states the section's groove with nothing layered over it.
+    const Tick bar_start = section.endTick() - 2 * TICKS_PER_BAR;
+    const Tick bar_end = bar_start + TICKS_PER_BAR;
 
-    // Count hi-hat in lift zone
-    int hh_in_lift = 0;
+    int kicks = 0;
+    int snares = 0;
     for (const auto& note : track.notes()) {
-      if (note.start_tick >= lift_start && note.start_tick < section_end) {
-        if (note.note == CHH || note.note == OHH || note.note == FOOT_HH) {
-          hh_in_lift++;
-        }
+      if (note.start_tick < bar_start || note.start_tick >= bar_end) continue;
+      if (note.note == KICK) ++kicks;
+      if (note.note == SNARE) ++snares;
+    }
+
+    EXPECT_GT(kicks, 0) << "The bar before a chorus still needs its bass drum";
+    EXPECT_LE(snares, 4) << "A backbeat bar must not be replaced by a marching snare (" << snares
+                         << " hits)";
+    ++checked;
+  }
+
+  EXPECT_GT(checked, 0) << "FullPop should contain B -> Chorus";
+}
+
+TEST_F(DrumsTest, PreChorusBreakIsSpentOnceOnTheFinalChorus) {
+  // Stopping the kit reads as an event only while it stays rare, so a song
+  // holds back exactly once and does it on the way into its last chorus.
+  params_.structure = StructurePattern::FullPop;
+  params_.mood = Mood::StraightPop;
+  params_.seed = 42;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& track = gen.getSong().drums();
+  const auto& sections = gen.getSong().arrangement().sections();
+
+  const size_t break_idx = drums::preChorusBreakSectionIndex(sections);
+  ASSERT_LT(break_idx, sections.size()) << "FullPop should qualify for a break";
+  EXPECT_EQ(sections[break_idx + 1].type, SectionType::Chorus);
+
+  auto held = [&track](const Section& section) {
+    const Tick hold_start = section.endTick() - drums::kPreChorusBreakBeats * TICKS_PER_BEAT;
+    for (const auto& note : track.notes()) {
+      if (note.start_tick >= hold_start && note.start_tick < section.endTick()) {
+        return false;
       }
     }
+    return true;
+  };
 
-    // Hi-hat should still be present in lift zone
-    EXPECT_GT(hh_in_lift, 4) << "Hi-hat should continue during pre-chorus lift (found "
-                             << hh_in_lift << " notes)";
+  int holds = 0;
+  for (size_t idx = 0; idx + 1 < sections.size(); ++idx) {
+    if (sections[idx + 1].type != SectionType::Chorus) continue;
+    if (!hasTrack(sections[idx].track_mask, TrackMask::Drums)) continue;
+    if (held(sections[idx])) ++holds;
   }
+
+  EXPECT_EQ(holds, 1) << "Every chorus but the last is entered over a playing kit";
+  EXPECT_TRUE(held(sections[break_idx])) << "The break belongs to the final chorus";
+}
+
+TEST_F(DrumsTest, PreChorusBreakOnlyTakesTheLastBeat) {
+  // The hold is a beat of silence inside a bar that otherwise grooves; taking
+  // the whole bar would read as a dropped bar instead.
+  params_.structure = StructurePattern::FullPop;
+  params_.mood = Mood::StraightPop;
+  params_.seed = 42;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& track = gen.getSong().drums();
+  const auto& sections = gen.getSong().arrangement().sections();
+
+  const size_t break_idx = drums::preChorusBreakSectionIndex(sections);
+  ASSERT_LT(break_idx, sections.size());
+
+  const Section& lead_in = sections[break_idx];
+  const Tick bar_start = lead_in.endTick() - TICKS_PER_BAR;
+  const Tick hold_start = lead_in.endTick() - drums::kPreChorusBreakBeats * TICKS_PER_BEAT;
+
+  int before_hold = 0;
+  for (const auto& note : track.notes()) {
+    if (note.start_tick >= bar_start && note.start_tick < hold_start) ++before_hold;
+  }
+  EXPECT_GT(before_hold, 2) << "The break bar grooves up to the hold";
+
+  // The chorus lands on its own downbeat rather than into an empty bar.
+  const Section& chorus = sections[break_idx + 1];
+  int on_entry = 0;
+  for (const auto& note : track.notes()) {
+    if (note.start_tick >= chorus.start_tick &&
+        note.start_tick < chorus.start_tick + TICKS_PER_BEAT) {
+      ++on_entry;
+    }
+  }
+  EXPECT_GT(on_entry, 0) << "The chorus has to answer the hold";
 }
 
 // ============================================================================
@@ -3132,179 +3062,6 @@ TEST_F(DrumsTest, IntroVerseUsesDifferentHiHatThanChorus) {
 
 // ============================================================================
 // Pre-chorus Snare Buildup Tests (Phase 2, Task 2-1)
-// ============================================================================
-
-TEST_F(DrumsTest, SnareBuildupEveryBeatIn8thPattern) {
-  // In B section's last 2 bars before Chorus, snare should be on every beat
-  // (8th note pattern for driving tension)
-  params_.structure = StructurePattern::StandardPop;  // A -> B -> Chorus
-  params_.mood = Mood::StraightPop;
-  params_.seed = 42;
-
-  Generator gen;
-  gen.generate(params_);
-
-  const auto& track = gen.getSong().drums();
-  const auto& sections = gen.getSong().arrangement().sections();
-
-  for (size_t idx = 0; idx + 1 < sections.size(); ++idx) {
-    const auto& section = sections[idx];
-    const auto& next_section = sections[idx + 1];
-
-    // Only B sections followed by Chorus
-    if (section.type != SectionType::B || next_section.type != SectionType::Chorus) {
-      continue;
-    }
-    if (section.bars < 3) {
-      continue;
-    }
-
-    Tick section_end = section.endTick();
-    Tick buildup_start = section_end - 2 * TICKS_PER_BAR;
-
-    // Count snares on 8th note positions in the buildup zone
-    int snares_on_8th = 0;
-    int total_8th_positions = 0;
-
-    for (Tick bar_start = buildup_start; bar_start < section_end; bar_start += TICKS_PER_BAR) {
-      for (int eighth = 0; eighth < 8; ++eighth) {
-        Tick eighth_pos = bar_start + eighth * (TICKS_PER_BEAT / 2);
-        total_8th_positions++;
-
-        // Check if there's a snare near this position (allow slight timing variation)
-        for (const auto& note : track.notes()) {
-          if (note.note == SNARE || note.note == 40) {
-            if (std::abs(static_cast<int>(note.start_tick) - static_cast<int>(eighth_pos)) < 30) {
-              snares_on_8th++;
-              break;
-            }
-          }
-        }
-      }
-    }
-
-    // Buildup should have snares on most 8th note positions
-    // Allow some flexibility: at least 50% coverage
-    double coverage = static_cast<double>(snares_on_8th) / total_8th_positions;
-    EXPECT_GT(coverage, 0.5)
-        << "Pre-chorus buildup should have snares on most 8th positions (coverage: " << coverage
-        << ")";
-  }
-}
-
-TEST_F(DrumsTest, SnareBuildupVelocityCrescendo) {
-  // Velocity in buildup zone should increase (crescendo effect)
-  // from ~50% at start to ~100% at end
-  params_.structure = StructurePattern::StandardPop;
-  params_.mood = Mood::StraightPop;
-  params_.seed = 100;
-
-  Generator gen;
-  gen.generate(params_);
-
-  const auto& track = gen.getSong().drums();
-  const auto& sections = gen.getSong().arrangement().sections();
-
-  for (size_t idx = 0; idx + 1 < sections.size(); ++idx) {
-    const auto& section = sections[idx];
-    const auto& next_section = sections[idx + 1];
-
-    if (section.type != SectionType::B || next_section.type != SectionType::Chorus) {
-      continue;
-    }
-    if (section.bars < 3) {
-      continue;
-    }
-
-    Tick section_end = section.endTick();
-    Tick buildup_start = section_end - 2 * TICKS_PER_BAR;
-    Tick buildup_mid = buildup_start + TICKS_PER_BAR;
-
-    // Collect snare velocities in first half and second half of buildup
-    std::vector<uint8_t> first_half_vels;
-    std::vector<uint8_t> second_half_vels;
-
-    for (const auto& note : track.notes()) {
-      if ((note.note == SNARE || note.note == 40) && note.start_tick >= buildup_start &&
-          note.start_tick < section_end) {
-        if (note.start_tick < buildup_mid) {
-          first_half_vels.push_back(note.velocity);
-        } else {
-          second_half_vels.push_back(note.velocity);
-        }
-      }
-    }
-
-    if (!first_half_vels.empty() && !second_half_vels.empty()) {
-      double avg_first = 0, avg_second = 0;
-      for (uint8_t vel : first_half_vels) avg_first += vel;
-      for (uint8_t vel : second_half_vels) avg_second += vel;
-      avg_first /= first_half_vels.size();
-      avg_second /= second_half_vels.size();
-
-      // Second half should have higher average velocity
-      EXPECT_GT(avg_second, avg_first)
-          << "Buildup velocity should crescendo: first half avg=" << avg_first
-          << ", second half avg=" << avg_second;
-    }
-  }
-}
-
-TEST_F(DrumsTest, SnareBuildupHasCrashOnFinalBeat) {
-  // Crash cymbal should be present on the final beat of the buildup
-  // (just before Chorus starts)
-  params_.structure = StructurePattern::StandardPop;
-  params_.mood = Mood::StraightPop;
-  params_.seed = 42;
-
-  Generator gen;
-  gen.generate(params_);
-
-  const auto& track = gen.getSong().drums();
-  const auto& sections = gen.getSong().arrangement().sections();
-
-  for (size_t idx = 0; idx + 1 < sections.size(); ++idx) {
-    const auto& section = sections[idx];
-    const auto& next_section = sections[idx + 1];
-
-    if (section.type != SectionType::B || next_section.type != SectionType::Chorus) {
-      continue;
-    }
-
-    Tick section_end = section.endTick();
-    Tick final_beat = section_end - TICKS_PER_BEAT;
-
-    // Check for crash on final beat (with tolerance for timing variations)
-    bool has_crash_on_final = false;
-    for (const auto& note : track.notes()) {
-      if (note.note == CRASH) {
-        if (note.start_tick >= final_beat - 60 && note.start_tick < section_end) {
-          has_crash_on_final = true;
-          break;
-        }
-      }
-    }
-
-    // Note: Crash is added at section start of Chorus, not end of B,
-    // so we check for crash near the transition point
-    // Either there's a crash at end of B or at start of Chorus is acceptable
-    bool has_crash_at_chorus_start = false;
-    for (const auto& note : track.notes()) {
-      if (note.note == CRASH) {
-        if (note.start_tick >= section_end && note.start_tick < section_end + TICKS_PER_BEAT / 2) {
-          has_crash_at_chorus_start = true;
-          break;
-        }
-      }
-    }
-
-    EXPECT_TRUE(has_crash_on_final || has_crash_at_chorus_start)
-        << "Should have crash at or near B->Chorus transition";
-  }
-}
-
-// ============================================================================
-// Blueprint intro_kick_enabled Tests
 // ============================================================================
 
 TEST_F(DrumsTest, IntroKickEnabledFlagDifferenceTest) {
@@ -3712,27 +3469,27 @@ TEST(DrumGrooveGridTest, EveryVoicePlacesOnsetsOnTheSectionGrid) {
   }
 }
 
-TEST(DrumGrooveGridTest, PreChorusBuildupSharesTheGridWithTheHiHat) {
-  // The buildup snare and the hi-hat name the same off-beat, so a swung
-  // section has to give them the same tick.
-  Section verse;
-  verse.type = SectionType::B;
-  verse.name = "B";
-  verse.start_tick = 0;
-  verse.bars = 4;
-  verse.track_mask = TrackMask::Drums;
-  verse.swing_amount = 0.5f;
+TEST(DrumGrooveGridTest, TransitionFillSharesTheGridWithTheHiHat) {
+  // The fill's snare and the hi-hat name the same off-beat, so a swung section
+  // has to give them the same tick.
+  auto makeSection = [](SectionType type, const char* name, Tick start) {
+    Section section;
+    section.type = type;
+    section.name = name;
+    section.start_tick = start;
+    section.bars = 4;
+    section.track_mask = TrackMask::Drums;
+    section.swing_amount = 0.5f;
+    return section;
+  };
 
-  Section chorus;
-  chorus.type = SectionType::Chorus;
-  chorus.name = "Chorus";
-  chorus.start_tick = 4 * TICKS_PER_BAR;
-  chorus.bars = 4;
-  chorus.track_mask = TrackMask::Drums;
-  chorus.swing_amount = 0.5f;
-
+  // Two chorus entries: the first keeps its fill, the last takes the break.
+  const Section verse = makeSection(SectionType::B, "B", 0);
   Song song;
-  song.setArrangement(Arrangement({verse, chorus}));
+  song.setArrangement(
+      Arrangement({verse, makeSection(SectionType::Chorus, "Chorus", 4 * TICKS_PER_BAR),
+                   makeSection(SectionType::B, "B", 8 * TICKS_PER_BAR),
+                   makeSection(SectionType::Chorus, "Chorus", 12 * TICKS_PER_BAR)}));
 
   drums::DrumGenerationParams params{};
   params.mood = Mood::CityPop;
@@ -3752,18 +3509,26 @@ TEST(DrumGrooveGridTest, PreChorusBuildupSharesTheGridWithTheHiHat) {
   const Tick swung_offbeat = grid.resolve(grid.bar_start + TICK_EIGHTH) % TICKS_PER_BEAT;
   ASSERT_NE(swung_offbeat, TICK_EIGHTH) << "This section must actually swing for the test to bite";
 
-  const Tick lift_start = verse.endTick() - drums::kPreChorusLiftBars * TICKS_PER_BAR;
+  // A fill subdivides down to 16ths, so the grid offsets it may name are the
+  // four the grid itself produces inside a beat.
+  std::set<Tick> grid_offsets;
+  for (Tick step = 0; step < TICKS_PER_BEAT; step += TICK_SIXTEENTH) {
+    grid_offsets.insert(grid.resolve(grid.bar_start + step) % TICKS_PER_BEAT);
+  }
+
+  const Tick fill_bar_start = verse.endTick() - TICKS_PER_BAR;
   int checked = 0;
   for (const auto& note : track.notes()) {
-    if (note.start_tick < lift_start || note.start_tick >= verse.endTick()) continue;
+    if (note.start_tick < fill_bar_start || note.start_tick >= verse.endTick()) continue;
     if (note.note != SNARE) continue;
     const Tick offset = note.start_tick % TICKS_PER_BEAT;
     if (offset == 0) continue;
     ++checked;
-    EXPECT_EQ(offset, swung_offbeat)
-        << "Buildup snare at " << note.start_tick << " ignores the section swing";
+    EXPECT_EQ(grid_offsets.count(offset), 1u)
+        << "Fill snare at " << note.start_tick << " (offset " << offset
+        << ") ignores the section grid; the swung eighth is " << swung_offbeat;
   }
-  EXPECT_GT(checked, 0) << "The lift should place off-beat snares to check";
+  EXPECT_GT(checked, 0) << "The fill should place off-beat snares to check";
 }
 
 TEST(DrumGrooveGridTest, TimeFeelMovesTheWholeKitAndSurvivesSwing) {
@@ -3960,8 +3725,15 @@ TEST(DrumFillCoverageTest, EveryFilledBeatCarriesAnOnset) {
   chorus.energy = SectionEnergy::Low;
   chorus.fill_before = true;
 
+  // A second pass of the same pair, so the transition under test is an
+  // ordinary one: the break that silences a beat is spent on the last chorus.
+  Section verse_two = verse;
+  verse_two.start_tick = 8 * TICKS_PER_BAR;
+  Section chorus_two = chorus;
+  chorus_two.start_tick = 12 * TICKS_PER_BAR;
+
   Song song;
-  song.setArrangement(Arrangement({verse, chorus}));
+  song.setArrangement(Arrangement({verse, chorus, verse_two, chorus_two}));
 
   drums::DrumGenerationParams params{};
   params.mood = Mood::StraightPop;

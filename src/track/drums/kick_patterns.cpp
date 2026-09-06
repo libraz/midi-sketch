@@ -11,30 +11,6 @@
 namespace midisketch {
 namespace drums {
 
-bool isInPreChorusLift(const Section& section, uint8_t bar, const std::vector<Section>& sections,
-                       size_t sec_idx) {
-  if (section.type != SectionType::B) {
-    return false;
-  }
-
-  if (sec_idx + 1 >= sections.size()) {
-    return false;
-  }
-  if (sections[sec_idx + 1].type != SectionType::Chorus) {
-    return false;
-  }
-
-  if (section.bars < 3) {
-    return false;
-  }
-
-  return bar >= (section.bars - kPreChorusLiftBars);
-}
-
-uint8_t preChorusBuildupHitsPerBar(uint8_t bar_in_lift) {
-  return (bar_in_lift + 1 >= kPreChorusLiftBars) ? 8 : 4;
-}
-
 KickPattern euclideanToKickPattern(uint16_t pattern) {
   auto hasHitAtEighthSlot = [pattern](uint8_t step) {
     uint8_t preceding_sixteenth = static_cast<uint8_t>((step + 15) % 16);

@@ -7,6 +7,8 @@
 
 #include <algorithm>
 #include <map>
+#include <optional>
+#include <utility>
 #include <vector>
 
 #include "core/euclidean_rhythm.h"
@@ -402,11 +404,11 @@ float timekeepingEventsPerBar(HiHatLevel level) {
 /// @brief Estimate the events one bar of a section writes, averaged over the
 ///        whole section.
 ///
-/// The steady groove is only part of a section's density: a pre-chorus trades
-/// its last bars for a snare buildup, and the bar before a transition gives
-/// its later beats to a fill. Both are written by the bar loop whatever the
-/// section context says, so the average has to include them or a comparison
-/// between sections measures the wrong thing.
+/// The steady groove is only part of a section's density: the bar before a
+/// transition gives its later beats to a fill, and the approach to the last
+/// chorus gives its final beat away to a break. Both are written by the bar
+/// loop whatever the section context says, so the average has to include them
+/// or a comparison between sections measures the wrong thing.
 float estimateEventsPerBar(const DrumSectionContext& ctx, const std::vector<Section>& sections,
                            size_t index, const DrumGenerationParams& params) {
   const Mood mood = params.mood;
@@ -432,16 +434,10 @@ float estimateEventsPerBar(const DrumSectionContext& ctx, const std::vector<Sect
   const float steady = timekeeping + ghosts + percussion + kSteadyKickPerBar + backbeat;
   float total = steady * bars;
 
-  if (isInPreChorusLift(section, static_cast<uint8_t>(section.bars - 1), sections, index)) {
-    // The lift replaces the groove with the snare crescendo. The kick keeps
-    // coming from the vocal-driven paradigms, which own it through a callback.
-    const float lift_kick =
-        params.paradigm == GenerationParadigm::Traditional ? 0.0f : kSteadyKickPerBar;
-    const float lift_timekeeping = timekeepingEventsPerBar(adjustHiHatSparser(ctx.hh_level));
-    for (uint8_t lift_bar = 0; lift_bar < kPreChorusLiftBars; ++lift_bar) {
-      total += lift_timekeeping + percussion + lift_kick +
-               static_cast<float>(preChorusBuildupHitsPerBar(lift_bar)) - steady;
-    }
+  if (preChorusBreakSectionIndex(sections) == index) {
+    // The break takes the bar's last beat away from every voice instead of
+    // handing it to a fill.
+    total -= steady / 4.0f * static_cast<float>(kPreChorusBreakBeats);
   } else if (index + 1 < sections.size() &&
              (sections[index + 1].fill_before || sections[index + 1].type == SectionType::Chorus)) {
     const float filled_beats = 4.0f - static_cast<float>(getFillStartBeat(section.energy));
@@ -549,6 +545,17 @@ void generateDrumsTrackImpl(MidiTrack& track, const Song& song, const DrumGenera
   const std::vector<DrumSectionContext> section_contexts =
       resolveSectionContexts(all_sections, params, blueprint, style, rng);
 
+  const size_t break_section_index = preChorusBreakSectionIndex(all_sections);
+  // Windows the break silences, collected here and cleared once the whole kit
+  // has been written. The kick arrives from three independent paths and the
+  // auxiliary percussion from a per-bar pass, so a per-beat guard would leave
+  // most of the bar's voices sounding through the hold.
+  std::vector<std::pair<Tick, Tick>> break_windows;
+  // The hold has to resolve into something. A style that would not otherwise
+  // mark the chorus entry still gets a crash there, placed after the windows
+  // are cleared so a pushed grid cannot put it inside the silence.
+  std::optional<std::pair<Tick, uint8_t>> break_answer;
+
   for (size_t sec_idx = 0; sec_idx < all_sections.size(); ++sec_idx) {
     const auto& section = all_sections[sec_idx];
     const DrumSectionContext& ctx = section_contexts[sec_idx];
@@ -560,13 +567,17 @@ void generateDrumsTrackImpl(MidiTrack& track, const Song& song, const DrumGenera
     bool is_last_section = (sec_idx == all_sections.size() - 1);
 
     // Add crash cymbal accent at start of Chorus
-    if (ctx.add_crash_accent && sec_idx > 0) {
+    const bool answers_break = (sec_idx > 0) && (sec_idx - 1 == break_section_index);
+    if ((ctx.add_crash_accent || answers_break) && sec_idx > 0) {
       uint8_t crash_vel =
           static_cast<uint8_t>(std::min(127, static_cast<int>(105 * ctx.density_mult)));
       const GrooveGrid entry_grid =
           makeGrooveGrid(section, 0, ctx.groove, ctx.time_feel, params.bpm);
-      addCrashIfAbsent(track, entry_grid.resolve(section.start_tick), TICKS_PER_BEAT / 2,
-                       crash_vel);
+      const Tick entry_tick = entry_grid.resolve(section.start_tick);
+      addCrashIfAbsent(track, entry_tick, TICKS_PER_BEAT / 2, crash_vel);
+      if (answers_break) {
+        break_answer = {entry_tick, crash_vel};
+      }
     }
 
     bool reuse_section_kick = shouldReuseSectionKickPattern(section.type, ctx.style);
@@ -579,6 +590,14 @@ void generateDrumsTrackImpl(MidiTrack& track, const Song& song, const DrumGenera
       bool is_section_last_bar = (bar == section.bars - 1);
       // One grid per bar; every voice below places its onsets through it.
       const GrooveGrid grid = makeGrooveGrid(section, bar, ctx.groove, ctx.time_feel, params.bpm);
+
+      const bool is_break_bar = (sec_idx == break_section_index) && is_section_last_bar;
+      if (is_break_bar) {
+        // Resolved through the grid so a swung or laid-back offbeat sitting
+        // just before the last beat still counts as played, not held.
+        const Tick hold_start = grid.resolve(bar_end - kPreChorusBreakBeats * TICKS_PER_BEAT);
+        break_windows.emplace_back(hold_start, bar_end);
+      }
 
       // Crash on section starts
       if (bar == 0) {
@@ -711,28 +730,18 @@ void generateDrumsTrackImpl(MidiTrack& track, const Song& song, const DrumGenera
           next_energy = all_sections[sec_idx + 1].energy;
         }
 
-        // Pre-chorus buildup
-        bool in_prechorus_lift = isInPreChorusLift(section, bar, all_sections, sec_idx);
-
         const float snare_prob = getDrumRoleSnareProbability(section.getEffectiveDrumRole());
-        const bool allow_snare_family = snare_prob > 0.0f;
 
-        bool did_buildup = false;
-        if (in_prechorus_lift) {
-          did_buildup =
-              generatePreChorusBuildup(track, grid, beat_tick, beat, velocity, bar, section.bars,
-                                       is_section_last_bar, ctx.style, allow_snare_family);
-        }
-
-        // Fill handling
+        // Fill handling. The bar that breaks into the last chorus keeps its
+        // groove and gives its final beat away instead, so it writes no fill.
         uint8_t fill_start_beat = getFillStartBeat(section.energy);
         bool should_fill = is_section_last_bar && !is_last_section && beat >= fill_start_beat &&
-                           (next_wants_fill || next_section == SectionType::Chorus) && !did_buildup;
+                           (next_wants_fill || next_section == SectionType::Chorus) &&
+                           !is_break_bar;
 
         // Common beat context (shared across all beat processors)
-        BeatContext beat_ctx{beat_tick,         beat,       velocity, section.type,
-                             params.mood,       params.bpm, bar,      section.bars,
-                             in_prechorus_lift, grid,       rng};
+        BeatContext beat_ctx{beat_tick,  beat, velocity,     section.type, params.mood,
+                             params.bpm, bar,  section.bars, grid,         rng};
 
         if (should_fill) {
           if (beat == fill_start_beat) {
@@ -807,6 +816,36 @@ void generateDrumsTrackImpl(MidiTrack& track, const Song& song, const DrumGenera
         std::remove_if(notes.begin(), notes.end(),
                        [](const NoteEvent& note) { return shouldThinRhythmSyncTexture(note); }),
         notes.end());
+  }
+
+  if (!break_windows.empty()) {
+    auto& notes = track.notes();
+    notes.erase(std::remove_if(notes.begin(), notes.end(),
+                               [&break_windows](const NoteEvent& note) {
+                                 for (const auto& [start, end] : break_windows) {
+                                   if (note.start_tick >= start && note.start_tick < end) {
+                                     return true;
+                                   }
+                                 }
+                                 return false;
+                               }),
+                notes.end());
+  }
+
+  if (break_answer) {
+    const Tick answer_tick = break_answer->first;
+    // A drummer coming out of a hold crashes instead of playing the
+    // timekeeping stroke, and the two cannot share the hand. Yielding the
+    // stroke here keeps the playability pass from dropping the crash and
+    // leaving the hold unanswered.
+    auto& notes = track.notes();
+    notes.erase(std::remove_if(notes.begin(), notes.end(),
+                               [answer_tick](const NoteEvent& note) {
+                                 return note.start_tick == answer_tick &&
+                                        (note.note == RIDE || note.note == CHH || note.note == OHH);
+                               }),
+                notes.end());
+    addCrashIfAbsent(track, answer_tick, TICKS_PER_BEAT / 2, break_answer->second);
   }
 
   // Fill, anchor, and vocal-aware paths are intentionally composed

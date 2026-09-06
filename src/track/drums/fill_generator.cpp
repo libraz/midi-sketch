@@ -25,6 +25,29 @@ uint8_t getFillStartBeat(SectionEnergy energy) {
   return 2;  // Default: beat 3
 }
 
+size_t preChorusBreakSectionIndex(const std::vector<Section>& sections) {
+  size_t entry = sections.size();
+  for (size_t scan = sections.size(); scan-- > 0;) {
+    if (sections[scan].type == SectionType::Chorus) {
+      entry = scan;
+      break;
+    }
+  }
+  if (entry == sections.size()) return sections.size();
+
+  // A closing chorus doubled onto itself is entered once. The hold belongs in
+  // front of the whole run rather than between its halves.
+  while (entry > 0 && sections[entry - 1].type == SectionType::Chorus) --entry;
+  if (entry == 0) return sections.size();
+
+  // When the approach cannot carry a hold, the song simply keeps its fills.
+  const Section& lead_in = sections[entry - 1];
+  if (lead_in.bars < 2) return sections.size();
+  if (!hasTrack(lead_in.track_mask, TrackMask::Drums)) return sections.size();
+  if (!hasTrack(sections[entry].track_mask, TrackMask::Drums)) return sections.size();
+  return entry - 1;
+}
+
 FillType selectFillType(SectionType from, SectionType to, DrumStyle style,
                         SectionEnergy next_energy, std::mt19937& rng) {
   // Sparse style: simple crash or breakdown fill

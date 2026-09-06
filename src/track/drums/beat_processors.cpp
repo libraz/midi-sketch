@@ -64,10 +64,6 @@ uint8_t getBackbeatSnareVelocity(uint8_t base_velocity) {
 
 void generateKickForBeat(MidiTrack& track, const BeatContext& beat_ctx,
                          const KickBeatParams& params) {
-  if (beat_ctx.in_prechorus_lift) {
-    return;
-  }
-
   bool play_kick_on = false;
   bool play_kick_and = false;
 
@@ -112,10 +108,6 @@ void generateKickForBeat(MidiTrack& track, const BeatContext& beat_ctx,
 
 void generateSnareForBeat(MidiTrack& track, const BeatContext& beat_ctx,
                           const SnareBeatParams& params) {
-  if (beat_ctx.in_prechorus_lift) {
-    return;
-  }
-
   uint8_t step = static_cast<uint8_t>(beat_ctx.beat * 4);
   bool snare_on_this_beat;
   if (params.use_groove_snare) {
@@ -184,44 +176,6 @@ void generateGhostNotesForBeat(MidiTrack& track, const BeatContext& beat_ctx,
   }
 }
 
-bool generatePreChorusBuildup(MidiTrack& track, const GrooveGrid& grid, Tick beat_tick,
-                              uint8_t beat, uint8_t velocity, uint8_t bar, uint8_t section_bars,
-                              bool is_section_last_bar, DrumStyle style, bool allow_snare) {
-  if (style == DrumStyle::Sparse) {
-    if (is_section_last_bar && beat == 3) {
-      if (allow_snare) {
-        uint8_t snare_vel = static_cast<uint8_t>(std::max(45, static_cast<int>(velocity * 0.75f)));
-        addDrumNote(track, grid.resolve(beat_tick), EIGHTH, SD, snare_vel);
-      }
-      uint8_t crash_vel = static_cast<uint8_t>(std::min(127, static_cast<int>(velocity * 0.9f)));
-      addDrumNote(track, grid.resolve(beat_tick + EIGHTH + SIXTEENTH), SIXTEENTH, CRASH, crash_vel);
-    }
-    return true;
-  }
-
-  uint8_t bar_in_lift = bar - (section_bars - kPreChorusLiftBars);
-  float buildup_progress = (bar_in_lift * 4.0f + beat) / (kPreChorusLiftBars * 4.0f);
-
-  float crescendo = 0.5f + 0.5f * buildup_progress;
-  uint8_t buildup_vel = static_cast<uint8_t>(velocity * crescendo);
-
-  if (allow_snare) {
-    addDrumNote(track, grid.resolve(beat_tick), EIGHTH, SD, buildup_vel);
-    // The lift subdivides as it goes: quarters first, eighths in the last bar.
-    if (preChorusBuildupHitsPerBar(bar_in_lift) > 4) {
-      uint8_t offbeat_vel = static_cast<uint8_t>(buildup_vel * 0.85f);
-      addDrumNote(track, grid.resolve(beat_tick + EIGHTH), EIGHTH, SD, offbeat_vel);
-    }
-  }
-
-  if (is_section_last_bar && beat == 3) {
-    uint8_t crash_vel = static_cast<uint8_t>(std::min(127, static_cast<int>(velocity * 1.1f)));
-    addDrumNote(track, grid.resolve(beat_tick + EIGHTH + SIXTEENTH), SIXTEENTH, CRASH, crash_vel);
-  }
-
-  return true;
-}
-
 void generateHiHatForBeat(MidiTrack& track, const BeatContext& beat_ctx,
                           const DrumSectionContext& ctx, const HiHatBeatParams& params) {
   (void)beat_ctx.section_bars;
@@ -239,12 +193,7 @@ void generateHiHatForBeat(MidiTrack& track, const BeatContext& beat_ctx,
   float hh_type_vel_mult = getHiHatVelocityMultiplierForType(hh_type);
   bool is_dynamic_open_hh_beat = params.bar_has_open_hh && (beat_ctx.beat == params.open_hh_beat);
 
-  // In the pre-chorus lift the snare buildup takes over the subdivision, so
-  // the timekeeping steps back instead of stacking on top of it.
-  const HiHatLevel hh_level =
-      beat_ctx.in_prechorus_lift ? adjustHiHatSparser(ctx.hh_level) : ctx.hh_level;
-
-  switch (hh_level) {
+  switch (ctx.hh_level) {
     case HiHatLevel::Quarter: {
       bool is_intro_rest = (beat_ctx.section_type == SectionType::Intro && beat_ctx.beat != 0);
       const Tick hh_tick = beat_ctx.grid.resolve(beat_ctx.beat_tick);

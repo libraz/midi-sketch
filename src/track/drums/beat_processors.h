@@ -52,7 +52,6 @@ struct BeatContext {
   uint16_t bpm;              ///< Tempo in BPM
   uint8_t bar;               ///< Current bar number within section
   uint8_t section_bars;      ///< Total bars in section
-  bool in_prechorus_lift;    ///< Whether in pre-chorus buildup zone
   const GrooveGrid& grid;    ///< Beat grid shared by every voice in the bar
   std::mt19937& rng;         ///< Random number generator
 };
@@ -116,22 +115,6 @@ void generateSnareForBeat(MidiTrack& track, const BeatContext& beat_ctx,
 /// @param params Ghost note-specific parameters
 void generateGhostNotesForBeat(MidiTrack& track, const BeatContext& beat_ctx,
                                const GhostBeatParams& params);
-
-/// @brief Generate pre-chorus buildup pattern for a beat.
-/// @param track Target MIDI track
-/// @param grid Beat grid shared by every voice in the bar
-/// @param beat_tick Nominal tick position of the beat
-/// @param beat Beat number (0-3)
-/// @param velocity Base velocity
-/// @param bar Current bar in section
-/// @param section_bars Total bars in section
-/// @param is_section_last_bar Whether this is the last bar
-/// @param style Drum style for genre-appropriate buildup
-/// @param allow_snare Whether the section's drum role admits snare-family notes
-/// @return true if buildup was generated
-bool generatePreChorusBuildup(MidiTrack& track, const GrooveGrid& grid, Tick beat_tick,
-                              uint8_t beat, uint8_t velocity, uint8_t bar, uint8_t section_bars,
-                              bool is_section_last_bar, DrumStyle style, bool allow_snare);
 
 /// @brief Generate hi-hat for a single beat.
 /// @param track Target MIDI track
