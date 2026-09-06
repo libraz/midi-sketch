@@ -25,6 +25,13 @@ int applyPitchChoice(PitchChoice choice, int current_pitch, int target_pitch,
   //   Expressive: chord tones + tensions (7, 9)
   //   Raw: all scale tones (more freedom)
   //
+  // The set below is consulted only when a pitch has to be chosen. Every
+  // stepwise branch resolves first by walking to the neighbouring scale tone
+  // and never looks at it, so the attitude does not decide those notes: Clean
+  // steps onto non-chord tones like the others, and Expressive's tensions
+  // reach the line only through the fallbacks. The chord is not consulted on
+  // that walk either -- see the note where the step is taken.
+  //
   // Rhythm-melody coupling: note duration modulates tension allowance
   //   Short notes (< 1 eighth): Force chord tones for stability
   //   Long notes (>= 4 eighths): Allow tensions if attitude permits
@@ -58,6 +65,21 @@ int applyPitchChoice(PitchChoice choice, int current_pitch, int target_pitch,
         bool add_tensions = (note_length_norm >= tension_threshold);
         if (add_tensions) {
           int root_pc = chord_tones.empty() ? 0 : chord_tones[0];
+          // These are fixed distances from the root, not degrees of the scale
+          // counted above it, and the two differ on most chords. Eleven
+          // semitones names the major seventh everywhere, so the diatonic
+          // filter below keeps the "seventh" on the two degrees whose seventh
+          // is major -- both of them avoid notes over a major triad -- and
+          // discards it on the five degrees built on a minor seventh, the
+          // dominant's among them. The "eleventh" is likewise the fourth,
+          // which is an avoid note over every major triad it survives on.
+          //
+          // Correcting the spelling was measured and left out: the melody
+          // reaches the chord's own seventh through the stepwise priority
+          // below without consulting this list at all, and the list itself is
+          // read on a small minority of calls, so a corrected candidate set
+          // moved nothing. Whoever makes the stepwise priority attitude-aware
+          // has to fix the spelling in the same change, or these become live.
           int seventh = (root_pc + 11) % 12;  // Major 7th (11 semitones from root)
           int ninth = (root_pc + 2) % 12;     // 9th = 2nd (2 semitones)
           int eleventh = (root_pc + 5) % 12;  // 11th = 4th (5 semitones, sus4-like)
@@ -110,7 +132,10 @@ int applyPitchChoice(PitchChoice choice, int current_pitch, int target_pitch,
       // Snapping "Same" to the nearest chord tone silently converted stay
       // decisions into moves (often 3rds), inflating leap ratios. Avoid-note
       // and downbeat chord-tone constraints run later in the pipeline and
-      // still correct genuinely unsafe pitches.
+      // correct part of what this leaves behind -- part, not all: a pitch this
+      // branch keeps can still be an avoid note over its chord in the finished
+      // line, so "a later pass handles it" is not a reason to skip the
+      // question, only a reason the melody is not written around the answer.
       if (isScaleTone(current_pitch % 12, static_cast<uint8_t>(key_offset))) {
         new_pitch = current_pitch;
       } else {
@@ -139,6 +164,15 @@ int applyPitchChoice(PitchChoice choice, int current_pitch, int target_pitch,
         // Note: Downbeat chord-tone constraint ensures strong beats are harmonically correct
 
         // Priority 1: Scale tone step (prefer whole step for more consonant motion)
+        //
+        // This walk tests the scale and not the chord, and it decides most of
+        // the notes this function returns. Roughly a third of the pitches it
+        // lands on are avoid notes over the chord sounding under them, and
+        // preferring the half step does not help: from a diatonic pitch only
+        // one of the two step sizes is in the scale, so there is no second
+        // step to fall back on. Clearing the chord here would mean giving up
+        // the step for a chord tone, which is a change to how the melodies
+        // move rather than a correction, so it is deliberately not done.
         for (int step = 2; step >= 1; --step) {
           int candidate = current_pitch + step;
           if (candidate <= vocal_high &&

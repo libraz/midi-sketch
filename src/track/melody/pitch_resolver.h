@@ -22,10 +22,17 @@ namespace melody {
 
 /// @brief Apply pitch choice to determine new pitch.
 ///
-/// VocalAttitude affects candidate pitches:
+/// VocalAttitude decides the candidate set:
 ///   Clean: chord tones only (1, 3, 5)
 ///   Expressive: chord tones + tensions (7, 9)
 ///   Raw: all scale tones
+///
+/// The candidate set is not the whole answer, and on most calls it is not the
+/// answer at all. Step motion is resolved first by walking to the neighbouring
+/// scale tone, which is attitude-independent, so Clean does not restrict the
+/// line to chord tones and Expressive's tensions are consulted only where that
+/// walk has nowhere to go. Read the set as what the attitude offers when a
+/// pitch has to be chosen rather than stepped to.
 ///
 /// Rhythm-melody coupling:
 ///   Short notes (< 1 eighth): Force chord tones for stability
