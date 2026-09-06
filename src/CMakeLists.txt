@@ -101,6 +101,8 @@ set(MIDISKETCH_CORE_SOURCES
   track/bass/bass_motion.cpp
   track/generators/chord.cpp
   track/generators/motif.cpp
+  track/motif/motif_rhythm.cpp
+  track/motif/motif_vocal_coordination.cpp
   track/generators/aux.cpp
   track/generators/arpeggio.cpp
   track/generators/drums.cpp

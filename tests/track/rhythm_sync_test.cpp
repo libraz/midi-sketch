@@ -23,6 +23,7 @@
 #include "test_support/generator_test_fixture.h"
 #include "test_support/test_helpers.h"
 #include "track/generators/motif.h"
+#include "track/motif/motif_rhythm.h"
 
 namespace midisketch {
 namespace {

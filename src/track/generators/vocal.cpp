@@ -32,6 +32,7 @@
 #include "track/melody/melody_utils.h"
 #include "track/melody/motif_support.h"
 #include "track/melody/rhythm_generator.h"
+#include "track/motif/motif_rhythm.h"
 #include "track/vocal/locked_rhythm_generator.h"
 #include "track/vocal/melody_designer.h"
 #include "track/vocal/phrase_cache.h"

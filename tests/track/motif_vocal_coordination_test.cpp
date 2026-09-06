@@ -3,6 +3,8 @@
  * @brief Tests for motif-vocal coordination in MelodyLead mode.
  */
 
+#include "track/motif/motif_vocal_coordination.h"
+
 #include <gtest/gtest.h>
 
 #include <algorithm>
@@ -21,15 +23,6 @@ namespace midisketch {
 // =============================================================================
 // Helper Function Tests
 // =============================================================================
-
-namespace motif_detail {
-// Forward declare internal helpers for testing
-bool isInVocalRest(Tick tick, const std::vector<Tick>* rest_positions, Tick threshold);
-uint8_t calculateMotifRegister(uint8_t vocal_low, uint8_t vocal_high, bool register_high,
-                               int8_t register_offset);
-int8_t getVocalDirection(const std::map<Tick, int8_t>* direction_at_tick, Tick tick);
-int applyContraryMotion(int pitch, int8_t vocal_direction, float strength, std::mt19937& rng);
-}  // namespace motif_detail
 
 namespace {
 

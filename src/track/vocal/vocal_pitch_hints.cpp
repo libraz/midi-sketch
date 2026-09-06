@@ -12,6 +12,7 @@
 
 #include "core/timing_constants.h"
 #include "track/generators/motif.h"
+#include "track/motif/motif_rhythm.h"
 #include "track/vocal/phrase_plan.h"
 
 namespace midisketch {

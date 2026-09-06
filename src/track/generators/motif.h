@@ -59,60 +59,6 @@ class MotifGenerator : public TrackBase {
 /// @returns Vector of NoteEvents for one motif cycle
 std::vector<NoteEvent> generateMotifPattern(const GeneratorParams& params, std::mt19937& rng);
 
-// Forward declarations for motif_detail functions used by generator.cpp
-enum class MotifRhythmTemplate : uint8_t;
-enum class MotifRhythmDensity : uint8_t;
-enum class MotifLength : uint8_t;
-
-namespace motif_detail {
-
-/// @brief Configuration for a single motif rhythm template.
-struct MotifRhythmTemplateConfig {
-  float beat_positions[16];
-  float accent_weights[16];
-  uint8_t note_count;
-  MotifRhythmDensity effective_density;
-};
-
-/// @brief Select a rhythm template based on BPM.
-MotifRhythmTemplate selectRhythmSyncTemplate(uint16_t bpm, std::mt19937& rng,
-                                             bool prefer_straight_sixteenth = false,
-                                             bool prefer_idol_chant = false);
-
-/// @brief Get the template config for a given template ID.
-const MotifRhythmTemplateConfig& getTemplateConfig(MotifRhythmTemplate tmpl);
-
-/// @brief The span one statement of a pattern occupies, in ticks.
-///
-/// Anything that lays a motif pattern end to end has to advance by the span the
-/// pattern actually covers. `MotifParams::length` is a request, not a
-/// measurement: a rhythm template supplies its own onsets and one of them spans
-/// two bars, so a caller that strides by the configured bar count restarts that
-/// pattern before it has finished and sounds each statement over the previous
-/// one. Measuring the pattern keeps the two in agreement whatever chose the
-/// rhythm.
-Tick motifCycleLengthOf(const std::vector<NoteEvent>& pattern, MotifLength configured_bars);
-
-/// @brief How long a riff note sounds inside the space it was given.
-///
-/// Half the space, and never shorter than a sixteenth. Articulation is a
-/// proportion, not a fixed margin: subtracting a constant number of ticks
-/// separates the notes of a slow figure by a hair and leaves the fastest ones
-/// touching, because the constant is a smaller share of a wide gap than of a
-/// narrow one and eventually exceeds it. A riff whose notes fill the space
-/// between their onsets stops being a riff and becomes a pad.
-///
-/// The floor is what keeps the rule from turning a slow figure into a row of
-/// clicks: at sixteenth spacing the two clauses meet and the note fills its
-/// space, which is how a fast run is played, while an eighth-spaced figure
-/// lands on exactly one sixteenth and a quarter-spaced one on an eighth.
-///
-/// @param gap Ticks from this onset to the next
-/// @return Sounding length in ticks
-Tick riffNoteDuration(Tick gap);
-
-}  // namespace motif_detail
-
 }  // namespace midisketch
 
 #endif  // MIDISKETCH_TRACK_GENERATORS_MOTIF_H

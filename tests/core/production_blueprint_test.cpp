@@ -32,6 +32,7 @@
 #include "track/generators/guitar.h"
 #include "track/generators/motif.h"
 #include "track/generators/vocal.h"
+#include "track/motif/motif_rhythm.h"
 #include "track/vocal/phrase_cache.h"
 
 namespace midisketch {

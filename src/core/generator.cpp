@@ -60,6 +60,7 @@
 #include "track/generators/motif.h"
 #include "track/generators/se.h"
 #include "track/generators/vocal.h"
+#include "track/motif/motif_rhythm.h"
 #include "track/vocal/vocal_analysis.h"
 #include "track/vocal/vocal_helpers.h"
 #include "track/vocal/vocal_post_process.h"
