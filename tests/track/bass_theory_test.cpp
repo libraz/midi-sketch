@@ -34,6 +34,7 @@
 #include "test_support/generator_test_fixture.h"
 #include "track/bass/bass_density.h"
 #include "track/bass/bass_motion.h"
+#include "track/bass/bass_pattern_selection.h"
 #include "track/generators/bass.h"
 
 namespace midisketch {

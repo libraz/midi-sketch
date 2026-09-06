@@ -75,13 +75,6 @@ uint8_t selectNextBassDiatonic(uint8_t pitch, int direction);
 /// @brief Select a diatonic third above the root while preserving pitch class at range limits.
 uint8_t selectBassDiatonicThird(uint8_t root);
 
-/// @brief Select a vocal-aware bass pattern before riff-policy and peak-level adjustments.
-BassPattern selectPatternForVocalDensity(float vocal_density, const Section& section,
-                                         const GeneratorParams& params, std::mt19937& rng);
-
-/// @brief Promote a bass pattern for peak sections.
-BassPattern promoteBassPatternForPeakLevel(BassPattern pattern, PeakLevel peak_level);
-
 /// Add a bass note while rejecting tritones against the sounding or theoretical chord.
 /// The theoretical fallback is needed because Bass is generated before Chord.
 /// Add a bass approach note after rejecting pitches that clash with the theoretical chord.
