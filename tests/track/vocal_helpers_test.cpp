@@ -858,6 +858,28 @@ TEST(VocalToneLegalityTest, AccentedNonChordToneResolvingDownIsAdmitted) {
       << "F over C resolving down to E on a downbeat is the ballad appoggiatura";
 }
 
+TEST(VocalToneLegalityTest, AccentedNonChordToneResolvingUpIsNotAdmitted) {
+  // The mirror image of the figure above, and deliberately not licensed. An
+  // ascending dissonance that is weak, short and approached by step is already
+  // a neighbour tone, so admitting the rise here would add only the accented,
+  // long and leap-approached ones. Doing that was measured across the corpus:
+  // the melody kept more of its steps, but the chord-tone discipline the rest
+  // of the arrangement stands on went with them -- a zero tension budget no
+  // longer held, the chord track's suspensions stopped resolving, and the
+  // guitar sounded avoid notes. Restricting the rise to the accented, short
+  // figure that the name would imply changed which of those broke, not how
+  // many.
+  FixedChordLookup harmony(0, {0, 4, 7}, false);  // C major triad
+  melody::MelodicNeighborhood n;
+  n.prev_pitch = 67;  // G4, reached by leap
+  n.next_pitch = 64;  // E4, a chord tone a step above
+  n.start = 0;        // bar downbeat
+  n.duration = TICK_QUARTER;
+  n.next_start = TICK_QUARTER;
+
+  EXPECT_EQ(melody::classifyVocalTone(harmony, 62, n), melody::ToneLegality::Illegal);
+}
+
 TEST(VocalToneLegalityTest, NonChordToneThatLeapsAwayIsRejected) {
   FixedChordLookup harmony(0, {0, 4, 7}, false);
   melody::MelodicNeighborhood n;

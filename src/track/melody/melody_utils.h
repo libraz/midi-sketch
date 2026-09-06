@@ -224,7 +224,10 @@ MelodicNeighborhood neighborhoodAt(const std::vector<NoteEvent>& line, size_t in
 ///
 /// The admitted non-chord figures are:
 /// - appoggiatura: any beat, any approach, diatonic, resolving down by one or
-///   two semitones onto a chord tone of the chord that the resolution lands on;
+///   two semitones onto a chord tone of the chord that the resolution lands on.
+///   The rise is deliberately not admitted: weak, short, step-approached rises
+///   are already neighbour tones below, and admitting the rest costs the
+///   accompaniment the chord-tone discipline it is voiced against;
 /// - suspension: held in from the previous pitch on an accent, resolving down
 ///   by step;
 /// - passing/neighbor tone: metrically weak, an eighth or shorter, approached

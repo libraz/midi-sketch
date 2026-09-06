@@ -289,6 +289,17 @@ ToneLegality classifyVocalTone(const IChordLookup& harmony, int pitch, const Mel
   // Appoggiatura: the accent lands on the dissonance and steps down onto a
   // chord tone of the chord the resolution belongs to. Approach interval and
   // beat position are deliberately unconstrained; the resolution is the rule.
+  //
+  // The descent is the rule's whole reach, and it is not an oversight that the
+  // rise is missing. An ascending dissonance that is weak, short and approached
+  // by step is already admitted below as a neighbour tone, so licensing the rise
+  // here would add exactly the accented, long and leap-approached ones -- and
+  // those were measured to take the chord-tone discipline the rest of the
+  // arrangement stands on with them. The tension budget stopped binding, the
+  // chord track's own suspensions lost the room to resolve, and the guitar
+  // ended up sounding avoid notes. Narrowing the rise to accented-and-short,
+  // the terms that define the figure, moved which notes broke rather than how
+  // many.
   const int resolution_down = pitch - n.next_pitch;
   if (resolution_down >= 1 && resolution_down <= 2) {
     const Tick resolution_tick = n.next_start > 0 ? n.next_start : n.start + n.duration;
