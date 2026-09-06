@@ -1326,9 +1326,18 @@ constexpr int kMaxFrozenSameRun = 3;
 /// Candidates are chord tones in nearby octaves sorted by distance from the
 /// note's pre-snap pitch (contour preservation). Returns candidate unchanged
 /// if no consonant alternative exists (clash avoidance wins over monotony).
+///
+/// `sounding` carries the voices of this same track already heard at `start`,
+/// and a candidate that clusters with one of them is no candidate at all. The
+/// caller has already cleared `candidate` of exactly those voices, so a step
+/// that reopened the question would undo that answer rather than refine it --
+/// and the pitch this search reaches for first is the note's own pre-snap
+/// pitch, which on an extended chord is a chord tone and can be the very
+/// semitone the clearing moved away from.
 uint8_t diversifyRepeatedChordTone(IHarmonyCoordinator& harmony, uint8_t candidate,
                                    uint8_t prev_pitch, uint8_t original, Tick start, Tick duration,
-                                   TrackRole role, uint8_t range_low, uint8_t range_high) {
+                                   TrackRole role, uint8_t range_low, uint8_t range_high,
+                                   const std::vector<uint8_t>& sounding) {
   auto chord_tones = harmony.getChordTonesAt(start);
   int orig_octave = original / 12;
 
@@ -1348,6 +1357,14 @@ uint8_t diversifyRepeatedChordTone(IHarmonyCoordinator& harmony, uint8_t candida
       int p = oct * 12 + ct_pc;
       if (p < range_low || p > range_high) continue;
       if (p == prev_pitch) continue;  // The whole point: avoid extending the run
+      bool clusters = false;
+      for (uint8_t other : sounding) {
+        if (isVoicingCluster(static_cast<uint8_t>(p), other, chord_tones)) {
+          clusters = true;
+          break;
+        }
+      }
+      if (clusters) continue;
       int dist = std::abs(p - static_cast<int>(original));
       bool crosses = orig_below_vocal && p >= vocal_ceiling;
       candidates.push_back({crosses, dist, static_cast<uint8_t>(p)});
@@ -1692,9 +1709,9 @@ void Coordinator::applyVoiceLimit(Song& song, const std::vector<Section>& sectio
         // contours onto the nearest chord tone, producing monotone lines.
         bool is_stack = (onset_note_count > 1);
         if (!is_stack && has_prev && candidate == prev_pitch && same_run >= kMaxFrozenSameRun) {
-          candidate =
-              diversifyRepeatedChordTone(harmony, candidate, prev_pitch, note.note, note.start_tick,
-                                         note.duration, fb.role, range_low, note_range_high);
+          candidate = diversifyRepeatedChordTone(harmony, candidate, prev_pitch, note.note,
+                                                 note.start_tick, note.duration, fb.role, range_low,
+                                                 note_range_high, sounding);
         }
 
 #ifdef MIDISKETCH_NOTE_PROVENANCE
