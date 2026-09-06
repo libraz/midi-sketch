@@ -220,6 +220,24 @@ class ChordToneHelper {
 bool hasTritoneWithChord(int pitch_pc, const std::vector<int>& chord_pcs);
 bool hasTritoneWithChord(int pitch_pc, const ChordTones& chord_pcs);
 
+/// @brief Does a pitch class state the natural form of a tone the chord raised?
+///
+/// A secondary dominant, a borrowed chord or a registered alteration replaces
+/// one of a degree's tones with its chromatic neighbour, and the tone it
+/// replaced is still in the key. A rule that asks only "is this pitch diatonic"
+/// therefore reaches for exactly the note the chord just moved away from, and
+/// the two sound a semitone apart with neither reading surviving -- the chord
+/// says one third and this voice says the other.
+///
+/// Diatonic-ness cannot answer this on its own, which is why it is asked
+/// separately: the offending pitch is the diatonic one.
+///
+/// @param pitch_pc Pitch class to check (0-11)
+/// @param degree Chord degree the timeline names at this tick
+/// @param sounding Chord tones the timeline states at this tick
+/// @return true if pitch_pc is the natural form of a tone `sounding` altered
+bool contradictsAlteredChordTone(int pitch_pc, int8_t degree, const ChordTones& sounding);
+
 // ============================================================================
 // Voices of one track sounding together
 // ============================================================================

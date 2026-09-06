@@ -565,5 +565,34 @@ TEST(ChordOrTensionTest, APitchTheChordHasNoPlaceForDoesNotBelong) {
   }
 }
 
+// vi in C major is A minor, and the secondary dominant of ii replaces its third
+// C with C#. C is still in the key, so a filter that asks only "is this pitch
+// diatonic" prefers it -- and it is the one pitch the chord just moved away
+// from.
+TEST(AlteredChordToneTest, TheNaturalThirdContradictsTheChordThatRaisedIt) {
+  constexpr int8_t kDegreeVi = 5;
+  ChordTones altered = getChordTones(kDegreeVi);
+  ASSERT_GE(altered.count, 2) << "a chord needs a third for this question to exist";
+  ASSERT_EQ(altered.pitch_classes[1], 0) << "vi in C major has C as its third";
+  altered.pitch_classes[1] = 1;  // The secondary dominant's raised third
+
+  EXPECT_TRUE(contradictsAlteredChordTone(0, kDegreeVi, altered))
+      << "the natural third is what the chord replaced";
+  EXPECT_FALSE(contradictsAlteredChordTone(1, kDegreeVi, altered))
+      << "the raised third is the chord itself";
+  EXPECT_FALSE(contradictsAlteredChordTone(9, kDegreeVi, altered)) << "the root is untouched";
+  EXPECT_FALSE(contradictsAlteredChordTone(4, kDegreeVi, altered)) << "the fifth is untouched";
+}
+
+TEST(AlteredChordToneTest, AnUnalteredChordContradictsNothing) {
+  constexpr int8_t kDegreeVi = 5;
+  const ChordTones plain = getChordTones(kDegreeVi);
+  for (int pitch_class = 0; pitch_class < 12; ++pitch_class) {
+    EXPECT_FALSE(contradictsAlteredChordTone(pitch_class, kDegreeVi, plain))
+        << "pitch class " << pitch_class
+        << ": with no tone replaced there is nothing for a pitch to contradict";
+  }
+}
+
 }  // namespace
 }  // namespace midisketch

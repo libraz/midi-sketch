@@ -1674,10 +1674,16 @@ void applyBassMicrovariation(MidiTrack& track, Tick bar_start, IHarmonyContext& 
     // against the later-voiced chord. Check candidates against the
     // theoretical chord tones at the note's position.
     auto current_chord_pcs = harmony.getChordTonesAt(target.start_tick);
+    const int8_t current_degree = harmony.getChordDegreeAt(target.start_tick);
     for (int cand : candidates) {
       if (cand < BASS_LOW || cand > BASS_HIGH) continue;
       // Only accept diatonic pitches to maintain key consistency
       if (!isDiatonic(cand)) continue;
+      // Diatonic is the wrong test on its own where the chord is altered: over
+      // a secondary dominant the natural third is the diatonic one, so the
+      // filter above reaches for exactly the tone the chord moved away from and
+      // states it a semitone under the chord's own third.
+      if (contradictsAlteredChordTone(cand % 12, current_degree, current_chord_pcs)) continue;
       if (hasTritoneWithChord(cand % 12, current_chord_pcs)) continue;
       // The note may already sit on the highest-priority approach pitch; that
       // is the approach, so stop rather than search past it.

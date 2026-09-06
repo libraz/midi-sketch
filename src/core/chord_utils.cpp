@@ -366,6 +366,24 @@ bool hasTritoneWithChord(int pitch_pc, const ChordTones& chord_pcs) {
   return false;
 }
 
+bool contradictsAlteredChordTone(int pitch_pc, int8_t degree, const ChordTones& sounding) {
+  const ChordTones diatonic = getChordTones(degree);
+  // Chord tones are ordered root, third, fifth, seventh, so the same index in
+  // both is the same voice of the chord: comparing them position by position is
+  // what tells an alteration from a different chord.
+  const uint8_t count = std::min(sounding.count, diatonic.count);
+  for (uint8_t i = 0; i < count; ++i) {
+    const int planned = sounding.pitch_classes[i];
+    const int natural = diatonic.pitch_classes[i];
+    if (planned < 0 || natural < 0 || planned == natural) continue;
+    if (pitch_pc != natural) continue;
+    int interval = std::abs(planned - natural);
+    if (interval > 6) interval = 12 - interval;
+    if (interval == 1) return true;
+  }
+  return false;
+}
+
 // ============================================================================
 // Voices of one track sounding together
 // ============================================================================
