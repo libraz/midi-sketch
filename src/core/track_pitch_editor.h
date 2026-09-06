@@ -21,14 +21,18 @@
 #ifndef MIDISKETCH_CORE_TRACK_PITCH_EDITOR_H
 #define MIDISKETCH_CORE_TRACK_PITCH_EDITOR_H
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <vector>
 
 #include "core/basic_types.h"
+#include "core/chord_utils.h"
 #include "core/i_harmony_context.h"
 #include "core/midi_track.h"
 #include "core/note_source.h"
+#include "core/track_collision_detector.h"
 
 namespace midisketch {
 
@@ -69,9 +73,9 @@ class TrackPitchEditor {
    * @brief Move a note to a new pitch, if the harmony state accepts it.
    *
    * The note is left untouched when the target pitch clashes with another
-   * track, so a caller that ignores the return value cannot introduce an
-   * unverified pitch. On success the original pitch and the reason are recorded
-   * on the note and the registry refresh is armed.
+   * track or with a voice of its own, so a caller that ignores the return value
+   * cannot introduce an unverified pitch. On success the original pitch and the
+   * reason are recorded on the note and the registry refresh is armed.
    *
    * @param index Index of the note to move
    * @param new_pitch Target MIDI pitch
@@ -90,6 +94,9 @@ class TrackPitchEditor {
       return false;
     }
     if (!harmony_.isConsonantWithOtherTracks(new_pitch, note.start_tick, note.duration, role_)) {
+      return false;
+    }
+    if (clustersWithOwnVoices(index, new_pitch)) {
       return false;
     }
     const uint8_t previous = note.note;
@@ -165,6 +172,58 @@ class TrackPitchEditor {
   }
 
  private:
+  /**
+   * @brief Whether a pitch would sit too close to a voice of this same track.
+   *
+   * isConsonantWithOtherTracks answers for every track but this one, which is
+   * the right question for a note moving against the arrangement and no
+   * question at all for a note moving against its own chord. Two voices of one
+   * instrument state the interval two instruments would, and they do not have
+   * to share an onset to sound together: a strum spreads one chord over a few
+   * ticks and a sustain runs into the note played after it. An octave shift
+   * that clears the bass can therefore land a semitone from the voice beside
+   * it, verified against everything except the thing it collides with.
+   *
+   * The chord decides what counts as too close, exactly as it does when the
+   * voicing is first built, so a close interval the chord contains stays
+   * available and only the ones no voicing wants are refused. How long the two
+   * voices actually overlap is the second half of the question, and it is asked
+   * with the same duration-aware rule every other gate uses: a line stepping
+   * through a semitone is not a chord sounding one, and a track that holds
+   * vertical harmony is never granted that exemption in the first place.
+   *
+   * @param index Index of the note being moved, excluded from the comparison
+   * @param pitch Target pitch
+   */
+  bool clustersWithOwnVoices(size_t index, uint8_t pitch) const {
+    const auto& notes = track_.notes();
+    const NoteEvent& note = notes[index];
+    const Tick note_end = note.start_tick + note.duration;
+    const ChordTones tones = harmony_.getChordTonesAt(note.start_tick);
+    for (size_t i = 0; i < notes.size(); ++i) {
+      if (i == index) {
+        continue;
+      }
+      const NoteEvent& other = notes[i];
+      const Tick other_end = other.start_tick + other.duration;
+      if (other.start_tick >= note_end || other_end <= note.start_tick) {
+        continue;
+      }
+      if (!isVoicingCluster(pitch, other.note, tones)) {
+        continue;
+      }
+      const Tick overlap_start = std::max(note.start_tick, other.start_tick);
+      const Tick overlap = std::min(note_end, other_end) - overlap_start;
+      const int semitones = std::abs(static_cast<int>(pitch) - static_cast<int>(other.note));
+      if (isToleratedPassingTone(semitones, overlap, pitch, other.note, overlap_start, role_,
+                                 role_)) {
+        continue;
+      }
+      return true;
+    }
+    return false;
+  }
+
   MidiTrack& track_;
   IHarmonyContext& harmony_;
   TrackRole role_;

@@ -61,6 +61,35 @@ TEST(TrackPitchEditorTest, RejectsAPitchTheHarmonyStateDoesNotAccept) {
   EXPECT_FALSE(editor.dirty());
 }
 
+TEST(TrackPitchEditorTest, RefusesAPitchAVoiceOfItsOwnTrackIsSoundingAgainst) {
+  HarmonyContext harmony;
+  MidiTrack guitar;
+  // One strum: the voices are raked a few ticks apart and sound together.
+  addTrackNote(guitar, harmony, 0, TICKS_PER_BEAT, 59, TrackRole::Guitar);
+  size_t index = addTrackNote(guitar, harmony, 8, TICKS_PER_BEAT, 48, TrackRole::Guitar);
+
+  // Nothing else is sounding, so the cross-track check accepts the target and
+  // the only thing that can refuse it is the voice beside it.
+  TrackPitchEditor editor(guitar, harmony, TrackRole::Guitar);
+  EXPECT_FALSE(editor.moveTo(index, 60, TransformStepType::OctaveAdjust, 12, 0));
+  EXPECT_EQ(guitar.notes()[index].note, 48) << "A rejected move must leave the note untouched";
+  EXPECT_FALSE(editor.dirty());
+}
+
+TEST(TrackPitchEditorTest, AllowsAStepThroughASemitoneItsOwnLineBarelyOverlaps) {
+  HarmonyContext harmony;
+  MidiTrack aux;
+  // A line, not a chord: the notes are consecutive and overlap only by the
+  // fraction of a beat a doubling offset produces. Guarding the property above
+  // must not cost a melodic track its stepwise motion.
+  addTrackNote(aux, harmony, 0, 240, 60, TrackRole::Aux);
+  size_t index = addTrackNote(aux, harmony, 200, 240, 64, TrackRole::Aux);
+
+  TrackPitchEditor editor(aux, harmony, TrackRole::Aux);
+  EXPECT_TRUE(editor.moveTo(index, 61, TransformStepType::ChordToneSnap));
+  EXPECT_EQ(aux.notes()[index].note, 61);
+}
+
 TEST(TrackPitchEditorTest, RecordsAnAppliedMoveOnTheNote) {
   HarmonyContext harmony;
   MidiTrack guitar;
