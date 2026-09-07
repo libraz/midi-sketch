@@ -8,8 +8,10 @@
 #include <algorithm>
 #include <random>
 #include <set>
+#include <string>
 
 #include "core/chord.h"
+#include "core/chord_utils.h"
 #include "core/generator.h"
 #include "core/harmony_context.h"
 #include "core/i_harmony_context.h"
@@ -678,60 +680,98 @@ TEST_F(ChordWithContextTest, RegressionVocalCloseIntervalOriginalBug) {
 
 // === Chord-Bass Tritone Avoidance Tests ===
 
+/// @brief Chord/bass pairs sounding a tritone, split by whether the harmony owns it.
+struct TritoneTally {
+  int clashes = 0;      ///< pairs the chord sounding there does not account for
+  int excused = 0;      ///< pairs it does
+  int overlapping = 0;  ///< chord and bass notes sounding together at all
+};
+
+/// @brief Count the tritones between chord and bass that the harmony does not own.
+///
+/// A tritone between two voices is either a clash or the chord itself, and only
+/// the chord sounding there tells them apart. Counting by scale degree cannot:
+/// a dominant seventh states its tritone between the third and the seventh, so
+/// a secondary dominant -- a I7 before IV, a II7 before V -- puts one over a
+/// degree whose plain triad has none, and calling that a defect flags the very
+/// interval the chord was chosen for.
+///
+/// The question is the one the post-processing clash removal asks: whether the
+/// tones the timeline states at that tick account for the pair, or failing that
+/// whether the degree itself owns a tritone.
+TritoneTally tallyChordBassTritones(const MidiTrack& chord_track, const MidiTrack& bass_track,
+                                    const IHarmonyContext& harmony) {
+  TritoneTally tally;
+  for (const auto& chord_note : chord_track.notes()) {
+    const Tick chord_end = chord_note.start_tick + chord_note.duration;
+
+    for (const auto& bass_note : bass_track.notes()) {
+      const Tick bass_end = bass_note.start_tick + bass_note.duration;
+      if (chord_note.start_tick >= bass_end || bass_note.start_tick >= chord_end) continue;
+      tally.overlapping++;
+
+      int interval = std::abs(chord_note.note % 12 - bass_note.note % 12);
+      if (interval > 6) interval = 12 - interval;
+      if (interval != 6) continue;
+
+      const Tick overlap = std::max(chord_note.start_tick, bass_note.start_tick);
+      const int actual =
+          std::abs(static_cast<int>(chord_note.note) - static_cast<int>(bass_note.note));
+      if (chordExcusesFlaggedPair(actual, chord_note.note, bass_note.note,
+                                  harmony.getChordTonesAt(overlap)) ||
+          chordDegreeOwnsATritone(harmony.getChordDegreeAt(overlap))) {
+        tally.excused++;
+      } else {
+        tally.clashes++;
+      }
+    }
+  }
+  return tally;
+}
+
 TEST_F(ChordWithContextTest, AvoidsTritoneCashesWithBass) {
-  // This tests that Chord voicing minimizes tritone interval with Bass.
-  // Tritone (6 semitones, e.g., B vs F) creates harsh dissonance on strong beats.
+  // Chord voicing is decided after the bass, so a tritone between the two is one
+  // the chord track is able to avoid -- unless the chord sounding there is built
+  // from that tritone, which is what the tally asks.
   //
-  // Note: With Dense harmonic rhythm (HarmonyContext synchronized with chord track),
-  // some tritone intervals may occur in musically appropriate contexts (e.g., V7 chords).
-  // The threshold allows for contextually acceptable tritones while still catching
-  // excessive clashes.
-  //
-  // Root cause: clashesWithBass() only checked minor 2nd, not tritone.
-  // Fix: Extended clashesWithBass() to also reject tritone intervals.
+  // Which songs are worth asking is the harder half. An unaccounted-for tritone
+  // needs a chord voice and a bass note belonging to different chords at the
+  // same instant, and the default progression never produces one: over a
+  // thousand seeds of it there is nothing here for any rule to remove, so those
+  // seeds bound an empty set no matter what the rules say. The configurations
+  // below add the two shapes that do produce one -- a progression that borrows
+  // (Rock1's bVII) or that changes chord more often than the bar (Extended5's
+  // five), under a blueprint whose bass moves inside the bar.
+  struct Config {
+    uint8_t chord_id;
+    uint8_t blueprint_id;
+    uint32_t seed;
+  };
+  const std::vector<Config> configs = {
+      {0, 0, 12345}, {0, 0, 54321}, {0, 0, 98765}, {0, 0, 3604033891u}, {0, 0, 2316818684u},
+      {11, 8, 5},    {11, 8, 16},   {11, 8, 19},   {9, 8, 17},          {20, 8, 1},
+  };
 
   Generator gen;
-
-  // Test across multiple seeds to ensure robustness
-  std::vector<uint32_t> test_seeds = {12345, 54321, 98765, 3604033891, 2316818684};
-
-  for (uint32_t seed : test_seeds) {
+  for (const Config& config : configs) {
     GeneratorParams params = params_;
-    params.seed = seed;
+    params.seed = config.seed;
+    params.chord_id = config.chord_id;
+    params.blueprint_id = config.blueprint_id;
 
     gen.generate(params);
     const auto& song = gen.getSong();
+    const TritoneTally tally =
+        tallyChordBassTritones(song.chord(), song.bass(), gen.getHarmonyContext());
 
-    const auto& chord_track = song.chord();
-    const auto& bass_track = song.bass();
-
-    // Count tritone clashes between Chord and Bass
-    int tritone_clash_count = 0;
-
-    for (const auto& chord_note : chord_track.notes()) {
-      Tick chord_end = chord_note.start_tick + chord_note.duration;
-      int chord_pc = chord_note.note % 12;
-
-      for (const auto& bass_note : bass_track.notes()) {
-        Tick bass_end = bass_note.start_tick + bass_note.duration;
-        int bass_pc = bass_note.note % 12;
-
-        // Check if notes overlap in time
-        if (chord_note.start_tick < bass_end && bass_note.start_tick < chord_end) {
-          // Check for tritone interval (6 semitones)
-          int interval = std::abs(chord_pc - bass_pc);
-          if (interval > 6) interval = 12 - interval;
-          if (interval == 6) {
-            tritone_clash_count++;
-          }
-        }
-      }
-    }
-
-    // Allow small number of tritone clashes (contextually acceptable on dominant chords)
-    // Dense harmonic rhythm synchronization may produce more context-appropriate tritones
-    EXPECT_LE(tritone_clash_count, 10) << "Seed " << seed << " has " << tritone_clash_count
-                                       << " Chord-Bass tritone clashes (threshold: 10)";
+    const std::string where = "progression " + std::to_string(config.chord_id) + ", blueprint " +
+                              std::to_string(config.blueprint_id) + ", seed " +
+                              std::to_string(config.seed);
+    EXPECT_GT(tally.overlapping, 0)
+        << where << ": chord and bass never sound together, so nothing was checked";
+    EXPECT_EQ(tally.clashes, 0) << where << " sounds " << tally.clashes
+                                << " chord-bass tritones the harmony there does not contain ("
+                                << tally.excused << " more that it does)";
   }
 }
 
@@ -751,46 +791,13 @@ TEST_F(ChordWithContextTest, RegressionChordBassTritoneOriginalBug) {
   Generator gen;
   gen.generate(params_);
 
-  const auto& chord_track = gen.getSong().chord();
-  const auto& bass_track = gen.getSong().bass();
-  const IHarmonyContext& harmony = gen.getHarmonyContext();
+  const TritoneTally tally =
+      tallyChordBassTritones(gen.getSong().chord(), gen.getSong().bass(), gen.getHarmonyContext());
 
-  // A tritone is not a clash everywhere. It is the interval a dominant and a
-  // diminished chord are built from, so on those degrees the chord and the bass
-  // sounding one is the harmony being stated rather than two voices colliding.
-  // The pairs to count are the ones on every other degree, which is what the
-  // collision rules themselves say.
-  int tritone_clash_count = 0;
-  int excused_by_degree = 0;
-  int overlapping_pairs = 0;
-  for (const auto& chord_note : chord_track.notes()) {
-    Tick chord_end = chord_note.start_tick + chord_note.duration;
-    int chord_pc = chord_note.note % 12;
-
-    for (const auto& bass_note : bass_track.notes()) {
-      Tick bass_end = bass_note.start_tick + bass_note.duration;
-      int bass_pc = bass_note.note % 12;
-
-      if (chord_note.start_tick < bass_end && bass_note.start_tick < chord_end) {
-        overlapping_pairs++;
-        int interval = std::abs(chord_pc - bass_pc);
-        if (interval > 6) interval = 12 - interval;
-        if (interval == 6) {
-          const Tick overlap = std::max(chord_note.start_tick, bass_note.start_tick);
-          if (chordDegreeOwnsATritone(harmony.getChordDegreeAt(overlap))) {
-            excused_by_degree++;
-          } else {
-            tritone_clash_count++;
-          }
-        }
-      }
-    }
-  }
-
-  EXPECT_GT(overlapping_pairs, 0) << "chord and bass never sound together, so nothing was checked";
-  EXPECT_EQ(tritone_clash_count, 0)
-      << "chord and bass sound a tritone on a degree whose chord does not contain one ("
-      << excused_by_degree << " more sound one on a degree that does)";
+  EXPECT_GT(tally.overlapping, 0) << "chord and bass never sound together, so nothing was checked";
+  EXPECT_EQ(tally.clashes, 0) << "chord and bass sound " << tally.clashes
+                              << " tritones the harmony there does not contain (" << tally.excused
+                              << " more that it does)";
 }
 
 // ============================================================================
