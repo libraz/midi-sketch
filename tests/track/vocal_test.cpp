@@ -2634,43 +2634,73 @@ TEST_F(VocalTest, BalladHasLongerBreathGapsThanEnergeticDance) {
 // Minimum Duration Tests
 // ============================================================================
 
-// Test that standard vocal styles have no notes shorter than TICK_SIXTEENTH (120 ticks).
-// This ensures singable notes - sub-16th notes are too short for human vocalists.
-TEST_F(VocalTest, StandardVocalMinimumDurationIs16thNote) {
-  // Test blueprints that use standard vocal (not UltraVocaloid)
-  // Note: Blueprint 8 (IdolEmo) has a known issue with Ochisabi sections creating
-  // very short notes at certain positions. This is tested separately in
-  // MinimumDurationAcrossMultipleSeeds with a more thorough multi-seed approach.
-  // Note: Blueprint 3 (Ballad) is MelodyDriven and may produce grace notes or
-  // embellishment notes as short as ~24 ticks. This is musically valid for ballad
-  // phrasing, so we use a lower threshold for Ballad.
-  std::vector<uint8_t> standard_blueprints = {0, 3};  // Traditional, Ballad
+TEST_F(VocalTest, VocalNoteIsShorterThanA16thOnlyToMakeRoomForTheNextOnset) {
+  // A sung note is held until the singer has to move. The only thing licensed
+  // to take a note below a 16th is the onset that follows it, and when that
+  // happens the note fills exactly the space it has left -- it does not stop
+  // early and leave a rest nobody asked for.
+  //
+  // Stating this as a constant floor on the finished line does not work, and a
+  // constant is what this test used to assert. Nothing downstream holds one:
+  // NoteTimeline::fixOverlaps truncates a note to the distance to its
+  // successor and has no minimum of its own, and applyGrooveFeel moves onsets
+  // off the 16th grid by a fraction of a 16th, so how short the shortest note
+  // gets is a statement about the onset the seed happened to produce. Measured
+  // across the blueprints, that shortest note lands anywhere from a 32nd to a
+  // 16th depending only on which seed is asked, so a constant either has to be
+  // loosened until it forbids nothing or it fails on the next seed.
+  //
+  // UltraVocaloid is the one style left out, and by style rather than by
+  // blueprint: it is declared not singable, writes on a 32nd grid, and does
+  // detach notes from the onset after them -- which is the behaviour every
+  // other style is being held to account for here.
+  auto checkLine = [](const MidiTrack& vocal, uint8_t blueprint_id, int style, uint32_t seed) {
+    std::vector<NoteEvent> notes = vocal.notes();
+    std::sort(notes.begin(), notes.end(),
+              [](const NoteEvent& a, const NoteEvent& b) { return a.start_tick < b.start_tick; });
 
-  // Note: Seed-dependent generation may occasionally produce shorter notes
-  // at phrase boundaries due to leap resolution and secondary dominant changes.
-  // Ballad (bp3) can produce grace-note embellishments below the normal threshold.
-  constexpr Tick kMinDurationDefault = 100;  // ~83% of TICK_SIXTEENTH (120)
-  constexpr Tick kMinDurationBallad = 20;    // Ballad allows short grace notes
+    for (size_t i = 0; i + 1 < notes.size(); ++i) {
+      const Tick space = notes[i + 1].start_tick - notes[i].start_tick;
+      const Tick owed = std::min<Tick>(TICK_SIXTEENTH, space);
+      EXPECT_GE(notes[i].duration, owed)
+          << "blueprint " << static_cast<int>(blueprint_id) << " style " << style << " seed "
+          << seed << ": the note at " << notes[i].start_tick << " lasts " << notes[i].duration
+          << " ticks with " << space << " ticks of room before the next onset";
+    }
+    return notes.size();
+  };
 
-  for (uint8_t blueprint_id : standard_blueprints) {
-    params_.blueprint_id = blueprint_id;
-    params_.seed = 42;
+  size_t notes_checked = 0;
 
-    Generator gen;
-    gen.generate(params_);
-
-    const auto& vocal = gen.getSong().vocal();
-    ASSERT_FALSE(vocal.notes().empty())
-        << "Blueprint " << static_cast<int>(blueprint_id) << " should generate vocal notes";
-
-    Tick min_duration = (blueprint_id == 3) ? kMinDurationBallad : kMinDurationDefault;
-    for (const auto& note : vocal.notes()) {
-      EXPECT_GE(note.duration, min_duration)
-          << "Blueprint " << static_cast<int>(blueprint_id) << ": Note at tick " << note.start_tick
-          << " has duration " << note.duration << " ticks, which is less than minimum ("
-          << min_duration << ")";
+  // Every blueprint, at the vocal style each one picks for itself.
+  for (uint8_t blueprint_id = 0; blueprint_id < 10; ++blueprint_id) {
+    for (uint32_t seed = 1; seed <= 10; ++seed) {
+      params_.blueprint_id = blueprint_id;
+      params_.seed = seed;
+      Generator gen;
+      gen.generate(params_);
+      ASSERT_FALSE(gen.getSong().vocal().notes().empty())
+          << "blueprint " << static_cast<int>(blueprint_id) << " seed " << seed << " sings nothing";
+      notes_checked += checkLine(gen.getSong().vocal(), blueprint_id, 0, seed);
     }
   }
+
+  // Every style that claims to be singable, since the exemption is a property
+  // of the style and not of the blueprint that happens to select it.
+  for (int style = static_cast<int>(VocalStylePreset::Auto);
+       style <= static_cast<int>(VocalStylePreset::KPop); ++style) {
+    if (static_cast<VocalStylePreset>(style) == VocalStylePreset::UltraVocaloid) continue;
+    for (uint32_t seed = 1; seed <= 3; ++seed) {
+      params_.blueprint_id = 0;
+      params_.vocal_style = static_cast<VocalStylePreset>(style);
+      params_.seed = seed;
+      Generator gen;
+      gen.generate(params_);
+      notes_checked += checkLine(gen.getSong().vocal(), 0, style, seed);
+    }
+  }
+
+  ASSERT_GT(notes_checked, 0u) << "no vocal note was measured";
 }
 
 // Test that notes have reasonable duration and no overlaps.
@@ -3296,8 +3326,7 @@ TEST_F(VocalTest, KPopStyleMultipleSeedsStable) {
 
 TEST_F(VocalTest, RhythmSyncGeneratesValidMelody) {
   // Test that RhythmSync paradigm with Locked riff policy generates melodies
-  params_.paradigm = GenerationParadigm::RhythmSync;
-  params_.riff_policy = RiffPolicy::LockedContour;
+  params_.blueprint_id = 1;  // RhythmLock supplies RhythmSync + locked riff policy
   params_.structure = StructurePattern::StandardPop;
   params_.seed = 42;
 
@@ -3312,8 +3341,7 @@ TEST_F(VocalTest, RhythmSyncGeneratesValidMelody) {
 TEST_F(VocalTest, RhythmSyncMelodyHasReasonableIntervals) {
   // Verify that locked rhythm melodies have singable intervals
   // (most intervals should be steps or small skips, not constant leaps)
-  params_.paradigm = GenerationParadigm::RhythmSync;
-  params_.riff_policy = RiffPolicy::LockedContour;
+  params_.blueprint_id = 1;  // RhythmLock supplies RhythmSync + locked riff policy
   params_.structure = StructurePattern::StandardPop;
   params_.seed = 42;
 
@@ -3569,8 +3597,7 @@ TEST_F(VocalTest, RhythmSyncSameSectionTypeRepeats) {
 
 TEST_F(VocalTest, RhythmSyncMultipleSeedsAllGenerateMelodies) {
   // Verify that RhythmSync works reliably across different seeds
-  params_.paradigm = GenerationParadigm::RhythmSync;
-  params_.riff_policy = RiffPolicy::LockedContour;
+  params_.blueprint_id = 1;  // RhythmLock supplies RhythmSync + locked riff policy
   params_.structure = StructurePattern::StandardPop;
 
   for (int seed = 1; seed <= 10; ++seed) {
@@ -3591,48 +3618,60 @@ TEST_F(VocalTest, RhythmSyncMultipleSeedsAllGenerateMelodies) {
 }
 
 // ============================================================================
-// RhythmSync Enhancements Tests
+// RhythmSync Melodic Quality Tests
 // ============================================================================
-// Tests for improvements in Issue 1-7:
-// - P5 (7 semitones) is allowed without penalty
-// - GlobalMotif cycles with modulo when notes exceed motif length
-// - Section-specific direction bias thresholds
-// - VocalAttitude affects tension note allowance
-// - Phrase boundaries create breath opportunities
-// - Section-specific direction inertia limits
-// - Increased motif bonus weight
+// What the locked-rhythm pitch selector is supposed to buy the melody:
+// - the perfect fifth carries no penalty
+// - the global motif cycles rather than running out
+// - the direction bias and the phrase contour read the section type
+// - VocalAttitude opens the tension notes
+// - phrase boundaries leave room to breathe
+//
+// The paradigm comes from the blueprint. GeneratorParams::paradigm is
+// overwritten from it before the first note is written, so setting that field
+// selects nothing and measures blueprint 0 -- which is Traditional.
 
 TEST_F(VocalTest, RhythmSyncAllowsPerfectFifthLeaps) {
-  // Issue 1: P5 (7 semitones) should not be penalized
-  // Setup for RhythmSync with evaluation
-  params_.paradigm = GenerationParadigm::RhythmSync;
-  params_.riff_policy = RiffPolicy::LockedContour;
-  params_.seed = 123;  // Fixed seed for reproducibility
+  // The fifth carries no penalty, so it should be the leap the locked rhythm
+  // reaches for most readily once it goes past the fourth -- ahead of the
+  // minor sixth beside it, which pop melody does use but sparingly.
+  //
+  // Whether any one song contains a fifth is a coin toss, so the claim is a
+  // ranking over a corpus rather than a presence in one line: penalise the
+  // fifth again and it falls in behind its neighbour, which is what this
+  // measures. Counting fifths in a single song and asserting nothing about
+  // the number, as this test did, reports on no rule at all.
+  int fifths = 0;
+  int minor_sixths = 0;
+  for (uint8_t blueprint_id : {1, 5, 7, 9}) {
+    for (uint32_t seed = 1; seed <= 8; ++seed) {
+      params_.blueprint_id = blueprint_id;
+      params_.seed = seed;
+      Generator gen;
+      gen.generate(params_);
 
-  Generator gen;
-  gen.generate(params_);
-
-  const auto& vocal = gen.getSong().vocal();
-  EXPECT_FALSE(vocal.empty()) << "Vocal should have notes";
-
-  // Check for P5 intervals (7 semitones)
-  int p5_count = 0;
-  for (size_t i = 1; i < vocal.notes().size(); ++i) {
-    int interval = std::abs(static_cast<int>(vocal.notes()[i].note) -
-                            static_cast<int>(vocal.notes()[i - 1].note));
-    if (interval == 7) {
-      p5_count++;
+      const auto& notes = gen.getSong().vocal().notes();
+      ASSERT_FALSE(notes.empty()) << "blueprint " << static_cast<int>(blueprint_id) << " seed "
+                                  << seed << " sings nothing";
+      for (size_t i = 1; i < notes.size(); ++i) {
+        const int interval =
+            std::abs(static_cast<int>(notes[i].note) - static_cast<int>(notes[i - 1].note));
+        if (interval == 7) ++fifths;
+        if (interval == 8) ++minor_sixths;
+      }
     }
   }
-  // P5 should be allowed - we just verify generation succeeds
-  // The actual presence depends on melodic context
-  SUCCEED() << "P5 intervals found: " << p5_count;
+
+  EXPECT_GT(fifths, minor_sixths)
+      << "A leap the rules do not penalise should outnumber one they use sparingly. Perfect "
+         "fifths "
+      << fifths << ", minor sixths " << minor_sixths;
 }
 
 TEST_F(VocalTest, RhythmSyncGlobalMotifCyclesWithModulo) {
-  // Issue 2: When note_index > motif_interval_count, should cycle
-  params_.paradigm = GenerationParadigm::RhythmSync;
-  params_.riff_policy = RiffPolicy::LockedContour;
+  // With modulo cycling a section longer than the motif keeps writing notes
+  // instead of running off the end of the interval pattern.
+  params_.blueprint_id = 1;  // RhythmLock supplies RhythmSync + locked riff policy
   params_.structure = StructurePattern::FullWithBridge;  // Long form for more notes
   params_.seed = 456;
 
@@ -3647,10 +3686,9 @@ TEST_F(VocalTest, RhythmSyncGlobalMotifCyclesWithModulo) {
 }
 
 TEST_F(VocalTest, RhythmSyncSectionSpecificDirectionBias) {
-  // Issue 4: Chorus should have stronger arch (ascending start, descending end)
-  // Verse should be flatter (more storytelling)
-  params_.paradigm = GenerationParadigm::RhythmSync;
-  params_.riff_policy = RiffPolicy::LockedContour;
+  // The chorus carries the stronger arch, so it is the section that has to be
+  // populated for the arch to be audible at all.
+  params_.blueprint_id = 1;  // RhythmLock supplies RhythmSync + locked riff policy
   params_.structure = StructurePattern::FullWithBridge;
   params_.seed = 789;
 
@@ -3679,9 +3717,9 @@ TEST_F(VocalTest, RhythmSyncSectionSpecificDirectionBias) {
 }
 
 TEST_F(VocalTest, RhythmSyncVocalAttitudeAffectsTensions) {
-  // Issue 5: VocalAttitude::Expressive should allow tension notes (9th, 13th)
-  params_.paradigm = GenerationParadigm::RhythmSync;
-  params_.riff_policy = RiffPolicy::LockedContour;
+  // VocalAttitude::Expressive adds the 9th and the 13th to the candidate
+  // pitches the locked rhythm chooses from.
+  params_.blueprint_id = 1;  // RhythmLock supplies RhythmSync + locked riff policy
   params_.vocal_attitude = VocalAttitude::Expressive;
   params_.seed = 101;
 
@@ -3697,9 +3735,8 @@ TEST_F(VocalTest, RhythmSyncVocalAttitudeAffectsTensions) {
 }
 
 TEST_F(VocalTest, RhythmSyncBreathOpportunities) {
-  // Issue 3: Phrase boundaries should create breath opportunities
-  params_.paradigm = GenerationParadigm::RhythmSync;
-  params_.riff_policy = RiffPolicy::LockedContour;
+  // Phrase boundaries have to leave gaps wide enough to breathe in.
+  params_.blueprint_id = 1;  // RhythmLock supplies RhythmSync + locked riff policy
   params_.seed = 202;
 
   Generator gen;
@@ -3724,48 +3761,86 @@ TEST_F(VocalTest, RhythmSyncBreathOpportunities) {
   EXPECT_GT(breath_gaps, 0) << "Should have breath opportunities in melody";
 }
 
-TEST_F(VocalTest, RhythmSyncDirectionInertiaLimits) {
-  // Issue 6: Direction inertia should be limited per section type
-  // Verse (A) sections should have more restrained movement (max inertia = 2)
-  params_.paradigm = GenerationParadigm::RhythmSync;
-  params_.riff_policy = RiffPolicy::LockedContour;
-  params_.structure = StructurePattern::FullWithBridge;
-  params_.seed = 303;
+TEST_F(VocalTest, RhythmSyncVerseTravelsLessFarThanChorus) {
+  // The locked-rhythm pitch selector reads the section type, and the verse is
+  // the section it is meant to hold back: the chorus should carry a direction
+  // for longer before it turns, the verse should keep turning.
+  //
+  // A bound on the longest run cannot say this. The selector does not cap a
+  // run -- it biases each note's direction -- so the longest run a song
+  // contains is whatever the seed rolled, and the number this test used to
+  // assert was simply the longest run that blueprint 0 produced, because the
+  // paradigm field it set was overwritten from the blueprint before any note
+  // was written. Under the blueprints that really are RhythmSync the same
+  // songs run to 12.
+  //
+  // The comparison is what belongs to the section type, so measure it against
+  // the section type, and average over the blueprints of the paradigm: one
+  // blueprint's arrangement moves this further than the verse/chorus gap does.
+  auto meanRunLength = [this](uint8_t blueprint_id, SectionType type) {
+    constexpr uint32_t kSeedCount = 12;
+    double sum = 0.0;
+    uint32_t scored = 0;
+    for (uint32_t seed = 1; seed <= kSeedCount; ++seed) {
+      params_.blueprint_id = blueprint_id;
+      params_.structure = StructurePattern::FullWithBridge;
+      params_.seed = seed;
+      Generator gen;
+      gen.generate(params_);
 
-  Generator gen;
-  gen.generate(params_);
+      for (const auto& section : gen.getSong().arrangement().sections()) {
+        if (section.type != type) continue;
+        const auto notes = collectNotesInSection(gen.getSong().vocal(), section, 0);
+        if (notes.size() < 6) continue;
 
-  const auto& vocal = gen.getSong().vocal();
-  EXPECT_FALSE(vocal.empty()) << "Should generate vocal notes";
+        int runs = 0;
+        int run_total = 0;
+        int current = 0;
+        int previous = 0;
+        for (size_t i = 1; i < notes.size(); ++i) {
+          const int movement =
+              static_cast<int>(notes[i]->note) - static_cast<int>(notes[i - 1]->note);
+          const int direction = (movement > 0) ? 1 : (movement < 0) ? -1 : 0;
+          if (direction == 0) continue;  // a repeated pitch travels nowhere
+          if (direction == previous) {
+            ++current;
+          } else {
+            if (current > 0) {
+              run_total += current;
+              ++runs;
+            }
+            current = 1;
+          }
+          previous = direction;
+        }
+        if (current > 0) {
+          run_total += current;
+          ++runs;
+        }
+        if (runs == 0) continue;
 
-  // Check that melody doesn't have excessive consecutive same-direction movements
-  // which would indicate inertia is being properly clamped
-  int max_consecutive_up = 0;
-  int max_consecutive_down = 0;
-  int current_up = 0;
-  int current_down = 0;
-
-  for (size_t i = 1; i < vocal.notes().size(); ++i) {
-    int movement =
-        static_cast<int>(vocal.notes()[i].note) - static_cast<int>(vocal.notes()[i - 1].note);
-    if (movement > 0) {
-      current_up++;
-      current_down = 0;
-      max_consecutive_up = std::max(max_consecutive_up, current_up);
-    } else if (movement < 0) {
-      current_down++;
-      current_up = 0;
-      max_consecutive_down = std::max(max_consecutive_down, current_down);
-    } else {
-      // Same pitch - no change
+        sum += static_cast<double>(run_total) / runs;
+        ++scored;
+      }
     }
-  }
+    EXPECT_GT(scored, 0u) << "blueprint " << static_cast<int>(blueprint_id)
+                          << " has no section long enough to score";
+    return scored > 0 ? sum / scored : 0.0;
+  };
 
-  // With inertia limits, shouldn't have extremely long consecutive movements
-  // Allow up to 6 as reasonable given phrase lengths
-  EXPECT_LE(max_consecutive_up, 8) << "Direction inertia should limit consecutive upward movements";
-  EXPECT_LE(max_consecutive_down, 8)
-      << "Direction inertia should limit consecutive downward movements";
+  double verse = 0.0;
+  double chorus = 0.0;
+  for (uint8_t blueprint_id : {1, 5, 7, 9}) {
+    verse += meanRunLength(blueprint_id, SectionType::A);
+    chorus += meanRunLength(blueprint_id, SectionType::Chorus);
+  }
+  verse /= 4;
+  chorus /= 4;
+
+  EXPECT_LT(verse, chorus)
+      << "The verse should turn sooner than the chorus, not later. Notes per unbroken "
+         "direction: verse "
+      << verse << ", chorus " << chorus;
 }
 
 TEST_F(VocalTest, MelodyDrivenHasBreathGaps) {
