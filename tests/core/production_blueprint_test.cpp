@@ -9,12 +9,12 @@
 
 #include <algorithm>
 #include <cstring>
-#include <iterator>
 #include <map>
 #include <random>
 #include <set>
 #include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "core/chord.h"
@@ -263,45 +263,6 @@ TEST_F(ProductionBlueprintTest, BalladBlueprint) {
   EXPECT_FALSE(bp.drums_sync_vocal);
   EXPECT_FALSE(bp.intro_kick_enabled);
   EXPECT_FALSE(bp.intro_bass_enabled);
-}
-
-// The identity a blueprint is chosen for is its name, the paradigm that orders
-// the pipeline and the riff policy that decides how much of a riff survives into
-// the next section. Stated one blueprint per test, the set is only ever as
-// complete as the tests that happen to exist, and an omission is invisible --
-// including at the one id whose policy is LockedPitch rather than the
-// LockedContour that `Locked` abbreviates, a distinction the alias hides.
-// Walking the table ties the count to the expectations, so a blueprint cannot be
-// added, removed or reordered without a line here.
-TEST_F(ProductionBlueprintTest, BlueprintIdentityTableIsComplete) {
-  struct BlueprintIdentity {
-    const char* name;
-    GenerationParadigm paradigm;
-    RiffPolicy riff_policy;
-  };
-
-  const BlueprintIdentity expected[] = {
-      {"Traditional", GenerationParadigm::Traditional, RiffPolicy::Free},
-      {"RhythmLock", GenerationParadigm::RhythmSync, RiffPolicy::LockedContour},
-      {"StoryPop", GenerationParadigm::MelodyDriven, RiffPolicy::Evolving},
-      {"Ballad", GenerationParadigm::MelodyDriven, RiffPolicy::Free},
-      {"IdolStandard", GenerationParadigm::MelodyDriven, RiffPolicy::Evolving},
-      {"IdolHyper", GenerationParadigm::RhythmSync, RiffPolicy::LockedContour},
-      {"IdolKawaii", GenerationParadigm::MelodyDriven, RiffPolicy::LockedContour},
-      {"IdolCoolPop", GenerationParadigm::RhythmSync, RiffPolicy::LockedContour},
-      {"IdolEmo", GenerationParadigm::MelodyDriven, RiffPolicy::LockedContour},
-      {"BehavioralLoop", GenerationParadigm::RhythmSync, RiffPolicy::LockedPitch},
-  };
-
-  ASSERT_EQ(getProductionBlueprintCount(), std::size(expected))
-      << "A blueprint was added or removed without updating the identity table";
-
-  for (uint8_t id = 0; id < getProductionBlueprintCount(); ++id) {
-    const auto& bp = getProductionBlueprint(id);
-    EXPECT_STREQ(bp.name, expected[id].name) << "Blueprint " << static_cast<int>(id);
-    EXPECT_EQ(bp.paradigm, expected[id].paradigm) << "Blueprint " << bp.name;
-    EXPECT_EQ(bp.riff_policy, expected[id].riff_policy) << "Blueprint " << bp.name;
-  }
 }
 
 // ============================================================================
@@ -689,16 +650,6 @@ TEST_F(ProductionBlueprintTest, BalladBlueprintNoDrumsSyncVocal) {
   EXPECT_EQ(bp.riff_policy, RiffPolicy::Free);
 }
 
-TEST_F(ProductionBlueprintTest, AllBlueprintRiffPoliciesValid) {
-  // All blueprints should have valid RiffPolicy values
-  for (uint8_t i = 0; i < getProductionBlueprintCount(); ++i) {
-    const auto& bp = getProductionBlueprint(i);
-    // RiffPolicy should be one of the valid values (0-4)
-    EXPECT_LE(static_cast<uint8_t>(bp.riff_policy), 4)
-        << "Blueprint " << bp.name << " has invalid riff_policy";
-  }
-}
-
 // ============================================================================
 // TrackMask::Motif Tests for RhythmLock Blueprint
 // ============================================================================
@@ -972,6 +923,9 @@ TEST_F(ProductionBlueprintTest, ExtractRhythmPattern) {
 // shouldLockVocalRhythm Tests
 // ============================================================================
 
+// `Locked` is an alias for LockedContour, so this case and the one below state
+// the same value. Both are kept deliberately: a blueprint may be written either
+// way, and the pair is what says the two spellings reach the same decision.
 TEST_F(ProductionBlueprintTest, ShouldLockVocalRhythm_RhythmSyncLocked) {
   GeneratorParams params;
   params.paradigm = GenerationParadigm::RhythmSync;
@@ -1671,20 +1625,28 @@ TEST_F(ProductionBlueprintTest, AllBlueprintConstraintsHaveExpectedInstrumentMod
 // Blueprint Identity
 // ============================================================================
 
-TEST_F(ProductionBlueprintTest, EveryBlueprintDeclaresItsDesignedParadigm) {
-  // The paradigm decides the coordinate-axis track and the rhythm lock, so it is
-  // the one field that has to agree with the published blueprint table.
-  const std::map<std::string, GenerationParadigm> expected = {
-      {"Traditional", GenerationParadigm::Traditional},
-      {"RhythmLock", GenerationParadigm::RhythmSync},
-      {"StoryPop", GenerationParadigm::MelodyDriven},
-      {"Ballad", GenerationParadigm::MelodyDriven},
-      {"IdolStandard", GenerationParadigm::MelodyDriven},
-      {"IdolHyper", GenerationParadigm::RhythmSync},
-      {"IdolKawaii", GenerationParadigm::MelodyDriven},
-      {"IdolCoolPop", GenerationParadigm::RhythmSync},
-      {"IdolEmo", GenerationParadigm::MelodyDriven},
-      {"BehavioralLoop", GenerationParadigm::RhythmSync},
+TEST_F(ProductionBlueprintTest, EveryBlueprintDeclaresItsDesignedParadigmAndRiffPolicy) {
+  // The paradigm decides the coordinate-axis track and the rhythm lock, and the
+  // riff policy decides how much of a riff survives into the next section.
+  // Neither is derivable from anything else the blueprint states, so both have to
+  // agree with the published blueprint table. They are checked together because
+  // the count assertion below is what makes the check complete: a blueprint
+  // cannot be added or removed without a line here, which is the only thing that
+  // catches a field nobody wrote an expectation for.
+  //
+  // `Locked` is an alias for LockedContour, so the two spellings compare equal
+  // and only BehavioralLoop holds the pitches themselves.
+  const std::map<std::string, std::pair<GenerationParadigm, RiffPolicy>> expected = {
+      {"Traditional", {GenerationParadigm::Traditional, RiffPolicy::Free}},
+      {"RhythmLock", {GenerationParadigm::RhythmSync, RiffPolicy::LockedContour}},
+      {"StoryPop", {GenerationParadigm::MelodyDriven, RiffPolicy::Evolving}},
+      {"Ballad", {GenerationParadigm::MelodyDriven, RiffPolicy::Free}},
+      {"IdolStandard", {GenerationParadigm::MelodyDriven, RiffPolicy::Evolving}},
+      {"IdolHyper", {GenerationParadigm::RhythmSync, RiffPolicy::LockedContour}},
+      {"IdolKawaii", {GenerationParadigm::MelodyDriven, RiffPolicy::LockedContour}},
+      {"IdolCoolPop", {GenerationParadigm::RhythmSync, RiffPolicy::LockedContour}},
+      {"IdolEmo", {GenerationParadigm::MelodyDriven, RiffPolicy::LockedContour}},
+      {"BehavioralLoop", {GenerationParadigm::RhythmSync, RiffPolicy::LockedPitch}},
   };
   ASSERT_EQ(expected.size(), getProductionBlueprintCount());
 
@@ -1692,7 +1654,8 @@ TEST_F(ProductionBlueprintTest, EveryBlueprintDeclaresItsDesignedParadigm) {
     const auto& bp = getProductionBlueprint(id);
     auto it = expected.find(bp.name);
     ASSERT_NE(it, expected.end()) << bp.name << " is not in the blueprint table";
-    EXPECT_EQ(bp.paradigm, it->second) << bp.name << " generates under the wrong paradigm";
+    EXPECT_EQ(bp.paradigm, it->second.first) << bp.name << " generates under the wrong paradigm";
+    EXPECT_EQ(bp.riff_policy, it->second.second) << bp.name << " holds the wrong part of its riff";
   }
 }
 
@@ -2169,7 +2132,11 @@ TEST_F(ProductionBlueprintTest, ParadigmAndRiffPolicyReachGeneratorParams) {
   EXPECT_EQ(gen.getParams().paradigm, bp.paradigm);
   EXPECT_EQ(gen.getParams().riff_policy, bp.riff_policy);
   EXPECT_EQ(gen.getParams().drums_sync_vocal, bp.drums_sync_vocal);
+  // The three equalities above would also hold if nothing carried the blueprint
+  // across and both sides simply stayed at the GeneratorParams default, so the
+  // blueprint has to state something other than that default for each of them.
   EXPECT_NE(bp.paradigm, GenerationParadigm::Traditional);
+  EXPECT_NE(bp.riff_policy, RiffPolicy::Free);
   EXPECT_TRUE(bp.drums_sync_vocal);
 }
 
