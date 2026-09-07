@@ -10,10 +10,12 @@
 #include <cmath>
 #include <map>
 #include <set>
+#include <string>
 #include <vector>
 
 #include "core/arrangement.h"
 #include "core/basic_types.h"
+#include "core/config_converter.h"
 #include "core/generator.h"
 #include "core/i_harmony_coordinator.h"
 #include "core/i_track_base.h"
@@ -1567,5 +1569,79 @@ TEST(GuitarStrumArticulationTest, NeverOutlastsTheSpaceItWasGiven) {
             << "gap=" << gap << " upstroke=" << up << " continuous=" << continuous;
       }
     }
+  }
+}
+
+TEST_F(GuitarGenerationTest, StrumsSpeakInStringOrderAfterTheSeparationPasses) {
+  // A strum is one chord raked across the strings, so its notes leave the
+  // generator ordered: the pick meets the strings in one direction and the
+  // pitches follow. Anything that moves a single one of those pitches
+  // afterwards breaks that, and an octave is enough to put the first voice
+  // above the last.
+  //
+  // The songs below are the ones where a strum's lowest voice sits under E3
+  // and within a seventh of the bass, which is the condition the guitar/bass
+  // separation reaches for. Held to the default style and progression the
+  // condition barely arises, so a config has to be chosen for it.
+  struct Config {
+    uint8_t style;
+    uint8_t progression;
+    uint8_t blueprint;
+    uint32_t seed;
+  };
+  const std::vector<Config> configs = {
+      {2, 19, 4, 9103}, {4, 4, 4, 9101}, {3, 3, 6, 9101}, {5, 5, 0, 9101}, {0, 0, 9, 9101},
+  };
+
+  for (const Config& c : configs) {
+    SongConfig config = createDefaultSongConfig(c.style);
+    config.seed = c.seed;
+    config.blueprint_id = c.blueprint;
+    config.chord_progression_id = c.progression;
+
+    Generator gen;
+    gen.generate(ConfigConverter::convert(config));
+
+    std::vector<const NoteEvent*> by_onset;
+    for (const auto& note : gen.getSong().guitar().notes()) by_onset.push_back(&note);
+    std::sort(by_onset.begin(), by_onset.end(),
+              [](const NoteEvent* a, const NoteEvent* b) { return a->start_tick < b->start_tick; });
+
+    size_t strums = 0;
+    size_t out_of_order = 0;
+    Tick first_bad = 0;
+    std::vector<const NoteEvent*> strum;
+    auto judge = [&]() {
+      if (strum.size() >= 2) {
+        ++strums;
+        bool rising = true;
+        bool falling = true;
+        for (size_t k = 1; k < strum.size(); ++k) {
+          if (strum[k]->note < strum[k - 1]->note) rising = false;
+          if (strum[k]->note > strum[k - 1]->note) falling = false;
+        }
+        if (!rising && !falling) {
+          if (out_of_order == 0) first_bad = strum.front()->start_tick;
+          ++out_of_order;
+        }
+      }
+      strum.clear();
+    };
+    for (const NoteEvent* note : by_onset) {
+      if (!strum.empty() && note->start_tick - strum.back()->start_tick != kStringRakeTicks) {
+        judge();
+      }
+      strum.push_back(note);
+    }
+    judge();
+
+    const std::string where = "style " + std::to_string(c.style) + ", progression " +
+                              std::to_string(c.progression) + ", blueprint " +
+                              std::to_string(c.blueprint) + ", seed " + std::to_string(c.seed);
+    EXPECT_GT(strums, 0u) << where << " has no strum, so no order was checked";
+    EXPECT_EQ(out_of_order, 0u) << where << " rakes " << out_of_order
+                                << " chords whose pitches change direction mid-strum, the first at "
+                                   "tick "
+                                << first_bad;
   }
 }

@@ -467,7 +467,6 @@ static void generateStrumBar(MidiTrack& track, IHarmonyContext& harmony, Tick ba
       placed.push_back(safe);
     }
     placed = orderPlayableStrum(placed, is_upstroke);
-    constexpr Tick kStringRakeTicks = 8;
     for (size_t string_idx = 0; string_idx < placed.size(); ++string_idx) {
       const uint8_t safe = placed[string_idx];
       const Tick note_start = pos + static_cast<Tick>(string_idx) * kStringRakeTicks;
@@ -522,7 +521,6 @@ static void generatePowerChordBar(MidiTrack& track, IHarmonyContext& harmony, Ti
       placed.push_back(safe);
     }
     placed = orderPlayableStrum(placed, false);
-    constexpr Tick kStringRakeTicks = 8;
     for (size_t string_idx = 0; string_idx < placed.size(); ++string_idx) {
       const uint8_t safe = placed[string_idx];
       const Tick note_start = pos + static_cast<Tick>(string_idx) * kStringRakeTicks;

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <map>
+#include <set>
 
 #include "core/basic_types.h"
 #include "core/chord_utils.h"
@@ -447,10 +448,30 @@ void separateGuitarFromBass(MidiTrack& guitar, const MidiTrack& bass, IHarmonyCo
     return;
   }
 
+  // Which notes are voices of a strum rather than notes of their own. The
+  // spacing is the only record of it that survives generation, so it is what
+  // has to be asked here.
+  std::set<Tick> onsets;
+  for (const auto& note : guitar.notes()) {
+    onsets.insert(note.start_tick);
+  }
+  auto voicesAStrum = [&onsets](Tick start) {
+    return onsets.count(start + kStringRakeTicks) != 0 ||
+           (start >= kStringRakeTicks && onsets.count(start - kStringRakeTicks) != 0);
+  };
+
   TrackPitchEditor editor(guitar, harmony, TrackRole::Guitar);
   for (size_t i = 0; i < editor.size(); ++i) {
     const NoteEvent& guitar_note = editor.at(i);
     if (guitar_note.note >= 52) {
+      continue;
+    }
+    // A strum's lowest voice is the one this rule reaches for, and it is the
+    // one it must not take. The shape was chosen whole against the fretboard,
+    // so lifting a single voice an octave puts it above the voices that follow
+    // it: the chord then speaks out of order, in an inversion nobody voiced,
+    // to clear a bass note the chord as a whole was never crowding.
+    if (voicesAStrum(guitar_note.start_tick)) {
       continue;
     }
     Tick guitar_end = guitar_note.start_tick + guitar_note.duration;

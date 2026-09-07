@@ -26,6 +26,16 @@ constexpr Tick TICK_QUARTER_TRIPLET = TICKS_PER_BEAT / 3;     // 160 ticks
 constexpr Tick TICK_EIGHTH_TRIPLET = TICKS_PER_BEAT / 6;      // 80 ticks
 constexpr Tick TICK_SIXTEENTH_TRIPLET = TICKS_PER_BEAT / 12;  // 40 ticks
 
+/// @brief Offset between one string of a strum and the next.
+///
+/// A strum is one chord, and once its notes are written this spacing is the
+/// only thing that still says so: they carry no other mark of belonging
+/// together, so a later pass sees several notes a few ticks apart rather than
+/// one gesture. Anything that moves a pitch has to be able to ask, because
+/// moving a single voice of a chord that was fingered as one shape breaks both
+/// the shape and the order the pick travels in.
+constexpr Tick kStringRakeTicks = 8;
+
 // Tempo conversion constant
 // 1 minute = 60,000,000 microseconds
 // microseconds_per_beat = kMicrosecondsPerMinute / BPM
