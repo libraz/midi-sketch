@@ -7,7 +7,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstdlib>
 
 #include "core/chord_utils.h"
 #include "core/i_harmony_context.h"
@@ -17,15 +16,6 @@
 namespace midisketch {
 
 namespace {
-
-// TEMPORARY measurement switch; remove before committing.
-bool bassDoublingRuleEnabled() {
-  static const bool enabled = [] {
-    const char* value = std::getenv("MIDISKETCH_BASSDOUBLE");
-    return (value == nullptr) || std::atoi(value) != 0;
-  }();
-  return enabled;
-}
 
 // Helper to check if a boundary safety level is considered safe
 bool isSafeBoundary(CrossBoundarySafety safety) {
@@ -772,7 +762,7 @@ std::vector<PitchCandidate> getSafePitchCandidates(const ICollisionDetector& har
     // The doubling rule is a bass rule: it is what keeps the bass supporting the
     // lead rather than shadowing it an octave below, and no other role is voiced
     // against the vocal that way.
-    if (preference == PitchPreference::PreferRootFifth && bassDoublingRuleEnabled()) {
+    if (preference == PitchPreference::PreferRootFifth) {
       candidate.doubles_vocal = doublesVocalPitchClass(harmony, pitch, start, duration);
     }
 
