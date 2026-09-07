@@ -9,14 +9,17 @@
 
 #include <cstdlib>
 #include <map>
+#include <random>
 #include <set>
 #include <vector>
 
 #include "core/generator.h"
+#include "core/production_blueprint.h"
 #include "core/song.h"
 #include "core/types.h"
 #include "test_support/generator_test_fixture.h"
 #include "test_support/test_constants.h"
+#include "track/bass/bass_pattern_selection.h"
 
 namespace midisketch {
 namespace {
@@ -919,21 +922,37 @@ TEST_F(BassTest, PedalToneVelocityRange) {
   }
 }
 
-TEST_F(BassTest, PedalToneDominantInBridge) {
-  // Bridge section with Electronic mood should exhibit pedal tone characteristics:
-  // low pitch class diversity (1-2 unique pitch classes) indicating static bass.
+TEST_F(BassTest, DominantPedalReachableInBridge) {
+  // Two claims about the dominant pedal a Bridge is supposed to be able to
+  // reach, asserted where each one actually lives.
+  //
+  // The selection chain is the first. The Electronic genre table names
+  // PedalTone as its primary choice for a Bridge, and the chain must not undo
+  // that: a Bridge is the one section exempted from the veto that replaces a
+  // pedal with a whole note wherever an arpeggio is playing. It is queried
+  // here with its own generator rather than the song's, so the claim does not
+  // move when an unrelated track draws a different number of random values --
+  // the sections it is asked about are still the ones the arranger built.
+  //
+  // The sounding track is the second. A pedal bar that reaches a dominant
+  // preparation, a harmonic subdivision or a phrase-end split is rewritten
+  // around the chord root instead, so a bridge that chose the pattern is not
+  // one pitch class; it is one pitch class in the majority. Counting unique
+  // pitch classes instead measures how many bars escaped those paths, which
+  // is not what the pattern promises.
   params_.mood = Mood::ElectroPop;                       // Electronic genre
   params_.structure = StructurePattern::FullWithBridge;  // Has Bridge section
   params_.drums_enabled = true;
 
-  int pedal_like_bridges = 0;
-  int total_bridges = 0;
+  const uint8_t kDominantPedalPc = 7;  // G: getBassRoot(4) in the internal C major
+  constexpr uint32_t kSelectionTrialsPerBridge = 8;
 
-  // Pedal selection is a low-probability roll, so the seed window has to be
-  // wide enough that drawing none of them is not an ordinary outcome. Over 50
-  // seeds the expected count is only a couple, and an empty draw says nothing
-  // about whether the pattern is still reachable.
-  for (uint32_t seed = 1; seed <= 200; ++seed) {
+  int total_bridges = 0;
+  int selection_trials = 0;
+  int pedal_selected = 0;
+  int dominant_pedal_bridges = 0;
+
+  for (uint32_t seed = 1; seed <= 40; ++seed) {
     params_.seed = seed;
     Generator gen;
     gen.generate(params_);
@@ -941,35 +960,66 @@ TEST_F(BassTest, PedalToneDominantInBridge) {
     const auto& track = gen.getSong().bass();
     const auto& arrangement = gen.getSong().arrangement();
 
-    for (const auto& section : arrangement.sections()) {
+    // A non-empty vocal is what routes the bass through the vocal-aware
+    // chain, and that chain is the one carrying the Bridge exemption.
+    ASSERT_FALSE(gen.getSong().vocal().notes().empty()) << "seed " << seed << " has no vocal";
+
+    // Blueprint resolution overwrites paradigm and riff_policy before any
+    // track is written, so replaying the chain means reading them back from
+    // the blueprint rather than from what the caller supplied.
+    GeneratorParams selection_params = params_;
+    const ProductionBlueprint& blueprint = getProductionBlueprint(gen.resolvedBlueprintId());
+    selection_params.paradigm = blueprint.paradigm;
+    selection_params.riff_policy = blueprint.riff_policy;
+
+    const auto& sections = arrangement.sections();
+    for (size_t sec_idx = 0; sec_idx < sections.size(); ++sec_idx) {
+      const Section& section = sections[sec_idx];
       if (section.type != SectionType::Bridge) continue;
 
-      Tick sec_start = section.start_tick;
-      Tick sec_end = section.endTick();
-
-      std::set<uint8_t> unique_pcs;
+      std::map<uint8_t, int> pc_counts;
+      int note_count = 0;
       for (const auto& note : track.notes()) {
-        if (note.start_tick >= sec_start && note.start_tick < sec_end) {
-          unique_pcs.insert(note.note % 12);
+        if (note.start_tick >= section.start_tick && note.start_tick < section.endTick()) {
+          pc_counts[note.note % 12]++;
+          note_count++;
         }
       }
+      if (note_count == 0) continue;
+      total_bridges++;
 
-      if (!unique_pcs.empty()) {
-        total_bridges++;
-        // Pedal tone characteristic: 1-2 unique pitch classes (static bass)
-        if (unique_pcs.size() <= 2) {
-          pedal_like_bridges++;
-        }
+      if (pc_counts[kDominantPedalPc] * 2 > note_count) {
+        dominant_pedal_bridges++;
+      }
+
+      for (uint32_t trial = 1; trial <= kSelectionTrialsPerBridge; ++trial) {
+        // A Bridge returns from the genre table before the vocal density is
+        // read, so the value passed here does not reach a branch.
+        std::mt19937 selection_rng(seed * 1000 + trial);
+        BassRiffCache cache;
+        BassPattern pattern = selectPatternWithPolicyForVocal(
+            cache, section, sec_idx, selection_params, 0.5f, selection_rng);
+        selection_trials++;
+        if (pattern == BassPattern::PedalTone) pedal_selected++;
       }
     }
   }
 
-  // A pedal-like bridge is low pitch-class diversity, that is, a static bass.
-  // The claim is reachability, not a rate: how often the roll succeeds is a
-  // tuning decision, but a pattern that can no longer occur at all is a break.
-  EXPECT_GT(total_bridges, 0) << "Should have Bridge sections to test";
-  EXPECT_GE(pedal_like_bridges, 1) << "Pedal-like bridge bass should remain reachable (found "
-                                   << pedal_like_bridges << "/" << total_bridges << ")";
+  ASSERT_GT(total_bridges, 0) << "Should have Bridge sections to test";
+  ASSERT_GT(selection_trials, 0);
+
+  // The table gives PedalTone the primary slot, which is a 60% roll. A quarter
+  // of the trials leaves room for the veto and the peak promotion to fire on
+  // some sections while still failing if the Bridge stops reaching the pattern.
+  EXPECT_GT(pedal_selected * 4, selection_trials)
+      << "Bridge pattern selection should still reach PedalTone (" << pedal_selected << "/"
+      << selection_trials << " trials)";
+
+  // Reachability, not a rate: how often a pedal survives to the output is a
+  // tuning decision, but never surviving means it no longer sounds at all.
+  EXPECT_GT(dominant_pedal_bridges, 0)
+      << "A dominant pedal should still reach the bass track (" << dominant_pedal_bridges << "/"
+      << total_bridges << " bridges)";
 }
 
 TEST_F(BassTest, PedalToneNotInChorus) {
