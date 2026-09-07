@@ -19,6 +19,7 @@
 #include "core/note_source.h"
 #include "core/pitch_utils.h"
 #include "core/song.h"
+#include "core/timing_constants.h"
 #include "core/track_collision_detector.h"
 #include "midi/midi_reader.h"
 
@@ -492,6 +493,43 @@ bool isPreparedResolvingSuspension(const std::vector<TimedNote>& notes, size_t n
   return downward_resolution == 1 || downward_resolution == 2;
 }
 
+// Whether the chord about to enter accounts for a flagged pair that arrives
+// just ahead of it.
+//
+// An accompaniment onset can precede the chord entry it was written for. The
+// arrangement's time feel places the rhythm section ahead of the grid, so a
+// note chosen as a tone of the entering chord starts a few ticks before that
+// chord does, and asking about the pair at its overlap start asks the chord it
+// is leaving -- which is exactly the chord the note was not written against.
+// The whole overlap is then reported for the few ticks that precede the entry.
+//
+// The entering chord answers only for a pair that really is an early arrival:
+// its entry falls inside the overlap, the part before it is shorter than the
+// shortest note this engine writes, and the part after it is at least as long.
+// A pair that ends before the entry, or that spends most of its life under the
+// departing chord, is the departing chord's to account for.
+//
+// This is the report's rule alone. The passes that shorten and remove notes ask
+// chordExcusesFlaggedPair() at the overlap start and stop there, so a pair
+// excused here can still be one they act on; what they do to such a pair is
+// their own question rather than a disagreement about this one.
+bool enteringChordExcusesEarlyArrival(uint8_t actual_interval, uint8_t pitch_a, uint8_t pitch_b,
+                                      Tick overlap_start, Tick overlap_end,
+                                      const IChordLookup& chord_lookup) {
+  // Every timeline entry, not just the next change of degree: an entry that
+  // keeps the degree and adds a ninth states different tones, and those tones
+  // are the whole question here.
+  const Tick entry = chord_lookup.getNextChordEntryTick(overlap_start);
+  if (entry <= overlap_start || entry >= overlap_end) return false;
+
+  const Tick before_entry = entry - overlap_start;
+  const Tick after_entry = overlap_end - entry;
+  if (before_entry >= TICK_32ND || before_entry > after_entry) return false;
+
+  return chordExcusesFlaggedPair(actual_interval, pitch_a, pitch_b,
+                                 chord_lookup.getChordTonesAt(entry));
+}
+
 // Detect simultaneous clashes between any two sounding notes, one track or two
 void detectSimultaneousClashes(const std::vector<TimedNote>& all_notes, const DetectionContext& ctx,
                                DissonanceReport& report) {
@@ -541,9 +579,17 @@ void detectSimultaneousClashes(const std::vector<TimedNote>& all_notes, const De
       // chordExcusesFlaggedPair()'s to say, and the pass that removes these
       // pairs from the tracks asks it too -- stating the rule here as well let
       // the report stay silent about a semitone the sweep would have taken.
+      //
+      // Which chord to ask is a second question, and one the overlap start
+      // alone answers wrongly for a pair that arrives a few ticks ahead of the
+      // chord it belongs to; enteringChordExcusesEarlyArrival() bounds when the
+      // chord about to enter is the one that owns the pair.
       if (is_dissonant &&
-          chordExcusesFlaggedPair(actual_interval, note_a.pitch, note_b.pitch,
-                                  ctx.chord_lookup.getChordTonesAt(overlap_start))) {
+          (chordExcusesFlaggedPair(actual_interval, note_a.pitch, note_b.pitch,
+                                   ctx.chord_lookup.getChordTonesAt(overlap_start)) ||
+           enteringChordExcusesEarlyArrival(actual_interval, note_a.pitch, note_b.pitch,
+                                            overlap_start, std::min(note_a.end, note_b.end),
+                                            ctx.chord_lookup))) {
         is_dissonant = false;
       }
 
