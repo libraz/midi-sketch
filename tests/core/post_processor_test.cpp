@@ -784,54 +784,8 @@ TEST(PostProcessorIntegrationTest, ChorusDropAndRitDecrescendoDoNotInterfere) {
 }
 
 // ============================================================================
-// Provenance Tests
+// Enhanced FinalHit Bass Pitch Resolution Tests
 // ============================================================================
-
-#ifdef MIDISKETCH_NOTE_PROVENANCE
-
-TEST_F(EnhancedFinalHitTest, AddedNotesHavePostProcessProvenance) {
-  // Notes added by applyEnhancedFinalHit should have provenance set
-
-  MidiTrack bass_track;
-  MidiTrack drum_track;
-  // Add a note so drum_track is not empty (required for applyEnhancedFinalHit)
-  drum_track.addNote(NoteEventBuilder::create(0, TICKS_PER_BEAT / 2, KICK, 80));
-
-  harmony_.setChordDegree(4);
-
-  PostProcessor::applyEnhancedFinalHit(&bass_track, &drum_track, nullptr, section_, harmony_);
-
-  Tick final_beat_start = 4 * TICKS_PER_BAR - TICKS_PER_BEAT;
-
-  // The bass note is pitched, so it is created through the harmony-aware API
-  // and its provenance names the chord it was created under. The drum notes
-  // below are unpitched and carry no chord.
-  for (const auto& note : bass_track.notes()) {
-    if (note.start_tick >= final_beat_start) {
-      EXPECT_EQ(note.prov_source, static_cast<uint8_t>(NoteSource::PostProcess))
-          << "Added bass note should have PostProcess provenance";
-      EXPECT_EQ(note.prov_lookup_tick, final_beat_start)
-          << "prov_lookup_tick should match start tick";
-      EXPECT_EQ(note.prov_original_pitch, note.note)
-          << "prov_original_pitch should match note pitch";
-      EXPECT_EQ(note.prov_chord_degree, 4)
-          << "prov_chord_degree should record the degree harmony reported at the final beat";
-    }
-  }
-
-  // Check drum notes provenance (kick and crash)
-  for (const auto& note : drum_track.notes()) {
-    if (note.start_tick >= final_beat_start) {
-      EXPECT_EQ(note.prov_source, static_cast<uint8_t>(NoteSource::PostProcess))
-          << "Added drum note should have PostProcess provenance";
-      EXPECT_EQ(note.prov_lookup_tick, final_beat_start)
-          << "prov_lookup_tick should match start tick";
-      EXPECT_EQ(note.prov_original_pitch, note.note)
-          << "prov_original_pitch should match note pitch";
-      EXPECT_EQ(note.prov_chord_degree, -1) << "an unpitched drum note names no chord";
-    }
-  }
-}
 
 TEST_F(EnhancedFinalHitTest, BassPitchUsesCollisionCheckWhenHarmonyProvided) {
   // When harmony context reports collision for default C2 (36), the function
@@ -939,7 +893,56 @@ TEST_F(EnhancedFinalHitTest, BassFallsBackToTheRootWhenNoPitchIsSafe) {
   EXPECT_TRUE(has_final_bass) << "The ending must keep its bass even when no pitch is safe";
 }
 
+// ============================================================================
+// Provenance Tests
+// ============================================================================
+
 #ifdef MIDISKETCH_NOTE_PROVENANCE
+
+TEST_F(EnhancedFinalHitTest, AddedNotesHavePostProcessProvenance) {
+  // Notes added by applyEnhancedFinalHit should have provenance set
+
+  MidiTrack bass_track;
+  MidiTrack drum_track;
+  // Add a note so drum_track is not empty (required for applyEnhancedFinalHit)
+  drum_track.addNote(NoteEventBuilder::create(0, TICKS_PER_BEAT / 2, KICK, 80));
+
+  harmony_.setChordDegree(4);
+
+  PostProcessor::applyEnhancedFinalHit(&bass_track, &drum_track, nullptr, section_, harmony_);
+
+  Tick final_beat_start = 4 * TICKS_PER_BAR - TICKS_PER_BEAT;
+
+  // The bass note is pitched, so it is created through the harmony-aware API
+  // and its provenance names the chord it was created under. The drum notes
+  // below are unpitched and carry no chord.
+  for (const auto& note : bass_track.notes()) {
+    if (note.start_tick >= final_beat_start) {
+      EXPECT_EQ(note.prov_source, static_cast<uint8_t>(NoteSource::PostProcess))
+          << "Added bass note should have PostProcess provenance";
+      EXPECT_EQ(note.prov_lookup_tick, final_beat_start)
+          << "prov_lookup_tick should match start tick";
+      EXPECT_EQ(note.prov_original_pitch, note.note)
+          << "prov_original_pitch should match note pitch";
+      EXPECT_EQ(note.prov_chord_degree, 4)
+          << "prov_chord_degree should record the degree harmony reported at the final beat";
+    }
+  }
+
+  // Check drum notes provenance (kick and crash)
+  for (const auto& note : drum_track.notes()) {
+    if (note.start_tick >= final_beat_start) {
+      EXPECT_EQ(note.prov_source, static_cast<uint8_t>(NoteSource::PostProcess))
+          << "Added drum note should have PostProcess provenance";
+      EXPECT_EQ(note.prov_lookup_tick, final_beat_start)
+          << "prov_lookup_tick should match start tick";
+      EXPECT_EQ(note.prov_original_pitch, note.note)
+          << "prov_original_pitch should match note pitch";
+      EXPECT_EQ(note.prov_chord_degree, -1) << "an unpitched drum note names no chord";
+    }
+  }
+}
+
 TEST_F(EnhancedFinalHitTest, BassPitchProvenanceTracksOriginalWhenCollisionResolved) {
   // When collision resolution changes the pitch, prov_original_pitch should
   // still record the default C2 (36) for debugging.
@@ -962,7 +965,6 @@ TEST_F(EnhancedFinalHitTest, BassPitchProvenanceTracksOriginalWhenCollisionResol
     }
   }
 }
-#endif  // MIDISKETCH_NOTE_PROVENANCE
 
 TEST_F(ChorusDropTest, DrumHitCrashHasPostProcessProvenance) {
   // Crash cymbal added by DrumHit style should have provenance set
