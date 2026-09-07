@@ -3,13 +3,13 @@
  * @brief Tests for Generator internal state hygiene across repeated generate()
  *        calls and harmony-context freshness after post-processing.
  *
- * Covers two audit findings:
- *  - #2: Lazily-computed cached optionals (drum_grid_, kick_cache_) must be
- *        reset at the start of each generate() so a second call on the same
- *        Generator instance does not reuse stale state from a prior call.
- *  - #1: After the post-processing clash-fix passes mutate accompaniment
- *        tracks, the harmony context must be re-registered so its registered
- *        note state matches the actual track contents.
+ * Two invariants are covered:
+ *  - Lazily-computed caches behind generate() (the drum grid and the kick
+ *    cache) must be reset at the start of each call, so a second generate()
+ *    on the same Generator instance does not reuse state from a prior call.
+ *  - After the post-processing clash-fix passes mutate accompaniment tracks,
+ *    the harmony context must be re-registered so its registered note state
+ *    matches the actual track contents.
  */
 
 #include <gtest/gtest.h>
@@ -109,7 +109,7 @@ Tick songTotalTicks(const Song& song) {
 }  // namespace
 
 // ---------------------------------------------------------------------------
-// Test A (audit #2): cached state reset between generate() calls
+// Cached state reset between generate() calls
 // ---------------------------------------------------------------------------
 
 // Same params/seed twice on the same instance must produce identical output.
@@ -129,7 +129,7 @@ TEST(GeneratorStateTest, RepeatGenerateSameParamsIsDeterministic) {
 
 // Generating a RhythmSync song then a Traditional song on the same instance
 // must match a Traditional song generated on a fresh instance. This catches
-// stale drum_grid_ / kick_cache_ leaking from the RhythmSync run.
+// a stale drum grid or kick cache leaking from the RhythmSync run.
 TEST(GeneratorStateTest, ParadigmSwitchMatchesFreshInstance) {
   GeneratorParams rhythm = makeRhythmSyncParams();
   GeneratorParams traditional = makeTraditionalParams();
@@ -146,7 +146,8 @@ TEST(GeneratorStateTest, ParadigmSwitchMatchesFreshInstance) {
   SongFingerprint fresh_fp = fingerprintSong(fresh.getSong());
 
   EXPECT_EQ(reused_fp, fresh_fp) << "Traditional output after a RhythmSync run must equal a fresh "
-                                    "Traditional run (stale drum_grid_/kick_cache_ would diverge).";
+                                    "Traditional run (a stale drum grid or kick cache would "
+                                    "diverge).";
 }
 
 // The reverse ordering also exercises the reset: Traditional first guarantees
@@ -168,7 +169,7 @@ TEST(GeneratorStateTest, TraditionalThenRhythmSyncMatchesFresh) {
 }
 
 // ---------------------------------------------------------------------------
-// Test B (audit #1): harmony context matches track contents after generate()
+// Harmony context matches track contents after generate()
 // ---------------------------------------------------------------------------
 
 namespace {
@@ -273,7 +274,7 @@ TEST(GeneratorStateTest, HarmonyContextMatchesChordAndBassRhythmSync) {
 }
 
 // ---------------------------------------------------------------------------
-// Regression (audit: vocal-first double secondary-dominant registration)
+// Vocal-first flow: no double secondary-dominant registration
 // ---------------------------------------------------------------------------
 
 // Sanity: the chosen params must actually register at least one secondary
