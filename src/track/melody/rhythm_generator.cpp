@@ -612,8 +612,18 @@ std::vector<RhythmNote> generateMoraTimedRhythm(uint8_t phrase_beats, uint8_t ta
   }
   base_duration = std::max(grid, std::floor(base_duration / grid) * grid);
 
-  // Articulation gap between word groups (1/32nd note = 0.125 beats)
-  constexpr float kArticulationGap = 0.125f;
+  // The gap between two word groups is the last syllable of a word being
+  // released early, so it is a share of that syllable and not a fixed length.
+  // The morae here run from a half beat to four beats, and one constant across
+  // that range is half of the short ones and a sixteenth of the long ones --
+  // the same rule reading as a clipped delivery in a fast line and as no
+  // boundary at all in a slow one.
+  //
+  // It comes out of the note's duration alone. Advancing the clock by it as
+  // well spends the gap twice and, worse, moves the next word group off the
+  // beat by that much, a displacement that accumulates: the fourth group of a
+  // line starts three thirty-seconds after the grid it was written against.
+  constexpr float kArticulationGapRatio = 0.25f;
 
   float current_beat = 0.0f;
 
@@ -637,8 +647,7 @@ std::vector<RhythmNote> generateMoraTimedRhythm(uint8_t phrase_beats, uint8_t ta
 
       // Shorten last mora of each group by articulation gap (except phrase-ending)
       if (is_last_mora_in_group && !is_last_mora_overall) {
-        duration -= kArticulationGap;
-        duration = std::max(duration, 0.25f);  // Minimum 16th note
+        duration -= base_duration * kArticulationGapRatio;
       }
 
       // Clamp to remaining time
@@ -658,9 +667,6 @@ std::vector<RhythmNote> generateMoraTimedRhythm(uint8_t phrase_beats, uint8_t ta
       }
 
       current_beat += base_duration;
-      if (is_last_mora_in_group && !is_last_mora_overall) {
-        current_beat += kArticulationGap;  // Add gap between word groups
-      }
     }
   }
 
