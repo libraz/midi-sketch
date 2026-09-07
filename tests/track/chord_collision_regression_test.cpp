@@ -9,10 +9,7 @@
 #include <gtest/gtest.h>
 
 #include <cstdlib>
-#include <map>
 #include <sstream>
-#include <string>
-#include <vector>
 
 #include "core/generator.h"
 #include "core/i_harmony_context.h"
@@ -26,15 +23,14 @@
 namespace midisketch {
 namespace {
 
-using test::ClashInfo;
 using test::findClashes;
 
 constexpr uint32_t kSeeds[] = {42, 100, 200, 999};
 
 // Maximum number of bass-chord clashes allowed per song.
-// A small number is acceptable (chord boundary effects, etc.),
-// but a large increase would indicate a regression.
-constexpr size_t kMaxBassChordClashesPerSong = 30;
+// Zero, not an observed ceiling: bass-chord collisions are resolved at
+// generation time, so any count above zero is a real regression.
+constexpr size_t kMaxBassChordClashesPerSong = 0;
 
 class ChordCollisionRegressionTest : public ::testing::Test {
  protected:
@@ -56,6 +52,26 @@ TEST_F(ChordCollisionRegressionTest, BassChordClashesBelowThreshold) {
 
       const auto& song = sketch_.getSong();
       const auto& harmony = sketch_.getHarmonyContext();
+
+      // Guard against a vacuous pass: with no bass, no chord, or no note that
+      // overlaps in time, the clash assertion below is trivially satisfied
+      // without having checked anything. Count what it will actually compare
+      // before trusting a zero clash count to mean collisions were avoided.
+      int overlapping_pairs = 0;
+      for (const auto& bass_note : song.bass().notes()) {
+        Tick bass_start = bass_note.start_tick;
+        Tick bass_end = bass_start + bass_note.duration;
+        for (const auto& chord_note : song.chord().notes()) {
+          Tick chord_start = chord_note.start_tick;
+          Tick chord_end = chord_start + chord_note.duration;
+          if (bass_start < chord_end && chord_start < bass_end) {
+            ++overlapping_pairs;
+          }
+        }
+      }
+      ASSERT_GT(overlapping_pairs, 0)
+          << "No overlapping bass/chord note pairs for blueprint=" << (int)blueprint
+          << " seed=" << seed << "; the clash count below has nothing to check";
 
       auto clashes =
           findClashes(song, sketch_.getParams(), harmony, TrackRole::Bass, TrackRole::Chord);
