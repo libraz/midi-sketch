@@ -302,9 +302,9 @@ struct SongConfig {
   uint8_t melody_use_leading_tone = 0;             ///< 0=preset, 1=off, 2=on
 
   /// Motif parameter overrides (0=auto/preset, 0xFF=preset for enum fields)
-  uint8_t motif_length = 0;             ///< 0=auto, 1/2/4 beats
+  uint8_t motif_length = 0;             ///< 0=auto, 1/2/4 bars
   uint8_t motif_note_count = 0;         ///< 0=auto, 3-8
-  uint8_t motif_motion = 0xFF;          ///< 0xFF=preset, 0-4=override (0=Stepwise..4=Disjunct)
+  uint8_t motif_motion = 0xFF;          ///< 0xFF=preset, 0-5=override (0=Stepwise..5=Ostinato)
   uint8_t motif_register_high = 0;      ///< 0=auto, 1=low, 2=high
   uint8_t motif_rhythm_density = 0xFF;  ///< 0xFF=preset, 0-2=override (0=Sparse..2=Driving)
 

@@ -195,11 +195,11 @@ export interface SongConfig {
   melodyUseLeadingTone: number;
 
   // Motif overrides
-  /** Motif length: 0=auto, 1/2/4 beats */
+  /** Motif length: 0=auto, 1/2/4 bars */
   motifLength: number;
   /** Motif note count: 0=auto, 3-8 */
   motifNoteCount: number;
-  /** Motif motion: 0xFF=preset, 0-4=override (0=Stepwise..4=Disjunct) */
+  /** Motif motion: 0xFF=preset, 0-5=override (0=Stepwise..5=Ostinato) */
   motifMotion: number;
   /** Motif register: 0=auto, 1=low, 2=high */
   motifRegisterHigh: number;
