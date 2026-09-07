@@ -803,9 +803,10 @@ TEST(DissonanceTest, AuxNonChordTonesAreGradedByBeatPosition) {
   chord_tracker.initialize(generated.arrangement(), getChordProgression(params.chord_id),
                            params.mood);
 
-  constexpr Tick kDownbeatTick = TICKS_PER_BAR * 4;
-  constexpr Tick kWeakBeatTick = kDownbeatTick + TICKS_PER_BEAT;
+  constexpr Tick kBarStart = TICKS_PER_BAR * 4;
   constexpr Tick kDuration = TICKS_PER_BEAT;
+  constexpr Tick kBeatTicks[] = {kBarStart, kBarStart + TICKS_PER_BEAT,
+                                 kBarStart + TICKS_PER_BEAT * 2, kBarStart + TICKS_PER_BEAT * 3};
 
   // The non-chord-tone pass has no duration or passing-tone exemption: a note
   // whose pitch class the chord does not account for is reported however short
@@ -815,7 +816,7 @@ TEST(DissonanceTest, AuxNonChordTonesAreGradedByBeatPosition) {
   // available, since chordOrTensionContains() is what decides whether the note
   // is a non-chord tone at all. And it has to sit clear of the intervals that
   // raise severity against a sounding chord note, because a minor 2nd or major
-  // 7th there would report High at both positions and flatten the contrast this
+  // 7th there would report High at every position and flatten the contrast this
   // test is measuring. Searching for such a pitch keeps the test tied to the
   // chord that is actually sounding rather than to a constant that a change in
   // the progression would quietly invalidate.
@@ -835,14 +836,18 @@ TEST(DissonanceTest, AuxNonChordTonesAreGradedByBeatPosition) {
   for (int pitch = 60; pitch < 108 && planted_pitch < 0; ++pitch) {
     if (!isDiatonic(pitch)) continue;
     const int pitch_class = getPitchClass(static_cast<uint8_t>(pitch));
-    if (chordOrTensionContains(pitch_class, kDownbeatTick, chord_tracker)) continue;
-    if (chordOrTensionContains(pitch_class, kWeakBeatTick, chord_tracker)) continue;
-    if (escalatesAgainstChord(static_cast<uint8_t>(pitch), kDownbeatTick)) continue;
-    if (escalatesAgainstChord(static_cast<uint8_t>(pitch), kWeakBeatTick)) continue;
-    planted_pitch = pitch;
+    bool usable = true;
+    for (Tick tick : kBeatTicks) {
+      if (chordOrTensionContains(pitch_class, tick, chord_tracker) ||
+          escalatesAgainstChord(static_cast<uint8_t>(pitch), tick)) {
+        usable = false;
+        break;
+      }
+    }
+    if (usable) planted_pitch = pitch;
   }
   ASSERT_GE(planted_pitch, 0) << "No diatonic non-chord tone is available over the chord at bar "
-                              << (kDownbeatTick / TICKS_PER_BAR) + 1;
+                              << (kBarStart / TICKS_PER_BAR) + 1;
 
   auto plantedToneSeverity = [&](TrackRole role, Tick tick) -> std::vector<DissonanceSeverity> {
     Song song = generated;
@@ -859,25 +864,40 @@ TEST(DissonanceTest, AuxNonChordTonesAreGradedByBeatPosition) {
     return severities;
   };
 
-  const auto downbeat = plantedToneSeverity(TrackRole::Aux, kDownbeatTick);
-  const auto weak_beat = plantedToneSeverity(TrackRole::Aux, kWeakBeatTick);
-  ASSERT_EQ(downbeat.size(), 1u) << "The planted aux non-chord tone was not reported on beat 1";
-  ASSERT_EQ(weak_beat.size(), 1u) << "The planted aux non-chord tone was not reported on beat 2";
+  std::vector<DissonanceSeverity> by_beat;
+  for (Tick tick : kBeatTicks) {
+    const auto reported = plantedToneSeverity(TrackRole::Aux, tick);
+    ASSERT_EQ(reported.size(), 1u) << "The planted aux non-chord tone was not reported on beat "
+                                   << ((tick - kBarStart) / TICKS_PER_BEAT) + 1;
+    by_beat.push_back(reported[0]);
+  }
 
   // Beat 1 is the exposed position, so the same wrong note costs more there.
   // This is what the aux track's "proper severity" means, stated over a note the
   // test placed rather than over whatever the generator happened to leave.
-  EXPECT_NE(downbeat[0], DissonanceSeverity::Low)
+  EXPECT_NE(by_beat[0], DissonanceSeverity::Low)
       << "An aux non-chord tone on beat 1 was reported at the lowest severity";
-  EXPECT_GT(downbeat[0], weak_beat[0])
-      << "Beat 1 and beat 2 graded the same aux non-chord tone alike";
+
+  // Beat 1 is the only position the pass raises. Beat 3 is the interesting one:
+  // getMetricPosition() names it separately as the secondary beat, and the bass
+  // branch of this same pass does grade it above beats 2 and 4 -- but a melodic
+  // track's non-chord tone there is worth no more than one on an offbeat. A
+  // future edit that starts honouring the secondary beat for melodic tracks has
+  // to come through here.
+  for (size_t beat = 1; beat < by_beat.size(); ++beat) {
+    EXPECT_GT(by_beat[0], by_beat[beat])
+        << "Beat 1 and beat " << beat + 1 << " graded the same aux non-chord tone alike";
+    EXPECT_EQ(by_beat[beat], by_beat[1])
+        << "Beat " << beat + 1 << " was graded apart from the other beats outside beat 1";
+  }
 
   // Nothing in the non-chord-tone pass reads the track beyond the bass/melodic
   // split, and aux is on the melodic side with motif.
-  EXPECT_EQ(plantedToneSeverity(TrackRole::Motif, kDownbeatTick), downbeat)
-      << "Aux and motif were graded differently for the same planted non-chord tone";
-  EXPECT_EQ(plantedToneSeverity(TrackRole::Motif, kWeakBeatTick), weak_beat)
-      << "Aux and motif were graded differently for the same planted non-chord tone";
+  for (size_t beat = 0; beat < by_beat.size(); ++beat) {
+    EXPECT_EQ(plantedToneSeverity(TrackRole::Motif, kBeatTicks[beat]),
+              std::vector<DissonanceSeverity>{by_beat[beat]})
+        << "Aux and motif were graded differently on beat " << beat + 1;
+  }
 }
 
 // ============================================================================
