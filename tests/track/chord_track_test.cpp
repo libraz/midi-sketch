@@ -1755,8 +1755,10 @@ TEST_F(ChordTrackTest, ChordMotifClashAvoidance_RhythmSyncParadigm) {
   // RhythmSync paradigm generates motif first, then chord
   // Chord voicing should avoid clashing with registered motif notes
   params_.seed = 12345;
-  params_.paradigm = GenerationParadigm::RhythmSync;
-  params_.riff_policy = RiffPolicy::LockedContour;
+  // The paradigm comes from the blueprint, not from params_: initializeBlueprint
+  // overwrites paradigm and riff_policy, so the blueprint id is the only way to
+  // ask for RhythmSync. Blueprint 1 is RhythmSync + Locked.
+  params_.blueprint_id = 1;
 
   Generator gen;
   gen.generate(params_);
@@ -1764,8 +1766,14 @@ TEST_F(ChordTrackTest, ChordMotifClashAvoidance_RhythmSyncParadigm) {
   const auto& chord_track = gen.getSong().chord();
   const auto& motif_track = gen.getSong().motif();
 
+  // An empty motif satisfies any upper bound on clashes, so the measurement is
+  // only meaningful once both tracks sound.
+  ASSERT_FALSE(motif_track.notes().empty()) << "No motif notes to clash against";
+  ASSERT_FALSE(chord_track.notes().empty()) << "No chord notes to measure";
+
   // Count minor 2nd clashes (highest priority to avoid)
   int minor_2nd_clashes = 0;
+  int overlapping_pairs = 0;
 
   for (const auto& chord_note : chord_track.notes()) {
     Tick chord_end = chord_note.start_tick + chord_note.duration;
@@ -1774,6 +1782,7 @@ TEST_F(ChordTrackTest, ChordMotifClashAvoidance_RhythmSyncParadigm) {
       Tick motif_end = motif_note.start_tick + motif_note.duration;
 
       if (chord_note.start_tick < motif_end && chord_end > motif_note.start_tick) {
+        ++overlapping_pairs;
         if (hasMinor2ndClash(chord_note.note, motif_note.note)) {
           ++minor_2nd_clashes;
         }
@@ -1781,16 +1790,19 @@ TEST_F(ChordTrackTest, ChordMotifClashAvoidance_RhythmSyncParadigm) {
     }
   }
 
+  ASSERT_GT(overlapping_pairs, 0) << "Chord and motif never sound at the same time";
+
   // Minor 2nd clashes should be very rare
   EXPECT_LE(minor_2nd_clashes, 3) << "Too many chord-motif minor 2nd clashes. Expected <= 3, got "
-                                  << minor_2nd_clashes;
+                                  << minor_2nd_clashes << " out of " << overlapping_pairs
+                                  << " overlapping pairs";
 }
 
 TEST_F(ChordTrackTest, ChordVoicingConsidersFullBarMotifNotes) {
   // Chord notes sustain through the bar, so voicing should consider
   // all motif notes that play during the chord's duration, not just at bar start
   params_.seed = 98765;
-  params_.paradigm = GenerationParadigm::RhythmSync;
+  params_.blueprint_id = 1;  // RhythmLock: RhythmSync paradigm, motif generated first
 
   Generator gen;
   gen.generate(params_);
@@ -1798,8 +1810,12 @@ TEST_F(ChordTrackTest, ChordVoicingConsidersFullBarMotifNotes) {
   const auto& chord_track = gen.getSong().chord();
   const auto& motif_track = gen.getSong().motif();
 
+  ASSERT_FALSE(motif_track.notes().empty()) << "No motif notes to clash against";
+  ASSERT_FALSE(chord_track.notes().empty()) << "No chord notes to measure";
+
   // Find chord notes that sustain for a full bar or more
   int long_chord_clashes = 0;
+  int mid_chord_pairs = 0;
 
   for (const auto& chord_note : chord_track.notes()) {
     if (chord_note.duration < TICKS_PER_BAR / 2) continue;  // Skip short chord notes
@@ -1811,6 +1827,7 @@ TEST_F(ChordTrackTest, ChordVoicingConsidersFullBarMotifNotes) {
       // Only count motif notes that START after chord note begins
       // (these would be missed by point-in-time lookup)
       if (motif_note.start_tick > chord_note.start_tick && motif_note.start_tick < chord_end) {
+        ++mid_chord_pairs;
         if (hasMajor2ndClash(chord_note.note, motif_note.note) ||
             hasMinor2ndClash(chord_note.note, motif_note.note)) {
           ++long_chord_clashes;
@@ -1819,10 +1836,16 @@ TEST_F(ChordTrackTest, ChordVoicingConsidersFullBarMotifNotes) {
     }
   }
 
+  // The two filters above (long chord notes, motif onsets inside them) can empty
+  // the population even when both tracks sound; without this the bound below
+  // would pass on nothing.
+  ASSERT_GT(mid_chord_pairs, 0) << "No motif note starts inside a sustained chord note";
+
   // Should have minimal clashes even with motif notes that start mid-chord
   // This verifies the range-based lookup is working
   EXPECT_LE(long_chord_clashes, 10)
-      << "Long chord notes have too many clashes with mid-bar motif notes";
+      << "Long chord notes have too many clashes with mid-bar motif notes (" << mid_chord_pairs
+      << " overlapping pairs examined)";
 }
 
 // ============================================================================

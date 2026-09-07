@@ -11,6 +11,7 @@
 #include <map>
 #include <random>
 #include <set>
+#include <string>
 #include <vector>
 
 #include "core/chord.h"
@@ -687,8 +688,9 @@ TEST_F(MotifMelodicContinuityTest, NoFullBarSilence) {
 
 // Test that not all notes are the same pitch class (melodic variety in RhythmSync mode)
 TEST_F(MotifMelodicContinuityTest, NotAllChordTonesInRhythmSync) {
-  // Use RhythmSync paradigm (Blueprint 1, 5, or 7)
-  params_.paradigm = GenerationParadigm::RhythmSync;
+  // The paradigm is taken from the blueprint, not from params_: initializeBlueprint
+  // overwrites both paradigm and riff_policy, so RhythmSync has to be requested by id.
+  params_.blueprint_id = 1;  // RhythmLock
 
   // Test multiple seeds since melodic_freedom=0.4 is probabilistic
   std::vector<uint32_t> test_seeds = {12345, 42, 99999, 54321, 11111};
@@ -701,6 +703,7 @@ TEST_F(MotifMelodicContinuityTest, NotAllChordTonesInRhythmSync) {
     gen.generate(params_);
 
     const auto& motif_notes = gen.getSong().motif().notes();
+    ASSERT_FALSE(motif_notes.empty()) << "Seed " << seed << ": no motif to measure";
     if (motif_notes.size() < 5) continue;
 
     // Count unique pitch classes used
@@ -766,37 +769,48 @@ TEST_F(MotifMelodicContinuityTest, MaxConsecutiveSilence) {
 
 // Test that RhythmSync with different blueprints doesn't produce all-chord-tone melodies
 TEST_F(MotifMelodicContinuityTest, RhythmSyncBlueprintsHaveMelodicVariety) {
-  params_.paradigm = GenerationParadigm::RhythmSync;
+  // Every RhythmSync blueprint, not one of them: the paradigm comes from the
+  // blueprint table, so each id has to be asked for by id.
+  const std::vector<uint8_t> rhythm_sync_blueprints = {1, 5, 7, 9};
 
   // Test multiple seeds to account for randomness
-  std::vector<uint32_t> test_seeds = {12345, 42, 99999};
-  int seeds_with_variety = 0;
+  const std::vector<uint32_t> test_seeds = {12345, 42, 99999};
 
-  for (uint32_t seed : test_seeds) {
-    params_.seed = seed;
+  for (uint8_t blueprint_id : rhythm_sync_blueprints) {
+    SCOPED_TRACE("blueprint " + std::to_string(static_cast<int>(blueprint_id)));
+    params_.blueprint_id = blueprint_id;
+    int seeds_with_variety = 0;
 
-    Generator gen;
-    gen.generate(params_);
+    for (uint32_t seed : test_seeds) {
+      params_.seed = seed;
 
-    const auto& motif_notes = gen.getSong().motif().notes();
-    if (motif_notes.size() < 5) continue;
+      Generator gen;
+      gen.generate(params_);
 
-    // Count unique pitch classes
-    std::set<int> pitch_classes;
-    for (const auto& note : motif_notes) {
-      pitch_classes.insert(note.note % 12);
+      ASSERT_EQ(gen.getParams().paradigm, GenerationParadigm::RhythmSync)
+          << "Blueprint " << static_cast<int>(blueprint_id) << " is not a RhythmSync blueprint";
+
+      const auto& motif_notes = gen.getSong().motif().notes();
+      ASSERT_FALSE(motif_notes.empty()) << "Seed " << seed << ": no motif to measure";
+      if (motif_notes.size() < 5) continue;
+
+      // Count unique pitch classes
+      std::set<int> pitch_classes;
+      for (const auto& note : motif_notes) {
+        pitch_classes.insert(note.note % 12);
+      }
+
+      // With melodic_freedom = 0.4, we should see passing tones
+      // Minimum 4 pitch classes indicates variety beyond just root/3rd/5th
+      if (pitch_classes.size() >= 4) {
+        seeds_with_variety++;
+      }
     }
 
-    // With melodic_freedom = 0.4, we should see passing tones
-    // Minimum 4 pitch classes indicates variety beyond just root/3rd/5th
-    if (pitch_classes.size() >= 4) {
-      seeds_with_variety++;
-    }
+    // At least 2 out of 3 seeds should show melodic variety
+    EXPECT_GE(seeds_with_variety, 2)
+        << "RhythmSync should produce melodic variety with melodic_freedom=0.4";
   }
-
-  // At least 2 out of 3 seeds should show melodic variety
-  EXPECT_GE(seeds_with_variety, 2)
-      << "RhythmSync should produce melodic variety with melodic_freedom=0.4";
 }
 
 // ============================================================================
