@@ -571,7 +571,7 @@ void enforceMaxPhraseDuration(std::vector<NoteEvent>& notes, uint8_t max_phrase_
       // Find the best barline-aligned breath point.
       // Prefer inserting breath at a barline (start of a bar) for musical naturalness.
       // Walk backward from the break point to find the nearest barline-aligned note.
-      constexpr Tick kRitMargin = 60;  // ~30% of TICK_SIXTEENTH (120 * 0.3 ≈ 36, rounded up)
+      constexpr Tick kRitMargin = 60;  // Half of TICK_SIXTEENTH: headroom on top of breath_ticks
       Tick target_gap = breath_ticks + kRitMargin;
 
       // Find the best break index: prefer a note starting near a barline

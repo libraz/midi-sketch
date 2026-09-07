@@ -64,7 +64,7 @@ Tick applyGateRatio(Tick duration, const GateContext& ctx, Tick min_duration) {
 }
 
 Tick clampToChordBoundary(Tick note_start, Tick note_duration, const IHarmonyContext& harmony,
-                          uint8_t pitch, Tick /*gap_ticks*/, Tick min_duration) {
+                          uint8_t pitch, Tick min_duration) {
   if (pitch == 0) {
     return note_duration;
   }

@@ -590,7 +590,7 @@ struct Section {
   /// @brief Maximum simultaneous moving voices (0=unlimited).
   uint8_t max_moving_voices = 0;
 
-  /// @brief Motif motion hint (0=auto, otherwise cast to MotifMotion enum).
+  /// @brief Motif motion hint (0=auto, 1-6 = MotifMotion enum + 1).
   uint8_t motif_motion_hint = 0;
 
   /// @brief Guide tone (3rd/7th) priority rate on downbeats (0=disabled, 1-100%).

@@ -33,16 +33,16 @@ struct GateContext {
 /**
  * @brief Calculate gate ratio for natural vocal-style articulation.
  *
- * Based on pop vocal theory:
- * - Phrase endings need breath preparation (85%)
- * - Same pitch = legato connection (100%)
- * - Step motion (1-2 semitones) = smooth legato (98%)
- * - Skip (3-5 semitones) = slight articulation (95%)
- * - Leap (6+ semitones) = preparation time (92%)
- * - Long notes (quarter+) = no gate needed (100%)
+ * Based on pop vocal theory. Gating is reserved for interior notes short
+ * enough that a gap reads as articulation rather than as a rest:
+ * - Phrase start/end = ungated (100%); PhrasePlanner supplies the breath gaps
+ * - Long notes (quarter+) = natural sustain, no gate (100%)
+ * - Same pitch or step motion (0-2 semitones) = full legato (100%)
+ * - Skip (3-5 semitones) = near-legato with a minimal gap (98%)
+ * - Leap (6+ semitones) = slight articulation for breath preparation (95%)
  *
  * @param ctx Gate context with phrase position and interval info
- * @return Gate ratio (0.85 - 1.0)
+ * @return Gate ratio (0.95 - 1.0)
  */
 float calculateGateRatio(const GateContext& ctx);
 
@@ -70,12 +70,11 @@ Tick applyGateRatio(Tick duration, const GateContext& ctx, Tick min_duration = 0
  * @param note_duration Current note duration
  * @param harmony Harmony context for chord boundary analysis
  * @param pitch MIDI pitch to check against next chord (0 = no check, returns unchanged)
- * @param gap_ticks Gap before boundary (default: 10 ticks)
  * @param min_duration Minimum allowed duration
  * @return Clamped duration
  */
 Tick clampToChordBoundary(Tick note_start, Tick note_duration, const IHarmonyContext& harmony,
-                          uint8_t pitch, Tick gap_ticks = 10, Tick min_duration = 0);
+                          uint8_t pitch, Tick min_duration = 0);
 
 /**
  * @brief Clamp note duration to phrase boundary.

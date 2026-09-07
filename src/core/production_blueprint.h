@@ -185,7 +185,7 @@ struct SectionSlot {
   /// Counts pitch-class changes on strong beats only (passing tones excluded).
   uint8_t max_moving_voices = 0;
 
-  /// @brief Motif motion hint (0=auto, otherwise cast to MotifMotion enum).
+  /// @brief Motif motion hint (0=auto, 1-6 = MotifMotion enum + 1).
   /// When > 0, overrides automatic motion selection.
   uint8_t motif_motion_hint = 0;
 

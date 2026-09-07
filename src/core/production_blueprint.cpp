@@ -1725,11 +1725,9 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
          InstrumentModelMode::ConstraintsOnly,  // instrument_mode
          false,                                 // guitar_below_vocal
          0.3f},                                 // ritardando_amount (Traditional: default)
-        // aux_profile: Mood default, standard functions, default scaling
-        // Chorus MelodicHook: pop references carry an active aux line in
-        // choruses (1.9-6.7 notes/bar); EmotionalPad measured ~0.7
-        // Chorus MelodicHook: pop references carry an active aux line in
-        // choruses (1.9-6.7 notes/bar); EmotionalPad measured ~0.7
+        // aux_profile: Mood default program, default scaling, MelodicHook in
+        // choruses instead of a pad: pop references carry an active aux line
+        // there (1.9-6.7 notes/bar); EmotionalPad measured ~0.7
         {0xFF, AuxFunction::MelodicHook, AuxFunction::MotifCounter, AuxFunction::MelodicHook, 1.0f,
          1.0f, -2},
         122,
@@ -1945,7 +1943,9 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         true,   // intro_kick
         true,   // intro_bass
         80,     // intro_stagger_percent (8-bar intro, full effect)
-        70,     // euclidean_drums_percent (four-on-floor + euclidean = great match)
+        // euclidean_drums_percent: the euclidean kick path excludes four-on-floor,
+        // so here this only reaches the euclidean snare and the ghost notes
+        70,
         PercussionPolicy::Full,           // percussion_policy (funky, full percussion)
         false,                            // addictive_mode
         0,                                // mood_mask: all moods allowed
