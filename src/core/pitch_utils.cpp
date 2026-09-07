@@ -312,17 +312,14 @@ bool isDissonantSemitoneInterval(int actual_semitones, const DissonanceCheckOpti
     return true;
   }
 
-  // Tritone (pitch class 6): context-dependent.
-  // Acceptable on V (dominant) and vii (diminished) chords where it forms
-  // a structural interval. Catches: 6, 18, 30 semitones.
+  // Tritone (pitch class 6). Catches 6, 18 and 30 semitones.
+  //
+  // Whether a tritone is the chord speaking or two voices colliding depends on
+  // the chord, and these options do not carry one, so it is flagged here and a
+  // caller holding the timeline decides. isDissonantActualInterval() is the
+  // same rule for callers that do have the degree.
   if (opts.check_tritone && pc_interval == 6) {
-    if (opts.chord_degree < 0) {
-      // No chord context: treat tritone as always dissonant.
-      return true;
-    }
-    if (!chordDegreeOwnsATritone(opts.chord_degree)) {
-      return true;  // The chord has no tritone of its own to excuse this one.
-    }
+    return true;
   }
 
   // All other intervals: consonant in Pop context.

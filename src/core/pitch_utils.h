@@ -298,15 +298,13 @@ constexpr int THREE_OCTAVES = 36;
 /// major 2nd is acceptable due to octave separation).
 struct DissonanceCheckOptions {
   /// @brief Check tritone (6 semitones) as dissonant.
-  /// When true, tritone is checked. The `chord_degree` field controls whether
-  /// the V/vii exception applies.
   /// When false, tritone is never flagged as dissonant.
+  ///
+  /// These options judge an interval on its own; they carry no chord, so the
+  /// V/vii exception cannot be applied here. A caller that holds the timeline
+  /// asks isDissonantActualInterval() or chordDegreeOwnsATritone() with the
+  /// sounding degree instead.
   bool check_tritone = true;
-
-  /// @brief Chord degree for tritone context (0=I, 4=V, 6=vii).
-  /// Only used when `check_tritone` is true.
-  /// Set to -1 to treat tritone as always dissonant (no V/vii exception).
-  int8_t chord_degree = -1;
 
   /// @brief Check major 2nd (2 semitones) as dissonant.
   /// When false, major 2nd is never flagged as dissonant (e.g., bass tracks
@@ -325,7 +323,9 @@ struct DissonanceCheckOptions {
   /// When false, compound intervals follow interval-class rules.
   bool apply_wide_interval_cutoff = true;
 
-  /// @brief Static factory: Default rules matching isDissonantActualInterval().
+  /// @brief Static factory: every interval rule, judged without a chord.
+  /// Matches isDissonantActualInterval() except for the tritone, which that
+  /// function excuses on V and vii and this one cannot.
   static constexpr DissonanceCheckOptions standard() { return {}; }
 
   /// @brief Static factory: No tritone check, no M2 check (bass vs vocal).
@@ -342,14 +342,6 @@ struct DissonanceCheckOptions {
   static DissonanceCheckOptions closeVoicing() {
     DissonanceCheckOptions opts;
     opts.check_tritone = false;
-    return opts;
-  }
-
-  /// @brief Static factory: Full check including tritone (always dissonant).
-  /// Used for motif-vs-vocal where tritone should not be allowed.
-  static DissonanceCheckOptions fullWithTritone() {
-    DissonanceCheckOptions opts;
-    opts.chord_degree = -1;  // Always treat tritone as dissonant
     return opts;
   }
 

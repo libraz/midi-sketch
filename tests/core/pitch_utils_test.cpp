@@ -232,20 +232,15 @@ TEST(PitchUtilsTest, ABorrowedDegreeIsAskedWhichChordItNames) {
   EXPECT_FALSE(chordDegreeOwnsATritone(-1)) << "no chord context excuses nothing";
 }
 
-TEST(PitchUtilsTest, TheTritoneRuleReadsTheSameFromEveryGate) {
-  // The same question was written out at five call sites; a rule spelled more
-  // than once is a rule that can be half-fixed. These are the three gates in
-  // this file, asked about the chord that exposed the difference.
+TEST(PitchUtilsTest, TheTritoneRuleReadsTheSameFromEveryGateThatHasAChord) {
+  // The same question was written out at several call sites; a rule spelled
+  // more than once is a rule that can be half-fixed. These are the gates that
+  // receive a chord, asked about the chords that exposed the difference.
   EXPECT_FALSE(isDissonantIntervalWithContext(6, 0, 14)) << "F#-C is what #IVdim is";
   EXPECT_FALSE(isDissonantActualInterval(6, 14));
-  DissonanceCheckOptions opts;
-  opts.chord_degree = 14;
-  EXPECT_FALSE(isDissonantSemitoneInterval(6, opts));
 
   EXPECT_TRUE(isDissonantIntervalWithContext(6, 0, 13));
   EXPECT_TRUE(isDissonantActualInterval(6, 13));
-  opts.chord_degree = 13;
-  EXPECT_TRUE(isDissonantSemitoneInterval(6, opts));
 }
 
 // ============================================================================
@@ -764,7 +759,8 @@ TEST(UnifiedDissonanceTest, CompoundMajor7thDissonant) {
 }
 
 TEST(UnifiedDissonanceTest, TritoneDissonantByDefault) {
-  // Tritone (6 semitones) is dissonant with default options (chord_degree=-1)
+  // These options carry no chord, so a tritone is flagged for the caller to
+  // judge; the degree-aware rule below is where a dominant keeps its own.
   EXPECT_TRUE(isDissonantSemitoneInterval(6));
   EXPECT_TRUE(isDissonantSemitoneInterval(18));  // Compound tritone
 }
@@ -798,41 +794,24 @@ TEST(UnifiedDissonanceTest, NegativeIntervalNotDissonant) {
 
 // --- Tritone chord context ---
 
+// Asked of the degree-aware rule, which is the one production reaches with a
+// chord in hand. The interval-only rule cannot answer these: it is handed two
+// pitches and nothing else.
 TEST(UnifiedDissonanceTest, TritoneAllowedOnDominant) {
-  DissonanceCheckOptions opts;
-  opts.check_tritone = true;
-  opts.chord_degree = 4;  // V chord
-  EXPECT_FALSE(isDissonantSemitoneInterval(6, opts));
-  EXPECT_FALSE(isDissonantSemitoneInterval(18, opts));  // Compound
+  EXPECT_FALSE(isDissonantActualInterval(6, 4));   // V chord
+  EXPECT_FALSE(isDissonantActualInterval(18, 4));  // Compound
 }
 
 TEST(UnifiedDissonanceTest, TritoneAllowedOnDiminished) {
-  DissonanceCheckOptions opts;
-  opts.check_tritone = true;
-  opts.chord_degree = 6;  // vii chord
-  EXPECT_FALSE(isDissonantSemitoneInterval(6, opts));
+  EXPECT_FALSE(isDissonantActualInterval(6, 6));  // vii chord
 }
 
 TEST(UnifiedDissonanceTest, TritoneDissonantOnTonic) {
-  DissonanceCheckOptions opts;
-  opts.check_tritone = true;
-  opts.chord_degree = 0;  // I chord
-  EXPECT_TRUE(isDissonantSemitoneInterval(6, opts));
+  EXPECT_TRUE(isDissonantActualInterval(6, 0));  // I chord
 }
 
 TEST(UnifiedDissonanceTest, TritoneDissonantOnSubdominant) {
-  DissonanceCheckOptions opts;
-  opts.check_tritone = true;
-  opts.chord_degree = 3;  // IV chord
-  EXPECT_TRUE(isDissonantSemitoneInterval(6, opts));
-}
-
-TEST(UnifiedDissonanceTest, TritoneAlwaysDissonantWithNegativeDegree) {
-  // chord_degree = -1 means no context: treat tritone as always dissonant
-  DissonanceCheckOptions opts;
-  opts.check_tritone = true;
-  opts.chord_degree = -1;
-  EXPECT_TRUE(isDissonantSemitoneInterval(6, opts));
+  EXPECT_TRUE(isDissonantActualInterval(6, 3));  // IV chord
 }
 
 // --- Major 2nd options ---
@@ -909,13 +888,26 @@ TEST(UnifiedDissonanceTest, CloseVoicingPreset) {
   EXPECT_FALSE(isDissonantSemitoneInterval(14, opts));  // M9 not close
 }
 
-TEST(UnifiedDissonanceTest, FullWithTritonePreset) {
-  auto opts = DissonanceCheckOptions::fullWithTritone();
-  // All intervals including tritone (always dissonant, no chord context)
+TEST(UnifiedDissonanceTest, StandardPresetFlagsEveryIntervalItCanJudgeAlone) {
+  auto opts = DissonanceCheckOptions::standard();
   EXPECT_TRUE(isDissonantSemitoneInterval(1, opts));   // m2
   EXPECT_TRUE(isDissonantSemitoneInterval(2, opts));   // M2
   EXPECT_TRUE(isDissonantSemitoneInterval(6, opts));   // tritone
   EXPECT_TRUE(isDissonantSemitoneInterval(11, opts));  // M7
+}
+
+// The options carry no chord, so the tritone answer here cannot depend on one.
+// The degree-aware rule is a different function, and it is the one that lets a
+// dominant keep the tritone that makes it a dominant.
+TEST(UnifiedDissonanceTest, TheIntervalOnlyRuleCannotExcuseADominantsTritone) {
+  auto opts = DissonanceCheckOptions::standard();
+  EXPECT_TRUE(isDissonantSemitoneInterval(6, opts));
+
+  EXPECT_TRUE(chordDegreeOwnsATritone(4));   // V
+  EXPECT_TRUE(chordDegreeOwnsATritone(6));   // vii
+  EXPECT_FALSE(chordDegreeOwnsATritone(0));  // I
+  EXPECT_FALSE(isDissonantActualInterval(6, 4));
+  EXPECT_TRUE(isDissonantActualInterval(6, 0));
 }
 
 TEST(UnifiedDissonanceTest, VocalClashPreset) {

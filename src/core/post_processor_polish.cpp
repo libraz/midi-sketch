@@ -34,17 +34,20 @@ namespace midisketch {
 namespace {
 
 // Helper to check if a pitch clashes with vocal at a given time range.
-// Uses the same criterion as the motif-vs-vocal detection pass
-// (fullWithTritone): a resolver that ignores tritone can otherwise land a
-// motif note on the very interval the detection pass flags (e.g. F4 under a
-// vocal B4 on a IV chord).
+// Uses the same criterion as the motif-vs-vocal detection pass: a resolver
+// that ignores tritone can otherwise land a motif note on the very interval
+// the detection pass flags (e.g. F4 under a vocal B4 on a IV chord).
+//
+// Neither this nor that pass asks the sounding chord, so both still treat a
+// dominant's own tritone as a clash. The chord is reachable from both callers
+// if that is worth changing.
 bool clashesWithVocal(uint8_t pitch, Tick start, Tick end, const MidiTrack& vocal) {
   for (const auto& v_note : vocal.notes()) {
     Tick v_end = v_note.start_tick + v_note.duration;
     // Check overlap
     if (start < v_end && end > v_note.start_tick) {
       int interval = std::abs(static_cast<int>(pitch) - static_cast<int>(v_note.note));
-      if (isDissonantSemitoneInterval(interval, DissonanceCheckOptions::fullWithTritone())) {
+      if (isDissonantSemitoneInterval(interval, DissonanceCheckOptions::standard())) {
         return true;
       }
     }
@@ -159,6 +162,17 @@ void removeClashingNotesAgainstReference(MidiTrack& track, const MidiTrack& refe
         const Tick overlap_start = std::max(note.start_tick, ref_note.start_tick);
         if (chordExcusesFlaggedPair(interval, note.note, ref_note.note,
                                     chord_lookup->getChordTonesAt(overlap_start))) {
+          return false;
+        }
+        // A dominant's tritone is the chord speaking, not two voices colliding.
+        // The pair reaching here is the one the chord tones cannot excuse --
+        // a V triad against a seventh nobody wrote into the voicing -- and
+        // removing it takes the leading tone out of the dominant, which is the
+        // note that made it one. The analysis rule already answers this way, so
+        // asking the sounding degree is what keeps one question from having two
+        // answers.
+        if (interval % 12 == 6 &&
+            chordDegreeOwnsATritone(chord_lookup->getChordDegreeAt(overlap_start))) {
           return false;
         }
         return !tailGateWillShortenEarlier(note, ref_note, *chord_lookup);
@@ -301,7 +315,7 @@ void PostProcessor::fixMotifVocalClashes(MidiTrack& motif, const MidiTrack& voca
 
         // Use unified dissonance check: m2, M2 (close), tritone (always), M7
         bool is_dissonant =
-            isDissonantSemitoneInterval(interval, DissonanceCheckOptions::fullWithTritone());
+            isDissonantSemitoneInterval(interval, DissonanceCheckOptions::standard());
 
         if (is_dissonant) {
           // Grazing overlap: when the clashing vocal note only clips the head
@@ -605,7 +619,7 @@ void PostProcessor::fixTrackVocalClashes(MidiTrack& track, const MidiTrack& voca
   // Bass tracks skip close major 2nd detection because octave separation
   // makes the interval acceptable.
   auto opts = (role == TrackRole::Bass) ? DissonanceCheckOptions::minimalClash()
-                                        : DissonanceCheckOptions::fullWithTritone();
+                                        : DissonanceCheckOptions::standard();
   removeClashingNotesAgainstReference(track, vocal, opts, chord_lookup);
 }
 
@@ -623,7 +637,7 @@ void PostProcessor::fixInterTrackClashes(MidiTrack& chord, const MidiTrack& bass
                                          const MidiTrack& motif, const IChordLookup* chord_lookup) {
   if (chord.notes().empty()) return;
 
-  removeClashingNotesAgainstReference(chord, bass, DissonanceCheckOptions::fullWithTritone(),
+  removeClashingNotesAgainstReference(chord, bass, DissonanceCheckOptions::standard(),
                                       chord_lookup);
   removeClashingNotesAgainstReference(chord, motif, DissonanceCheckOptions::closeVoicing(),
                                       chord_lookup);
