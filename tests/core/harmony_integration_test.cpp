@@ -170,7 +170,7 @@ TEST_F(HarmonyIntegrationTest, VocalNotesAreChordTonesOrExtensions) {
 }
 
 // =============================================================================
-// Test 2: StylePreset ID mapping is correct for all 13 styles
+// Test 2: StylePreset ID mapping is correct for every style
 // =============================================================================
 
 TEST(StylePresetMappingTest, AllStylePresetsMapToValidMood) {

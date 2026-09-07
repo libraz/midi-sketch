@@ -285,7 +285,7 @@ TEST_F(NonDiatonicDetectionTest, CleanGenerationHasNoNonDiatonic) {
 
     EXPECT_LE(report.summary.non_diatonic_notes, 3u)
         << "Seed " << seed << " produced " << report.summary.non_diatonic_notes
-        << " non-diatonic notes - should be minimal (Phase 3 modal interchange allowed)";
+        << " non-diatonic notes - should be minimal (modal interchange allowed)";
   }
 }
 

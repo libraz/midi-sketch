@@ -1004,7 +1004,7 @@ TEST_F(ChorusDropTest, DrumHitCrashHasPostProcessProvenance) {
 #endif  // MIDISKETCH_NOTE_PROVENANCE
 
 // ============================================================================
-// Phase 3: Micro-Timing Offset Tests
+// Micro-Timing Offset Tests
 // ============================================================================
 
 TEST(MicroTimingTest, VocalTimingVariesByPhrasePosition) {
@@ -1210,7 +1210,7 @@ TEST(MicroTimingTest, DefaultDriveFeelMatchesNeutral) {
 }
 
 // ============================================================================
-// Phase 1: Human Body Timing Model Tests
+// Human Body Timing Model Tests
 // ============================================================================
 
 TEST(PostProcessorTest, HighPitchTimingDelay) {
@@ -2244,7 +2244,7 @@ TEST_F(PerSectionDropStyleTest, MultipleSectionsWithDifferentDropStyles) {
 }
 
 // ============================================================================
-// Phase 2 P2: DrumStyle-based Timing Profile Tests
+// DrumStyle-based Timing Profile Tests
 // ============================================================================
 
 TEST(DrumTimingProfileTest, StandardProfileMatchesDocumentedPocketDirections) {
@@ -2568,7 +2568,7 @@ TEST_F(BassKickSyncTest, DoesNotSnapBackwardIntoPreviousBassNote) {
 }
 
 // ============================================================================
-// Arrangement Holes Tests (Phase 3-1)
+// Arrangement Holes Tests
 // Now tests TrackBase::removeArrangementHoleNotes() instead of PostProcessor
 // ============================================================================
 

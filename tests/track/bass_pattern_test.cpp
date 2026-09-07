@@ -82,7 +82,7 @@ TEST(BassPatternRangeTest, AllBassNotesWithinRange) {
 
 // Exercise SubBass808 territory directly: Trap-style mood across many seeds.
 // The slide note is computed from the sub-octave root, which is most likely to
-// approach BASS_LOW, so this is the highest-risk path for finding 3.
+// approach BASS_LOW, so this is the highest-risk path for staying in range.
 TEST(BassPatternRangeTest, SubBassStaysInRange) {
   for (uint32_t seed : kSeeds) {
     GeneratorParams params = makeParams(seed);
