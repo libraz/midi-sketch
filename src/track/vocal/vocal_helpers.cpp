@@ -785,12 +785,6 @@ void mergeSamePitchNotes(std::vector<NoteEvent>& notes, Tick max_gap) {
         if (current.is_syllabic_subdivision || next.is_syllabic_subdivision) {
           break;
         }
-#ifdef MIDISKETCH_NOTE_PROVENANCE
-        if (current.prov_source == static_cast<uint8_t>(NoteSource::SyllabicSub) ||
-            next.prov_source == static_cast<uint8_t>(NoteSource::SyllabicSub)) {
-          break;
-        }
-#endif
         // Extend current note to include next note
         Tick next_end = next.start_tick + next.duration;
         current.duration = next_end - current.start_tick;
