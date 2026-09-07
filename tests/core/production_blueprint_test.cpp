@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <iterator>
 #include <map>
 #include <random>
 #include <set>
@@ -262,6 +263,45 @@ TEST_F(ProductionBlueprintTest, BalladBlueprint) {
   EXPECT_FALSE(bp.drums_sync_vocal);
   EXPECT_FALSE(bp.intro_kick_enabled);
   EXPECT_FALSE(bp.intro_bass_enabled);
+}
+
+// The identity a blueprint is chosen for is its name, the paradigm that orders
+// the pipeline and the riff policy that decides how much of a riff survives into
+// the next section. Stated one blueprint per test, the set is only ever as
+// complete as the tests that happen to exist, and an omission is invisible --
+// including at the one id whose policy is LockedPitch rather than the
+// LockedContour that `Locked` abbreviates, a distinction the alias hides.
+// Walking the table ties the count to the expectations, so a blueprint cannot be
+// added, removed or reordered without a line here.
+TEST_F(ProductionBlueprintTest, BlueprintIdentityTableIsComplete) {
+  struct BlueprintIdentity {
+    const char* name;
+    GenerationParadigm paradigm;
+    RiffPolicy riff_policy;
+  };
+
+  const BlueprintIdentity expected[] = {
+      {"Traditional", GenerationParadigm::Traditional, RiffPolicy::Free},
+      {"RhythmLock", GenerationParadigm::RhythmSync, RiffPolicy::LockedContour},
+      {"StoryPop", GenerationParadigm::MelodyDriven, RiffPolicy::Evolving},
+      {"Ballad", GenerationParadigm::MelodyDriven, RiffPolicy::Free},
+      {"IdolStandard", GenerationParadigm::MelodyDriven, RiffPolicy::Evolving},
+      {"IdolHyper", GenerationParadigm::RhythmSync, RiffPolicy::LockedContour},
+      {"IdolKawaii", GenerationParadigm::MelodyDriven, RiffPolicy::LockedContour},
+      {"IdolCoolPop", GenerationParadigm::RhythmSync, RiffPolicy::LockedContour},
+      {"IdolEmo", GenerationParadigm::MelodyDriven, RiffPolicy::LockedContour},
+      {"BehavioralLoop", GenerationParadigm::RhythmSync, RiffPolicy::LockedPitch},
+  };
+
+  ASSERT_EQ(getProductionBlueprintCount(), std::size(expected))
+      << "A blueprint was added or removed without updating the identity table";
+
+  for (uint8_t id = 0; id < getProductionBlueprintCount(); ++id) {
+    const auto& bp = getProductionBlueprint(id);
+    EXPECT_STREQ(bp.name, expected[id].name) << "Blueprint " << static_cast<int>(id);
+    EXPECT_EQ(bp.paradigm, expected[id].paradigm) << "Blueprint " << bp.name;
+    EXPECT_EQ(bp.riff_policy, expected[id].riff_policy) << "Blueprint " << bp.name;
+  }
 }
 
 // ============================================================================
