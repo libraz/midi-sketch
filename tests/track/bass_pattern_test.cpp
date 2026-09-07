@@ -31,6 +31,8 @@
 #include "core/song.h"
 #include "core/timing_constants.h"
 #include "core/types.h"
+#include "test_support/stub_harmony_context.h"
+#include "track/bass/bass_bar_writer.h"
 
 namespace midisketch {
 namespace {
@@ -183,6 +185,41 @@ TEST(BassMicrovariationTest, FourthBarVariationKeepsTrackValid) {
       EXPECT_LE(n.note, BASS_HIGH) << "seed=" << seed;
     }
   }
+}
+
+// The bar-end octave jump picks its direction by a coin toss, and an octave is
+// consonant, so the harmony check the editor runs cannot reject the one landing
+// that hurts: the bass a plain octave under the melody, where it stops being a
+// foundation and doubles the singer. Here the jump up lands on the vocal's own
+// pitch class an octave below it and the jump down does not, and both stay
+// inside the instrument, so every jump the roll produces has to go down.
+TEST(BassMicrovariationTest, OctaveJumpDoesNotLandUnderTheVocalsOwnPitchClass) {
+  constexpr uint8_t kBassPitch = 43;   // G2; up is G3 (55), down is G1 (31)
+  constexpr uint8_t kVocalPitch = 67;  // G4 -- an octave above the upward jump
+  constexpr uint8_t kUp = kBassPitch + 12;
+  constexpr uint8_t kDown = kBassPitch - 12;
+  static_assert(kUp <= BASS_HIGH && kDown >= BASS_LOW, "both directions must be available");
+
+  int jumps = 0;
+  for (uint32_t seed = 0; seed < 200; ++seed) {
+    MidiTrack bass;
+    bass.addNote(NoteEventBuilder::create(0, TICKS_PER_BEAT, kBassPitch, 80));
+
+    test::StubHarmonyContext harmony;
+    harmony.setAllPitchesSafe(true);
+    harmony.setLowestPitchForTrack(kVocalPitch);
+    harmony.setHighestPitchForTrack(kVocalPitch);
+
+    std::mt19937 rng(seed);
+    applyBassMicrovariation(bass, 0, harmony, kBassPitch, kBassPitch, rng);
+
+    if (bass.notes().empty()) continue;  // the rest variation removed it
+    uint8_t result = bass.notes()[0].note;
+    if (result == kBassPitch) continue;  // a variation that does not jump
+    ++jumps;
+    EXPECT_EQ(result, kDown) << "seed=" << seed << " jumped to " << static_cast<int>(result);
+  }
+  EXPECT_GT(jumps, 0) << "no octave jump occurred, so the property was never asked";
 }
 
 // Determinism guard: same seed must reproduce identical bass after the fixes.

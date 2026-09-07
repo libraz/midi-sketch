@@ -1115,7 +1115,9 @@ void applyBassMicrovariation(MidiTrack& track, Tick bar_start, IHarmonyContext& 
 
   if (variation == 1) {
     // Octave jump: shift pitch by +12 or -12
-    uint8_t original_pitch = editor.at(target_idx).note;
+    const uint8_t original_pitch = editor.at(target_idx).note;
+    const Tick note_start = editor.at(target_idx).start_tick;
+    const Tick note_duration = editor.at(target_idx).duration;
     int up = static_cast<int>(original_pitch) + 12;
     int down = static_cast<int>(original_pitch) - 12;
     bool up_ok = up <= BASS_HIGH;
@@ -1126,6 +1128,18 @@ void applyBassMicrovariation(MidiTrack& track, Tick bar_start, IHarmonyContext& 
       // Both directions possible; pick randomly
       new_pitch = (rng_util::rollRange(rng, 0, 1) == 0) ? static_cast<uint8_t>(up)
                                                         : static_cast<uint8_t>(down);
+      // An octave is consonant, so the editor's harmony check cannot see the
+      // one thing this jump can get wrong: landing the bass a plain octave
+      // under the melody, where it stops being a foundation and becomes the
+      // vocal's shadow. Both directions are equally in range here, so take the
+      // other one when the roll picked that. The roll happens either way, so
+      // nothing downstream of the random stream moves.
+      uint8_t other = (new_pitch == static_cast<uint8_t>(up)) ? static_cast<uint8_t>(down)
+                                                              : static_cast<uint8_t>(up);
+      if (doublesVocalPitchClass(harmony, new_pitch, note_start, note_duration) &&
+          !doublesVocalPitchClass(harmony, other, note_start, note_duration)) {
+        new_pitch = other;
+      }
     } else if (up_ok) {
       new_pitch = static_cast<uint8_t>(up);
     } else if (down_ok) {
