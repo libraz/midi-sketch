@@ -6,7 +6,10 @@
 #include <gtest/gtest.h>
 
 #include <cstring>
+#include <map>
 #include <sstream>
+#include <string>
+#include <vector>
 
 #include "core/config_converter.h"
 #include "core/json_helpers.h"
@@ -247,44 +250,156 @@ TEST(SongConfigJsonTest, RoundtripDefaultConfig) {
   EXPECT_EQ(restored.motif_chord.max_chord_count, original.motif_chord.max_chord_count);
 }
 
-TEST(SongConfigJsonTest, RoundtripNonDefaultValues) {
-  SongConfig original;
-  original.style_preset_id = 5;
-  original.blueprint_id = 3;
-  original.mood = 12;
-  original.mood_explicit = true;
-  original.key = Key::Ab;
-  original.bpm = 145;
-  original.seed = 99999;
-  original.humanize = true;
-  original.humanize_timing = 0.7f;
-  original.humanize_velocity = 0.5f;
-  original.modulation_timing = ModulationTiming::LastChorus;
-  original.modulation_semitones = 3;
-  original.melody_max_leap = 7;
-  original.melody_syncopation_prob = 50;
-  original.melody_chorus_register_shift = -4;
-  original.motif_motion = 2;
-  original.addictive_mode = true;
-  original.arpeggio.pattern = ArpeggioPattern::UpDown;
-  original.arpeggio.base_velocity = 110;
-  original.chord_extension.enable_7th = true;
-  original.chord_extension.seventh_probability = 0.5f;
-  original.chord_extension.tritone_sub = true;
-  original.chord_extension.tritone_sub_probability = 0.7f;
-  original.chord_ext_prob_explicit = true;
-  original.drums_enabled_explicit = true;
-  original.guitar_enabled = false;
-  original.mora_rhythm_mode = 1;
-  original.syllabic_sub_rate = 40;
+// A config whose every field differs from a default-constructed one. A field
+// left at its default cannot show that the round trip carried it: readFrom()
+// starts from the same defaults, so a dropped field arrives looking correct.
+SongConfig makeFullyNonDefaultConfig() {
+  SongConfig config;
+  config.style_preset_id = 5;
+  config.blueprint_id = 3;
+  config.mood = 12;
+  config.mood_explicit = true;
+  config.key = Key::Ab;
+  config.bpm = 145;
+  config.seed = 99999;
+  config.chord_progression_id = 7;
+  config.form = StructurePattern::BuildUp;
+  config.form_explicit = true;
+  config.target_duration_seconds = 210;
+  config.vocal_attitude = VocalAttitude::Expressive;
+  config.vocal_style = VocalStylePreset::Vocaloid;
+  config.drive_feel = 80;
+  config.drums_enabled = false;
+  config.drums_enabled_explicit = true;
+  config.arpeggio_enabled = true;
+  config.guitar_enabled = false;
+  config.skip_vocal = true;
+  config.vocal_low = 55;
+  config.vocal_high = 84;
+  config.composition_style = CompositionStyle::BackgroundMotif;
+  config.composition_style_explicit = true;
+  config.motif_repeat_scope = MotifRepeatScope::Section;
+  config.arrangement_growth = ArrangementGrowth::RegisterAdd;
+  config.humanize = true;
+  config.humanize_timing = 0.7f;
+  config.humanize_velocity = 0.5f;
+  config.modulation_timing = ModulationTiming::LastChorus;
+  config.modulation_semitones = 3;
+  config.se_enabled = false;
+  config.call_setting = CallSetting::Enabled;
+  config.call_notes_enabled = false;
+  config.intro_chant = IntroChant::Gachikoi;
+  config.mix_pattern = MixPattern::Standard;
+  config.call_density = CallDensity::Minimal;
+  config.melody_template = MelodyTemplateId::PlateauTalk;
+  config.melodic_complexity = MelodicComplexity::Complex;
+  config.hook_intensity = HookIntensity::Light;
+  config.vocal_groove = VocalGrooveFeel::Swing;
+  config.enable_syncopation = true;
+  config.energy_curve = EnergyCurve::FrontLoaded;
+  config.addictive_mode = true;
+  config.mora_rhythm_mode = 1;
+  config.syllabic_sub_rate = 40;
+  config.melody_max_leap = 7;
+  config.melody_syncopation_prob = 50;
+  config.melody_phrase_length = 4;
+  config.melody_long_note_ratio = 30;
+  config.melody_chorus_register_shift = -4;
+  config.melody_hook_repetition = 2;
+  config.melody_use_leading_tone = 1;
+  config.motif_length = 2;
+  config.motif_note_count = 6;
+  config.motif_motion = 2;
+  config.motif_register_high = 2;
+  config.motif_rhythm_density = 1;
+  config.chord_ext_prob_explicit = true;
+  config.arpeggio.pattern = ArpeggioPattern::UpDown;
+  config.arpeggio.speed = ArpeggioSpeed::Sixteenth;
+  config.arpeggio.octave_range = 3;
+  config.arpeggio.gate = 0.8f;
+  config.arpeggio.sync_chord = false;
+  config.arpeggio.base_velocity = 110;
+  config.chord_extension.enable_sus = true;
+  config.chord_extension.enable_7th = true;
+  config.chord_extension.enable_9th = true;
+  config.chord_extension.tritone_sub = true;
+  config.chord_extension.sus_probability = 0.4f;
+  config.chord_extension.seventh_probability = 0.5f;
+  config.chord_extension.ninth_probability = 0.6f;
+  config.chord_extension.tritone_sub_probability = 0.7f;
+  config.motif_chord.max_chord_count = 2;
+  return config;
+}
 
+std::string writeConfigJson(const SongConfig& config) {
   std::ostringstream oss;
   json::Writer w(oss);
   w.beginObject();
-  original.writeTo(w);
+  config.writeTo(w);
   w.endObject();
+  return oss.str();
+}
 
-  json::Parser p(oss.str());
+// Split a written config into "name" -> "value" pairs, descending one level so
+// the nested arpeggio, chord_extension and motif_chord objects are compared
+// field by field rather than as opaque blobs.
+std::map<std::string, std::string> flattenConfigJson(const std::string& json_text) {
+  std::map<std::string, std::string> fields;
+  std::string prefix;
+  size_t i = 0;
+  while (i < json_text.size()) {
+    const size_t name_start = json_text.find('"', i);
+    if (name_start == std::string::npos) break;
+    const size_t name_end = json_text.find('"', name_start + 1);
+    if (name_end == std::string::npos) break;
+    const std::string name = json_text.substr(name_start + 1, name_end - name_start - 1);
+    const size_t colon = json_text.find(':', name_end);
+    if (colon == std::string::npos) break;
+
+    if (json_text[colon + 1] == '{') {
+      prefix = name + ".";
+      i = colon + 2;
+      continue;
+    }
+    size_t value_end = colon + 1;
+    while (value_end < json_text.size() && json_text[value_end] != ',' &&
+           json_text[value_end] != '}') {
+      ++value_end;
+    }
+    fields[prefix + name] = json_text.substr(colon + 1, value_end - colon - 1);
+    if (value_end < json_text.size() && json_text[value_end] == '}') prefix.clear();
+    i = value_end + 1;
+  }
+  return fields;
+}
+
+TEST(SongConfigJsonTest, RoundtripNonDefaultValues) {
+  const SongConfig original = makeFullyNonDefaultConfig();
+
+  // What makes the per-field expectations below load-bearing: every field the
+  // writer emits has to differ from the default a dropped field would fall back
+  // to. Stated over the written form rather than field by field, so a field
+  // added to visitFields() without a value here is caught here instead of
+  // silently joining the set that cannot fail.
+  const auto default_fields = flattenConfigJson(writeConfigJson(SongConfig{}));
+  const auto fixture_fields = flattenConfigJson(writeConfigJson(original));
+  ASSERT_EQ(default_fields.size(), fixture_fields.size());
+  ASSERT_FALSE(default_fields.empty()) << "The config writer emitted no fields to compare";
+  std::vector<std::string> still_at_default;
+  for (const auto& [name, value] : fixture_fields) {
+    const auto it = default_fields.find(name);
+    if (it != default_fields.end() && it->second == value) still_at_default.push_back(name);
+  }
+  EXPECT_TRUE(still_at_default.empty())
+      << "These fields are round-tripped only at their default, so dropping them "
+         "from visitFields() would not be noticed: "
+      << [&still_at_default] {
+           std::string joined;
+           for (const auto& name : still_at_default) joined += name + " ";
+           return joined;
+         }();
+
+  json::Parser p(writeConfigJson(original));
   SongConfig restored;
   restored.readFrom(p);
 
@@ -295,27 +410,72 @@ TEST(SongConfigJsonTest, RoundtripNonDefaultValues) {
   EXPECT_EQ(restored.key, Key::Ab);
   EXPECT_EQ(restored.bpm, 145);
   EXPECT_EQ(restored.seed, 99999u);
+  EXPECT_EQ(restored.chord_progression_id, 7);
+  EXPECT_EQ(restored.form, StructurePattern::BuildUp);
+  EXPECT_TRUE(restored.form_explicit);
+  EXPECT_EQ(restored.target_duration_seconds, 210);
+  EXPECT_EQ(restored.vocal_attitude, VocalAttitude::Expressive);
+  EXPECT_EQ(restored.vocal_style, VocalStylePreset::Vocaloid);
+  EXPECT_EQ(restored.drive_feel, 80);
+  EXPECT_FALSE(restored.drums_enabled);
+  EXPECT_TRUE(restored.drums_enabled_explicit);
+  EXPECT_TRUE(restored.arpeggio_enabled);
+  EXPECT_FALSE(restored.guitar_enabled);
+  EXPECT_TRUE(restored.skip_vocal);
+  EXPECT_EQ(restored.vocal_low, 55);
+  EXPECT_EQ(restored.vocal_high, 84);
+  EXPECT_EQ(restored.composition_style, CompositionStyle::BackgroundMotif);
+  EXPECT_TRUE(restored.composition_style_explicit);
+  EXPECT_EQ(restored.motif_repeat_scope, MotifRepeatScope::Section);
+  EXPECT_EQ(restored.arrangement_growth, ArrangementGrowth::RegisterAdd);
   EXPECT_TRUE(restored.humanize);
   EXPECT_FLOAT_EQ(restored.humanize_timing, 0.7f);
   EXPECT_FLOAT_EQ(restored.humanize_velocity, 0.5f);
   EXPECT_EQ(restored.modulation_timing, ModulationTiming::LastChorus);
   EXPECT_EQ(restored.modulation_semitones, 3);
-  EXPECT_EQ(restored.melody_max_leap, 7);
-  EXPECT_EQ(restored.melody_syncopation_prob, 50);
-  EXPECT_EQ(restored.melody_chorus_register_shift, -4);
-  EXPECT_EQ(restored.motif_motion, 2);
+  EXPECT_FALSE(restored.se_enabled);
+  EXPECT_EQ(restored.call_setting, CallSetting::Enabled);
+  EXPECT_FALSE(restored.call_notes_enabled);
+  EXPECT_EQ(restored.intro_chant, IntroChant::Gachikoi);
+  EXPECT_EQ(restored.mix_pattern, MixPattern::Standard);
+  EXPECT_EQ(restored.call_density, CallDensity::Minimal);
+  EXPECT_EQ(restored.melody_template, MelodyTemplateId::PlateauTalk);
+  EXPECT_EQ(restored.melodic_complexity, MelodicComplexity::Complex);
+  EXPECT_EQ(restored.hook_intensity, HookIntensity::Light);
+  EXPECT_EQ(restored.vocal_groove, VocalGrooveFeel::Swing);
+  EXPECT_TRUE(restored.enable_syncopation);
+  EXPECT_EQ(restored.energy_curve, EnergyCurve::FrontLoaded);
   EXPECT_TRUE(restored.addictive_mode);
-  EXPECT_EQ(restored.arpeggio.pattern, ArpeggioPattern::UpDown);
-  EXPECT_EQ(restored.arpeggio.base_velocity, 110);
-  EXPECT_TRUE(restored.chord_extension.enable_7th);
-  EXPECT_FLOAT_EQ(restored.chord_extension.seventh_probability, 0.5f);
-  EXPECT_TRUE(restored.chord_extension.tritone_sub);
-  EXPECT_FLOAT_EQ(restored.chord_extension.tritone_sub_probability, 0.7f);
-  EXPECT_TRUE(restored.chord_ext_prob_explicit);
-  EXPECT_TRUE(restored.drums_enabled_explicit);
-  EXPECT_FALSE(restored.guitar_enabled);
   EXPECT_EQ(restored.mora_rhythm_mode, 1);
   EXPECT_EQ(restored.syllabic_sub_rate, 40);
+  EXPECT_EQ(restored.melody_max_leap, 7);
+  EXPECT_EQ(restored.melody_syncopation_prob, 50);
+  EXPECT_EQ(restored.melody_phrase_length, 4);
+  EXPECT_EQ(restored.melody_long_note_ratio, 30);
+  EXPECT_EQ(restored.melody_chorus_register_shift, -4);
+  EXPECT_EQ(restored.melody_hook_repetition, 2);
+  EXPECT_EQ(restored.melody_use_leading_tone, 1);
+  EXPECT_EQ(restored.motif_length, 2);
+  EXPECT_EQ(restored.motif_note_count, 6);
+  EXPECT_EQ(restored.motif_motion, 2);
+  EXPECT_EQ(restored.motif_register_high, 2);
+  EXPECT_EQ(restored.motif_rhythm_density, 1);
+  EXPECT_TRUE(restored.chord_ext_prob_explicit);
+  EXPECT_EQ(restored.arpeggio.pattern, ArpeggioPattern::UpDown);
+  EXPECT_EQ(restored.arpeggio.speed, ArpeggioSpeed::Sixteenth);
+  EXPECT_EQ(restored.arpeggio.octave_range, 3);
+  EXPECT_FLOAT_EQ(restored.arpeggio.gate, 0.8f);
+  EXPECT_FALSE(restored.arpeggio.sync_chord);
+  EXPECT_EQ(restored.arpeggio.base_velocity, 110);
+  EXPECT_TRUE(restored.chord_extension.enable_sus);
+  EXPECT_TRUE(restored.chord_extension.enable_7th);
+  EXPECT_TRUE(restored.chord_extension.enable_9th);
+  EXPECT_TRUE(restored.chord_extension.tritone_sub);
+  EXPECT_FLOAT_EQ(restored.chord_extension.sus_probability, 0.4f);
+  EXPECT_FLOAT_EQ(restored.chord_extension.seventh_probability, 0.5f);
+  EXPECT_FLOAT_EQ(restored.chord_extension.ninth_probability, 0.6f);
+  EXPECT_FLOAT_EQ(restored.chord_extension.tritone_sub_probability, 0.7f);
+  EXPECT_EQ(restored.motif_chord.max_chord_count, 2);
 }
 
 TEST(SongConfigJsonTest, AllStylePresetsRoundtrip) {
