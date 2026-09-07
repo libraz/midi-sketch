@@ -26,6 +26,16 @@
 
 namespace midisketch {
 
+/// @brief Smallest departure from 1.0 the transition velocity ramp acts on.
+///
+/// Below this the ramp would move a velocity by less than a step over the two
+/// beats it covers, so the pass skips the transition rather than walking every
+/// note to no effect. Whether a planned ramp clears it is the difference
+/// between the crescendo reaching the notes and being computed and discarded,
+/// which is why the threshold is named here rather than written at the one
+/// place that applies it.
+constexpr float kMinTransitionRampDeparture = 0.05f;
+
 /**
  * @brief Orchestrates post-processing phases for generated tracks.
  *

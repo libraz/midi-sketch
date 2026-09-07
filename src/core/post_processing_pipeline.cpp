@@ -334,7 +334,7 @@ void PostProcessingPipeline::applyEmotionBasedDynamics(const Context& ctx,
     auto hint = ctx.emotion_curve.getTransitionHint(i);
 
     // Skip if no significant velocity change
-    if (std::abs(hint.velocity_ramp - 1.0f) < 0.05f) {
+    if (std::abs(hint.velocity_ramp - 1.0f) < kMinTransitionRampDeparture) {
       continue;
     }
 

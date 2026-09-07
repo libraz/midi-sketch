@@ -8,8 +8,10 @@
 #include <gtest/gtest.h>
 
 #include "core/generator.h"
+#include "core/post_processing_pipeline.h"
 #include "core/preset_data.h"
 #include "core/structure.h"
+#include "core/timing_constants.h"
 #include "core/velocity.h"
 #include "test_support/generator_test_fixture.h"
 
@@ -339,54 +341,57 @@ TEST_F(EmotionCurveIntegrationTest, TransitionHintAffectsVelocity) {
   }
 }
 
-TEST_F(EmotionCurveIntegrationTest, VelocityIncreasesInTransitionZone) {
-  // Test that applyEmotionBasedDynamics actually increases velocity
-  // in the transition zone before Chorus
+TEST_F(EmotionCurveIntegrationTest, TransitionRampReachesTheNotesItScales) {
+  // The run-up into a chorus is a velocity ramp over the last two beats of the
+  // section before it, and it has exactly two preconditions: the planned ramp
+  // has to clear the threshold below which the pass skips the transition, and
+  // those two beats have to contain notes on a track the pass scales. Either
+  // one failing leaves the ramp computed and thrown away, with nothing in the
+  // output to say so.
+  //
+  // What the ramp does to the final velocities is not assertable from here, and
+  // an average over the zone is the wrong instrument for it. The factor is
+  // weighted by position, so the note at the zone's start is scaled by one and
+  // the ramp moves a handful of notes by a few units -- less than the shaping
+  // the vocal writer applies across a phrase, which falls toward the end of a B
+  // section. Comparing the zone's mean against any other window measures that
+  // shaping instead: over a couple of hundred seeds such a mean lands below a
+  // five-percent bound on about a third of them, whether or not the ramp runs.
   generator_.generate(params_);
 
   const auto& sections = generator_.getSong().arrangement().sections();
-  const auto& vocal = generator_.getSong().vocal();
+  const Song& song = generator_.getSong();
+  const MidiTrack* scaled[] = {&song.vocal(),    &song.chord(), &song.bass(),  &song.motif(),
+                               &song.arpeggio(), &song.aux(),   &song.guitar()};
 
-  // Find B section that precedes Chorus
+  size_t transitions = 0;
   for (size_t i = 0; i + 1 < sections.size(); ++i) {
-    if (sections[i].type == SectionType::B && sections[i + 1].type == SectionType::Chorus) {
-      const auto& b_section = sections[i];
-
-      // Define transition zone: last 2 beats of B section
-      Tick section_end = b_section.endTick();
-      Tick transition_start = section_end - 480 * 2;      // Last 2 beats
-      Tick early_zone_end = b_section.start_tick + 1920;  // First bar
-
-      // Collect velocities from early B section and transition zone
-      std::vector<uint8_t> early_velocities;
-      std::vector<uint8_t> transition_velocities;
-
-      for (const auto& note : vocal.notes()) {
-        if (note.start_tick >= b_section.start_tick && note.start_tick < early_zone_end) {
-          early_velocities.push_back(note.velocity);
-        }
-        if (note.start_tick >= transition_start && note.start_tick < section_end) {
-          transition_velocities.push_back(note.velocity);
-        }
-      }
-
-      // If we have notes in both zones, transition zone should have higher average velocity
-      if (!early_velocities.empty() && !transition_velocities.empty()) {
-        float early_avg = 0.0f;
-        for (auto v : early_velocities) early_avg += v;
-        early_avg /= early_velocities.size();
-
-        float transition_avg = 0.0f;
-        for (auto v : transition_velocities) transition_avg += v;
-        transition_avg /= transition_velocities.size();
-
-        // Transition zone velocity should be >= early zone (crescendo effect)
-        EXPECT_GE(transition_avg, early_avg * 0.95f)
-            << "Transition zone should have equal or higher velocity than early B section";
-      }
-      break;
+    if (sections[i].type != SectionType::B || sections[i + 1].type != SectionType::Chorus) {
+      continue;
     }
+    ++transitions;
+
+    const auto hint = generator_.getEmotionCurve().getTransitionHint(i);
+    EXPECT_GE(std::abs(hint.velocity_ramp - 1.0f), kMinTransitionRampDeparture)
+        << "section " << i << " plans a ramp of " << hint.velocity_ramp
+        << ", which the pass discards as too small to apply";
+
+    const Tick section_end = sections[i].endTick();
+    const Tick transition_start = section_end - TICKS_PER_BEAT * 2;
+    size_t notes_in_zone = 0;
+    for (const MidiTrack* track : scaled) {
+      for (const auto& note : track->notes()) {
+        if (note.start_tick >= transition_start && note.start_tick < section_end) {
+          ++notes_in_zone;
+        }
+      }
+    }
+    EXPECT_GT(notes_in_zone, 0u) << "section " << i
+                                 << " ends with two beats of silence on every "
+                                    "track the ramp scales, so it has nothing to raise";
   }
+
+  EXPECT_GT(transitions, 0u) << "this structure has no B before a Chorus, so no ramp was checked";
 }
 
 // use_fill is the only transition hint read before generation: it marks the
