@@ -543,6 +543,7 @@ struct PitchCandidate {
   bool is_scale_tone;     ///< Is a scale tone
   bool is_root_or_fifth;  ///< Is root or 5th (useful for Bass)
   bool is_guide_tone;     ///< Is 3rd or 7th (guide tone)
+  bool doubles_vocal;     ///< Sounds a vocal pitch class closer than two octaves
 
   // Collision info (if this was resolved from a collision)
   TrackRole colliding_track;  ///< Track that was colliding
@@ -560,6 +561,7 @@ struct PitchCandidate {
         is_scale_tone(false),
         is_root_or_fifth(false),
         is_guide_tone(false),
+        doubles_vocal(false),
         colliding_track(TrackRole::Vocal),
         colliding_pitch(0),
         cross_boundary_safety(CrossBoundarySafety::NoBoundary),

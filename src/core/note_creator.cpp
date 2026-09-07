@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 
 #include "core/chord_utils.h"
 #include "core/i_harmony_context.h"
@@ -17,11 +18,24 @@ namespace midisketch {
 
 namespace {
 
+// TEMPORARY measurement switch; remove before committing.
+bool bassDoublingRuleEnabled() {
+  static const bool enabled = [] {
+    const char* value = std::getenv("MIDISKETCH_BASSDOUBLE");
+    return (value == nullptr) || std::atoi(value) != 0;
+  }();
+  return enabled;
+}
+
 // Helper to check if a boundary safety level is considered safe
 bool isSafeBoundary(CrossBoundarySafety safety) {
   return safety == CrossBoundarySafety::NoBoundary || safety == CrossBoundarySafety::ChordTone ||
          safety == CrossBoundarySafety::Tension;
 }
+
+/// Two octaves: below this, a shared pitch class reads as the bass doubling the
+/// vocal rather than supporting it, and the low end goes hollow.
+constexpr int kMinVocalOctaveSeparation = 24;
 
 // Helper to check if a pitch class is root or 5th of the chord
 bool isRootOrFifth(int pitch_class, const ChordTones& chord_tones) {
@@ -129,6 +143,17 @@ void rankCandidates(std::vector<PitchCandidate>& candidates, PitchPreference pre
         bool b_in_harmony = b.is_chord_tone || b.is_scale_tone;
         if (a_in_harmony != b_in_harmony) {
           return a_in_harmony;
+        }
+
+        // A candidate that sounds a vocal pitch class within two octaves is the
+        // bass shadowing the lead rather than supporting it. The bass writers
+        // clear this on the pitch they ask for, but the pitch that sounds is the
+        // one the search returns, and the distance key below would trade a
+        // cleared pitch for a doubling one semitone nearer the one asked for.
+        // Ranked under harmonic membership, so it reorders chord tones rather
+        // than pulling the bass off the chord.
+        if (a.doubles_vocal != b.doubles_vocal) {
+          return !a.doubles_vocal;
         }
 
         // Quaternary: prefer smaller interval from desired
@@ -291,6 +316,24 @@ void finalizeResult(CreateNoteResult& result, NoteEvent event, uint8_t final_pit
 }
 
 }  // namespace
+
+bool doublesVocalPitchClass(const ICollisionDetector& harmony, uint8_t pitch, Tick start,
+                            Tick duration) {
+  Tick end = start + duration;
+  uint8_t vocal_low = harmony.getLowestPitchForTrackInRange(start, end, TrackRole::Vocal);
+  if (vocal_low == 0) return false;  // No vocal sounding across this span
+  uint8_t vocal_high = harmony.getHighestPitchForTrackInRange(start, end, TrackRole::Vocal);
+
+  // The lowest vocal pitch in the span that could carry this pitch class is the
+  // one to clear, so a vocal note two octaves up does not condemn the pitch for
+  // nothing.
+  int nearest_double = static_cast<int>(vocal_low);
+  nearest_double += ((getPitchClass(pitch) - nearest_double) % 12 + 12) % 12;
+  if (nearest_double > static_cast<int>(vocal_high)) {
+    return false;  // No vocal note in the span can carry this pitch class
+  }
+  return nearest_double - static_cast<int>(pitch) < kMinVocalOctaveSeparation;
+}
 
 // ============================================================================
 // Main API
@@ -725,6 +768,13 @@ std::vector<PitchCandidate> getSafePitchCandidates(const ICollisionDetector& har
 
     // Guide tone annotation (3rd/7th)
     candidate.is_guide_tone = std::find(guide_pcs.begin(), guide_pcs.end(), pc) != guide_pcs.end();
+
+    // The doubling rule is a bass rule: it is what keeps the bass supporting the
+    // lead rather than shadowing it an octave below, and no other role is voiced
+    // against the vocal that way.
+    if (preference == PitchPreference::PreferRootFifth && bassDoublingRuleEnabled()) {
+      candidate.doubles_vocal = doublesVocalPitchClass(harmony, pitch, start, duration);
+    }
 
     // Annotate cross-boundary safety for notes with meaningful duration
     if (duration >= 240) {  // TICK_EIGHTH

@@ -183,36 +183,16 @@ uint8_t getApproachNote(uint8_t current_root, uint8_t next_root, int8_t target_d
   return clampBass(next_root);
 }
 
-/// Two octaves: below this, a shared pitch class reads as the bass doubling the
-/// vocal rather than supporting it, and the low end goes hollow.
-constexpr int kMinVocalOctaveSeparation = 24;
-
 /// @brief Drop a bass pitch that doubles a vocal pitch class too closely.
 ///
-/// The vocal is scanned over the whole span the bass note sounds, not sampled
-/// at its onset: a vocal note that enters halfway through the bass note doubles
-/// it just as audibly as one that starts with it. The lowest vocal pitch in the
-/// span that could carry the bass note's pitch class is the one to clear, so a
-/// vocal note two octaves up does not push the bass down for nothing.
+/// Clearing the doubling here only fixes the pitch the note creation path is
+/// asked for; the same rule is a ranking key over the candidates it may return
+/// instead, so the pitch that ends up sounding is held to it either way.
 uint8_t separateFromVocalDoubling(const IHarmonyContext& harmony, uint8_t pitch, Tick start,
                                   Tick duration) {
-  Tick end = start + duration;
-  uint8_t vocal_low = harmony.getLowestPitchForTrackInRange(start, end, TrackRole::Vocal);
-  if (vocal_low == 0) {
-    return pitch;  // No vocal sounding across this span
-  }
-  uint8_t vocal_high = harmony.getHighestPitchForTrackInRange(start, end, TrackRole::Vocal);
-
-  int pitch_class = pitch % 12;
-  int nearest_double = static_cast<int>(vocal_low);
-  nearest_double += ((pitch_class - nearest_double) % 12 + 12) % 12;
-  if (nearest_double > static_cast<int>(vocal_high)) {
-    return pitch;  // No vocal note in the span can carry this pitch class
-  }
-  if (nearest_double - static_cast<int>(pitch) >= kMinVocalOctaveSeparation) {
+  if (!doublesVocalPitchClass(harmony, pitch, start, duration)) {
     return pitch;
   }
-
   int lowered = static_cast<int>(pitch) - 12;
   return (lowered >= BASS_LOW) ? static_cast<uint8_t>(lowered) : pitch;
 }

@@ -153,6 +153,26 @@ NoteEvent createNoteWithoutHarmonyAndAdd(MidiTrack& track, Tick start, Tick dura
 // ============================================================================
 
 /**
+ * @brief Whether a bass pitch sounds a vocal pitch class closer than two octaves.
+ *
+ * Below two octaves a shared pitch class reads as the bass doubling the vocal
+ * rather than supporting it, and the low end goes hollow. The vocal is scanned
+ * over the whole span the note sounds rather than sampled at its onset: a vocal
+ * note entering halfway through doubles it just as audibly.
+ *
+ * Exposed because the rule has to hold at two points that cannot see each
+ * other: the bass writers clear it on the pitch they ask for, and the candidate
+ * search has to keep it when it returns a different pitch than the one asked.
+ *
+ * @param harmony Collision detector, queried for the vocal's register
+ * @param pitch Candidate MIDI pitch
+ * @param start Note start tick
+ * @param duration Note duration in ticks
+ */
+bool doublesVocalPitchClass(const ICollisionDetector& harmony, uint8_t pitch, Tick start,
+                            Tick duration);
+
+/**
  * @brief Get safe pitch candidates for a desired pitch.
  *
  * Returns multiple candidate pitches ranked by preference. Tracks can
