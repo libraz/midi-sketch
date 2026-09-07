@@ -2456,8 +2456,7 @@ TEST_F(DrumsTest, RhythmPatternMaintainedAcrossInstrumentChanges) {
 }
 
 TEST_F(DrumsTest, RhythmSyncRideThinningKeepsSameSlotsEachBar) {
-  params_.blueprint_id = 1;  // RhythmLock
-  params_.paradigm = GenerationParadigm::RhythmSync;
+  params_.blueprint_id = 1;  // RhythmLock: RhythmSync paradigm
   params_.structure = StructurePattern::StandardPop;
   params_.mood = Mood::StraightPop;
   params_.bpm = 120;
@@ -2629,8 +2628,7 @@ TEST_F(DrumsTest, RhythmSyncHiHatLevelVariesBySection) {
 }
 
 TEST_F(DrumsTest, RhythmSyncShakerThinningKeepsSameSlotsEachBar) {
-  params_.blueprint_id = 1;  // RhythmLock
-  params_.paradigm = GenerationParadigm::RhythmSync;
+  params_.blueprint_id = 1;  // RhythmLock: RhythmSync paradigm
   params_.structure = StructurePattern::StandardPop;
   params_.mood = Mood::EnergeticDance;
   params_.bpm = 120;
