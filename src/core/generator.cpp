@@ -50,15 +50,9 @@
 #include "core/track_registration_guard.h"
 #include "core/track_separation.h"
 #include "core/velocity_helper.h"
-#include "track/drums.h"
 #include "track/drums/beat_processors.h"
-#include "track/generators/arpeggio.h"
 #include "track/generators/aux.h"
-#include "track/generators/bass.h"
-#include "track/generators/chord.h"
-#include "track/generators/drums.h"
 #include "track/generators/motif.h"
-#include "track/generators/se.h"
 #include "track/generators/vocal.h"
 #include "track/motif/motif_rhythm.h"
 #include "track/vocal/vocal_analysis.h"
@@ -461,14 +455,12 @@ void Generator::acceptParams(const GeneratorParams& params) {
 uint16_t Generator::initializeGenerationState() {
   warnings_.clear();
   invalidateVocalAnalysisCache();
-  // Reset lazily-computed cached state so a second generate() call on the same
-  // Generator instance does not reuse the previous call's drum grid / kick
-  // pattern (which would carry the wrong sections/mood/paradigm). drum_grid_ is
-  // only recomputed for RhythmSync below, so a stale value from a prior
-  // RhythmSync run could otherwise leak into a Traditional run; kick_cache_ is
-  // lazily filled in generateBass() only when empty, so it must be cleared here.
+  // Reset the cached drum grid so a second generate() call on the same Generator
+  // instance does not reuse the previous call's grid (which would carry the wrong
+  // sections/mood/paradigm). It is only recomputed for RhythmSync below, so a
+  // stale value from a prior RhythmSync run could otherwise leak into a
+  // Traditional run.
   drum_grid_.reset();
-  kick_cache_.reset();
   validateVocalRange();
 
   // Initialize seed
@@ -1396,87 +1388,6 @@ FullTrackContext Generator::buildBaseContext() {
   return ctx;
 }
 
-void Generator::generateVocal() {
-  // RAII guard ensures vocal is registered when this scope ends
-  TrackRegistrationGuard guard(*harmony_context_, song_.vocal(), TrackRole::Vocal);
-
-  // Use VocalGenerator for track generation
-  VocalGenerator vocal_gen;
-  // Set Motif track reference for:
-  // - BackgroundMotif: range separation to avoid collisions
-  // - RhythmSync: rhythm pattern synchronization (Motif is coordinate axis)
-  const MidiTrack* motif_track = nullptr;
-  if (params_.composition_style == CompositionStyle::BackgroundMotif ||
-      params_.paradigm == GenerationParadigm::RhythmSync) {
-    motif_track = &song_.motif();
-  }
-  vocal_gen.setMotifTrack(motif_track);
-
-  // Build FullTrackContext
-  FullTrackContext ctx = buildBaseContext();
-  ctx.drum_grid = getDrumGrid();
-
-  vocal_gen.generateFullTrack(song_.vocal(), ctx);
-}
-
-void Generator::generateChord() {
-  // RAII guard ensures chord is registered when this scope ends
-  TrackRegistrationGuard guard(*harmony_context_, song_.chord(), TrackRole::Chord);
-
-  // Use ChordGenerator with FullTrackContext
-  ChordGenerator chord_gen;
-
-  // Build FullTrackContext
-  FullTrackContext ctx = buildBaseContext();
-
-  // Use cached vocal analysis for register avoidance
-  ctx.vocal_analysis = getCachedVocalAnalysis();
-
-  chord_gen.generateFullTrack(song_.chord(), ctx);
-}
-
-void Generator::generateBass() {
-  // RAII guard ensures bass is registered when this scope ends
-  TrackRegistrationGuard guard(*harmony_context_, song_.bass(), TrackRole::Bass);
-
-  // Use BassGenerator for track generation
-  BassGenerator bass_gen;
-
-  // Compute kick pattern for Bass-Kick sync if not already cached
-  if (!kick_cache_.has_value()) {
-    kick_cache_ = computeKickPattern(song_.arrangement().sections(), params_.mood);
-  }
-
-  // Build FullTrackContext
-  FullTrackContext ctx = buildBaseContext();
-  ctx.kick_cache = kick_cache_.has_value() ? &kick_cache_.value() : nullptr;
-
-  bass_gen.generateFullTrack(song_.bass(), ctx);
-}
-
-void Generator::generateDrums() {
-  // Use DrumsGenerator for track generation
-  DrumsGenerator drums_gen;
-
-  // Build FullTrackContext
-  FullTrackContext ctx = buildBaseContext();
-
-  // Use cached vocal analysis (for RhythmSync/MelodyDriven modes)
-  ctx.vocal_analysis = getCachedVocalAnalysis();
-
-  drums_gen.generateFullTrack(song_.drums(), ctx);
-}
-
-void Generator::generateArpeggio() {
-  // Use ArpeggioGenerator for track generation
-  ArpeggioGenerator arpeggio_gen;
-
-  // Build FullTrackContext
-  FullTrackContext ctx = buildBaseContext();
-
-  arpeggio_gen.generateFullTrack(song_.arpeggio(), ctx);
-}
-
 void Generator::resolveArpeggioChordClashes() {
   // Delegate to CollisionResolver
   CollisionResolver::resolveArpeggioChordClashes(song_.arpeggio(), song_.chord(),
@@ -1553,21 +1464,6 @@ void Generator::planTempoMap() {
   }
 
   song_.setTempoMap(tempo_map);
-}
-
-void Generator::generateSE() {
-  // Use SEGenerator for track generation
-  SEGenerator se_gen;
-
-  // Build FullTrackContext with call system options
-  FullTrackContext ctx = buildBaseContext();
-  ctx.call_enabled = params_.call_enabled;
-  ctx.call_notes_enabled = params_.call_notes_enabled;
-  ctx.intro_chant = static_cast<uint8_t>(params_.intro_chant);
-  ctx.mix_pattern = static_cast<uint8_t>(params_.mix_pattern);
-  ctx.call_density = static_cast<uint8_t>(params_.call_density);
-
-  se_gen.generateFullTrack(song_.se(), ctx);
 }
 
 void Generator::generateMotif() {

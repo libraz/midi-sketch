@@ -270,9 +270,6 @@ class Generator {
   /// RhythmSync state
   std::optional<DrumGrid> drum_grid_;  ///< Drum grid for RhythmSync (pre-computed)
 
-  /// Bass-Kick sync state
-  std::optional<KickPatternCache> kick_cache_;  ///< Pre-computed kick positions for bass sync
-
   /// Emotion curve for song-wide emotional planning
   EmotionCurve emotion_curve_;  ///< Planned emotional arc
 
@@ -389,14 +386,8 @@ class Generator {
   /// @name Track Generation Methods
   /// Each generates a single track and registers notes with HarmonyContext
   /// @{
-  void generateVocal();     ///< Main melody track
-  void generateChord();     ///< Chord voicing track
-  void generateBass();      ///< Bass line track
-  void generateDrums();     ///< Drum pattern track
-  void generateSE();        ///< Sound effects (calls, chants)
-  void generateMotif();     ///< Background motif track
-  void generateArpeggio();  ///< Arpeggio pattern track
-  void generateAux();       ///< Auxiliary melody track
+  void generateMotif();  ///< Background motif track
+  void generateAux();    ///< Auxiliary melody track
   /// @}
 
   /// @name Post-Processing Methods
