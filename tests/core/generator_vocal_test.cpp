@@ -9,6 +9,7 @@
 #include <cmath>
 
 #include "core/generator.h"
+#include "core/pitch_utils.h"
 #include "core/preset_data.h"
 #include "core/timing_constants.h"
 #include "test_helpers/note_event_test_helper.h"
@@ -394,10 +395,13 @@ TEST(VocalRangeTest, RegenerateVocalRespectsRange) {
 // ============================================================================
 
 TEST(VocalMelodyTest, VocalIntervalConstraint) {
-  // Test that maximum interval between consecutive vocal notes is <= 9 semitones
-  // (major 6th) within a section. Larger leaps at section boundaries are allowed.
-  // Note: 9 semitones allows for expressive melodic movement while staying
-  // within singable range for pop vocals.
+  // A leap inside a section stays within what that section allows. The ceiling
+  // is per section and comes from the same table the generator reads, not from
+  // a number written here: a Verse is held to a major sixth while a Chorus is
+  // granted the octave it exists to reach and a Bridge more still. Asserting
+  // the Verse ceiling everywhere would call the widest leap of a Chorus a
+  // defect, and it only ever passed because this one seed does not take one.
+  // Leaps across a section boundary are a separate decision and are skipped.
   Generator gen;
   GeneratorParams params{};
   params.structure = StructurePattern::FullPop;  // Multiple sections for variety
@@ -418,6 +422,16 @@ TEST(VocalMelodyTest, VocalIntervalConstraint) {
     section_boundaries.push_back(sec.start_tick);
   }
 
+  auto sectionAt = [&sections](Tick tick) {
+    SectionType type = SectionType::A;
+    for (const auto& sec : sections) {
+      if (sec.start_tick > tick) break;
+      type = sec.type;
+    }
+    return type;
+  };
+  int widest_checked = 0;
+
   // Check interval between consecutive notes (skip section boundaries)
   for (size_t i = 1; i < notes.size(); ++i) {
     Tick prev_tick = notes[i - 1].start_tick;
@@ -435,11 +449,15 @@ TEST(VocalMelodyTest, VocalIntervalConstraint) {
     if (crosses_boundary) continue;  // Skip section boundary checks
 
     int interval = std::abs(static_cast<int>(notes[i].note) - static_cast<int>(notes[i - 1].note));
-    EXPECT_LE(interval, 9) << "Interval of " << interval << " semitones between notes at tick "
-                           << notes[i - 1].start_tick << " (pitch " << (int)notes[i - 1].note
-                           << ") and tick " << notes[i].start_tick << " (pitch "
-                           << (int)notes[i].note << ") exceeds 9 semitones (major 6th)";
+    const int allowed = getMaxMelodicIntervalForSection(sectionAt(prev_tick));
+    widest_checked = std::max(widest_checked, interval);
+    EXPECT_LE(interval, allowed) << "Interval of " << interval
+                                 << " semitones between notes at tick " << notes[i - 1].start_tick
+                                 << " (pitch " << (int)notes[i - 1].note << ") and tick "
+                                 << notes[i].start_tick << " (pitch " << (int)notes[i].note
+                                 << ") exceeds the " << allowed << " this section allows";
   }
+  EXPECT_GT(widest_checked, 0) << "every pair crossed a boundary, so no leap was checked";
 }
 
 TEST(VocalMelodyTest, ChorusHookRepetition) {

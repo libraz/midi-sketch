@@ -5,6 +5,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <random>
 #include <set>
 
@@ -12,6 +13,7 @@
 #include "core/generator.h"
 #include "core/harmony_context.h"
 #include "core/i_harmony_context.h"
+#include "core/pitch_utils.h"
 #include "core/song.h"
 #include "core/timing_constants.h"
 #include "core/types.h"
@@ -751,9 +753,16 @@ TEST_F(ChordWithContextTest, RegressionChordBassTritoneOriginalBug) {
 
   const auto& chord_track = gen.getSong().chord();
   const auto& bass_track = gen.getSong().bass();
+  const IHarmonyContext& harmony = gen.getHarmonyContext();
 
-  // Count tritone clashes
+  // A tritone is not a clash everywhere. It is the interval a dominant and a
+  // diminished chord are built from, so on those degrees the chord and the bass
+  // sounding one is the harmony being stated rather than two voices colliding.
+  // The pairs to count are the ones on every other degree, which is what the
+  // collision rules themselves say.
   int tritone_clash_count = 0;
+  int excused_by_degree = 0;
+  int overlapping_pairs = 0;
   for (const auto& chord_note : chord_track.notes()) {
     Tick chord_end = chord_note.start_tick + chord_note.duration;
     int chord_pc = chord_note.note % 12;
@@ -763,18 +772,25 @@ TEST_F(ChordWithContextTest, RegressionChordBassTritoneOriginalBug) {
       int bass_pc = bass_note.note % 12;
 
       if (chord_note.start_tick < bass_end && bass_note.start_tick < chord_end) {
+        overlapping_pairs++;
         int interval = std::abs(chord_pc - bass_pc);
         if (interval > 6) interval = 12 - interval;
         if (interval == 6) {
-          tritone_clash_count++;
+          const Tick overlap = std::max(chord_note.start_tick, bass_note.start_tick);
+          if (chordDegreeOwnsATritone(harmony.getChordDegreeAt(overlap))) {
+            excused_by_degree++;
+          } else {
+            tritone_clash_count++;
+          }
         }
       }
     }
   }
 
-  // Original bug had multiple Chord-Bass tritone clashes; after fix should be 0
+  EXPECT_GT(overlapping_pairs, 0) << "chord and bass never sound together, so nothing was checked";
   EXPECT_EQ(tritone_clash_count, 0)
-      << "No Chord-Bass tritone clashes expected with original bug parameters";
+      << "chord and bass sound a tritone on a degree whose chord does not contain one ("
+      << excused_by_degree << " more sound one on a degree that does)";
 }
 
 // ============================================================================
