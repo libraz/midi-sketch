@@ -13,7 +13,7 @@ help:
 	@echo ""
 	@echo "  make build     - Build the project"
 	@echo "  make test      - Run C++, WASM/JS, oracle, Python, and README example tests"
-	@echo "  make test-noprov - Run C++ tests in the shipping (no-provenance) shape"
+	@echo "  make test-noprov - Run C++ tests in the same shape the WASM module ships in"
 	@echo "  make clean     - Clean build"
 	@echo "  make rebuild   - Clean and rebuild"
 	@echo "  make format    - Format code (C++ + js/ TS bindings)"
