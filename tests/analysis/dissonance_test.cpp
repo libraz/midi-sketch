@@ -493,7 +493,7 @@ TEST(DissonanceTest, MajorNinthAgainstChordVoiceDoesNotRaiseNonChordTone) {
 }
 
 TEST(DissonanceTest, JsonOutputFormat) {
-  DissonanceReport report;
+  DissonanceReport report{};
   report.summary.total_issues = 2;
   report.summary.simultaneous_clashes = 1;
   report.summary.non_chord_tones = 1;

@@ -232,7 +232,7 @@ TEST(NonDiatonicGateTest, ReportsTheInternalPitchAndStatesTheKeyOnce) {
 // Test: JSON output includes non-diatonic notes
 TEST_F(NonDiatonicDetectionTest, JsonOutputIncludesNonDiatonic) {
   // Create a report with a non-diatonic issue
-  DissonanceReport report;
+  DissonanceReport report{};
   report.summary.total_issues = 1;
   report.summary.non_diatonic_notes = 1;
   report.summary.high_severity = 1;
