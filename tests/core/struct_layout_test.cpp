@@ -5,6 +5,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cstring>
 #include <map>
 #include <sstream>
@@ -340,9 +341,37 @@ std::string writeConfigJson(const SongConfig& config) {
   return oss.str();
 }
 
+// The names SongConfig::visitFields() offers, collected without going through
+// the written form. This is the reference the flattener below is checked
+// against: the two share no code, so a pair the flattener drops shows up as a
+// disagreement rather than as a field that quietly stops being compared.
+struct ConfigFieldNameVisitor {
+  std::vector<std::string> scalars;
+  std::vector<std::string> nested_objects;
+
+  template <typename T>
+  void operator()(const char* name, T&&) {
+    scalars.emplace_back(name);
+  }
+  template <typename T>
+  void nested(const char* name, T&&) {
+    nested_objects.emplace_back(name);
+  }
+};
+
+// Keys in a written config, counted without parsing it. The config writes no
+// string values, so every quote in it opens or closes a key and the total is
+// exactly half the quotes -- a count that cannot drift with the flattener
+// because it does not look at structure at all.
+size_t countWrittenKeys(const std::string& json_text) {
+  return static_cast<size_t>(std::count(json_text.begin(), json_text.end(), '"')) / 2;
+}
+
 // Split a written config into "name" -> "value" pairs, descending one level so
 // the nested arpeggio, chord_extension and motif_chord objects are compared
-// field by field rather than as opaque blobs.
+// field by field rather than as opaque blobs. The nested objects themselves are
+// containers rather than values, so they contribute no entry of their own --
+// which is why the count below is short by exactly the number of them.
 std::map<std::string, std::string> flattenConfigJson(const std::string& json_text) {
   std::map<std::string, std::string> fields;
   std::string prefix;
@@ -376,15 +405,61 @@ std::map<std::string, std::string> flattenConfigJson(const std::string& json_tex
 TEST(SongConfigJsonTest, RoundtripNonDefaultValues) {
   const SongConfig original = makeFullyNonDefaultConfig();
 
+  const std::string fixture_json = writeConfigJson(original);
+  const std::string default_json = writeConfigJson(SongConfig{});
+  const auto fixture_fields = flattenConfigJson(fixture_json);
+  const auto default_fields = flattenConfigJson(default_json);
+
+  // Before the comparison can mean anything, the flattener has to have seen
+  // every field. Over-reporting fails loudly further down; under-reporting
+  // would silently shrink what is compared, which is the same shape of defect
+  // this test exists to rule out. So tie it to two things it does not share
+  // code with: the count of keys the writer emitted, and the names the field
+  // list declares.
+  ConfigFieldNameVisitor declared;
+  SongConfig probe;
+  SongConfig::visitFields(probe, declared);
+
+  ASSERT_EQ(fixture_json.find(":\""), std::string::npos)
+      << "A string-valued field breaks the quote-counted key total";
+  ASSERT_EQ(fixture_fields.size() + declared.nested_objects.size(), countWrittenKeys(fixture_json))
+      << "The flattener did not account for every key the config writer emitted";
+  ASSERT_EQ(default_fields.size() + declared.nested_objects.size(), countWrittenKeys(default_json))
+      << "The flattener did not account for every key the config writer emitted";
+
+  for (const auto& name : declared.scalars) {
+    EXPECT_EQ(fixture_fields.count(name), 1u) << name << " is declared but was not flattened";
+  }
+  for (const auto& name : declared.nested_objects) {
+    const std::string prefix = name + ".";
+    const bool has_member =
+        std::any_of(fixture_fields.begin(), fixture_fields.end(), [&prefix](const auto& entry) {
+          return entry.first.compare(0, prefix.size(), prefix) == 0;
+        });
+    EXPECT_TRUE(has_member) << name << " is a declared nested object with no flattened member";
+  }
+
+  // Same fields on both sides, so the comparison below is field against field.
+  std::vector<std::string> key_mismatch;
+  for (const auto& [name, value] : fixture_fields) {
+    (void)value;
+    if (default_fields.count(name) == 0) key_mismatch.push_back("fixture-only:" + name);
+  }
+  for (const auto& [name, value] : default_fields) {
+    (void)value;
+    if (fixture_fields.count(name) == 0) key_mismatch.push_back("default-only:" + name);
+  }
+  ASSERT_TRUE(key_mismatch.empty()) << [&key_mismatch] {
+    std::string joined;
+    for (const auto& name : key_mismatch) joined += name + " ";
+    return joined;
+  }();
+
   // What makes the per-field expectations below load-bearing: every field the
   // writer emits has to differ from the default a dropped field would fall back
   // to. Stated over the written form rather than field by field, so a field
   // added to visitFields() without a value here is caught here instead of
   // silently joining the set that cannot fail.
-  const auto default_fields = flattenConfigJson(writeConfigJson(SongConfig{}));
-  const auto fixture_fields = flattenConfigJson(writeConfigJson(original));
-  ASSERT_EQ(default_fields.size(), fixture_fields.size());
-  ASSERT_FALSE(default_fields.empty()) << "The config writer emitted no fields to compare";
   std::vector<std::string> still_at_default;
   for (const auto& [name, value] : fixture_fields) {
     const auto it = default_fields.find(name);
@@ -399,7 +474,7 @@ TEST(SongConfigJsonTest, RoundtripNonDefaultValues) {
            return joined;
          }();
 
-  json::Parser p(writeConfigJson(original));
+  json::Parser p(fixture_json);
   SongConfig restored;
   restored.readFrom(p);
 
