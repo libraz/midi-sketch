@@ -7,6 +7,9 @@
 
 #include <gtest/gtest.h>
 
+#include <set>
+#include <vector>
+
 #include "core/timing_constants.h"
 #include "instrument/fretted/bass_model.h"
 #include "instrument/fretted/fretted_note_factory.h"
@@ -400,8 +403,52 @@ TEST_F(GuitarModelTest, ChordFingering) {
   std::vector<uint8_t> c_major = {48, 52, 55};
   Fingering fingering = guitar_->findChordFingering(c_major, state);
 
-  EXPECT_TRUE(fingering.isValid());
-  EXPECT_GE(fingering.assignments.size(), 3u);
+  ASSERT_TRUE(fingering.isValid());
+  ASSERT_EQ(fingering.assignments.size(), c_major.size());
+
+  // Each assignment must sound the pitch it was asked for, on a string of its
+  // own, within a reach.
+  const std::vector<uint8_t>& tuning = guitar_->getTuning();
+  std::set<uint8_t> strings;
+  for (size_t i = 0; i < c_major.size(); ++i) {
+    const FretPosition& pos = fingering.assignments[i].position;
+    ASSERT_LT(pos.string, tuning.size());
+    EXPECT_EQ(tuning[pos.string] + pos.fret, c_major[i])
+        << "assignment " << i << " does not sound its pitch";
+    EXPECT_TRUE(strings.insert(pos.string).second)
+        << "string " << static_cast<int>(pos.string) << " was given two notes of the chord";
+  }
+  EXPECT_LE(fingering.getSpan(), HandSpanConstraints::intermediate().max_span);
+}
+
+TEST_F(GuitarModelTest, ChordFingeringStringsRiseWithThePitches) {
+  // A strum sounds its strings in order, so a chord whose higher notes sit on
+  // lower strings speaks them out of order. Every diatonic triad has to hold
+  // the property, not the ones that happen to fall out of a per-note choice:
+  // this is asked over all seven because V and ii are the two a greedy
+  // assignment gets wrong, and I and IV are the ones it gets right by accident.
+  const std::vector<std::vector<uint8_t>> triads = {
+      {48, 52, 55},  // I    C
+      {50, 53, 57},  // ii   Dm
+      {52, 55, 59},  // iii  Em
+      {53, 57, 60},  // IV   F
+      {55, 59, 62},  // V    G
+      {57, 60, 64},  // vi   Am
+      {59, 62, 65},  // vii  Bdim
+  };
+
+  FretboardState state(6);
+  for (const auto& triad : triads) {
+    Fingering fingering = guitar_->findChordFingering(triad, state);
+    ASSERT_TRUE(fingering.isValid()) << "triad on " << static_cast<int>(triad[0]) << " is unvoiced";
+    ASSERT_EQ(fingering.assignments.size(), triad.size());
+    for (size_t i = 1; i < fingering.assignments.size(); ++i) {
+      EXPECT_GT(fingering.assignments[i].position.string,
+                fingering.assignments[i - 1].position.string)
+          << "triad on " << static_cast<int>(triad[0]) << ": pitch " << static_cast<int>(triad[i])
+          << " sits below pitch " << static_cast<int>(triad[i - 1]);
+    }
+  }
 }
 
 TEST_F(GuitarModelTest, StrumConfig) {

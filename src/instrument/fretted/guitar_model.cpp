@@ -7,7 +7,6 @@
 
 #include <algorithm>
 #include <limits>
-#include <set>
 
 #include "core/timing_constants.h"
 
@@ -226,6 +225,98 @@ PickingPattern GuitarModel::getRecommendedPickingPattern(const std::vector<uint8
   return PickingPattern::Alternate;
 }
 
+namespace {
+
+/// Weights for comparing two shapes of the same chord. A hand plays near the
+/// nut with the fingers close together, so the span decides and the absolute
+/// position breaks the tie; a skipped string costs a little because strumming
+/// across one means muting it.
+constexpr int kShapeSpanCost = 32;
+constexpr int kShapeSkippedStringCost = 8;
+
+/// @brief What a finished chord shape costs to play, or -1 if a hand cannot.
+int chordShapeCost(const std::vector<FretPosition>& shape, const HandSpanConstraints& constraints) {
+  int fret_sum = 0;
+  uint8_t low = 0;
+  uint8_t high = 0;
+  bool any_fretted = false;
+  for (const auto& pos : shape) {
+    fret_sum += pos.fret;
+    if (pos.fret == 0) continue;  // Open strings are free and span nothing
+    if (!any_fretted || pos.fret < low) low = pos.fret;
+    if (!any_fretted || pos.fret > high) high = pos.fret;
+    any_fretted = true;
+  }
+  const int span = any_fretted ? static_cast<int>(high) - static_cast<int>(low) : 0;
+  if (span > static_cast<int>(constraints.max_span)) return -1;
+
+  int skipped = 0;
+  if (shape.size() > 1) {
+    skipped = static_cast<int>(shape.back().string) - static_cast<int>(shape.front().string) -
+              (static_cast<int>(shape.size()) - 1);
+  }
+  return span * kShapeSpanCost + fret_sum + skipped * kShapeSkippedStringCost;
+}
+
+/// @brief Extend a partial shape, keeping every string above the last one used.
+void searchRisingChordShape(const std::vector<std::vector<FretPosition>>& by_ascending_pitch,
+                            size_t index, int min_string, const HandSpanConstraints& constraints,
+                            std::vector<FretPosition>& current, std::vector<FretPosition>& best,
+                            int& best_cost) {
+  if (index == by_ascending_pitch.size()) {
+    const int cost = chordShapeCost(current, constraints);
+    if (cost >= 0 && (best.empty() || cost < best_cost)) {
+      best = current;
+      best_cost = cost;
+    }
+    return;
+  }
+  for (const auto& pos : by_ascending_pitch[index]) {
+    if (static_cast<int>(pos.string) < min_string) continue;
+    current.push_back(pos);
+    searchRisingChordShape(by_ascending_pitch, index + 1, static_cast<int>(pos.string) + 1,
+                           constraints, current, best, best_cost);
+    current.pop_back();
+  }
+}
+
+/// @brief Put a chord's pitches on strings that rise with them.
+///
+/// A strum sounds its strings in order, so the string a pitch sits on is not
+/// only a fingering question: get it wrong and a chord raked from the bass side
+/// speaks its notes out of order. On a guitar the two are the same decision,
+/// because a hand voices a chord with the low notes on the low strings.
+///
+/// Choosing one pitch at a time cannot express that. The lowest pitch reaches
+/// first and takes the string its own fret prefers -- and since a pitch is
+/// reachable on a high string only at a low fret, "the easiest string for this
+/// note alone" is the highest one that can play it, which is exactly the string
+/// the notes above it need. The shape has to be chosen whole, so this walks
+/// every rising assignment and keeps the cheapest. Six strings and at most a
+/// handful of pitches make that a few hundred combinations.
+///
+/// @return The chosen positions in ascending-pitch order, empty if the chord
+///         cannot be voiced this way at all.
+std::vector<FretPosition> findRisingChordShape(
+    const std::vector<std::vector<FretPosition>>& by_ascending_pitch,
+    const HandSpanConstraints& constraints) {
+  std::vector<FretPosition> current;
+  std::vector<FretPosition> best;
+  current.reserve(by_ascending_pitch.size());
+  int best_cost = 0;
+  searchRisingChordShape(by_ascending_pitch, 0, 0, constraints, current, best, best_cost);
+  if (!best.empty()) return best;
+
+  // Nothing fits the hand. A shape a hand has to stretch for still sounds the
+  // chord in the right order, so it beats refusing to play it.
+  HandSpanConstraints unbounded = constraints;
+  unbounded.max_span = kMaxFrets;
+  searchRisingChordShape(by_ascending_pitch, 0, 0, unbounded, current, best, best_cost);
+  return best;
+}
+
+}  // namespace
+
 Fingering GuitarModel::findChordFingering(const std::vector<uint8_t>& pitches,
                                           const FretboardState& state) const {
   Fingering best;
@@ -245,71 +336,25 @@ Fingering GuitarModel::findChordFingering(const std::vector<uint8_t>& pitches,
     all_positions.push_back(positions);
   }
 
-  // Use the first position as a reference for finding a common hand position
-  // This is a simplified approach - a full implementation would search all combinations
+  // Voice the chord the way a hand does: one string per pitch, and the strings
+  // rising with the pitches.
+  std::vector<size_t> ascending(pitches.size());
+  for (size_t i = 0; i < ascending.size(); ++i) ascending[i] = i;
+  std::stable_sort(ascending.begin(), ascending.end(),
+                   [&pitches](size_t a, size_t b) { return pitches[a] < pitches[b]; });
 
-  // Try to find positions that share similar frets (for potential barre)
-  std::set<uint8_t> used_strings;
-  std::vector<FretPosition> selected_positions;
+  std::vector<std::vector<FretPosition>> by_ascending_pitch;
+  by_ascending_pitch.reserve(ascending.size());
+  for (size_t i : ascending) by_ascending_pitch.push_back(all_positions[i]);
 
-  for (size_t i = 0; i < all_positions.size(); ++i) {
-    bool found = false;
-    for (const auto& pos : all_positions[i]) {
-      // Check if this string is already used
-      if (used_strings.find(pos.string) != used_strings.end()) {
-        continue;
-      }
-
-      // Check if the fret is reachable with current selection
-      bool reachable = true;
-      if (!selected_positions.empty()) {
-        uint8_t low_fret = selected_positions[0].fret;
-        uint8_t high_fret = selected_positions[0].fret;
-        for (const auto& sel : selected_positions) {
-          if (sel.fret > 0 && sel.fret < low_fret) low_fret = sel.fret;
-          if (sel.fret > high_fret) high_fret = sel.fret;
-        }
-
-        if (pos.fret > 0) {
-          uint8_t new_low = std::min(low_fret, pos.fret);
-          uint8_t new_high = std::max(high_fret, pos.fret);
-          uint8_t span = (new_low == 0) ? new_high : (new_high - new_low);
-          if (span > span_constraints_.max_span) {
-            reachable = false;
-          }
-        }
-      }
-
-      if (reachable) {
-        selected_positions.push_back(pos);
-        used_strings.insert(pos.string);
-        found = true;
-        break;
-      }
-    }
-
-    if (!found) {
-      // Couldn't find a playable position for this pitch
-      // Try with any available position regardless of span
-      for (const auto& pos : all_positions[i]) {
-        if (used_strings.find(pos.string) == used_strings.end()) {
-          selected_positions.push_back(pos);
-          used_strings.insert(pos.string);
-          found = true;
-          break;
-        }
-      }
-    }
-
-    if (!found) {
-      return best;  // Chord not playable (out of strings or positions)
-    }
+  std::vector<FretPosition> shape = findRisingChordShape(by_ascending_pitch, span_constraints_);
+  if (shape.size() != pitches.size()) {
+    return best;  // Chord not playable (out of strings or positions)
   }
 
-  // Calculate hand position and cost
-  if (selected_positions.empty()) {
-    return best;
-  }
+  // Back into the caller's order, so assignment i belongs to pitch i.
+  std::vector<FretPosition> selected_positions(pitches.size(), FretPosition());
+  for (size_t i = 0; i < ascending.size(); ++i) selected_positions[ascending[i]] = shape[i];
 
   // Find the fret range
   uint8_t lowest_fret = kMaxFrets;

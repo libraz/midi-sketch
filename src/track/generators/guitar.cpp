@@ -230,16 +230,29 @@ static uint8_t resolveSustainedChordPitch(IHarmonyContext& harmony, uint8_t desi
   return 0;  // No consonant octave available
 }
 
+/// @brief The order a strum sounds its notes in: the order the pick meets the
+///        strings.
+///
+/// The six-string model answers which string each pitch sits on, and that is
+/// the answer this needs -- but only when it can voice the whole chord. When it
+/// cannot, the chord still has to be played, so fall back to the order a hand
+/// would sound it in anyway: a down-stroke runs from the lowest note up, an
+/// up-stroke from the highest note down. Returning nothing instead would delete
+/// every voice of the chord, which is the one outcome worse than an awkward
+/// fingering.
 static std::vector<uint8_t> orderPlayableStrum(const std::vector<uint8_t>& pitches, bool upstroke) {
+  std::vector<std::pair<uint8_t, uint8_t>> by_string;
+  by_string.reserve(pitches.size());
+
   GuitarModel guitar;
   FretboardState state(guitar.getStringCount());
   Fingering fingering = guitar.findChordFingering(pitches, state);
-  if (!fingering.isValid() || fingering.assignments.size() != pitches.size()) return {};
-
-  std::vector<std::pair<uint8_t, uint8_t>> by_string;
-  by_string.reserve(pitches.size());
+  const bool voiced = fingering.isValid() && fingering.assignments.size() == pitches.size();
   for (size_t idx = 0; idx < pitches.size(); ++idx) {
-    by_string.emplace_back(fingering.assignments[idx].position.string, pitches[idx]);
+    // Without a fingering, sort on the pitch itself: on a guitar the strings
+    // rise with the notes, so it is the same order the model would have given.
+    by_string.emplace_back(voiced ? fingering.assignments[idx].position.string : pitches[idx],
+                           pitches[idx]);
   }
   std::sort(by_string.begin(), by_string.end(), [upstroke](const auto& lhs, const auto& rhs) {
     return upstroke ? lhs.first > rhs.first : lhs.first < rhs.first;

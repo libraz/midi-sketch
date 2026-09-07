@@ -345,16 +345,16 @@ TEST_F(GeneratorIterationSnapshotTest, NoteCountsAreStable) {
 // captured from it records that stale output as the expectation.
 TEST(GeneratorMidiGoldenTest, FixedBlueprintsMatchNormalizedMidiSha256) {
   constexpr std::array<const char*, 10> kExpectedHashes = {
-      "50ec95c9d1cf3d1d0e0164870b670254d72a553f9d5501977834f77f8b1d2fa1",
+      "28431e1e0508129a0b0205ae1c9af1a4d922a06c0e36118756643341036f9a87",
       "4cfafca6d17e40ef9cb936af4550de418d79809f55f38fc8d9cf2da068f618fb",
-      "36d16b3f130b8253641bb9ae799778389ef357712512911ace948f86d813a90e",
-      "651fea4580ea1f4fc313bb06117362cb38bcc64c6f262aa0e977f402d541331e",
-      "2137888543e7d7737bb91e7084a48e72b9886cd27d93b36458636bccf0b1a1dc",
+      "b0468b525595b30194b2bba400470ff02da7f4c06ee84cffa1087ec7e33c66a2",
+      "6c01cdc02f859cc02ccb09bf1602367d3473e17293af07b3bf0dc97333635d05",
+      "6faad64e7ee6f18e5be9f50e529a2e2352daa96cc07bd3f012f92bfee3e1b157",
       "844f73057f27f0266e9ac6a9a36b6b9ea9ed9b360180051c4d00779f8f023159",
       "12e2bb502611f38f37e09115f27bd13bcfa3694df0cc8b94f120f18e8bc7e315",
       "1d55a0cd822a1c303c37f7bee9f54b94d61356a7c439240a36ad1a73e7296744",
-      "37b2966a3c19900dc8d26669eac90aa9de633f60a37b2a3ae3552df6a8e58243",
-      "ab76335a243ede29640f3c1906e9cc64b0baee5ee0d6cd35f55bad14e04b2ca5",
+      "51b31b9ede1069028e3e8a8973acaf5ba0140420e51664d14de25b8097a0b730",
+      "af68a731a31d27a4b3f7316005973c3a313006c9d6a0afe8f8bea2fada41829f",
   };
 
   for (uint8_t blueprint = 0; blueprint < kExpectedHashes.size(); ++blueprint) {
