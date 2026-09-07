@@ -9,7 +9,6 @@
  */
 
 #include <algorithm>
-#include <cstdlib>
 
 #include "core/chord_utils.h"
 #include "core/i_chord_lookup.h"
@@ -405,52 +404,9 @@ void PostProcessor::applyRitDecrescendo(std::vector<MidiTrack*>& tracks,
 // Enhanced FinalHit Implementation
 // ============================================================================
 
-// Helper: Check if extending a chord note would create dissonance with vocal
-// Returns the maximum safe end tick (may be less than desired_end if clash found)
-static Tick getMaxSafeEndTick(const NoteEvent& chord_note, Tick desired_end,
-                              const MidiTrack* vocal_track) {
-  if (vocal_track == nullptr) {
-    return desired_end;  // No vocal to clash with
-  }
-
-  Tick safe_end = desired_end;
-
-  for (const auto& vocal_note : vocal_track->notes()) {
-    Tick vocal_start = vocal_note.start_tick;
-    Tick vocal_end = vocal_start + vocal_note.duration;
-
-    // Check if extended chord would overlap with this vocal note
-    if (chord_note.start_tick < vocal_end && desired_end > vocal_start) {
-      // Calculate interval
-      int actual_semitones =
-          std::abs(static_cast<int>(chord_note.note) - static_cast<int>(vocal_note.note));
-
-      bool is_dissonant = isDissonantActualInterval(actual_semitones, 0);
-
-      if (is_dissonant) {
-        // Found a clash - limit extension to just before the vocal note starts
-        // But only if vocal starts after chord's original end
-        Tick original_end = chord_note.start_tick + chord_note.duration;
-        if (vocal_start > original_end) {
-          // Safe to extend up to (but not including) vocal start
-          safe_end = std::min(safe_end, vocal_start);
-        } else if (vocal_start <= chord_note.start_tick) {
-          // Vocal already playing when chord starts - don't extend at all
-          safe_end = std::min(safe_end, original_end);
-        } else {
-          // Vocal starts during chord's original duration - no extension possible
-          safe_end = std::min(safe_end, original_end);
-        }
-      }
-    }
-  }
-
-  return safe_end;
-}
-
 void PostProcessor::applyEnhancedFinalHit(MidiTrack* bass_track, MidiTrack* drum_track,
-                                          MidiTrack* chord_track, const MidiTrack* vocal_track,
-                                          const Section& section, IHarmonyContext* harmony) {
+                                          MidiTrack* chord_track, const Section& section,
+                                          IHarmonyContext& harmony) {
   if (section.exit_pattern != ExitPattern::FinalHit) {
     return;
   }
@@ -487,22 +443,19 @@ void PostProcessor::applyEnhancedFinalHit(MidiTrack* bass_track, MidiTrack* drum
     // context, keeping later queries aware of the note this pass added.
     if (!has_final_bass) {
       constexpr uint8_t DEFAULT_BASS_ROOT = 36;  // C2
-      bool added = false;
 
-      if (harmony != nullptr) {
-        NoteOptions opts;
-        opts.start = final_beat_start;
-        opts.duration = TICKS_PER_BEAT;
-        opts.desired_pitch = DEFAULT_BASS_ROOT;
-        opts.velocity = FINAL_HIT_VEL;
-        opts.role = TrackRole::Bass;
-        opts.preference = PitchPreference::PreferRootFifth;
-        opts.range_low = BASS_LOW;
-        opts.range_high = BASS_HIGH;
-        opts.source = NoteSource::PostProcess;
-        opts.original_pitch = DEFAULT_BASS_ROOT;
-        added = createNoteAndAdd(*bass_track, *harmony, opts).has_value();
-      }
+      NoteOptions opts;
+      opts.start = final_beat_start;
+      opts.duration = TICKS_PER_BEAT;
+      opts.desired_pitch = DEFAULT_BASS_ROOT;
+      opts.velocity = FINAL_HIT_VEL;
+      opts.role = TrackRole::Bass;
+      opts.preference = PitchPreference::PreferRootFifth;
+      opts.range_low = BASS_LOW;
+      opts.range_high = BASS_HIGH;
+      opts.source = NoteSource::PostProcess;
+      opts.original_pitch = DEFAULT_BASS_ROOT;
+      const bool added = createNoteAndAdd(*bass_track, harmony, opts).has_value();
 
       // An ending without its bass is worse than an ending whose bass is not
       // the pitch the search would have preferred, so the root goes in even when
@@ -519,10 +472,7 @@ void PostProcessor::applyEnhancedFinalHit(MidiTrack* bass_track, MidiTrack* drum
         final_bass.prov_original_pitch = DEFAULT_BASS_ROOT;
 #endif
         bass_track->addNote(final_bass);
-        if (harmony != nullptr) {
-          harmony->registerNote(final_beat_start, TICKS_PER_BEAT, DEFAULT_BASS_ROOT,
-                                TrackRole::Bass);
-        }
+        harmony.registerNote(final_beat_start, TICKS_PER_BEAT, DEFAULT_BASS_ROOT, TrackRole::Bass);
       }
     }
   }
@@ -586,8 +536,8 @@ void PostProcessor::applyEnhancedFinalHit(MidiTrack* bass_track, MidiTrack* drum
     }
   }
 
-  // Chord track: sustain final chord as whole note with strong velocity
-  // Check against all tracks (via harmony) or vocal only (fallback) to avoid dissonance
+  // Chord track: sustain final chord as whole note with strong velocity,
+  // asking harmony how far the sustain can reach without clashing
   if (chord_track != nullptr) {
     auto& chord_notes = chord_track->notes();
 
@@ -598,9 +548,9 @@ void PostProcessor::applyEnhancedFinalHit(MidiTrack* bass_track, MidiTrack* drum
     // voice of the second-to-last chord straight over the last one. Ask the
     // boundary the same way the note's own creation did.
     const auto clipAtChordBoundary = [&harmony](const NoteEvent& note, Tick proposed_end) {
-      if (harmony == nullptr || proposed_end <= note.start_tick) return proposed_end;
+      if (proposed_end <= note.start_tick) return proposed_end;
       const ChordBoundaryInfo info =
-          harmony->analyzeChordBoundary(note.note, note.start_tick, proposed_end - note.start_tick);
+          harmony.analyzeChordBoundary(note.note, note.start_tick, proposed_end - note.start_tick);
       if (info.boundary_tick == 0 || info.overlap_ticks == 0) return proposed_end;
       if (info.safe_duration == 0) return proposed_end;
       return std::min(proposed_end, note.start_tick + info.safe_duration);
@@ -608,16 +558,9 @@ void PostProcessor::applyEnhancedFinalHit(MidiTrack* bass_track, MidiTrack* drum
 
     for (auto& note : chord_notes) {
       if (note.start_tick >= final_beat_start && note.start_tick < section_end) {
-        // Extend duration, but check for clashes first
-        Tick safe_end;
-        if (harmony != nullptr) {
-          // Use comprehensive clash detection against all registered tracks
-          safe_end =
-              harmony->getMaxSafeEnd(note.start_tick, note.note, TrackRole::Chord, section_end);
-        } else {
-          // Fallback: check against vocal only
-          safe_end = getMaxSafeEndTick(note, section_end, vocal_track);
-        }
+        // Extend duration, but check for clashes against every registered track first
+        Tick safe_end =
+            harmony.getMaxSafeEnd(note.start_tick, note.note, TrackRole::Chord, section_end);
         safe_end = clipAtChordBoundary(note, safe_end);
         if (safe_end > note.start_tick) {
 #ifdef MIDISKETCH_NOTE_PROVENANCE
@@ -642,13 +585,8 @@ void PostProcessor::applyEnhancedFinalHit(MidiTrack* bass_track, MidiTrack* drum
     for (auto& note : chord_notes) {
       if (note.start_tick >= last_bar_start && note.start_tick < final_beat_start) {
         // Extend to section end, but check for clashes first
-        Tick safe_end;
-        if (harmony != nullptr) {
-          safe_end =
-              harmony->getMaxSafeEnd(note.start_tick, note.note, TrackRole::Chord, section_end);
-        } else {
-          safe_end = getMaxSafeEndTick(note, section_end, vocal_track);
-        }
+        Tick safe_end =
+            harmony.getMaxSafeEnd(note.start_tick, note.note, TrackRole::Chord, section_end);
         safe_end = clipAtChordBoundary(note, safe_end);
         if (safe_end > note.start_tick + note.duration) {
 #ifdef MIDISKETCH_NOTE_PROVENANCE

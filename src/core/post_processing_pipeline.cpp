@@ -186,8 +186,8 @@ void PostProcessingPipeline::applyTransitionEffects(const Context& ctx,
   // Apply enhanced FinalHit for sections with that exit pattern
   for (const auto& section : sections) {
     if (section.exit_pattern == ExitPattern::FinalHit) {
-      PostProcessor::applyEnhancedFinalHit(&ctx.song.bass(), drum_track, &ctx.song.chord(),
-                                           &ctx.song.vocal(), section, &ctx.harmony);
+      PostProcessor::applyEnhancedFinalHit(&ctx.song.bass(), drum_track, &ctx.song.chord(), section,
+                                           ctx.harmony);
     }
   }
 

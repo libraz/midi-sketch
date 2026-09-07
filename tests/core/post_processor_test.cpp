@@ -380,6 +380,9 @@ class EnhancedFinalHitTest : public ::testing::Test {
   }
 
   Section section_;
+  /// Permissive harmony: nothing clashes, no chord change, no boundary. Each
+  /// test states the one constraint it is about on top of that.
+  test::StubHarmonyContext harmony_;
 };
 
 TEST_F(EnhancedFinalHitTest, AddsKickAndCrashOnFinalBeat) {
@@ -390,7 +393,7 @@ TEST_F(EnhancedFinalHitTest, AddsKickAndCrashOnFinalBeat) {
   drum_track.addNote(NoteEventBuilder::create(0, TICKS_PER_BEAT / 2, KICK, 80));
   drum_track.addNote(NoteEventBuilder::create(TICKS_PER_BEAT, TICKS_PER_BEAT / 2, SNARE, 85));
 
-  PostProcessor::applyEnhancedFinalHit(nullptr, &drum_track, nullptr, nullptr, section_);
+  PostProcessor::applyEnhancedFinalHit(nullptr, &drum_track, nullptr, section_, harmony_);
 
   Tick final_beat_start = 4 * TICKS_PER_BAR - TICKS_PER_BEAT;
 
@@ -414,9 +417,11 @@ TEST_F(EnhancedFinalHitTest, AddsKickAndCrashOnFinalBeat) {
   EXPECT_TRUE(has_crash) << "Should have crash on final beat";
 }
 
-TEST_F(EnhancedFinalHitTest, ChordTrackSustainsFinalChord) {
-  // Chord track notes on final beat should be sustained
-
+TEST_F(EnhancedFinalHitTest, ChordTrackSustainsFinalChordWhenNothingShortensIt) {
+  // The section ends on the chord it states, so the final-beat voices are
+  // written all the way to the section end. What can shorten that is harmony:
+  // a clash with another track, or the chord itself moving before the end.
+  // With neither present, the whole beat sustains.
   MidiTrack chord_track;
   Tick final_beat_start = 4 * TICKS_PER_BAR - TICKS_PER_BEAT;
   Tick original_duration = TICKS_PER_BEAT / 2;
@@ -426,9 +431,14 @@ TEST_F(EnhancedFinalHitTest, ChordTrackSustainsFinalChord) {
   chord_track.addNote(NoteEventBuilder::create(final_beat_start, original_duration, 64, 80));  // E
   chord_track.addNote(NoteEventBuilder::create(final_beat_start, original_duration, 67, 80));  // G
 
-  PostProcessor::applyEnhancedFinalHit(nullptr, nullptr, &chord_track, nullptr, section_);
-
   Tick section_end = 4 * TICKS_PER_BAR;
+  ASSERT_EQ(harmony_.getMaxSafeEnd(final_beat_start, 60, TrackRole::Chord, section_end),
+            section_end)
+      << "the fixture must let the sustain reach the section end";
+  ASSERT_EQ(harmony_.analyzeChordBoundary(60, final_beat_start, TICKS_PER_BEAT).boundary_tick, 0u)
+      << "the fixture must hold one chord through the final beat";
+
+  PostProcessor::applyEnhancedFinalHit(nullptr, nullptr, &chord_track, section_, harmony_);
 
   for (const auto& note : chord_track.notes()) {
     if (note.start_tick >= final_beat_start) {
@@ -463,7 +473,7 @@ TEST_F(EnhancedFinalHitTest, TheFinalSustainStopsWhereTheChordItSpellsStops) {
   chord_track.addNote(NoteEventBuilder::create(last_bar_start, TICKS_PER_BEAT, 60, 80));
   harmony.registerTrack(chord_track, TrackRole::Chord);
 
-  PostProcessor::applyEnhancedFinalHit(nullptr, nullptr, &chord_track, nullptr, section, &harmony);
+  PostProcessor::applyEnhancedFinalHit(nullptr, nullptr, &chord_track, section, harmony);
 
   ASSERT_EQ(chord_track.notes().size(), 1u);
   const NoteEvent& note = chord_track.notes()[0];
@@ -483,7 +493,7 @@ TEST_F(EnhancedFinalHitTest, BoostsBassVelocity) {
   // Add bass note on final beat
   bass_track.addNote(NoteEventBuilder::create(final_beat_start, TICKS_PER_BEAT, 36, 80));
 
-  PostProcessor::applyEnhancedFinalHit(&bass_track, nullptr, nullptr, nullptr, section_);
+  PostProcessor::applyEnhancedFinalHit(&bass_track, nullptr, nullptr, section_, harmony_);
 
   for (const auto& note : bass_track.notes()) {
     if (note.start_tick >= final_beat_start) {
@@ -543,7 +553,7 @@ TEST_F(EnhancedFinalHitTest, OnlyAppliesWhenExitPatternIsFinalHit) {
   MidiTrack drum_track;
   size_t original_count = drum_track.notes().size();
 
-  PostProcessor::applyEnhancedFinalHit(nullptr, &drum_track, nullptr, nullptr, other_section);
+  PostProcessor::applyEnhancedFinalHit(nullptr, &drum_track, nullptr, other_section, harmony_);
 
   EXPECT_EQ(drum_track.notes().size(), original_count)
       << "Should not add notes when exit_pattern is not FinalHit";
@@ -557,7 +567,7 @@ TEST_F(EnhancedFinalHitTest, AddsMissingKickOnFinalBeat) {
   drum_track.addNote(NoteEventBuilder::create(0, TICKS_PER_BEAT / 2, KICK, 80));
   drum_track.addNote(NoteEventBuilder::create(TICKS_PER_BAR, TICKS_PER_BEAT / 2, SNARE, 85));
 
-  PostProcessor::applyEnhancedFinalHit(nullptr, &drum_track, nullptr, nullptr, section_);
+  PostProcessor::applyEnhancedFinalHit(nullptr, &drum_track, nullptr, section_, harmony_);
 
   Tick final_beat_start = 4 * TICKS_PER_BAR - TICKS_PER_BEAT;
   Tick section_end = 4 * TICKS_PER_BAR;
@@ -787,11 +797,15 @@ TEST_F(EnhancedFinalHitTest, AddedNotesHavePostProcessProvenance) {
   // Add a note so drum_track is not empty (required for applyEnhancedFinalHit)
   drum_track.addNote(NoteEventBuilder::create(0, TICKS_PER_BEAT / 2, KICK, 80));
 
-  PostProcessor::applyEnhancedFinalHit(&bass_track, &drum_track, nullptr, nullptr, section_);
+  harmony_.setChordDegree(4);
+
+  PostProcessor::applyEnhancedFinalHit(&bass_track, &drum_track, nullptr, section_, harmony_);
 
   Tick final_beat_start = 4 * TICKS_PER_BAR - TICKS_PER_BEAT;
 
-  // Check bass note provenance
+  // The bass note is pitched, so it is created through the harmony-aware API
+  // and its provenance names the chord it was created under. The drum notes
+  // below are unpitched and carry no chord.
   for (const auto& note : bass_track.notes()) {
     if (note.start_tick >= final_beat_start) {
       EXPECT_EQ(note.prov_source, static_cast<uint8_t>(NoteSource::PostProcess))
@@ -800,8 +814,8 @@ TEST_F(EnhancedFinalHitTest, AddedNotesHavePostProcessProvenance) {
           << "prov_lookup_tick should match start tick";
       EXPECT_EQ(note.prov_original_pitch, note.note)
           << "prov_original_pitch should match note pitch";
-      EXPECT_EQ(note.prov_chord_degree, -1)
-          << "prov_chord_degree should be -1 for PostProcessor notes";
+      EXPECT_EQ(note.prov_chord_degree, 4)
+          << "prov_chord_degree should record the degree harmony reported at the final beat";
     }
   }
 
@@ -814,6 +828,7 @@ TEST_F(EnhancedFinalHitTest, AddedNotesHavePostProcessProvenance) {
           << "prov_lookup_tick should match start tick";
       EXPECT_EQ(note.prov_original_pitch, note.note)
           << "prov_original_pitch should match note pitch";
+      EXPECT_EQ(note.prov_chord_degree, -1) << "an unpitched drum note names no chord";
     }
   }
 }
@@ -830,7 +845,7 @@ TEST_F(EnhancedFinalHitTest, BassPitchUsesCollisionCheckWhenHarmonyProvided) {
 
   MidiTrack bass_track;  // Empty - no existing bass note on final beat
 
-  PostProcessor::applyEnhancedFinalHit(&bass_track, nullptr, nullptr, nullptr, section_, &harmony);
+  PostProcessor::applyEnhancedFinalHit(&bass_track, nullptr, nullptr, section_, harmony);
 
   // Bass note should still be added (collision check is best-effort)
   EXPECT_FALSE(bass_track.notes().empty())
@@ -857,7 +872,7 @@ TEST_F(EnhancedFinalHitTest, BassPitchUnchangedWhenSafe) {
 
   MidiTrack bass_track;  // Empty - forces adding a new note
 
-  PostProcessor::applyEnhancedFinalHit(&bass_track, nullptr, nullptr, nullptr, section_, &harmony);
+  PostProcessor::applyEnhancedFinalHit(&bass_track, nullptr, nullptr, section_, harmony);
 
   Tick final_beat_start = 4 * TICKS_PER_BAR - TICKS_PER_BEAT;
   for (const auto& note : bass_track.notes()) {
@@ -877,7 +892,7 @@ TEST_F(EnhancedFinalHitTest, AddedBassNoteIsRegisteredWithHarmony) {
   MidiTrack bass_track;  // Empty - forces a new note
   int before = harmony.getRegisteredNoteCount();
 
-  PostProcessor::applyEnhancedFinalHit(&bass_track, nullptr, nullptr, nullptr, section_, &harmony);
+  PostProcessor::applyEnhancedFinalHit(&bass_track, nullptr, nullptr, section_, harmony);
 
   ASSERT_FALSE(bass_track.notes().empty());
   EXPECT_GT(harmony.getRegisteredNoteCount(), before)
@@ -894,26 +909,34 @@ TEST_F(EnhancedFinalHitTest, AddedBassNoteIsRegisteredEvenWhenNothingIsSafe) {
   MidiTrack bass_track;
   int before = harmony.getRegisteredNoteCount();
 
-  PostProcessor::applyEnhancedFinalHit(&bass_track, nullptr, nullptr, nullptr, section_, &harmony);
+  PostProcessor::applyEnhancedFinalHit(&bass_track, nullptr, nullptr, section_, harmony);
 
   ASSERT_FALSE(bass_track.notes().empty());
   EXPECT_GT(harmony.getRegisteredNoteCount(), before)
       << "The fallback final-hit bass note bypassed harmony registration";
 }
 
-TEST_F(EnhancedFinalHitTest, BassPitchFallsBackToDefaultWithoutHarmony) {
-  // When no harmony context is provided (nullptr), the default C2 should be used.
+TEST_F(EnhancedFinalHitTest, BassFallsBackToTheRootWhenNoPitchIsSafe) {
+  // An ending without its bass is worse than an ending whose bass is not the
+  // pitch the search would have preferred, so when the search finds nothing the
+  // default C2 root goes in rather than nothing at all.
+  test::StubHarmonyContext harmony;
+  harmony.setAllPitchesSafe(false);
+  harmony.setChordTones({0, 4, 7});
 
   MidiTrack bass_track;  // Empty
 
-  PostProcessor::applyEnhancedFinalHit(&bass_track, nullptr, nullptr, nullptr, section_, nullptr);
+  PostProcessor::applyEnhancedFinalHit(&bass_track, nullptr, nullptr, section_, harmony);
 
   Tick final_beat_start = 4 * TICKS_PER_BAR - TICKS_PER_BEAT;
+  bool has_final_bass = false;
   for (const auto& note : bass_track.notes()) {
     if (note.start_tick == final_beat_start) {
-      EXPECT_EQ(note.note, 36u) << "Bass note should be C2 (36) when no harmony context";
+      has_final_bass = true;
+      EXPECT_EQ(note.note, 36u) << "Bass note should be C2 (36) when the search found nothing safe";
     }
   }
+  EXPECT_TRUE(has_final_bass) << "The ending must keep its bass even when no pitch is safe";
 }
 
 #ifdef MIDISKETCH_NOTE_PROVENANCE
@@ -927,7 +950,7 @@ TEST_F(EnhancedFinalHitTest, BassPitchProvenanceTracksOriginalWhenCollisionResol
 
   MidiTrack bass_track;
 
-  PostProcessor::applyEnhancedFinalHit(&bass_track, nullptr, nullptr, nullptr, section_, &harmony);
+  PostProcessor::applyEnhancedFinalHit(&bass_track, nullptr, nullptr, section_, harmony);
 
   Tick final_beat_start = 4 * TICKS_PER_BAR - TICKS_PER_BEAT;
   for (const auto& note : bass_track.notes()) {
