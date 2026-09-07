@@ -2,8 +2,8 @@
  * @file chord_collision_regression_test.cpp
  * @brief Safety net tests for chord-bass collision detection.
  *
- * Tests across all 9 blueprints with multiple seeds to detect regressions
- * that significantly increase bass-chord dissonant clashes.
+ * Tests across every shipped blueprint with multiple seeds to detect
+ * regressions that significantly increase bass-chord dissonant clashes.
  */
 
 #include <gtest/gtest.h>
@@ -17,6 +17,7 @@
 #include "core/generator.h"
 #include "core/i_harmony_context.h"
 #include "core/preset_data.h"
+#include "core/production_blueprint.h"
 #include "core/timing_constants.h"
 #include "core/types.h"
 #include "midisketch.h"
@@ -29,7 +30,6 @@ using test::ClashInfo;
 using test::findClashes;
 
 constexpr uint32_t kSeeds[] = {42, 100, 200, 999};
-constexpr uint8_t kAllBlueprints[] = {0, 1, 2, 3, 4, 5, 6, 7, 8};
 
 // Maximum number of bass-chord clashes allowed per song.
 // A small number is acceptable (chord boundary effects, etc.),
@@ -50,7 +50,7 @@ class ChordCollisionRegressionTest : public ::testing::Test {
 
 // Test bass-chord collisions across all blueprint/seed combinations
 TEST_F(ChordCollisionRegressionTest, BassChordClashesBelowThreshold) {
-  for (uint8_t blueprint : kAllBlueprints) {
+  for (uint8_t blueprint = 0; blueprint < getProductionBlueprintCount(); ++blueprint) {
     for (uint32_t seed : kSeeds) {
       generateSong(seed, blueprint);
 
@@ -78,7 +78,7 @@ TEST_F(ChordCollisionRegressionTest, BassChordClashesBelowThreshold) {
 TEST_F(ChordCollisionRegressionTest, BassChordMinor2ndClashesLimited) {
   constexpr size_t kMaxMinor2ndClashes = 10;
 
-  for (uint8_t blueprint : kAllBlueprints) {
+  for (uint8_t blueprint = 0; blueprint < getProductionBlueprintCount(); ++blueprint) {
     for (uint32_t seed : kSeeds) {
       generateSong(seed, blueprint);
 
@@ -144,7 +144,7 @@ TEST_F(ChordCollisionRegressionTest, TotalClashCountBelowThreshold) {
   // harmonic quality improves. See CLAUDE.md 2.3.
   constexpr size_t kMaxTotalClashes = 3;
 
-  for (uint8_t blueprint : kAllBlueprints) {
+  for (uint8_t blueprint = 0; blueprint < getProductionBlueprintCount(); ++blueprint) {
     // Use just one seed per blueprint for total clash analysis (it's expensive)
     generateSong(42, blueprint);
 
