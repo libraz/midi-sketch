@@ -998,43 +998,84 @@ TEST(AuxTest, MotifCounterRhythmicComplementation) {
   }
 }
 
-TEST(AuxTest, MotifCounterAvoidsVocalCollision) {
-  AuxGenerator generator;
-  auto ctx = createTestContext();
-  auto main_melody = createTestMainMelody();
-  ctx.main_melody = &main_melody;
-  HarmonyContext harmony;
-  std::mt19937 rng(42);
-
-  MidiTrack vocal_track;
-  for (const auto& note : main_melody) {
-    vocal_track.addNote(note);
-  }
-  VocalAnalysis va = analyzeVocal(vocal_track);
-
-  AuxConfig config;
-  config.function = AuxFunction::MotifCounter;
-  config.velocity_ratio = 0.7f;
-  config.density_ratio = 1.0f;
-
-  auto notes = generator.generateMotifCounter(ctx, config, harmony, va, rng);
-
-  int collision_count = 0;
-  for (const auto& counter_note : notes) {
+// Counts minor 2nd / major 7th clashes between a counter line and the vocal it
+// is written against.
+int countSemitoneClashes(const std::vector<NoteEvent>& counter,
+                         const std::vector<NoteEvent>& vocal) {
+  int clashes = 0;
+  for (const auto& counter_note : counter) {
     Tick counter_end = counter_note.start_tick + counter_note.duration;
-    for (const auto& vocal_note : main_melody) {
+    for (const auto& vocal_note : vocal) {
       Tick vocal_end = vocal_note.start_tick + vocal_note.duration;
       if (counter_note.start_tick < vocal_end && vocal_note.start_tick < counter_end) {
         int interval =
             std::abs(static_cast<int>(counter_note.note) - static_cast<int>(vocal_note.note)) % 12;
         if (interval == 1 || interval == 11) {
-          collision_count++;
+          clashes++;
         }
       }
     }
   }
+  return clashes;
+}
 
-  EXPECT_LT(collision_count, 3) << "MotifCounter should minimize minor 2nd collisions";
+// Builds a moving vocal line whose extremes straddle |center|, one note per beat.
+std::vector<NoteEvent> createMovingVocal(int center, int bars) {
+  static const int8_t kContour[8] = {0, 2, 4, 5, 4, 2, -1, 0};
+  std::vector<NoteEvent> melody;
+  Tick current = 0;
+  for (int idx = 0; idx < bars * 4; ++idx) {
+    melody.push_back(NoteEventTestHelper::create(
+        current, TICKS_PER_BEAT / 2, static_cast<uint8_t>(center + kContour[idx % 8]), 100));
+    current += TICKS_PER_BEAT;
+  }
+  return melody;
+}
+
+TEST(AuxTest, MotifCounterAvoidsVocalCollision) {
+  AuxGenerator generator;
+
+  AuxConfig config;
+  config.function = AuxFunction::MotifCounter;
+  config.velocity_ratio = 0.7f;
+  config.density_ratio = 1.0f;
+  // The placement fields decide which pitches the counter may use at all, so the
+  // assertion below is only meaningful with them pinned. These are the values
+  // generateFullTrack() feeds MotifCounter on verse sections.
+  config.range_offset = -12;
+  config.range_width = 12;
+  config.sync_phrase_boundary = true;
+
+  // MotifCounter places itself against the vocal's register, and picks a
+  // different register for a high, a low and a middle vocal. Sweeping all three
+  // keeps the assertion from resting on whichever branch one fixture happens to
+  // take.
+  for (int vocal_center : {56, 66, 76}) {
+    auto main_melody = createMovingVocal(vocal_center, 4);
+
+    auto ctx = createTestContext();
+    ctx.main_melody = &main_melody;
+
+    MidiTrack vocal_track;
+    for (const auto& note : main_melody) {
+      vocal_track.addNote(note);
+    }
+    VocalAnalysis va = analyzeVocal(vocal_track);
+
+    // The property is a rule about pitch selection, not a property of one die
+    // roll, so it has to hold for every seed rather than a chosen one.
+    for (uint32_t seed : {1u, 42u, 777u, 2024u, 31337u}) {
+      HarmonyContext harmony;
+      std::mt19937 rng(seed);
+      auto notes = generator.generateMotifCounter(ctx, config, harmony, va, rng);
+
+      ASSERT_FALSE(notes.empty()) << "MotifCounter produced nothing to judge (vocal center "
+                                  << vocal_center << ")";
+      EXPECT_LT(countSemitoneClashes(notes, main_melody), 3)
+          << "MotifCounter should minimize minor 2nd collisions (vocal center " << vocal_center
+          << ", seed " << seed << ")";
+    }
+  }
 }
 
 // ============================================================================
