@@ -1129,7 +1129,7 @@ TEST_F(ProductionBlueprintTest, BgmOnlyWithTraditionalNoMotif) {
 }
 
 // ============================================================================
-// NEW: SectionSlot Extended Fields Tests (exit_pattern, time_feel, etc.)
+// SectionSlot Extended Fields Tests (exit_pattern, time_feel, etc.)
 // ============================================================================
 
 TEST_F(ProductionBlueprintTest, BalladHasLaidBackTimeFeel) {
@@ -1329,7 +1329,7 @@ TEST_F(ProductionBlueprintTest, LastChorusHasFinalHitExitPattern) {
 }
 
 // ============================================================================
-// NEW: buildStructureFromBlueprint() Transfer Tests
+// buildStructureFromBlueprint() Transfer Tests
 // ============================================================================
 
 TEST_F(ProductionBlueprintTest, BuildStructureTransfersTimeFeel) {
@@ -1416,7 +1416,7 @@ TEST_F(ProductionBlueprintTest, BuildStructureAutoAssignsExitPatternWhenNone) {
 }
 
 // ============================================================================
-// NEW: ChorusDropStyle Enum Tests
+// ChorusDropStyle Enum Tests
 // ============================================================================
 
 TEST_F(ProductionBlueprintTest, ChorusDropStyleEnumValues) {
@@ -1445,7 +1445,7 @@ TEST_F(ProductionBlueprintTest, ExitPatternEnumValues) {
 }
 
 // ============================================================================
-// NEW: SectionSlot Default Values Tests
+// SectionSlot Default Values Tests
 // ============================================================================
 
 TEST_F(ProductionBlueprintTest, SectionSlotDefaultValues) {
@@ -1473,7 +1473,7 @@ TEST_F(ProductionBlueprintTest, SectionSlotDefaultValues) {
 }
 
 // ============================================================================
-// NEW: Integration Tests - Full Generation with New Features
+// Integration Tests - Full Generation with Extended Section Fields
 // ============================================================================
 
 TEST_F(ProductionBlueprintTest, BalladGenerationPreservesTimeFeel) {
@@ -1537,7 +1537,7 @@ TEST_F(ProductionBlueprintTest, IdolEmoGenerationWithEmotionalDynamics) {
 }
 
 // ============================================================================
-// NEW: InstrumentSkillLevel and InstrumentModelMode Tests
+// InstrumentSkillLevel and InstrumentModelMode Tests
 // ============================================================================
 
 TEST_F(ProductionBlueprintTest, InstrumentSkillLevelEnumValues) {
@@ -1685,34 +1685,6 @@ TEST_F(ProductionBlueprintTest, AddictiveModeGeneratesARiffOnAnyBlueprint) {
   gen.generate(params);
   EXPECT_FALSE(gen.getSong().motif().notes().empty())
       << "addictive_mode asks for a fixed riff, so the motif track cannot be empty";
-}
-
-// ============================================================================
-// Declarations reaching the accompaniment
-// ============================================================================
-
-/// @brief Generate a shipped blueprint end to end.
-Generator generateBlueprint(uint8_t blueprint_id) {
-  GeneratorParams params;
-  params.seed = 20240903;
-  params.blueprint_id = blueprint_id;
-
-  Generator gen;
-  gen.generate(params);
-  return gen;
-}
-
-/// @brief Group a track's notes by onset tick.
-std::map<Tick, std::vector<uint8_t>> notesByOnset(const MidiTrack& track) {
-  std::map<Tick, std::vector<uint8_t>> by_onset;
-  for (const auto& note : track.notes()) {
-    by_onset[note.start_tick].push_back(note.note);
-  }
-  for (auto& [tick, pitches] : by_onset) {
-    (void)tick;
-    std::sort(pitches.begin(), pitches.end());
-  }
-  return by_onset;
 }
 
 // ============================================================================
