@@ -2,8 +2,9 @@
  * @file emotion_curve_velocity_test.cpp
  * @brief Tests for EmotionCurve velocity integration in Generator.
  *
- * Verifies that EmotionCurve's tension/energy parameters affect
- * note velocities throughout each section, not just at transitions.
+ * Verifies that the curve's energy affects note velocities throughout each
+ * section, not just at transitions: it sets both the section's velocity level
+ * and the ceiling above it.
  */
 
 #include <gtest/gtest.h>
@@ -102,36 +103,51 @@ TEST_F(EmotionCurveVelocityIntegrationTest, HighEnergySectionHasLouderVelocity) 
       << "A avg: " << a_avg << ", Chorus avg: " << chorus_avg;
 }
 
-TEST_F(EmotionCurveVelocityIntegrationTest, LowTensionCapsVelocity) {
-  // Intro has low tension, which should cap maximum velocity
-  // Using chord track since it's always populated in all sections
-  generator_.generate(params_);
+// The ceiling reads the section's energy, not its tension, and it is tiered:
+// below the low threshold it pulls the cap down, above it the cap sits at the
+// base it was given. An intro at the default mood lands on the threshold, so
+// nothing is capped there and asking about the intro at that mood asks nothing.
+// A mood that scales the curve down is what puts the intro under the threshold
+// and makes the cap real; the bound comes from the same function the pipeline
+// calls, so no later pass may raise the section past it.
+TEST_F(EmotionCurveVelocityIntegrationTest, IntroIsCappedByItsLowEnergy) {
+  const Mood kQuietMoods[] = {Mood::Sentimental, Mood::Chill, Mood::Ballad};
 
-  const auto& sections = generator_.getSong().arrangement().sections();
-  const auto& chord = generator_.getSong().chord();
+  size_t asked = 0;
+  for (Mood mood : kQuietMoods) {
+    params_.mood = mood;
+    generator_.generate(params_);
 
-  const Section* intro = findSectionByType(sections, SectionType::Intro);
-  ASSERT_NE(intro, nullptr) << "Velocity fixture must contain an Intro section";
+    const auto& sections = generator_.getSong().arrangement().sections();
+    const auto& curve = generator_.getEmotionCurve();
 
-  ASSERT_GT(countNotesInSection(chord, *intro), 0)
-      << "Chord track must contain notes in the Intro section";
+    for (size_t i = 0; i < sections.size(); ++i) {
+      if (sections[i].type != SectionType::Intro) continue;
 
-  Tick section_start = intro->start_tick;
-  Tick section_end = section_start + intro->bars * TICKS_PER_BAR;
+      uint8_t ceiling = calculateVelocityCeiling(127, curve.getEmotion(i).energy);
+      if (ceiling >= 127) continue;  // Energy is above the tier, nothing is capped
 
-  // Check that Intro velocities are capped (tension limits ceiling)
-  // With tension ~0.2, ceiling should be reduced from 127
-  uint8_t max_velocity = 0;
-  for (const auto& note : chord.notes()) {
-    if (note.start_tick >= section_start && note.start_tick < section_end) {
-      max_velocity = std::max(max_velocity, note.velocity);
+      Tick end = sections[i].start_tick + sections[i].bars * TICKS_PER_BAR;
+      uint8_t peak = 0;
+      for (const auto* track : {&generator_.getSong().chord(), &generator_.getSong().vocal(),
+                                &generator_.getSong().bass()}) {
+        for (const auto& note : track->notes()) {
+          if (note.start_tick < sections[i].start_tick || note.start_tick >= end) continue;
+          peak = std::max(peak, note.velocity);
+        }
+      }
+      if (peak == 0) continue;
+
+      EXPECT_LE(peak, ceiling) << "mood=" << static_cast<int>(mood) << " intro at tick "
+                               << sections[i].start_tick << " peaks at " << static_cast<int>(peak)
+                               << ", above the ceiling its energy imposes ("
+                               << static_cast<int>(ceiling) << ")";
+      ++asked;
     }
   }
-
-  // Low tension sections should not exceed ~115 velocity (accounting for processing variance)
-  // This tests that calculateVelocityCeiling is being applied
-  EXPECT_LE(max_velocity, 115) << "Intro (low tension) should have capped velocity. Max found: "
-                               << static_cast<int>(max_velocity);
+  // Without a mood that scales the intro below the tier threshold, the ceiling
+  // sits at the maximum and nothing above was asked.
+  EXPECT_GT(asked, 0u);
 }
 
 TEST_F(EmotionCurveVelocityIntegrationTest, AllSectionsHaveEmotionApplied) {

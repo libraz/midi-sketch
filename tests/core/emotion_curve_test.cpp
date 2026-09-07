@@ -8,11 +8,22 @@
 #include <gtest/gtest.h>
 
 #include "core/generator.h"
+#include "core/preset_data.h"
 #include "core/structure.h"
+#include "core/velocity.h"
 #include "test_support/generator_test_fixture.h"
 
 namespace midisketch {
 namespace {
+
+/// Structures wide enough to contain every section relation the curve reasons
+/// about: a B before a Chorus, a repeated Chorus, and an Outro.
+constexpr StructurePattern kCurvePatterns[] = {
+    StructurePattern::StandardPop,
+    StructurePattern::BuildUp,
+    StructurePattern::FullPop,
+    StructurePattern::RepeatChorus,
+};
 
 // ============================================================================
 // EmotionCurve Basic Tests
@@ -34,24 +45,24 @@ TEST(EmotionCurveTest, PlannedAfterPlan) {
   EXPECT_EQ(curve.size(), sections.size());
 }
 
-TEST(EmotionCurveTest, GetEmotionInRange) {
-  EmotionCurve curve;
+// The post-processing pipeline hands energy to calculateVelocityCeiling and to
+// the section velocity factor, both of which are written for a 0.0-1.0 level.
+// Mood scaling multiplies the whole curve by up to 1.2 before the clamp, so it
+// is the clamp that keeps that assumption true -- and the default mood scales
+// by 1.0, which asks nothing.
+TEST(EmotionCurveTest, EnergyStaysInRangeForEveryMood) {
+  for (uint8_t mood = 0; mood < MOOD_COUNT; ++mood) {
+    for (StructurePattern pattern : kCurvePatterns) {
+      std::vector<Section> sections = buildStructure(pattern);
+      EmotionCurve curve;
+      curve.plan(sections, static_cast<Mood>(mood));
 
-  std::vector<Section> sections = buildStructure(StructurePattern::StandardPop);
-  curve.plan(sections, Mood::ModernPop);
-
-  for (size_t i = 0; i < sections.size(); ++i) {
-    const auto& emotion = curve.getEmotion(i);
-    EXPECT_GE(emotion.tension, 0.0f);
-    EXPECT_LE(emotion.tension, 1.0f);
-    EXPECT_GE(emotion.energy, 0.0f);
-    EXPECT_LE(emotion.energy, 1.0f);
-    EXPECT_GE(emotion.resolution_need, 0.0f);
-    EXPECT_LE(emotion.resolution_need, 1.0f);
-    EXPECT_GE(emotion.pitch_tendency, -3);
-    EXPECT_LE(emotion.pitch_tendency, 3);
-    EXPECT_GE(emotion.density_factor, 0.5f);
-    EXPECT_LE(emotion.density_factor, 1.5f);
+      for (size_t i = 0; i < sections.size(); ++i) {
+        float energy = curve.getEmotion(i).energy;
+        EXPECT_GE(energy, 0.0f) << "mood=" << static_cast<int>(mood) << " section=" << i;
+        EXPECT_LE(energy, 1.0f) << "mood=" << static_cast<int>(mood) << " section=" << i;
+      }
+    }
   }
 }
 
@@ -61,10 +72,12 @@ TEST(EmotionCurveTest, GetEmotionOutOfRange) {
   std::vector<Section> sections = buildStructure(StructurePattern::StandardPop);
   curve.plan(sections, Mood::ModernPop);
 
-  // Out of range should return default
+  // An index past the planned curve returns the neutral midpoint rather than
+  // reading past the end, and neutral means neutral on the wire that is read:
+  // at 0.5 the ceiling stays at whatever base it was given.
   const auto& emotion = curve.getEmotion(999);
-  EXPECT_FLOAT_EQ(emotion.tension, 0.5f);
   EXPECT_FLOAT_EQ(emotion.energy, 0.5f);
+  EXPECT_EQ(calculateVelocityCeiling(100, emotion.energy), 100);
 }
 
 // ============================================================================
@@ -93,21 +106,31 @@ TEST(EmotionCurveTest, ChorusHasHighestEnergy) {
   EXPECT_GT(chorus_energy, max_non_chorus_energy) << "Chorus should have highest energy";
 }
 
-TEST(EmotionCurveTest, BBeforeChorusHasHighTension) {
-  EmotionCurve curve;
+// The run-up into a chorus is carried by energy, which sets both the section's
+// velocity level and its transition ramp. Mood scaling multiplies every section
+// by the same factor and then clamps at the top, so the question is whether the
+// clamp can flatten the climb: a chorus levelled onto the B in front of it
+// would stop being the section it is arranged to rise out of.
+TEST(EmotionCurveTest, BStaysBelowTheChorusItRunsInto) {
+  size_t pairs = 0;
+  for (uint8_t mood = 0; mood < MOOD_COUNT; ++mood) {
+    for (StructurePattern pattern : kCurvePatterns) {
+      std::vector<Section> sections = buildStructure(pattern);
+      EmotionCurve curve;
+      curve.plan(sections, static_cast<Mood>(mood));
 
-  std::vector<Section> sections = buildStructure(StructurePattern::BuildUp);
-  curve.plan(sections, Mood::ModernPop);
-
-  // Find B sections before Chorus
-  for (size_t i = 0; i + 1 < sections.size(); ++i) {
-    if (sections[i].type == SectionType::B && sections[i + 1].type == SectionType::Chorus) {
-      const auto& b_emotion = curve.getEmotion(i);
-      EXPECT_GT(b_emotion.tension, 0.6f) << "B section before Chorus should have high tension";
-      EXPECT_GT(b_emotion.resolution_need, 0.5f)
-          << "B section before Chorus should have high resolution need";
+      for (size_t i = 0; i + 1 < sections.size(); ++i) {
+        if (sections[i].type != SectionType::B || sections[i + 1].type != SectionType::Chorus) {
+          continue;
+        }
+        ++pairs;
+        EXPECT_LT(curve.getEmotion(i).energy, curve.getEmotion(i + 1).energy)
+            << "mood=" << static_cast<int>(mood) << " B at section " << i
+            << " is not below the Chorus it runs into";
+      }
     }
   }
+  EXPECT_GT(pairs, 0u) << "the patterns under test must contain a B before a Chorus";
 }
 
 TEST(EmotionCurveTest, IntroHasLowEnergy) {
@@ -125,21 +148,35 @@ TEST(EmotionCurveTest, IntroHasLowEnergy) {
   }
 }
 
-TEST(EmotionCurveTest, OutroHasLowTension) {
-  EmotionCurve curve;
+// An outro settles, and the field that carries "settled" into the song is the
+// same one the run-up uses. Stated against the chorus rather than against a
+// fixed number, the property survives a mood that scales the whole curve.
+TEST(EmotionCurveTest, OutroSettlesBelowEveryChorus) {
+  size_t outros = 0;
+  for (uint8_t mood = 0; mood < MOOD_COUNT; ++mood) {
+    for (StructurePattern pattern : kCurvePatterns) {
+      std::vector<Section> sections = buildStructure(pattern);
+      EmotionCurve curve;
+      curve.plan(sections, static_cast<Mood>(mood));
 
-  std::vector<Section> sections = buildStructure(StructurePattern::FullPop);
-  curve.plan(sections, Mood::ModernPop);
+      float peak_chorus_energy = -1.0f;
+      for (size_t i = 0; i < sections.size(); ++i) {
+        if (sections[i].type == SectionType::Chorus) {
+          peak_chorus_energy = std::max(peak_chorus_energy, curve.getEmotion(i).energy);
+        }
+      }
+      if (peak_chorus_energy < 0.0f) continue;
 
-  // Find Outro
-  for (size_t i = 0; i < sections.size(); ++i) {
-    if (sections[i].type == SectionType::Outro) {
-      const auto& emotion = curve.getEmotion(i);
-      EXPECT_LT(emotion.tension, 0.3f) << "Outro should have low tension";
-      EXPECT_LT(emotion.resolution_need, 0.3f)
-          << "Outro should have low resolution need (resolved)";
+      for (size_t i = 0; i < sections.size(); ++i) {
+        if (sections[i].type != SectionType::Outro) continue;
+        ++outros;
+        EXPECT_LT(curve.getEmotion(i).energy, peak_chorus_energy)
+            << "mood=" << static_cast<int>(mood) << " Outro at section " << i
+            << " is not below the loudest Chorus";
+      }
     }
   }
+  EXPECT_GT(outros, 0u) << "the patterns under test must contain an Outro";
 }
 
 // ============================================================================
@@ -196,7 +233,8 @@ TEST(EmotionCurveTest, TransitionHintCrescendoBeforeChorus) {
       auto hint = curve.getTransitionHint(i);
       EXPECT_TRUE(hint.crescendo) << "Should crescendo from B to Chorus";
       EXPECT_TRUE(hint.use_fill) << "Should use fill before Chorus";
-      EXPECT_TRUE(hint.use_leading_tone) << "Should use leading tone from B to Chorus";
+      // crescendo only reaches the song through the ramp it sets.
+      EXPECT_GT(hint.velocity_ramp, 1.0f) << "Crescendo should raise the transition ramp";
     }
   }
 }
@@ -351,8 +389,11 @@ TEST_F(EmotionCurveIntegrationTest, VelocityIncreasesInTransitionZone) {
   }
 }
 
+// use_fill is the only transition hint read before generation: it marks the
+// next section for a drum fill while the arrangement is still being built. The
+// arrangement is rebuilt from the marked sections, so the mark has to survive
+// into the sections the song is generated from.
 TEST_F(EmotionCurveIntegrationTest, UseFillAppliedToSectionFillBefore) {
-  // Test that EmotionCurve's use_fill is reflected in Section.fill_before
   params_.structure = StructurePattern::BuildUp;  // Has B -> Chorus transition
   params_.seed = 12345;
 
@@ -361,19 +402,14 @@ TEST_F(EmotionCurveIntegrationTest, UseFillAppliedToSectionFillBefore) {
   const auto& sections = generator_.getSong().arrangement().sections();
   const auto& emotion_curve = generator_.getEmotionCurve();
 
-  // Find transitions where use_fill is true
+  size_t marked = 0;
   for (size_t i = 0; i + 1 < sections.size(); ++i) {
-    auto hint = emotion_curve.getTransitionHint(i);
-
-    // If emotion curve suggests a fill, the next section should have fill_before
-    // (unless it was already set by PeakLevel)
-    if (hint.use_fill) {
-      // At minimum, verify the hint is correctly computed for high-energy transitions
-      if (sections[i].type == SectionType::B && sections[i + 1].type == SectionType::Chorus) {
-        EXPECT_TRUE(hint.use_fill) << "B -> Chorus should have use_fill hint";
-      }
-    }
+    if (!emotion_curve.getTransitionHint(i).use_fill) continue;
+    ++marked;
+    EXPECT_TRUE(sections[i + 1].fill_before)
+        << "section " << (i + 1) << " follows a use_fill transition but carries no fill mark";
   }
+  EXPECT_GT(marked, 0u) << "BuildUp must produce at least one use_fill transition";
 }
 
 TEST_F(EmotionCurveIntegrationTest, FillBeforeReflectedInDrumTrack) {
