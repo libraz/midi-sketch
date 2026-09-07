@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "core/generator.h"
+#include "core/production_blueprint.h"
 #include "core/section_types.h"
 #include "core/song.h"
 #include "core/types.h"
@@ -106,13 +107,23 @@ TEST(GeneratorAddictiveModeTest, CallerRequestedAddictiveModeLocksTheRiffPitches
 // Without the request, a blueprint that does not declare addictive mode keeps
 // its own riff policy; otherwise the test above would pass for the wrong reason.
 TEST(GeneratorAddictiveModeTest, WithoutTheRequestTheBlueprintPolicyStands) {
+  // The blueprint has to declare a policy that is neither LockedPitch nor the
+  // one GeneratorParams starts with. Traditional declares Free, which is that
+  // starting value, so the resolution could stop reading the blueprint entirely
+  // and the expectations below would still hold.
+  constexpr uint8_t kBlueprintId = 2;  // StoryPop: Evolving, no addictive mode
+  const auto& blueprint = getProductionBlueprint(kBlueprintId);
+  ASSERT_NE(blueprint.riff_policy, RiffPolicy::LockedPitch);
+  ASSERT_NE(blueprint.riff_policy, GeneratorParams{}.riff_policy);
+  ASSERT_FALSE(blueprint.addictive_mode);
+
   GeneratorParams params = baseParams();
-  params.blueprint_id = 0;  // Traditional: Free riff policy, no addictive mode
+  params.blueprint_id = kBlueprintId;
   params.addictive_mode = false;
 
   Generator gen;
   gen.generate(params);
-  EXPECT_NE(gen.getParams().riff_policy, RiffPolicy::LockedPitch);
+  EXPECT_EQ(gen.getParams().riff_policy, blueprint.riff_policy);
   EXPECT_FALSE(gen.getParams().addictive_mode);
 }
 

@@ -710,15 +710,22 @@ TEST(GeneratorTest, FormExplicitWithDifferentForm) {
   Generator gen;
   SongConfig config = createDefaultSongConfig(1);  // Dance Pop Emotion, default: FullPop
 
-  // Set form to StandardPop (different from default)
-  config.form = StructurePattern::StandardPop;
+  // The form has to differ from two things, not one. Differing from the style
+  // preset's default is what makes this an explicit choice; differing from
+  // GeneratorParams::structure's own default is what lets the expectation below
+  // fail. A form of StandardPop satisfies the first and not the second, so the
+  // conversion could stop carrying the form at all and this would still pass.
+  const StructurePattern kExplicitForm = StructurePattern::DirectChorus;
+  ASSERT_NE(kExplicitForm, getStylePreset(1).default_form);
+  ASSERT_NE(kExplicitForm, GeneratorParams{}.structure);
+
+  config.form = kExplicitForm;
   config.form_explicit = true;
   config.seed = 12345;
 
   gen.generateFromConfig(config);
 
-  // Should use StandardPop
-  EXPECT_EQ(gen.getParams().structure, StructurePattern::StandardPop);
+  EXPECT_EQ(gen.getParams().structure, kExplicitForm);
 }
 
 TEST(GeneratorTest, FormNotExplicitUsesRandomSelection) {
