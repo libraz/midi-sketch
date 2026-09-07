@@ -19,11 +19,6 @@ namespace midisketch {
 
 namespace {
 
-/// Longer overlaps than this were visible at creation time.
-constexpr Tick kMaxTailOverlap = TICK_QUARTER;
-/// A 32nd-note stub is the shortest musically acceptable remainder (a bass
-/// approach note reduced to a ghost-note blip beats an m9/M7 clash).
-constexpr Tick kMinRemainder = TICK_32ND;
 /// Within two octaves the gate's rule reads the chord and nothing else. Past
 /// it the analyzer keeps a single rule that also reads which voices sound the
 /// interval, so a caller holding only the two notes cannot be answered there.
@@ -46,9 +41,9 @@ Tick tailTrimRemainder(const NoteEvent& earlier, const NoteEvent& later) {
   // too long to touch: a chord stab under a sustained motif was skipped for the
   // length of the motif rather than the length of the stab.
   const Tick later_end = later.start_tick + later.duration;
-  if (std::min(earlier_end, later_end) - later.start_tick > kMaxTailOverlap) return 0;
+  if (std::min(earlier_end, later_end) - later.start_tick > kTailGateMaxOverlap) return 0;
   const Tick remainder = later.start_tick - earlier.start_tick;
-  if (remainder < kMinRemainder) return 0;
+  if (remainder < kTailGateMinRemainder) return 0;
   return remainder;
 }
 

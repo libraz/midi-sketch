@@ -21,6 +21,7 @@
 #include "core/chord_utils.h"
 #include "core/harmony_context.h"
 #include "core/pitch_utils.h"
+#include "core/post_processor.h"
 #include "core/preset_types.h"
 #include "core/song.h"
 #include "core/timing_constants.h"
@@ -280,6 +281,62 @@ TEST(ClashGateTest, AConsonantStabInsideASustainIsLeftAlone) {
 
   ASSERT_EQ(song.motif().notes().size(), 1u);
   EXPECT_EQ(song.motif().notes()[0].duration, motif_duration);
+}
+
+TEST(ClashGateTest, TheDeletePassHandsATailToTheGateAndTheGateShortensIt) {
+  // Deleting is the only answer removeClashingNotesAgainstReference has, and a
+  // note whose last ticks are clipped by one arriving late does not deserve it.
+  // The pair belongs to this gate, which stops the earlier note where the later
+  // one begins. The overlap here is exactly the longest the gate accepts, the
+  // boundary the delete pass used to take whole.
+  Arrangement arrangement = singleSection();
+  HarmonyContext harmony;
+  harmony.initialize(arrangement, getChordProgression(0), Mood::StraightPop);
+
+  const uint8_t chord_pitch = 65;  // F4
+  const uint8_t vocal_pitch = 59;  // B3, a tritone below
+  // What the gate will leave of the chord note. Stated as its own value so the
+  // assertion below can be the equation the gate states rather than a number.
+  const Tick remainder = TICK_QUARTER;
+
+  // A chord that owns no tritone of its own and does not contain both voices,
+  // so the pair is one both passes call a clash.
+  Tick chord_tick = 0;
+  bool found = false;
+  for (Tick tick = 0; tick + remainder + kTailGateMaxOverlap < 4 * TICKS_PER_BAR;
+       tick += TICK_QUARTER) {
+    const int normalized = ((degreeAt(harmony, tick + remainder) % 7) + 7) % 7;
+    if (normalized == 4 || normalized == 6) continue;
+    if (bothVoicesAreChordTones(chord_pitch, vocal_pitch,
+                                harmony.getChordTonesAt(tick + remainder))) {
+      continue;
+    }
+    chord_tick = tick;
+    found = true;
+    break;
+  }
+  ASSERT_TRUE(found) << "the fixture progression must state a chord a tritone clashes over";
+
+  Song song;
+  song.chord().addNote(
+      NoteEventBuilder::create(chord_tick, remainder + kTailGateMaxOverlap, chord_pitch, 90));
+  song.vocal().addNote(
+      NoteEventBuilder::create(chord_tick + remainder, kTailGateMaxOverlap, vocal_pitch, 90));
+  harmony.registerTrack(song.chord(), TrackRole::Chord);
+  harmony.registerTrack(song.vocal(), TrackRole::Vocal);
+
+  PostProcessor::fixTrackVocalClashes(song.chord(), song.vocal(), TrackRole::Chord, &harmony);
+  ASSERT_EQ(song.chord().notes().size(), 1u)
+      << "a tail this gate answers for is not the delete pass's note to remove";
+
+  trimClashingNoteTails(song, harmony);
+
+  ASSERT_EQ(song.chord().notes().size(), 1u);
+  ASSERT_EQ(song.vocal().notes().size(), 1u) << "the vocal is not the voice that gives way here";
+  EXPECT_EQ(song.chord().notes()[0].duration,
+            song.vocal().notes()[0].start_tick - song.chord().notes()[0].start_tick)
+      << "the gate should stop the chord note exactly where the vocal begins; leaving it whole "
+         "means the clash the delete pass was holding back now sounds";
 }
 
 TEST(ClashGateTest, NoGeneratedSongLeavesAClashTheGateItselfWouldTake) {

@@ -23,6 +23,7 @@
 #define MIDISKETCH_CORE_TRACK_CLASH_GATES_H
 
 #include "core/basic_types.h"
+#include "core/timing_constants.h"
 
 namespace midisketch {
 
@@ -30,6 +31,26 @@ class Song;
 class MidiTrack;
 class IHarmonyContext;
 class IChordLookup;
+
+/// @brief The longest the two voices of a tail may sound together for the gate
+///        to treat the overlap as accidental.
+///
+/// Longer than this and the simultaneity was visible when the notes were
+/// placed, so it is a voicing decision rather than a spill.
+///
+/// Stated here rather than kept private because it is the boundary of what the
+/// gate answers for, and a caller that hands it a pair -- or a test that builds
+/// one -- has to be able to say which side of the boundary it is on. Writing
+/// the number again somewhere else is how a fixture ends up sitting exactly on
+/// it with nobody able to see that it does.
+constexpr Tick kTailGateMaxOverlap = TICK_QUARTER;
+
+/// @brief The shortest the gate will leave of a note it shortens.
+///
+/// A 32nd-note stub is the shortest musically acceptable remainder (a bass
+/// approach note reduced to a ghost-note blip beats an m9/M7 clash). Below it
+/// the gate declines and the note keeps its length.
+constexpr Tick kTailGateMinRemainder = TICK_32ND;
 
 /// @brief Whether trimClashingNoteTails will shorten @p earlier because of @p later.
 ///

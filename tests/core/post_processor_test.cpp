@@ -26,6 +26,7 @@
 #include "core/song.h"
 #include "core/timing_constants.h"
 #include "core/track_base.h"
+#include "core/track_clash_gates.h"
 #include "core/types.h"
 #include "midisketch.h"
 #include "test_support/stub_harmony_context.h"
@@ -1887,10 +1888,15 @@ TEST(PostProcessorTest, FixTrackVocalClashesReadsChordAtOverlapStart) {
   // tones, but the two voices only meet after the chord has turned to C major,
   // where neither pitch belongs. The chord sounding where they overlap is the
   // one that decides.
-  constexpr Tick kBoundary = 480;
+  constexpr Tick kBoundary = TICK_QUARTER;
+  // The two have to sound together for longer than the tail gate will take, or
+  // this pass hands the pair over and never reaches the question the test is
+  // about. Derived from the gate's own boundary rather than written again, so
+  // a fixture cannot come to rest exactly on it unnoticed.
+  constexpr Tick kOverlap = kTailGateMaxOverlap + TICK_SIXTEENTH;
   MidiTrack chord, vocal;
-  chord.addNote(NoteEventBuilder::create(0, 960, 65, 80));          // F4 across the change
-  vocal.addNote(NoteEventBuilder::create(kBoundary, 480, 59, 80));  // B3 after the change
+  chord.addNote(NoteEventBuilder::create(0, kBoundary + kOverlap, 65, 80));  // F4 across the change
+  vocal.addNote(NoteEventBuilder::create(kBoundary, kOverlap, 59, 80));      // B3 after the change
 
   ChordChangeLookup lookup({7, 11, 2, 5}, {0, 4, 7}, kBoundary);  // G7 then C major
 
