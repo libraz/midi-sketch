@@ -38,25 +38,25 @@ struct SectionEmotion {
   /// Harmonic unrest, which a pop chorus resolves at its loudest point. That is
   /// why the velocity ceiling asks energy instead: the two point opposite ways
   /// at exactly the section the arrangement made the peak.
-  float tension;
-  float energy;  ///< Energy level 0.0-1.0 (0=calm, 1=explosive)
+  float tension = 0.5f;
+  float energy = 0.5f;  ///< Energy level 0.0-1.0 (0=calm, 1=explosive)
   /// @brief Need for resolution 0.0-1.0 (0=stable, 1=desperate for resolution).
   ///
   /// Carried by the curve's own rules and not read by any track.
   /// getChordTonePreferenceBoost() converts it into a chord-tone bias, but
   /// nothing in the generation path calls that function.
-  float resolution_need;
+  float resolution_need = 0.3f;
   /// @brief Pitch direction tendency -3..+3 (-=down, +=up), not read by any track.
   ///
   /// The run-up into the next section is driven by SectionTransition, which
   /// carries a field of the same name that the vocal transition pass does read.
-  int8_t pitch_tendency;
+  int8_t pitch_tendency = 0;
   /// @brief Planned density weight 0.5-1.5, carried by the curve's own rules.
   ///
   /// Section note counts are set by Section::density_percent during generation.
   /// This value records the arc's density intent alongside it and is not applied
   /// to any track.
-  float density_factor;
+  float density_factor = 1.0f;
 };
 
 /**
@@ -69,11 +69,11 @@ struct SectionEmotion {
  * from, and the two pitch hints have no reader.
  */
 struct TransitionHint {
-  bool crescendo;         ///< Energy is rising into the next section; sets velocity_ramp
-  bool use_fill;          ///< Should add drum fill at boundary
-  int8_t approach_pitch;  ///< Pitch approach direction (-1=down, 0=any, +1=up), not read
-  float velocity_ramp;    ///< Velocity change rate (>1 = increase, <1 = decrease)
-  bool use_leading_tone;  ///< Insert leading tone before next section, not read
+  bool crescendo = false;         ///< Energy is rising into the next section; sets velocity_ramp
+  bool use_fill = false;          ///< Should add drum fill at boundary
+  int8_t approach_pitch = 0;      ///< Pitch approach direction (-1=down, 0=any, +1=up), not read
+  float velocity_ramp = 1.0f;     ///< Velocity change rate (>1 = increase, <1 = decrease)
+  bool use_leading_tone = false;  ///< Insert leading tone before next section, not read
 };
 
 /**
