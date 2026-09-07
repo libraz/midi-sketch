@@ -24,6 +24,12 @@ enum class DissonanceSeverity : uint8_t {
   High     ///< Severe clash (minor 2nd, major 7th)
 };
 
+// Callers order these as well as match them, so a reordering would silently
+// invert every comparison rather than fail to compile.
+static_assert(DissonanceSeverity::Low < DissonanceSeverity::Medium &&
+                  DissonanceSeverity::Medium < DissonanceSeverity::High,
+              "DissonanceSeverity must be declared in increasing order of severity");
+
 /// @brief Type of dissonance detected.
 enum class DissonanceType : uint8_t {
   SimultaneousClash,         ///< Two notes with dissonant interval
