@@ -710,10 +710,8 @@ TEST(DissonanceTest, DeduplicationWorks) {
 // true severity without artificial reduction, allowing the generator to
 // be improved based on accurate feedback.
 
-// Test: Aux track issues are properly detected with correct severity
+// Test: the aux track is scanned, and graded by the same rule as its peers
 TEST(DissonanceTest, AuxTrackIssuesAreDetected) {
-  // Generate a song and verify Aux track issues are detected
-  // (not artificially suppressed to Low)
   Generator gen;
   GeneratorParams params{};
   params.structure = StructurePattern::FullPop;
@@ -726,45 +724,58 @@ TEST(DissonanceTest, AuxTrackIssuesAreDetected) {
   params.seed = 54321;
 
   gen.generate(params);
-  const auto& song = gen.getSong();
+  const Song& generated = gen.getSong();
 
-  auto report = analyzeDissonance(song, params);
-
-  expectSummaryMatchesIssues(report);
-
-  // If there are aux issues, they should be detected with proper severity
-  // (not all forced to Low)
-  int aux_issues = 0;
-  for (const auto& issue : report.issues) {
-    bool aux_involved = false;
-    if (issue.type == DissonanceType::SimultaneousClash) {
-      for (const auto& note_info : issue.notes) {
-        if (note_info.track_name == "aux") {
-          aux_involved = true;
-          break;
-        }
-      }
-    } else if (issue.type == DissonanceType::NonChordTone) {
-      aux_involved = (issue.track_name == "aux");
-    }
-
-    if (aux_involved) {
-      aux_issues++;
-    }
-  }
-
-  // Severity is derived from beat strength, so an aux non-chord tone landing on
-  // beat 1 is never Low. This is what "proper severity" means for the aux track.
-  for (const auto& issue : report.issues) {
-    if (issue.type != DissonanceType::NonChordTone || issue.track_name != "aux") continue;
-    if (issue.beat >= 1.0f && issue.beat < 1.25f) {
-      EXPECT_NE(issue.severity, DissonanceSeverity::Low)
-          << "Aux non-chord tone on beat 1 at bar " << issue.bar << " was not elevated";
-    }
-  }
+  expectSummaryMatchesIssues(analyzeDissonance(generated, params));
 
   // The aux track is enabled for this fixture, so it must be part of what was scanned.
-  EXPECT_FALSE(song.aux().notes().empty()) << "Aux track produced no notes to analyze";
+  ASSERT_FALSE(generated.aux().notes().empty()) << "Aux track produced no notes to analyze";
+
+  // Whether a generated song happens to leave an aux dissonance behind is the
+  // generator's business and varies by seed, so asking that of the report says
+  // nothing about the analyzer. Plant one instead: a minor 2nd is dissonant at
+  // every spacing and over every chord, and an overlap of a whole bar is far
+  // past the window in which a stepwise clash passes as a passing tone. The
+  // interval alone therefore fixes the verdict, and the only thing left free is
+  // the track the two voices sit on.
+  constexpr Tick kPlantTick = TICKS_PER_BAR * 4;
+  constexpr uint8_t kLowerPitch = 72;
+  constexpr uint8_t kUpperPitch = kLowerPitch + 1;
+
+  auto plantedClashSeverity = [&](TrackRole role) -> std::vector<DissonanceSeverity> {
+    Song song = generated;
+    song.track(role).addNote(
+        NoteEventTestHelper::create(kPlantTick, TICKS_PER_BAR, kLowerPitch, 90));
+    song.track(role).addNote(
+        NoteEventTestHelper::create(kPlantTick, TICKS_PER_BAR, kUpperPitch, 90));
+
+    std::vector<DissonanceSeverity> severities;
+    for (const auto& issue : analyzeDissonance(song, params).issues) {
+      if (issue.type != DissonanceType::SimultaneousClash) continue;
+      if (issue.tick != kPlantTick || issue.notes.size() < 2) continue;
+      bool lower_present = false;
+      bool upper_present = false;
+      for (const auto& note_info : issue.notes) {
+        if (note_info.pitch == kLowerPitch) lower_present = true;
+        if (note_info.pitch == kUpperPitch) upper_present = true;
+      }
+      if (lower_present && upper_present) severities.push_back(issue.severity);
+    }
+    return severities;
+  };
+
+  const auto aux_severities = plantedClashSeverity(TrackRole::Aux);
+  ASSERT_EQ(aux_severities.size(), 1u) << "The planted aux minor 2nd was not reported exactly once";
+  EXPECT_EQ(aux_severities[0], DissonanceSeverity::High)
+      << "An aux minor 2nd was reported below the severity the interval carries";
+
+  // The severity rule reads the interval, the metric position and whether either
+  // voice belongs to a sustained harmonic track. Aux is none of those, so the
+  // same pair on a melodic peer has to come back with the same verdict; a
+  // difference here is an aux-specific adjustment, which is what this test is
+  // here to keep out.
+  EXPECT_EQ(plantedClashSeverity(TrackRole::Motif), aux_severities)
+      << "Aux and motif were graded differently for the same planted interval";
 }
 
 // ============================================================================
