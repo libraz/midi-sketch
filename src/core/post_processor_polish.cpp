@@ -33,21 +33,43 @@ namespace midisketch {
 
 namespace {
 
+// Whether a motif note and a vocal note sounding together are two voices
+// colliding, rather than the chord being heard through both of them.
+//
+// The interval rule alone cannot tell those apart, because the answer depends
+// on the chord: a motif F under a vocal B is a clash on IV and the pair that
+// makes a chord a dominant on V. The sweeps that delete notes ask the chord
+// before acting, and this is the same question asked at the pass that rewrites
+// a motif pitch, so a motif is no longer moved off the seventh a chord is
+// named for. Asking here rather than only at the detection pass matters as
+// much: a resolver that still called the seventh a clash rejected it as a
+// destination, and the pitch it reached for instead was often the vocal's own,
+// which is consonant by interval and inaudible as a second line.
+//
+// The delete sweeps also excuse a tritone by scale degree, for a note the
+// voicing does not contain. That belongs to a chord's own voices and not here:
+// a pair this reaches is one the chord tones could not account for, so the only
+// notes the degree would save are motif notes that are not chord tones, left
+// sounding against the melody.
+bool motifPairIsAClash(uint8_t motif_pitch, uint8_t vocal_pitch, Tick overlap_start,
+                       const IChordLookup& chords) {
+  int interval = std::abs(static_cast<int>(motif_pitch) - static_cast<int>(vocal_pitch));
+  if (!isDissonantSemitoneInterval(interval, DissonanceCheckOptions::standard())) return false;
+  return !chordExcusesFlaggedPair(interval, motif_pitch, vocal_pitch,
+                                  chords.getChordTonesAt(overlap_start));
+}
+
 // Helper to check if a pitch clashes with vocal at a given time range.
 // Uses the same criterion as the motif-vs-vocal detection pass: a resolver
 // that ignores tritone can otherwise land a motif note on the very interval
 // the detection pass flags (e.g. F4 under a vocal B4 on a IV chord).
-//
-// Neither this nor that pass asks the sounding chord, so both still treat a
-// dominant's own tritone as a clash. The chord is reachable from both callers
-// if that is worth changing.
-bool clashesWithVocal(uint8_t pitch, Tick start, Tick end, const MidiTrack& vocal) {
+bool clashesWithVocal(uint8_t pitch, Tick start, Tick end, const MidiTrack& vocal,
+                      const IChordLookup& chords) {
   for (const auto& v_note : vocal.notes()) {
     Tick v_end = v_note.start_tick + v_note.duration;
     // Check overlap
     if (start < v_end && end > v_note.start_tick) {
-      int interval = std::abs(static_cast<int>(pitch) - static_cast<int>(v_note.note));
-      if (isDissonantSemitoneInterval(interval, DissonanceCheckOptions::standard())) {
+      if (motifPairIsAClash(pitch, v_note.note, std::max(start, v_note.start_tick), chords)) {
         return true;
       }
     }
@@ -93,7 +115,7 @@ uint8_t findSafeChordTone(uint8_t original_pitch, Tick start, Tick duration, con
 
       uint8_t clamped = static_cast<uint8_t>(candidate_pitch);
       // Check against vocal directly (for tests that don't register vocal)
-      if (clashesWithVocal(clamped, start, end, vocal)) continue;
+      if (clashesWithVocal(clamped, start, end, vocal, harmony)) continue;
       // Also check against all registered tracks (chord, bass, etc.)
       if (!harmony.isConsonantWithOtherTracks(clamped, start, duration, TrackRole::Motif)) continue;
 
@@ -222,7 +244,7 @@ uint8_t resolveMotifAboveVocalImpl(uint8_t original_pitch, uint8_t ceiling, Tick
       int candidate = oct * 12 + ct_pc;
       if (candidate < floor_limit || candidate > static_cast<int>(ceiling)) continue;
       uint8_t cand = static_cast<uint8_t>(candidate);
-      if (clashesWithVocal(cand, start, end, vocal)) continue;
+      if (clashesWithVocal(cand, start, end, vocal, harmony)) continue;
       if (!harmony.isConsonantWithOtherTracks(cand, start, duration, TrackRole::Motif)) continue;
       if (cand > best) best = cand;  // highest chord tone under the ceiling
     }
@@ -236,7 +258,7 @@ uint8_t resolveMotifAboveVocalImpl(uint8_t original_pitch, uint8_t ceiling, Tick
     shifted -= 12;
   }
   if (shifted >= floor_limit && shifted <= static_cast<int>(ceiling) && shifted != original_pitch &&
-      !clashesWithVocal(static_cast<uint8_t>(shifted), start, end, vocal)) {
+      !clashesWithVocal(static_cast<uint8_t>(shifted), start, end, vocal, harmony)) {
     return static_cast<uint8_t>(shifted);
   }
 
@@ -257,7 +279,7 @@ uint8_t resolveMotifAboveVocalImpl(uint8_t original_pitch, uint8_t ceiling, Tick
         int candidate = oct * 12 + ct_pc;
         if (candidate < floor_limit || candidate > MOTIF_HIGH) continue;
         uint8_t cand = static_cast<uint8_t>(candidate);
-        if (clashesWithVocal(cand, start, end, vocal)) continue;
+        if (clashesWithVocal(cand, start, end, vocal, harmony)) continue;
         if (harmony.isConsonantWithOtherTracks(cand, start, duration, TrackRole::Motif)) {
           if (best_full == 0 || cand < best_full) best_full = cand;
         }
@@ -311,11 +333,8 @@ void PostProcessor::fixMotifVocalClashes(MidiTrack& motif, const MidiTrack& voca
 
       // Check overlap: motif note and vocal note must be sounding simultaneously
       if (m_note.start_tick < v_end && m_end > v_note.start_tick) {
-        int interval = std::abs(static_cast<int>(m_note.note) - static_cast<int>(v_note.note));
-
-        // Use unified dissonance check: m2, M2 (close), tritone (always), M7
-        bool is_dissonant =
-            isDissonantSemitoneInterval(interval, DissonanceCheckOptions::standard());
+        bool is_dissonant = motifPairIsAClash(
+            m_note.note, v_note.note, std::max(m_note.start_tick, v_note.start_tick), harmony);
 
         if (is_dissonant) {
           // Grazing overlap: when the clashing vocal note only clips the head
@@ -364,7 +383,7 @@ void PostProcessor::fixMotifVocalClashes(MidiTrack& motif, const MidiTrack& voca
           // resolver escape far above the melody (register crossing). Fall back to the
           // full motif range only when nothing below the vocal is available
           // (crossing warning < forced clash).
-          if (clashesWithVocal(new_pitch, m_note.start_tick, m_end, vocal)) {
+          if (clashesWithVocal(new_pitch, m_note.start_tick, m_end, vocal, harmony)) {
             uint8_t cand_high = (vocal_ceiling > MOTIF_LOW && vocal_ceiling < MOTIF_HIGH)
                                     ? vocal_ceiling
                                     : MOTIF_HIGH;
@@ -557,7 +576,7 @@ void PostProcessor::fixMotifRepeatedPitches(MidiTrack& motif, const MidiTrack& v
           // Never cross above the overlapping vocal (ceiling == 0 means vocal rest).
           if (ceiling > 0 && cand > static_cast<int>(ceiling)) continue;
           uint8_t cp = static_cast<uint8_t>(cand);
-          if (clashesWithVocal(cp, note.start_tick, note_end, vocal)) continue;
+          if (clashesWithVocal(cp, note.start_tick, note_end, vocal, harmony)) continue;
           if (!harmony.isConsonantWithOtherTracks(cp, note.start_tick, note.duration,
                                                   TrackRole::Motif)) {
             continue;

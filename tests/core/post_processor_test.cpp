@@ -1424,6 +1424,43 @@ TEST(PostProcessorTest, FixMotifVocalClashesResolveMajor2ndClose) {
       << "Motif pitch class should be C(0), E(4), or G(7), got " << pc;
 }
 
+TEST(PostProcessorTest, FixMotifVocalClashesKeepsTheTritoneTheChordIsSpelledWith) {
+  // Motif F4 against a vocal B4 over a G7. The two are the seventh and the
+  // third of the chord written on the timeline, so the tritone between them is
+  // the dominant sounding through two voices and not a collision to resolve.
+  MidiTrack motif, vocal;
+  motif.addNote(NoteEventBuilder::create(0, 480, 65, 80));  // F4, the seventh
+  vocal.addNote(NoteEventBuilder::create(0, 480, 71, 80));  // B4, the third
+
+  test::StubHarmonyContext harmony;
+  harmony.setChordDegree(4);             // V
+  harmony.setChordTones({7, 11, 2, 5});  // G B D F
+
+  PostProcessor::fixMotifVocalClashes(motif, vocal, harmony);
+
+  EXPECT_EQ(motif.notes()[0].note, 65) << "The seventh a dominant is named for was rewritten away";
+}
+
+TEST(PostProcessorTest, FixMotifVocalClashesStillResolvesATritoneTheChordDoesNotContain) {
+  // The same two pitches over a C major triad, which contains neither of them.
+  // Nothing accounts for the tritone there, so it is resolved -- what decides
+  // is the chord, not the interval, and the pair above is not excused by being
+  // a tritone.
+  MidiTrack motif, vocal;
+  motif.addNote(NoteEventBuilder::create(0, 480, 65, 80));  // F4
+  vocal.addNote(NoteEventBuilder::create(0, 480, 71, 80));  // B4
+
+  test::StubHarmonyContext harmony;
+  harmony.setChordDegree(0);         // I
+  harmony.setChordTones({0, 4, 7});  // C E G
+
+  PostProcessor::fixMotifVocalClashes(motif, vocal, harmony);
+
+  int pc = motif.notes()[0].note % 12;
+  EXPECT_TRUE(pc == 0 || pc == 4 || pc == 7)
+      << "Motif pitch class should be C(0), E(4), or G(7), got " << pc;
+}
+
 TEST(PostProcessorTest, FixMotifVocalClashesLowersMajor9thAboveVocal) {
   // Motif D5 (74) vs Vocal C4 (60) - major 9th (14 semitones).
   // The interval is not a close-voicing dissonance, but the motif sits a 9th
