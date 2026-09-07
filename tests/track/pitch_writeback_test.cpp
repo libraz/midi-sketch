@@ -263,6 +263,11 @@ TEST_F(PitchWritebackTest, PitchMovesLeaveATrace) {
 // Where a moved note came from
 // ============================================================================
 
+// Not verified in the shipping build, and nothing there needs it to be: the
+// recorded origin this pins is absent from that build, so no pass can overwrite
+// it and no later reading can be misled by it.
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+
 struct RewrittenOrigin {
   std::string track;
   Tick tick;
@@ -272,6 +277,8 @@ struct RewrittenOrigin {
 
 // Steps whose input and output are pitches. Duration, velocity and timing steps
 // carry zero in both fields, so they say nothing about where a pitch came from.
+// Only the recorded steps are classified here, so the shipping build, which
+// records none, has no use for this.
 bool isPitchMove(TransformStepType type) {
   switch (type) {
     case TransformStepType::OctaveAdjust:
@@ -293,7 +300,6 @@ bool isPitchMove(TransformStepType type) {
 // them started from, which means a later pass overwrote it with its own input.
 std::vector<RewrittenOrigin> findRewrittenOrigins(const Song& song, size_t& moved_notes) {
   std::vector<RewrittenOrigin> out;
-#ifdef MIDISKETCH_NOTE_PROVENANCE
   const std::pair<const MidiTrack*, const char*> all[] = {
       {&song.vocal(), "Vocal"},       {&song.motif(), "Motif"}, {&song.aux(), "Aux"},
       {&song.bass(), "Bass"},         {&song.chord(), "Chord"}, {&song.guitar(), "Guitar"},
@@ -313,10 +319,6 @@ std::vector<RewrittenOrigin> findRewrittenOrigins(const Song& song, size_t& move
       }
     }
   }
-#else
-  (void)song;
-  (void)moved_notes;
-#endif
   return out;
 }
 
@@ -360,10 +362,15 @@ TEST_F(PitchWritebackTest, TheFirstPassToMoveANoteIsTheOneThatRecordsWhereItCame
   // Without notes that a pass moved at all, the assertion above is vacuous.
   EXPECT_GT(moved_notes, 0u);
 }
+#endif  // MIDISKETCH_NOTE_PROVENANCE
 
 // ============================================================================
 // Bass / vocal pitch class doubling
 // ============================================================================
+
+// Everything below is read only by the guarded test at the end of this
+// section, which needs the recorded origin to say whose note it is.
+#ifdef MIDISKETCH_NOTE_PROVENANCE
 
 /// Two octaves: closer than this, a shared pitch class reads as the bass
 /// doubling the vocal instead of supporting it, and the low end goes hollow.
@@ -381,14 +388,12 @@ struct CloseDoubling {
 /// bass never saw, which is a different write-back path. Durations above the
 /// byte the step can hold are not recoverable, so the current length is used.
 Tick spanAtGeneration(const NoteEvent& note) {
-#ifdef MIDISKETCH_NOTE_PROVENANCE
   for (uint8_t i = 0; i < note.transform_count; ++i) {
     const auto& step = note.transform_steps[i];
     if (step.type == TransformStepType::ArticulationGate && step.output_pitch < 255) {
       return step.output_pitch;
     }
   }
-#endif
   return note.duration;
 }
 
@@ -406,9 +411,7 @@ constexpr Tick kAudibleOverlap = TICK_32ND;
 std::vector<CloseDoubling> findCloseDoublings(const MidiTrack& bass, const MidiTrack& vocal) {
   std::vector<CloseDoubling> out;
   for (const auto& bass_note : bass.notes()) {
-#ifdef MIDISKETCH_NOTE_PROVENANCE
     if (bass_note.hasValidProvenance() && bass_note.prov_original_pitch != bass_note.note) continue;
-#endif
     Tick bass_end = bass_note.start_tick + spanAtGeneration(bass_note);
     for (const auto& vocal_note : vocal.notes()) {
       Tick vocal_end = vocal_note.start_tick + vocal_note.duration;
@@ -436,6 +439,7 @@ std::string describeCloseDoublings(const std::vector<CloseDoubling>& doublings) 
   }
   return out;
 }
+#endif  // MIDISKETCH_NOTE_PROVENANCE
 
 // ============================================================================
 // Secondary dominant voicing
@@ -517,6 +521,11 @@ std::string describeCrossRelations(const std::vector<CrossRelation>& relations) 
 // Root, fifth, octave, approach, slap and ghost notes all have to clear a vocal
 // pitch class by two octaves. A single sample at the bar root cannot see a
 // vocal note that enters inside the bass note, so the whole span is scanned.
+// Not verified in the shipping build: that the bass clears a vocal pitch class
+// by two octaves. The rule is asked of the pitches the bass writer chose, and a
+// note a later pass moved is that pass's note; only the recorded origin tells
+// the two apart, so the shipping build cannot name the notes this speaks for.
+#ifdef MIDISKETCH_NOTE_PROVENANCE
 TEST_F(PitchWritebackTest, BassDoesNotDoubleAVocalPitchClassWithinTwoOctaves) {
   constexpr uint32_t kSeeds[] = {12345, 777, 20260903, 424242, 31337};
   constexpr uint8_t kBlueprints[] = {0, 1, 2, 3, 4, 9};
@@ -540,6 +549,7 @@ TEST_F(PitchWritebackTest, BassDoesNotDoubleAVocalPitchClassWithinTwoOctaves) {
   }
   EXPECT_EQ(songs_scanned, std::size(kSeeds) * std::size(kBlueprints));
 }
+#endif  // MIDISKETCH_NOTE_PROVENANCE
 
 // Every pitched track picks its tones from the shared timeline, so a secondary
 // dominant registered at a tick is voiced with its own third rather than with

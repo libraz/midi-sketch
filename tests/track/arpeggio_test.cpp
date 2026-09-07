@@ -334,6 +334,11 @@ TEST_F(ArpeggioTest, GeneratorDoesNotBypassCollisionChecks) {
       << "Arpeggio overlays should use normal collision-aware note creation";
 }
 
+// Not verified in the shipping build: that BrokenChord ascends across the first
+// half of its cycle. The shape is stated by the pitches the pattern asks for,
+// and collision avoidance may move the ones that sound; the pitch it asked for
+// survives only in the provenance record, which the shipping build omits.
+#ifdef MIDISKETCH_NOTE_PROVENANCE
 TEST_F(ArpeggioTest, BrokenChordAscendsThenDescends) {
   // BrokenChord should go up through chord tones then back down.
   // With a triad (3 notes) the pattern is: low, mid, high, mid (4 notes).
@@ -354,6 +359,7 @@ TEST_F(ArpeggioTest, BrokenChordAscendsThenDescends) {
   uint8_t pitch_2 = track.notes()[2].prov_original_pitch;
   EXPECT_LE(pitch_0, pitch_2) << "BrokenChord should ascend from index 0 to index 2";
 }
+#endif  // MIDISKETCH_NOTE_PROVENANCE
 
 TEST_F(ArpeggioTest, CityPopUsesPinwheelByDefault) {
   // CityPop mood should default to Pinwheel pattern via ArpeggioStyle
@@ -883,6 +889,11 @@ TEST_F(ArpeggioTest, NoMinor2ndClashWithChordTrack) {
                              << clash_count;
 }
 
+// Not verified in the shipping build: that a persistent pattern is built from
+// the chord of the bar the section starts on. Which chord the pattern was built
+// from is readable only from the pitch it asked for, and collision avoidance
+// may have moved the one that sounds.
+#ifdef MIDISKETCH_NOTE_PROVENANCE
 TEST_F(ArpeggioTest, SyncChordFalseRespectsHarmonicDensity) {
   // Test that sync_chord=false mode also respects HarmonicDensity
   // when refreshing pattern at section start
@@ -923,6 +934,7 @@ TEST_F(ArpeggioTest, SyncChordFalseRespectsHarmonicDensity) {
         << " (final pitch after collision avoidance: " << static_cast<int>(note.note) << ")";
   }
 }
+#endif  // MIDISKETCH_NOTE_PROVENANCE
 
 TEST_F(ArpeggioTest, PhraseEndSplitMatchesChordTrack) {
   // At phrase-end bars the chord changes at beat 3 for anticipation. Arpeggio

@@ -424,6 +424,8 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& 
       hook_note.prov_chord_degree = note_chord_degree;
       hook_note.prov_lookup_tick = current_tick;
       hook_note.prov_original_pitch = static_cast<uint8_t>(pitch);
+#else
+      (void)note_chord_degree;
 #endif
       result.notes.push_back(hook_note);
 

@@ -1600,6 +1600,11 @@ TEST_F(VocalTest, ChorusHasMelodicContent) {
 // Motif Repetition Tests
 // ============================================================================
 
+// Not verified in the shipping build: that every four-bar phrase of a chorus
+// states the hook. Which notes the hook produced is readable only from their
+// recorded source; the guard covers the whole test rather than the assertions
+// alone, so the shipping build omits it instead of passing it vacuously.
+#ifdef MIDISKETCH_NOTE_PROVENANCE
 TEST_F(VocalTest, ChorusStatesItsHookInEveryFourBarPhrase) {
   // A hook is a skeleton the designer selects rather than writes, and a chorus
   // is where it is meant to be recognised -- which takes more than one
@@ -1617,7 +1622,6 @@ TEST_F(VocalTest, ChorusStatesItsHookInEveryFourBarPhrase) {
     for (const auto& sec : gen.getSong().arrangement().sections()) {
       if (sec.type != SectionType::Chorus || sec.bars < 8) continue;
 
-#ifdef MIDISKETCH_NOTE_PROVENANCE
       uint8_t phrases = 0;
       uint8_t phrases_with_hook = 0;
       for (uint8_t bar = 0; bar + 4 <= sec.bars; bar += 4) {
@@ -1639,10 +1643,10 @@ TEST_F(VocalTest, ChorusStatesItsHookInEveryFourBarPhrase) {
           << "seed " << seed << " chorus at tick " << sec.start_tick << ": only "
           << static_cast<int>(phrases_with_hook) << " of " << static_cast<int>(phrases)
           << " four-bar phrases state the hook";
-#endif
     }
   }
 }
+#endif  // MIDISKETCH_NOTE_PROVENANCE
 
 TEST_F(VocalTest, VerseCarriesMelodyInEveryTwoBarUnit) {
   // The old name here claimed motif repetition and the body only counted the

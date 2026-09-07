@@ -503,6 +503,11 @@ TEST(BlueprintClashCorpusTest, NoTwoVoicesOfOneInstrumentClashAcrossStyles) {
   ASSERT_EQ(songs, 10u);
 }
 
+// Not verified in the shipping build: that the guitar reads the chord at each
+// onset rather than once per bar. The guitar track also carries notes other
+// passes placed, and the recorded source is what tells them apart, so without
+// it the corpus cannot be narrowed to the notes the guitar itself chose.
+#ifdef MIDISKETCH_NOTE_PROVENANCE
 TEST(GuitarChordLookupCorpusTest, EveryGuitarNoteSpellsTheChordSoundingAtItsOnset) {
   // A bar is one rhythmic unit and does not have to be one harmonic unit. The
   // guitar read the chord when it entered the bar and kept strumming it for the
@@ -590,6 +595,7 @@ TEST(GuitarChordLookupCorpusTest, EveryGuitarNoteSpellsTheChordSoundingAtItsOnse
   // above cannot tell a per-onset lookup from a per-bar one.
   ASSERT_GT(onsets_after_a_change, 0u);
 }
+#endif  // MIDISKETCH_NOTE_PROVENANCE
 
 TEST(BassApproachNoteCorpusTest, AnApproachNoteDoesNotContradictAnAlteredChordTone) {
   // The bass approach note filters its candidates on "is this pitch diatonic",
@@ -801,6 +807,11 @@ TEST(LockedRiffCorpusTest, ARiffReplayedOutsideTheCoordinateAxisIsAskedTheSameQu
   ASSERT_EQ(songs, 2u);
 }
 
+// Not verified in the shipping build: that a re-quantized note falling back to
+// the key stays usable over its chord. Re-quantized notes are the whole subject
+// here and the recorded source is the only thing that identifies them among the
+// notes their generators placed.
+#ifdef MIDISKETCH_NOTE_PROVENANCE
 TEST(FrozenBarCorpusTest, ARequantizedNoteFallingBackToTheScaleStaysUsableOverItsChord) {
   // When a frozen bar is re-quantized and the range holds no chord tone that
   // clears the other tracks, the search widens to the key rather than accept a
@@ -856,6 +867,7 @@ TEST(FrozenBarCorpusTest, ARequantizedNoteFallingBackToTheScaleStaysUsableOverIt
   // The pass has to have placed notes for the loop above to say anything.
   ASSERT_GT(requantized_notes, 0u);
 }
+#endif  // MIDISKETCH_NOTE_PROVENANCE
 
 }  // namespace
 }  // namespace midisketch

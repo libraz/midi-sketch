@@ -307,6 +307,9 @@ TEST_F(GuitarGenerationTest, NotesInGuitarRange) {
   }
 }
 
+// Not verified in the shipping build, and nothing there needs it to be: the
+// record this pins is the provenance field itself, which that build omits.
+#ifdef MIDISKETCH_NOTE_PROVENANCE
 TEST_F(GuitarGenerationTest, NotesHaveGuitarProvenance) {
   params_.mood = Mood::LightRock;
   params_.seed = 42;
@@ -322,6 +325,7 @@ TEST_F(GuitarGenerationTest, NotesHaveGuitarProvenance) {
         << "Note at tick " << note.start_tick << " has wrong provenance";
   }
 }
+#endif  // MIDISKETCH_NOTE_PROVENANCE
 
 TEST_F(GuitarGenerationTest, ValidVelocityRange) {
   params_.mood = Mood::LightRock;

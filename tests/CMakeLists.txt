@@ -1,3 +1,14 @@
+# The shipping WASM build omits the note provenance fields, so a handful of
+# tests cannot be expressed there: their subject is either the record itself or
+# a property whose only handle is the record. Those tests are compiled out under
+# MIDISKETCH_NOTE_PROVENANCE and each says, at its own guard, which property the
+# shipping build therefore does not check. To list them:
+#
+#   grep -rn "Not verified in the shipping build" tests/
+#
+# Everything else has to compile and pass in both shapes. Build the shipping
+# shape with -DMIDISKETCH_NO_PROVENANCE=ON.
+
 # Google Test
 include(FetchContent)
 FetchContent_Declare(

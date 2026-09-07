@@ -23,6 +23,11 @@
 #include "core/types.h"
 #include "midisketch.h"
 
+// Not verified in the shipping build, and nothing there needs it to be: the
+// record whose honesty this file pins is absent from that build, so it cannot
+// mislead anyone measuring its output.
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+
 namespace midisketch {
 namespace {
 
@@ -83,3 +88,5 @@ TEST(ProvenanceIntegrityTest, APostGenerationNoteRecordsTheChordAtTheTickItNames
 
 }  // namespace
 }  // namespace midisketch
+
+#endif  // MIDISKETCH_NOTE_PROVENANCE
