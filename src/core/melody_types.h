@@ -185,12 +185,12 @@ struct MelodyTemplate {
 
 /// @brief Aux track configuration for sub-track generation.
 struct AuxConfig {
-  AuxFunction function;       ///< Aux track function type
-  int8_t range_offset;        ///< Offset from main melody range (negative = below)
-  int8_t range_width;         ///< Range width (semitones)
-  float velocity_ratio;       ///< Velocity ratio vs main melody (0.5-0.8)
-  float density_ratio;        ///< Density ratio vs main melody
-  bool sync_phrase_boundary;  ///< Sync with main melody phrase boundaries
+  AuxFunction function = AuxFunction::PulseLoop;  ///< Aux track function type
+  int8_t range_offset = 0;           ///< Offset from main melody range (negative = below)
+  int8_t range_width = 12;           ///< Range width (semitones)
+  float velocity_ratio = 0.7f;       ///< Velocity ratio vs main melody (0.5-0.8)
+  float density_ratio = 1.0f;        ///< Density ratio vs main melody
+  bool sync_phrase_boundary = true;  ///< Sync with main melody phrase boundaries
 };
 
 /// @brief Hook intensity for controlling catchiness at key positions.
