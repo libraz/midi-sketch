@@ -17,6 +17,66 @@
 
 namespace midisketch {
 
+namespace {
+
+/// Longer overlaps than this were visible at creation time.
+constexpr Tick kMaxTailOverlap = TICK_QUARTER;
+/// A 32nd-note stub is the shortest musically acceptable remainder (a bass
+/// approach note reduced to a ghost-note blip beats an m9/M7 clash).
+constexpr Tick kMinRemainder = TICK_32ND;
+/// Within two octaves the gate's rule reads the chord and nothing else. Past
+/// it the analyzer keeps a single rule that also reads which voices sound the
+/// interval, so a caller holding only the two notes cannot be answered there.
+constexpr int kChordOnlyDissonanceSpan = 24;
+
+/// @brief The shape the tail gate acts on, and the length it would leave.
+///
+/// @p later has to begin inside @p earlier, the two may sound together for no
+/// more than a beat, and what is left of @p earlier once it stops at that onset
+/// has to still be worth hearing.
+///
+/// @return the trimmed length for @p earlier, or 0 when the shape does not hold.
+Tick tailTrimRemainder(const NoteEvent& earlier, const NoteEvent& later) {
+  if (later.start_tick <= earlier.start_tick) return 0;  // need a true tail overlap
+  const Tick earlier_end = earlier.start_tick + earlier.duration;
+  if (later.start_tick >= earlier_end) return 0;
+  // How long the two actually sound together, which ends when either one does.
+  // Measuring to the end of `earlier` alone reports an overlap the analyzer
+  // never counts, and the cap below then reads a clash of a few ticks as one
+  // too long to touch: a chord stab under a sustained motif was skipped for the
+  // length of the motif rather than the length of the stab.
+  const Tick later_end = later.start_tick + later.duration;
+  if (std::min(earlier_end, later_end) - later.start_tick > kMaxTailOverlap) return 0;
+  const Tick remainder = later.start_tick - earlier.start_tick;
+  if (remainder < kMinRemainder) return 0;
+  return remainder;
+}
+
+/// @brief The gate's dissonance rule for a pair inside two octaves.
+///
+/// The analyzer this gate mirrors excuses a flagged pair whose voices both
+/// belong to the sounding chord, and a gate that shortens notes the report
+/// never asked about is a gate taking music for nothing. Most of what that
+/// reaches is the tritone a dominant is built on, which the scale degree alone
+/// calls a clash whenever the chord is a registered substitution.
+bool clashesUnderSoundingChord(int semitones, uint8_t pitch_a, uint8_t pitch_b,
+                               const IChordLookup& chords, Tick at) {
+  if (chordExcusesFlaggedPair(semitones, pitch_a, pitch_b, chords.getChordTonesAt(at))) {
+    return false;
+  }
+  return isDissonantActualInterval(semitones, chords.getChordDegreeAt(at));
+}
+
+}  // namespace
+
+bool tailGateWillShortenEarlier(const NoteEvent& earlier, const NoteEvent& later,
+                                const IChordLookup& chords) {
+  if (tailTrimRemainder(earlier, later) == 0) return false;
+  const int semitones = std::abs(static_cast<int>(earlier.note) - static_cast<int>(later.note));
+  if (semitones > kChordOnlyDissonanceSpan) return false;
+  return clashesUnderSoundingChord(semitones, earlier.note, later.note, chords, later.start_tick);
+}
+
 void removeComfortClashesAgainstReference(MidiTrack& track, const MidiTrack& reference,
                                           const IHarmonyContext& harmony) {
   auto& notes = track.notes();
@@ -153,12 +213,6 @@ void resolveSameTrackClusters(Song& song, IHarmonyContext& harmony) {
 /// @param harmony Harmony context, read for the chord at each clash and left
 ///                describing the notes this pass emitted
 void trimClashingNoteTails(Song& song, IHarmonyContext& harmony) {
-  constexpr Tick kMaxTailOverlap = TICK_QUARTER;  // longer overlaps were
-                                                  // visible at creation time
-  // A 32nd-note stub is the shortest musically acceptable remainder (a bass
-  // approach note reduced to a ghost-note blip beats an m9/M7 clash).
-  constexpr Tick kMinRemainder = TICK_32ND;
-
   const std::pair<MidiTrack*, TrackRole> tracks[] = {
       {&song.vocal(), TrackRole::Vocal},  {&song.chord(), TrackRole::Chord},
       {&song.bass(), TrackRole::Bass},    {&song.motif(), TrackRole::Motif},
@@ -173,16 +227,8 @@ void trimClashingNoteTails(Song& song, IHarmonyContext& harmony) {
   auto isAlwaysDissonant = [&harmony](int semitones, uint8_t pitch_a, TrackRole role_a,
                                       uint8_t pitch_b, TrackRole role_b, Tick at) {
     const int8_t degree = harmony.getChordDegreeAt(at);
-    if (semitones <= 24) {
-      // The analyzer this gate mirrors excuses a flagged pair whose voices both
-      // belong to the sounding chord, and a gate that shortens notes the report
-      // never asked about is a gate taking music for nothing. Most of what this
-      // reaches is the tritone a dominant is built on, which the scale degree
-      // alone calls a clash whenever the chord is a registered substitution.
-      if (chordExcusesFlaggedPair(semitones, pitch_a, pitch_b, harmony.getChordTonesAt(at))) {
-        return false;
-      }
-      return isDissonantActualInterval(semitones, degree);
+    if (semitones <= kChordOnlyDissonanceSpan) {
+      return clashesUnderSoundingChord(semitones, pitch_a, pitch_b, harmony, at);
     }
     // Past two octaves the analyzer keeps exactly one rule: a major seventh
     // over a bass note below C3 stays audible through the low register's
@@ -232,28 +278,15 @@ void trimClashingNoteTails(Song& song, IHarmonyContext& harmony) {
     for (const auto& [earlier_track, earlier_role] : tracks) {
       for (const auto& [later_track, later_role] : tracks) {
         for (auto& a : earlier_track->notes()) {
-          Tick a_end = a.start_tick + a.duration;
           for (const auto& b : later_track->notes()) {
-            if (b.start_tick <= a.start_tick) continue;  // need a true tail overlap
-            if (b.start_tick >= a_end) continue;
-            // How long the two actually sound together, which ends when either
-            // one does. Measuring to the end of `a` alone reports an overlap the
-            // analyzer never counts, and the cap below then reads a clash of a
-            // few ticks as one too long to touch: a chord stab under a sustained
-            // motif was skipped for the length of the motif rather than the
-            // length of the stab.
-            Tick b_end = b.start_tick + b.duration;
-            Tick overlap = std::min(a_end, b_end) - b.start_tick;
-            if (overlap > kMaxTailOverlap) continue;
-            Tick remainder = b.start_tick - a.start_tick;
-            if (remainder < kMinRemainder) continue;
+            const Tick remainder = tailTrimRemainder(a, b);
+            if (remainder == 0) continue;
             int semitones = std::abs(static_cast<int>(a.note) - static_cast<int>(b.note));
             if (!isAlwaysDissonant(semitones, a.note, earlier_role, b.note, later_role,
                                    b.start_tick)) {
               continue;
             }
             a.duration = remainder;
-            a_end = a.start_tick + a.duration;
             trimmed_any = true;
 #ifdef MIDISKETCH_NOTE_PROVENANCE
             a.addTransformStep(TransformStepType::PostProcessDuration, 0, 0, -1, 0);

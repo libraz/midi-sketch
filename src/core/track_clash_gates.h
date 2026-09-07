@@ -22,11 +22,35 @@
 #ifndef MIDISKETCH_CORE_TRACK_CLASH_GATES_H
 #define MIDISKETCH_CORE_TRACK_CLASH_GATES_H
 
+#include "core/basic_types.h"
+
 namespace midisketch {
 
 class Song;
 class MidiTrack;
 class IHarmonyContext;
+class IChordLookup;
+
+/// @brief Whether trimClashingNoteTails will shorten @p earlier because of @p later.
+///
+/// A pass that runs before the tail gate and deletes what clashes has no
+/// concept of a tail: a note whose last few ticks are overlapped by a note
+/// nudged in front of the beat reads to it exactly like one clashing outright,
+/// and it takes the whole note. The gate answers the same pair by stopping the
+/// earlier note at the later one's onset, which is what the overlap actually
+/// is. Asking here is how such a pass leaves that pair alone rather than
+/// deciding it with a rule of its own.
+///
+/// Only the case the gate resolves by shortening @p earlier is reported. The
+/// gate can also shorten the note that arrives second when the roles are the
+/// other way round, but then it is a different note that gives way, so a caller
+/// deciding the fate of @p earlier learns nothing it can act on.
+///
+/// @param earlier The note whose tail is overlapped
+/// @param later The note beginning inside it
+/// @param chords Harmony timeline read for the chord under the overlap
+bool tailGateWillShortenEarlier(const NoteEvent& earlier, const NoteEvent& later,
+                                const IChordLookup& chords);
 
 /// @brief Delete notes that clash against a track this one has to sit under.
 ///

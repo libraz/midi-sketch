@@ -21,6 +21,7 @@
 #include "core/pitch_utils.h"
 #include "core/post_processor.h"
 #include "core/timing_constants.h"
+#include "core/track_clash_gates.h"
 #include "core/velocity.h"
 #include "core/velocity_helper.h"
 
@@ -131,6 +132,15 @@ uint8_t findSafeChordTone(uint8_t original_pitch, Tick start, Tick duration, con
 // decide; the analysis report asks the same question and now gets the same
 // answer.
 //
+// Deleting is the answer to a note that clashes for as long as it sounds, and
+// this pass has no other. An overlap of a few ticks is not that: the time feel
+// nudges a bass note in front of the beat, it lands on the last ticks of the
+// chord note before it, and the whole chord note goes -- for a clash shorter
+// than the gap between two sixteenths. The tail gate at the end of
+// post-processing answers exactly that shape by stopping the earlier note at
+// the later one's onset, so those pairs are left for it rather than being
+// decided twice with two different rules.
+//
 // @param opts Dissonance policy for the pair being checked.
 // @param chord_lookup Registered harmony timeline, or nullptr to judge by interval alone.
 void removeClashingNotesAgainstReference(MidiTrack& track, const MidiTrack& reference,
@@ -147,8 +157,11 @@ void removeClashingNotesAgainstReference(MidiTrack& track, const MidiTrack& refe
         if (chord_lookup == nullptr) return true;
 
         const Tick overlap_start = std::max(note.start_tick, ref_note.start_tick);
-        return !chordExcusesFlaggedPair(interval, note.note, ref_note.note,
-                                        chord_lookup->getChordTonesAt(overlap_start));
+        if (chordExcusesFlaggedPair(interval, note.note, ref_note.note,
+                                    chord_lookup->getChordTonesAt(overlap_start))) {
+          return false;
+        }
+        return !tailGateWillShortenEarlier(note, ref_note, *chord_lookup);
       });
 }
 
