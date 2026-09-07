@@ -299,7 +299,12 @@ Tick getBreathDuration(SectionType section, Mood mood, float phrase_density = 0.
 Tick getPlannedBreathDuration(SectionType section, Mood mood, VocalStylePreset vocal_style,
                               uint16_t bpm);
 
-/// @brief Get rhythm unit based on grid type.
+/// @brief Get the unit a grid measures note lengths in.
+///
+/// Asked for durations only. Onsets are quantized by the rhythm generator on
+/// its own grid, which has no triplet case, so a Ternary answer here scales
+/// note lengths and leaves every onset where a binary grid would put it.
+///
 /// @param grid Rhythm grid type
 /// @param is_eighth Whether to use 8th note base
 /// @return Tick duration for the rhythm unit

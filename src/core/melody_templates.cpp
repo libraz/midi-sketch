@@ -109,9 +109,12 @@ constexpr MelodyTemplate kDownResolve = {
     0.7f,  // target_attraction_strength
 
     // Rhythm
-    false,                // rhythm_driven: melody-driven
-    0.2f,                 // sixteenth_density: low
-    RhythmGrid::Ternary,  // rhythm_grid: triplet for flowing pre-chorus feel
+    false,  // rhythm_driven: melody-driven
+    0.2f,   // sixteenth_density: low
+    // rhythm_grid: two thirds the note length of the sections around it, so the
+    // pre-chorus is the crisp one and the chorus arrives on longer notes. The
+    // onsets stay where a binary grid puts them; only the lengths change.
+    RhythmGrid::Ternary,
 
     // Vocal constraints
     true,  // vowel_constraint

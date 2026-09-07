@@ -38,10 +38,18 @@ enum class VocalAttitude : uint8_t {
 /// @brief Rhythm grid type for note timing.
 ///
 /// Controls whether notes are quantized to binary (8th/16th) or ternary (triplet) grid.
+/// @brief The unit a template's note lengths are measured in.
+///
+/// This decides how long a note is, not where it starts. Onsets come from the
+/// rhythm generator, which quantizes to its own eighth, sixteenth and
+/// thirty-second grid and never asks for this value, so declaring a triplet
+/// grid shortens the notes of a phrase without moving any of them onto a
+/// triplet position. Placing notes on triplets is a change to the rhythm
+/// generator, not to a template.
 enum class RhythmGrid : uint8_t {
-  Binary,   ///< Standard 8th/16th note grid (most pop music)
-  Ternary,  ///< Triplet grid (ballads, jazz, shuffle feel)
-  Hybrid    ///< Mixed grid (some phrases use triplets)
+  Binary,   ///< Notes are measured in eighths and sixteenths (most pop music)
+  Ternary,  ///< Notes are measured in triplets, so they are two thirds as long
+  Hybrid    ///< Measured as Binary; kept for templates that read as mixed
 };
 
 /// @name Vocal Attitude Flags
