@@ -376,9 +376,24 @@ TEST_F(PitchWritebackTest, TheFirstPassToMoveANoteIsTheOneThatRecordsWhereItCame
 /// doubling the vocal instead of supporting it, and the low end goes hollow.
 constexpr int kMinOctaveSeparation = 24;
 
+/// Which bass notes a scan covers, and with it the pitch the rule is asked of.
+///
+/// The bass writer clears the doubling on the pitch it hands to the note
+/// creation path, so that pitch is the one it answers for. On a note nothing
+/// moved the two are the same pitch. On a note a pass moved they are not, and
+/// the pass owns what now sounds -- but the writer's choice is still recorded,
+/// so the rule can still be asked of it. Splitting the scan is what keeps the
+/// moved notes in view: a single scan can only pick one of the two pitches, and
+/// dropping the notes it cannot answer for takes them out of every test.
+enum class BassPopulation {
+  Unmoved,  ///< The pitch that sounds is the one the bass writer chose
+  Moved,    ///< A pass replaced the pitch; the recorded origin is the writer's
+};
+
 struct CloseDoubling {
   Tick tick;
-  int bass_pitch;
+  int bass_pitch;      ///< The pitch the rule was asked of
+  int sounding_pitch;  ///< What the note sounds, which a pass may have replaced
   int vocal_pitch;
 };
 
@@ -405,13 +420,20 @@ constexpr Tick kAudibleOverlap = TICK_32ND;
 
 /// Every bass note is compared against every vocal note overlapping the span it
 /// sounds, not against a single sample at its onset: a vocal note entering
-/// halfway through the bass note doubles it just as audibly. Notes a later pass
-/// moved to a different pitch are excluded; the pitch they now sound is that
-/// pass's to answer for.
-std::vector<CloseDoubling> findCloseDoublings(const MidiTrack& bass, const MidiTrack& vocal) {
+/// halfway through the bass note doubles it just as audibly.
+///
+/// @param population Which notes to scan; also selects the pitch asked of them.
+/// @param scanned Number of notes the population held, so a caller can tell a
+///        clean scan from one that found nothing to scan.
+std::vector<CloseDoubling> findCloseDoublings(const MidiTrack& bass, const MidiTrack& vocal,
+                                              BassPopulation population, size_t& scanned) {
   std::vector<CloseDoubling> out;
   for (const auto& bass_note : bass.notes()) {
-    if (bass_note.hasValidProvenance() && bass_note.prov_original_pitch != bass_note.note) continue;
+    bool moved = bass_note.hasValidProvenance() && bass_note.prov_original_pitch != bass_note.note;
+    if (moved != (population == BassPopulation::Moved)) continue;
+    int bass_pitch =
+        (population == BassPopulation::Moved) ? bass_note.prov_original_pitch : bass_note.note;
+    ++scanned;
     Tick bass_end = bass_note.start_tick + spanAtGeneration(bass_note);
     for (const auto& vocal_note : vocal.notes()) {
       Tick vocal_end = vocal_note.start_tick + vocal_note.duration;
@@ -419,11 +441,10 @@ std::vector<CloseDoubling> findCloseDoublings(const MidiTrack& bass, const MidiT
       Tick overlap =
           std::min(bass_end, vocal_end) - std::max(bass_note.start_tick, vocal_note.start_tick);
       if (overlap < kAudibleOverlap) continue;
-      if ((bass_note.note % 12) != (vocal_note.note % 12)) continue;
-      int separation =
-          std::abs(static_cast<int>(bass_note.note) - static_cast<int>(vocal_note.note));
+      if ((bass_pitch % 12) != (vocal_note.note % 12)) continue;
+      int separation = std::abs(bass_pitch - static_cast<int>(vocal_note.note));
       if (separation < kMinOctaveSeparation) {
-        out.push_back({bass_note.start_tick, bass_note.note, vocal_note.note});
+        out.push_back({bass_note.start_tick, bass_pitch, bass_note.note, vocal_note.note});
         break;
       }
     }
@@ -435,7 +456,11 @@ std::string describeCloseDoublings(const std::vector<CloseDoubling>& doublings) 
   std::string out;
   for (const auto& d : doublings) {
     out += "tick " + std::to_string(d.tick) + ": bass " + std::to_string(d.bass_pitch) +
-           " doubles vocal " + std::to_string(d.vocal_pitch) + "\n";
+           " doubles vocal " + std::to_string(d.vocal_pitch);
+    if (d.sounding_pitch != d.bass_pitch) {
+      out += ", now sounding " + std::to_string(d.sounding_pitch);
+    }
+    out += "\n";
   }
   return out;
 }
@@ -521,16 +546,23 @@ std::string describeCrossRelations(const std::vector<CrossRelation>& relations) 
 // Root, fifth, octave, approach, slap and ghost notes all have to clear a vocal
 // pitch class by two octaves. A single sample at the bar root cannot see a
 // vocal note that enters inside the bass note, so the whole span is scanned.
-// Not verified in the shipping build: that the bass clears a vocal pitch class
-// by two octaves. The rule is asked of the pitches the bass writer chose, and a
-// note a later pass moved is that pass's note; only the recorded origin tells
-// the two apart, so the shipping build cannot name the notes this speaks for.
+//
+// Every bass creation site clears the doubling on the pitch it hands to the
+// note creation path, so the rule is a property of the pitch the bass writer
+// chose, whether or not that pitch is still the one sounding. Both populations
+// are therefore scanned; only the pitch the rule is asked of differs.
+//
+// Not verified in the shipping build: the recorded origin is what names the
+// pitch the writer chose, and that build records none, so it cannot tell the
+// two populations apart or say which pitch either one speaks for.
 #ifdef MIDISKETCH_NOTE_PROVENANCE
 TEST_F(PitchWritebackTest, BassDoesNotDoubleAVocalPitchClassWithinTwoOctaves) {
   constexpr uint32_t kSeeds[] = {12345, 777, 20260903, 424242, 31337};
   constexpr uint8_t kBlueprints[] = {0, 1, 2, 3, 4, 9};
 
   size_t songs_scanned = 0;
+  size_t unmoved_notes = 0;
+  size_t moved_notes = 0;
   for (uint8_t blueprint : kBlueprints) {
     for (uint32_t seed : kSeeds) {
       generateSong(seed, blueprint);
@@ -540,14 +572,26 @@ TEST_F(PitchWritebackTest, BassDoesNotDoubleAVocalPitchClassWithinTwoOctaves) {
       ASSERT_FALSE(song.vocal().empty())
           << "blueprint=" << static_cast<int>(blueprint) << " seed=" << seed;
 
-      auto doublings = findCloseDoublings(song.bass(), song.vocal());
-      EXPECT_TRUE(doublings.empty())
+      auto unmoved =
+          findCloseDoublings(song.bass(), song.vocal(), BassPopulation::Unmoved, unmoved_notes);
+      EXPECT_TRUE(unmoved.empty())
           << "blueprint=" << static_cast<int>(blueprint) << " seed=" << seed << "\n"
-          << describeCloseDoublings(doublings);
+          << describeCloseDoublings(unmoved);
+
+      auto moved =
+          findCloseDoublings(song.bass(), song.vocal(), BassPopulation::Moved, moved_notes);
+      EXPECT_TRUE(moved.empty())
+          << "the pitch the bass writer chose has to clear the vocal even where a"
+             " pass replaced it\nblueprint="
+          << static_cast<int>(blueprint) << " seed=" << seed << "\n"
+          << describeCloseDoublings(moved);
       ++songs_scanned;
     }
   }
   EXPECT_EQ(songs_scanned, std::size(kSeeds) * std::size(kBlueprints));
+  // Neither scan says anything about a population it never had a note from.
+  EXPECT_GT(unmoved_notes, 0u);
+  EXPECT_GT(moved_notes, 0u);
 }
 #endif  // MIDISKETCH_NOTE_PROVENANCE
 
