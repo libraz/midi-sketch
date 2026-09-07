@@ -587,8 +587,8 @@ TEST(BGMOnlyDissonanceTest, SynthDrivenModeZeroDissonance) {
       }
     }
 
-    // Phase 3 harmonic changes (slash chords, tritone substitution, modal
-    // interchange) may introduce a small number of chord-arpeggio clashes.
+    // Harmonic changes from slash chords, tritone substitution, and modal
+    // interchange may introduce a small number of chord-arpeggio clashes.
     // Allow up to 5 clashes (previously 0).
     EXPECT_LE(clash_count, 5) << "SynthDriven mode should have minimal chord-arpeggio clashes, "
                               << "but seed " << seed << " has " << clash_count << " clashes";

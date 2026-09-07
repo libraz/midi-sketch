@@ -1094,7 +1094,7 @@ TEST_F(BassTest, PedalToneInBassRange) {
 }
 
 // ============================================================================
-// Phase 4: Bass Articulation Tests (Task 4-1, 4-2)
+// Bass Note Duration and Velocity Tests
 // ============================================================================
 
 TEST_F(BassTest, BassNotesHaveValidDuration) {
@@ -1134,7 +1134,7 @@ TEST_F(BassTest, BassVelocityVariation) {
 }
 
 // ============================================================================
-// Phase 4: Section Density Tests (Task 4-3)
+// Section Density Tests
 // ============================================================================
 
 TEST_F(BassTest, LowDensitySectionHasSimplifiedBass) {
@@ -1170,7 +1170,7 @@ TEST_F(BassTest, LowDensitySectionHasSimplifiedBass) {
 }
 
 // ============================================================================
-// Phase 4: RnBNeoSoul Pattern Test
+// RnBNeoSoul Pattern Test
 // ============================================================================
 
 TEST_F(BassTest, RnBSoulPatternGeneratesBass) {
@@ -1194,7 +1194,7 @@ TEST_F(BassTest, RnBSoulPatternGeneratesBass) {
 }
 
 // ============================================================================
-// Bass Articulation Tests (Phase 4, Task 4-1, 4-2)
+// Bass Articulation Tests
 // ============================================================================
 
 TEST_F(BassTest, DrivingPatternHasStaccatoOnEven8thNotes) {

@@ -917,7 +917,7 @@ TEST(VelocityTest, ApplyPhraseEndDecay_EmptySections) {
 }
 
 // ============================================================================
-// Phase 1: Continuous Velocity Curve Tests
+// Continuous Velocity Curve Tests
 // ============================================================================
 
 TEST(VelocityTest, BarVelocityMultiplierContinuousCurve) {
@@ -948,7 +948,7 @@ TEST(VelocityTest, BarVelocityMultiplierRangeCheck) {
 }
 
 // ============================================================================
-// Phase 2: Phrase End Duration Stretch Tests
+// Phrase End Duration Stretch Tests
 // ============================================================================
 
 TEST(VelocityTest, ApplyPhraseEndDecay_DurationStretch) {
@@ -997,7 +997,7 @@ TEST(VelocityTest, ApplyPhraseEndDecay_BridgeSectionStrongerStretch) {
 }
 
 // ============================================================================
-// Phase 4: Syncopation Weight Tests
+// Syncopation Weight Tests
 // ============================================================================
 
 TEST(VelocityTest, GetSyncopationWeight_BaseValues) {
@@ -1031,7 +1031,7 @@ TEST(VelocityTest, GetSyncopationWeight_ClampedRange) {
 }
 
 // ============================================================================
-// Phase 5: Drive Mapping Tests
+// Drive Mapping Tests
 // ============================================================================
 
 TEST(VelocityTest, DriveMapping_TimingMultiplier) {
@@ -1091,7 +1091,7 @@ TEST(VelocityTest, DriveMapping_PhraseEndStretch) {
 }
 
 // ============================================================================
-// Human Body Timing Model Tests (Phase 1)
+// Human Body Timing Model Tests
 // ============================================================================
 
 TEST(VelocityTest, DriveMapping_HighPitchDelay_BelowCenter) {

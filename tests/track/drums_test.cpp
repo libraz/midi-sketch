@@ -873,7 +873,7 @@ TEST_F(DrumsTest, EuclideanDrumsIntegration_ConsistentWithSeed) {
 }
 
 // ============================================================================
-// Phase 1 Improvements: Integration Tests
+// Bridge Ghost Notes and Genre Groove Differentiation Tests
 // ============================================================================
 
 TEST_F(DrumsTest, BridgeSectionHasGhostNotes) {
@@ -2016,7 +2016,7 @@ TEST_F(DrumsTest, ShakerUsesGM82) {
 }
 
 // ============================================================================
-// Phase 3.7: Dynamic Hi-Hat Pattern Tests
+// Dynamic Hi-Hat Pattern Tests
 // ============================================================================
 
 constexpr uint8_t FOOT_HH = 44;
@@ -2227,7 +2227,7 @@ TEST_F(DrumsTest, DynamicHiHatPatternDeterministic) {
 }
 
 // ============================================================================
-// Phase 3.6: Section-Based Drum Style Changes
+// Section-Based Drum Style Changes
 // ============================================================================
 
 constexpr uint8_t RIDE = 51;
@@ -2929,7 +2929,7 @@ TEST_F(DrumsTest, PreChorusBreakOnlyTakesTheLastBeat) {
 }
 
 // ============================================================================
-// Phase 3: Ghost Note Velocity Contextualization Tests (Task 3-1)
+// Ghost Note Velocity Contextualization Tests
 // ============================================================================
 
 TEST_F(DrumsTest, GhostNotesHaveContextDependentVelocity) {
@@ -2983,7 +2983,7 @@ TEST_F(DrumsTest, GhostNotesHaveContextDependentVelocity) {
 }
 
 // ============================================================================
-// Phase 3: Fill Length Energy Linkage Tests (Task 3-3)
+// Fill Length Energy Linkage Tests
 // ============================================================================
 
 TEST_F(DrumsTest, HighEnergyChorusAllowsLongerFills) {
@@ -3019,7 +3019,7 @@ TEST_F(DrumsTest, HighEnergyChorusAllowsLongerFills) {
 }
 
 // ============================================================================
-// Phase 3: Hi-Hat Type Variation Tests (Task 3-4)
+// Hi-Hat Type Variation Tests
 // ============================================================================
 
 TEST_F(DrumsTest, IntroVerseUsesDifferentHiHatThanChorus) {
@@ -3059,7 +3059,7 @@ TEST_F(DrumsTest, IntroVerseUsesDifferentHiHatThanChorus) {
 }
 
 // ============================================================================
-// Pre-chorus Snare Buildup Tests (Phase 2, Task 2-1)
+// Pre-chorus Snare Buildup Tests
 // ============================================================================
 
 TEST_F(DrumsTest, IntroKickEnabledFlagDifferenceTest) {

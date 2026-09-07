@@ -1,6 +1,6 @@
 /**
  * @file genre_expansion_test.cpp
- * @brief Tests for Phase 4 genre expansion features: R&B/Neo-Soul, Latin Pop, Trap, Lo-fi moods,
+ * @brief Tests for genre expansion features: R&B/Neo-Soul, Latin Pop, Trap, Lo-fi moods,
  *        Drop section type, and bass pedal tone linkage.
  */
 

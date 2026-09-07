@@ -121,7 +121,7 @@ TEST(TypesTest, DrumStyleMapping) {
 }
 
 // ============================================================================
-// Phase 0: Layer Architecture Types Tests
+// Layer Architecture Types Tests
 // ============================================================================
 
 TEST(TypesTest, CadenceTypeEnumValues) {

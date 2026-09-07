@@ -452,7 +452,7 @@ TEST_F(VocalTest, BasicMelodyGeneration) {
 
 TEST_F(VocalTest, NoExcessiveOverlapWithVariousSeeds) {
   // Test that notes never excessively overlap across many seeds.
-  // Phase 3 exit patterns (Fadeout/FinalHit/CutOff/Sustain) may extend the last
+  // Exit patterns (Fadeout/FinalHit/CutOff/Sustain) may extend the last
   // note of a section slightly into the next section boundary. Allow up to 1 beat
   // (480 ticks) of overlap at section boundaries only.
   constexpr Tick kSectionBoundaryTolerance = 480;
@@ -1215,7 +1215,7 @@ TEST_F(VocalTest, AllGrooveFeelsGenerateValidOutput) {
 }
 
 // ============================================================================
-// Phase 5: Extended VocalStylePreset Tests
+// Extended VocalStylePreset Tests
 // ============================================================================
 
 TEST_F(VocalTest, AllExtendedVocalStylePresetsGenerateValidOutput) {
@@ -1433,7 +1433,7 @@ TEST_F(VocalTest, AppoggiaturasAreNotMergedIntoTheirResolution) {
 }
 
 // ============================================================================
-// Phase 6: RangeProfile Tests
+// RangeProfile Tests
 // ============================================================================
 
 TEST_F(VocalTest, NoSectionLeapsWiderThanItsOwnAllowance) {
@@ -1904,7 +1904,7 @@ TEST_F(VocalTest, AllVocalGroovesProduceValidData) {
     }
 
     // Verify no excessive overlaps.
-    // Phase 3 exit patterns may cause up to 1 beat overlap at section boundaries.
+    // Exit patterns may cause up to 1 beat overlap at section boundaries.
     constexpr Tick kSectionBoundaryTolerance = 480;
     for (size_t i = 0; i + 1 < notes.size(); ++i) {
       Tick end_tick = notes[i].start_tick + notes[i].duration;
@@ -2824,7 +2824,7 @@ TEST_F(VocalTest, CleanAttitudeDoesNotGeneratePitchBends) {
 }
 
 // ============================================================================
-// Phase 2 P4: Occurrence-dependent phrase variation and embellishment density
+// Occurrence-dependent phrase variation and embellishment density
 // ============================================================================
 
 TEST(PhraseVariationOccurrence, Occurrence1ProducesAbout80PercentExact) {

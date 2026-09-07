@@ -637,7 +637,7 @@ TEST(MelodyEvaluatorTest, TotalIncludesCatchiness) {
 }
 
 // ============================================================================
-// Graduated Repeat Bonus Tests (Phase 1: Catchiness Enhancement)
+// Graduated Repeat Bonus Tests (Catchiness Enhancement)
 // ============================================================================
 
 TEST(MelodyEvaluatorTest, Catchiness_GraduatedRepeatBonus_TwoNotes) {

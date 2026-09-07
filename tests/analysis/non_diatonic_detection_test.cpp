@@ -269,7 +269,7 @@ TEST_F(NonDiatonicDetectionTest, JsonOutputIncludesNonDiatonic) {
 // Test: Clean generation produces minimal non-diatonic notes
 TEST_F(NonDiatonicDetectionTest, CleanGenerationHasNoNonDiatonic) {
   // After the bass fix, normal generation should have minimal non-diatonic notes.
-  // Phase 3 modal interchange (iv, bII, #IVdim) intentionally introduces
+  // Modal interchange (iv, bII, #IVdim) intentionally introduces
   // non-diatonic tones for harmonic color. Allow up to 3 per song.
   std::vector<uint32_t> test_seeds = {1, 42, 12345, 67890, 99999};
 
@@ -330,7 +330,7 @@ TEST_F(NonDiatonicDetectionTest, RegressionOriginalBugDetected) {
   auto report = analyzeDissonance(song, params_);
 
   // After the fix, non-diatonic notes from the original bass bug should be gone.
-  // Phase 3 modal interchange may introduce a small number of intentional
+  // Modal interchange may introduce a small number of intentional
   // non-diatonic notes (iv, bII, #IVdim). Allow up to 6.
   // (Increased from 5 to 6 for phrase contour/rhythm-melody coupling changes)
   EXPECT_LE(report.summary.non_diatonic_notes, 6u)

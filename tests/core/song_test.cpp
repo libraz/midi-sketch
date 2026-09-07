@@ -192,7 +192,7 @@ TEST(SongTest, GetMelodicTracksModifiable) {
 }
 
 // ============================================================================
-// Phase 0: Phrase Boundary Tests
+// Phrase Boundary Tests
 // ============================================================================
 
 TEST(SongTest, PhraseBoundariesDefault) {

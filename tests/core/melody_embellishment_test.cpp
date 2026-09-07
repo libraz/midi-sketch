@@ -355,7 +355,7 @@ TEST(BeatStrengthTest, OffBeatIsWeak) {
 }
 
 // ============================================================================
-// "Setsunai" Expression Enhancement Tests (Phase 2-4)
+// "Setsunai" Expression Enhancement Tests
 // ============================================================================
 
 TEST(SetsunaiExpressionTest, BalladMoodHasIncreasedTensionRatio) {

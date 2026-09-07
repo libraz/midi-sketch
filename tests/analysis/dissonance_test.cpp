@@ -85,7 +85,7 @@ TEST(DissonanceTest, AnalyzeGeneratedSong) {
   auto report = analyzeDissonance(song, params, gen.getHarmonyContext());
 
   // Basic sanity checks - total_issues includes all category counts.
-  // Phase 3 added non_diatonic_notes from modal interchange/tritone substitution.
+  // non_diatonic_notes comes from modal interchange/tritone substitution.
   EXPECT_EQ(report.summary.total_issues,
             report.summary.simultaneous_clashes + report.summary.non_chord_tones +
                 report.summary.sustained_over_chord_change + report.summary.non_diatonic_notes);
@@ -1327,7 +1327,7 @@ TEST(DissonanceIntegrationTest, MediumSeverityMetrics) {
   float avg_medium = static_cast<float>(total_medium) / total_tests;
 
   // Quality thresholds: average < 7 medium issues per song.
-  // Phase 3 harmonic features (slash chords, tritone substitution, modal interchange)
+  // Harmonic features such as slash chords, tritone substitution, and modal interchange
   // introduce additional valid harmonic complexity that the analyzer may flag.
   // Note: percentage threshold removed as medium issues (major 7th, tritone context)
   // are acceptable in harmonic content and 100% occurrence is OK after Aux order fix.

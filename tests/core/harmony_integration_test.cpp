@@ -601,7 +601,7 @@ TEST_F(HarmonyIntegrationTest, MotifTensionRespectsExtensionParams_Disabled) {
     // which fall on these intervals (9th=2, 11th=5, 13th=9). Since tension
     // addition logic is disabled, these occur naturally from the diatonic scale.
     // Allow up to 40% for natural melodic content in diatonic passages.
-    // Phase 3 harmonic changes (modal interchange, B-section subdivision) can
+    // Harmonic changes from modal interchange and B-section subdivision can
     // increase tension note counts slightly above previous levels.
     float tension_ratio = static_cast<float>(tension_count) / motif_notes.size();
     EXPECT_LE(tension_ratio, 0.40f)

@@ -869,14 +869,14 @@ TEST_F(ArpeggioTest, NoMinor2ndClashWithChordTrack) {
     }
   }
 
-  // Phase 3 harmonic changes (slash chords, B-section half-bar subdivision,
-  // modal interchange) can introduce additional clashes at chord boundaries.
+  // Harmonic changes from slash chords, B-section half-bar subdivision, and
+  // modal interchange can introduce additional clashes at chord boundaries.
   // Strong-beat clashes are tolerated up to 10 (previously 0).
   EXPECT_LE(strong_beat_clash_count, 10)
       << "Too many strong-beat arpeggio-chord clashes: " << strong_beat_clash_count;
 
   // Measured clash count: 25-75 (from swing-induced temporal overlaps and
-  // B section half-bar chord changes plus Phase 3 slash chord voice leading).
+  // B section half-bar chord changes plus slash chord voice leading).
   // Threshold set with margin for cross-platform and RNG state variation.
   // Increased to 75 after phrase contour and rhythm-melody coupling changes.
   EXPECT_LE(clash_count, 75) << "Too many arpeggio-chord minor 2nd/major 7th clashes: "

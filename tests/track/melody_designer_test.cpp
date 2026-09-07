@@ -1579,7 +1579,7 @@ TEST(MelodyDesignerTest, CachedGlobalMotifIsSet) {
 }
 
 // ============================================================================
-// Melody DNA Strengthening Tests (Phase 3.12)
+// Melody DNA Strengthening Tests
 // ============================================================================
 
 TEST(GlobalMotifTest, MaxBonusIsPointTwoFive) {
@@ -1682,7 +1682,7 @@ TEST(GlobalMotifTest, StrengthenedBonusImprovesCoherence) {
 }
 
 // ============================================================================
-// Phase 5: Melody Motif Development Tests (Task 5-1, 5-2)
+// Melody Motif Development Tests
 // ============================================================================
 
 TEST(SectionContextTest, SubPhraseIndexHelpers) {
@@ -1748,7 +1748,7 @@ TEST(SectionContextTest, StepSizeMultiplier) {
 }
 
 // ============================================================================
-// Phase 5: Melody Climax Point Tests (Task 5-4)
+// Melody Climax Point Tests
 // ============================================================================
 
 TEST(VelocityContourTest, MelodyGeneratesWithVaryingVelocity) {
@@ -1825,7 +1825,7 @@ TEST(MelodyTemplateTest, BetrayalThresholdAffectsHookGeneration) {
 }
 
 // ============================================================================
-// Enhanced Breath Model Tests (Phase 2)
+// Enhanced Breath Model Tests
 // ============================================================================
 
 TEST(BreathContextTest, BreathContextStructInitialization) {
@@ -2007,7 +2007,7 @@ TEST(MelodyDesignerTest, HighPitchPhraseAffectsBreath) {
 }
 
 // ============================================================================
-// Internal Arc Activation Tests (Phase 2-2)
+// Internal Arc Activation Tests
 // ============================================================================
 
 TEST(InternalArcActivationTest, EightBarSectionUsesAllArcStages) {
