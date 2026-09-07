@@ -1,6 +1,7 @@
-.PHONY: help build test test-cpp test-js test-oracle test-python test-readme clean rebuild format format-check lint wasm wasm-clean serve demo
+.PHONY: help build test test-cpp test-noprov test-js test-oracle test-python test-readme clean rebuild format format-check lint wasm wasm-clean serve demo
 
 BUILD_DIR := build
+NOPROV_BUILD_DIR := build-noprov
 WASM_BUILD_DIR := build-wasm
 CLANG_FORMAT ?= clang-format
 PYTHON ?= python3
@@ -12,6 +13,7 @@ help:
 	@echo ""
 	@echo "  make build     - Build the project"
 	@echo "  make test      - Run C++, WASM/JS, oracle, Python, and README example tests"
+	@echo "  make test-noprov - Run C++ tests in the shipping (no-provenance) shape"
 	@echo "  make clean     - Clean build"
 	@echo "  make rebuild   - Clean and rebuild"
 	@echo "  make format    - Format code (C++ + js/ TS bindings)"
@@ -34,6 +36,16 @@ test: test-cpp test-js test-oracle test-python test-readme
 test-cpp: build
 	ctest --test-dir $(BUILD_DIR) --output-on-failure
 
+# The shape the WASM module ships in: no NoteEvent provenance fields. Kept as a
+# separate build tree because the definition changes NoteEvent's layout, so the
+# two shapes cannot share object files. Not part of `make test` -- it doubles
+# the C++ run for a difference only a handful of tests can see.
+test-noprov:
+	@mkdir -p $(NOPROV_BUILD_DIR)
+	@cmake -B $(NOPROV_BUILD_DIR) -DCMAKE_BUILD_TYPE=Release -DMIDISKETCH_NO_PROVENANCE=ON
+	cmake --build $(NOPROV_BUILD_DIR) --parallel
+	ctest --test-dir $(NOPROV_BUILD_DIR) --output-on-failure
+
 test-js: wasm
 	yarn test
 
@@ -47,7 +59,7 @@ test-readme: build wasm
 	$(PYTHON) scripts/check_readme_examples.py
 
 clean:
-	rm -rf $(BUILD_DIR)
+	rm -rf $(BUILD_DIR) $(NOPROV_BUILD_DIR)
 
 rebuild: clean build
 

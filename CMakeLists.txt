@@ -35,6 +35,17 @@ option(BUILD_CLI "Build CLI executable" ON)
 option(BUILD_TESTING "Build tests" ON)
 option(BUILD_WASM "Build for WebAssembly" OFF)
 option(ENABLE_COVERAGE "Enable code coverage" OFF)
+option(MIDISKETCH_NO_PROVENANCE "Build without the NoteEvent provenance fields, as the WASM build does" OFF)
+
+# The provenance fields are members of NoteEvent, so the definition decides that
+# type's layout. It has to reach the library and everything linked against it
+# alike: a library built with the fields and a test binary built without them
+# agree at link time and disagree about where every note member lives. Set it on
+# the directory rather than on one target so no future target can be added on
+# the wrong side of it.
+if(MIDISKETCH_NO_PROVENANCE)
+  add_compile_definitions(MIDISKETCH_NO_NOTE_PROVENANCE)
+endif()
 
 # Output directories
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
