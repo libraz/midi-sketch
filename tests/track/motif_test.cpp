@@ -1724,7 +1724,9 @@ TEST_F(MotifLockedCacheTest, MultiSeedProducesSimilarRepeatSections) {
       << " (consistent=" << consistent_count << ", testable=" << testable_count << ")";
 }
 
-TEST_F(MotifLockedCacheTest, NonRhythmSyncLockedRiffsKeepPitchIdentityAfterPostProcessing) {
+TEST_F(MotifLockedCacheTest, LockedRiffsKeepPitchIdentityAfterPostProcessing) {
+  // What these three share is the locked riff policy, not a paradigm: 6 and 8
+  // are MelodyDriven, 9 is RhythmSync.
   struct Case {
     uint8_t blueprint_id;
     Mood mood;
