@@ -35,21 +35,27 @@ float calculateGateRatio(const GateContext& ctx) {
 
   // Interior notes: gate based on interval
   // Vocal principle: stepwise motion should be fully legato for singability
+  //
+  // What the gap can reach is bounded by where this applies. Only a note
+  // shorter than a quarter arrives here, and applyGateRatio will not return
+  // less than a sixteenth, so the skip ratio opens at most 8 ticks and the leap
+  // ratio at most 18 -- under 20 ms at 120 BPM. These are a hint of separation
+  // rather than an articulation control, and the values belong on that scale.
   int interval = std::abs(ctx.interval_from_prev);
 
-  if (interval == 0) {
-    // Same pitch: legato connection (100%)
+  if (interval <= 2) {
+    // Unison and step motion (0-2 semitones): fully legato. A repeated pitch is
+    // sung as one connected line the same way a step is, so it is not a
+    // separate case; splitting it into its own arm returning the same ratio
+    // read as a decision the gate was not making.
     return 1.0f;
-  } else if (interval <= 2) {
-    // Step motion (1-2 semitones): full legato for smooth vocal line
-    return 1.0f;
-  } else if (interval <= 5) {
+  }
+  if (interval <= 5) {
     // Skip (3-5 semitones): near-legato with minimal gap
     return 0.98f;
-  } else {
-    // Leap (6+ semitones): slight articulation for breath preparation
-    return 0.95f;
   }
+  // Leap (6+ semitones): slight articulation for breath preparation
+  return 0.95f;
 }
 
 Tick applyGateRatio(Tick duration, const GateContext& ctx, Tick min_duration) {
@@ -60,6 +66,12 @@ Tick applyGateRatio(Tick duration, const GateContext& ctx, Tick min_duration) {
   float ratio = calculateGateRatio(ctx);
   Tick gated = static_cast<Tick>(duration * ratio);
 
+  // The floor can exceed what was asked for, so this returns a longer note than
+  // it was given whenever a writer hands in one shorter than a sixteenth -- and
+  // that is the largest change this function makes to any duration, several
+  // times the widest gap the ratio above can open. The vocal's shortest note is
+  // a sixteenth, so a sixteenth-triplet duration arrives here and leaves as a
+  // sixteenth; the stretch is the floor speaking, not the gate.
   return std::max(gated, min_duration);
 }
 
