@@ -1015,9 +1015,19 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
       int direction = (chord_tone > prev_pitch) ? 1 : -1;
       int stepped_pitch = prev_pitch + direction * kMaxPhraseConnectionInterval;
       current_pitch = melody::nearestPitchInSet(start_chord_tones, stepped_pitch, 0, 127);
-      current_pitch = std::clamp(current_pitch, static_cast<int>(ctx.vocal_low),
-                                 static_cast<int>(ctx.vocal_high));
     }
+
+    // The range belongs to the singer, so it binds whichever way the pitch above
+    // was reached. Asked once here rather than inside a branch: the branch that
+    // does not fire held the only copy, so the live one could open a phrase
+    // above the ceiling. What the skeleton does with such a head is clamp it,
+    // and a clamped head is no longer the chord tone the lines above chose it
+    // for -- it is whichever pitch the boundary happens to be. Asking for the
+    // nearest chord tone inside the range keeps both properties; it falls back
+    // to the plain clamp only when the chord has no tone in range at all.
+    current_pitch =
+        melody::nearestPitchInSet(start_chord_tones, current_pitch, static_cast<int>(ctx.vocal_low),
+                                  static_cast<int>(ctx.vocal_high));
   }
 
   // Calculate target pitch if template has target

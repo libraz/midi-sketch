@@ -307,6 +307,63 @@ TEST(MelodyDesignerTest, GenerateMelodyPhraseContinuity) {
   }
 }
 
+TEST(MelodyDesignerTest, APhraseReachingPastTheCeilingDoesNotOpenPinnedToIt) {
+  HarmonyContext harmony;
+  std::vector<Section> sections;
+  Section a_section;
+  a_section.type = SectionType::A;
+  a_section.bars = 8;
+  a_section.start_tick = 0;
+  a_section.name = "A";
+  sections.push_back(a_section);
+  harmony.initialize(Arrangement(sections), getChordProgression(0), Mood::StraightPop);
+
+  const MelodyTemplate& tmpl = getTemplate(MelodyTemplateId::PlateauTalk);
+
+  auto ctx = createTestContext();
+  ctx.section_bars = 8;
+  ctx.section_end = TICKS_PER_BAR * 8;
+  ctx.mood = Mood::StraightPop;
+  ctx.enable_embellishment = false;
+  // A range narrow enough that the chord tone nearest to its ceiling can lie
+  // above it. The previous phrase is given that ceiling as its last pitch,
+  // which is the position from which the next phrase reaches past it.
+  ctx.vocal_low = 68;
+  ctx.vocal_high = 79;
+
+  size_t chords_reaching_past_the_ceiling = 0;
+  for (int bar = 0; bar < 8; ++bar) {
+    const Tick phrase_start = static_cast<Tick>(bar) * TICKS_PER_BAR;
+    const ChordTones tones = melody::vocalSnapTonesAt(harmony, phrase_start);
+    const int nearest_anywhere = melody::nearestPitchInSet(tones, ctx.vocal_high, 0, 127);
+    if (nearest_anywhere > ctx.vocal_high) ++chords_reaching_past_the_ceiling;
+
+    MelodyDesigner designer;
+    std::mt19937 rng(42);
+    auto result =
+        designer.generateMelodyPhrase(tmpl, phrase_start, 8, ctx, ctx.vocal_high, 0, harmony, rng);
+    ASSERT_FALSE(result.notes.empty()) << "bar " << bar << " produced no phrase";
+
+    const int head = result.notes.front().note;
+    EXPECT_GE(head, ctx.vocal_low) << "bar " << bar;
+    EXPECT_LE(head, ctx.vocal_high) << "bar " << bar;
+    if (nearest_anywhere <= ctx.vocal_high) continue;
+
+    // Where the chord's nearest tone lies above the ceiling, the ceiling itself
+    // is by that same fact not a tone of the chord -- otherwise it would have
+    // been the nearest. So a phrase opening exactly on the ceiling here is not
+    // a pitch anything chose; it is a pitch above the range with the range
+    // subtracted from it. The phrase has to open somewhere else.
+    EXPECT_LT(head, ctx.vocal_high)
+        << "bar " << bar << ": the chord's nearest tone to the ceiling is " << nearest_anywhere
+        << ", and the phrase opens on the ceiling itself";
+  }
+
+  ASSERT_GT(chords_reaching_past_the_ceiling, 0u)
+      << "no chord in this progression puts its nearest tone above the ceiling, so the "
+         "range is not being asked anything here";
+}
+
 // ============================================================================
 // generateHook Tests
 // ============================================================================
