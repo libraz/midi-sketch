@@ -312,9 +312,25 @@ void PostProcessor::applyChorusDrop(std::vector<MidiTrack*>& tracks,
     }
 
     // Dramatic/DrumHit: also truncate drum track (except fills)
+    //
+    // A crash in the last sixteenth of the zone is noted before the cut. The kit
+    // writes the chorus entry accent only when no crash is already sounding
+    // within a sixteenth of the downbeat, so a crash there is the reason the
+    // entry was left unwritten -- it is the arrival marker, played slightly
+    // ahead of the beat, and not a note of the build. Silencing it without
+    // putting one back leaves the chorus arriving unannounced.
+    uint8_t displaced_entry_crash_vel = 0;
     if (style == ChorusDropStyle::Dramatic || style == ChorusDropStyle::DrumHit) {
       if (drum_track != nullptr && !drum_track->empty()) {
         auto& drum_notes = drum_track->notes();
+        const Tick entry_anticipation_start = next_section_start_tick - TICK_SIXTEENTH;
+        for (const NoteEvent& note : drum_notes) {
+          if (note.note != CRASH_NOTE) continue;
+          if (note.start_tick < entry_anticipation_start || note.start_tick >= section_end_tick) {
+            continue;
+          }
+          displaced_entry_crash_vel = std::max(displaced_entry_crash_vel, note.velocity);
+        }
         // Remove drum notes in drop zone (fill should be added separately)
         drum_notes.erase(std::remove_if(drum_notes.begin(), drum_notes.end(),
                                         [drop_start_tick, section_end_tick](const NoteEvent& note) {
@@ -325,33 +341,36 @@ void PostProcessor::applyChorusDrop(std::vector<MidiTrack*>& tracks,
       }
     }
 
-    // DrumHit: add crash cymbal on next section entry
-    if (style == ChorusDropStyle::DrumHit) {
-      if (drum_track != nullptr) {
-        auto& drum_notes = drum_track->notes();
-        // Check if crash already exists at next section start
-        bool has_crash = false;
-        for (const auto& note : drum_notes) {
-          if (note.start_tick == next_section_start_tick && note.note == CRASH_NOTE) {
-            has_crash = true;
-            break;
-          }
+    // Mark the next section's entry with a crash. DrumHit asks for one whether
+    // or not the kit wrote anything, at its own strong level; the other styles
+    // only restore the one the cut above took away, at the level the kit gave
+    // it, so a drop that removed nothing still adds nothing.
+    const bool mark_entry = (style == ChorusDropStyle::DrumHit) || (displaced_entry_crash_vel > 0);
+    if (mark_entry && drum_track != nullptr) {
+      auto& drum_notes = drum_track->notes();
+      // Check if crash already exists at next section start
+      bool has_crash = false;
+      for (const auto& note : drum_notes) {
+        if (note.start_tick == next_section_start_tick && note.note == CRASH_NOTE) {
+          has_crash = true;
+          break;
         }
-        // Add crash cymbal at next section entry
-        if (!has_crash) {
-          NoteEvent crash;
-          crash.start_tick = next_section_start_tick;
-          crash.duration = TICKS_PER_BEAT;
-          crash.note = CRASH_NOTE;
-          crash.velocity = CRASH_VEL;
+      }
+      // Add crash cymbal at next section entry
+      if (!has_crash) {
+        NoteEvent crash;
+        crash.start_tick = next_section_start_tick;
+        crash.duration = TICKS_PER_BEAT;
+        crash.note = CRASH_NOTE;
+        crash.velocity =
+            (style == ChorusDropStyle::DrumHit) ? CRASH_VEL : displaced_entry_crash_vel;
 #ifdef MIDISKETCH_NOTE_PROVENANCE
-          crash.prov_chord_degree = -1;
-          crash.prov_lookup_tick = next_section_start_tick;
-          crash.prov_source = static_cast<uint8_t>(NoteSource::PostProcess);
-          crash.prov_original_pitch = CRASH_NOTE;
+        crash.prov_chord_degree = -1;
+        crash.prov_lookup_tick = next_section_start_tick;
+        crash.prov_source = static_cast<uint8_t>(NoteSource::PostProcess);
+        crash.prov_original_pitch = CRASH_NOTE;
 #endif
-          drum_notes.push_back(crash);
-        }
+        drum_notes.push_back(crash);
       }
     }
   }

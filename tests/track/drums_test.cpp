@@ -1075,16 +1075,26 @@ TEST_F(DrumsTest, CrashCymbalsDoNotDuplicateAtSameTick) {
 // The crash is what tells a listener the chorus has arrived, and a fill spends
 // a whole bar pointing at it. It is written at every chorus entry, but the
 // timekeeping stroke that lands on the same beat is written later and the two
-// cannot share a hand, so the accent only survives if that stroke yields.
-// Sections that ride are the ones where this is decided.
+// cannot share a hand, so the accent only survives if that stroke yields. A
+// pre-chorus drop can also cut the last beat away, and a crash the kit played
+// slightly ahead of the downbeat is inside what it cuts.
+//
+// Which of those happens is decided by the blueprint (whether a drop is drawn
+// at all), the mood (which kit is playing and how its fills end), and the seed,
+// so the three are varied together rather than one at a time: every pair of
+// values from two different axes appears in some song below. Pinning the mood
+// left the kits whose fills end on an anticipated crash untested.
 TEST_F(DrumsTest, EveryChorusEntryIsMarkedByACrash) {
-  const std::vector<uint8_t> blueprint_ids = {0, 1, 2, 4, 7, 8};
+  const std::vector<uint8_t> blueprint_ids = {0, 1, 2, 4, 5, 7, 8};
   const std::vector<uint32_t> seeds = {7, 4242, 20260908};
+  constexpr int kMoodCount = 24;
 
   int entries = 0;
-  for (uint8_t blueprint_id : blueprint_ids) {
-    for (uint32_t seed : seeds) {
-      params_.blueprint_id = blueprint_id;
+  for (size_t bi = 0; bi < blueprint_ids.size(); ++bi) {
+    for (int mood = 0; mood < kMoodCount; ++mood) {
+      const uint32_t seed = seeds[(bi + static_cast<size_t>(mood)) % seeds.size()];
+      params_.blueprint_id = blueprint_ids[bi];
+      params_.mood = static_cast<Mood>(mood);
       params_.seed = seed;
 
       Generator gen;
@@ -1112,12 +1122,17 @@ TEST_F(DrumsTest, EveryChorusEntryIsMarkedByACrash) {
         }
         ++entries;
         EXPECT_TRUE(marked) << "Chorus at tick " << section.start_tick << " enters with no crash"
-                            << " for blueprint=" << static_cast<int>(blueprint_id)
-                            << " seed=" << seed;
+                            << " for blueprint=" << static_cast<int>(blueprint_ids[bi])
+                            << " mood=" << mood << " seed=" << seed;
       }
     }
   }
-  EXPECT_GE(entries, 30) << "The sweep must actually reach chorus entries to assert anything";
+  // Every song in this sweep is a StandardPop arrangement, so each contributes
+  // at least one chorus entry past the first section. Stating the floor that
+  // way rather than as an observed count keeps it from being a snapshot of
+  // today's output.
+  EXPECT_GE(entries, static_cast<int>(blueprint_ids.size()) * kMoodCount)
+      << "The sweep must actually reach chorus entries to assert anything";
 }
 
 TEST(HiHatControlTest, CrashPresenceWindowIsSymmetricAroundRequestedTick) {
