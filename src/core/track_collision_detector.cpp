@@ -22,12 +22,6 @@ namespace midisketch {
 
 namespace {
 
-// Helper to check if a track role produces harmonic (pitched) content
-bool isHarmonicTrack(TrackRole role) {
-  return role == TrackRole::Bass || role == TrackRole::Chord || role == TrackRole::Vocal ||
-         role == TrackRole::Motif || role == TrackRole::Aux || role == TrackRole::Guitar;
-}
-
 bool isDominantFunctionContext(int8_t chord_degree, const ChordProgressionTracker* chord_tracker,
                                Tick tick) {
   return chordDegreeOwnsATritone(chord_degree) ||
@@ -177,9 +171,6 @@ bool TrackCollisionDetector::isConsonantWithOtherTracks(
     chord_degree = chord_tracker->getChordDegreeAt(start);
   }
 
-  // Determine if exclude track is harmonic (pre-compute outside loop)
-  bool exclude_is_harmonic = isHarmonicTrack(exclude);
-
   // Use beat-indexed lookup
   auto& indices = noteIndexScratch();
   collectNoteIndices(start, end, indices);
@@ -210,18 +201,6 @@ bool TrackCollisionDetector::isConsonantWithOtherTracks(
         continue;
       }
 
-      // Special case: tritone between harmonic tracks is dissonant except in
-      // dominant-function contexts (V, vii°, registered secondary dominants).
-      if (exclude_is_harmonic) {
-        if (isHarmonicTrack(note.track)) {
-          int pc_interval = actual_semitones % 12;
-          if (pc_interval == 6 && actual_semitones < 36 &&
-              !isDominantFunctionContext(chord_degree, chord_tracker, start)) {
-            return false;
-          }
-        }
-      }
-
       // Mirror the analyzer's compound-interval rules (analysis/dissonance.cpp
       // checkIntervalDissonance + bass M7 special case) so generation never
       // accepts an interval the dissonance gate counts as a clash:
@@ -231,13 +210,6 @@ bool TrackCollisionDetector::isConsonantWithOtherTracks(
             pc_interval == 11 &&
             isRegisteredRootMajorSeventhContext(pitch, note.pitch, actual_semitones, chord_degree,
                                                 chord_tracker, start);
-        // Compound tritone (e.g. vocal B4 over bass F3 = aug 11th) is
-        // dissonant on non-dominant chords for ANY track pair.
-        if (pc_interval == 6 && actual_semitones <= 24) {
-          if (!isDominantFunctionContext(chord_degree, chord_tracker, start)) {
-            return false;
-          }
-        }
         // Major-7th pitch class against a low bass note (< C3): the low
         // register overtone content makes this clash audible even with
         // 2+ octaves of separation.
@@ -260,6 +232,10 @@ bool TrackCollisionDetector::isConsonantWithOtherTracks(
           continue;
         }
 
+        // The tritone the interval table forbids is the one no chord accounts
+        // for. A secondary dominant owns its tritone the same way a diatonic V
+        // does, and the table cannot see it -- it is told a scale degree, and
+        // the substitution lives on the timeline.
         if (pc_interval == 6 && isDominantFunctionContext(chord_degree, chord_tracker, start)) {
           continue;
         }
@@ -289,8 +265,6 @@ CollisionInfo TrackCollisionDetector::getCollisionInfo(
     chord_degree = chord_tracker->getChordDegreeAt(start);
   }
 
-  bool exclude_is_harmonic = isHarmonicTrack(exclude);
-
   auto& indices = noteIndexScratch();
   collectNoteIndices(start, end, indices);
 
@@ -309,20 +283,6 @@ CollisionInfo TrackCollisionDetector::getCollisionInfo(
       if (isToleratedMelodicTension(actual_semitones, overlap_duration, pitch, note.pitch,
                                     overlap_start, exclude, note.track)) {
         continue;
-      }
-
-      if (exclude_is_harmonic) {
-        if (isHarmonicTrack(note.track)) {
-          int pc_interval = actual_semitones % 12;
-          if (pc_interval == 6 && actual_semitones < 36 &&
-              !isDominantFunctionContext(chord_degree, chord_tracker, start)) {
-            info.has_collision = true;
-            info.colliding_pitch = note.pitch;
-            info.colliding_track = note.track;
-            info.interval_semitones = actual_semitones;
-            return info;
-          }
-        }
       }
 
       bool registered_root_major_seventh =

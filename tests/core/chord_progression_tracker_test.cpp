@@ -220,6 +220,42 @@ TEST_F(ChordProgressionTrackerTest, CollisionDetectorAllowsRegisteredSecondaryDo
       << "E-Bb tritone should be allowed inside a registered C7 secondary dominant";
 }
 
+// How far a tritone reaches is stated once, by the interval table, and the
+// chord-function exemption above it reaches exactly as far. Both used to be
+// spelled a second time in a wider form that ran first and hid this one; the
+// pair below is what the second spelling was nominally protecting, so it is
+// asserted here rather than left to the shape of the code.
+TEST_F(ChordProgressionTrackerTest, CollisionDetectorRefusesATritoneAcrossOctavesUntilItStops) {
+  TrackCollisionDetector detector;
+  detector.registerNote(0, TICKS_PER_BEAT, 53, TrackRole::Chord);  // F3 under a I chord
+
+  for (uint8_t b : {59, 71, 83}) {  // B3, B4, B5: 6, 18 and 30 semitones above F3
+    EXPECT_FALSE(
+        detector.isConsonantWithOtherTracks(b, 0, TICKS_PER_BEAT, TrackRole::Motif, &tracker_))
+        << "A tritone the sounding chord does not own is refused at " << (b - 53) << " semitones";
+    EXPECT_TRUE(
+        detector.getCollisionInfo(b, 0, TICKS_PER_BEAT, TrackRole::Motif, &tracker_).has_collision)
+        << "Diagnostic collision reporting must match generation at " << (b - 53) << " semitones";
+  }
+
+  EXPECT_TRUE(
+      detector.isConsonantWithOtherTracks(95, 0, TICKS_PER_BEAT, TrackRole::Motif, &tracker_))
+      << "Three octaves apart the two notes no longer beat against each other";
+}
+
+TEST_F(ChordProgressionTrackerTest, CollisionDetectorAllowsACompoundSecondaryDominantTritone) {
+  ChordProgressionTracker tracker;
+  tracker.initialize(arrangement_, progression_, Mood::StraightPop);
+  tracker.registerSecondaryDominant(TICK_HALF, TICKS_PER_BAR, 0);  // C7: C-E-G-Bb
+
+  TrackCollisionDetector detector;
+  detector.registerNote(TICK_HALF, TICKS_PER_BEAT, 70, TrackRole::Chord);  // Bb4
+
+  EXPECT_TRUE(detector.isConsonantWithOtherTracks(52, TICK_HALF, TICKS_PER_BEAT, TrackRole::Motif,
+                                                  &tracker))
+      << "E3 against Bb4 is the same C7 tritone an octave wider, and the chord still owns it";
+}
+
 TEST_F(ChordProgressionTrackerTest, CollisionDetectorAllowsOnlyRegisteredRootMajorSeventh) {
   TrackCollisionDetector detector;
   detector.registerNote(0, TICKS_PER_BEAT, 36, TrackRole::Bass);  // C2
