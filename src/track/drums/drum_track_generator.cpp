@@ -7,7 +7,6 @@
 
 #include <algorithm>
 #include <map>
-#include <optional>
 #include <utility>
 #include <vector>
 
@@ -551,10 +550,14 @@ void generateDrumsTrackImpl(MidiTrack& track, const Song& song, const DrumGenera
   // auxiliary percussion from a per-bar pass, so a per-beat guard would leave
   // most of the bar's voices sounding through the hold.
   std::vector<std::pair<Tick, Tick>> break_windows;
-  // The hold has to resolve into something. A style that would not otherwise
-  // mark the chorus entry still gets a crash there, placed after the windows
-  // are cleared so a pushed grid cannot put it inside the silence.
-  std::optional<std::pair<Tick, uint8_t>> break_answer;
+  // Section entries the kit marks with a crash, replayed once the whole kit has
+  // been written. The crash is placed here as well, but the timekeeping stroke
+  // that lands on the same beat is only written later, and a crash sharing a
+  // hand with one does not survive the playability pass. Collecting the ticks
+  // lets that stroke yield after it exists. A hold resolving into the entry is
+  // one of these too, and it also has to be replayed after the windows are
+  // cleared so a pushed grid cannot put its crash inside the silence.
+  std::vector<std::pair<Tick, uint8_t>> entry_accents;
 
   for (size_t sec_idx = 0; sec_idx < all_sections.size(); ++sec_idx) {
     const auto& section = all_sections[sec_idx];
@@ -575,9 +578,7 @@ void generateDrumsTrackImpl(MidiTrack& track, const Song& song, const DrumGenera
           makeGrooveGrid(section, 0, ctx.groove, ctx.time_feel, params.bpm);
       const Tick entry_tick = entry_grid.resolve(section.start_tick);
       addCrashIfAbsent(track, entry_tick, TICKS_PER_BEAT / 2, crash_vel);
-      if (answers_break) {
-        break_answer = {entry_tick, crash_vel};
-      }
+      entry_accents.emplace_back(entry_tick, crash_vel);
     }
 
     bool reuse_section_kick = shouldReuseSectionKickPattern(section.type, ctx.style);
@@ -832,20 +833,20 @@ void generateDrumsTrackImpl(MidiTrack& track, const Song& song, const DrumGenera
                 notes.end());
   }
 
-  if (break_answer) {
-    const Tick answer_tick = break_answer->first;
-    // A drummer coming out of a hold crashes instead of playing the
-    // timekeeping stroke, and the two cannot share the hand. Yielding the
-    // stroke here keeps the playability pass from dropping the crash and
-    // leaving the hold unanswered.
+  // A drummer marking a section entry crashes instead of playing the
+  // timekeeping stroke, and the two cannot share the hand. Yielding the stroke
+  // here keeps the playability pass from dropping the crash -- it is the accent
+  // that tells the listener the chorus has arrived, and a ride stroke standing
+  // in for it leaves a fill building toward nothing.
+  for (const auto& [accent_tick, accent_vel] : entry_accents) {
     auto& notes = track.notes();
     notes.erase(std::remove_if(notes.begin(), notes.end(),
-                               [answer_tick](const NoteEvent& note) {
-                                 return note.start_tick == answer_tick &&
+                               [accent_tick = accent_tick](const NoteEvent& note) {
+                                 return note.start_tick == accent_tick &&
                                         (note.note == RIDE || note.note == CHH || note.note == OHH);
                                }),
                 notes.end());
-    addCrashIfAbsent(track, answer_tick, TICKS_PER_BEAT / 2, break_answer->second);
+    addCrashIfAbsent(track, accent_tick, TICKS_PER_BEAT / 2, accent_vel);
   }
 
   // Fill, anchor, and vocal-aware paths are intentionally composed

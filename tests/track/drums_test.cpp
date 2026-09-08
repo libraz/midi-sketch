@@ -1072,6 +1072,54 @@ TEST_F(DrumsTest, CrashCymbalsDoNotDuplicateAtSameTick) {
   }
 }
 
+// The crash is what tells a listener the chorus has arrived, and a fill spends
+// a whole bar pointing at it. It is written at every chorus entry, but the
+// timekeeping stroke that lands on the same beat is written later and the two
+// cannot share a hand, so the accent only survives if that stroke yields.
+// Sections that ride are the ones where this is decided.
+TEST_F(DrumsTest, EveryChorusEntryIsMarkedByACrash) {
+  const std::vector<uint8_t> blueprint_ids = {0, 1, 2, 4, 7, 8};
+  const std::vector<uint32_t> seeds = {7, 4242, 20260908};
+
+  int entries = 0;
+  for (uint8_t blueprint_id : blueprint_ids) {
+    for (uint32_t seed : seeds) {
+      params_.blueprint_id = blueprint_id;
+      params_.seed = seed;
+
+      Generator gen;
+      gen.generate(params_);
+      const auto& sections = gen.getSong().arrangement().sections();
+
+      for (size_t idx = 1; idx < sections.size(); ++idx) {
+        const Section& section = sections[idx];
+        if (section.type != SectionType::Chorus) continue;
+        if (!hasTrack(section.track_mask, TrackMask::Drums)) continue;
+
+        // A groove grid moves an onset off its nominal beat -- swing and a
+        // pushed time feel both do -- so the accent is looked for around the
+        // downbeat rather than exactly on it.
+        bool marked = false;
+        for (const auto& note : gen.getSong().drums().notes()) {
+          if (note.note != CRASH) continue;
+          const Tick delta = note.start_tick > section.start_tick
+                                 ? note.start_tick - section.start_tick
+                                 : section.start_tick - note.start_tick;
+          if (delta <= TICK_SIXTEENTH) {
+            marked = true;
+            break;
+          }
+        }
+        ++entries;
+        EXPECT_TRUE(marked) << "Chorus at tick " << section.start_tick << " enters with no crash"
+                            << " for blueprint=" << static_cast<int>(blueprint_id)
+                            << " seed=" << seed;
+      }
+    }
+  }
+  EXPECT_GE(entries, 30) << "The sweep must actually reach chorus entries to assert anything";
+}
+
 TEST(HiHatControlTest, CrashPresenceWindowIsSymmetricAroundRequestedTick) {
   MidiTrack track;
   constexpr Tick kCrashTick = TICK_SIXTEENTH * 2;
