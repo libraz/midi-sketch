@@ -836,7 +836,6 @@ std::vector<int> getPitchClassesOnBeat(const std::vector<NoteEvent>& notes, Tick
 bool isTrackMoving(const std::vector<NoteEvent>& notes, Tick prev_bar_start, Tick curr_bar_start) {
   Tick prev_bar_end = prev_bar_start + TICKS_PER_BAR;
   Tick curr_bar_end = curr_bar_start + TICKS_PER_BAR;
-
   for (uint8_t beat = 0; beat < BEATS_PER_BAR; ++beat) {
     Tick prev_beat = prev_bar_start + beat * TICKS_PER_BEAT;
     Tick curr_beat = curr_bar_start + beat * TICKS_PER_BEAT;
@@ -1241,6 +1240,22 @@ void Coordinator::applyVoiceLimit(Song& song, const std::vector<Section>& sectio
         // Copy previous bar's notes shifted by TICKS_PER_BAR
         copyNotesFromBar(notes, prev_bar_notes, getActiveHarmony(), prev_bar_start, prev_bar_end,
                          TICKS_PER_BAR);
+
+        // The source bar and this one do not stand in the same place in the
+        // phrase. Where this one is the phrase's last, the arrangement has
+        // already taken notes out of it so the phrase is heard to end, and the
+        // copy puts a full bar back over that silence -- the freeze undoing a
+        // subtraction the section asked for. Ask the track where it stops:
+        // whether a tail is observed at all, and how far into the bar, is the
+        // track's own answer and not the section's.
+        const ITrackBase* generator = getTrackGenerator(role);
+        if (generator != nullptr) {
+          Tick silence_offset = generator->getPhraseTailSilenceOffset(section.phrase_tail_rest,
+                                                                      bar_idx, section.bars);
+          if (silence_offset < TICKS_PER_BAR) {
+            removeNotesInBar(notes, curr_bar_start + silence_offset, curr_bar_end);
+          }
+        }
 
         frozen_bars.push_back({role, curr_bar_start, curr_bar_end});
       }

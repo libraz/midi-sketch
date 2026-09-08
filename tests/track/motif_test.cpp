@@ -20,8 +20,10 @@
 #include "core/motif_types.h"
 #include "core/note_source.h"
 #include "core/pitch_utils.h"
+#include "core/preset_data.h"
 #include "core/timing_constants.h"
 #include "core/types.h"
+#include "midisketch.h"
 #include "test_support/generator_test_fixture.h"
 #include "test_support/stub_harmony_context.h"
 #include "test_support/test_helpers.h"
@@ -87,6 +89,54 @@ const Section* findFirstMotifSection(const Song& song, SectionType type) {
     }
   }
   return nullptr;
+}
+
+TEST(MotifPhraseTailTest, TheLastBarKeepsItsSilenceAfterVoiceLimiting) {
+  struct Config {
+    uint8_t style;
+    uint8_t blueprint;
+    uint32_t seed;
+  };
+  // RhythmSync blueprints, where the riff is what the other parts follow and
+  // the voice limit reaches it most often.
+  constexpr Config kConfigs[] = {{0, 1, 3}, {0, 1, 7}, {0, 1, 12}, {0, 5, 2}, {0, 7, 4}, {0, 9, 1}};
+
+  size_t tail_bars = 0;
+  size_t notes_in_the_silence = 0;
+  for (const Config& c : kConfigs) {
+    SongConfig config = createDefaultSongConfig(c.style);
+    config.seed = c.seed;
+    config.blueprint_id = c.blueprint;
+
+    MidiSketch sketch;
+    sketch.generateFromConfig(config);
+    const Song& song = sketch.getSong();
+
+    for (const Section& section : song.arrangement().sections()) {
+      if (section.bars == 0) continue;
+      const uint8_t last_bar = static_cast<uint8_t>(section.bars - 1);
+      const Tick offset = phraseTailSilenceOffset(section.phrase_tail_rest, last_bar, section.bars,
+                                                  MotifGenerator::kPhraseTailSilence);
+      if (offset >= TICKS_PER_BAR) continue;
+
+      ++tail_bars;
+      const Tick bar_start = section.start_tick + last_bar * TICKS_PER_BAR;
+      for (const NoteEvent& note : song.motif().notes()) {
+        if (note.start_tick >= bar_start + offset && note.start_tick < bar_start + TICKS_PER_BAR) {
+          ++notes_in_the_silence;
+        }
+      }
+    }
+  }
+
+  ASSERT_GT(tail_bars, 0u) << "no section in this corpus asks its phrases to breathe";
+  // The riff writer leaves this part of the bar empty on purpose. Whatever a
+  // later pass does with the bar -- including replacing it with the one before,
+  // which was not a phrase ending and is full -- the silence is the phrase's
+  // ending and has to survive.
+  EXPECT_EQ(notes_in_the_silence, 0u)
+      << "the riff sounds in " << notes_in_the_silence << " place(s) the phrase tail emptied, "
+      << "across " << tail_bars << " phrase-ending bars";
 }
 
 TEST(MotifSectionBoundaryTest, ClipsFinalCycleNotesToShortSection) {

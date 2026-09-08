@@ -346,8 +346,8 @@ TEST_F(GeneratorIterationSnapshotTest, NoteCountsAreStable) {
 TEST(GeneratorMidiGoldenTest, FixedBlueprintsMatchNormalizedMidiSha256) {
   constexpr std::array<const char*, 10> kExpectedHashes = {
       "e7a76e083a047961cb6328e0ce9040d4fc0cee33f9195faf01190d5c13bd196b",
-      "4d5d39d9d1f3dd66c7a79af90880d11c2b71c1c88d60787bb8fe447ebfa891e6",
-      "86d547e9d740cde89f9eb22bb49ae46d2137f3339a76382b0e2312882c445322",
+      "36f15aa7cbc74ef82e3d7136c96aa87e27d545a5b092405abad27ca04bf3af5f",
+      "508f05897ff03b5194b94c5c1152bb4be31777b4f7e85839e410dc7b8866ec11",
       "3091ed959f763c3529697ddb56b808517c6264c134bad8bbc802db07063c08e6",
       "a6e67ff6bf88f44d38c4d59716b890573501113d9002ca2658b3740bcf9ba07c",
       "ee8cf14e30a55b7dab09f89e5280888292c3f2aca3302e96d43270c7dd222748",
