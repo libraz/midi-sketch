@@ -562,18 +562,11 @@ std::vector<NoteEvent> MelodyDesigner::generateSection(
     bool is_downbeat = bar_pos < TICKS_PER_BEAT / 4;
     if (is_downbeat) {
       const ChordTones chord_tones = melody::vocalSnapTonesAt(harmony, note.start_tick);
-      melody::MelodicNeighborhood neighborhood;
-      neighborhood.start = note.start_tick;
-      neighborhood.duration = note.duration;
+      melody::MelodicNeighborhood neighborhood = melody::neighborhoodAt(result, note_idx);
+      // The walk decides each note against the pitch the previous one was left
+      // with, not the one it was written with, so the interval this snap tries
+      // to preserve is the interval that will actually be sung.
       neighborhood.prev_pitch = prev_final_pitch;
-      if (note_idx + 1 < result.size()) {
-        Tick cur_end = note.start_tick + note.duration;
-        neighborhood.next_pitch = result[note_idx + 1].note;
-        neighborhood.next_start = result[note_idx + 1].start_tick;
-        neighborhood.gap_to_next = result[note_idx + 1].start_tick > cur_end
-                                       ? result[note_idx + 1].start_tick - cur_end
-                                       : Tick{0};
-      }
       const melody::ToneLegality legality =
           melody::classifyVocalTone(harmony, note.note, neighborhood, ctx.key_offset);
       if (legality != melody::ToneLegality::ChordTone) {

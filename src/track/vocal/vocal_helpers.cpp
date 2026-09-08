@@ -505,6 +505,18 @@ void applyCollisionAvoidanceWithIntervalConstraint(std::vector<NoteEvent>& notes
     // priced high enough to refuse that, the line zigzags past what the corpus
     // does. The lever that would help is which notes are forced to move at all,
     // not which landing they take once they are.
+    //
+    // The surroundings are read from the immediate neighbours rather than with
+    // the shared builder, and that is a deliberate narrowing of this site
+    // alone. The shared reading treats a rearticulated unison as one held note,
+    // which is the right reading of the figure and withdraws the licence from
+    // roughly one vocal note in sixty here. The repair available at this point
+    // is the snap below, and for those notes the nearest chord tone is the
+    // pitch the line just left -- the trade the paragraph above describes, paid
+    // on the metric the melody is already furthest outside: measured over the
+    // reference corpus it pushed the repeated-note ratio and the direction
+    // changes per hundred notes further from the target in every category.
+    // The grammar this site can enforce is bounded by the repair it can make.
     melody::MelodicNeighborhood neighborhood;
     neighborhood.start = note.start_tick;
     neighborhood.duration = note.duration;

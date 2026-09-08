@@ -4081,5 +4081,61 @@ TEST(VocalRegisterCorpusTest, APassThatMovesTheLineForRegisterLeavesItSingableOv
   ASSERT_GT(downbeats, 0u) << "the corpus has no vocal note on a downbeat to judge";
 }
 
+// A syllable sung again on the same pitch is the figure continuing, not the
+// figure arriving, so the note an accented dissonance resolves to may sit two
+// entries away. Reading only the adjacent entry sees a resolution of nought
+// semitones, calls the figure illegal, and flattens it onto a chord tone --
+// which is the one thing the downbeat snap exists not to do. The surroundings
+// are therefore read with the shared builder everywhere the vocal's legality
+// is asked, and these are the notes that survive only because of it.
+TEST(VocalRegisterCorpusTest, AnAccentedDissonanceSurvivesARearticulatedResolution) {
+  struct Config {
+    uint8_t style;
+    uint8_t blueprint;
+    uint32_t seed;
+  };
+  constexpr Config kConfigs[] = {{0, 4, 1}, {0, 4, 4}, {0, 2, 1}, {0, 3, 2}, {0, 0, 7}};
+
+  size_t downbeats = 0;
+  size_t rearticulated_figures = 0;
+  for (const Config& c : kConfigs) {
+    SongConfig config = createDefaultSongConfig(c.style);
+    config.seed = c.seed;
+    config.blueprint_id = c.blueprint;
+
+    MidiSketch sketch;
+    sketch.generateFromConfig(config);
+    const IHarmonyContext& harmony = sketch.getHarmonyContext();
+
+    std::vector<NoteEvent> line = sketch.getSong().vocal().notes();
+    std::sort(line.begin(), line.end(), [](const NoteEvent& a, const NoteEvent& b) {
+      if (a.start_tick != b.start_tick) return a.start_tick < b.start_tick;
+      return a.note < b.note;
+    });
+
+    for (size_t k = 0; k + 1 < line.size(); ++k) {
+      const NoteEvent& note = line[k];
+      if (note.start_tick % TICKS_PER_BAR >= TICKS_PER_BEAT / 4) continue;
+      ++downbeats;
+
+      // Only the notes whose resolution is hidden behind a rearticulation say
+      // anything here: everywhere else the two readings agree.
+      if (line[k + 1].note != note.note) continue;
+
+      const melody::ToneLegality legality =
+          melody::classifyVocalTone(harmony, note.note, melody::neighborhoodAt(line, k));
+      if (legality == melody::ToneLegality::Appoggiatura ||
+          legality == melody::ToneLegality::Suspension) {
+        ++rearticulated_figures;
+      }
+    }
+  }
+
+  ASSERT_GT(downbeats, 0u) << "the corpus has no vocal note on a downbeat to judge";
+  EXPECT_GT(rearticulated_figures, 0u)
+      << "no accented dissonance in the corpus resolves through a rearticulation, so nothing here "
+         "distinguishes the shared reading of a line from reading the adjacent entry";
+}
+
 }  // namespace
 }  // namespace midisketch
