@@ -15,6 +15,7 @@
 #include "core/harmony_timeline_planner.h"
 #include "core/i_chord_lookup.h"
 #include "core/midi_track.h"
+#include "core/note_creator.h"
 #include "core/note_source.h"
 #include "core/pitch_utils.h"
 #include "core/preset_data.h"
@@ -758,10 +759,23 @@ const ITrackBase* Coordinator::getTrackGenerator(TrackRole role) const {
 namespace {
 
 /// @brief Priority order for voice limiting (highest to lowest).
+///
+/// Freezing a bar means playing the previous one again, so the order asks which
+/// part can repeat a bar without the repetition being heard as a fault. That is
+/// not the same as which part matters least. A bass line and a comping figure
+/// repeat bar after bar by design and are barely marked by another copy; a
+/// strummed guitar and a riff are the parts a listener follows for variation,
+/// and freezing them is what makes an arrangement sound like a loop.
+///
+/// The reference corpus states the same order in numbers: across its songs the
+/// bass and the backing parts repeat their bar most, and the rhythm guitar and
+/// the riff repeat theirs least of everything that is not the vocal.
+///
+/// The vocal stays highest and is never frozen while anything else is moving.
 /// Tracks not in this list (Drums, SE) are excluded from voice limiting.
 constexpr TrackRole kVoiceLimitPriority[] = {
-    TrackRole::Vocal, TrackRole::Bass,     TrackRole::Chord,  TrackRole::Aux,
-    TrackRole::Motif, TrackRole::Arpeggio, TrackRole::Guitar,
+    TrackRole::Vocal, TrackRole::Guitar,   TrackRole::Motif, TrackRole::Aux,
+    TrackRole::Chord, TrackRole::Arpeggio, TrackRole::Bass,
 };
 constexpr size_t kVoiceLimitTrackCount =
     sizeof(kVoiceLimitPriority) / sizeof(kVoiceLimitPriority[0]);
@@ -949,7 +963,11 @@ bool pitchClassTaken(const std::vector<uint8_t>* taken_pcs, uint8_t pitch) {
 int findConsonantChordTone(IHarmonyCoordinator& harmony, uint8_t snapped, uint8_t original,
                            Tick start, Tick duration, TrackRole role, uint8_t range_low = 0,
                            uint8_t range_high = 127,
-                           const std::vector<uint8_t>* taken_pcs = nullptr) {
+                           const std::vector<uint8_t>* taken_pcs = nullptr,
+                           bool avoid_vocal_double = false) {
+  auto shadowsVocal = [&](uint8_t pitch) {
+    return avoid_vocal_double && doublesVocalPitchClass(harmony, pitch, start, duration);
+  };
   auto chord_tones = harmony.getChordTonesAt(start);
   int orig_octave = original / 12;
   int vocal_ceiling = getVocalCeiling(harmony, start, duration, role);
@@ -964,6 +982,9 @@ int findConsonantChordTone(IHarmonyCoordinator& harmony, uint8_t snapped, uint8_
   struct Candidate {
     bool duplicates_stack;
     bool crosses_above_vocal;
+    /// Bass only: this pitch states the vocal's pitch class close enough below
+    /// it to shadow the melody instead of supporting it.
+    bool shadows_vocal;
     int distance;
     uint8_t pitch;
     /// Only the scale-tone fallback below can set this; a chord tone never does.
@@ -977,7 +998,8 @@ int findConsonantChordTone(IHarmonyCoordinator& harmony, uint8_t snapped, uint8_
       int dist = std::abs(p - static_cast<int>(original));
       bool crosses = orig_below_vocal && p >= vocal_ceiling;
       bool dup = pitchClassTaken(taken_pcs, static_cast<uint8_t>(p));
-      candidates.push_back({dup, crosses, dist, static_cast<uint8_t>(p)});
+      candidates.push_back(
+          {dup, crosses, shadowsVocal(static_cast<uint8_t>(p)), dist, static_cast<uint8_t>(p)});
     }
   }
 
@@ -992,6 +1014,9 @@ int findConsonantChordTone(IHarmonyCoordinator& harmony, uint8_t snapped, uint8_
                      }
                      if (a.crosses_above_vocal != b.crosses_above_vocal) {
                        return !a.crosses_above_vocal;
+                     }
+                     if (a.shadows_vocal != b.shadows_vocal) {
+                       return !a.shadows_vocal;
                      }
                      return a.distance < b.distance;
                    });
@@ -1036,7 +1061,8 @@ int findConsonantChordTone(IHarmonyCoordinator& harmony, uint8_t snapped, uint8_
       int dist = std::abs(p - static_cast<int>(original));
       bool crosses = orig_below_vocal && p >= vocal_ceiling;
       bool dup = pitchClassTaken(taken_pcs, static_cast<uint8_t>(p));
-      scale_candidates.push_back({dup, crosses, dist, static_cast<uint8_t>(p), chordRejects(p)});
+      scale_candidates.push_back({dup, crosses, shadowsVocal(static_cast<uint8_t>(p)), dist,
+                                  static_cast<uint8_t>(p), chordRejects(p)});
     }
   }
   std::stable_sort(scale_candidates.begin(), scale_candidates.end(),
@@ -1049,6 +1075,9 @@ int findConsonantChordTone(IHarmonyCoordinator& harmony, uint8_t snapped, uint8_
                      }
                      if (a.duplicates_stack != b.duplicates_stack) {
                        return !a.duplicates_stack;
+                     }
+                     if (a.shadows_vocal != b.shadows_vocal) {
+                       return !a.shadows_vocal;
                      }
                      return a.distance < b.distance;
                    });
@@ -1490,6 +1519,40 @@ void Coordinator::applyVoiceLimit(Song& song, const std::vector<Section>& sectio
           candidate = diversifyRepeatedChordTone(harmony, candidate, prev_pitch, note.note,
                                                  note.start_tick, note.duration, fb.role, range_low,
                                                  note_range_high, sounding);
+        }
+
+        // A bass note that states the vocal's pitch class just below it stops
+        // supporting the melody and starts shadowing it. The bass writer clears
+        // this when it chooses a pitch, and the interval rules cannot re-ask it
+        // here: an octave is consonant, so every step above is free to land on
+        // the doubling and none of them objects.
+        //
+        // It is asked last because the steps above refine a pitch rather than
+        // decide one -- separating the onset's voices, breaking a repeated run.
+        // Asked before them, its answer is refined away: the clearing moves the
+        // re-seated note back onto the pitch class the vocal is already
+        // singing. The replacement is put through the same separation, so
+        // nothing this pass established is given up to get it, and the snapped
+        // pitch is kept when no chord tone answers both -- a doubled bass is a
+        // weaker line, a wrong one is a wrong chord.
+        if (fb.role == TrackRole::Bass &&
+            doublesVocalPitchClass(harmony, candidate, note.start_tick, note.duration)) {
+          int cleared = findConsonantChordTone(harmony, candidate, note.note, note.start_tick,
+                                               note.duration, fb.role, range_low, note_range_high,
+                                               &onset_taken_pcs, /*avoid_vocal_double=*/true);
+          if (cleared >= 0) {
+            uint8_t settled =
+                clearOfOnsetVoices(harmony, static_cast<uint8_t>(cleared), note.start_tick,
+                                   sounding, range_low, note_range_high);
+            if (!doublesVocalPitchClass(harmony, settled, note.start_tick, note.duration)) {
+              candidate = settled;
+              // The onset's record was written before this step, so correct it
+              // rather than leave the following voices avoiding a pitch that is
+              // no longer here.
+              onset_taken_pcs.back() = static_cast<uint8_t>(candidate % 12);
+              onset_pitches.back() = candidate;
+            }
+          }
         }
 
 #ifdef MIDISKETCH_NOTE_PROVENANCE

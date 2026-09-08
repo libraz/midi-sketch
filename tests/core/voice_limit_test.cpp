@@ -179,11 +179,26 @@ TEST(VoiceLimitTest, MaxMovingVoicesLimitApplied) {
   }
 }
 
-TEST(VoiceLimitTest, MaxMovingVoicesPreservesPriority) {
-  // With max_moving_voices=2, Vocal and Bass (highest priority) should never
-  // be frozen. Generate twice - once with limit=0, once with limit=2 - and
-  // compare Vocal/Bass tracks.
+TEST(VoiceLimitTest, MaxMovingVoicesFreezesFromTheBottomOfThePriorityOrder) {
+  // The vocal is the one part the limiter may never freeze: an arrangement that
+  // repeats the melody's bar has stopped being a song. Every other part is
+  // ordered by what a repeated bar costs it, and freezing takes from the bottom
+  // of that order, so a part is reached only once every part below it that was
+  // moving has already been frozen.
+  //
+  // The bass sits at the bottom because a bass line that plays its bar again is
+  // how the music is written; the guitar sits directly under the vocal because a
+  // strummed part repeating its bar is what makes an arrangement sound like a
+  // loop. So the guitar cannot be frozen in a song where the bass was left
+  // alone.
+  //
+  // The guitar has to be sounding for that last part to be asked at all. The
+  // shared fixture leaves it off and picks a mood whose instrument set has no
+  // guitar in it, so both have to be set here; a song without a guitar says
+  // nothing about where the guitar sits in the order.
   auto params = makeVoiceLimitParams();
+  params.guitar_enabled = true;
+  params.mood = Mood::LightRock;
 
   Song unlimited_song;
   Coordinator unlimited_coord;
@@ -193,24 +208,33 @@ TEST(VoiceLimitTest, MaxMovingVoicesPreservesPriority) {
   Coordinator limited_coord;
   generateWithVoiceLimit(params, 2, limited_song, limited_coord);
 
-  // Vocal and Bass should be identical between unlimited and limited
-  EXPECT_EQ(unlimited_song.vocal().notes().size(), limited_song.vocal().notes().size())
-      << "Vocal track should not be modified by voice limiter";
-  EXPECT_EQ(unlimited_song.bass().notes().size(), limited_song.bass().notes().size())
-      << "Bass track should not be modified by voice limiter";
+  auto differs = [](const MidiTrack& a, const MidiTrack& b) {
+    if (a.notes().size() != b.notes().size()) return true;
+    for (size_t idx = 0; idx < a.notes().size(); ++idx) {
+      if (a.notes()[idx].start_tick != b.notes()[idx].start_tick) return true;
+      if (a.notes()[idx].note != b.notes()[idx].note) return true;
+    }
+    return false;
+  };
 
-  // Verify note content is identical
+  EXPECT_EQ(unlimited_song.vocal().notes().size(), limited_song.vocal().notes().size())
+      << "the voice limiter may not freeze the vocal";
   const auto& vocal_unlimited = unlimited_song.vocal().notes();
   const auto& vocal_limited = limited_song.vocal().notes();
   for (size_t idx = 0; idx < std::min(vocal_unlimited.size(), vocal_limited.size()); ++idx) {
     EXPECT_EQ(vocal_unlimited[idx].start_tick, vocal_limited[idx].start_tick);
     EXPECT_EQ(vocal_unlimited[idx].note, vocal_limited[idx].note);
   }
-  const auto& bass_unlimited = unlimited_song.bass().notes();
-  const auto& bass_limited = limited_song.bass().notes();
-  for (size_t idx = 0; idx < std::min(bass_unlimited.size(), bass_limited.size()); ++idx) {
-    EXPECT_EQ(bass_unlimited[idx].start_tick, bass_limited[idx].start_tick);
-    EXPECT_EQ(bass_unlimited[idx].note, bass_limited[idx].note);
+
+  // A limit that never bound would make the order below unfalsifiable.
+  EXPECT_TRUE(differs(unlimited_song.bass(), limited_song.bass()))
+      << "the limit did not bind, so nothing here says which part is frozen first";
+
+  ASSERT_FALSE(unlimited_song.guitar().empty())
+      << "no guitar was written, so its place in the order was never asked";
+  if (differs(unlimited_song.guitar(), limited_song.guitar())) {
+    EXPECT_TRUE(differs(unlimited_song.bass(), limited_song.bass()))
+        << "the guitar was frozen while the bass, which is below it in the order, was not";
   }
 }
 
@@ -392,8 +416,14 @@ std::vector<NoteEvent> applyVoiceLimitToFrozenMotif(Song& song) {
 /// Bar 1 of FourChordPop is G major, so B7 remains a valid chord tone.  This
 /// makes it possible to distinguish the generator's real high bound from a
 /// stale lower limit in the re-quantization path.
+/// @param mover A track above `role` in the freeze order, kept moving so that
+///        `role` is the one the limiter reaches. Which track that is depends on
+///        the order, so the caller names it; the notes are placed on the last
+///        beat of each bar, clear of the frozen note under test, since a mover
+///        sounding across it would move the vocal ceiling the re-quantization
+///        reads and decide the outcome instead of the range under test.
 std::vector<NoteEvent> applyVoiceLimitToFrozenHighTrack(Song& song, TrackRole role,
-                                                        uint8_t source_pitch) {
+                                                        uint8_t source_pitch, TrackRole mover) {
   auto params = makeVoiceLimitParams();
   auto sections = makeFrozenBarSections();
   Arrangement arrangement(sections);
@@ -405,10 +435,10 @@ std::vector<NoteEvent> applyVoiceLimitToFrozenHighTrack(Song& song, TrackRole ro
   std::mt19937 rng(params.seed);
   coord.initialize(params, arrangement, rng, &harmony);
 
-  // Motif has higher freeze priority than Arpeggio and Guitar, keeping it
-  // moving ensures the requested lower-priority track is frozen.
-  song.motif().addNote(NoteEventTestHelper::create(0, TICKS_PER_BEAT, 60, 80));
-  song.motif().addNote(NoteEventTestHelper::create(TICKS_PER_BAR, TICKS_PER_BEAT, 62, 80));
+  const Tick last_beat = 3 * TICKS_PER_BEAT;
+  song.track(mover).addNote(NoteEventTestHelper::create(last_beat, TICKS_PER_BEAT, 60, 80));
+  song.track(mover).addNote(
+      NoteEventTestHelper::create(TICKS_PER_BAR + last_beat, TICKS_PER_BEAT, 62, 80));
   song.track(role).addNote(NoteEventTestHelper::create(0, TICKS_PER_BEAT, source_pitch, 80));
   song.track(role).addNote(NoteEventTestHelper::create(TICKS_PER_BAR, TICKS_PER_BEAT, 60, 80));
 
@@ -590,7 +620,8 @@ TEST(VoiceLimitRequantizeTest, RequantizedPitchStaysBelowConcurrentVocal) {
 
 TEST(VoiceLimitRequantizeTest, UsesArpeggioPhysicalModelRange) {
   Song song;
-  const auto bar1_notes = applyVoiceLimitToFrozenHighTrack(song, TrackRole::Arpeggio, 107);
+  const auto bar1_notes =
+      applyVoiceLimitToFrozenHighTrack(song, TrackRole::Arpeggio, 107, TrackRole::Motif);
 
   ASSERT_EQ(bar1_notes.size(), 1u);
   EXPECT_EQ(bar1_notes.front().note, 107)
@@ -600,7 +631,8 @@ TEST(VoiceLimitRequantizeTest, UsesArpeggioPhysicalModelRange) {
 
 TEST(VoiceLimitRequantizeTest, KeepsAGuitarNoteInsideThePhysicalModel) {
   Song song;
-  const auto bar1_notes = applyVoiceLimitToFrozenHighTrack(song, TrackRole::Guitar, 71);
+  const auto bar1_notes =
+      applyVoiceLimitToFrozenHighTrack(song, TrackRole::Guitar, 71, TrackRole::Vocal);
 
   ASSERT_EQ(bar1_notes.size(), 1u);
   EXPECT_EQ(bar1_notes.front().note, 71)
@@ -610,7 +642,8 @@ TEST(VoiceLimitRequantizeTest, KeepsAGuitarNoteInsideThePhysicalModel) {
 
 TEST(VoiceLimitRequantizeTest, PullsAGuitarNoteBackIntoThePhysicalModel) {
   Song song;
-  const auto bar1_notes = applyVoiceLimitToFrozenHighTrack(song, TrackRole::Guitar, 83);
+  const auto bar1_notes =
+      applyVoiceLimitToFrozenHighTrack(song, TrackRole::Guitar, 83, TrackRole::Vocal);
 
   ASSERT_EQ(bar1_notes.size(), 1u);
   EXPECT_LE(bar1_notes.front().note, PhysicalModels::kElectricGuitar.pitch_high)

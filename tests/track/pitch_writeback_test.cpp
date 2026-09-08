@@ -386,9 +386,23 @@ constexpr int kMinOctaveSeparation = 24;
 /// moved notes in view: a single scan can only pick one of the two pitches, and
 /// dropping the notes it cannot answer for takes them out of every test.
 enum class BassPopulation {
-  Unmoved,  ///< The pitch that sounds is the one the bass writer chose
-  Moved,    ///< A pass replaced the pitch; the recorded origin is the writer's
+  Unmoved,    ///< The pitch that sounds is the one its writer chose
+  Moved,      ///< A pass replaced the pitch; the recorded origin is the writer's
+  Relocated,  ///< The bass writer never wrote this note here; only what it
+              ///< sounds was decided at this position
 };
+
+/// Whether the bass writer is the one that chose this note's recorded origin.
+///
+/// The voice limiter can place a bass note by copying the bar before it, and
+/// such a copy starts its history over at the pitch it was copied with. That
+/// pitch is a decision the writer made a bar earlier, against the vocal that
+/// was singing there, so asking whether it clears the vocal here asks the
+/// writer a question it was never posed. What was decided at this position is
+/// the pitch the copy ended up sounding, and that is what the rule is asked of.
+bool writerChoseTheOrigin(const NoteEvent& note) {
+  return static_cast<NoteSource>(note.prov_source) == NoteSource::BassPattern;
+}
 
 struct CloseDoubling {
   Tick tick;
@@ -430,7 +444,11 @@ std::vector<CloseDoubling> findCloseDoublings(const MidiTrack& bass, const MidiT
   std::vector<CloseDoubling> out;
   for (const auto& bass_note : bass.notes()) {
     bool moved = bass_note.hasValidProvenance() && bass_note.prov_original_pitch != bass_note.note;
-    if (moved != (population == BassPopulation::Moved)) continue;
+    BassPopulation belongs_to =
+        !moved
+            ? BassPopulation::Unmoved
+            : (writerChoseTheOrigin(bass_note) ? BassPopulation::Moved : BassPopulation::Relocated);
+    if (belongs_to != population) continue;
     int bass_pitch =
         (population == BassPopulation::Moved) ? bass_note.prov_original_pitch : bass_note.note;
     ++scanned;
@@ -549,8 +567,11 @@ std::string describeCrossRelations(const std::vector<CrossRelation>& relations) 
 //
 // Every bass creation site clears the doubling on the pitch it hands to the
 // note creation path, so the rule is a property of the pitch the bass writer
-// chose, whether or not that pitch is still the one sounding. Both populations
-// are therefore scanned; only the pitch the rule is asked of differs.
+// chose, whether or not that pitch is still the one sounding. A note the voice
+// limiter placed by copying the bar before it has no such pitch -- its recorded
+// origin is a decision made at another position -- so there the rule is asked of
+// what it sounds. All three populations are scanned; only the pitch the rule is
+// asked of differs.
 //
 // Not verified in the shipping build: the recorded origin is what names the
 // pitch the writer chose, and that build records none, so it cannot tell the
@@ -563,6 +584,7 @@ TEST_F(PitchWritebackTest, BassDoesNotDoubleAVocalPitchClassWithinTwoOctaves) {
   size_t songs_scanned = 0;
   size_t unmoved_notes = 0;
   size_t moved_notes = 0;
+  size_t relocated_notes = 0;
   for (uint8_t blueprint : kBlueprints) {
     for (uint32_t seed : kSeeds) {
       generateSong(seed, blueprint);
@@ -585,13 +607,22 @@ TEST_F(PitchWritebackTest, BassDoesNotDoubleAVocalPitchClassWithinTwoOctaves) {
              " pass replaced it\nblueprint="
           << static_cast<int>(blueprint) << " seed=" << seed << "\n"
           << describeCloseDoublings(moved);
+
+      auto relocated =
+          findCloseDoublings(song.bass(), song.vocal(), BassPopulation::Relocated, relocated_notes);
+      EXPECT_TRUE(relocated.empty())
+          << "a bass note the voice limiter placed has to clear the vocal where it"
+             " was placed\nblueprint="
+          << static_cast<int>(blueprint) << " seed=" << seed << "\n"
+          << describeCloseDoublings(relocated);
       ++songs_scanned;
     }
   }
   EXPECT_EQ(songs_scanned, std::size(kSeeds) * std::size(kBlueprints));
-  // Neither scan says anything about a population it never had a note from.
+  // No scan says anything about a population it never had a note from.
   EXPECT_GT(unmoved_notes, 0u);
   EXPECT_GT(moved_notes, 0u);
+  EXPECT_GT(relocated_notes, 0u);
 }
 #endif  // MIDISKETCH_NOTE_PROVENANCE
 

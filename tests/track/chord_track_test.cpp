@@ -1806,9 +1806,16 @@ TEST_F(ChordTrackTest, ChordMotifClashAvoidance_RhythmSyncParadigm) {
 
 TEST_F(ChordTrackTest, ChordVoicingConsidersFullBarMotifNotes) {
   // Chord notes sustain through the bar, so voicing should consider
-  // all motif notes that play during the chord's duration, not just at bar start
-  params_.seed = 98765;
-  params_.blueprint_id = 1;  // RhythmLock: RhythmSync paradigm, motif generated first
+  // all motif notes that play during the chord's duration, not just at bar start.
+  //
+  // What the config has to supply is a chord part that sustains and a motif
+  // written before it. StoryPop supplies both: the chord is voiced after the
+  // motif in every paradigm, and its comping holds notes for half a bar and
+  // longer, which is what makes a mid-chord motif onset possible at all. A
+  // blueprint whose comping is short leaves the population below empty however
+  // many motif notes it writes.
+  params_.seed = 20260908;
+  params_.blueprint_id = 2;
 
   Generator gen;
   gen.generate(params_);
