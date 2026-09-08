@@ -599,6 +599,14 @@ void Generator::applyPostProcessingEffects() {
     // calls below cover every clash pair against the rewritten vocal
     // (chord/aux/bass/guitar via fixTrackVocalClashes, motif via
     // fixMotifVocalClashes), so no vocal-side recheck is required here.
+    //
+    // What those calls cover is dissonance, and that is narrower than what the
+    // accompaniment was written to. The bass clears the vocal's pitch class by
+    // two octaves, and an octave is consonant, so a vocal that moves onto a
+    // bass note's pitch class is not a pair anything below asks about. No such
+    // pair survives to the output today, but it is not this comment that keeps
+    // it out: the sweep that finds them scans the pitch the bass writer chose,
+    // and it is only silent because nothing has moved onto one lately.
     applyRhythmSyncLeadDna(song_.vocal(), song_.motif(), song_.arrangement().sections(), params_,
                            *harmony_context_);
     // Re-register vocal/motif BEFORE breaking pitch runs: the DNA rewrite
