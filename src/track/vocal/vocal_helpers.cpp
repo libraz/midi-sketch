@@ -515,8 +515,9 @@ void applyCollisionAvoidanceWithIntervalConstraint(std::vector<NoteEvent>& notes
     // pitch the line just left -- the trade the paragraph above describes, paid
     // on the metric the melody is already furthest outside: measured over the
     // reference corpus it pushed the repeated-note ratio and the direction
-    // changes per hundred notes further from the target in every category.
-    // The grammar this site can enforce is bounded by the repair it can make.
+    // changes per hundred notes further from the target in every category that
+    // has more than one reference song. The grammar this site can enforce is
+    // bounded by the repair it can make.
     melody::MelodicNeighborhood neighborhood;
     neighborhood.start = note.start_tick;
     neighborhood.duration = note.duration;
