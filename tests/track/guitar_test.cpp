@@ -1645,3 +1645,73 @@ TEST_F(GuitarGenerationTest, StrumsSpeakInStringOrderAfterTheSeparationPasses) {
                                 << first_bad;
   }
 }
+
+TEST_F(GuitarGenerationTest, StrumVoicesKeepDistinctPitchesThroughTheVoiceLimitFreeze) {
+  // Each string of a strum carries a voice of the chord, so two of them on one
+  // pitch is not a doubling but a voice the chord has lost -- and the loss does
+  // not stop there, since a note identical to one already sounding is removed
+  // by the passes that follow, leaving a bare dyad where a triad was written.
+  //
+  // The freeze is what puts the voices at risk: it replaces a bar with a copy of
+  // the one before it and re-seats each pitch onto the chord that sounds here
+  // instead, one voice at a time. The songs below are ones whose frozen bars
+  // hold strums; the condition needs a blueprint that limits its moving voices,
+  // so a config has to be chosen for it.
+  struct Config {
+    uint8_t style;
+    uint8_t progression;
+    uint8_t blueprint;
+    uint32_t seed;
+  };
+  const std::vector<Config> configs = {
+      {2, 11, 4, 9107}, {13, 5, 6, 9101}, {16, 1, 8, 9103}, {12, 13, 3, 9103}, {7, 2, 6, 9101},
+  };
+
+  for (const Config& c : configs) {
+    SongConfig config = createDefaultSongConfig(c.style);
+    config.seed = c.seed;
+    config.blueprint_id = c.blueprint;
+    config.chord_progression_id = c.progression;
+
+    Generator gen;
+    gen.generate(ConfigConverter::convert(config));
+
+    std::vector<const NoteEvent*> by_onset;
+    for (const auto& note : gen.getSong().guitar().notes()) by_onset.push_back(&note);
+    std::sort(by_onset.begin(), by_onset.end(),
+              [](const NoteEvent* a, const NoteEvent* b) { return a->start_tick < b->start_tick; });
+
+    size_t strums = 0;
+    size_t collapsed = 0;
+    Tick first_bad = 0;
+    std::vector<const NoteEvent*> strum;
+    auto judge = [&]() {
+      if (strum.size() >= 2) {
+        ++strums;
+        std::vector<uint8_t> pitches;
+        for (const NoteEvent* voice : strum) pitches.push_back(voice->note);
+        std::sort(pitches.begin(), pitches.end());
+        if (std::adjacent_find(pitches.begin(), pitches.end()) != pitches.end()) {
+          if (collapsed == 0) first_bad = strum.front()->start_tick;
+          ++collapsed;
+        }
+      }
+      strum.clear();
+    };
+    for (const NoteEvent* note : by_onset) {
+      if (!strum.empty() && note->start_tick - strum.back()->start_tick != kStringRakeTicks) {
+        judge();
+      }
+      strum.push_back(note);
+    }
+    judge();
+
+    const std::string where = "style " + std::to_string(c.style) + ", progression " +
+                              std::to_string(c.progression) + ", blueprint " +
+                              std::to_string(c.blueprint) + ", seed " + std::to_string(c.seed);
+    EXPECT_GT(strums, 0u) << where << " has no strum, so no voicing was checked";
+    EXPECT_EQ(collapsed, 0u) << where << " rakes " << collapsed
+                             << " chords that state one pitch on two strings, the first at tick "
+                             << first_bad;
+  }
+}

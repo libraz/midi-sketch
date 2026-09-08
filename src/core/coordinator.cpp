@@ -1310,7 +1310,13 @@ void Coordinator::applyVoiceLimit(Song& song, const std::vector<Section>& sectio
       }
 
       Tick prev_onset = static_cast<Tick>(-1);
+      bool has_onset_group = false;
       size_t onset_note_count = 0;
+      // The pitch each note carried into this pass, in the order of
+      // `bar_note_indices`. The loop overwrites the note itself, and the strum
+      // pass after it needs the shape the bar was copied with.
+      std::vector<uint8_t> incoming_pitches;
+      incoming_pitches.reserve(bar_note_indices.size());
       // Pitch classes already resolved at the current onset. A chord stack has
       // to stay a chord: its members are re-quantized one at a time, so without
       // this two voices land on the same pitch and the third disappears,
@@ -1323,14 +1329,28 @@ void Coordinator::applyVoiceLimit(Song& song, const std::vector<Section>& sectio
         // Track chord stacks: multiple notes at the same onset (e.g., Chord
         // track voicings) are not a melodic run; skip run-based diversification
         // for them and reset the run tracking.
-        if (note.start_tick == prev_onset) {
+        //
+        // A strum is one chord too, struck across a few ticks rather than at one
+        // of them, and its voices have to be grouped here on the same terms: the
+        // duplicate-pitch-class check below reads this group, so a strum split
+        // into single-note groups is re-quantized voice by voice and two of them
+        // land on one pitch. The one that would have carried the third is then
+        // an exact duplicate of a note already sounding, which the passes after
+        // this one remove -- the chord arrives a voice short, and nothing
+        // downstream records that it ever had one.
+        incoming_pitches.push_back(note.note);
+        const bool same_group =
+            has_onset_group &&
+            (note.start_tick == prev_onset || note.start_tick == prev_onset + kStringRakeTicks);
+        if (same_group) {
           ++onset_note_count;
         } else {
-          prev_onset = note.start_tick;
           onset_note_count = 1;
           onset_taken_pcs.clear();
           onset_pitches.clear();
         }
+        prev_onset = note.start_tick;
+        has_onset_group = true;
 
         // Per-note vocal ceiling for accompaniment tracks: never snap above the
         // vocal note(s) overlapping this note's time span. The crossing
@@ -1490,6 +1510,58 @@ void Coordinator::applyVoiceLimit(Song& song, const std::vector<Section>& sectio
           same_run = 1;
           has_prev = true;
         }
+      }
+
+      // Give a strum back the order its pick travelled in. The loop above
+      // decides one voice at a time and cannot see the voices it has not
+      // reached, so a shape copied rising can come out with its second string
+      // above its third: the right notes, played in an order no hand produces.
+      //
+      // What is corrected here is only which voice states which pitch. The
+      // pitches themselves were each accepted against the chord, the vocal and
+      // every other track, and a permutation of them sounds all of the same
+      // ones -- so the order can be restored without asking any of those
+      // questions again. Where the copied shape was not ordered to begin with
+      // there is no order to restore, and the strum is left as it is.
+      for (size_t start = 0; start < bar_note_indices.size();) {
+        size_t end = start + 1;
+        while (end < bar_note_indices.size() &&
+               notes[bar_note_indices[end]].start_tick ==
+                   notes[bar_note_indices[end - 1]].start_tick + kStringRakeTicks) {
+          ++end;
+        }
+        const size_t voices = end - start;
+        if (voices < 2) {
+          start = end;
+          continue;
+        }
+        bool rising = true;
+        bool falling = true;
+        for (size_t i = start + 1; i < end; ++i) {
+          if (incoming_pitches[i] <= incoming_pitches[i - 1]) rising = false;
+          if (incoming_pitches[i] >= incoming_pitches[i - 1]) falling = false;
+        }
+        if (rising || falling) {
+          std::vector<uint8_t> resolved;
+          resolved.reserve(voices);
+          for (size_t i = start; i < end; ++i) {
+            resolved.push_back(notes[bar_note_indices[i]].note);
+          }
+          std::sort(resolved.begin(), resolved.end());
+          if (falling) {
+            std::reverse(resolved.begin(), resolved.end());
+          }
+          for (size_t i = start; i < end; ++i) {
+            NoteEvent& voice = notes[bar_note_indices[i]];
+            const uint8_t ordered = resolved[i - start];
+            if (voice.note == ordered) continue;
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+            voice.addTransformStep(TransformStepType::ChordToneSnap, voice.note, ordered, 0, 0);
+#endif
+            voice.note = ordered;
+          }
+        }
+        start = end;
       }
 
       // Append tail segments from cross-boundary splits (deferred to avoid
