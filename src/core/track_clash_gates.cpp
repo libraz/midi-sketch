@@ -43,7 +43,15 @@ Tick tailTrimRemainder(const NoteEvent& earlier, const NoteEvent& later) {
   const Tick later_end = later.start_tick + later.duration;
   if (std::min(earlier_end, later_end) - later.start_tick > kTailGateMaxOverlap) return 0;
   const Tick remainder = later.start_tick - earlier.start_tick;
-  if (remainder < kTailGateMinRemainder) return 0;
+  // What is left has to still be worth hearing, and there are two ways for that
+  // to be true. Reaching the shortest length this engine writes is one. Keeping
+  // nearly all of what was written is the other, and it is the reading a note
+  // already at that shortest length depends on: no trim can leave it a 32nd, so
+  // an absolute floor alone declines every overlap a run of 32nds is ever in.
+  // A strum voice grazing the last two ticks of one was declined here and had
+  // no other gate able to take it.
+  const Tick keeps_nearly_all = earlier.duration - earlier.duration / 8;
+  if (remainder < kTailGateMinRemainder && remainder < keeps_nearly_all) return 0;
   return remainder;
 }
 

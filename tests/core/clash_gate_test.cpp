@@ -237,6 +237,49 @@ TEST(ClashGateTest, ATrackSustainingIntoItsOwnNextNoteIsTrimmed) {
   EXPECT_EQ(song.aux().notes()[1].duration, TICK_EIGHTH);
 }
 
+TEST(ClashGateTest, ANoteAlreadyAtTheShortestLengthIsStillTrimmable) {
+  // The floor asks that what survives a trim still be worth hearing, and a note
+  // written at the shortest length this engine writes can never reach it: every
+  // trim of a 32nd leaves less than a 32nd. Read as ticks alone the floor
+  // therefore declines every overlap such a note is ever in, and a run of them
+  // -- which is what a bass fill is -- has no gate at all. Shaving two ticks
+  // plainly leaves the note it was.
+  Arrangement arrangement = singleSection();
+  HarmonyContext harmony;
+  harmony.initialize(arrangement, getChordProgression(0), Mood::StraightPop);
+
+  Song song;
+  song.aux().addNote(NoteEventBuilder::create(0, TICK_32ND, 72, 90));
+  song.aux().addNote(NoteEventBuilder::create(TICK_32ND - 2, TICK_EIGHTH, 71, 90));
+  harmony.registerTrack(song.aux(), TrackRole::Aux);
+
+  trimClashingNoteTails(song, harmony);
+
+  ASSERT_EQ(song.aux().notes().size(), 2u) << "a tail is shortened, never deleted";
+  EXPECT_EQ(song.aux().notes()[0].duration, TICK_32ND - 2)
+      << "the 32nd should end where the semitone under it begins";
+}
+
+TEST(ClashGateTest, TheFloorStillRefusesToLeaveAStub) {
+  // The other reading of the same floor, which the case above must not weaken:
+  // taking most of a long note leaves a blip, and the gate would rather let the
+  // clash sound than write one.
+  Arrangement arrangement = singleSection();
+  HarmonyContext harmony;
+  harmony.initialize(arrangement, getChordProgression(0), Mood::StraightPop);
+
+  Song song;
+  song.aux().addNote(NoteEventBuilder::create(0, 2 * TICK_QUARTER, 72, 90));
+  song.aux().addNote(NoteEventBuilder::create(TICK_32ND / 2, TICK_EIGHTH, 71, 90));
+  harmony.registerTrack(song.aux(), TrackRole::Aux);
+
+  trimClashingNoteTails(song, harmony);
+
+  ASSERT_EQ(song.aux().notes().size(), 2u);
+  EXPECT_EQ(song.aux().notes()[0].duration, 2 * TICK_QUARTER)
+      << "trimming here would leave less than half a 32nd of a half-note";
+}
+
 TEST(ClashGateTest, ShorteningANoteExposesTheOverlapTheCapHadExcused) {
   // The cap reads a long overlap as a simultaneity somebody chose rather than a
   // tail that slipped out, and leaves it. Trimming the same note for a later

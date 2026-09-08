@@ -49,7 +49,10 @@ constexpr Tick kTailGateMaxOverlap = TICK_QUARTER;
 ///
 /// A 32nd-note stub is the shortest musically acceptable remainder (a bass
 /// approach note reduced to a ghost-note blip beats an m9/M7 clash). Below it
-/// the gate declines and the note keeps its length.
+/// the gate declines and the note keeps its length -- unless what it would take
+/// is a sliver of a note already that short, which leaves the note it was.
+/// Stating the floor in ticks alone made a note written at exactly this length
+/// untrimmable at any overlap, because no trim of it can reach the floor.
 constexpr Tick kTailGateMinRemainder = TICK_32ND;
 
 /// @brief Whether trimClashingNoteTails will shorten @p earlier because of @p later.
