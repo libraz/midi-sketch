@@ -1399,8 +1399,9 @@ void Coordinator::applyVoiceLimit(Song& song, const std::vector<Section>& sectio
             static_cast<int>(note.note), note.start_tick, range_low, note_range_high);
         uint8_t candidate = static_cast<uint8_t>(std::clamp(snapped, 0, 127));
 
-        if (!harmony.isConsonantWithOtherTracks(candidate, note.start_tick, note.duration,
-                                                fb.role)) {
+        bool cleared_candidate_is_consonant =
+            harmony.isConsonantWithOtherTracks(candidate, note.start_tick, note.duration, fb.role);
+        if (!cleared_candidate_is_consonant) {
           int resolved = findConsonantChordTone(harmony, candidate, note.note, note.start_tick,
                                                 note.duration, fb.role, range_low, note_range_high);
           if (resolved < 0 && note_range_high < range_high) {
@@ -1468,10 +1469,15 @@ void Coordinator::applyVoiceLimit(Song& song, const std::vector<Section>& sectio
 
           if (resolved >= 0) {
             candidate = static_cast<uint8_t>(resolved);
+            cleared_candidate_is_consonant = true;
           }
           // resolved < 0: keep snapped pitch (clash > dropped onset; the
           // frozen bar must keep the previous bar's rhythm)
         }
+        // The pitch this step settled on, before the refinements below reshape
+        // it. Kept so the last of them can hand it back rather than ship an
+        // interval that was already known to be avoidable.
+        const uint8_t cleared_candidate = candidate;
 
         // Keep a chord stack a chord. The snap above answers for one note in
         // isolation, so the second and later members of an onset can duplicate
@@ -1553,6 +1559,20 @@ void Coordinator::applyVoiceLimit(Song& song, const std::vector<Section>& sectio
               onset_pitches.back() = candidate;
             }
           }
+        }
+
+        // Asked last, for the reason the doubling check above is asked last: the
+        // steps in between refine a pitch rather than decide one, and each reads
+        // a single question -- this onset's other voices, a repeated run, the
+        // vocal's pitch class. None of them asks the other tracks again, so a
+        // refinement can seat a voice on an interval no screen has looked at,
+        // and the one pitch known to be clear of the other tracks is given up to
+        // get it. A frozen bar keeps the previous bar's rhythm either way, so
+        // what is decided here is only which pitch the note states.
+        if (cleared_candidate_is_consonant && candidate != cleared_candidate &&
+            !harmony.isConsonantWithOtherTracks(candidate, note.start_tick, note.duration,
+                                                fb.role)) {
+          candidate = cleared_candidate;
         }
 
 #ifdef MIDISKETCH_NOTE_PROVENANCE
