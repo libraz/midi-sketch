@@ -439,7 +439,9 @@ bool isVoicingCluster(uint8_t pitch_a, uint8_t pitch_b, const ChordTones& tones)
   // The major seventh is judged here rather than in the gap rule, on the same
   // condition as the major second and for the same reason: it is the chord when
   // both voices belong to the chord, and a clash when only one of them does.
-  const bool conditional = (abs_gap == 2 || abs_gap == 11);
+  // Its compound is the same interval and takes the same condition; asking only
+  // at eleven let a voice be moved a register away and carry the clash with it.
+  const bool conditional = (abs_gap == 2 || abs_gap == 11 || abs_gap == 23);
   if (!isDissonantVoicingGap(gap) && !conditional) return false;
   if (!conditional) return true;
 

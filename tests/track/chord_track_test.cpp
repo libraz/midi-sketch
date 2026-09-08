@@ -1583,6 +1583,13 @@ TEST_F(ChordTrackTest, AWholeStepBetweenTwoChordTonesIsTheChordNotACluster) {
   EXPECT_FALSE(isVoicingCluster(71, 60, cmaj7)) << "B4 over C4 is the seventh of Cmaj7";
   EXPECT_TRUE(isVoicingCluster(71, 60, c7)) << "C7 has no B, so the same pair is a clash";
 
+  // A register between the voices does not change which interval they state,
+  // and a pass that spreads a voicing across registers is exactly what puts
+  // them there. Note the asymmetry with the minor second two lines above: that
+  // one is a cluster at its compound whatever the chord says, this one is not.
+  EXPECT_FALSE(isVoicingCluster(83, 60, cmaj7)) << "B5 over C4 is the same seventh of Cmaj7";
+  EXPECT_TRUE(isVoicingCluster(83, 60, c7)) << "and C7 still has no B to make it one";
+
   // Consonant spacings are unaffected.
   EXPECT_FALSE(isVoicingCluster(64, 72, c7));
   EXPECT_FALSE(isVoicingCluster(67, 72, c7));

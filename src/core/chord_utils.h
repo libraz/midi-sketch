@@ -321,6 +321,15 @@ bool isDissonantVoicingGap(int semitones);
 /// contain is as harsh as any other clash; the analyzer has always said so, so
 /// a rule that excused it unconditionally disagreed with the report.
 ///
+/// It is asked at the octave above as well, on the same condition. The interval
+/// table names the major seventh at eleven semitones and at twenty-three, and a
+/// rule that stopped at eleven let one voice be lifted a register clear of the
+/// pair and the interval survive the move -- which is what a pass that spreads
+/// a voicing across registers does. The distance is where the two rules part:
+/// the minor second stays a cluster at thirteen whatever the chord says, while
+/// the major seventh is the chord at either distance whenever both voices are
+/// in it.
+///
 /// This is the one place the question is answered. The rule used to be spelled
 /// out at each screen that asks it, and a screen stating it separately can be
 /// corrected on its own while the others keep undoing the correction.
