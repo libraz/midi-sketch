@@ -46,9 +46,6 @@ class VocalGenerator : public TrackBase {
   /// @brief Generate full vocal track using FullTrackContext.
   void doGenerateFullTrack(MidiTrack& track, const FullTrackContext& ctx) override;
 
-  /// @brief Set motif track reference for coordination.
-  void setMotifTrack(const MidiTrack* motif) { motif_track_ = motif; }
-
  private:
   /// @brief Build MelodyDesigner::SectionContext from section parameters.
   /// @param section Current section being generated
@@ -111,8 +108,6 @@ class VocalGenerator : public TrackBase {
                              std::mt19937& rng, float velocity_scale, uint8_t effective_vocal_low,
                              uint8_t effective_vocal_high,
                              const std::vector<SectionCeiling>& section_ceilings) const;
-
-  const MidiTrack* motif_track_ = nullptr;
 };
 
 // =============================================================================

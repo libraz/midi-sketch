@@ -226,12 +226,11 @@ CachedRhythmPattern* VocalGenerator::resolveRhythmLock(
     CachedRhythmPattern* active_rhythm_lock, Tick section_start, Tick section_end) const {
   CachedRhythmPattern* current_rhythm_lock = nullptr;
 
-  // RhythmSync paradigm: extract rhythm from Motif track (coordinate axis)
-  // Try ctx.motif_track first (from Coordinator), then fall back to motif_track_ member
+  // RhythmSync paradigm: extract rhythm from Motif track (coordinate axis).
+  // The context is the one place the axis arrives from; a second channel on the
+  // generator would be a way for the two to disagree about which motif is being
+  // followed.
   const MidiTrack* motif_ref = ctx.motif_track;
-  if (motif_ref == nullptr) {
-    motif_ref = motif_track_;
-  }
   if (params.paradigm == GenerationParadigm::RhythmSync && motif_ref != nullptr &&
       !motif_ref->empty()) {
     // Extract Motif's rhythm pattern for this section
@@ -594,7 +593,7 @@ void VocalGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContex
   const DrumGrid* drum_grid = ctx.drum_grid;
 
   // Calculate effective vocal range (extracted helper)
-  VocalRangeResult range = calculateEffectiveVocalRange(params, song, motif_track_);
+  VocalRangeResult range = calculateEffectiveVocalRange(params, song);
   uint8_t effective_vocal_low = range.effective_low;
   uint8_t effective_vocal_high = range.effective_high;
   float velocity_scale = range.velocity_scale;

@@ -1,6 +1,6 @@
 /**
  * @file vocal_range.cpp
- * @brief Vocal range calculation considering constraints and motif collision.
+ * @brief Vocal range calculation considering blueprint and modulation headroom.
  *
  * Extracted from vocal.cpp to allow reuse and testing.
  */
@@ -9,15 +9,13 @@
 
 #include <algorithm>
 
-#include "core/midi_track.h"
 #include "core/preset_types.h"
 #include "core/production_blueprint.h"
 #include "core/song.h"
 
 namespace midisketch {
 
-VocalRangeResult calculateEffectiveVocalRange(const GeneratorParams& params, const Song& song,
-                                              const MidiTrack* motif_track) {
+VocalRangeResult calculateEffectiveVocalRange(const GeneratorParams& params, const Song& song) {
   VocalRangeResult result;
   result.effective_low = params.vocal_low;
   result.effective_high = params.vocal_high;
@@ -37,26 +35,6 @@ VocalRangeResult calculateEffectiveVocalRange(const GeneratorParams& params, con
     int adjusted_high = static_cast<int>(result.effective_high) - mod_amount;
     int min_high = static_cast<int>(result.effective_low) + 12;  // At least 1 octave
     result.effective_high = static_cast<uint8_t>(std::max(min_high, adjusted_high));
-  }
-
-  // Adjust range for BackgroundMotif to avoid collision with motif
-  if (params.composition_style == CompositionStyle::BackgroundMotif && motif_track != nullptr &&
-      !motif_track->empty()) {
-    auto [motif_low, motif_high] = motif_track->analyzeRange();
-
-    if (motif_high > kMotifHighRegisterThreshold) {  // Motif in high register
-      result.effective_high = std::min(result.effective_high, kVocalAvoidHighLimit);
-      if (result.effective_high - result.effective_low < kMinVocalOctaveRange) {
-        result.effective_low = std::max(
-            kVocalRangeFloor, static_cast<uint8_t>(result.effective_high - kMinVocalOctaveRange));
-      }
-    } else if (motif_low < kMotifLowRegisterThreshold) {  // Motif in low register
-      result.effective_low = std::max(result.effective_low, kVocalAvoidLowLimit);
-      if (result.effective_high - result.effective_low < kMinVocalOctaveRange) {
-        result.effective_high = std::min(
-            kVocalRangeCeiling, static_cast<uint8_t>(result.effective_low + kMinVocalOctaveRange));
-      }
-    }
   }
 
   // Calculate velocity scale for composition style
