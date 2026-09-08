@@ -1365,18 +1365,17 @@ bool shouldSkipMotifNote(const Section& section, Tick absolute_tick, Tick pos, s
     }
   }
 
-  // Phrase tail rest: skip ~50% of notes in the last bar, reduce in penultimate
-  if (section.phrase_tail_rest) {
+  // Phrase tail rest: the riff gives up the second half of the phrase's last
+  // bar. The offset is the track's own constant so a later pass that writes
+  // into this bar can ask for it rather than restate it.
+  {
     uint8_t section_bar = static_cast<uint8_t>(tickToBar(absolute_tick - section.start_tick));
-    if (isPhraseTail(section_bar, section.bars)) {
-      if (isLastBar(section_bar, section.bars)) {
-        // Last bar: skip notes in the second half of the bar
-        Tick bar_start = section.start_tick + section_bar * TICKS_PER_BAR;
-        Tick bar_half = bar_start + TICKS_PER_BAR / 2;
-        if (absolute_tick >= bar_half) {
-          return true;
-        }
-      }
+    Tick bar_start = section.start_tick + section_bar * TICKS_PER_BAR;
+    Tick silence_start =
+        bar_start + phraseTailSilenceOffset(section.phrase_tail_rest, section_bar, section.bars,
+                                            MotifGenerator::kPhraseTailSilence);
+    if (absolute_tick >= silence_start) {
+      return true;
     }
   }
 

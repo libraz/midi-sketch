@@ -40,6 +40,14 @@ class ArpeggioGenerator : public TrackBase {
   static constexpr ChordBoundaryPolicy kChordBoundary = ChordBoundaryPolicy::ClipAtBoundary;
   ChordBoundaryPolicy getChordBoundaryPolicy() const override { return kChordBoundary; }
 
+  /// A running figure thins rather than stops, so it gives up the last beat
+  /// where the riff and the strum give up the last half.
+  static constexpr Tick kPhraseTailSilence = TICKS_PER_BEAT * 3;
+  Tick getPhraseTailSilenceOffset(bool phrase_tail_rest, uint8_t bar_index,
+                                  uint8_t section_bars) const override {
+    return phraseTailSilenceOffset(phrase_tail_rest, bar_index, section_bars, kPhraseTailSilence);
+  }
+
   /// @brief Generate full arpeggio track using FullTrackContext.
   void doGenerateFullTrack(MidiTrack& track, const FullTrackContext& ctx) override;
 };

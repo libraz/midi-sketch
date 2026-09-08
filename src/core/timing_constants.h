@@ -87,6 +87,32 @@ inline bool isLastBar(uint8_t bar_index, uint8_t section_bars) {
   return bar_index == section_bars - 1;
 }
 
+/// @brief Offset within a bar from which a track stops starting notes, when the
+///        section asks its phrases to breathe before the next one begins.
+///
+/// A phrase tail is a subtraction: the arrangement takes notes out so the end of
+/// the phrase is heard as an end. This states *where* that happens -- the last
+/// bar of a section that asked for it, and only there. *How much* is silenced
+/// differs by instrument and is the caller's constant, so a track free to write
+/// the whole bar gets TICKS_PER_BAR back and the result can be used as a cutoff
+/// without first asking whether the section has a tail at all.
+///
+/// The last-bar test is not implied by the tail test: a two-bar section has a
+/// last bar and no tail region.
+///
+/// @param phrase_tail_rest The section's phrase_tail_rest flag
+/// @param bar_index 0-based bar index within the section
+/// @param section_bars Total bars in section
+/// @param offset_in_tail Offset this track stops at when the bar is a tail
+/// @return Offset from the bar's start; TICKS_PER_BAR when the bar is not a tail
+inline Tick phraseTailSilenceOffset(bool phrase_tail_rest, uint8_t bar_index, uint8_t section_bars,
+                                    Tick offset_in_tail) {
+  if (!phrase_tail_rest) return TICKS_PER_BAR;
+  if (!isPhraseTail(bar_index, section_bars)) return TICKS_PER_BAR;
+  if (!isLastBar(bar_index, section_bars)) return TICKS_PER_BAR;
+  return offset_in_tail;
+}
+
 }  // namespace midisketch
 
 #endif  // MIDISKETCH_CORE_TIMING_CONSTANTS_H_

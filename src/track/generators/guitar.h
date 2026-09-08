@@ -47,6 +47,14 @@ class GuitarGenerator : public TrackBase {
   static constexpr ChordBoundaryPolicy kChordBoundary = ChordBoundaryPolicy::ClipAtBoundary;
   ChordBoundaryPolicy getChordBoundaryPolicy() const override { return kChordBoundary; }
 
+  /// The strum stops halfway through the phrase's last bar so the phrase is
+  /// heard to end. generateBar() writes only up to the same offset there.
+  static constexpr Tick kPhraseTailSilence = TICKS_PER_BAR / 2;
+  Tick getPhraseTailSilenceOffset(bool phrase_tail_rest, uint8_t bar_index,
+                                  uint8_t section_bars) const override {
+    return phraseTailSilenceOffset(phrase_tail_rest, bar_index, section_bars, kPhraseTailSilence);
+  }
+
   /// @brief Generate full guitar track using FullTrackContext.
   void doGenerateFullTrack(MidiTrack& track, const FullTrackContext& ctx) override;
 };

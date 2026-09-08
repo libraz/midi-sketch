@@ -184,6 +184,32 @@ class ITrackBase {
   /// generator itself would have clipped.
   virtual ChordBoundaryPolicy getChordBoundaryPolicy() const = 0;
 
+  /// @brief Offset within a bar from which this track starts no more notes,
+  ///        when the section asks its phrases to breathe.
+  ///
+  /// Answers for this track what phraseTailSilenceOffset() states in general.
+  /// Not every track observes the tail -- the default writes the whole bar --
+  /// and the two that do apply it at the same place, so the question has to be
+  /// asked of the track rather than of the section alone.
+  ///
+  /// A pass that places notes into a bar after generation asks this for the bar
+  /// it is writing into. Copying a bar from elsewhere otherwise fills the
+  /// silence the tail exists to make, and the phrase runs on through its own
+  /// ending.
+  ///
+  /// @param phrase_tail_rest The destination section's phrase_tail_rest flag
+  /// @param bar_index 0-based bar index within that section
+  /// @param section_bars Total bars in that section
+  /// @return Offset from the bar's start; TICKS_PER_BAR when the whole bar is
+  ///         available to this track
+  virtual Tick getPhraseTailSilenceOffset(bool phrase_tail_rest, uint8_t bar_index,
+                                          uint8_t section_bars) const {
+    (void)phrase_tail_rest;
+    (void)bar_index;
+    (void)section_bars;
+    return TICKS_PER_BAR;
+  }
+
   /// @brief Configure the generator with parameters.
   /// @param config Track configuration
   virtual void configure(const TrackConfig& config) = 0;

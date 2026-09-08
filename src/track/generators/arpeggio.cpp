@@ -491,9 +491,13 @@ void ArpeggioGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackCon
         bool in_phrase_tail =
             bc.section.phrase_tail_rest && isPhraseTail(bc.bar_index, bc.section.bars);
         bool is_final_bar = in_phrase_tail && isLastBar(bc.bar_index, bc.section.bars);
-        // Last bar: stop generating at beat 4 (skip last beat)
+        // Last bar: stop where this track's tail silence begins. The offset is
+        // the track's own constant so a later pass writing into this bar can
+        // ask for it rather than restate it.
         Tick tail_cutoff =
-            is_final_bar ? (bc.bar_start + TICKS_PER_BEAT * 3) : (bc.bar_start + TICKS_PER_BAR);
+            bc.bar_start + phraseTailSilenceOffset(bc.section.phrase_tail_rest, bc.bar_index,
+                                                   bc.section.bars,
+                                                   ArpeggioGenerator::kPhraseTailSilence);
         // Gate shortening: 50% for last bar, 75% for penultimate
         float tail_gate_mult = is_final_bar ? 0.5f : (in_phrase_tail ? 0.75f : 1.0f);
 

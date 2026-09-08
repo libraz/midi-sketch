@@ -940,8 +940,14 @@ void GuitarGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackConte
         // Phrase tail rest: reduce density in tail bars, silence last bar's second half
         if (bc.section.phrase_tail_rest && isPhraseTail(bc.bar_index, bc.section.bars)) {
           if (isLastBar(bc.bar_index, bc.section.bars)) {
-            // Last bar: generate first half only (second half is silence)
-            generateHalf(bc.bar_start, half_bar, bc.section.type, bc.section.energy, style);
+            // Last bar: stop where this track's tail silence begins. The offset
+            // is the track's own constant so a later pass writing into this bar
+            // can ask for it rather than restate it.
+            Tick silence_start =
+                bc.bar_start + phraseTailSilenceOffset(bc.section.phrase_tail_rest, bc.bar_index,
+                                                       bc.section.bars,
+                                                       GuitarGenerator::kPhraseTailSilence);
+            generateHalf(bc.bar_start, silence_start, bc.section.type, bc.section.energy, style);
             return;
           }
           // Penultimate bar: generate first half normally, second half with sparse feel
