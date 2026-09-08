@@ -285,11 +285,12 @@ BassPattern applyPeakLevelPromotion(BassPattern pattern, PeakLevel peak_level) {
 /// @return Selected bass pattern
 BassPattern selectPatternWithPolicy(BassRiffCache& cache, const Section& section, size_t sec_idx,
                                     const GeneratorParams& params, std::mt19937& rng) {
-  // bass_style_hint overrides genre table selection
+  // bass_style_hint names the pattern; it does not name the section's dynamics.
+  // A peak still has to sound like a peak, so the promotion below runs either way.
   if (section.bass_style_hint > 0) {
     uint8_t idx = section.bass_style_hint - 1;
     if (idx <= static_cast<uint8_t>(BassPattern::FastRun)) {
-      return static_cast<BassPattern>(idx);
+      return applyPeakLevelPromotion(static_cast<BassPattern>(idx), section.peak_level);
     }
   }
 
@@ -363,11 +364,11 @@ BassPattern selectPatternForVocalDensity(float vocal_density, const Section& sec
 BassPattern selectPatternWithPolicyForVocal(BassRiffCache& cache, const Section& section,
                                             size_t sec_idx, const GeneratorParams& params,
                                             float vocal_density, std::mt19937& rng) {
-  // bass_style_hint overrides genre table selection
+  // Same reading of the hint as above: it replaces the choice, not the peak.
   if (section.bass_style_hint > 0) {
     uint8_t idx = section.bass_style_hint - 1;
     if (idx <= static_cast<uint8_t>(BassPattern::FastRun)) {
-      return static_cast<BassPattern>(idx);
+      return applyPeakLevelPromotion(static_cast<BassPattern>(idx), section.peak_level);
     }
   }
 

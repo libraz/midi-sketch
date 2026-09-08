@@ -726,6 +726,44 @@ TEST_F(ChordFunctionApproachTest, PeakLevelPromotionRaisesSparseBassPatterns) {
             BassPattern::Syncopated);
 }
 
+// A style hint names the figure the section plays. It does not name how loud or
+// how thick that section sits in the arrangement, so a last chorus still has to
+// gain weight over the first one that used the same hint.
+TEST_F(ChordFunctionApproachTest, AStyleHintNamesTheFigureNotTheSectionsWeight) {
+  GeneratorParams params;
+  params.mood = Mood::EnergeticDance;
+  params.riff_policy = RiffPolicy::Free;
+
+  Section verse;
+  verse.type = SectionType::A;
+  verse.peak_level = PeakLevel::None;
+  verse.bass_style_hint = static_cast<uint8_t>(BassPattern::Driving) + 1;
+
+  Section peak_chorus = verse;
+  peak_chorus.type = SectionType::Chorus;
+  peak_chorus.peak_level = PeakLevel::Max;
+
+  const BassPattern promoted = promoteBassPatternForPeakLevel(BassPattern::Driving, PeakLevel::Max);
+  ASSERT_NE(promoted, BassPattern::Driving)
+      << "The promotion table must move this pattern, or the assertions below prove nothing";
+
+  BassRiffCache cache;
+  std::mt19937 rng(7);
+  EXPECT_EQ(selectPatternWithPolicy(cache, verse, 0, params, rng), BassPattern::Driving)
+      << "Away from a peak the hint is the answer on its own";
+  EXPECT_EQ(selectPatternWithPolicy(cache, peak_chorus, 1, params, rng), promoted)
+      << "The same hint at a peak reaches the promotion the chain applies to every other pattern";
+
+  BassRiffCache vocal_cache;
+  std::mt19937 vocal_rng(7);
+  EXPECT_EQ(selectPatternWithPolicyForVocal(vocal_cache, verse, 0, params, 0.5f, vocal_rng),
+            BassPattern::Driving)
+      << "The vocal-density chain reads the hint the same way";
+  EXPECT_EQ(selectPatternWithPolicyForVocal(vocal_cache, peak_chorus, 1, params, 0.5f, vocal_rng),
+            promoted)
+      << "and promotes it at a peak the same way";
+}
+
 // --- Chromatic Approach Tests ---
 
 class ChromaticApproachTest : public ::testing::Test {};
