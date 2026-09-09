@@ -73,8 +73,22 @@ endif()
 if(ENABLE_COVERAGE AND NOT BUILD_WASM)
   if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     message(STATUS "Enabling code coverage")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --coverage -O0 -g")
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} --coverage -O0 -g")
+
+    # The coverage target runs ctest in parallel, so several test processes
+    # update the same .gcda counters at once. Non-atomic counter updates lose
+    # those races and can wrap a count negative, which lcov reports as a hard
+    # error rather than as a wrong number -- so the corruption has to be
+    # prevented here rather than ignored at capture time.
+    include(CheckCXXCompilerFlag)
+    check_cxx_compiler_flag(-fprofile-update=atomic HAVE_FPROFILE_UPDATE_ATOMIC)
+    if(HAVE_FPROFILE_UPDATE_ATOMIC)
+      set(COVERAGE_ATOMIC_FLAG " -fprofile-update=atomic")
+    else()
+      set(COVERAGE_ATOMIC_FLAG "")
+    endif()
+
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --coverage -O0 -g${COVERAGE_ATOMIC_FLAG}")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} --coverage -O0 -g${COVERAGE_ATOMIC_FLAG}")
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} --coverage")
     set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} --coverage")
   else()
