@@ -4,7 +4,7 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   resolve: {
     alias: {
-      '../midisketch.js': path.resolve(__dirname, 'dist/midisketch.js'),
+      '../midisketch.js': path.resolve(import.meta.dirname, 'dist/midisketch.js'),
     },
   },
   test: {

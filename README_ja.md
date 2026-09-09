@@ -2,7 +2,7 @@
 
 [![CI](https://img.shields.io/github/actions/workflow/status/libraz/midi-sketch/ci.yml?branch=main&label=CI)](https://github.com/libraz/midi-sketch/actions)
 [![codecov](https://codecov.io/gh/libraz/midi-sketch/branch/main/graph/badge.svg)](https://codecov.io/gh/libraz/midi-sketch)
-[![Version](https://img.shields.io/badge/version-0.2.1-blue.svg)](https://github.com/libraz/midi-sketch)
+[![Version](https://img.shields.io/badge/version-0.3.0-blue.svg)](https://github.com/libraz/midi-sketch)
 [![License](https://img.shields.io/badge/license-AGPL--3.0%20%2F%20Commercial-green)](LICENSE)
 [![C++17](https://img.shields.io/badge/C%2B%2B-17-blue?logo=c%2B%2B)](https://en.cppreference.com/w/cpp/17)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20WebAssembly-lightgrey)](https://github.com/libraz/midi-sketch)
