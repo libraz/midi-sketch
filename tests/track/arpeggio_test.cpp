@@ -7,6 +7,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <random>
@@ -14,8 +15,10 @@
 #include <sstream>
 #include <string>
 
+#include "core/chord.h"
 #include "core/chord_utils.h"
 #include "core/generator.h"
+#include "core/harmonic_rhythm.h"
 #include "core/song.h"
 #include "core/types.h"
 #include "test_support/generator_test_fixture.h"
@@ -962,53 +965,41 @@ TEST_F(ArpeggioTest, PhraseEndSplitMatchesChordTrack) {
   ASSERT_FALSE(arpeggio.empty());
   ASSERT_FALSE(chord_track.empty());
 
-  // The specific clashes were at these ticks (beat 3.0):
-  // Bar 19 (tick 37440), Bar 24 (tick 47040), Bar 43 (tick 83520),
-  // Bar 48 (tick 93120), Bar 67 (tick 129600), Bar 72 (tick 139200)
-  // All were Chord(B3) vs Arpeggio(F5 or C5) - tritone or minor 2nd
-  constexpr std::array<Tick, 6> PROBLEM_TICKS = {37440, 47040, 83520, 93120, 129600, 139200};
-
-  int problem_clash_count = 0;
-
-  for (Tick problem_tick : PROBLEM_TICKS) {
-    // Find arpeggio notes near this tick
-    for (const auto& arp_note : arpeggio.notes()) {
-      if (arp_note.start_tick < problem_tick - 120 || arp_note.start_tick > problem_tick + 120)
+  // Every bar the phrase-end rule splits, across the whole song: from beat 3 on
+  // the arpeggio states the chord the timeline holds there, not the one the bar
+  // opened on, and so never sits against the chord track in a pitch that chord
+  // does not own.
+  const auto& harmony = gen.getHarmonyContext();
+  const auto& progression = getChordProgression(params_.chord_id);
+  int checked = 0;
+  for (const auto& section : gen.getSong().arrangement().sections()) {
+    HarmonicRhythmInfo harmonic = HarmonicRhythmInfo::forSection(section, params_.mood);
+    for (int bar = 0; bar < section.bars; ++bar) {
+      if (!shouldSplitPhraseEnd(bar, section.bars, progression.length, harmonic, section.type,
+                                params_.mood)) {
         continue;
-
-      // Find chord notes at this tick
-      for (const auto& chord_note : chord_track.notes()) {
-        if (chord_note.start_tick > problem_tick + 120) continue;
-        Tick chord_end = chord_note.start_tick + chord_note.duration;
-        if (chord_end < problem_tick) continue;
-
-        // The two notes must actually sound together: a chord note ending
-        // exactly where the arpeggio note starts (end-exclusive) cannot clash.
-        Tick arp_end = arp_note.start_tick + arp_note.duration;
-        if (chord_note.start_tick >= arp_end || chord_end <= arp_note.start_tick) continue;
-
-        // Check interval - must be within one octave to be a real clash
-        int raw_interval =
-            std::abs(static_cast<int>(arp_note.note) - static_cast<int>(chord_note.note));
-        // Only count clashes within 12 semitones (same register)
-        // Notes more than an octave apart don't create harsh dissonance
-        if (raw_interval > 12) continue;
-
-        int interval = raw_interval % 12;
-        // Tritone = 6, Minor 2nd = 1, Major 7th = 11
-        if (interval == 1 || interval == 6 || interval == 11) {
-          problem_clash_count++;
-        }
+      }
+      Tick half_start = section.start_tick + bar * TICKS_PER_BAR + TICKS_PER_BAR / 2;
+      Tick bar_end = section.start_tick + (bar + 1) * TICKS_PER_BAR;
+      for (const auto& arp_note : arpeggio.notes()) {
+        if (arp_note.start_tick < half_start || arp_note.start_tick >= bar_end) continue;
+        const ChordTones tones = harmony.getChordTonesAt(arp_note.start_tick);
+        ++checked;
+        EXPECT_NE(std::find(tones.begin(), tones.end(), arp_note.note % 12), tones.end())
+            << "arpeggio " << int(arp_note.note) << " at tick " << arp_note.start_tick
+            << " is not a tone of the chord sounding there";
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+        // The pitch the arpeggio asked for, before any collision snap: following
+        // the split has to be the arpeggio's own reading, not a correction.
+        EXPECT_NE(std::find(tones.begin(), tones.end(), arp_note.prov_original_pitch % 12),
+                  tones.end())
+            << "arpeggio asked for " << int(arp_note.prov_original_pitch) << " at tick "
+            << arp_note.start_tick << ", not a tone of the chord sounding there";
+#endif  // MIDISKETCH_NOTE_PROVENANCE
       }
     }
   }
-
-  // Before fix: 6 clashes at these specific positions (B3 vs F5/C5)
-  // After phrase-end split fix: reduced to 0-1 (arpeggio switches chord at beat 3)
-  // Relaxed dissonance thresholds (compound M7/m2 no longer flagged) may shift
-  // chord voicings, causing minor seed-dependent changes in clash count.
-  EXPECT_LE(problem_clash_count, 1) << "Phrase-end split regression: " << problem_clash_count
-                                    << " clashes at known problem positions";
+  EXPECT_GT(checked, 0);
 }
 
 // ============================================================================

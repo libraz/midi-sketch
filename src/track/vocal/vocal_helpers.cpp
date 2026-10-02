@@ -9,6 +9,7 @@
 
 #include "core/chord_utils.h"
 #include "core/i_chord_lookup.h"
+#include "core/i_harmony_context.h"
 #include "core/note_creator.h"
 #include "core/note_source.h"
 #include "core/note_timeline_utils.h"
@@ -52,55 +53,19 @@ std::vector<NoteEvent> shiftTiming(const std::vector<NoteEvent>& notes, const IC
   return result;
 }
 
-std::vector<NoteEvent> adjustPitchRange(const std::vector<NoteEvent>& notes, uint8_t orig_low,
-                                        uint8_t orig_high, uint8_t new_low, uint8_t new_high,
-                                        int key_offset) {
-  if (orig_low == new_low && orig_high == new_high) {
-    return notes;  // No adjustment needed
-  }
-
-  std::vector<NoteEvent> result;
-  result.reserve(notes.size());
-
-  // Calculate shift based on center points
-  int orig_center = (orig_low + orig_high) / 2;
-  int new_center = (new_low + new_high) / 2;
-  int shift = new_center - orig_center;
-  // A later chorus commonly raises the floor while retaining the same ceiling.
-  // Shifting by midpoint alone halves that intentional lift and can make a
-  // cached chorus sag after scale snapping. In that asymmetric case, preserve
-  // the full floor movement; range clamping still protects the ceiling.
-  if (new_low > orig_low && new_high == orig_high) {
-    shift = static_cast<int>(new_low) - static_cast<int>(orig_low);
-  }
-
-  for (const auto& note : notes) {
-    NoteEvent adjusted = note;
+void foldPitchesIntoRange(std::vector<NoteEvent>& notes, uint8_t low, uint8_t high) {
+  for (auto& note : notes) {
+    int pitch = note.note;
+    while (pitch > high && pitch - 12 >= low) pitch -= 12;
+    while (pitch < low && pitch + 12 <= high) pitch += 12;
+    if (pitch == note.note) continue;
 #ifdef MIDISKETCH_NOTE_PROVENANCE
-    uint8_t old_pitch = adjusted.note;
+    note.prov_original_pitch = note.note;
+    note.addTransformStep(TransformStepType::OctaveAdjust, note.note, static_cast<uint8_t>(pitch),
+                          static_cast<int8_t>(pitch - note.note), 0);
 #endif
-    int new_pitch = static_cast<int>(note.note) + shift;
-    // Snap to scale to prevent chromatic notes
-    new_pitch = snapToNearestScaleTone(new_pitch, key_offset);
-    // Clamp to new range
-    new_pitch = std::clamp(new_pitch, static_cast<int>(new_low), static_cast<int>(new_high));
-    // Clamping can land on a chromatic range bound; walk inward to a scale tone.
-    const int inward = (new_pitch > (static_cast<int>(new_low) + new_high) / 2) ? -1 : 1;
-    while (!isScaleTone(getPitchClass(static_cast<uint8_t>(new_pitch)), key_offset) &&
-           new_pitch + inward >= static_cast<int>(new_low) &&
-           new_pitch + inward <= static_cast<int>(new_high)) {
-      new_pitch += inward;
-    }
-    adjusted.note = static_cast<uint8_t>(new_pitch);
-#ifdef MIDISKETCH_NOTE_PROVENANCE
-    if (old_pitch != adjusted.note) {
-      adjusted.prov_original_pitch = old_pitch;
-      adjusted.addTransformStep(TransformStepType::ScaleSnap, old_pitch, adjusted.note, 0, 0);
-    }
-#endif
-    result.push_back(adjusted);
+    note.note = static_cast<uint8_t>(pitch);
   }
-  return result;
 }
 
 std::vector<NoteEvent> toRelativeTiming(const std::vector<NoteEvent>& notes, Tick section_start) {
@@ -297,6 +262,48 @@ void applyHookIntensity(std::vector<NoteEvent>& notes, SectionType section_type,
   }
 }
 
+void restateChorusHead(std::vector<NoteEvent>& notes, Tick section_start, uint8_t section_bars,
+                       const IHarmonyContext& harmony) {
+  constexpr uint8_t kMinBars = 8;
+  constexpr Tick kHeadTicks = 2 * TICKS_PER_BAR;
+  if (section_bars < kMinBars || notes.empty()) return;
+
+  NoteTimeline::sortByStartTick(notes);
+  const Tick offset = static_cast<Tick>(section_bars / 2) * TICKS_PER_BAR;
+  const Tick answer_start = section_start + offset;
+
+  std::vector<std::pair<Tick, uint8_t>> head;
+  for (const auto& note : notes) {
+    if (note.start_tick >= section_start && note.start_tick < section_start + kHeadTicks) {
+      head.emplace_back(note.start_tick + offset, note.note);
+    }
+  }
+
+  for (size_t idx = 0; idx < notes.size(); ++idx) {
+    NoteEvent& note = notes[idx];
+    if (note.start_tick < answer_start || note.start_tick >= answer_start + kHeadTicks) continue;
+    auto match = std::find_if(head.begin(), head.end(), [&note](const auto& entry) {
+      return entry.first == note.start_tick;
+    });
+    if (match == head.end() || match->second == note.note) continue;
+
+    const uint8_t before = note.note;
+    note.note = match->second;
+    const bool legal =
+        melody::classifyVocalTone(harmony, note.note, melody::neighborhoodAt(notes, idx)) !=
+            melody::ToneLegality::Illegal &&
+        harmony.isConsonantWithOtherTracks(note.note, note.start_tick, note.duration,
+                                           TrackRole::Vocal);
+    if (!legal) {
+      note.note = before;
+      continue;
+    }
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+    note.recordPitchMove(TransformStepType::MotionAdjust, before, note.note);
+#endif
+  }
+}
+
 namespace {
 
 /// @brief Calculate groove shift for a single note based on groove type.
@@ -374,7 +381,7 @@ void applyGrooveFeel(std::vector<NoteEvent>& notes, VocalGrooveFeel groove) {
   // Pass 1: Calculate shift amounts for all notes
   std::vector<int32_t> shifts(notes.size(), 0);
   for (size_t i = 0; i < notes.size(); ++i) {
-    shifts[i] = calculateGrooveShift(notes[i], groove);
+    shifts[i] = notes[i].is_syllabic_subdivision ? 0 : calculateGrooveShift(notes[i], groove);
 
     // Bouncy8th: also shorten first 8th note duration
     if (groove == VocalGrooveFeel::Bouncy8th) {
@@ -450,26 +457,33 @@ void applyCollisionAvoidanceWithIntervalConstraint(std::vector<NoteEvent>& notes
     uint8_t old_pitch = note.note;
 #endif
 
-    // Apply collision avoidance
-    auto candidates = getSafePitchCandidates(harmony, note.note, note.start_tick, note.duration,
-                                             TrackRole::Vocal, vocal_low, vocal_high);
-    // Prefer diatonic candidates for vocal track
-    {
+    // Collision avoidance moves a note only when it collides. The candidate
+    // ranking scores chord tones above the pitch asked for, so running it on a
+    // note that clashes with nothing replaced the melody's 9ths, 6ths and
+    // sevenths with the nearest chord tone before the legality rule below was
+    // ever asked about them.
+    uint8_t safe_pitch = note.note;
+    if (!harmony.isConsonantWithOtherTracks(note.note, note.start_tick, note.duration,
+                                            TrackRole::Vocal)) {
+      auto candidates = getSafePitchCandidates(harmony, note.note, note.start_tick, note.duration,
+                                               TrackRole::Vocal, vocal_low, vocal_high);
+      // Prefer diatonic candidates for vocal track
       auto it = std::remove_if(candidates.begin(), candidates.end(),
                                [](const PitchCandidate& c) { return !c.is_scale_tone; });
       if (it != candidates.begin()) {
         candidates.erase(it, candidates.end());
       }
+      // Select best candidate considering melodic continuity
+      PitchSelectionHints hints;
+      if (i > 0) {
+        hints.prev_pitch = static_cast<int8_t>(notes[i - 1].note);
+      }
+      hints.note_duration = note.duration;
+      hints.tessitura_center = (vocal_low + vocal_high) / 2;
+      if (!candidates.empty()) {
+        safe_pitch = selectBestCandidate(candidates, note.note, hints);
+      }
     }
-    // Select best candidate considering melodic continuity
-    PitchSelectionHints hints;
-    if (i > 0) {
-      hints.prev_pitch = static_cast<int8_t>(notes[i - 1].note);
-    }
-    hints.note_duration = note.duration;
-    hints.tessitura_center = (vocal_low + vocal_high) / 2;
-    uint8_t safe_pitch =
-        candidates.empty() ? note.note : selectBestCandidate(candidates, note.note, hints);
     safe_pitch = static_cast<uint8_t>(std::clamp(
         static_cast<int>(safe_pitch), static_cast<int>(vocal_low), static_cast<int>(vocal_high)));
 
@@ -754,11 +768,109 @@ uint8_t vocalCeilingAt(Tick tick, const std::vector<Section>& sections, uint8_t 
   return vocal_high;
 }
 
+namespace {
+
+/// @p pitch moved down by @p steps scale tones of the internal C major.
+int diatonicDown(int pitch, int steps) {
+  for (int step = 0; step < steps; ++step) {
+    --pitch;
+    while (pitch > 0 && !isScaleTone(pitch % 12)) --pitch;
+  }
+  return pitch;
+}
+
+/// Lower line[begin, end) as one unit so its peak fits under @p ceiling.
+///
+/// The smallest diatonic shift that fits is tried first, then larger ones up
+/// to an octave. A shift is taken only when every note stays at or above
+/// @p low, clears the other tracks, and no tone the chord admitted becomes one
+/// it refuses. Returns whether the span moved.
+bool lowerSpanAsUnit(std::vector<NoteEvent>& line, size_t begin, size_t end,
+                     const IHarmonyContext& harmony, uint8_t low, uint8_t ceiling) {
+  int peak = 0;
+  for (size_t pos = begin; pos < end; ++pos) peak = std::max<int>(peak, line[pos].note);
+  int steps = 1;
+  while (steps <= 7 && diatonicDown(peak, steps) > ceiling) ++steps;
+
+  for (; steps <= 7; ++steps) {
+    std::vector<NoteEvent> trial = line;
+    bool admitted = true;
+    for (size_t pos = begin; pos < end && admitted; ++pos) {
+      const int moved = diatonicDown(trial[pos].note, steps);
+      admitted = moved >= low;
+      trial[pos].note = static_cast<uint8_t>(moved);
+    }
+    for (size_t pos = begin; pos < end && admitted; ++pos) {
+      const NoteEvent& note = trial[pos];
+      admitted = harmony.isConsonantWithOtherTracks(note.note, note.start_tick, note.duration,
+                                                    TrackRole::Vocal);
+      const bool was_legal =
+          melody::classifyVocalTone(harmony, line[pos].note, melody::neighborhoodAt(line, pos)) !=
+          melody::ToneLegality::Illegal;
+      if (admitted && was_legal) {
+        admitted =
+            melody::classifyVocalTone(harmony, note.note, melody::neighborhoodAt(trial, pos)) !=
+            melody::ToneLegality::Illegal;
+      }
+    }
+    if (!admitted) continue;
+
+    for (size_t pos = begin; pos < end; ++pos) {
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+      const uint8_t old_pitch = line[pos].note;
+      if (old_pitch != trial[pos].note) {
+        if (line[pos].prov_original_pitch == 0) line[pos].prov_original_pitch = old_pitch;
+        line[pos].addTransformStep(TransformStepType::RangeClamp, old_pitch, trial[pos].note,
+                                   static_cast<int16_t>(low), static_cast<int16_t>(ceiling));
+      }
+#endif
+      line[pos].note = trial[pos].note;
+    }
+    return true;
+  }
+  return false;
+}
+
+}  // namespace
+
 void capNonChorusBelowChorusPeak(std::vector<NoteEvent>& notes, const IHarmonyContext& harmony,
                                  const std::vector<Section>& sections, uint8_t vocal_low) {
   const uint8_t chorus_peak = realizedChorusPeak(notes, sections);
   if (chorus_peak == 0) return;
 
+  // Lower each phrase that crosses its ceiling as a unit, so its contour
+  // survives. A phrase ends at a rest longer than a beat or where the ceiling
+  // changes; when no shift of the whole phrase is admissible, the stretch from
+  // its first to its last note over the ceiling is tried on its own.
+  std::vector<NoteEvent> line = notes;
+  std::stable_sort(line.begin(), line.end(), [](const NoteEvent& a, const NoteEvent& b) {
+    return a.start_tick < b.start_tick;
+  });
+  size_t begin = 0;
+  while (begin < line.size()) {
+    const uint8_t ceiling = vocalCeilingAt(line[begin].start_tick, sections, chorus_peak, 127);
+    size_t end = begin + 1;
+    while (end < line.size() &&
+           line[end].start_tick <=
+               line[end - 1].start_tick + line[end - 1].duration + TICKS_PER_BEAT &&
+           vocalCeilingAt(line[end].start_tick, sections, chorus_peak, 127) == ceiling) {
+      ++end;
+    }
+    size_t first = begin;
+    while (first < end && line[first].note <= ceiling) ++first;
+    if (first < end && ceiling >= vocal_low &&
+        !lowerSpanAsUnit(line, begin, end, harmony, vocal_low, ceiling)) {
+      size_t last = end;
+      while (line[last - 1].note <= ceiling) --last;
+      if (last - first >= 2 && (first != begin || last != end)) {
+        lowerSpanAsUnit(line, first, last, harmony, vocal_low, ceiling);
+      }
+    }
+    begin = end;
+  }
+  notes = std::move(line);
+
+  // What no shift could place is clamped note by note.
   for (auto& note : notes) {
     const uint8_t ceiling = vocalCeilingAt(note.start_tick, sections, chorus_peak, 127);
     if (note.note <= ceiling) continue;

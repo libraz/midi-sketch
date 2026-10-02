@@ -146,11 +146,9 @@ uint32_t Generator::resolveSeed(uint32_t seed) {
 // ============================================================================
 
 void Generator::initializeBlueprint(uint32_t seed) {
-  // Use separate RNG with derived seed to avoid disturbing main rng_ state
-  constexpr uint32_t kBlueprintMagic = 0x424C5052;  // "BLPR"
-  std::mt19937 blueprint_rng(seed ^ kBlueprintMagic);
-  resolved_blueprint_id_ = selectProductionBlueprintForMood(blueprint_rng, params_.blueprint_id,
-                                                            static_cast<uint8_t>(params_.mood));
+  // Drawn from its own seed-derived stream, so main rng_ state is undisturbed
+  resolved_blueprint_id_ =
+      resolveProductionBlueprintId(seed, params_.blueprint_id, static_cast<uint8_t>(params_.mood));
   blueprint_ = &getProductionBlueprint(resolved_blueprint_id_);
   params_.blueprint_id = resolved_blueprint_id_;
 
@@ -908,8 +906,11 @@ void Generator::applyPostProcessingEffects() {
   // Post-generation pitch rewrites above resolve against the chord at each
   // note's start tick; a long motif note re-pitched there can sustain into a
   // chromatically different chord (deeper than the tail-trim window below).
-  // Duration-only change, so no re-registration is required.
+  // The registry holds durations too, so the passes after this one must see
+  // the released tail rather than the sustain it replaced.
   trimSustainsAtDissonantChordChanges(song_.motif(), *harmony_context_);
+  harmony_context_->clearNotesForTrack(TrackRole::Motif);
+  harmony_context_->registerTrack(song_.motif(), TrackRole::Motif);
 
   // Bass synchronization and late chord-duration alignment can create a
   // bass/chord overlap after the earlier inter-track pass. Preserve registered
@@ -1611,31 +1612,19 @@ namespace {
 
 /// @brief Check if a note should be removed based on layer schedule.
 /// @param note Note to check
-/// @param section_start Start tick of the section
-/// @param section_end End tick of the section
-/// @param layer_events Layer events for the section
+/// @param section Section the schedule belongs to
 /// @param track_mask Track mask for the current track
 /// @return true if the note should be removed (track inactive at this bar)
-bool shouldRemoveNoteForLayerSchedule(const NoteEvent& note, Tick section_start, Tick section_end,
-                                      const std::vector<LayerEvent>& layer_events,
-                                      TrackMask track_mask, TrackMask section_base_mask) {
+bool shouldRemoveNoteForLayerSchedule(const NoteEvent& note, const Section& section,
+                                      TrackMask track_mask) {
   // Only process notes within this section
-  if (note.start_tick < section_start || note.start_tick >= section_end) {
+  if (note.start_tick < section.start_tick || note.start_tick >= section.endTick()) {
     return false;
   }
 
   // Calculate which bar this note falls in (0-based)
-  uint8_t bar_offset = static_cast<uint8_t>(tickToBar(note.start_tick - section_start));
-
-  bool schedule_defines_full_mask = !layer_events.empty() && layer_events.front().bar_offset == 0 &&
-                                    layer_events.front().tracks_add_mask != TrackMask::None;
-
-  // Default intro/interlude schedules define the active set from scratch.
-  // Remove-only or delayed schedules refine the blueprint section track_mask.
-  bool active = schedule_defines_full_mask
-                    ? isTrackActiveAtBar(layer_events, bar_offset, track_mask)
-                    : isTrackActiveAtBar(layer_events, bar_offset, track_mask, section_base_mask);
-  return !active;
+  uint8_t bar_offset = static_cast<uint8_t>(tickToBar(note.start_tick - section.start_tick));
+  return !hasTrack(section.activeTracksAtBar(bar_offset), track_mask);
 }
 
 void deduplicatePitchOnsets(MidiTrack& track) {
@@ -1707,9 +1696,6 @@ void Generator::applyLayerSchedule() {
       continue;
     }
 
-    Tick section_start = section.start_tick;
-    Tick section_end = section_start + section.bars * TICKS_PER_BAR;
-
     // For each track, check bar-by-bar activity and remove inactive notes
     for (auto& mapping : track_map) {
       // Vocal-first workflow: protect custom vocal notes from layer schedule
@@ -1730,9 +1716,8 @@ void Generator::applyLayerSchedule() {
 
       notes.erase(std::remove_if(notes.begin(), notes.end(),
                                  [&](const NoteEvent& note) {
-                                   return shouldRemoveNoteForLayerSchedule(
-                                       note, section_start, section_end, section.layer_events,
-                                       mapping.mask, section.track_mask);
+                                   return shouldRemoveNoteForLayerSchedule(note, section,
+                                                                           mapping.mask);
                                  }),
                   notes.end());
     }

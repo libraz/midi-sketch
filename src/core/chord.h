@@ -132,6 +132,26 @@ ChordQuality getChordQuality(int8_t degree);
  */
 Chord getExtendedChord(int8_t degree, ChordExtension extension);
 
+/// @brief A chord tone the chord takes off the key, beside the key's own tone it replaces.
+struct ChromaticAlteration {
+  int8_t diatonic_pc;  ///< The key's tone on that chord member (G in E7)
+  int8_t altered_pc;   ///< What the chord sounds instead (G#)
+};
+
+/**
+ * @brief The members of a chord that leave the key, each with the tone it displaces.
+ *
+ * A line sounding the displaced tone over the chord states the key's version
+ * of the harmony against it: a cross-relation, even when the altered tone is
+ * nowhere near it in register or time. Each member is compared with the key's
+ * tone on the same letter, so G# in E7 pairs with G, Bb in C7 with B.
+ *
+ * @param degree Scale degree of the chord, borrowed degrees included
+ * @param extension Chord extension the timeline holds
+ * @return One entry per altered member, empty for a diatonic chord
+ */
+std::vector<ChromaticAlteration> getChromaticAlterations(int8_t degree, ChordExtension extension);
+
 /**
  * @brief Check if the extension is a suspended chord (Sus2 or Sus4).
  *

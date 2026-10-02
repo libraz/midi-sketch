@@ -19,6 +19,7 @@
 #include "core/chord_extension_planner.h"
 #include "core/chord_utils.h"
 #include "core/harmonic_rhythm.h"
+#include "core/harmony_timeline_planner.h"
 #include "core/i_harmony_context.h"
 #include "core/mood_utils.h"
 #include "core/note_creator.h"
@@ -90,7 +91,7 @@ class KeyboardPlayabilityChecker {
       return pitches;
     }
     ensureInitialized();
-    return factory_->ensurePlayableVoicing(pitches, root_pitch_class, start, duration);
+    return factory_->ensurePlayableVoicing(pitches, root_pitch_class, start, duration, CHORD_LOW);
   }
 
   /// @brief Reset state (call at section boundaries).
@@ -619,23 +620,48 @@ void tryAnticipation(ChordBarContext& ctx) {
   // Only what is struck inside the span counts. A tone already ringing when
   // the chord changes is a suspension, which is why the harmony is asked for
   // onsets rather than for everything audible here.
-  {
-    const ChordTones incoming_tones = ctx.harmony.getChordTonesAt(bar_end);
-    const uint8_t incoming_root = degreeToRoot(next_degree, Key::C);
-    const Chord incoming = getChordNotes(next_degree);
-    const bool incoming_minor = (incoming.intervals[1] == 3);
-    for (uint8_t pitch : ctx.harmony.getOnsetPitches(ant_tick, bar_end, TrackRole::Chord)) {
+  const ChordTones incoming_tones = ctx.harmony.getChordTonesAt(bar_end);
+  const uint8_t incoming_root = degreeToRoot(next_degree, Key::C);
+  const Chord incoming = getChordNotes(next_degree);
+  const bool incoming_minor = (incoming.intervals[1] == 3);
+  const auto incoming_alterations =
+      getChromaticAlterations(next_degree, ctx.harmony.getChordExtensionAt(bar_end));
+  auto eighthAccepts = [&](Tick eighth_start, Tick eighth_end) {
+    for (uint8_t pitch : ctx.harmony.getOnsetPitches(eighth_start, eighth_end, TrackRole::Chord)) {
       const int pitch_class = pitch % 12;
       if (std::find(incoming_tones.begin(), incoming_tones.end(), pitch_class) !=
           incoming_tones.end()) {
         continue;
       }
+      // A line already sounding the key's tone the incoming chord alters would
+      // be left in a cross-relation with it.
+      if (std::any_of(incoming_alterations.begin(), incoming_alterations.end(),
+                      [&](const ChromaticAlteration& a) { return a.diatonic_pc == pitch_class; })) {
+        return false;
+      }
       if (isDiatonic(pitch) &&
           !isAvoidNoteWithContext(pitch, incoming_root, incoming_minor, next_degree)) {
         continue;
       }
-      return;
+      return false;
     }
+    return true;
+  };
+  if (!eighthAccepts(ant_tick, bar_end)) return;
+
+  // A restated chorus bar anticipates only where every bar stating the same
+  // place in the loop into the same chord can, so the loop keeps one shape.
+  const ChordExtension next_colour = ctx.harmony.getChordExtensionAt(bar_end);
+  const bool next_is_secondary = ctx.harmony.isSecondaryDominantAt(bar_end);
+  for (uint8_t sibling :
+       restatedLoopBars(*ctx.section, ctx.bar, ctx.progression, ctx.params.mood)) {
+    Tick sibling_end = ctx.section->start_tick + (sibling + 1) * TICKS_PER_BAR;
+    if (sibling == ctx.bar || ctx.harmony.getChordDegreeAt(sibling_end) != next_degree ||
+        ctx.harmony.getChordExtensionAt(sibling_end) != next_colour ||
+        ctx.harmony.isSecondaryDominantAt(sibling_end) != next_is_secondary) {
+      continue;
+    }
+    if (!eighthAccepts(sibling_end - TICK_EIGHTH, sibling_end)) return;
   }
 
   // The anticipation moves the harmonic change an eighth earlier, so the shared
@@ -645,7 +671,8 @@ void tryAnticipation(ChordBarContext& ctx) {
   ChordExtension next_extension = ctx.harmony.hasChordExtensionAt(bar_end)
                                       ? ctx.harmony.getChordExtensionAt(bar_end)
                                       : ChordExtension::None;
-  ctx.harmony.registerChordReplacement(ant_tick, bar_end, next_degree, next_extension);
+  ctx.harmony.registerChordReplacement(ant_tick, bar_end, next_degree, next_extension,
+                                       ctx.harmony.isSecondaryDominantAt(bar_end));
 
   // Vacate the span the replacement just claimed.
   //

@@ -15,6 +15,7 @@
 
 #include "core/arrangement.h"
 #include "core/basic_types.h"
+#include "core/chord.h"
 #include "core/config_converter.h"
 #include "core/generator.h"
 #include "core/i_harmony_coordinator.h"
@@ -1406,6 +1407,37 @@ TEST_F(GuitarGenerationTest, TremoloPickHintProducesHighDensity) {
     EXPECT_GT(notes_per_bar, 16.0f)
         << "TremoloPick should produce >16 notes per bar, got " << notes_per_bar;
   }
+}
+
+TEST_F(GuitarGenerationTest, TremoloRunTakesTheToneTheSoundingChordAlters) {
+  // The run is diatonic to the key, but over a secondary dominant it plays the
+  // chord's raised tone in place of the key tone it displaces: G# over E7.
+  size_t over_altered = 0;
+  for (uint32_t seed = 1; seed <= 30; ++seed) {
+    params_.blueprint_id = 1;
+    params_.mood = Mood::LightRock;
+    params_.seed = seed;
+    Generator gen;
+    gen.generate(params_);
+    const auto& harmony = gen.getHarmonyContext();
+    for (const auto& section : gen.getSong().arrangement().sections()) {
+      if (section.guitar_style_hint != 6) continue;
+      for (const auto& note : gen.getSong().guitar().notes()) {
+        if (note.start_tick < section.start_tick || note.start_tick >= section.endTick()) continue;
+        const auto alterations =
+            getChromaticAlterations(harmony.getChordDegreeAt(note.start_tick),
+                                    harmony.getChordExtensionAt(note.start_tick));
+        if (alterations.empty()) continue;
+        ++over_altered;
+        for (const auto& a : alterations) {
+          EXPECT_NE(note.note % 12, a.diatonic_pc)
+              << "seed " << seed << " tick " << note.start_tick << " plays the key's "
+              << int(a.diatonic_pc) << " against the chord's " << int(a.altered_pc);
+        }
+      }
+    }
+  }
+  EXPECT_GT(over_altered, 0u);
 }
 
 TEST_F(GuitarGenerationTest, TremoloPickNoteSpacing) {

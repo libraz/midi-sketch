@@ -193,6 +193,7 @@ enum class ToneLegality : uint8_t {
   Appoggiatura,       ///< Accented dissonance resolving down by step
   Suspension,         ///< Held over from the previous chord, resolving down by step
   PassingOrNeighbor,  ///< Weak, short, step-connected
+  ColourTone,         ///< A diatonic extension the chord takes as a stable tone
 };
 
 /// @brief The surroundings of `line[index]`, read the way the rule reads them.
@@ -236,6 +237,13 @@ MelodicNeighborhood neighborhoodAt(const std::vector<NoteEvent>& line, size_t in
 /// Appoggiaturas and suspensions are exempt from the avoid-note rule: the
 /// clash with the chord is the point of the figure, and the resolution is what
 /// licenses it.
+///
+/// A colour tone needs no figure: a tension the degree takes in the shared
+/// table (getAvailableTensionPitchClasses, which leaves avoid notes out) or the
+/// degree's diatonic seventh, held up to a beat anywhere but at a phrase end.
+/// How many are admitted is the song's vocal tension usage
+/// (IChordLookup::getVocalTensionUsage), weighted per colour and decided by a
+/// pure function of the note's tick and pitch class; usage 0 admits none.
 ///
 /// @param harmony Tick-accurate chord lookup
 /// @param pitch Candidate MIDI pitch

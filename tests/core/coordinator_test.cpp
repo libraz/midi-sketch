@@ -357,6 +357,60 @@ TEST(CoordinatorTest, ChorusColourObeysTheConfiguredProbabilityAndFamilies) {
   EXPECT_GT(checked, 0u);
 }
 
+TEST(CoordinatorTest, ChorusSecondStatementRestatesTheFirstOnesHarmony) {
+  // An eight-bar chorus over a four-chord loop states the loop twice; the hook
+  // restated in bars 4-5 has to meet the chords it met in bars 0-1, whatever
+  // the planners decided by chance. Bars 6-7 carry the cadence and stay free.
+  Section verse;
+  verse.type = SectionType::B;
+  verse.start_tick = 0;
+  verse.bars = 4;
+  verse.name = "B";
+  Section chorus;
+  chorus.type = SectionType::Chorus;
+  chorus.start_tick = 4 * TICKS_PER_BAR;
+  chorus.bars = 8;
+  chorus.name = "Chorus";
+  Arrangement arrangement({verse, chorus});
+
+  size_t checked = 0;
+  for (Mood mood : {Mood::StraightPop, Mood::IdolPop}) {
+    for (uint8_t chord_id = 0; chord_id < 20; ++chord_id) {
+      ASSERT_EQ(getChordProgression(chord_id).length, 4);
+      for (uint32_t seed = 1; seed <= 8; ++seed) {
+        GeneratorParams params;
+        params.seed = seed;
+        params.chord_id = chord_id;
+        params.mood = mood;
+        params.chord_extension.enable_7th = true;
+        params.chord_extension.enable_9th = true;
+        params.chord_extension.seventh_probability = 0.5f;
+        params.chord_extension.ninth_probability = 0.5f;
+        params.chord_extension.tritone_sub = true;
+        params.chord_extension.tritone_sub_probability = 0.5f;
+
+        HarmonyCoordinator harmony;
+        harmony.initialize(arrangement, getChordProgression(chord_id), mood);
+        registerPlannedHarmonyTimeline(arrangement, params, getChordProgression(chord_id), harmony);
+
+        for (Tick offset = 0; offset < 2 * TICKS_PER_BAR; offset += TICK_EIGHTH) {
+          Tick first = chorus.start_tick + offset;
+          Tick second = first + 4 * TICKS_PER_BAR;
+          ++checked;
+          ASSERT_EQ(harmony.getChordDegreeAt(second), harmony.getChordDegreeAt(first))
+              << "mood " << static_cast<int>(mood) << " chord " << int(chord_id) << " seed " << seed
+              << " offset " << offset;
+          ASSERT_EQ(harmony.getChordExtensionAt(second), harmony.getChordExtensionAt(first))
+              << "chord " << int(chord_id) << " seed " << seed << " offset " << offset;
+          ASSERT_EQ(harmony.isSecondaryDominantAt(second), harmony.isSecondaryDominantAt(first))
+              << "chord " << int(chord_id) << " seed " << seed << " offset " << offset;
+        }
+      }
+    }
+  }
+  EXPECT_GT(checked, 0u);
+}
+
 TEST(CoordinatorTest, GenerateAllTracksMarksPriorityTargetsGenerated) {
   Section verse;
   verse.type = SectionType::A;

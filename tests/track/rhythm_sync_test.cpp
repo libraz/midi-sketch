@@ -24,9 +24,44 @@
 #include "test_support/test_helpers.h"
 #include "track/generators/motif.h"
 #include "track/motif/motif_rhythm.h"
+#include "track/vocal/vocal_recitation.h"
 
 namespace midisketch {
 namespace {
+
+/// The vocal's same-pitch runs, split the way its run guards split them.
+struct VocalRuns {
+  test::PitchRun line;         ///< Longest run of the notes the line arrived at itself
+  int longest_rearticulation;  ///< Longest unbroken run of placed rearticulations
+};
+
+/// A syllabic rearticulation -- a recitation run or a split note -- is a placed
+/// figure with a length bound of its own, so it neither counts toward nor
+/// interrupts the run of the notes around it. Counting it into that run made a
+/// six-note recitation on the pitch the line had held before a rest read as ten
+/// stuck notes.
+VocalRuns vocalSamePitchRuns(const std::vector<NoteEvent>& notes) {
+  std::vector<NoteEvent> sorted = notes;
+  std::sort(sorted.begin(), sorted.end(), [](const NoteEvent& a, const NoteEvent& b) {
+    if (a.start_tick != b.start_tick) return a.start_tick < b.start_tick;
+    return a.note < b.note;
+  });
+  std::vector<NoteEvent> line;
+  VocalRuns runs{{}, 0};
+  int current = 0;
+  for (size_t idx = 0; idx < sorted.size(); ++idx) {
+    if (!sorted[idx].is_syllabic_subdivision) {
+      line.push_back(sorted[idx]);
+      current = 0;
+      continue;
+    }
+    const bool continues = current > 0 && sorted[idx].note == sorted[idx - 1].note;
+    current = continues ? current + 1 : 1;
+    runs.longest_rearticulation = std::max(runs.longest_rearticulation, current);
+  }
+  runs.line = test::longestSamePitchRun(line);
+  return runs;
+}
 
 // Identify motif rhythm template from pattern fingerprint.
 // Returns template index matching MotifRhythmTemplate enum or 0 for unknown.
@@ -162,10 +197,14 @@ TEST_F(RhythmSyncTest, LimitedConsecutiveSamePitch) {
 
   ASSERT_FALSE(notes.empty()) << "RhythmSync must generate Vocal notes";
 
-  const test::PitchRun longest_run = test::longestSamePitchRun(notes);
+  const VocalRuns runs = vocalSamePitchRuns(notes);
+  const test::PitchRun& longest_run = runs.line;
 
   // Reference-inspired chant phrases can intentionally sustain 5-8 repeated
-  // pitches. Nine or more indicates a stuck-note regression.
+  // pitches. Nine or more indicates a stuck-note regression. A recitation run
+  // is bounded by its own cap, which the reference idol/vocaloid patter (5-9
+  // notes) sets.
+  EXPECT_LE(runs.longest_rearticulation, kMaxRecitationNotes);
   EXPECT_LE(longest_run.length, 8) << "Found " << longest_run.length << " consecutive same pitch ("
                                    << static_cast<int>(longest_run.pitch) << ") from tick "
                                    << longest_run.start_tick << ". Maximum allowed is 8.";
@@ -187,7 +226,11 @@ TEST_F(RhythmSyncTest, SamePitchRunLimitHoldsAcrossBlueprintsAndMoods) {
         const auto& notes = gen.getSong().vocal().notes();
         ASSERT_FALSE(notes.empty()) << "blueprint=" << static_cast<int>(blueprint_id)
                                     << " mood=" << static_cast<int>(mood) << " seed=" << seed;
-        const test::PitchRun longest_run = test::longestSamePitchRun(notes);
+        const VocalRuns runs = vocalSamePitchRuns(notes);
+        const test::PitchRun& longest_run = runs.line;
+        EXPECT_LE(runs.longest_rearticulation, kMaxRecitationNotes)
+            << "blueprint=" << static_cast<int>(blueprint_id) << " mood=" << static_cast<int>(mood)
+            << " seed=" << seed;
         EXPECT_LE(longest_run.length, 8)
             << "blueprint=" << static_cast<int>(blueprint_id) << " mood=" << static_cast<int>(mood)
             << " seed=" << seed << " pitch=" << static_cast<int>(longest_run.pitch)

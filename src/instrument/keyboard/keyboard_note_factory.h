@@ -60,10 +60,12 @@ class KeyboardNoteFactory {
   /// @param root_pitch_class Root note pitch class (0-11)
   /// @param start Start tick (for transition timing)
   /// @param duration Duration in ticks
+  /// @param lowest_allowed Floor of the part's register; an octave-equivalent
+  ///        alternative reaching below it is not offered
   /// @return Playable voicing (may be same as input)
   std::vector<uint8_t> ensurePlayableVoicing(const std::vector<uint8_t>& pitches,
                                              uint8_t root_pitch_class, uint32_t start,
-                                             uint32_t duration);
+                                             uint32_t duration, uint8_t lowest_allowed = 0);
 
   /// @brief Check if a voicing is playable without modifying it.
   /// @param pitches Voicing pitches to check

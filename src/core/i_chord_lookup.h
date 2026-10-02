@@ -65,6 +65,15 @@ class IChordLookup {
   virtual bool hasChordExtensionAt(Tick /*tick*/) const { return false; }
 
   /**
+   * @brief How much diatonic colour the lead line may hold as a stable tone.
+   *
+   * The song-level MelodyParams::tension_usage, registered with the planned
+   * timeline so every pass that judges a vocal pitch reads one value. A lookup
+   * that carries no such plan answers 0: chord tones and resolving figures only.
+   */
+  virtual float getVocalTensionUsage() const { return 0.0f; }
+
+  /**
    * @brief Get the tick of the next chord change after the given tick.
    * @param after Position to search from
    * @return Tick of next chord change, or 0 if none found

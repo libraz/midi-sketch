@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "core/chord.h"
+#include "core/config_converter.h"
 #include "core/coordinator.h"
 #include "core/emotion_curve.h"
 #include "core/generator.h"
@@ -1758,6 +1759,8 @@ const char* const kAssemblyCheckedFields[] = {
     "tempo_default",
     "tempo_min",
     "tempo_max",
+    "vocal_styles",
+    "vocal_style_count",
     "constraints.ritardando_amount",
     "constraints.motif_note_count",
     "aux_profile.program_override",
@@ -2160,6 +2163,67 @@ TEST_F(ProductionBlueprintTest, TempoDefaultAndRangeResolveTheBpm) {
   EXPECT_EQ(below.first, bp.tempo_min);
   const auto above = clampBlueprintBpm(static_cast<uint16_t>(bp.tempo_max + 20), bp, false);
   EXPECT_EQ(above.first, bp.tempo_max);
+}
+
+TEST_F(ProductionBlueprintTest, AutoVocalStyleResolvesFromTheBlueprintTable) {
+  int blueprints_with_a_table = 0;
+  for (uint8_t id = 0; id < getProductionBlueprintCount(); ++id) {
+    const auto& bp = getProductionBlueprint(id);
+    std::set<VocalStylePreset> table;
+    for (uint8_t idx = 0; idx < bp.vocal_style_count; ++idx) {
+      if (bp.vocal_styles[idx].weight > 0) table.insert(bp.vocal_styles[idx].style);
+    }
+    if (!table.empty()) ++blueprints_with_a_table;
+
+    std::set<VocalStylePreset> seen;
+    for (uint32_t seed = 1; seed <= 200; ++seed) {
+      SongConfig config = createDefaultSongConfig(0);
+      config.seed = seed;
+      config.blueprint_id = id;
+      config.vocal_style = VocalStylePreset::Auto;
+      const VocalStylePreset style = ConfigConverter::convert(config).vocal_style;
+      seen.insert(style);
+      if (table.empty()) {
+        EXPECT_EQ(style, selectRandomVocalStyle(config.style_preset_id, seed ^ 0x56534C53))
+            << bp.name << " has no table, so the style preset decides";
+      } else {
+        EXPECT_EQ(table.count(style), 1u)
+            << bp.name << " seed " << seed << " resolved a style outside its table";
+      }
+    }
+    if (!table.empty()) {
+      EXPECT_EQ(seen, table) << bp.name << ": every weighted style must be reachable";
+    }
+  }
+  EXPECT_GT(blueprints_with_a_table, 0);
+}
+
+TEST_F(ProductionBlueprintTest, AutoVocalStyleFollowsTheRandomlySelectedBlueprint) {
+  // The style is resolved while the parameters are converted, the blueprint
+  // later by the generator; both have to name the same blueprint.
+  int checked = 0;
+  for (uint32_t seed = 1; seed <= 200 && checked < 3; ++seed) {
+    SongConfig config = createDefaultSongConfig(0);
+    config.seed = seed;
+    config.blueprint_id = 255;
+    config.vocal_style = VocalStylePreset::Auto;
+    const GeneratorParams params = ConfigConverter::convert(config);
+    const uint8_t expected =
+        resolveProductionBlueprintId(params.seed, 255, static_cast<uint8_t>(params.mood));
+    const auto& bp = getProductionBlueprint(expected);
+    if (bp.vocal_style_count == 0) continue;
+    ++checked;
+
+    Generator gen;
+    gen.generate(params);
+    EXPECT_EQ(gen.getParams().blueprint_id, expected) << "seed " << seed;
+    bool in_table = false;
+    for (uint8_t idx = 0; idx < bp.vocal_style_count; ++idx) {
+      in_table = in_table || bp.vocal_styles[idx].style == params.vocal_style;
+    }
+    EXPECT_TRUE(in_table) << "seed " << seed << ": " << bp.name;
+  }
+  EXPECT_EQ(checked, 3) << "too few random picks landed on a blueprint with a table";
 }
 
 TEST_F(ProductionBlueprintTest, MotifNoteCountOverridesTheDefaultRiffDensity) {

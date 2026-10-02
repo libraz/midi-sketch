@@ -37,6 +37,17 @@ void applyContourToHints(const OnsetContourInfo& ci, PitchSelectionHints& hints)
   }
 }
 
+int sectionAscentCeiling(SectionType section_type, const TessituraRange& tessitura) {
+  switch (section_type) {
+    case SectionType::A:
+      return tessitura.center;
+    case SectionType::B:
+      return tessitura.center + 2;
+    default:
+      return -1;
+  }
+}
+
 PitchSelectionHints buildPitchHints(const LockedRhythmMelodicState& state, Tick hint_duration,
                                     const MelodyDesigner::SectionContext& ctx,
                                     const PhrasePlan* phrase_plan, size_t onset_idx,
@@ -53,6 +64,13 @@ PitchSelectionHints buildPitchHints(const LockedRhythmMelodicState& state, Tick 
   // Apply phrase contour from PhrasePlan
   if (phrase_plan != nullptr && onset_idx < onset_contours.size()) {
     applyContourToHints(onset_contours[onset_idx], hints);
+  }
+  // A rising verse or pre-chorus stops climbing at its register target. The
+  // climb is rewarded on every onset, so without an end a dense locked line
+  // reaches its section ceiling within a bar and sits in the chorus's register.
+  const int ascent_ceiling = sectionAscentCeiling(ctx.section_type, ctx.tessitura);
+  if (hints.contour_direction > 0 && ascent_ceiling >= 0 && state.prev_pitch >= ascent_ceiling) {
+    hints.contour_direction = 0;
   }
   return hints;
 }

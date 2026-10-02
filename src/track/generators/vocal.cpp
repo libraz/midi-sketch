@@ -24,6 +24,7 @@
 #include "core/note_timeline_utils.h"
 #include "core/pitch_bend_curves.h"
 #include "core/pitch_utils.h"
+#include "core/preset_data.h"
 #include "core/production_blueprint.h"
 #include "core/rng_util.h"
 #include "core/song.h"
@@ -43,6 +44,7 @@
 #include "track/vocal/vocal_pitch_hints.h"
 #include "track/vocal/vocal_post_process.h"
 #include "track/vocal/vocal_range.h"
+#include "track/vocal/vocal_recitation.h"
 
 namespace midisketch {
 
@@ -207,10 +209,11 @@ MelodyDesigner::SectionContext VocalGenerator::buildSectionContext(
     sctx.enforce_motif_fragments = true;
   }
 
-  // Set transition info for next section (if any)
+  // Set transition info for next section (if any). Matched by end tick: the
+  // context may cover only the closing bars of an arrangement section.
   const auto& sections = song.arrangement().sections();
   for (size_t idx = 0; idx < sections.size(); ++idx) {
-    if (&sections[idx] == &section && idx + 1 < sections.size()) {
+    if (sections[idx].endTick() == section.endTick() && idx + 1 < sections.size()) {
       sctx.transition_to_next = getTransition(section.type, sections[idx + 1].type);
       break;
     }
@@ -598,9 +601,6 @@ void VocalGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContex
   uint8_t effective_vocal_high = range.effective_high;
   float velocity_scale = range.velocity_scale;
 
-  // Get chord progression
-  const auto& progression = getChordProgression(params.chord_id);
-
   // Create MelodyDesigner
   MelodyDesigner designer;
 
@@ -610,8 +610,8 @@ void VocalGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContex
   // Collect per-section pitch ceilings for the final, song-wide ceiling pass.
   std::vector<SectionCeiling> section_ceilings;
 
-  // Phrase cache for section repetition (V2: extended key with bars + chord_degree)
-  std::unordered_map<PhraseCacheKey, CachedPhrase, PhraseCacheKeyHash> phrase_cache;
+  // First occurrence of each section type, restated by every later one
+  std::unordered_map<SectionType, CachedPhrase> phrase_cache;
 
   // Check if rhythm lock should be used
   bool use_rhythm_lock = shouldLockVocalRhythm(params);
@@ -654,10 +654,6 @@ void VocalGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContex
     // Calculate section boundaries
     Tick section_start = section.start_tick;
     Tick section_end = section.endTick();
-
-    // Get chord for this section
-    int chord_idx = section.start_bar % progression.length;
-    int8_t chord_degree = progression.at(chord_idx);
 
     // Track occurrence count for this section type (1-based)
     int occurrence = ++section_occurrence_count[section.type];
@@ -715,43 +711,171 @@ void VocalGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContex
     // Recalculate tessitura for section
     TessituraRange section_tessitura = calculateTessitura(section_vocal_low, section_vocal_high);
 
+    // Fresh melody over `part`: the whole section, or the bars of it that run
+    // past a shorter cached phrase.
+    auto generateFresh = [&](const Section& part, uint8_t part_low, uint8_t part_high) {
+      const Tick part_start = part.start_tick;
+      const Tick part_end = part.endTick();
+      std::vector<NoteEvent> notes;
+      MelodyDesigner::SectionContext sctx = buildSectionContext(
+          part, params, song, section_tessitura, part_low, part_high,
+          harmony.getChordDegreeAt(part_start), occurrence, drum_grid, designer);
+
+      // Resolve rhythm lock for this section
+      CachedRhythmPattern motif_rhythm_pattern;  // Local storage for Motif-derived pattern
+      CachedRhythmPattern* current_rhythm_lock = nullptr;
+      if (use_rhythm_lock) {
+        current_rhythm_lock = resolveRhythmLock(
+            part, params, song, ctx, motif_rhythm_pattern, use_per_section_type_lock,
+            section_type_rhythm_locks, active_rhythm_lock, part_start, part_end);
+      }
+
+      // Build phrase plan for this section (uses rhythm lock if available)
+      PhrasePlan phrase_plan =
+          PhrasePlanner::buildPlan(part.type, part_start, part_end, part.bars, params.mood,
+                                   params.vocal_style, current_rhythm_lock, params.bpm,
+                                   params.melody_params.phrase_length_bars, sctx.anticipation_rest);
+
+      // A Chorus entered straight out of a Pre-chorus bursts from that section's
+      // hold, which PhrasePlanner cannot see: it plans one section at a time.
+      if (part.type == SectionType::Chorus && !phrase_plan.phrases.empty()) {
+        const auto& sections = song.arrangement().sections();
+        for (size_t si = 0; si < sections.size(); ++si) {
+          if (&sections[si] == &part && si > 0 && sections[si - 1].type == SectionType::B) {
+            PhrasePlanner::markHoldBurstEntry(phrase_plan.phrases[0], part.type);
+            break;
+          }
+        }
+      }
+
+      // Hand the plan to the designer so the rhythm-lock reconciliation and the
+      // density surge above reach generation instead of being re-derived there.
+      sctx.phrase_plan = &phrase_plan;
+
+      // Run-based onset selection for RhythmSync (skip for UltraVocaloid)
+      CachedRhythmPattern run_filtered_pattern;
+      if (current_rhythm_lock != nullptr && params.paradigm == GenerationParadigm::RhythmSync &&
+          params.motif.rhythm_template != MotifRhythmTemplate::None &&
+          params.vocal_style != VocalStylePreset::UltraVocaloid) {
+        const auto& tmpl = motif_detail::getTemplateConfig(params.motif.rhythm_template);
+        run_filtered_pattern =
+            buildRunBasedOnsetMap(*current_rhythm_lock, phrase_plan, tmpl, params.bpm, part_start);
+        current_rhythm_lock = &run_filtered_pattern;
+      }
+
+      if (current_rhythm_lock != nullptr) {
+        // Use locked rhythm pattern with evaluation-based pitch selection
+        notes = generateLockedRhythmWithEvaluation(*current_rhythm_lock, part, designer, harmony,
+                                                   sctx, rng, &phrase_plan);
+      } else {
+        // Generate melody with evaluation (candidate count varies by section importance)
+        int candidate_count = MelodyDesigner::getCandidateCountForSection(part.type);
+        notes = designer.generateSectionWithEvaluation(section_tmpl, sctx, harmony, rng,
+                                                       params.vocal_style,
+                                                       params.melodic_complexity, candidate_count);
+
+        // Cache rhythm pattern for subsequent sections
+        // Validate density before locking to prevent sparse patterns from propagating
+        constexpr float kMinRhythmLockDensity = 3.0f;  // Minimum notes per bar
+        if (use_rhythm_lock && !notes.empty()) {
+          CachedRhythmPattern candidate = extractRhythmPattern(notes, part_start, part.bars * 4);
+          float density = calculatePatternDensity(candidate);
+
+          if (density >= kMinRhythmLockDensity) {
+            if (use_per_section_type_lock) {
+              // Cache per section type
+              section_type_rhythm_locks[part.type] = std::move(candidate);
+            } else if (!active_rhythm_lock->isValid()) {
+              // Cache globally
+              *active_rhythm_lock = std::move(candidate);
+            }
+          }
+          // If density is too low, don't lock - let subsequent sections generate fresh
+        }
+      }
+
+      if (part.type == SectionType::Chorus) {
+        restateChorusHead(notes, part_start, part.bars, harmony);
+      }
+
+      // Apply transition approach if transition info was set
+      if (sctx.transition_to_next) {
+        designer.applyTransitionApproach(notes, sctx, harmony);
+      }
+
+      // Apply HarmonyContext collision avoidance with interval constraint
+      applyCollisionAvoidanceWithIntervalConstraint(notes, harmony, part_low, part_high, part.type,
+                                                    melody::resolveContextMaxLeap(params));
+
+      // Enforce non-Chorus ceiling AFTER all pitch transforms. Earlier pitch
+      // resolution (collision avoidance, interval fixes) can push individual
+      // notes above part_high; left unchecked, the global melodic peak
+      // can land in a Verse/Pre-chorus/Bridge instead of the Chorus. Any note
+      // above the ceiling is dropped an octave and snapped to a safe scale tone
+      // so the Chorus remains the clear melodic climax.
+      if (part.type != SectionType::Chorus && part.type != SectionType::Drop) {
+        enforceSectionCeiling(notes, harmony, part_low, part_high);
+      }
+
+      // Recitation is decided here, before the phrase is cached, so every
+      // restatement of the section carries the same run. Its own stream keeps
+      // the decision from shifting the main generator's draws.
+      RecitationSpec recitation;
+      recitation.section_type = part.type;
+      const auto& sections = song.arrangement().sections();
+      for (size_t idx = 0; idx + 1 < sections.size(); ++idx) {
+        if (sections[idx].endTick() == part_end) {
+          recitation.leads_into_chorus = sections[idx + 1].type == SectionType::Chorus;
+          break;
+        }
+      }
+      recitation.style_rate = getVocalStylePresetData(params.vocal_style).recitation_rate;
+      recitation.step = recitationStepTicks(params.vocal_style, params.bpm);
+      recitation.bpm = params.bpm;
+      recitation.keep_onsets = current_rhythm_lock != nullptr;
+      recitation.vocal_low = part_low;
+      recitation.vocal_high = part_high;
+      constexpr uint32_t kRecitationMagic = 0x52454349;  // "RECI"
+      std::mt19937 recitation_rng(params.seed ^ kRecitationMagic ^ part_start);
+      placeRecitation(notes, part_start, part_end, recitation, harmony, recitation_rng);
+
+      return notes;
+    };
+
     std::vector<NoteEvent> section_notes;
 
-    // V2: Create extended cache key
-    PhraseCacheKey cache_key{section.type, section.bars, chord_degree};
-
-    // Check phrase cache for repeated sections (V2: extended key)
-    auto cache_it = phrase_cache.find(cache_key);
+    auto cache_it = phrase_cache.find(section.type);
     if (cache_it != phrase_cache.end()) {
-      // Cache hit: reuse cached phrase with timing adjustment and optional variation
+      // Cache hit: restate the first occurrence. Only the bars both sections
+      // share are replayed; a shorter section ends on the cached head, a longer
+      // one continues with freshly generated bars.
       CachedPhrase& cached = cache_it->second;
+      const uint8_t head_bars = std::min(section.bars, cached.bars);
+      const Tick head_end = section_start + head_bars * TICKS_PER_BAR;
 
       // Select variation based on reuse count and occurrence
       // (later choruses get progressively more variation)
       PhraseVariation variation = selectPhraseVariation(cached.reuse_count, occurrence, rng);
       cached.reuse_count++;
 
-      // Shift timing to current section start
-      section_notes = shiftTiming(cached.notes, harmony, section_start);
+      for (NoteEvent note : shiftTiming(cached.notes, harmony, section_start)) {
+        if (note.start_tick >= head_end) continue;
+        note.duration = std::min(note.duration, head_end - note.start_tick);
+        section_notes.push_back(note);
+      }
 
       // Apply subtle variation for interest while maintaining recognizability
       applyPhraseVariation(section_notes, variation, rng);
 
-      // A cached phrase already contains the first occurrence's embellishment.
-      // Later occurrences still need their own development pass; otherwise a
-      // cache hit bypasses the occurrence-aware NCT density and every repeated
-      // section becomes only a shifted copy. The embellisher preserves the
-      // existing skeleton while adding the later-occurrence detail.
-      if (occurrence > 1 && !section_notes.empty()) {
-        EmbellishmentConfig occurrence_config = MelodicEmbellisher::getConfigForMood(params.mood);
-        occurrence_config.adjustForOccurrence(occurrence);
-        section_notes =
-            MelodicEmbellisher::embellish(section_notes, occurrence_config, harmony, 0, rng);
-      }
-
-      // Adjust pitch range if different
-      section_notes = adjustPitchRange(section_notes, cached.vocal_low, cached.vocal_high,
-                                       section_vocal_low, section_vocal_high);
+      // The replay keeps the register it was written in. A later chorus's
+      // occurrence lift is the head-lift pass's job; moving the whole phrase to
+      // a lifted range and snapping each note back to the scale rewrote its
+      // intervals, and the collision pass then re-chose most of its pitches.
+      const uint8_t fresh_vocal_low = section_vocal_low;
+      const uint8_t fresh_vocal_high = section_vocal_high;
+      section_vocal_low = std::min(section_vocal_low, cached.vocal_low);
+      section_vocal_high = std::max(section_vocal_high, cached.vocal_high);
+      foldPitchesIntoRange(section_notes, section_vocal_low, section_vocal_high);
 
       // A replayed hook is still a hook the listener hears, so it counts toward
       // the template's betrayal threshold. Counting only generated hooks left
@@ -768,110 +892,25 @@ void VocalGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContex
                                                     melody::resolveContextMaxLeap(params));
 
       // Enforce non-Chorus ceiling so the global peak stays in the Chorus
-      // (see detailed rationale in the cache-miss branch below).
+      // (see detailed rationale in generateFresh above).
       if (section.type != SectionType::Chorus && section.type != SectionType::Drop) {
         enforceSectionCeiling(section_notes, harmony, section_vocal_low, section_vocal_high);
       }
+
+      if (section.bars > cached.bars) {
+        Section tail = section;
+        tail.start_tick = head_end;
+        tail.start_bar = section.start_bar + cached.bars;
+        tail.bars = static_cast<uint8_t>(section.bars - cached.bars);
+        std::vector<NoteEvent> tail_notes = generateFresh(tail, fresh_vocal_low, fresh_vocal_high);
+        section_notes.insert(section_notes.end(), tail_notes.begin(), tail_notes.end());
+      }
+      section_ceilings.back().low = section_vocal_low;
+      section_ceilings.back().high = section_vocal_high;
     } else {
       // Cache miss: generate new melody
       const uint8_t hook_count_before_section = designer.hookRepetitionCount();
-      MelodyDesigner::SectionContext sctx =
-          buildSectionContext(section, params, song, section_tessitura, section_vocal_low,
-                              section_vocal_high, chord_degree, occurrence, drum_grid, designer);
-
-      // Resolve rhythm lock for this section
-      CachedRhythmPattern motif_rhythm_pattern;  // Local storage for Motif-derived pattern
-      CachedRhythmPattern* current_rhythm_lock = nullptr;
-      if (use_rhythm_lock) {
-        current_rhythm_lock = resolveRhythmLock(
-            section, params, song, ctx, motif_rhythm_pattern, use_per_section_type_lock,
-            section_type_rhythm_locks, active_rhythm_lock, section_start, section_end);
-      }
-
-      // Build phrase plan for this section (uses rhythm lock if available)
-      PhrasePlan phrase_plan =
-          PhrasePlanner::buildPlan(section.type, section_start, section_end, section.bars,
-                                   params.mood, params.vocal_style, current_rhythm_lock, params.bpm,
-                                   params.melody_params.phrase_length_bars, sctx.anticipation_rest);
-
-      // A Chorus entered straight out of a Pre-chorus bursts from that section's
-      // hold, which PhrasePlanner cannot see: it plans one section at a time.
-      if (section.type == SectionType::Chorus && !phrase_plan.phrases.empty()) {
-        const auto& sections = song.arrangement().sections();
-        for (size_t si = 0; si < sections.size(); ++si) {
-          if (&sections[si] == &section && si > 0 && sections[si - 1].type == SectionType::B) {
-            PhrasePlanner::markHoldBurstEntry(phrase_plan.phrases[0], section.type);
-            break;
-          }
-        }
-      }
-
-      // Hand the plan to the designer so the rhythm-lock reconciliation and the
-      // density surge above reach generation instead of being re-derived there.
-      sctx.phrase_plan = &phrase_plan;
-
-      // Run-based onset selection for RhythmSync (skip for UltraVocaloid)
-      CachedRhythmPattern run_filtered_pattern;
-      if (current_rhythm_lock != nullptr && params.paradigm == GenerationParadigm::RhythmSync &&
-          params.motif.rhythm_template != MotifRhythmTemplate::None &&
-          params.vocal_style != VocalStylePreset::UltraVocaloid) {
-        const auto& tmpl = motif_detail::getTemplateConfig(params.motif.rhythm_template);
-        run_filtered_pattern = buildRunBasedOnsetMap(*current_rhythm_lock, phrase_plan, tmpl,
-                                                     params.bpm, section_start);
-        current_rhythm_lock = &run_filtered_pattern;
-      }
-
-      if (current_rhythm_lock != nullptr) {
-        // Use locked rhythm pattern with evaluation-based pitch selection
-        section_notes = generateLockedRhythmWithEvaluation(*current_rhythm_lock, section, designer,
-                                                           harmony, sctx, rng, &phrase_plan);
-      } else {
-        // Generate melody with evaluation (candidate count varies by section importance)
-        int candidate_count = MelodyDesigner::getCandidateCountForSection(section.type);
-        section_notes = designer.generateSectionWithEvaluation(
-            section_tmpl, sctx, harmony, rng, params.vocal_style, params.melodic_complexity,
-            candidate_count);
-
-        // Cache rhythm pattern for subsequent sections
-        // Validate density before locking to prevent sparse patterns from propagating
-        constexpr float kMinRhythmLockDensity = 3.0f;  // Minimum notes per bar
-        if (use_rhythm_lock && !section_notes.empty()) {
-          CachedRhythmPattern candidate =
-              extractRhythmPattern(section_notes, section_start, section.bars * 4);
-          float density = calculatePatternDensity(candidate);
-
-          if (density >= kMinRhythmLockDensity) {
-            if (use_per_section_type_lock) {
-              // Cache per section type
-              section_type_rhythm_locks[section.type] = std::move(candidate);
-            } else if (!active_rhythm_lock->isValid()) {
-              // Cache globally
-              *active_rhythm_lock = std::move(candidate);
-            }
-          }
-          // If density is too low, don't lock - let subsequent sections generate fresh
-        }
-      }
-
-      // Apply transition approach if transition info was set
-      if (sctx.transition_to_next) {
-        designer.applyTransitionApproach(section_notes, sctx, harmony);
-      }
-
-      // Apply HarmonyContext collision avoidance with interval constraint
-      applyCollisionAvoidanceWithIntervalConstraint(section_notes, harmony, section_vocal_low,
-                                                    section_vocal_high, section.type,
-                                                    melody::resolveContextMaxLeap(params));
-
-      // Enforce non-Chorus ceiling AFTER all pitch transforms. Earlier pitch
-      // resolution (collision avoidance, interval fixes) can push individual
-      // notes above section_vocal_high; left unchecked, the global melodic peak
-      // can land in a Verse/Pre-chorus/Bridge instead of the Chorus. Any note
-      // above the ceiling is dropped an octave and snapped to a safe scale tone
-      // so the Chorus remains the clear melodic climax.
-      if (section.type != SectionType::Chorus && section.type != SectionType::Drop) {
-        enforceSectionCeiling(section_notes, harmony, section_vocal_low, section_vocal_high);
-      }
+      section_notes = generateFresh(section, section_vocal_low, section_vocal_high);
 
       // Extract GlobalMotif from first Chorus for song-wide melodic unity
       // Subsequent sections will receive bonus for similar contour/intervals
@@ -892,12 +931,13 @@ void VocalGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContex
       cache_entry.vocal_low = section_vocal_low;
       cache_entry.vocal_high = section_vocal_high;
       cache_entry.contains_hook = designer.hookRepetitionCount() > hook_count_before_section;
-      phrase_cache[cache_key] = std::move(cache_entry);
+      phrase_cache[section.type] = std::move(cache_entry);
     }
 
     // V5: Generate phrase boundary at section end
     if (!section_notes.empty()) {
-      CadenceType cadence = detectCadenceType(section_notes, chord_degree);
+      CadenceType cadence = detectCadenceType(
+          section_notes, harmony.getChordDegreeAt(section_notes.back().start_tick));
       bool is_section_end = true;
       bool is_breath = true;  // Breath at every section end
 

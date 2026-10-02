@@ -7,11 +7,15 @@
 
 #include <gtest/gtest.h>
 
+#include <map>
+
 #include "core/melody_templates.h"
 #include "core/midi_track.h"
 #include "core/note_source.h"
 #include "core/note_timeline_utils.h"
 #include "core/pitch_utils.h"
+#include "core/rhythm_sync_lead.h"
+#include "core/section_types.h"
 #include "core/timing_constants.h"
 #include "core/types.h"
 #include "test_helpers/note_event_test_helper.h"
@@ -869,15 +873,89 @@ TEST(VocalToneLegalityTest, AccentedNonChordToneResolvingUpIsNotAdmitted) {
   // guitar sounded avoid notes. Restricting the rise to the accented, short
   // figure that the name would imply changed which of those broke, not how
   // many.
+  //
+  // The example is the fourth over a major triad rising to the fifth. A 9th
+  // rising to the third is no longer an example of anything: it is a colour
+  // the chord takes whether it resolves or not, and an avoid note is the one
+  // non-chord tone no colour budget can license.
   FixedChordLookup harmony(0, {0, 4, 7}, false);  // C major triad
   melody::MelodicNeighborhood n;
-  n.prev_pitch = 67;  // G4, reached by leap
-  n.next_pitch = 64;  // E4, a chord tone a step above
+  n.prev_pitch = 72;  // C5, reached by leap
+  n.next_pitch = 67;  // G4, a chord tone a step above
   n.start = 0;        // bar downbeat
   n.duration = TICK_QUARTER;
   n.next_start = TICK_QUARTER;
 
-  EXPECT_EQ(melody::classifyVocalTone(harmony, 62, n), melody::ToneLegality::Illegal);
+  EXPECT_EQ(melody::classifyVocalTone(harmony, 65, n), melody::ToneLegality::Illegal);
+}
+
+/// @brief A single chord with a song-level vocal tension usage.
+class ColourBudgetLookup : public FixedChordLookup {
+ public:
+  ColourBudgetLookup(int8_t degree, std::vector<int> tones, float usage)
+      : FixedChordLookup(degree, std::move(tones), false), usage_(usage) {}
+  float getVocalTensionUsage() const override { return usage_; }
+
+ private:
+  float usage_;
+};
+
+/// @brief An accented, leap-approached quarter that no figure licenses.
+melody::MelodicNeighborhood unfiguredQuarter(int prev, int next) {
+  melody::MelodicNeighborhood n;
+  n.prev_pitch = prev;
+  n.next_pitch = next;
+  n.start = 0;
+  n.duration = TICK_QUARTER;
+  n.next_start = TICK_QUARTER;
+  return n;
+}
+
+TEST(VocalToneLegalityTest, ColourTonesAreAdmittedWithoutAFigure) {
+  // The add9 / add6 / maj7 colour a pop melody holds on a downbeat: none of
+  // them resolves, all of them are the chord.
+  const ColourBudgetLookup c_major(0, {0, 4, 7}, 1.0f);
+  for (int pitch : {62, 69, 71}) {  // D, A, B over C
+    EXPECT_EQ(melody::classifyVocalTone(c_major, pitch, unfiguredQuarter(55, 79)),
+              melody::ToneLegality::ColourTone)
+        << "pitch " << pitch;
+  }
+  const ColourBudgetLookup a_minor(5, {9, 0, 4}, 1.0f);
+  for (int pitch : {71, 62, 67}) {  // B, D, G over Am
+    EXPECT_EQ(melody::classifyVocalTone(a_minor, pitch, unfiguredQuarter(55, 79)),
+              melody::ToneLegality::ColourTone)
+        << "pitch " << pitch;
+  }
+}
+
+TEST(VocalToneLegalityTest, AvoidNotesAreNeverColours) {
+  const ColourBudgetLookup c_major(0, {0, 4, 7}, 1.0f);
+  EXPECT_EQ(melody::classifyVocalTone(c_major, 65, unfiguredQuarter(55, 79)),
+            melody::ToneLegality::Illegal)
+      << "the fourth over a major triad";
+  const ColourBudgetLookup a_minor(5, {9, 0, 4}, 1.0f);
+  EXPECT_EQ(melody::classifyVocalTone(a_minor, 65, unfiguredQuarter(55, 79)),
+            melody::ToneLegality::Illegal)
+      << "the flat sixth over a minor triad";
+  const ColourBudgetLookup e_minor(2, {4, 7, 11}, 1.0f);
+  EXPECT_EQ(melody::classifyVocalTone(e_minor, 65, unfiguredQuarter(55, 79)),
+            melody::ToneLegality::Illegal)
+      << "the flat ninth over iii";
+}
+
+TEST(VocalToneLegalityTest, ZeroTensionUsageAdmitsNoColour) {
+  const ColourBudgetLookup c_major(0, {0, 4, 7}, 0.0f);
+  EXPECT_EQ(melody::classifyVocalTone(c_major, 62, unfiguredQuarter(55, 79)),
+            melody::ToneLegality::Illegal);
+}
+
+TEST(VocalToneLegalityTest, AColourIsNeitherHeldPastABeatNorAPhraseEnd) {
+  const ColourBudgetLookup c_major(0, {0, 4, 7}, 1.0f);
+  melody::MelodicNeighborhood held = unfiguredQuarter(55, 79);
+  held.duration = TICK_HALF;
+  EXPECT_EQ(melody::classifyVocalTone(c_major, 62, held), melody::ToneLegality::Illegal);
+  EXPECT_EQ(melody::classifyVocalTone(c_major, 62, unfiguredQuarter(55, -1)),
+            melody::ToneLegality::Illegal);
 }
 
 TEST(VocalToneLegalityTest, NonChordToneThatLeapsAwayIsRejected) {
@@ -1345,6 +1423,176 @@ TEST(ShiftTimingTest, ATrackWithoutChordContextKeepsItsUnsetDegree) {
 }
 
 #endif  // MIDISKETCH_NOTE_PROVENANCE
+
+// ============================================================================
+// Chorus head restatement
+// ============================================================================
+
+TEST(RestateChorusHeadTest, MidpointTakesTheOpeningPitchesOnSharedOnsets) {
+  test::StubHarmonyContext harmony;
+  harmony.setAllPitchesSafe(true);
+  harmony.setChordDegree(0);
+  harmony.setChordTones({0, 4, 7});
+
+  const Tick mid = 4 * TICKS_PER_BAR;
+  std::vector<NoteEvent> notes = {
+      NoteEventTestHelper::create(0, TICK_QUARTER, 72, 90),
+      NoteEventTestHelper::create(TICK_QUARTER, TICK_QUARTER, 76, 90),
+      NoteEventTestHelper::create(mid, TICK_QUARTER, 67, 90),
+      NoteEventTestHelper::create(mid + TICK_QUARTER, TICK_QUARTER, 64, 90),
+      NoteEventTestHelper::create(mid + TICK_HALF, TICK_QUARTER, 67, 90),
+  };
+
+  restateChorusHead(notes, 0, 8, harmony);
+
+  EXPECT_EQ(notes[2].note, 72);
+  EXPECT_EQ(notes[3].note, 76);
+  EXPECT_EQ(notes[4].note, 67) << "An onset the opening does not have keeps its pitch";
+}
+
+TEST(RestateChorusHeadTest, PitchTheMidpointChordRefusesIsLeftAsGenerated) {
+  test::StubHarmonyContext harmony;
+  harmony.setAllPitchesSafe(true);
+  harmony.setChordDegree(0);
+  harmony.setChordTones({0, 4, 7});
+
+  const Tick mid = 4 * TICKS_PER_BAR;
+  std::vector<NoteEvent> notes = {
+      NoteEventTestHelper::create(0, TICK_QUARTER, 73, 90),  // chromatic: no figure admits it
+      NoteEventTestHelper::create(mid, TICK_QUARTER, 72, 90),
+  };
+
+  restateChorusHead(notes, 0, 8, harmony);
+
+  EXPECT_EQ(notes[1].note, 72);
+}
+
+TEST(RestateChorusHeadTest, ShortChorusIsLeftAlone) {
+  test::StubHarmonyContext harmony;
+  harmony.setAllPitchesSafe(true);
+  harmony.setChordDegree(0);
+  harmony.setChordTones({0, 4, 7});
+
+  std::vector<NoteEvent> notes = {
+      NoteEventTestHelper::create(0, TICK_QUARTER, 72, 90),
+      NoteEventTestHelper::create(2 * TICKS_PER_BAR, TICK_QUARTER, 67, 90),
+  };
+
+  restateChorusHead(notes, 0, 4, harmony);
+
+  EXPECT_EQ(notes[1].note, 67);
+}
+
+// ============================================================================
+// Non-chorus cap under the realized chorus peak
+// ============================================================================
+
+/// A verse phrase written over the chorus peak, followed by a chorus that peaks
+/// at C5. Every diatonic tone is a chord tone, so only the cap decides pitches.
+std::vector<NoteEvent> verseOverChorusPeak(std::vector<Section>& sections) {
+  Section verse;
+  verse.type = SectionType::A;
+  verse.bars = 2;
+  verse.start_bar = 0;
+  verse.start_tick = 0;
+  Section chorus;
+  chorus.type = SectionType::Chorus;
+  chorus.bars = 2;
+  chorus.start_bar = 2;
+  chorus.start_tick = 2 * TICKS_PER_BAR;
+  sections = {verse, chorus};
+
+  std::vector<NoteEvent> notes;
+  const uint8_t phrase[] = {74, 76, 77, 79, 77, 76, 74, 76};
+  Tick tick = 0;
+  for (uint8_t pitch : phrase) {
+    notes.push_back(NoteEventTestHelper::create(tick, TICK_EIGHTH, pitch, 90));
+    tick += TICK_EIGHTH;
+  }
+  notes.push_back(NoteEventTestHelper::create(2 * TICKS_PER_BAR, TICK_QUARTER, 67, 90));
+  notes.push_back(
+      NoteEventTestHelper::create(2 * TICKS_PER_BAR + TICK_QUARTER, TICK_QUARTER, 72, 90));
+  return notes;
+}
+
+TEST(NonChorusCapTest, APhraseOverTheChorusPeakKeepsItsContour) {
+  test::StubHarmonyContext harmony;
+  harmony.setAllPitchesSafe(true);
+  harmony.setChordTones({0, 2, 4, 5, 7, 9, 11});
+
+  std::vector<Section> sections;
+  std::vector<NoteEvent> notes = verseOverChorusPeak(sections);
+  const std::vector<NoteEvent> before = notes;
+  capNonChorusBelowChorusPeak(notes, harmony, sections, 55);
+
+  std::vector<int> written;
+  std::vector<int> sung;
+  for (size_t idx = 0; idx < notes.size(); ++idx) {
+    if (notes[idx].start_tick >= 2 * TICKS_PER_BAR) continue;
+    EXPECT_LT(notes[idx].note, 72)
+        << "a verse note reaches the chorus peak at " << notes[idx].start_tick;
+    sung.push_back(notes[idx].note);
+    written.push_back(before[idx].note);
+  }
+  ASSERT_EQ(sung.size(), 8u);
+  for (size_t idx = 1; idx < sung.size(); ++idx) {
+    const int written_step = written[idx] - written[idx - 1];
+    const int sung_step = sung[idx] - sung[idx - 1];
+    EXPECT_EQ((written_step > 0) - (written_step < 0), (sung_step > 0) - (sung_step < 0))
+        << "the cap turned the contour at note " << idx;
+  }
+}
+
+TEST(NonChorusCapTest, APhraseNoShiftCanPlaceStillEndsUnderTheCeiling) {
+  test::StubHarmonyContext harmony;
+  harmony.setAllPitchesSafe(true);
+  harmony.setChordTones({0, 2, 4, 5, 7, 9, 11});
+
+  std::vector<Section> sections;
+  std::vector<NoteEvent> notes = verseOverChorusPeak(sections);
+  // A floor right under the ceiling leaves no room to move the phrase whole.
+  capNonChorusBelowChorusPeak(notes, harmony, sections, 69);
+
+  for (const auto& note : notes) {
+    if (note.start_tick >= 2 * TICKS_PER_BAR) continue;
+    EXPECT_LT(note.note, 72) << "tick " << note.start_tick;
+  }
+}
+
+TEST(RestateChorusHeadTest, LeadDnaStampsTheMidpointLikeTheHead) {
+  // The RhythmSync lead DNA rewrites the chorus head after the restatement was
+  // made; it has to rewrite the midpoint the same way or the hook is sung once.
+  test::StubHarmonyContext harmony;
+  harmony.setAllPitchesSafe(true);
+  harmony.setChordDegree(0);
+  harmony.setChordTones({0, 4, 7});
+
+  Section chorus;
+  chorus.type = SectionType::Chorus;
+  chorus.start_tick = 0;
+  chorus.bars = 8;
+
+  const Tick mid = 4 * TICKS_PER_BAR;
+  MidiTrack vocal;
+  MidiTrack motif;
+  for (int idx = 0; idx < 8; ++idx) {
+    const Tick offset = static_cast<Tick>(idx) * TICK_QUARTER;
+    vocal.addNote(NoteEventTestHelper::create(offset, TICK_QUARTER, 64, 90));
+    vocal.addNote(NoteEventTestHelper::create(mid + offset, TICK_QUARTER, 76, 90));
+  }
+
+  GeneratorParams params;
+  params.vocal_low = 60;
+  params.vocal_high = 79;
+  applyRhythmSyncLeadDna(vocal, motif, {chorus}, params, harmony);
+
+  std::map<Tick, uint8_t> pitch_at;
+  for (const auto& note : vocal.notes()) pitch_at[note.start_tick] = note.note;
+  for (int idx = 0; idx < 8; ++idx) {
+    const Tick offset = static_cast<Tick>(idx) * TICK_QUARTER;
+    EXPECT_EQ(pitch_at[mid + offset], pitch_at[offset]) << "onset " << idx;
+  }
+}
 
 }  // namespace
 }  // namespace midisketch

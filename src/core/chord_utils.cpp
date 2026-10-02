@@ -10,6 +10,7 @@
 
 #include "core/chord.h"
 #include "core/i_harmony_context.h"
+#include "core/pitch_utils.h"
 
 namespace midisketch {
 
@@ -179,6 +180,14 @@ std::vector<int> getAvailableTensionPitchClasses(int8_t degree) {
   }
 
   return result;
+}
+
+bool isMelodicColourPitchClass(int8_t degree, int pitch_class) {
+  const std::vector<int> tensions = getAvailableTensionPitchClasses(degree);
+  if (std::find(tensions.begin(), tensions.end(), pitch_class) != tensions.end()) return true;
+  const int root_pc = ((degreeToSemitone(degree) % 12) + 12) % 12;
+  const int interval = (pitch_class - root_pc + 12) % 12;
+  return (interval == 10 || interval == 11) && isScaleTone(pitch_class);
 }
 
 // ============================================================================

@@ -103,9 +103,10 @@ inline bool shouldSplitPhraseEnd(int bar, int section_bars, int prog_length,
   bool is_phrase_end = harmonic.double_at_phrase_end &&
                        (is_4bar_phrase_end || is_chord_cycle_end) && (bar < section_bars - 1);
 
-  // Dense harmonic rhythm: also allow mid-bar changes on even bars in Chorus
-  // for energetic moods (more dynamic harmonic motion)
-  bool is_dense_extra = (section_type == SectionType::Chorus) && (bar % 2 == 0) && (bar > 0) &&
+  // Dense harmonic rhythm: energetic choruses also change mid-bar in the middle
+  // of each four-bar statement, never on the bar a statement opens on, so a
+  // restated loop splits the same bars the first statement did.
+  bool is_dense_extra = (section_type == SectionType::Chorus) && (bar % 4 == 2) &&
                         (mood == Mood::EnergeticDance || mood == Mood::IdolPop ||
                          mood == Mood::AnimeHighEnergy || mood == Mood::FutureBass);
 

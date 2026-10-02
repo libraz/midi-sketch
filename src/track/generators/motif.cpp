@@ -25,6 +25,7 @@
 #include "core/production_blueprint.h"
 #include "core/rng_util.h"
 #include "core/song.h"
+#include "core/sustain_trimmer.h"
 #include "core/timing_constants.h"
 #include "track/motif/motif_rhythm.h"
 #include "track/motif/motif_vocal_coordination.h"
@@ -1050,6 +1051,44 @@ uint8_t computeVocalCeilingForNote(uint8_t base_range_high, bool enforce_vocal_c
 
 namespace {
 
+/// @brief Whether the chord sounding at a tick rejects a motif pitch.
+///
+/// An avoid note against the chord's root, or a pitch class an altered chord
+/// (a secondary dominant) has raised or lowered away.
+bool isMotifAvoidNoteAt(int pitch, const IHarmonyCoordinator& harmony, Tick tick) {
+  const int8_t degree = harmony.getChordDegreeAt(tick);
+  const Chord chord = getChordNotes(degree);
+  return isAvoidNoteWithContext(pitch, degreeToRoot(degree, Key::C), chord.intervals[1] == 3,
+                                degree) ||
+         chordToneHelperAt(harmony, tick).contradictsAlteration(pitch % 12);
+}
+
+/// @brief The pitch to ask for when the motif's own pitch clashes with another track.
+///
+/// The collision search counts any scale tone as accounted for, so its way out
+/// of a clash can be the very pitch the avoid-note screen rejected -- a major
+/// seventh over IV, which the bass voiced after the motif can then no longer
+/// put its root under. The way out is chosen here under the same screen; the
+/// search's own answer stands only when every safe pitch is one the chord
+/// rejects.
+/// @return A safe pitch the chord accepts, or the pitch asked for unchanged
+uint8_t resolveClashOffAvoidNotes(const IHarmonyCoordinator& harmony, uint8_t pitch, Tick tick,
+                                  Tick duration, uint8_t range_low, uint8_t range_high,
+                                  const MotifGenerationState& state) {
+  if (harmony.isConsonantWithOtherTracks(pitch, tick, duration, TrackRole::Motif)) {
+    return pitch;
+  }
+  for (const auto& candidate :
+       getSafePitchCandidates(harmony, pitch, tick, duration, TrackRole::Motif, range_low,
+                              range_high, PitchPreference::PreserveContour, 5,
+                              state.motif_prev_pitch, state.motif_consecutive_same)) {
+    if (!isMotifAvoidNoteAt(candidate.pitch, harmony, tick)) {
+      return candidate.pitch;
+    }
+  }
+  return pitch;
+}
+
 /// @brief Re-seat a cached riff pitch the chord at the replay position rejects.
 ///
 /// A locked riff is recorded once and played back over whatever harmony the
@@ -1144,6 +1183,11 @@ bool replayCachedNotesLocked(MidiTrack& track, const Section& section, IHarmonyC
       bool cached_pitch_safe = harmony->isConsonantWithOtherTracks(
           desired, absolute_tick, entry.duration, TrackRole::Motif);
       bool is_chord_tone_at_replay = isChordToneAtTick(desired, harmony, absolute_tick);
+
+      if (!cached_pitch_safe) {
+        desired = resolveClashOffAvoidNotes(*harmony, desired, absolute_tick, entry.duration,
+                                            motif_range_low, eff_range_high, state);
+      }
 
       NoteOptions opts;
       opts.start = absolute_tick;
@@ -1429,15 +1473,10 @@ bool shouldSkipMotifNote(const Section& section, Tick absolute_tick, Tick pos, s
 /// @return Corrected pitch
 int applyPostCeilingAvoidNote(int adjusted_pitch, Tick absolute_tick, IHarmonyCoordinator* harmony,
                               uint8_t motif_range_low, uint8_t motif_range_high) {
-  int8_t post_degree = harmony->getChordDegreeAt(absolute_tick);
-  uint8_t post_root = degreeToRoot(post_degree, Key::C);
-  Chord post_chord = getChordNotes(post_degree);
-  bool post_minor = (post_chord.intervals[1] == 3);
-  ChordToneHelper ct_helper = chordToneHelperAt(*harmony, absolute_tick);
-  if (isAvoidNoteWithContext(adjusted_pitch, post_root, post_minor, post_degree) ||
-      ct_helper.contradictsAlteration(adjusted_pitch % 12)) {
-    adjusted_pitch = ct_helper.nearestInRange(static_cast<uint8_t>(adjusted_pitch), motif_range_low,
-                                              motif_range_high);
+  if (isMotifAvoidNoteAt(adjusted_pitch, *harmony, absolute_tick)) {
+    adjusted_pitch = chordToneHelperAt(*harmony, absolute_tick)
+                         .nearestInRange(static_cast<uint8_t>(adjusted_pitch), motif_range_low,
+                                         motif_range_high);
   }
   return adjusted_pitch;
 }
@@ -1617,6 +1656,10 @@ bool emitMotifNoteStandard(MidiTrack& track, IHarmonyCoordinator& harmony, const
   opts.original_pitch = note.note;  // Track pre-adjustment pitch
   opts.prev_pitch = state.motif_prev_pitch;
   opts.consecutive_same_count = state.motif_consecutive_same;
+
+  opts.desired_pitch =
+      resolveClashOffAvoidNotes(harmony, final_pitch, absolute_tick, check_duration,
+                                motif_range_low, motif_range_high, state);
 
   auto motif_note = createNoteAndAdd(track, harmony, opts);
 
@@ -1976,6 +2019,13 @@ void MotifGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContex
 
     state.sec_idx++;
   }
+
+  // A note held into a chord it rubs a semitone against is released before the
+  // change. The motif is registered when this returns, and every track voiced
+  // after it reads that registration: a tail cut only later is a sound the bass
+  // and chord have already given up their roots to, and that never plays.
+  trimSustainsAtDissonantChordChanges(track, *harmony);
+
   // Post-generation avoid note correction is no longer needed because
   // secondary dominants are now pre-registered in the harmony context
   // before track generation (see secondary_dominant_planner.h).

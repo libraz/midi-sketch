@@ -18,12 +18,17 @@
 #ifndef MIDISKETCH_CORE_HARMONY_TIMELINE_PLANNER_H
 #define MIDISKETCH_CORE_HARMONY_TIMELINE_PLANNER_H
 
+#include <cstdint>
+#include <vector>
+
 namespace midisketch {
 
 class Arrangement;
 class IHarmonyCoordinator;
 struct GeneratorParams;
 struct ChordProgression;
+struct Section;
+enum class Mood : uint8_t;
 
 /// @brief Register every generation-time harmony decision on the timeline.
 ///
@@ -38,6 +43,16 @@ struct ChordProgression;
 void registerPlannedHarmonyTimeline(const Arrangement& arrangement, const GeneratorParams& params,
                                     const ChordProgression& progression,
                                     IHarmonyCoordinator& harmony);
+
+/// @brief The bars of a chorus that state the same place in its loop as @p bar, @p bar included.
+///
+/// A chorus restates its loop up to the two bars it closes on, and the planner
+/// writes every restated bar's harmony from the first statement. A decision a
+/// track makes later on one of these bars has to be one it makes on all of
+/// them, or the restatement comes apart again. Empty when @p bar is not in a
+/// restated loop.
+std::vector<uint8_t> restatedLoopBars(const Section& section, uint8_t bar,
+                                      const ChordProgression& progression, Mood mood);
 
 }  // namespace midisketch
 

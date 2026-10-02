@@ -737,6 +737,15 @@ void detectNonChordTonesInTrack(const MidiTrack& track, TrackRole role, bool is_
     auto [has_close_interval, interval_semitones, clashing_pitch] =
         checkCloseIntervalWithChord(note, ctx.song);
 
+    // The vocal's legality admits the degree's seventh as a colour as well, so
+    // reporting it would call the rule generation follows an error -- unless a
+    // chord voice sits close enough to make it a clash.
+    if (role == TrackRole::Vocal && !has_close_interval &&
+        !ctx.chord_lookup.isSecondaryDominantAt(note.start_tick) &&
+        isMelodicColourPitchClass(degree, pitch_class)) {
+      continue;
+    }
+
     if (has_close_interval) {
       if (interval_semitones == 1 || interval_semitones == 11) {
         severity = DissonanceSeverity::High;
@@ -1077,6 +1086,12 @@ DissonanceReport analyzeDissonanceFromParsedMidi(const ParsedMidi& midi) {
     // Skip drum tracks (channel 9 or track named "Drums")
     // Drum note numbers represent instruments, not pitches
     if (track.channel == 9 || track.name == "Drums") {
+      continue;
+    }
+    // The call/chant track sits outside collision detection during generation
+    // (see collectPitchedNotes); judging it here would report clashes the
+    // generation-side reading never asks about.
+    if (track.name == "SE") {
       continue;
     }
 

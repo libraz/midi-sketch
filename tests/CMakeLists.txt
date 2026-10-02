@@ -14,7 +14,7 @@ include(FetchContent)
 FetchContent_Declare(
   googletest
   GIT_REPOSITORY https://github.com/google/googletest.git
-  GIT_TAG v1.14.0
+  GIT_TAG v1.18.0
 )
 set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
@@ -120,6 +120,7 @@ set(TEST_SOURCES
   track/leap_resolution_test.cpp
   track/vocal_test.cpp
   track/vocal_helpers_test.cpp
+  track/vocal_recitation_test.cpp
   track/phrase_plan_test.cpp
   track/chord_track_test.cpp
   track/bass_test.cpp

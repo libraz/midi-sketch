@@ -50,18 +50,18 @@ std::vector<NoteEvent> shiftTiming(const std::vector<NoteEvent>& notes, const IC
                                    Tick offset);
 
 /**
- * @brief Adjust pitches to new vocal range.
- * @param notes Source notes
- * @param orig_low Original low range
- * @param orig_high Original high range
- * @param new_low New low range
- * @param new_high New high range
- * @param key_offset Key offset for scale snapping (default 0 = C major)
- * @return Notes with adjusted pitch range
+ * @brief Move notes outside [low, high] into it by whole octaves.
+ *
+ * A replayed phrase keeps its intervals; only a note the range cannot hold is
+ * moved, and only by octaves, so its pitch class and every other note stay as
+ * written. A note no octave of which fits a range narrower than 12 is left for
+ * the caller's range enforcement.
+ *
+ * @param notes Notes to fold in place
+ * @param low Range low bound (inclusive)
+ * @param high Range high bound (inclusive)
  */
-std::vector<NoteEvent> adjustPitchRange(const std::vector<NoteEvent>& notes, uint8_t orig_low,
-                                        uint8_t orig_high, uint8_t new_low, uint8_t new_high,
-                                        int key_offset = 0);
+void foldPitchesIntoRange(std::vector<NoteEvent>& notes, uint8_t low, uint8_t high);
 
 /**
  * @brief Convert notes to relative timing (subtract section start).
@@ -156,10 +156,29 @@ void applyHookIntensity(std::vector<NoteEvent>& notes, SectionType section_type,
                         HookIntensity intensity, Tick section_start);
 
 /**
+ * @brief Restate a chorus's opening two bars at its midpoint.
+ *
+ * A pop chorus states its hook twice (hook-answer-hook). Each note in the two
+ * bars at the midpoint that shares an onset with the opening takes the
+ * opening's pitch, so the second statement is heard as the hook rather than a
+ * new line over the same rhythm. A pitch the chord at the midpoint refuses, or
+ * one the other tracks clash with, is left as generated.
+ *
+ * @param notes Section notes (sorted in place)
+ * @param section_start Section start tick
+ * @param section_bars Section length; shorter than eight bars is left alone
+ * @param harmony Harmony context for legality and collision checks
+ */
+void restateChorusHead(std::vector<NoteEvent>& notes, Tick section_start, uint8_t section_bars,
+                       const IHarmonyContext& harmony);
+
+/**
  * @brief Apply groove timing adjustments.
  *
  * Applies timing feel: OffBeat (laid-back), Swing (shuffle),
  * Syncopated (funk), Driving16th (energetic), Bouncy8th (playful).
+ * Syllabic rearticulations keep their onsets: they were spaced to a singable
+ * floor, and a per-position shift closes some of those gaps to a 32nd.
  *
  * @param notes Notes to modify (in-place)
  * @param groove Groove feel to apply
@@ -249,8 +268,11 @@ uint8_t vocalCeilingAt(Tick tick, const std::vector<Section>& sections, uint8_t 
  * @brief Keep the global melodic peak inside a Chorus.
  *
  * Lowers every note that sits at or above the realized Chorus peak outside a
- * hook section, delegating the clamp to enforceSectionCeiling so the octave
- * drop, the scale snap and the collision-safety walk stay in one place.
+ * hook section. A phrase that crosses the ceiling moves down as a unit by the
+ * smallest diatonic shift (up to an octave) that keeps every note in range,
+ * clear of the other tracks and as legal over its chord as it was; clipping
+ * note by note flattened distinct pitches onto the one ceiling pitch. Notes
+ * no shift can place are clamped one at a time by enforceSectionCeiling.
  *
  * @param notes Notes to modify (in-place)
  * @param harmony Harmony context for collision-safety verification

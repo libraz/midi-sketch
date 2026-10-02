@@ -94,12 +94,20 @@ void rankCandidates(std::vector<PitchCandidate>& candidates, PitchPreference pre
 
         // Secondary: preference-specific ranking
         switch (preference) {
-          case PitchPreference::PreferRootFifth:
+          case PitchPreference::PreferRootFifth: {
+            // An octave of the pitch asked for keeps its function, so a root
+            // asked for stays the root rather than yielding to a nearer fifth.
+            const bool a_same_class = a.interval_from_desired % 12 == 0;
+            const bool b_same_class = b.interval_from_desired % 12 == 0;
+            if (a_same_class != b_same_class) {
+              return a_same_class;
+            }
             // Prefer root/5th over other chord tones
             if (a.is_root_or_fifth != b.is_root_or_fifth) {
               return a.is_root_or_fifth;
             }
             break;
+          }
 
           case PitchPreference::PreferChordTones:
             // Prefer chord tones

@@ -2573,11 +2573,15 @@ TEST_F(DrumsTest, IdolHyperRhythmSyncUsesBlueprintSwing) {
   const auto& track = gen.getSong().drums();
   const auto& sections = gen.getSong().arrangement().sections();
 
-  bool checked_chorus = false;
+  // A chorus whose drums follow a vocal figure note for note can lose its own
+  // swung offbeats, so the swing is looked for across every swung chorus.
+  int swung_choruses = 0;
+  bool found_swung_offbeat = false;
   for (const auto& sec : sections) {
     if (sec.type != SectionType::Chorus || sec.swing_amount <= 0.0f) {
       continue;
     }
+    ++swung_choruses;
 
     // Ask the section's own grid where a straight 16th lands, then look for a
     // note there. The grid also carries the section time feel, so the expected
@@ -2591,24 +2595,18 @@ TEST_F(DrumsTest, IdolHyperRhythmSyncUsesBlueprintSwing) {
     ASSERT_NE(swung_sixteenth, TICK_SIXTEENTH)
         << "IdolHyper RhythmSync should preserve blueprint swing instead of forcing Straight";
 
-    bool found_swung_offbeat = false;
     for (const auto& note : track.notes()) {
-      if (note.start_tick < sec.start_tick || note.start_tick >= sec.endTick()) {
-        continue;
-      }
-      if (note.start_tick % TICKS_PER_BEAT == swung_sixteenth) {
+      if (note.start_tick >= sec.start_tick && note.start_tick < sec.endTick() &&
+          note.start_tick % TICKS_PER_BEAT == swung_sixteenth) {
         found_swung_offbeat = true;
         break;
       }
     }
-
-    EXPECT_TRUE(found_swung_offbeat)
-        << "IdolHyper RhythmSync should preserve blueprint swing instead of forcing Straight";
-    checked_chorus = true;
-    break;
   }
 
-  EXPECT_TRUE(checked_chorus) << "IdolHyper should contain a swung Chorus section";
+  ASSERT_GT(swung_choruses, 0) << "IdolHyper should contain a swung Chorus section";
+  EXPECT_TRUE(found_swung_offbeat)
+      << "IdolHyper RhythmSync should preserve blueprint swing instead of forcing Straight";
 }
 
 TEST(DrumSwingConsistencyTest, AuxiliaryShakerUsesSharedSwingGrid) {

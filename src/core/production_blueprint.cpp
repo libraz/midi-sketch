@@ -1701,6 +1701,54 @@ constexpr SectionSlot IDOL_EMO_FLOW[] = {
 
 namespace {
 
+// Vocal styles an Auto vocal style resolves to. A blueprint is a production
+// identity, and the singer is part of it: resolving from the style preset alone
+// gave every blueprint the same singer for a given seed.
+
+constexpr VocalStyleWeight RHYTHMLOCK_VOCAL_STYLES[] = {
+    {VocalStylePreset::Vocaloid, 35},
+    {VocalStylePreset::UltraVocaloid, 15},
+    {VocalStylePreset::CoolSynth, 25},
+    {VocalStylePreset::Anime, 25},
+};
+
+constexpr VocalStyleWeight BALLAD_VOCAL_STYLES[] = {
+    {VocalStylePreset::Ballad, 70},
+    {VocalStylePreset::Standard, 30},
+};
+
+constexpr VocalStyleWeight IDOL_STANDARD_VOCAL_STYLES[] = {
+    {VocalStylePreset::Idol, 50},
+    {VocalStylePreset::BrightKira, 30},
+    {VocalStylePreset::CuteAffected, 20},
+};
+
+constexpr VocalStyleWeight IDOL_HYPER_VOCAL_STYLES[] = {
+    {VocalStylePreset::Idol, 35},
+    {VocalStylePreset::Vocaloid, 25},
+    {VocalStylePreset::UltraVocaloid, 15},
+    {VocalStylePreset::BrightKira, 25},
+};
+
+constexpr VocalStyleWeight IDOL_KAWAII_VOCAL_STYLES[] = {
+    {VocalStylePreset::CuteAffected, 50},
+    {VocalStylePreset::Idol, 30},
+    {VocalStylePreset::BrightKira, 20},
+};
+
+constexpr VocalStyleWeight IDOL_COOLPOP_VOCAL_STYLES[] = {
+    {VocalStylePreset::CoolSynth, 40},
+    {VocalStylePreset::Idol, 25},
+    {VocalStylePreset::Vocaloid, 20},
+    {VocalStylePreset::KPop, 15},
+};
+
+constexpr VocalStyleWeight IDOL_EMO_VOCAL_STYLES[] = {
+    {VocalStylePreset::Anime, 40},
+    {VocalStylePreset::Idol, 35},
+    {VocalStylePreset::Vocaloid, 25},
+};
+
 constexpr ProductionBlueprint BLUEPRINTS[] = {
     // 0: Traditional (backward compatible)
     {
@@ -1767,6 +1815,8 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         168,
         160,
         175,
+        RHYTHMLOCK_VOCAL_STYLES,
+        static_cast<uint8_t>(sizeof(RHYTHMLOCK_VOCAL_STYLES) / sizeof(RHYTHMLOCK_VOCAL_STYLES[0])),
     },
 
     // 2: StoryPop (melody-driven story pop)
@@ -1830,6 +1880,8 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         82,
         68,
         98,
+        BALLAD_VOCAL_STYLES,
+        static_cast<uint8_t>(sizeof(BALLAD_VOCAL_STYLES) / sizeof(BALLAD_VOCAL_STYLES[0])),
     },
 
     // 4: IdolStandard (classic idol pop: memorable melody, gradual build)
@@ -1863,6 +1915,9 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         150,
         138,
         168,
+        IDOL_STANDARD_VOCAL_STYLES,
+        static_cast<uint8_t>(sizeof(IDOL_STANDARD_VOCAL_STYLES) /
+                             sizeof(IDOL_STANDARD_VOCAL_STYLES[0])),
     },
 
     // 5: IdolHyper (high BPM, chorus-first, high density)
@@ -1895,6 +1950,8 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         168,
         160,
         175,
+        IDOL_HYPER_VOCAL_STYLES,
+        static_cast<uint8_t>(sizeof(IDOL_HYPER_VOCAL_STYLES) / sizeof(IDOL_HYPER_VOCAL_STYLES[0])),
     },
 
     // 6: IdolKawaii (sweet, bouncy, restrained)
@@ -1928,6 +1985,9 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         132,
         124,
         146,
+        IDOL_KAWAII_VOCAL_STYLES,
+        static_cast<uint8_t>(sizeof(IDOL_KAWAII_VOCAL_STYLES) /
+                             sizeof(IDOL_KAWAII_VOCAL_STYLES[0])),
     },
 
     // 7: IdolCoolPop (cool, four-on-floor, uniform)
@@ -1961,6 +2021,9 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         170,
         160,
         178,
+        IDOL_COOLPOP_VOCAL_STYLES,
+        static_cast<uint8_t>(sizeof(IDOL_COOLPOP_VOCAL_STYLES) /
+                             sizeof(IDOL_COOLPOP_VOCAL_STYLES[0])),
     },
 
     // 8: IdolEmo (quiet→explosive, emotional, late peak)
@@ -1994,6 +2057,8 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         96,
         82,
         116,
+        IDOL_EMO_VOCAL_STYLES,
+        static_cast<uint8_t>(sizeof(IDOL_EMO_VOCAL_STYLES) / sizeof(IDOL_EMO_VOCAL_STYLES[0])),
     },
 
     // 9: BehavioralLoop (addictive, highly repetitive hooks)
@@ -2129,6 +2194,12 @@ uint8_t selectProductionBlueprintForMood(std::mt19937& rng, uint8_t explicit_id,
   }
 
   return 0;
+}
+
+uint8_t resolveProductionBlueprintId(uint32_t seed, uint8_t explicit_id, uint8_t mood) {
+  constexpr uint32_t kBlueprintMagic = 0x424C5052;  // "BLPR"
+  std::mt19937 blueprint_rng(seed ^ kBlueprintMagic);
+  return selectProductionBlueprintForMood(blueprint_rng, explicit_id, mood);
 }
 
 const char* getProductionBlueprintName(uint8_t id) {

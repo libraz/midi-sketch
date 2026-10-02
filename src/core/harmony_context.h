@@ -53,6 +53,8 @@ class HarmonyContext : public IHarmonyContext {
 
   bool hasChordExtensionAt(Tick tick) const override;
 
+  float getVocalTensionUsage() const override { return vocal_tension_usage_; }
+
   void registerNote(Tick start, Tick duration, uint8_t pitch, TrackRole track) override;
 
   void registerTrack(const MidiTrack& track, TrackRole role) override;
@@ -82,8 +84,12 @@ class HarmonyContext : public IHarmonyContext {
 
   void registerChordExtension(Tick start, Tick end, ChordExtension extension) override;
 
-  void registerChordReplacement(Tick start, Tick end, int8_t degree,
-                                ChordExtension extension) override;
+  void registerVocalTensionUsage(float usage) override { vocal_tension_usage_ = usage; }
+
+  void registerChordReplacement(Tick start, Tick end, int8_t degree, ChordExtension extension,
+                                bool secondary_dominant) override;
+
+  void restateChordSpan(Tick source, Tick target, Tick length) override;
 
   bool isSecondaryDominantAt(Tick tick) const override;
 
@@ -119,6 +125,7 @@ class HarmonyContext : public IHarmonyContext {
  private:
   ChordProgressionTracker chord_tracker_;
   TrackCollisionDetector collision_detector_;
+  float vocal_tension_usage_ = 0.0f;
 };
 
 }  // namespace midisketch

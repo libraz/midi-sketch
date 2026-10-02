@@ -961,7 +961,7 @@ TEST(VelocityTest, ApplyPhraseEndDecay_DurationStretch) {
   section.bars = 4;
   sections.push_back(section);
 
-  Tick initial_duration = 480;
+  Tick initial_duration = 120;  // Ends before the phrase end, leaving room to stretch
   // Add note near end of phrase (in decay region)
   Tick decay_note_tick = 4 * TICKS_PER_BAR - TICKS_PER_BEAT / 2;
   track.addNote(NoteEventBuilder::create(decay_note_tick, initial_duration, 60, 100));
@@ -986,7 +986,7 @@ TEST(VelocityTest, ApplyPhraseEndDecay_BridgeSectionStrongerStretch) {
   section.bars = 4;
   sections.push_back(section);
 
-  Tick initial_duration = 480;
+  Tick initial_duration = 120;  // Ends before the phrase end, leaving room to stretch
   Tick decay_note_tick = 4 * TICKS_PER_BAR - TICKS_PER_BEAT / 2;
   track.addNote(NoteEventBuilder::create(decay_note_tick, initial_duration, 60, 100));
 
@@ -994,6 +994,28 @@ TEST(VelocityTest, ApplyPhraseEndDecay_BridgeSectionStrongerStretch) {
 
   // Duration should be stretched more for Bridge section
   EXPECT_GT(track.notes()[0].duration, initial_duration);
+}
+
+TEST(VelocityTest, ApplyPhraseEndDecay_StretchStaysInsidePhrase) {
+  // The phrase end is a barline the next chord usually starts on, so a note
+  // that already reaches it is not carried past it.
+  std::vector<Section> sections;
+  Section section;
+  section.type = SectionType::Bridge;
+  section.start_tick = 0;
+  section.bars = 4;
+  sections.push_back(section);
+
+  const Tick phrase_end = 4 * TICKS_PER_BAR;
+  MidiTrack track;
+  track.addNote(NoteEventBuilder::create(phrase_end - TICKS_PER_BEAT / 2, TICKS_PER_BEAT / 2, 60,
+                                         100));  // Ends exactly at the phrase end
+  track.addNote(NoteEventBuilder::create(phrase_end - TICKS_PER_BEAT / 4, 360, 62,
+                                         100));  // Already crosses it
+  applyPhraseEndDecay(track, sections, 0);
+
+  EXPECT_EQ(track.notes()[0].start_tick + track.notes()[0].duration, phrase_end);
+  EXPECT_EQ(track.notes()[1].duration, 360u);
 }
 
 // ============================================================================
@@ -1190,7 +1212,7 @@ TEST(VelocityTest, ApplyPhraseEndDecay_DriveFeelAffectsStretch) {
   section.bars = 4;
   sections.push_back(section);
 
-  Tick initial_duration = 480;
+  Tick initial_duration = 120;  // Ends before the phrase end, leaving room to stretch
   Tick decay_note_tick = 4 * TICKS_PER_BAR - TICKS_PER_BEAT / 2;
 
   // Test with laid-back drive (should have longer stretch)
@@ -1216,7 +1238,7 @@ TEST(VelocityTest, ApplyPhraseEndDecay_DefaultDriveFeelMatchesNeutral) {
   section.bars = 4;
   sections.push_back(section);
 
-  Tick initial_duration = 480;
+  Tick initial_duration = 120;  // Ends before the phrase end, leaving room to stretch
   Tick decay_note_tick = 4 * TICKS_PER_BAR - TICKS_PER_BEAT / 2;
 
   // Test with default (should be neutral = 50)

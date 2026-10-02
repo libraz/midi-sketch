@@ -44,6 +44,8 @@ class HarmonyCoordinator : public IHarmonyCoordinator {
 
   bool hasChordExtensionAt(Tick tick) const override;
 
+  float getVocalTensionUsage() const override;
+
   void registerNote(Tick start, Tick duration, uint8_t pitch, TrackRole track) override;
 
   void registerTrack(const MidiTrack& track, TrackRole role) override;
@@ -71,8 +73,12 @@ class HarmonyCoordinator : public IHarmonyCoordinator {
 
   void registerChordExtension(Tick start, Tick end, ChordExtension extension) override;
 
-  void registerChordReplacement(Tick start, Tick end, int8_t degree,
-                                ChordExtension extension) override;
+  void registerVocalTensionUsage(float usage) override;
+
+  void registerChordReplacement(Tick start, Tick end, int8_t degree, ChordExtension extension,
+                                bool secondary_dominant) override;
+
+  void restateChordSpan(Tick source, Tick target, Tick length) override;
 
   bool isSecondaryDominantAt(Tick tick) const override;
 

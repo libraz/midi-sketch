@@ -620,7 +620,11 @@ constexpr size_t STYLE_VOCAL_COUNT = 4;
 // [16] chorus_long_tones          - Use sustained notes in chorus
 // [17] chorus_register_shift      - Chorus pitch shift in semitones (5=normal, 7=higher)
 // [18] tension_usage              - Tension note probability (0.2=low, 0.4=jazzy)
+// [19] syllabic_sub_ratio         - Chance a long note is split into same-pitch syllables
+// [20] recitation_rate            - Chance a pre-chorus carries a recitation run; other
+//                                   sections scale it down (see recitationSectionWeight)
 //
+// clang-format off
 const VocalStylePresetData VOCAL_STYLE_PRESET_DATA[] = {
     // -------------------------------------------------------------------------
     // Auto (0) - Default values, no style-specific changes applied
@@ -629,7 +633,8 @@ const VocalStylePresetData VOCAL_STYLE_PRESET_DATA[] = {
      1.0f, 1.0f, 0.9f, 1.0f,                   // chorus=90% (avoid 8th note saturation)
      0.0f, 0.0f, 0.0f, 0.0f,                   // no 32nd notes
      1.0f, false, false, false, 5, 0.2f,       // all same-note OK, no special flags
-     0.0f},                                    // syllabic_sub: disabled
+     0.0f,                                     // syllabic_sub: disabled
+     0.25f},                                   // recitation: rare
 
     // -------------------------------------------------------------------------
     // Standard (1) - General purpose pop melody
@@ -638,7 +643,8 @@ const VocalStylePresetData VOCAL_STYLE_PRESET_DATA[] = {
      1.0f, 1.0f, 0.85f, 1.0f,                      // chorus=85% (room for long notes)
      0.0f, 0.0f, 0.0f, 0.0f,                       // no 32nd notes
      1.0f, false, false, false, 5, 0.2f,           // standard settings
-     0.0f},                                        // syllabic_sub: disabled
+     0.0f,                                         // syllabic_sub: disabled
+     0.25f},                                       // recitation: rare
 
     // -------------------------------------------------------------------------
     // Vocaloid (2) - AnimeHighEnergy style: energetic, wide leaps, singable
@@ -647,7 +653,8 @@ const VocalStylePresetData VOCAL_STYLE_PRESET_DATA[] = {
      0.8f, 0.9f, 1.0f, 0.85f,                      // verse sparse, chorus=100% (singable pace)
      0.0f, 0.0f, 0.0f, 0.0f,                       // no 32nd notes (still singable)
      1.0f, true, false, false, 5, 0.2f,            // disable vowel limits
-     0.15f},                                       // syllabic_sub: moderate
+     0.15f,                                        // syllabic_sub: moderate
+     0.9f},                                        // recitation: signature figure
 
     // -------------------------------------------------------------------------
     // UltraVocaloid (3) - ultra-dense machine vocal style: ballad verse + barrage chorus
@@ -657,7 +664,8 @@ const VocalStylePresetData VOCAL_STYLE_PRESET_DATA[] = {
      0.3f, 0.5f, 1.4f, 0.35f,                          // verse=ballad(30%), chorus=140%
      0.0f, 0.0f, 1.0f, 0.0f,                           // 32nd: verse=0%, chorus=100% (contrast!)
      0.1f, true, false, false, 5, 0.2f,                // same-note=10% only, disable vowel
-     0.25f},                                           // syllabic_sub: high
+     0.25f,                                            // syllabic_sub: high
+     0.9f},                                            // recitation: signature figure
 
     // -------------------------------------------------------------------------
     // Idol (4) - Love Live/Idolmaster style: catchy, unison-friendly
@@ -666,7 +674,8 @@ const VocalStylePresetData VOCAL_STYLE_PRESET_DATA[] = {
      1.05f, 1.0f, 1.10f, 1.0f,                 // verse+5%, chorus+10% (chorus_long_tones BPM-gated)
      0.0f, 0.0f, 0.0f, 0.0f,                   // no 32nd notes
      1.0f, false, true, true, 5, 0.2f,         // hook repeat + long tones in chorus
-     0.20f},                                   // syllabic_sub: moderate-high
+     0.20f,                                    // syllabic_sub: moderate-high
+     0.7f},                                    // recitation: frequent
 
     // -------------------------------------------------------------------------
     // Ballad (5) - Slow emotional ballad: small leaps, sustained notes
@@ -675,7 +684,8 @@ const VocalStylePresetData VOCAL_STYLE_PRESET_DATA[] = {
      1.0f, 1.0f, 0.55f, 1.0f,                    // chorus=55% (long tones, breathing room)
      0.0f, 0.0f, 0.0f, 0.0f,                     // no 32nd notes
      1.0f, false, false, true, 5, 0.2f,          // long tones in chorus
-     0.05f},                                     // syllabic_sub: minimal
+     0.05f,                                      // syllabic_sub: minimal
+     0.0f},                                      // recitation: none
 
     // -------------------------------------------------------------------------
     // Rock (6) - Rock style: powerful, driving, wide chorus register
@@ -684,7 +694,8 @@ const VocalStylePresetData VOCAL_STYLE_PRESET_DATA[] = {
      1.0f, 1.0f, 0.75f, 1.0f,                 // chorus=75% (power needs sustain)
      0.0f, 0.0f, 0.0f, 0.0f,                  // no 32nd notes
      1.0f, false, true, true, 7, 0.2f,        // hook + long tones, chorus +7 semitones
-     0.05f},                                  // syllabic_sub: minimal
+     0.05f,                                   // syllabic_sub: minimal
+     0.35f},                                  // recitation: occasional
 
     // -------------------------------------------------------------------------
     // CityPop (7) - 80s Japanese city pop: groovy, jazzy tensions
@@ -693,7 +704,8 @@ const VocalStylePresetData VOCAL_STYLE_PRESET_DATA[] = {
      1.0f, 1.0f, 0.75f, 1.0f,                    // chorus=75% (relaxed groove)
      0.0f, 0.0f, 0.0f, 0.0f,                     // no 32nd notes
      1.0f, false, false, false, 5, 0.4f,         // tension=0.4 (jazzy chords)
-     0.0f},                                      // syllabic_sub: disabled
+     0.0f,                                       // syllabic_sub: disabled
+     0.2f},                                      // recitation: rare
 
     // -------------------------------------------------------------------------
     // Anime (8) - Anime OP/ED style: dramatic, wide leaps, building energy
@@ -702,7 +714,8 @@ const VocalStylePresetData VOCAL_STYLE_PRESET_DATA[] = {
      1.0f, 1.0f, 1.10f, 1.0f,                   // chorus=110% (dense anime OP feel)
      0.0f, 0.0f, 0.0f, 0.0f,                    // no 32nd notes
      1.0f, false, true, true, 5, 0.2f,          // hook repeat + long tones
-     0.10f},                                    // syllabic_sub: light
+     0.10f,                                     // syllabic_sub: light
+     0.6f},                                     // recitation: moderate
 
     // -------------------------------------------------------------------------
     // BrightKira (9) - Bright sparkly idol style: energetic, high register
@@ -711,7 +724,8 @@ const VocalStylePresetData VOCAL_STYLE_PRESET_DATA[] = {
      1.0f, 1.0f, 1.10f, 1.0f,                         // chorus=110% (bright, dense at high BPM)
      0.0f, 0.0f, 0.0f, 0.0f,                          // no 32nd notes
      1.0f, false, true, true, 7, 0.2f,                // hook + long, chorus +7 semitones
-     0.10f},                                          // syllabic_sub: light
+     0.10f,                                           // syllabic_sub: light
+     0.6f},                                           // recitation: moderate
 
     // -------------------------------------------------------------------------
     // CoolSynth (10) - Cool synthetic style: mechanical, flowing phrases
@@ -720,7 +734,8 @@ const VocalStylePresetData VOCAL_STYLE_PRESET_DATA[] = {
      1.0f, 1.0f, 0.75f, 1.0f,                      // chorus=75% (cool and relaxed)
      0.0f, 0.0f, 0.0f, 0.0f,                       // no 32nd notes
      1.0f, false, true, false, 5, 0.2f,            // hook repeat, no long tones
-     0.0f},                                        // syllabic_sub: disabled
+     0.0f,                                         // syllabic_sub: disabled
+     0.5f},                                        // recitation: moderate
 
     // -------------------------------------------------------------------------
     // CuteAffected (11) - Cute affected style: slightly wider leaps
@@ -729,7 +744,8 @@ const VocalStylePresetData VOCAL_STYLE_PRESET_DATA[] = {
      1.0f, 1.0f, 1.05f, 1.0f,                          // chorus=105% (slightly denser)
      0.0f, 0.0f, 0.0f, 0.0f,                           // no 32nd notes
      1.0f, false, true, true, 5, 0.2f,                 // hook repeat + long tones
-     0.10f},                                           // syllabic_sub: light
+     0.10f,                                            // syllabic_sub: light
+     0.55f},                                           // recitation: moderate
 
     // -------------------------------------------------------------------------
     // PowerfulShout (12) - Powerful shout style: big leaps, power sustain
@@ -738,7 +754,8 @@ const VocalStylePresetData VOCAL_STYLE_PRESET_DATA[] = {
      1.0f, 1.0f, 0.75f, 1.0f,                           // chorus=75% (power needs sustain)
      0.0f, 0.0f, 0.0f, 0.0f,                            // no 32nd notes
      1.0f, false, true, true, 5, 0.2f,                  // hook repeat + long tones
-     0.0f},                                             // syllabic_sub: disabled
+     0.0f,                                              // syllabic_sub: disabled
+     0.35f},                                            // recitation: occasional
 
     // -------------------------------------------------------------------------
     // KPop (13) - K-POP style: syncopated hooks, rap-like repetition, offbeat
@@ -747,8 +764,10 @@ const VocalStylePresetData VOCAL_STYLE_PRESET_DATA[] = {
      1.0f, 1.0f, 1.0f, 1.0f,                  // chorus=100% (dense hook-driven)
      0.0f, 0.0f, 0.0f, 0.0f,                  // no 32nd notes
      1.0f, true, true, false, 5, 0.2f,        // disable vowel, hook repeat, no long tones
-     0.10f},                                  // syllabic_sub: light
+     0.10f,                                   // syllabic_sub: light
+     0.7f},                                   // recitation: frequent
 };
+// clang-format on
 
 }  // namespace
 
@@ -1233,12 +1252,16 @@ VocalStylePreset selectRandomVocalStyle(uint8_t style_id, uint32_t seed) {
   if (style_id >= STYLE_PRESET_COUNT) {
     style_id = 0;
   }
+  return selectWeightedVocalStyle(STYLE_VOCAL_STYLES[style_id], STYLE_VOCAL_COUNT, seed);
+}
 
+VocalStylePreset selectWeightedVocalStyle(const VocalStyleWeight* table, size_t count,
+                                          uint32_t seed) {
   // Calculate total weight (skip entries with weight 0)
   uint32_t total_weight = 0;
-  for (size_t i = 0; i < STYLE_VOCAL_COUNT; ++i) {
-    if (STYLE_VOCAL_STYLES[style_id][i].weight > 0) {
-      total_weight += STYLE_VOCAL_STYLES[style_id][i].weight;
+  for (size_t i = 0; i < count; ++i) {
+    if (table[i].weight > 0) {
+      total_weight += table[i].weight;
     }
   }
 
@@ -1254,17 +1277,17 @@ VocalStylePreset selectRandomVocalStyle(uint8_t style_id, uint32_t seed) {
 
   // Select style based on weighted random roll
   uint32_t cumulative = 0;
-  for (size_t i = 0; i < STYLE_VOCAL_COUNT; ++i) {
-    if (STYLE_VOCAL_STYLES[style_id][i].weight > 0) {
-      cumulative += STYLE_VOCAL_STYLES[style_id][i].weight;
+  for (size_t i = 0; i < count; ++i) {
+    if (table[i].weight > 0) {
+      cumulative += table[i].weight;
       if (roll < cumulative) {
-        return STYLE_VOCAL_STYLES[style_id][i].style;
+        return table[i].style;
       }
     }
   }
 
   // Fallback: return first style
-  return STYLE_VOCAL_STYLES[style_id][0].style;
+  return table[0].style;
 }
 
 SongConfig createDefaultSongConfig(uint8_t style_id) {

@@ -75,6 +75,11 @@ std::vector<int> getScalePitchClasses(uint8_t key);
 // @returns Vector of tension pitch classes (0-11)
 std::vector<int> getAvailableTensionPitchClasses(int8_t degree);
 
+// Whether a lead line may hold a pitch class over the degree as a colour: one
+// of the available tensions above, or the degree's own diatonic seventh.
+// Avoid notes are never colours.
+bool isMelodicColourPitchClass(int8_t degree, int pitch_class);
+
 // ============================================================================
 // Nearest Chord Tone Functions
 // ============================================================================

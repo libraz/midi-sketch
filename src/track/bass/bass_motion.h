@@ -7,11 +7,11 @@
  * accompaniment of its own to answer to. Contrary motion under a rising line,
  * an oblique hold under a moving one -- that choice is made here.
  *
- * It is made as a displacement of a pitch the pattern already chose, never as
- * a pitch of its own, and the displacement lands only on a tone of the chord
- * sounding at that moment. Which pitches those are comes from the caller, so a
- * bar carrying a registered secondary dominant is voiced against that chord
- * rather than against the diatonic triad sharing its degree.
+ * The pitch adjusted is the bar's anchor, which every pattern note is derived
+ * from and which lands on the downbeat, so the motion is answered by its
+ * octave alone: moving it to another chord tone would put the whole bar in an
+ * inversion the chord never declared. Direction is measured from the previous
+ * bar's anchor, which is what contrary motion is relative to.
  */
 
 #ifndef MIDISKETCH_TRACK_BASS_BASS_MOTION_H
@@ -24,16 +24,17 @@
 
 namespace midisketch {
 
-/// @brief Adjust a bass pitch according to vocal motion while staying on chord tones.
+/// @brief Adjust a bass anchor's octave according to vocal motion.
 ///
-/// @param base_pitch The pitch the pattern chose
+/// @param base_pitch The bar's anchor pitch
 /// @param motion How this bass note should move against the vocal
 /// @param vocal_direction Which way the vocal is moving here (-1, 0, +1)
 /// @param vocal_pitch The pitch the vocal is sounding, 0 when silent
+/// @param previous_pitch The previous bar's anchor, 0 when there is none
 /// @param degree Scale degree of the bar's chord, used for its diatonic tones
 /// @return A playable, diatonic pitch; base_pitch when nothing better exists
 uint8_t adjustPitchForMotion(uint8_t base_pitch, MotionType motion, int8_t vocal_direction,
-                             uint8_t vocal_pitch, int8_t degree);
+                             uint8_t vocal_pitch, uint8_t previous_pitch, int8_t degree);
 
 /// @brief Motion adjustment against an explicit chord-tone set.
 ///
@@ -41,7 +42,8 @@ uint8_t adjustPitchForMotion(uint8_t base_pitch, MotionType motion, int8_t vocal
 /// the tones directly, which is what a bar whose chord was replaced on the
 /// shared timeline has to pass.
 uint8_t adjustPitchForMotion(uint8_t base_pitch, MotionType motion, int8_t vocal_direction,
-                             uint8_t vocal_pitch, const ChordTones& chord_tones);
+                             uint8_t vocal_pitch, uint8_t previous_pitch,
+                             const ChordTones& chord_tones);
 
 }  // namespace midisketch
 

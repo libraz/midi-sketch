@@ -675,19 +675,27 @@ TEST_F(ChordFunctionApproachTest, RnBDiatonicThirdWrapsInsteadOfClampingToRootOr
   EXPECT_NE(g_third, 55);
 }
 
-TEST_F(ChordFunctionApproachTest, MotionAdjustmentMovesToNearestChordTone) {
+TEST_F(ChordFunctionApproachTest, MotionAdjustmentMovesTheOctaveAndKeepsTheRoot) {
   constexpr uint8_t kC3 = 48;
+  constexpr uint8_t kC2 = 36;
+  constexpr uint8_t kPreviousA2 = 45;
   constexpr uint8_t kVocalC5 = 72;
   constexpr int8_t kTonicDegree = 0;
 
-  EXPECT_EQ(adjustPitchForMotion(kC3, MotionType::Similar, +1, kVocalC5, kTonicDegree), 52)
-      << "Similar upward motion should move C3 to E3 instead of rejecting a semitone step";
-  EXPECT_EQ(adjustPitchForMotion(kC3, MotionType::Contrary, +1, kVocalC5, kTonicDegree), 43)
-      << "Contrary motion against upward vocal should move C3 down to G2";
-  EXPECT_EQ(adjustPitchForMotion(kC3, MotionType::Similar, -1, kVocalC5, kTonicDegree), 43)
-      << "Similar downward motion should move C3 to G2";
-  EXPECT_EQ(adjustPitchForMotion(kC3, MotionType::Contrary, -1, kVocalC5, kTonicDegree), 52)
-      << "Contrary motion against downward vocal should move C3 up to E3";
+  EXPECT_EQ(adjustPitchForMotion(kC3, MotionType::Similar, +1, kVocalC5, kPreviousA2, kTonicDegree),
+            kC3)
+      << "Similar upward motion from A2 should rise to C3";
+  EXPECT_EQ(
+      adjustPitchForMotion(kC3, MotionType::Contrary, +1, kVocalC5, kPreviousA2, kTonicDegree), kC2)
+      << "Contrary motion against an upward vocal should fall from A2 to C2";
+  EXPECT_EQ(adjustPitchForMotion(kC3, MotionType::Similar, -1, kVocalC5, kPreviousA2, kTonicDegree),
+            kC2)
+      << "Similar downward motion from A2 should fall to C2";
+  EXPECT_EQ(
+      adjustPitchForMotion(kC3, MotionType::Contrary, -1, kVocalC5, kPreviousA2, kTonicDegree), kC3)
+      << "Contrary motion against a downward vocal should rise from A2 to C3";
+  EXPECT_EQ(adjustPitchForMotion(kC3, MotionType::Contrary, +1, kVocalC5, 0, kTonicDegree), kC3)
+      << "Without a previous anchor there is no motion to answer";
 }
 
 TEST_F(ChordFunctionApproachTest, HighVocalDensityStillSimplifiesNonPeakVerse) {

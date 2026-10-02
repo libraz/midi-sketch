@@ -70,10 +70,12 @@ enum class BassPattern : uint8_t {
 /// Generate bass track with pattern selection based on section type.
 /// @param kick_cache Optional pre-computed kick positions for Bass-Kick sync (can be nullptr)
 /// @param vocal_analysis Optional vocal analysis for motion-aware generation (can be nullptr)
+/// @param generated_tracks Tracks the song generates at all (see FullTrackContext)
 void generateBassTrack(MidiTrack& track, const Song& song, const GeneratorParams& params,
                        std::mt19937& rng, IHarmonyContext& harmony,
                        const KickPatternCache* kick_cache = nullptr,
-                       const VocalAnalysis* vocal_analysis = nullptr);
+                       const VocalAnalysis* vocal_analysis = nullptr,
+                       TrackMask generated_tracks = TrackMask::All);
 
 /// @brief The pattern a section actually generated, recorded for later passes.
 ///

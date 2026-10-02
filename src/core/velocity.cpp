@@ -810,10 +810,11 @@ void applyPhraseEndDecay(MidiTrack& track, const std::vector<Section>& sections,
           // Gradual stretch: increases toward phrase end for natural "exhale" feeling
           float stretch_progress = position_in_decay;  // 0.0 at start, 1.0 at end
           float effective_stretch = 1.0f + (duration_stretch - 1.0f) * stretch_progress;
-          // Guard against overflow: cap stretched duration at a reasonable maximum
-          constexpr Tick MAX_DURATION = TICKS_PER_BAR * 4;  // 4 bars max
+          // The exhale stays inside its phrase: a note that already reaches the
+          // phrase end would otherwise be carried into the next bar's chord.
           Tick stretched_duration = static_cast<Tick>(note.duration * effective_stretch);
-          note.duration = std::min(stretched_duration, MAX_DURATION);
+          const Tick room = std::max(note.duration, phrase_end - note.start_tick);
+          note.duration = std::min(stretched_duration, room);
         }
       }
     }

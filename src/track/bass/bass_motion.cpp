@@ -19,6 +19,9 @@ namespace midisketch {
 
 namespace {
 
+// Ensure 2+ octave separation (24 semitones) for doubling avoidance
+constexpr int kMinOctaveSeparation = 24;
+
 [[maybe_unused]] const char* motionTypeToString(MotionType motion) {
   switch (motion) {
     case MotionType::Contrary:
@@ -50,37 +53,40 @@ bool isPitchChordTone(int pitch, const ChordTones& chord_tones) {
   return false;
 }
 
-std::optional<int> nearestChordToneInDirection(int bass_pitch, int direction,
-                                               const ChordTones& chord_tones, int vocal_pitch) {
-  if (direction == 0) return std::nullopt;
+// The octave of base_pitch that moves away from previous_pitch in direction,
+// nearest to it. The pitch class is the bar's anchor and is never changed.
+std::optional<int> octaveInDirection(int base_pitch, int direction, int previous_pitch,
+                                     int vocal_pitch) {
+  if (direction == 0 || previous_pitch <= 0) return std::nullopt;
 
-  for (int distance = 1; distance <= Interval::OCTAVE; ++distance) {
-    int candidate = bass_pitch + direction * distance;
+  std::optional<int> best;
+  for (int candidate : {base_pitch - Interval::OCTAVE, base_pitch, base_pitch + Interval::OCTAVE}) {
     if (candidate < BASS_LOW || candidate > BASS_HIGH) continue;
-    if (!isDiatonic(candidate)) continue;
-    if (!isPitchChordTone(candidate, chord_tones)) continue;
-    if (wouldClashWithVocal(candidate, vocal_pitch)) continue;
-    return candidate;
+    if ((candidate - previous_pitch) * direction <= 0) continue;
+    if (vocal_pitch > 0 && candidate % 12 == vocal_pitch % 12 &&
+        std::abs(candidate - vocal_pitch) < kMinOctaveSeparation) {
+      continue;
+    }
+    if (!best || std::abs(candidate - previous_pitch) < std::abs(*best - previous_pitch)) {
+      best = candidate;
+    }
   }
-
-  return std::nullopt;
+  return best;
 }
 
 }  // namespace
 
 uint8_t adjustPitchForMotion(uint8_t base_pitch, MotionType motion, int8_t vocal_direction,
-                             uint8_t vocal_pitch, int8_t degree) {
-  return adjustPitchForMotion(base_pitch, motion, vocal_direction, vocal_pitch,
+                             uint8_t vocal_pitch, uint8_t previous_pitch, int8_t degree) {
+  return adjustPitchForMotion(base_pitch, motion, vocal_direction, vocal_pitch, previous_pitch,
                               getChordTones(degree));
 }
 
 // Adjust bass pitch based on Motion Type and vocal direction
-// chord_tones constrains every adjustment to a tone of the chord that sounds here
+// chord_tones constrains the vocal-clash fallback to a tone of the chord that sounds here
 uint8_t adjustPitchForMotion(uint8_t base_pitch, MotionType motion, int8_t vocal_direction,
-                             uint8_t vocal_pitch, const ChordTones& chord_tones) {
-  // Ensure 2+ octave separation (24 semitones) for doubling avoidance
-  constexpr int kMinOctaveSeparation = 24;
-
+                             uint8_t vocal_pitch, uint8_t previous_pitch,
+                             const ChordTones& chord_tones) {
   int bass_pitch = static_cast<int>(base_pitch);
   int v_pitch = static_cast<int>(vocal_pitch);
   [[maybe_unused]] int original_bass = bass_pitch;
@@ -108,17 +114,18 @@ uint8_t adjustPitchForMotion(uint8_t base_pitch, MotionType motion, int8_t vocal
 
   [[maybe_unused]] int after_vocal_avoid = bass_pitch;
 
-  // Apply motion type adjustments - ONLY if result is diatonic AND doesn't clash with vocal
+  // Motion is answered by the octave the bar is anchored in, measured from the
+  // previous bar's anchor; the pitch class is the chord's and is not the motion's.
   int proposed_pitch = bass_pitch;
   switch (motion) {
     case MotionType::Contrary:
       // Move opposite to vocal direction
       if (vocal_direction > 0) {
-        if (auto candidate = nearestChordToneInDirection(bass_pitch, -1, chord_tones, v_pitch)) {
+        if (auto candidate = octaveInDirection(bass_pitch, -1, previous_pitch, v_pitch)) {
           proposed_pitch = *candidate;  // Vocal going up, bass goes down
         }
       } else if (vocal_direction < 0) {
-        if (auto candidate = nearestChordToneInDirection(bass_pitch, +1, chord_tones, v_pitch)) {
+        if (auto candidate = octaveInDirection(bass_pitch, +1, previous_pitch, v_pitch)) {
           proposed_pitch = *candidate;  // Vocal going down, bass goes up
         }
       }
@@ -127,11 +134,11 @@ uint8_t adjustPitchForMotion(uint8_t base_pitch, MotionType motion, int8_t vocal
     case MotionType::Similar:
       // Move same direction as vocal but different interval
       if (vocal_direction > 0) {
-        if (auto candidate = nearestChordToneInDirection(bass_pitch, +1, chord_tones, v_pitch)) {
+        if (auto candidate = octaveInDirection(bass_pitch, +1, previous_pitch, v_pitch)) {
           proposed_pitch = *candidate;
         }
       } else if (vocal_direction < 0) {
-        if (auto candidate = nearestChordToneInDirection(bass_pitch, -1, chord_tones, v_pitch)) {
+        if (auto candidate = octaveInDirection(bass_pitch, -1, previous_pitch, v_pitch)) {
           proposed_pitch = *candidate;
         }
       }
@@ -158,29 +165,13 @@ uint8_t adjustPitchForMotion(uint8_t base_pitch, MotionType motion, int8_t vocal
       break;
   }
 
-  // Only apply motion if result is diatonic, chord tone, AND doesn't clash with vocal
-  // CRITICAL: Bass must stay on chord tones to define harmony correctly
+  // An octave keeps the pitch class, so the bar's root stays its root.
   if (proposed_pitch != bass_pitch) {
-    bool diatonic_ok = isDiatonic(proposed_pitch);
-    bool chord_tone_ok = isPitchChordTone(proposed_pitch, chord_tones);
-    bool vocal_ok = !wouldClashWithVocal(proposed_pitch, v_pitch);
-
-    if (diatonic_ok && chord_tone_ok && vocal_ok) {
 #if BASS_DEBUG_LOG
-      std::cerr << "    [motion] " << motionTypeToString(motion) << ": " << bass_pitch << " -> "
-                << proposed_pitch << " (diatonic OK, chord tone OK, vocal OK)\n";
+    std::cerr << "    [motion] " << motionTypeToString(motion) << ": " << bass_pitch << " -> "
+              << proposed_pitch << "\n";
 #endif
-      bass_pitch = proposed_pitch;
-    } else {
-#if BASS_DEBUG_LOG
-      std::cerr << "    [motion] " << motionTypeToString(motion) << ": " << bass_pitch << " -> "
-                << proposed_pitch << " REJECTED ("
-                << (!diatonic_ok ? "non-diatonic"
-                                 : (!chord_tone_ok ? "non-chord-tone" : "vocal clash"))
-                << ")\n";
-#endif
-      // Keep original bass_pitch - motion adjustment rejected
-    }
+    bass_pitch = proposed_pitch;
   }
 
   // Final check: if the current bass_pitch still clashes with vocal, try to fix it

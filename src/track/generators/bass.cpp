@@ -288,6 +288,7 @@ struct BassTrackContext {
   IHarmonyContext& harmony;
   const KickPatternCache* kick_cache;
   const VocalAnalysis* vocal_analysis;
+  TrackMask generated_tracks;
 
   // Derived state
   bool has_vocal;
@@ -299,7 +300,7 @@ struct BassTrackContext {
 
   BassTrackContext(MidiTrack& track, const Song& song, const GeneratorParams& params,
                    std::mt19937& rng, IHarmonyContext& harmony, const KickPatternCache* kick_cache,
-                   const VocalAnalysis* vocal_analysis)
+                   const VocalAnalysis* vocal_analysis, TrackMask generated_tracks)
       : track(track),
         song(song),
         params(params),
@@ -307,6 +308,7 @@ struct BassTrackContext {
         harmony(harmony),
         kick_cache(kick_cache),
         vocal_analysis(vocal_analysis),
+        generated_tracks(generated_tracks),
         has_vocal(vocal_analysis != nullptr),
         progression(getChordProgression(params.chord_id)),
         sections(song.arrangement().sections()) {}
@@ -339,10 +341,21 @@ BassPattern selectSectionPattern(BassTrackContext& ctx, const Section& section, 
 // Apply slash chord bass override for smoother voice leading.
 // Modifies root in-place if slash chord is applicable and doesn't clash.
 void applySlashChordOverride(BassTrackContext& ctx, uint8_t& root, int8_t degree,
-                             int8_t next_degree, SectionType section_type, Tick bar_start) {
+                             int8_t next_degree, const Section& section, uint8_t bar) {
+  const Tick bar_start = section.start_tick + bar * TICKS_PER_BAR;
   float slash_roll = rng_util::rollFloat(ctx.rng, 0.0f, 1.0f);
-  SlashChordInfo slash_info = checkSlashChord(degree, next_degree, section_type, slash_roll);
+  SlashChordInfo slash_info = checkSlashChord(degree, next_degree, section.type, slash_roll);
   if (!slash_info.has_override) {
+    return;
+  }
+  // An inversion is heard against the chord sounding above it. Where no
+  // chordal track plays, the bass alone names the chord, and C/E is heard as E.
+  // A track sounds where the song generates it, the section's mask admits it
+  // and the layer schedule has it playing.
+  constexpr TrackMask kChordalTracks = TrackMask::Chord | TrackMask::Guitar | TrackMask::Arpeggio;
+  const TrackMask sounding =
+      section.activeTracksAtBar(bar) & section.track_mask & ctx.generated_tracks;
+  if (!hasTrack(sounding, kChordalTracks)) {
     return;
   }
   // Convert pitch class to bass octave range
@@ -378,21 +391,23 @@ void applySlashChordOverride(BassTrackContext& ctx, uint8_t& root, int8_t degree
 }
 
 // Apply vocal motion adjustment to bass root if vocal analysis is available
-uint8_t resolveEffectiveRoot(BassTrackContext& ctx, uint8_t root, Tick bar_start, uint8_t bar) {
+uint8_t resolveEffectiveRoot(BassTrackContext& ctx, uint8_t root, Tick bar_start, uint8_t bar,
+                             uint8_t previous_root) {
   if (!ctx.has_vocal) {
     return root;
   }
   int8_t vocal_direction = getVocalDirectionAt(*ctx.vocal_analysis, bar_start);
   uint8_t vocal_pitch = getVocalPitchAt(*ctx.vocal_analysis, bar_start);
   MotionType motion = selectMotionType(vocal_direction, bar, ctx.rng);
-  return adjustPitchForMotion(root, motion, vocal_direction, vocal_pitch,
+  return adjustPitchForMotion(root, motion, vocal_direction, vocal_pitch, previous_root,
                               ctx.harmony.getChordTonesAt(bar_start));
 }
 
 // Try dominant preparation before Chorus. Returns true if bar was handled (caller should continue).
 bool tryDominantPreparation(BassTrackContext& ctx, Tick bar_start, uint8_t effective_root,
-                            SectionType section_type, SectionType next_section_type, int8_t degree,
-                            bool is_last_bar, BassPattern pattern) {
+                            uint8_t chord_root, SectionType section_type,
+                            SectionType next_section_type, int8_t degree, bool is_last_bar,
+                            BassPattern pattern) {
   // A secondary dominant covering only the second half of the bar is already in
   // the shared harmonic timeline.  It takes precedence over the generic V
   // preparation so bass uses the same root as chord, vocal, and collision
@@ -414,29 +429,29 @@ bool tryDominantPreparation(BassTrackContext& ctx, Tick bar_start, uint8_t effec
       has_planned_secondary ? ctx.harmony.getChordDegreeAt(preparation_start) : 4;  // V
   uint8_t dominant_root = getBassRoot(dominant_degree);
   bool steady = (ctx.params.paradigm == GenerationParadigm::RhythmSync);
-  generateBassHalfBar(ctx.track, bar_start, effective_root, section_type, ctx.params.mood, true,
-                      ctx.harmony, pattern, steady);
-  generateBassHalfBar(ctx.track, preparation_start, dominant_root, section_type, ctx.params.mood,
-                      false, ctx.harmony, pattern, steady);
+  generateBassHalfBar(ctx.track, bar_start, effective_root, chord_root, section_type,
+                      ctx.params.mood, true, ctx.harmony, pattern, steady);
+  generateBassHalfBar(ctx.track, preparation_start, dominant_root, dominant_root, section_type,
+                      ctx.params.mood, false, ctx.harmony, pattern, steady);
   return true;
 }
 
 // Try harmonic rhythm subdivision. Returns true if bar was handled (caller should continue).
 bool tryHarmonicSubdivision(BassTrackContext& ctx, Tick bar_start, uint8_t effective_root,
-                            const Section& section, BassPattern pattern) {
+                            uint8_t chord_root, const Section& section, BassPattern pattern) {
   HarmonicRhythmInfo harmonic = HarmonicRhythmInfo::forSection(section, ctx.params.mood);
   if (harmonic.subdivision != 2) {
     return false;
   }
   bool steady = (ctx.params.paradigm == GenerationParadigm::RhythmSync);
   // First half: current chord root (with vocal adjustment if available)
-  generateBassHalfBar(ctx.track, bar_start, effective_root, section.type, ctx.params.mood, true,
-                      ctx.harmony, pattern, steady);
+  generateBassHalfBar(ctx.track, bar_start, effective_root, chord_root, section.type,
+                      ctx.params.mood, true, ctx.harmony, pattern, steady);
   // Second half: next chord in subdivided progression
   int8_t second_half_degree = ctx.harmony.getChordDegreeAt(bar_start + TICK_HALF);
   uint8_t second_half_root = getBassRoot(second_half_degree);
-  generateBassHalfBar(ctx.track, bar_start + TICK_HALF, second_half_root, section.type,
-                      ctx.params.mood, false, ctx.harmony, pattern, steady);
+  generateBassHalfBar(ctx.track, bar_start + TICK_HALF, second_half_root, second_half_root,
+                      section.type, ctx.params.mood, false, ctx.harmony, pattern, steady);
   return true;
 }
 
@@ -466,7 +481,7 @@ bool wouldAnticipationClash(BassTrackContext& ctx, uint8_t anticipate_root, Tick
 
 // Try phrase-end split with anticipation. Returns true if bar was handled (caller should continue).
 bool tryPhraseEndSplit(BassTrackContext& ctx, Tick bar_start, uint8_t effective_root,
-                       const Section& section, uint8_t bar, bool slow_harmonic,
+                       uint8_t chord_root, const Section& section, uint8_t bar, bool slow_harmonic,
                        BassPattern pattern) {
   HarmonicRhythmInfo harmonic = HarmonicRhythmInfo::forSection(section, ctx.params.mood);
   int effective_prog_length =
@@ -483,10 +498,10 @@ bool tryPhraseEndSplit(BassTrackContext& ctx, Tick bar_start, uint8_t effective_
     return false;  // Fall through to generate full bar without anticipation
   }
   bool steady = (ctx.params.paradigm == GenerationParadigm::RhythmSync);
-  generateBassHalfBar(ctx.track, bar_start, effective_root, section.type, ctx.params.mood, true,
-                      ctx.harmony, pattern, steady);
-  generateBassHalfBar(ctx.track, bar_start + TICK_HALF, anticipate_root, section.type,
-                      ctx.params.mood, false, ctx.harmony, pattern, steady);
+  generateBassHalfBar(ctx.track, bar_start, effective_root, chord_root, section.type,
+                      ctx.params.mood, true, ctx.harmony, pattern, steady);
+  generateBassHalfBar(ctx.track, bar_start + TICK_HALF, anticipate_root, anticipate_root,
+                      section.type, ctx.params.mood, false, ctx.harmony, pattern, steady);
   return true;
 }
 
@@ -557,13 +572,18 @@ void applyKickSyncPostProcess(BassTrackContext& ctx) {
 
 void generateBassTrack(MidiTrack& track, const Song& song, const GeneratorParams& params,
                        std::mt19937& rng, IHarmonyContext& harmony,
-                       const KickPatternCache* kick_cache, const VocalAnalysis* vocal_analysis) {
-  BassTrackContext ctx(track, song, params, rng, harmony, kick_cache, vocal_analysis);
+                       const KickPatternCache* kick_cache, const VocalAnalysis* vocal_analysis,
+                       TrackMask generated_tracks) {
+  BassTrackContext ctx(track, song, params, rng, harmony, kick_cache, vocal_analysis,
+                       generated_tracks);
+  // The last bar's anchor, which vocal motion is measured from; 0 after silence.
+  uint8_t previous_root = 0;
 
   for (size_t sec_idx = 0; sec_idx < ctx.sections.size(); ++sec_idx) {
     const auto& section = ctx.sections[sec_idx];
 
     if (shouldSkipSection(section, params)) {
+      previous_root = 0;
       continue;
     }
 
@@ -582,34 +602,42 @@ void generateBassTrack(MidiTrack& track, const Song& song, const GeneratorParams
       int8_t next_degree = harmony.getChordDegreeAt(bar_start + TICKS_PER_BAR);
       uint8_t root = getBassRoot(degree);
       uint8_t next_root = getBassRoot(next_degree);
+      const uint8_t chord_root = root;
 
       // Slash chord override for smoother voice leading
-      applySlashChordOverride(ctx, root, degree, next_degree, section.type, bar_start);
+      applySlashChordOverride(ctx, root, degree, next_degree, section, bar);
 
       // Vocal motion adjustment
-      uint8_t effective_root = resolveEffectiveRoot(ctx, root, bar_start, bar);
+      uint8_t effective_root = resolveEffectiveRoot(ctx, root, bar_start, bar, previous_root);
+      previous_root = effective_root;
+      // The chord's root in the register the motion chose, unless the bass
+      // stands on a slash note, whose chord tones are still the chord's.
+      const uint8_t bar_chord_root =
+          (effective_root % 12 == chord_root % 12) ? effective_root : chord_root;
 
       bool is_last_bar = (bar == section.bars - 1);
 
       // Dominant preparation before Chorus (sync with chord_track.cpp)
-      if (tryDominantPreparation(ctx, bar_start, effective_root, section.type, next_section_type,
-                                 degree, is_last_bar, pattern)) {
+      if (tryDominantPreparation(ctx, bar_start, effective_root, bar_chord_root, section.type,
+                                 next_section_type, degree, is_last_bar, pattern)) {
         continue;
       }
 
       // Harmonic rhythm subdivision (B sections)
-      if (tryHarmonicSubdivision(ctx, bar_start, effective_root, section, pattern)) {
+      if (tryHarmonicSubdivision(ctx, bar_start, effective_root, bar_chord_root, section,
+                                 pattern)) {
         continue;
       }
 
       // Phrase-end split with anticipation
-      if (tryPhraseEndSplit(ctx, bar_start, effective_root, section, bar, slow_harmonic, pattern)) {
+      if (tryPhraseEndSplit(ctx, bar_start, effective_root, bar_chord_root, section, bar,
+                            slow_harmonic, pattern)) {
         continue;
       }
 
       // Standard bar generation
-      generateBassBar(track, bar_start, effective_root, next_root, next_degree, pattern,
-                      section.type, params.mood, is_last_bar, harmony, &rng,
+      generateBassBar(track, bar_start, effective_root, bar_chord_root, next_root, next_degree,
+                      pattern, section.type, params.mood, is_last_bar, harmony, &rng,
                       params.paradigm == GenerationParadigm::RhythmSync);
 
       // Ghost notes for Groove pattern (rhythmic texture)
@@ -646,7 +674,7 @@ void generateBassTrack(MidiTrack& track, const Song& song, const GeneratorParams
 void BassGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContext& ctx) {
   // Unified bass generation: pass both kick_cache and vocal_analysis (either/both may be nullptr)
   generateBassTrack(track, *ctx.song, *ctx.params, *ctx.rng, *ctx.harmony, ctx.kick_cache,
-                    ctx.vocal_analysis);
+                    ctx.vocal_analysis, ctx.generated_tracks);
 }
 
 void BassGenerator::generateWithVocal(MidiTrack& track, const Song& song,

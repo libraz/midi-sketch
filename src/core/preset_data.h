@@ -223,6 +223,14 @@ StructurePattern selectRandomForm(uint8_t style_id, uint32_t seed);
 // @returns Selected VocalStylePreset (never Auto or UltraVocaloid)
 VocalStylePreset selectRandomVocalStyle(uint8_t style_id, uint32_t seed);
 
+// Selects a vocal style from a weighted table. Entries with weight 0 are skipped.
+// @param table Weighted styles
+// @param count Number of entries in the table
+// @param seed Random seed
+// @returns Selected VocalStylePreset, or Standard when no entry has weight
+VocalStylePreset selectWeightedVocalStyle(const VocalStyleWeight* table, size_t count,
+                                          uint32_t seed);
+
 // Creates a default SongConfig from a style preset.
 // @param style_id Style preset ID
 // @returns SongConfig with style defaults
@@ -308,6 +316,7 @@ struct VocalStylePresetData {
   int8_t chorus_register_shift;      // Chorus register shift (semitones)
   float tension_usage;               // Tension usage probability (0.0-1.0)
   float syllabic_sub_ratio;          // Base syllabic subdivision ratio (0.0-0.5)
+  float recitation_rate;             // Chance a pre-chorus carries a recitation run (0.0-1.0)
 };
 
 // Returns the vocal style preset data for the given style.

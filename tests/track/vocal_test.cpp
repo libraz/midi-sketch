@@ -7,6 +7,7 @@
 
 #include <gtest/gtest.h>
 
+#include <map>
 #include <random>
 #include <set>
 #include <unordered_map>
@@ -2096,36 +2097,60 @@ TEST_F(VocalTest, PhraseCacheReuseWithExtendedKey) {
   }
 }
 
-TEST_F(VocalTest, CachedChorusReceivesOccurrenceDevelopment) {
+TEST_F(VocalTest, LaterChorusRestatesTheFirst) {
+  // Pop sings every chorus to the same tune with new lyrics, so a later chorus
+  // replays the first one's melody. What may differ is the intended variation:
+  // the head lift that raises a few opening notes, an altered phrase ending,
+  // and pitches re-chosen where the accompaniment's chords differ. Re-running
+  // the embellisher and re-quantizing the whole phrase into a shifted range used
+  // to leave about a third of the notes unrecognizable.
   params_.structure = StructurePattern::RepeatChorus;
-  params_.seed = 641903;
 
-  Generator gen;
-  gen.generate(params_);
+  for (uint32_t seed : {641903u, 11u, 22u, 33u}) {
+    params_.seed = seed;
+    Generator gen;
+    gen.generate(params_);
 
-  const auto& song = gen.getSong();
-  std::vector<const Section*> choruses;
-  for (const auto& section : song.arrangement().sections()) {
-    if (section.type == SectionType::Chorus) choruses.push_back(&section);
-  }
-  ASSERT_GE(choruses.size(), 2u);
-
-  auto relativeFingerprint = [&](const Section& section) {
-    std::vector<std::tuple<Tick, Tick, uint8_t>> fingerprint;
-    for (const auto& note : song.vocal().notes()) {
-      if (note.start_tick >= section.start_tick && note.start_tick < section.endTick()) {
-        fingerprint.emplace_back(note.start_tick - section.start_tick, note.duration, note.note);
-      }
+    const auto& song = gen.getSong();
+    std::vector<const Section*> choruses;
+    for (const auto& section : song.arrangement().sections()) {
+      if (section.type == SectionType::Chorus) choruses.push_back(&section);
     }
-    return fingerprint;
-  };
+    ASSERT_GE(choruses.size(), 2u);
 
-  const auto first = relativeFingerprint(*choruses[0]);
-  const auto later = relativeFingerprint(*choruses[1]);
-  ASSERT_FALSE(first.empty());
-  ASSERT_FALSE(later.empty());
-  EXPECT_NE(later, first)
-      << "A cached later chorus must still pass through occurrence-aware development";
+    auto relativeNotes = [&](const Section& section, Tick span) {
+      std::map<Tick, uint8_t> notes;
+      for (const auto& note : song.vocal().notes()) {
+        if (note.start_tick >= section.start_tick && note.start_tick < section.start_tick + span) {
+          notes.emplace(note.start_tick - section.start_tick, note.note);
+        }
+      }
+      return notes;
+    };
+
+    for (size_t idx = 1; idx < choruses.size(); ++idx) {
+      const Tick span = std::min(choruses[0]->endTick() - choruses[0]->start_tick,
+                                 choruses[idx]->endTick() - choruses[idx]->start_tick);
+      const auto first = relativeNotes(*choruses[0], span);
+      const auto later = relativeNotes(*choruses[idx], span);
+      ASSERT_FALSE(first.empty());
+
+      size_t same_onset = 0;
+      size_t same_note = 0;
+      for (const auto& [offset, pitch] : first) {
+        auto it = later.find(offset);
+        if (it == later.end()) continue;
+        ++same_onset;
+        if (it->second == pitch) ++same_note;
+      }
+      const double onset_ratio = static_cast<double>(same_onset) / first.size();
+      const double note_ratio = static_cast<double>(same_note) / first.size();
+      // Measured 1.00 onsets / 0.80-0.92 notes; the replaced replay path kept
+      // about a third of the notes.
+      EXPECT_GE(onset_ratio, 0.9) << "seed=" << seed << " chorus " << idx;
+      EXPECT_GE(note_ratio, 0.7) << "seed=" << seed << " chorus " << idx;
+    }
+  }
 }
 
 TEST_F(VocalTest, PhraseVariationAppliedAfterMultipleReuse) {
@@ -2199,7 +2224,7 @@ TEST_F(VocalTest, CadenceTypeFloatingOnTensionEndings) {
 // chromatic notes like D#4 to appear in C major, creating minor 2nd clashes.
 // Root causes fixed:
 // 1. applyPhraseVariation::LastNoteShift shifted by semitones instead of scale degrees
-// 2. adjustPitchRange didn't snap after center-based shift
+// 2. A cached phrase moved into a shifted range didn't snap after the shift
 // 3. Section boundary interval adjustment didn't snap after clamping
 // 4. applyCollisionAvoidanceWithIntervalConstraint didn't snap after interval enforcement
 // ============================================================================
@@ -2317,13 +2342,12 @@ TEST_F(VocalTest, RegressionChromaticNoteFromSectionBoundary) {
   }
 }
 
-TEST_F(VocalTest, RegressionChromaticNoteFromAdjustPitchRange) {
-  // Regression test for adjustPitchRange creating chromatic notes
-  // Old bug: center-based shift didn't snap to scale
-  // Fix: apply snapToNearestScaleTone after shift
+TEST_F(VocalTest, RegisterShiftedReplaysStayOnScale) {
+  // A replayed phrase whose section range differs from the cached one is moved
+  // only by octaves, which keeps every pitch class it was written with.
   std::set<int> c_major_pcs = {0, 2, 4, 5, 7, 9, 11};
 
-  // Test with different register shifts (which trigger adjustPitchRange)
+  // Register shifts make the replayed sections' ranges differ from the cached ones
   params_.key = Key::C;
   params_.structure = StructurePattern::FullPop;
   params_.melody_params.chorus_register_shift = 5;  // Upward shift in chorus
@@ -2340,7 +2364,7 @@ TEST_F(VocalTest, RegressionChromaticNoteFromAdjustPitchRange) {
     for (const auto& note : track.notes()) {
       int pc = note.note % 12;
       EXPECT_TRUE(c_major_pcs.count(pc) > 0)
-          << "adjustPitchRange created chromatic note at seed=" << seed << ": pitch class " << pc
+          << "Replayed phrase left the scale at seed=" << seed << ": pitch class " << pc
           << " at tick " << note.start_tick;
     }
   }

@@ -1381,6 +1381,22 @@ TEST_F(HarmonyIntegrationTest, BassChordPhraseEndSynchronization) {
 // accompaniment is no longer playing.
 // ============================================================================
 
+TEST(HarmonyContextDenseRhythm, ExtraChangeNeverSplitsTheBarAStatementOpensOn) {
+  // An eight-bar chorus states its four-bar loop twice. Splitting bar 4 and not
+  // bar 0 gave the second statement a chord change under the hook's first beat
+  // that the first statement did not have. Bars 6-7 close the section and may
+  // differ.
+  HarmonicRhythmInfo harmonic =
+      HarmonicRhythmInfo::forSection(SectionType::Chorus, Mood::EnergeticDance);
+  for (int bar = 0; bar < 2; ++bar) {
+    EXPECT_EQ(
+        shouldSplitPhraseEnd(bar + 4, 8, 4, harmonic, SectionType::Chorus, Mood::EnergeticDance),
+        shouldSplitPhraseEnd(bar, 8, 4, harmonic, SectionType::Chorus, Mood::EnergeticDance))
+        << "bar " << bar;
+  }
+  EXPECT_FALSE(shouldSplitPhraseEnd(4, 8, 4, harmonic, SectionType::Chorus, Mood::EnergeticDance));
+}
+
 TEST(HarmonyContextDenseRhythm, MidBarChordChangeInChorus) {
   // Create 8-bar Chorus section
   Section chorus;
@@ -1404,7 +1420,7 @@ TEST(HarmonyContextDenseRhythm, MidBarChordChangeInChorus) {
       << "Chorus with EnergeticDance should use Dense harmonic rhythm";
 
   // Find a bar where shouldSplitPhraseEnd() returns true
-  // For EnergeticDance Chorus: bar % 2 == 0 && bar > 0 triggers dense_extra
+  // For EnergeticDance Chorus: the middle bar of each four-bar statement splits
   int split_bar = 2;  // Bar 2 should split (even bar, > 0)
   bool should_split = shouldSplitPhraseEnd(split_bar, 8, progression.length, harmonic,
                                            SectionType::Chorus, Mood::EnergeticDance);

@@ -270,6 +270,17 @@ void applyRhythmSyncLeadDna(MidiTrack& vocal, MidiTrack& motif,
     auto vocal_notes = collectSectionNotes(vocal, section, 12);
     applyDnaPattern(vocal_notes, vocal_center + vocal_shift, *vocal_pattern, params.vocal_low,
                     params.vocal_high, vocal_boost, &harmony);
+    // A chorus states its hook again at the midpoint (restateChorusHead), so
+    // the DNA stamped on the head is stamped there too; stamping only the head
+    // turned the second statement into a different line.
+    if (section.type == SectionType::Chorus && section.bars >= 8) {
+      Section answer = section;
+      answer.start_tick = section.start_tick + (section.bars / 2) * TICKS_PER_BAR;
+      answer.bars = static_cast<uint8_t>(section.bars - section.bars / 2);
+      auto answer_notes = collectSectionNotes(vocal, answer, vocal_notes.size());
+      applyDnaPattern(answer_notes, vocal_center + vocal_shift, *vocal_pattern, params.vocal_low,
+                      params.vocal_high, vocal_boost, &harmony);
+    }
 
     // Motif register shaping uses the bar-uniform variant: the motif is the
     // locked riff, and per-note resolution would scatter its cycles into

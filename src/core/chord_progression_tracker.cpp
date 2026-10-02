@@ -228,8 +228,17 @@ ChordBoundaryInfo ChordProgressionTracker::analyzeChordBoundary(uint8_t pitch, T
   ChordToneHelper helper = chordToneHelperAt(*this, boundary);
   int pc = pitch % 12;
 
+  // A tone the chord on the far side displaces from the key is held into a
+  // cross-relation however the degree's tension table reads it.
+  const auto alterations = getChromaticAlterations(info.next_degree, getChordExtensionAt(boundary));
+  const bool displaced =
+      std::any_of(alterations.begin(), alterations.end(),
+                  [&](const ChromaticAlteration& a) { return a.diatonic_pc == pc; });
+
   if (helper.isChordTonePitchClass(pc)) {
     info.safety = CrossBoundarySafety::ChordTone;
+  } else if (displaced) {
+    info.safety = CrossBoundarySafety::AvoidNote;
   } else {
     // Check if it's an available tension
     auto tensions = getAvailableTensionPitchClasses(info.next_degree);
@@ -304,7 +313,8 @@ void ChordProgressionTracker::registerChordExtension(Tick start, Tick end,
 }
 
 void ChordProgressionTracker::registerChordReplacement(Tick start, Tick end, int8_t degree,
-                                                       ChordExtension extension) {
+                                                       ChordExtension extension,
+                                                       bool secondary_dominant) {
   if (chords_.empty() || start >= end) return;
 
   std::vector<ChordInfo> updated;
@@ -325,7 +335,7 @@ void ChordProgressionTracker::registerChordReplacement(Tick start, Tick end, int
     replacement.degree = degree;
     replacement.extension = extension;
     replacement.extension_planned = true;
-    replacement.is_secondary_dominant = false;
+    replacement.is_secondary_dominant = secondary_dominant;
     updated.push_back(replacement);
     if (end < chord.end) {
       ChordInfo after = chord;
@@ -333,6 +343,42 @@ void ChordProgressionTracker::registerChordReplacement(Tick start, Tick end, int
       updated.push_back(after);
     }
   }
+  chords_ = std::move(updated);
+}
+
+void ChordProgressionTracker::restateChordSpan(Tick source, Tick target, Tick length) {
+  if (chords_.empty() || length == 0 || source + length > target) return;
+
+  const Tick target_end = target + length;
+  std::vector<ChordInfo> updated;
+  updated.reserve(chords_.size() * 2);
+  for (const auto& chord : chords_) {
+    if (chord.end <= target || chord.start >= target_end) {
+      updated.push_back(chord);
+      continue;
+    }
+    if (chord.start < target) {
+      ChordInfo before = chord;
+      before.end = target;
+      updated.push_back(before);
+    }
+    if (chord.end > target_end) {
+      ChordInfo after = chord;
+      after.start = target_end;
+      updated.push_back(after);
+    }
+  }
+  for (const auto& chord : chords_) {
+    Tick start = std::max(chord.start, source);
+    Tick end = std::min(chord.end, source + length);
+    if (start >= end) continue;
+    ChordInfo copy = chord;
+    copy.start = start - source + target;
+    copy.end = end - source + target;
+    updated.push_back(copy);
+  }
+  std::sort(updated.begin(), updated.end(),
+            [](const ChordInfo& a, const ChordInfo& b) { return a.start < b.start; });
   chords_ = std::move(updated);
 }
 

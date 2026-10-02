@@ -110,7 +110,9 @@ TEST(DissonanceTest, ExactHarmonyTimelinePreservesPlannedExtensions) {
   Song song;
   song.setArrangement(arrangement);
   // B is a Cmaj7 chord tone, but not a C-major-triad tone or available tension.
-  song.vocal().addNote(NoteEventTestHelper::create(0, TICKS_PER_BEAT, 71, 100));
+  // It is put on the motif: on the vocal it is a colour the vocal rule admits
+  // over any I, so it could not tell the two timelines apart.
+  song.motif().addNote(NoteEventTestHelper::create(0, TICKS_PER_BEAT, 71, 100));
 
   ChordProgression progression{};
   progression.degrees = {0, -1, -1, -1, -1, -1, -1, -1};
@@ -289,7 +291,8 @@ TEST(DissonanceTest, ExactHarmonyTimelinePreservesChordReplacement) {
   progression.length = 1;
   ChordProgressionTracker exact_timeline;
   exact_timeline.initialize(arrangement, progression, Mood::StraightPop);
-  exact_timeline.registerChordReplacement(0, TICKS_PER_BAR, 13, ChordExtension::None);
+  exact_timeline.registerChordReplacement(0, TICKS_PER_BAR, 13, ChordExtension::None,
+                                          /*secondary_dominant=*/false);
 
   GeneratorParams params{};
   params.chord_id = 0;

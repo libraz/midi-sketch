@@ -314,6 +314,13 @@ FullTrackContext Coordinator::buildFullTrackContext(TrackRole role, Song& song, 
   // Kick pattern cache for Bass-Kick groove sync. Computed lazily on first
   // Bass request (matches Generator::generateBass() behavior).
   if (role == TrackRole::Bass) {
+    ctx.generated_tracks = TrackMask::None;
+    for (uint8_t index = 0; index < kTrackCount; ++index) {
+      const auto track_role = static_cast<TrackRole>(index);
+      if (!shouldSkipTrack(track_role, song)) {
+        ctx.generated_tracks = ctx.generated_tracks | trackRoleToMask(track_role);
+      }
+    }
     if (!kick_cache_) {
       kick_cache_ = computeKickPattern(arrangement_.sections(), params_.mood);
     }
@@ -920,6 +927,72 @@ void copyNotesFromBar(std::vector<NoteEvent>& notes, const std::vector<NoteEvent
   }
 }
 
+/// @brief Carry a copied pitch to the same function in the destination chord.
+///
+/// Moves the pitch by the root motion between the chord it was written over
+/// and the one it now sounds over, by the smaller of the two directions, and
+/// folds it back into range by octaves. A root stays a root and a fifth a
+/// fifth; the nearest chord tone to the old pitch keeps neither.
+/// @param harmony Chord lookup for both positions
+/// @param pitch The copied pitch
+/// @param source_tick Where the pitch was written
+/// @param dest_tick Where the copy sounds
+/// @param range_low Lowest pitch the track plays
+/// @param range_high Highest pitch the track plays
+/// @return The transposed pitch
+int transposeByRootMotion(const IChordLookup& harmony, uint8_t pitch, Tick source_tick,
+                          Tick dest_tick, uint8_t range_low, uint8_t range_high) {
+  const int source_root = degreeToRoot(harmony.getChordDegreeAt(source_tick), Key::C);
+  const int dest_root = degreeToRoot(harmony.getChordDegreeAt(dest_tick), Key::C);
+  int motion = ((dest_root - source_root) % 12 + 12) % 12;
+  if (motion > 6) motion -= 12;
+  int moved = static_cast<int>(pitch) + motion;
+  while (moved > range_high && moved - 12 >= range_low) moved -= 12;
+  while (moved < range_low && moved + 12 <= range_high) moved += 12;
+  return moved;
+}
+
+/// @brief A slash bass in a copied bar that the destination does not ask for.
+struct SlashReseat {
+  int pitch_class = -1;  ///< The copied slash note's pitch class, -1 for none
+  int above_root = 0;    ///< Semitones it stands above its chord's root
+};
+
+/// @brief Decide whether a copied bass bar's slash note has to give way to the root.
+///
+/// A slash bass is chosen to step into the chord after it (checkSlashChord), so
+/// it is only still motivated where the destination moves between the same two
+/// chords. Any other destination re-seats it on the root: a relation that merely
+/// also allows an inversion chains them, and a chorus of I/3 and IV/3 never
+/// states a root. The source counts as a slash bar when its downbeat sounds the
+/// inversion its own chord pair names.
+/// @param harmony Chord lookup for the source and destination bars
+/// @param notes The track's notes
+/// @param bar_note_indices The destination bar's copied notes, in time order
+/// @param bar_start Destination bar start
+/// @param source_offset Distance back to the bar the notes were written in
+/// @param section_type Section both bars belong to
+/// @return The slash to re-seat on the root, or an empty result
+SlashReseat findSlashBassToReseat(const IChordLookup& harmony, const std::vector<NoteEvent>& notes,
+                                  const std::vector<size_t>& bar_note_indices, Tick bar_start,
+                                  Tick source_offset, SectionType section_type) {
+  if (bar_note_indices.empty()) return {};
+  const NoteEvent& downbeat = notes[bar_note_indices.front()];
+  if (downbeat.start_tick >= bar_start + TICK_SIXTEENTH) return {};
+
+  const Tick source_start = bar_start - source_offset;
+  const int8_t degree = harmony.getChordDegreeAt(source_start);
+  const int8_t next_degree = harmony.getChordDegreeAt(source_start + TICKS_PER_BAR);
+  const SlashChordInfo source = checkSlashChord(degree, next_degree, section_type, 0.0f);
+  if (!source.has_override || downbeat.note % 12 != source.bass_note_semitone) return {};
+  if (harmony.getChordDegreeAt(bar_start) == degree &&
+      harmony.getChordDegreeAt(bar_start + TICKS_PER_BAR) == next_degree) {
+    return {};
+  }
+  return {source.bass_note_semitone,
+          (source.bass_note_semitone - degreeToSemitone(degree) + 12) % 12};
+}
+
 /// @brief Find a consonant chord tone for a voice-limited note.
 ///
 /// Tries all chord tones in nearby octaves, sorted by distance from the
@@ -1184,6 +1257,10 @@ void Coordinator::applyVoiceLimit(Song& song, const std::vector<Section>& sectio
     TrackRole role;
     Tick bar_start;
     Tick bar_end;
+    /// Distance back to the bar the copied notes were written in. A run of
+    /// frozen bars copies the first one forward, so this grows along the run.
+    Tick source_offset;
+    SectionType section_type;
   };
   std::vector<FrozenBar> frozen_bars;
 
@@ -1257,7 +1334,13 @@ void Coordinator::applyVoiceLimit(Song& song, const std::vector<Section>& sectio
           }
         }
 
-        frozen_bars.push_back({role, curr_bar_start, curr_bar_end});
+        Tick source_offset = TICKS_PER_BAR;
+        for (const auto& earlier : frozen_bars) {
+          if (earlier.role == role && earlier.bar_start == prev_bar_start) {
+            source_offset = earlier.source_offset + TICKS_PER_BAR;
+          }
+        }
+        frozen_bars.push_back({role, curr_bar_start, curr_bar_end, source_offset, section.type});
       }
     }
   }
@@ -1278,7 +1361,25 @@ void Coordinator::applyVoiceLimit(Song& song, const std::vector<Section>& sectio
       harmony.clearNotesForTrack(role);
       harmony.registerTrack(song.track(role), role);
     }
-    for (const auto& fb : frozen_bars) {
+    for (size_t fb_idx = 0; fb_idx < frozen_bars.size(); ++fb_idx) {
+      const auto& fb = frozen_bars[fb_idx];
+      // The roles frozen in this bar and resolved after this one still hold
+      // the previous bar's pitches here, which the re-quantization is about to
+      // replace. Answering to them would move this note off a pitch for the
+      // sake of one that is not going to sound; they answer to this one when
+      // their turn comes instead.
+      std::vector<TrackRole> pending_roles;
+      for (size_t later = fb_idx + 1;
+           later < frozen_bars.size() && frozen_bars[later].bar_start == fb.bar_start; ++later) {
+        const TrackRole pending = frozen_bars[later].role;
+        pending_roles.push_back(pending);
+        harmony.clearNotesForTrack(pending);
+        for (const auto& note : song.track(pending).notes()) {
+          if (note.start_tick >= fb.bar_start && note.start_tick < fb.bar_end) continue;
+          harmony.registerNote(note.start_tick, note.duration, note.note, pending);
+        }
+      }
+
       // Re-quantization must share the generator's physical model.  Keeping
       // duplicate ranges here previously truncated valid high Arpeggio and
       // Guitar notes whenever a bar was frozen.
@@ -1325,6 +1426,15 @@ void Coordinator::applyVoiceLimit(Song& song, const std::vector<Section>& sectio
       // after the loop: push_back during iteration would invalidate the
       // `note` reference held inside the loop).
       std::vector<NoteEvent> split_tails;
+
+      // A slash bass is chosen for the chord that follows it, and the copy now
+      // precedes a different one. Unless the destination asks for the same
+      // inversion, the copied slash note goes back to the chord root first.
+      const SlashReseat slash_reseat =
+          (fb.role == TrackRole::Bass)
+              ? findSlashBassToReseat(harmony, notes, bar_note_indices, fb.bar_start,
+                                      fb.source_offset, fb.section_type)
+              : SlashReseat{};
 
       // Carry in the same-pitch run from notes preceding the bar. Earlier
       // frozen bars are processed first (frozen_bars is in ascending bar
@@ -1410,14 +1520,30 @@ void Coordinator::applyVoiceLimit(Song& song, const std::vector<Section>& sectio
           }
         }
 
+        // A bass note answers for the chord's function, which the nearest chord
+        // tone does not keep: a root copied under a new chord becomes its third
+        // or fifth, and the downbeat stops naming the chord. Carry it by the
+        // root motion first; every check below then runs from that pitch.
+        uint8_t wanted = note.note;
+        if (fb.role == TrackRole::Bass) {
+          int carried = note.note;
+          if (slash_reseat.pitch_class >= 0 && note.note % 12 == slash_reseat.pitch_class) {
+            carried -= slash_reseat.above_root;
+          }
+          wanted = static_cast<uint8_t>(
+              std::clamp(transposeByRootMotion(harmony, static_cast<uint8_t>(carried),
+                                               note.start_tick - fb.source_offset, note.start_tick,
+                                               range_low, range_high),
+                         0, 127));
+        }
         int snapped = harmony.snapToNearestChordToneInRange(
-            static_cast<int>(note.note), note.start_tick, range_low, note_range_high);
+            static_cast<int>(wanted), note.start_tick, range_low, note_range_high);
         uint8_t candidate = static_cast<uint8_t>(std::clamp(snapped, 0, 127));
 
         bool cleared_candidate_is_consonant =
             harmony.isConsonantWithOtherTracks(candidate, note.start_tick, note.duration, fb.role);
         if (!cleared_candidate_is_consonant) {
-          int resolved = findConsonantChordTone(harmony, candidate, note.note, note.start_tick,
+          int resolved = findConsonantChordTone(harmony, candidate, wanted, note.start_tick,
                                                 note.duration, fb.role, range_low, note_range_high);
           if (resolved < 0 && note_range_high < range_high) {
             // No consonant pitch under the vocal ceiling (the ceiling can
@@ -1428,7 +1554,7 @@ void Coordinator::applyVoiceLimit(Song& song, const std::vector<Section>& sectio
             // medium band (excess >= 5 is a high-severity gate failure).
             uint8_t lifted_high = static_cast<uint8_t>(
                 std::min<int>(range_high, static_cast<int>(note_range_high) + 4));
-            resolved = findConsonantChordTone(harmony, candidate, note.note, note.start_tick,
+            resolved = findConsonantChordTone(harmony, candidate, wanted, note.start_tick,
                                               note.duration, fb.role, range_low, lifted_high);
           }
           // A note crossing a mid-bar chord change may have no single pitch
@@ -1445,11 +1571,11 @@ void Coordinator::applyVoiceLimit(Song& song, const std::vector<Section>& sectio
               int head_res =
                   harmony.isConsonantWithOtherTracks(candidate, note.start_tick, head_dur, fb.role)
                       ? candidate
-                      : findConsonantChordTone(harmony, candidate, note.note, note.start_tick,
+                      : findConsonantChordTone(harmony, candidate, wanted, note.start_tick,
                                                head_dur, fb.role, range_low, note_range_high);
               int tail_res =
-                  findConsonantChordTone(harmony, candidate, note.note, boundary,
-                                         note_end - boundary, fb.role, range_low, note_range_high);
+                  findConsonantChordTone(harmony, candidate, wanted, boundary, note_end - boundary,
+                                         fb.role, range_low, note_range_high);
               if (head_res >= 0 && head_res == tail_res) {
                 // One pitch satisfies both contexts: keep the full duration.
                 resolved = head_res;
@@ -1503,7 +1629,7 @@ void Coordinator::applyVoiceLimit(Song& song, const std::vector<Section>& sectio
         // beats a clash or a dropped note.
         if (onset_note_count > 1 && pitchClassTaken(&onset_taken_pcs, candidate)) {
           int distinct =
-              findConsonantChordTone(harmony, candidate, note.note, note.start_tick, note.duration,
+              findConsonantChordTone(harmony, candidate, wanted, note.start_tick, note.duration,
                                      fb.role, range_low, note_range_high, &onset_taken_pcs);
           if (distinct >= 0 && !pitchClassTaken(&onset_taken_pcs, static_cast<uint8_t>(distinct))) {
             candidate = static_cast<uint8_t>(distinct);
@@ -1535,9 +1661,15 @@ void Coordinator::applyVoiceLimit(Song& song, const std::vector<Section>& sectio
 
         // Break long same-pitch runs: re-quantization collapses copied
         // contours onto the nearest chord tone, producing monotone lines.
+        // A bass repeating its chord's root is the pulse the bass writers play,
+        // not a collapsed contour, and breaking it moves the downbeat off the root.
         bool is_stack = (onset_note_count > 1);
-        if (!is_stack && has_prev && candidate == prev_pitch && same_run >= kMaxFrozenSameRun) {
-          candidate = diversifyRepeatedChordTone(harmony, candidate, prev_pitch, note.note,
+        const bool bass_states_root =
+            fb.role == TrackRole::Bass &&
+            candidate % 12 == degreeToRoot(harmony.getChordDegreeAt(note.start_tick), Key::C) % 12;
+        if (!is_stack && !bass_states_root && has_prev && candidate == prev_pitch &&
+            same_run >= kMaxFrozenSameRun) {
+          candidate = diversifyRepeatedChordTone(harmony, candidate, prev_pitch, wanted,
                                                  note.start_tick, note.duration, fb.role, range_low,
                                                  note_range_high, sounding);
         }
@@ -1556,11 +1688,24 @@ void Coordinator::applyVoiceLimit(Song& song, const std::vector<Section>& sectio
         // nothing this pass established is given up to get it, and the snapped
         // pitch is kept when no chord tone answers both -- a doubled bass is a
         // weaker line, a wrong one is a wrong chord.
+        //
+        // The bass writer clears it an octave down (separateFromVocalDoubling),
+        // which keeps the note's function; another chord tone is the fallback.
         if (fb.role == TrackRole::Bass &&
             doublesVocalPitchClass(harmony, candidate, note.start_tick, note.duration)) {
-          int cleared = findConsonantChordTone(harmony, candidate, note.note, note.start_tick,
-                                               note.duration, fb.role, range_low, note_range_high,
-                                               &onset_taken_pcs, /*avoid_vocal_double=*/true);
+          const int lowered = static_cast<int>(candidate) - 12;
+          int cleared = -1;
+          if (lowered >= range_low &&
+              !doublesVocalPitchClass(harmony, static_cast<uint8_t>(lowered), note.start_tick,
+                                      note.duration) &&
+              harmony.isConsonantWithOtherTracks(static_cast<uint8_t>(lowered), note.start_tick,
+                                                 note.duration, fb.role)) {
+            cleared = lowered;
+          } else {
+            cleared = findConsonantChordTone(harmony, candidate, wanted, note.start_tick,
+                                             note.duration, fb.role, range_low, note_range_high,
+                                             &onset_taken_pcs, /*avoid_vocal_double=*/true);
+          }
           if (cleared >= 0) {
             uint8_t settled =
                 clearOfOnsetVoices(harmony, static_cast<uint8_t>(cleared), note.start_tick,
@@ -1678,6 +1823,10 @@ void Coordinator::applyVoiceLimit(Song& song, const std::vector<Section>& sectio
       // is rejected against a note that is no longer sounding.
       harmony.clearNotesForTrack(fb.role);
       harmony.registerTrack(song.track(fb.role), fb.role);
+      for (TrackRole pending : pending_roles) {
+        harmony.clearNotesForTrack(pending);
+        harmony.registerTrack(song.track(pending), pending);
+      }
     }
 
     // Pass 3: Fit the frozen bars to their neighbours.

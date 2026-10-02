@@ -14,6 +14,7 @@
 #include "core/rewrite_pitch_guard.h"
 #include "core/timing_constants.h"
 #include "core/track_pitch_editor.h"
+#include "track/melody/melody_utils.h"
 #include "track/vocal/vocal_helpers.h"
 
 namespace midisketch {
@@ -681,6 +682,7 @@ void breakLongPitchRuns(MidiTrack& track, const IHarmonyContext& harmony, uint8_
 
   uint8_t run_pitch = notes.front().note;
   int run_count = 1;
+  size_t run_start = 0;
   for (size_t idx = 1; idx < notes.size(); ++idx) {
     Tick previous_end = notes[idx - 1].start_tick + notes[idx - 1].duration;
     Tick gap = notes[idx].start_tick > previous_end ? notes[idx].start_tick - previous_end : 0;
@@ -689,25 +691,43 @@ void breakLongPitchRuns(MidiTrack& track, const IHarmonyContext& harmony, uint8_
     } else {
       run_pitch = notes[idx].note;
       run_count = 1;
+      run_start = idx;
     }
 
     if (run_count <= max_run) {
       continue;
     }
 
-    uint8_t original = notes[idx].note;
+    // A deliberate rearticulation stays; the run is broken at the latest note
+    // of it the line arrived at on its own.
+    size_t break_at = idx;
+    if (notes[idx].is_syllabic_subdivision) {
+      break_at = notes.size();
+      for (size_t pos = idx; pos-- > run_start;) {
+        if (!notes[pos].is_syllabic_subdivision) {
+          break_at = pos;
+          break;
+        }
+      }
+      if (break_at == notes.size()) {
+        continue;
+      }
+    }
+    NoteEvent& note = notes[break_at];
+
+    uint8_t original = note.note;
     // Snapshot of everything sounding across this note: the generic
     // consonance check below tolerates a brief stepwise overlap as a passing
     // tone, but the dissonance analyzer flags every close m2/M2 the
     // run-break lands on a sounding note (observed: vocal C5 -> D5 placed
     // directly on a held aux C5). Reject such candidates explicitly.
-    Tick run_note_end = notes[idx].start_tick + notes[idx].duration;
+    Tick run_note_end = note.start_tick + note.duration;
     CollisionSnapshot snapshot = harmony.getCollisionSnapshot(
-        notes[idx].start_tick, 2 * std::max<Tick>(notes[idx].duration, TICK_SIXTEENTH));
+        note.start_tick, 2 * std::max<Tick>(note.duration, TICK_SIXTEENTH));
     auto landsCloseSecond = [&](uint8_t cand) {
       for (const auto& info : snapshot.notes_in_range) {
         if (info.track == role) continue;
-        if (notes[idx].start_tick >= info.end || run_note_end <= info.start) continue;
+        if (note.start_tick >= info.end || run_note_end <= info.start) continue;
         int interval = std::abs(static_cast<int>(cand) - static_cast<int>(info.pitch));
         if (interval == 1 || interval == 2) return true;
       }
@@ -722,14 +742,14 @@ void breakLongPitchRuns(MidiTrack& track, const IHarmonyContext& harmony, uint8_
     // global melodic peak out of the hook. Bounding the search keeps that
     // constraint and the run limit from having to undo each other.
     const uint8_t note_high =
-        std::max(vocalCeilingAt(notes[idx].start_tick, sections, chorus_peak, high), low);
+        std::max(vocalCeilingAt(note.start_tick, sections, chorus_peak, high), low);
     for (int offset : kOffsets) {
       int target = static_cast<int>(original) + offset;
       if (target < static_cast<int>(low) || target > static_cast<int>(note_high)) {
         continue;
       }
       uint8_t candidate =
-          clampScalePitchAvoidingChord(target, notes[idx].start_tick, harmony, low, note_high);
+          clampScalePitchAvoidingChord(target, note.start_tick, harmony, low, note_high);
       if (candidate == original) {
         continue;
       }
@@ -740,28 +760,38 @@ void breakLongPitchRuns(MidiTrack& track, const IHarmonyContext& harmony, uint8_
       // moving the vocal onto the bass's pitch class creates the close doubling
       // the bass generator avoided at note creation.
       if (role == TrackRole::Vocal &&
-          bassDoublesVocalWithinTwoOctaves(harmony, candidate, notes[idx].start_tick,
-                                           notes[idx].duration)) {
+          bassDoublesVocalWithinTwoOctaves(harmony, candidate, note.start_tick, note.duration)) {
         continue;
       }
       // The chord-aware clamp alone is not enough: a chord/scale tone two
       // semitones away can still land a close M2 over a sounding bass note
       // (observed: motif A3 over bass G3 in the RhythmLock gate). Verify
       // against the registered tracks before accepting.
-      if (!harmony.isConsonantWithOtherTracks(candidate, notes[idx].start_tick, notes[idx].duration,
-                                              role)) {
+      if (!harmony.isConsonantWithOtherTracks(candidate, note.start_tick, note.duration, role)) {
         continue;
       }
-      notes[idx].note = candidate;
+      // Clearing the other tracks says nothing about the chord the vocal sings
+      // over; the vocal's own legality rule decides that.
+      if (role == TrackRole::Vocal &&
+          melody::classifyVocalTone(harmony, candidate, melody::neighborhoodAt(notes, break_at)) ==
+              melody::ToneLegality::Illegal) {
+        continue;
+      }
+      note.note = candidate;
       break;
     }
-    if (notes[idx].note != original) {
+    if (note.note != original) {
 #ifdef MIDISKETCH_NOTE_PROVENANCE
-      notes[idx].addTransformStep(TransformStepType::CollisionAvoid, original, notes[idx].note, 0,
-                                  0);
+      note.addTransformStep(TransformStepType::CollisionAvoid, original, note.note, 0, 0);
 #endif
-      run_pitch = notes[idx].note;
-      run_count = 1;
+      if (break_at == idx) {
+        run_pitch = note.note;
+        run_count = 1;
+        run_start = idx;
+      } else {
+        run_count = static_cast<int>(idx - break_at);
+        run_start = break_at + 1;
+      }
     }
   }
 }

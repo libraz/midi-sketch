@@ -609,6 +609,21 @@ struct Section {
   /// @brief Check if layer scheduling is active for this section.
   bool hasLayerSchedule() const { return !layer_events.empty(); }
 
+  /// @brief Tracks that sound at a bar once the layer schedule is applied.
+  ///
+  /// A schedule whose first event adds tracks at bar 0 defines the active set
+  /// from scratch (the default intro and interlude schedules); any other
+  /// schedule refines track_mask.
+  /// @param bar_offset Bar within the section (0-based)
+  TrackMask activeTracksAtBar(uint8_t bar_offset) const {
+    const bool schedule_defines_full_mask = !layer_events.empty() &&
+                                            layer_events.front().bar_offset == 0 &&
+                                            layer_events.front().tracks_add_mask != TrackMask::None;
+    return schedule_defines_full_mask
+               ? computeActiveTracksAtBar(layer_events, bar_offset)
+               : computeActiveTracksAtBar(layer_events, bar_offset, track_mask);
+  }
+
   /// @brief Velocity multiplier contributed by this section's modifier.
   ///
   /// This is the modifier term of the section velocity scale, isolated from any

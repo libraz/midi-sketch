@@ -699,15 +699,38 @@ static void generateTremoloPickBar(MidiTrack& track, IHarmonyContext& harmony, T
 
     // The run is diatonic to the song's C-major internal pitch space, not to
     // a major scale transposed from the current chord root. In particular, a
-    // vi chord must not turn the C-major F/G into F#/G#.
-    const int scale_pitch = snapToNearestScaleTone(static_cast<int>(base_root) + interval, 0);
+    // vi chord must not turn the C-major F/G into F#/G#. A tone the sounding
+    // chord itself alters (G# in E7) takes the place of the key tone it
+    // displaces, or the run states the key's chord against it.
+    const auto alterations =
+        getChromaticAlterations(harmony.getChordDegreeAt(pos), harmony.getChordExtensionAt(pos));
+    auto onRunScale = [&](int candidate) {
+      const int pc = candidate % 12;
+      for (const auto& a : alterations) {
+        if (pc == a.altered_pc) return true;
+        if (pc == a.diatonic_pc) return false;
+      }
+      return snapToNearestScaleTone(candidate, 0) == candidate;
+    };
+    auto toRunScale = [&](int candidate) {
+      const int pc = candidate % 12;
+      for (const auto& a : alterations) {
+        if (pc == a.diatonic_pc) {
+          int step = (a.altered_pc - a.diatonic_pc + 12) % 12;
+          return candidate + (step > 6 ? step - 12 : step);
+        }
+      }
+      return candidate;
+    };
+    const int scale_pitch =
+        toRunScale(snapToNearestScaleTone(static_cast<int>(base_root) + interval, 0));
     // Apply the vocal ceiling before snapping. Clamping after scale selection
     // can turn a C-major tone into a chromatic range-edge pitch (for example,
     // G4 into F#4 at a ceiling of 66).
     const int ceiling_limited = std::min(scale_pitch, static_cast<int>(effective_high));
-    uint8_t pitch = static_cast<uint8_t>(std::clamp(snapToNearestScaleTone(ceiling_limited, 0),
-                                                    static_cast<int>(kGuitarLow),
-                                                    static_cast<int>(kGuitarHigh)));
+    uint8_t pitch = static_cast<uint8_t>(
+        std::clamp(toRunScale(snapToNearestScaleTone(ceiling_limited, 0)),
+                   static_cast<int>(kGuitarLow), static_cast<int>(kGuitarHigh)));
 
     // Velocity: beat-head accent (every 8 notes), others -10
     int beat_pos = pos_idx / 8;
@@ -716,16 +739,15 @@ static void generateTremoloPickBar(MidiTrack& track, IHarmonyContext& harmony, T
       vel = static_cast<uint8_t>(std::max(40, static_cast<int>(vel) - 10));
     }
 
-    // Keep the run diatonic even when the desired tone clashes. Resolve only
-    // to another safe C-major tone; the generic resolver may pick a chromatic
+    // Keep the run on its scale even when the desired tone clashes. Resolve only
+    // to another safe tone of it; the generic resolver may pick a chromatic
     // neighbor to satisfy collision constraints.
     std::optional<uint8_t> safe_pitch;
     for (int delta = 0; delta <= 12 && !safe_pitch; ++delta) {
       for (int signed_delta : {delta == 0 ? 0 : -delta, delta}) {
         int candidate = static_cast<int>(pitch) + signed_delta;
         if (candidate < static_cast<int>(kGuitarLow) ||
-            candidate > static_cast<int>(effective_high) ||
-            snapToNearestScaleTone(candidate, 0) != candidate) {
+            candidate > static_cast<int>(effective_high) || !onRunScale(candidate)) {
           continue;
         }
         if (harmony.isConsonantWithOtherTracks(static_cast<uint8_t>(candidate), pos, note_dur,
@@ -743,7 +765,7 @@ static void generateTremoloPickBar(MidiTrack& track, IHarmonyContext& harmony, T
     opts.desired_pitch = *safe_pitch;
     opts.velocity = vel;
     opts.role = TrackRole::Guitar;
-    // The candidate was pre-checked above, so preserve its C-major pitch.
+    // The candidate was pre-checked above, so preserve its pitch.
     opts.preference = PitchPreference::NoCollisionCheck;
     opts.range_low = kGuitarLow;
     opts.range_high = effective_high;

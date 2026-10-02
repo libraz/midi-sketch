@@ -141,6 +141,10 @@ struct FullTrackContext {
   const MotifContext* vocal_ctx = nullptr;        ///< MotifContext for motif generation
   const VocalAnalysis* vocal_analysis = nullptr;  ///< VocalAnalysis for adapting to vocal
   const MidiTrack* motif_track = nullptr;         ///< MidiTrack for RhythmSync motif reference
+  /// Tracks this song generates at all; a section's mask then says where each
+  /// one plays. A track the song never generates sounds nowhere, whatever a
+  /// section's mask declares.
+  TrackMask generated_tracks = TrackMask::All;
 
   // Call system options (for SE track)
   bool call_enabled = false;

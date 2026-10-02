@@ -41,21 +41,27 @@ uint8_t getBassRoot(int8_t degree, Key key = Key::C);
 
 /// @brief Write one bar of the given figure.
 ///
+/// @param root The bar's bass note: the chord root, or a slash bass
+/// @param chord_root Root of the chord the bar sounds over; the figure's fifth
+///        and third are the chord's, whichever note the bass stands on
 /// @param rng Optional random generator for ghost note velocity in Aggressive pattern
 /// @param steady_cell Suppress the per-bar cell variation, for a locked riff
-void generateBassBar(MidiTrack& track, Tick bar_start, uint8_t root, uint8_t next_root,
-                     int8_t next_degree, BassPattern pattern, SectionType section, Mood mood,
-                     bool is_last_bar, IHarmonyContext& harmony, std::mt19937* rng = nullptr,
-                     bool steady_cell = false);
+void generateBassBar(MidiTrack& track, Tick bar_start, uint8_t root, uint8_t chord_root,
+                     uint8_t next_root, int8_t next_degree, BassPattern pattern,
+                     SectionType section, Mood mood, bool is_last_bar, IHarmonyContext& harmony,
+                     std::mt19937* rng = nullptr, bool steady_cell = false);
 
 /// @brief Write half a bar, for bars split by a chord change inside them.
 ///
 /// A half bar has room for fewer notes than a whole one, and deciding what to
 /// drop by position alone turns every driving figure into quarter notes, so
 /// the pattern is asked whether its pulse is part of its identity.
-void generateBassHalfBar(MidiTrack& track, Tick half_start, uint8_t root, SectionType section,
-                         Mood mood, bool is_first_half, IHarmonyContext& harmony,
-                         BassPattern pattern = BassPattern::RootFifth, bool steady_cell = false);
+/// @param root The half bar's bass note: the chord root, or a slash bass
+/// @param chord_root Root of the chord the half bar sounds over
+void generateBassHalfBar(MidiTrack& track, Tick half_start, uint8_t root, uint8_t chord_root,
+                         SectionType section, Mood mood, bool is_first_half,
+                         IHarmonyContext& harmony, BassPattern pattern = BassPattern::RootFifth,
+                         bool steady_cell = false);
 
 /// @brief Add ghost notes on weak 16th subdivisions for rhythmic texture.
 ///

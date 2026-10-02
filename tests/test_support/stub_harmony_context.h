@@ -121,8 +121,13 @@ class StubHarmonyContext : public IHarmonyCoordinator {
   void registerChordExtension(Tick /*start*/, Tick /*end*/, ChordExtension /*extension*/) override {
   }
 
+  void registerVocalTensionUsage(float /*usage*/) override {}
+
   void registerChordReplacement(Tick /*start*/, Tick /*end*/, int8_t /*degree*/,
-                                ChordExtension /*extension*/) override {}
+                                ChordExtension /*extension*/,
+                                bool /*secondary_dominant*/) override {}
+
+  void restateChordSpan(Tick /*source*/, Tick /*target*/, Tick /*length*/) override {}
 
   bool isSecondaryDominantAt(Tick /*tick*/) const override { return false; }
 

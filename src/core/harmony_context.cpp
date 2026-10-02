@@ -97,8 +97,12 @@ void HarmonyContext::registerChordExtension(Tick start, Tick end, ChordExtension
 }
 
 void HarmonyContext::registerChordReplacement(Tick start, Tick end, int8_t degree,
-                                              ChordExtension extension) {
-  chord_tracker_.registerChordReplacement(start, end, degree, extension);
+                                              ChordExtension extension, bool secondary_dominant) {
+  chord_tracker_.registerChordReplacement(start, end, degree, extension, secondary_dominant);
+}
+
+void HarmonyContext::restateChordSpan(Tick source, Tick target, Tick length) {
+  chord_tracker_.restateChordSpan(source, target, length);
 }
 
 bool HarmonyContext::isSecondaryDominantAt(Tick tick) const {

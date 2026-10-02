@@ -95,7 +95,15 @@ class ChordProgressionTracker : public IChordLookup {
   void registerChordExtension(Tick start, Tick end, ChordExtension extension);
 
   /// Replace a timeline range while preserving its exact tick boundaries.
-  void registerChordReplacement(Tick start, Tick end, int8_t degree, ChordExtension extension);
+  /// @p secondary_dominant states whether the chord written there is one.
+  void registerChordReplacement(Tick start, Tick end, int8_t degree, ChordExtension extension,
+                                bool secondary_dominant);
+
+  /// @brief Make [target, target + length) state exactly what [source, source + length) states.
+  ///
+  /// Every entry property is copied, secondary-dominant flags and planned
+  /// extensions included. The source span must end at or before the target.
+  void restateChordSpan(Tick source, Tick target, Tick length);
 
   /// @brief Check if a secondary dominant is active at a given tick.
   /// @param tick Position in ticks

@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "core/chord.h"
 #include "core/chord_utils.h"
 #include "core/i_harmony_context.h"
 #include "core/pitch_monotony_tracker.h"
@@ -258,6 +259,75 @@ MelodicNeighborhood neighborhoodAt(const std::vector<NoteEvent>& line, size_t in
   return n;
 }
 
+namespace {
+
+// tension_usage the colour weights below were calibrated at (the preset default).
+constexpr float kColourCalibrationUsage = 0.2f;
+
+/// Share of one colour the lead line holds as a stable tone at the calibration
+/// usage, by its interval above the root.
+///
+/// Set from the reference vocals' rate of each colour over the rate the
+/// writers offer it (accompanied pop corpus): 9ths, 6ths and minor sevenths
+/// are offered two to three times as often as sung, the major seventh less.
+float colourWeight(int interval_above_root, bool minor, bool dominant) {
+  switch (interval_above_root) {
+    case 2:
+      return minor ? 0.8f : 0.6f;  // 9th
+    case 5:
+      return 0.55f;  // 11th
+    case 6:
+      return 0.3f;  // #11 over IV
+    case 8:
+      return 0.3f;  // b13 over iii
+    case 9:
+      return 0.35f;  // 13th
+    case 10:
+      return dominant ? 0.1f : 0.3f;  // minor seventh
+    case 11:
+      return 1.0f;  // major seventh
+    default:
+      return 0.0f;
+  }
+}
+
+/// A uniform value in [0, 1) that depends only on the note, so every pass that
+/// asks about the same pitch at the same tick gets the same answer.
+float noteDraw(Tick start, int pitch_class) {
+  uint32_t h = static_cast<uint32_t>(start) * 0x9E3779B1u ^
+               static_cast<uint32_t>(pitch_class + 1) * 0x85EBCA77u;
+  h ^= h >> 16;
+  h *= 0x7FEB352Du;
+  h ^= h >> 15;
+  h *= 0x846CA68Bu;
+  h ^= h >> 16;
+  return static_cast<float>(h >> 8) / static_cast<float>(1u << 24);
+}
+
+bool isStableColourTone(const IChordLookup& harmony, int pitch_class,
+                        const MelodicNeighborhood& n) {
+  // A colour is a moment, not a pedal: the reference vocals hold almost none
+  // longer than a beat.
+  if (n.duration > TICK_QUARTER) return false;
+  if (harmony.isSecondaryDominantAt(n.start)) return false;
+  const ChordExtension extension = harmony.getChordExtensionAt(n.start);
+  if (extension == ChordExtension::Sus2 || extension == ChordExtension::Sus4) return false;
+
+  const int8_t degree = harmony.getChordDegreeAt(n.start);
+  const int root_pc = ((degreeToSemitone(degree) % 12) + 12) % 12;
+  if (!isMelodicColourPitchClass(degree, pitch_class)) return false;
+  const int interval = (pitch_class - root_pc + 12) % 12;
+  const ChordQuality quality = getChordQuality(degree);
+  if (quality == ChordQuality::Diminished) return false;
+  const float weight = colourWeight(interval, quality == ChordQuality::Minor, degree == 4);
+
+  const float usage = harmony.getVocalTensionUsage();
+  const float share = std::min(1.0f, weight * usage / kColourCalibrationUsage);
+  return noteDraw(n.start, pitch_class) < share;
+}
+
+}  // namespace
+
 ToneLegality classifyVocalTone(const IChordLookup& harmony, int pitch, const MelodicNeighborhood& n,
                                int key) {
   const int pitch_pc = getPitchClass(static_cast<uint8_t>(pitch));
@@ -318,6 +388,10 @@ ToneLegality classifyVocalTone(const IChordLookup& harmony, int pitch, const Mel
                           key) &&
       !isAvoidNoteForDegree(pitch, harmony.getChordDegreeAt(n.start))) {
     return ToneLegality::PassingOrNeighbor;
+  }
+
+  if (isStableColourTone(harmony, pitch_pc, n)) {
+    return ToneLegality::ColourTone;
   }
 
   return ToneLegality::Illegal;

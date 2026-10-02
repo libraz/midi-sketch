@@ -7,6 +7,9 @@
 
 #include <gtest/gtest.h>
 
+#include <utility>
+#include <vector>
+
 #include "core/preset_data.h"
 
 namespace midisketch {
@@ -68,6 +71,25 @@ TEST(ChordTest, BorrowedMinorQualityDrivesChorusExtension) {
 
   EXPECT_TRUE(reharm.extension_overridden);
   EXPECT_EQ(reharm.extension, ChordExtension::Min7);
+}
+
+TEST(ChordTest, ChromaticAlterationsPairEachAlteredToneWithTheKeyToneItDisplaces) {
+  auto pairs = [](int8_t degree, ChordExtension extension) {
+    std::vector<std::pair<int, int>> out;
+    for (const auto& a : getChromaticAlterations(degree, extension)) {
+      out.emplace_back(a.diatonic_pc, a.altered_pc);
+    }
+    return out;
+  };
+  using Pairs = std::vector<std::pair<int, int>>;
+  EXPECT_EQ(pairs(2, ChordExtension::Dom7), (Pairs{{7, 8}})) << "E7: G# for G";
+  EXPECT_EQ(pairs(5, ChordExtension::Dom7), (Pairs{{0, 1}})) << "A7: C# for C";
+  EXPECT_EQ(pairs(1, ChordExtension::Dom7), (Pairs{{5, 6}})) << "D7: F# for F";
+  EXPECT_EQ(pairs(0, ChordExtension::Dom7), (Pairs{{11, 10}})) << "C7: Bb for B";
+  EXPECT_EQ(pairs(10, ChordExtension::None), (Pairs{{11, 10}})) << "bVII: Bb for B";
+  EXPECT_TRUE(pairs(5, ChordExtension::Min7).empty()) << "Am7 is the key's own";
+  EXPECT_TRUE(pairs(4, ChordExtension::Dom7).empty()) << "G7 is the key's own";
+  EXPECT_TRUE(pairs(0, ChordExtension::Maj9).empty()) << "Cmaj9 is the key's own";
 }
 
 TEST(ChordTest, ProgressionNames) {

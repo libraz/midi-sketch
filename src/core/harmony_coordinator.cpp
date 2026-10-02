@@ -84,6 +84,9 @@ FORWARD_CONST(ChordExtension, getChordExtensionAt, Tick tick) {
 FORWARD_CONST(bool, hasChordExtensionAt, Tick tick) {
   return base_context_.hasChordExtensionAt(tick);
 }
+float HarmonyCoordinator::getVocalTensionUsage() const {
+  return base_context_.getVocalTensionUsage();
+}
 FORWARD_CONST(Tick, getNextChordChangeTick, Tick after) {
   return base_context_.getNextChordChangeTick(after);
 }
@@ -143,9 +146,15 @@ FORWARD_VOID(registerSecondaryDominant, Tick start, Tick end, int8_t degree) {
 FORWARD_VOID(registerChordExtension, Tick start, Tick end, ChordExtension extension) {
   base_context_.registerChordExtension(start, end, extension);
 }
+FORWARD_VOID(registerVocalTensionUsage, float usage) {
+  base_context_.registerVocalTensionUsage(usage);
+}
 FORWARD_VOID(registerChordReplacement, Tick start, Tick end, int8_t degree,
-             ChordExtension extension) {
-  base_context_.registerChordReplacement(start, end, degree, extension);
+             ChordExtension extension, bool secondary_dominant) {
+  base_context_.registerChordReplacement(start, end, degree, extension, secondary_dominant);
+}
+FORWARD_VOID(restateChordSpan, Tick source, Tick target, Tick length) {
+  base_context_.restateChordSpan(source, target, length);
 }
 FORWARD_CONST(bool, isSecondaryDominantAt, Tick tick) {
   return base_context_.isSecondaryDominantAt(tick);

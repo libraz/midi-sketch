@@ -61,10 +61,19 @@ class IHarmonyContext : public ICollisionDetector, public INoteRegistration {
    */
   virtual void registerChordExtension(Tick start, Tick end, ChordExtension extension) = 0;
 
+  /// Register the song's vocal tension usage (see IChordLookup::getVocalTensionUsage).
+  virtual void registerVocalTensionUsage(float usage) = 0;
+
   /// Replace an existing timeline entry with a planned chord identity.
-  /// Used for non-diatonic reharmonizations such as a tritone substitution.
+  /// Used for non-diatonic reharmonizations such as a tritone substitution, and
+  /// for an anticipation, which writes the next chord whole -- secondary
+  /// dominant included -- an eighth early.
   virtual void registerChordReplacement(Tick start, Tick end, int8_t degree,
-                                        ChordExtension extension) = 0;
+                                        ChordExtension extension, bool secondary_dominant) = 0;
+
+  /// Make [target, target + length) state exactly the chords of [source, source + length).
+  /// Used to restate a loop: the source span must end at or before the target.
+  virtual void restateChordSpan(Tick source, Tick target, Tick length) = 0;
 
   /**
    * @brief Check if a secondary dominant is active at a given tick.

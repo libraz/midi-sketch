@@ -30,6 +30,7 @@ enum class NoteSource : uint8_t {
   CollisionAvoid,  ///< Modified by collision avoidance
   SyllabicSub,     ///< Syllabic subdivision (同音分割)
   PostProcess,     ///< Modified by post-processing
+  Recitation,      ///< Recitation run (rapid same-pitch patter)
 };
 
 /// @brief Convert NoteSource to string for JSON output.
@@ -65,6 +66,8 @@ inline const char* noteSourceToString(NoteSource source) {
       return "syllabic_sub";
     case NoteSource::PostProcess:
       return "post_process";
+    case NoteSource::Recitation:
+      return "recitation";
   }
   return "unknown";
 }

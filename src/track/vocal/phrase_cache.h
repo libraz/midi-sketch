@@ -12,7 +12,6 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
-#include <functional>
 #include <vector>
 
 #include "core/section_types.h"
@@ -24,9 +23,13 @@
 namespace midisketch {
 
 /**
- * @brief Cached phrase for section repetition.
+ * @brief The first occurrence of a section type, replayed by every later one.
  *
- * Chorus 1 & 2 share melody with subtle variations for musical interest.
+ * Pop restates a section's tune on each return -- new lyrics, same melody -- so
+ * the cache is keyed by section type alone. A later section of a different
+ * length reuses the cached bars it shares and generates only the rest. The
+ * starting chord is not part of the key: the progression restarts at every
+ * section, and the chords a replay meets are answered by its own collision pass.
  */
 struct CachedPhrase {
   std::vector<NoteEvent> notes;  ///< Notes with timing relative to section start
@@ -38,34 +41,6 @@ struct CachedPhrase {
   /// contains one are hook occurrences too, and the betrayal threshold counts
   /// what reaches the output rather than what was generated.
   bool contains_hook = false;
-};
-
-/**
- * @brief Extended cache key for phrase lookup.
- *
- * Phrases are cached not just by section type, but also by length and
- * starting chord. This ensures that a 4-bar chorus starting on I chord
- * is cached separately from an 8-bar chorus starting on IV chord.
- */
-struct PhraseCacheKey {
-  SectionType section_type;  ///< Section type (Verse, Chorus, etc.)
-  uint8_t bars;              ///< Section length in bars
-  int8_t chord_degree;       ///< Starting chord degree (affects melodic choices)
-
-  bool operator==(const PhraseCacheKey& other) const {
-    return section_type == other.section_type && bars == other.bars &&
-           chord_degree == other.chord_degree;
-  }
-};
-
-/**
- * @brief Hash function for PhraseCacheKey enabling use in unordered_map.
- */
-struct PhraseCacheKeyHash {
-  size_t operator()(const PhraseCacheKey& key) const {
-    return std::hash<uint8_t>()(static_cast<uint8_t>(key.section_type)) ^
-           (std::hash<uint8_t>()(key.bars) << 4) ^ (std::hash<int8_t>()(key.chord_degree) << 8);
-  }
 };
 
 // ============================================================================

@@ -397,11 +397,18 @@ GeneratorParams ConfigConverter::convert(const SongConfig& config) {
   params.vocal_attitude = config.vocal_attitude;
   params.vocal_style = config.vocal_style;
 
-  // If VocalStylePreset::Auto, select a random style based on StylePreset
+  // If VocalStylePreset::Auto, the blueprint's singer decides; a blueprint
+  // without one falls back to the StylePreset's table.
   if (params.vocal_style == VocalStylePreset::Auto) {
     // Use a seed derived from the main seed for consistent selection
     uint32_t vocal_style_seed = resolved_seed ^ 0x56534C53;  // "VSLS"
-    params.vocal_style = selectRandomVocalStyle(config.style_preset_id, vocal_style_seed);
+    const ProductionBlueprint& blueprint = getProductionBlueprint(resolveProductionBlueprintId(
+        resolved_seed, config.blueprint_id, static_cast<uint8_t>(params.mood)));
+    params.vocal_style =
+        blueprint.vocal_style_count > 0
+            ? selectWeightedVocalStyle(blueprint.vocal_styles, blueprint.vocal_style_count,
+                                       vocal_style_seed)
+            : selectRandomVocalStyle(config.style_preset_id, vocal_style_seed);
   }
 
   params.melody_params = preset.melody;

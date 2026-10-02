@@ -909,6 +909,23 @@ TEST_F(KeyboardNoteFactoryTest, RevoicesUnreachableTransitionToClosestOctave) {
   EXPECT_EQ(result, previous);
 }
 
+TEST_F(KeyboardNoteFactoryTest, OctaveSearchStaysAboveThePartFloor) {
+  // From a low voicing the cheapest octave-equivalent of a high one sits an
+  // octave or two down, which the keyboard reaches and the part does not own.
+  const std::vector<uint8_t> previous = {36, 40, 43};
+  const std::vector<uint8_t> desired = {72, 76, 79};
+  factory_->ensurePlayableVoicing(previous, 0, 0, 480);
+  const auto unbounded = factory_->ensurePlayableVoicing(desired, 0, 480, 480);
+  ASSERT_LT(unbounded.front(), 60)
+      << "the search did not reach below the floor, so nothing is tested";
+
+  factory_->resetState();
+  factory_->ensurePlayableVoicing(previous, 0, 0, 480);
+  const auto bounded = factory_->ensurePlayableVoicing(desired, 0, 480, 480, 60);
+  ASSERT_FALSE(bounded.empty());
+  EXPECT_GE(*std::min_element(bounded.begin(), bounded.end()), 60);
+}
+
 TEST_F(KeyboardNoteFactoryTest, RevoicesAReachableVoicingWhenACloserPositionIsCheaper) {
   const std::vector<uint8_t> previous = {60, 64, 67};
   const std::vector<uint8_t> reachable = {72, 76, 79};

@@ -1,11 +1,13 @@
 #include "core/harmony_timeline_planner.h"
 
+#include <algorithm>
 #include <random>
 
 #include "core/arrangement.h"
 #include "core/chord.h"
 #include "core/chord_extension_planner.h"
 #include "core/chord_utils.h"
+#include "core/harmonic_rhythm.h"
 #include "core/i_chord_lookup.h"
 #include "core/i_harmony_coordinator.h"
 #include "core/preset_data.h"
@@ -18,6 +20,27 @@
 namespace midisketch {
 
 namespace {
+
+/// Bars a chorus closes on; they stay as planned rather than restating the loop.
+constexpr int kChorusCadenceBars = 2;
+
+/// @brief Bars one statement of the chorus loop lasts, or 0 when the section has none.
+///
+/// The loop is the shortest whole number of bars the progression cycles in,
+/// stretched to a four-bar phrase; a cycle that does not fit a four-bar phrase
+/// (a five-chord progression) states no loop to restate.
+int chorusStatementBars(const Section& section, const ChordProgression& progression, Mood mood) {
+  HarmonicRhythmInfo harmonic = HarmonicRhythmInfo::forSection(section, mood);
+  int slots_per_two_bars = harmonic.subdivision == 2                   ? 4
+                           : harmonic.density == HarmonicDensity::Slow ? 1
+                                                                       : 2;
+  int cycle_slots = progression.length;
+  if ((2 * cycle_slots) % slots_per_two_bars != 0) return 0;
+  int cycle_bars = 2 * cycle_slots / slots_per_two_bars;
+  bool fits_phrase = cycle_bars > 0 && (4 % cycle_bars == 0 || cycle_bars % 4 == 0);
+  if (!fits_phrase) return 0;
+  return std::max(cycle_bars, 4);
+}
 
 /// @brief Replace a timeline range while leaving registered secondary dominants intact.
 ///
@@ -34,7 +57,8 @@ void registerReplacementOutsideSecondaryDominants(IHarmonyCoordinator& harmony, 
     Tick next_entry = harmony.getNextChordEntryTick(cursor);
     Tick chunk_end = (next_entry > cursor && next_entry < end) ? next_entry : end;
     if (!harmony.isSecondaryDominantAt(cursor)) {
-      harmony.registerChordReplacement(cursor, chunk_end, degree, extension);
+      harmony.registerChordReplacement(cursor, chunk_end, degree, extension,
+                                       /*secondary_dominant=*/false);
     }
     cursor = chunk_end;
   }
@@ -288,11 +312,33 @@ void planAndRegisterChordExtensions(const Arrangement& arrangement, const Genera
   }
 }
 
+/// @brief Make every later statement of a chorus loop state the first one's harmony.
+///
+/// The planners above decide per entry and some decide by chance, so the
+/// second pass through the same loop came out with a secondary dominant, a
+/// colour or a substitute the first pass did not have, and the hook sung over
+/// it a second time met different chords. The last two bars stay as planned:
+/// that is where the cadence the section closes on is written.
+void restateChorusLoops(const Arrangement& arrangement, const GeneratorParams& params,
+                        const ChordProgression& progression, IHarmonyCoordinator& harmony) {
+  for (const auto& section : arrangement.sections()) {
+    if (section.type != SectionType::Chorus) continue;
+    int statement = chorusStatementBars(section, progression, params.mood);
+    int free_from = static_cast<int>(section.bars) - kChorusCadenceBars;
+    for (int bar = statement; statement > 0 && bar < free_from; bar += statement) {
+      int bars = std::min(statement, free_from - bar);
+      harmony.restateChordSpan(section.start_tick, section.start_tick + bar * TICKS_PER_BAR,
+                               bars * TICKS_PER_BAR);
+    }
+  }
+}
+
 }  // namespace
 
 void registerPlannedHarmonyTimeline(const Arrangement& arrangement, const GeneratorParams& params,
                                     const ChordProgression& progression,
                                     IHarmonyCoordinator& harmony) {
+  harmony.registerVocalTensionUsage(params.melody_params.tension_usage);
   constexpr uint32_t kSecDomSalt = 0x5ECD0A17;
   uint32_t sec_dom_seed = params.seed ^ kSecDomSalt;
   if (sec_dom_seed == 0) sec_dom_seed = kSecDomSalt;
@@ -305,6 +351,20 @@ void registerPlannedHarmonyTimeline(const Arrangement& arrangement, const Genera
   planAndRegisterPassingDiminished(arrangement, harmony);
   planAndRegisterTritoneSubstitutions(arrangement, params, harmony);
   planAndRegisterChordExtensions(arrangement, params, harmony);
+  restateChorusLoops(arrangement, params, progression, harmony);
+}
+
+std::vector<uint8_t> restatedLoopBars(const Section& section, uint8_t bar,
+                                      const ChordProgression& progression, Mood mood) {
+  std::vector<uint8_t> bars;
+  if (section.type != SectionType::Chorus) return bars;
+  int statement = chorusStatementBars(section, progression, mood);
+  int free_from = static_cast<int>(section.bars) - kChorusCadenceBars;
+  if (statement <= 0 || bar >= free_from || free_from <= statement) return bars;
+  for (int sibling = bar % statement; sibling < free_from; sibling += statement) {
+    bars.push_back(static_cast<uint8_t>(sibling));
+  }
+  return bars;
 }
 
 }  // namespace midisketch

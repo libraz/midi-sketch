@@ -14,6 +14,7 @@
 #include "core/chord_utils.h"
 #include "core/generator.h"
 #include "core/harmony_context.h"
+#include "core/harmony_timeline_planner.h"
 #include "core/i_harmony_context.h"
 #include "core/pitch_utils.h"
 #include "core/song.h"
@@ -646,7 +647,10 @@ TEST_F(ChordWithContextTest, RegressionVocalCloseIntervalOriginalBug) {
   ASSERT_GT(vocal_track.noteCount(), 0u);
   ASSERT_GT(chord_track.noteCount(), 0u);
 
-  // Count SUSTAINED close interval exposure (major 2nd pitch class). Brief
+  // Count SUSTAINED close interval exposure (major 2nd pitch class). A vocal
+  // note that is itself a colour of the chord -- the 9th, or the seventh whose
+  // inversion is the same pitch class -- is that colour sung against its own
+  // root or third, not the clash a crowded voicing makes, and is left out. Brief
   // overlaps (<= an eighth note) are weak-beat passing/neighbor tones over a
   // sustained chord bed — theory-legal non-chord tones, not the regression
   // this test guards against (the original bug was repeated clashes lasting
@@ -655,6 +659,10 @@ TEST_F(ChordWithContextTest, RegressionVocalCloseIntervalOriginalBug) {
   for (const auto& vocal_note : vocal_track.notes()) {
     Tick vocal_end = vocal_note.start_tick + vocal_note.duration;
     int vocal_pc = vocal_note.note % 12;
+    const auto& harmony = gen.getHarmonyContext();
+    const bool vocal_is_colour =
+        !harmony.isSecondaryDominantAt(vocal_note.start_tick) &&
+        isMelodicColourPitchClass(harmony.getChordDegreeAt(vocal_note.start_tick), vocal_pc);
 
     for (const auto& chord_note : chord_track.notes()) {
       Tick chord_end = chord_note.start_tick + chord_note.duration;
@@ -666,7 +674,7 @@ TEST_F(ChordWithContextTest, RegressionVocalCloseIntervalOriginalBug) {
         if (overlap <= TICK_EIGHTH) continue;  // brief passing exposure
         int interval = std::abs(vocal_pc - chord_pc);
         if (interval > 6) interval = 12 - interval;
-        if (interval == 2) {  // Major 2nd specifically
+        if (interval == 2 && !vocal_is_colour) {  // Major 2nd specifically
           major_2nd_count++;
         }
       }
@@ -983,6 +991,122 @@ TEST_F(ChordWithContextTest, ChordThicknessIncreasesWithPeakLevel) {
     EXPECT_GE(avg_medium + 0.5, avg_none)
         << "PeakLevel::Medium voicings should be at least as thick as None";
   }
+}
+
+TEST_F(ChordWithContextTest, AnticipatedSecondaryDominantIsDeclaredAsOne) {
+  // An anticipation writes the next chord an eighth early. When that chord is a
+  // secondary dominant the eighth is one too, or the declared timeline names a
+  // diatonic chord there and every check that excuses a secondary dominant's
+  // tritone reads the eighth as an unexplained one.
+  size_t anticipated = 0;
+  for (uint8_t blueprint : {1, 2, 4, 5}) {
+    for (uint32_t seed = 1; seed <= 6; ++seed) {
+      params_.blueprint_id = blueprint;
+      params_.seed = seed;
+      Generator gen;
+      gen.generate(params_);
+      const auto& harmony = gen.getHarmonyContext();
+      const auto& sections = gen.getSong().arrangement().sections();
+      Tick song_end = sections.empty() ? 0 : sections.back().endTick();
+      for (Tick bar_line = TICKS_PER_BAR; bar_line < song_end; bar_line += TICKS_PER_BAR) {
+        Tick eighth = bar_line - TICK_EIGHTH;
+        if (!harmony.isSecondaryDominantAt(bar_line) ||
+            harmony.getNextChordEntryTick(eighth - 1) != eighth ||
+            harmony.getChordDegreeAt(eighth) != harmony.getChordDegreeAt(bar_line) ||
+            harmony.getChordExtensionAt(eighth) != harmony.getChordExtensionAt(bar_line)) {
+          continue;
+        }
+        ++anticipated;
+        EXPECT_TRUE(harmony.isSecondaryDominantAt(eighth))
+            << "blueprint " << int(blueprint) << " seed " << seed << " tick " << eighth;
+      }
+    }
+  }
+  EXPECT_GT(anticipated, 0u);
+}
+
+TEST_F(ChordWithContextTest, RestatedChorusBarsAnticipateAlike) {
+  // Bars stating the same place in a restated chorus loop, into the same chord,
+  // either all anticipate it or none do: one statement pushing the change an
+  // eighth early and the next not is the loop coming apart under the hook.
+  size_t compared = 0;
+  for (uint8_t blueprint : {0, 1, 4, 6}) {
+    for (uint32_t seed = 1; seed <= 10; ++seed) {
+      params_.blueprint_id = blueprint;
+      params_.seed = seed;
+      Generator gen;
+      gen.generate(params_);
+      const auto& harmony = gen.getHarmonyContext();
+      const auto& progression = getChordProgression(gen.getParams().chord_id);
+      auto anticipates = [&](Tick bar_line) {
+        Tick eighth = bar_line - TICK_EIGHTH;
+        return harmony.getNextChordEntryTick(eighth - 1) == eighth &&
+               harmony.getChordDegreeAt(eighth) == harmony.getChordDegreeAt(bar_line) &&
+               harmony.getChordDegreeAt(eighth - 1) != harmony.getChordDegreeAt(bar_line);
+      };
+      for (const auto& section : gen.getSong().arrangement().sections()) {
+        for (uint8_t bar = 0; bar < section.bars; ++bar) {
+          Tick bar_line = section.start_tick + (bar + 1) * TICKS_PER_BAR;
+          for (uint8_t sibling :
+               restatedLoopBars(section, bar, progression, gen.getParams().mood)) {
+            Tick sibling_line = section.start_tick + (sibling + 1) * TICKS_PER_BAR;
+            if (sibling <= bar ||
+                harmony.getChordDegreeAt(sibling_line) != harmony.getChordDegreeAt(bar_line) ||
+                harmony.getChordExtensionAt(sibling_line) !=
+                    harmony.getChordExtensionAt(bar_line) ||
+                harmony.isSecondaryDominantAt(sibling_line) !=
+                    harmony.isSecondaryDominantAt(bar_line)) {
+              continue;
+            }
+            ++compared;
+            EXPECT_EQ(anticipates(sibling_line), anticipates(bar_line))
+                << "blueprint " << int(blueprint) << " seed " << seed << " bars " << int(bar) << "/"
+                << int(sibling) << " of the chorus at " << section.start_tick;
+          }
+        }
+      }
+    }
+  }
+  EXPECT_GT(compared, 0u);
+}
+
+TEST_F(ChordWithContextTest, AnticipationYieldsToALineHoldingTheToneItWouldAlter) {
+  // An anticipated secondary dominant brings its raised tone an eighth early.
+  // A bass, motif, aux or vocal already struck on the key's tone there (G under
+  // an anticipated E7) would sound against it, so the anticipation yields.
+  size_t anticipated = 0;
+  for (uint8_t blueprint : {1, 2, 4, 5}) {
+    for (uint32_t seed = 1; seed <= 6; ++seed) {
+      params_.blueprint_id = blueprint;
+      params_.seed = seed;
+      Generator gen;
+      gen.generate(params_);
+      const auto& harmony = gen.getHarmonyContext();
+      const auto& song = gen.getSong();
+      const auto& sections = song.arrangement().sections();
+      Tick song_end = sections.empty() ? 0 : sections.back().endTick();
+      for (Tick bar_line = TICKS_PER_BAR; bar_line < song_end; bar_line += TICKS_PER_BAR) {
+        Tick eighth = bar_line - TICK_EIGHTH;
+        if (!harmony.isSecondaryDominantAt(eighth) ||
+            harmony.getNextChordEntryTick(eighth - 1) != eighth) {
+          continue;
+        }
+        ++anticipated;
+        const auto alterations = getChromaticAlterations(harmony.getChordDegreeAt(eighth),
+                                                         harmony.getChordExtensionAt(eighth));
+        for (const MidiTrack* track : {&song.bass(), &song.motif(), &song.aux(), &song.vocal()}) {
+          for (const auto& note : track->notes()) {
+            if (note.start_tick < eighth || note.start_tick >= bar_line) continue;
+            for (const auto& a : alterations) {
+              EXPECT_NE(note.note % 12, a.diatonic_pc) << "blueprint " << int(blueprint) << " seed "
+                                                       << seed << " tick " << note.start_tick;
+            }
+          }
+        }
+      }
+    }
+  }
+  EXPECT_GT(anticipated, 0u);
 }
 
 }  // namespace

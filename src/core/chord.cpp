@@ -268,6 +268,69 @@ int degreeToSemitone(int8_t degree) {
   return 0;
 }
 
+std::vector<ChromaticAlteration> getChromaticAlterations(int8_t degree, ChordExtension extension) {
+  // Letter of the chord's root on the key's scale, borrowed degrees included.
+  int letter;
+  switch (degree) {
+    case 8:
+      letter = 5;  // bVI on A
+      break;
+    case 10:
+      letter = 6;  // bVII on B
+      break;
+    case 11:
+      letter = 2;  // bIII on E
+      break;
+    case 12:
+    case 14:
+      letter = 3;  // iv on F, #IVdim on F
+      break;
+    case 13:
+      letter = 1;  // bII on D
+      break;
+    default:
+      if (degree < 0 || degree > 6) return {};
+      letter = degree;
+      break;
+  }
+  // Letters above the root each chord interval stands on.
+  auto letterStep = [](int interval) {
+    switch (interval % 12) {
+      case 0:
+        return 0;
+      case 1:
+      case 2:
+        return 1;
+      case 3:
+      case 4:
+        return 2;
+      case 5:
+        return 3;
+      case 6:
+      case 7:
+      case 8:
+        return 4;
+      case 9:
+        return 5;
+      default:
+        return 6;
+    }
+  };
+
+  const Chord chord = getExtendedChord(degree, extension);
+  const int root_pc = degreeToSemitone(degree);
+  std::vector<ChromaticAlteration> alterations;
+  for (uint8_t i = 0; i < chord.note_count; ++i) {
+    if (chord.intervals[i] < 0) continue;
+    const int actual = (root_pc + chord.intervals[i]) % 12;
+    const int diatonic = SCALE[(letter + letterStep(chord.intervals[i])) % 7];
+    if (actual != diatonic) {
+      alterations.push_back({static_cast<int8_t>(diatonic), static_cast<int8_t>(actual)});
+    }
+  }
+  return alterations;
+}
+
 const ChordProgression& getChordProgression(uint8_t chord_id) {
   return PROGRESSIONS[safeProgressionIndex(chord_id, PROGRESSIONS)];
 }

@@ -72,6 +72,9 @@ void anchorBassStrongBeats(MidiTrack& bass, const std::vector<Section>& sections
 /// it. Replacement pitches are checked against the other registered tracks, so
 /// the caller has to re-register anything it changed before calling: against a
 /// stale registration every alternative reads as a clash and the run survives.
+/// Notes flagged is_syllabic_subdivision are a deliberate rearticulation: they
+/// count toward a run but are never moved, so a run they lengthen is broken at
+/// the latest unflagged note in it.
 ///
 /// @param chorus_peak The line's realized peak, so the break does not invent a
 ///        new high point outside the shape the chorus already established

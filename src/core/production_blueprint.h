@@ -275,6 +275,11 @@ struct ProductionBlueprint {
   uint16_t tempo_default = 0;
   uint16_t tempo_min = 0;
   uint16_t tempo_max = 0;
+
+  /// @brief Vocal styles an Auto vocal style resolves to, with weights.
+  /// nullptr = resolve from the style preset's table instead.
+  const VocalStyleWeight* vocal_styles = nullptr;
+  uint8_t vocal_style_count = 0;  ///< Number of entries in vocal_styles
 };
 
 // ============================================================================
@@ -364,7 +369,8 @@ void visitBlueprintFields(Blueprint& blueprint, Visitor&& visit) {
   auto& [name, weight, paradigm, section_flow, section_count, riff_policy, drums_sync_vocal,
          drums_required, intro_kick_enabled, intro_bass_enabled, intro_stagger_percent,
          euclidean_drums_percent, percussion_policy, addictive_mode, mood_mask, constraints,
-         aux_profile, tempo_default, tempo_min, tempo_max] = blueprint;
+         aux_profile, tempo_default, tempo_min, tempo_max, vocal_styles, vocal_style_count] =
+      blueprint;
   visit(BlueprintFieldRole::Identity, "name", name);
   visit(BlueprintFieldRole::Selection, "weight", weight);
   visit(BlueprintFieldRole::SongAssembly, "paradigm", paradigm);
@@ -385,6 +391,8 @@ void visitBlueprintFields(Blueprint& blueprint, Visitor&& visit) {
   visit(BlueprintFieldRole::SongAssembly, "tempo_default", tempo_default);
   visit(BlueprintFieldRole::SongAssembly, "tempo_min", tempo_min);
   visit(BlueprintFieldRole::SongAssembly, "tempo_max", tempo_max);
+  visit(BlueprintFieldRole::SongAssembly, "vocal_styles", vocal_styles);
+  visit(BlueprintFieldRole::SongAssembly, "vocal_style_count", vocal_style_count);
 }
 
 /// @brief Clamp an implicit BPM to a blueprint's declared tempo range.
@@ -439,6 +447,19 @@ uint8_t selectProductionBlueprint(std::mt19937& rng, uint8_t explicit_id = 255);
  * @return Selected blueprint ID
  */
 uint8_t selectProductionBlueprintForMood(std::mt19937& rng, uint8_t explicit_id, uint8_t mood);
+
+/**
+ * @brief Resolve the blueprint a song with this seed is generated with.
+ *
+ * The draw comes from a stream of its own derived from @p seed, so parameter
+ * resolution and the generator reach the same blueprint without sharing state.
+ *
+ * @param seed Resolved song seed
+ * @param explicit_id If < 255, use this ID directly; otherwise random selection
+ * @param mood Mood enum value used to filter random candidates
+ * @return Selected blueprint ID
+ */
+uint8_t resolveProductionBlueprintId(uint32_t seed, uint8_t explicit_id, uint8_t mood);
 
 /**
  * @brief Get blueprint name by ID.

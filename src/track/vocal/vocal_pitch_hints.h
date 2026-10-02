@@ -38,6 +38,13 @@ struct LockedRhythmMelodicState {
 /// @brief Apply phrase contour direction to pitch selection hints.
 void applyContourToHints(const OnsetContourInfo& ci, PitchSelectionHints& hints);
 
+/// @brief Pitch above which a section's rising contour stops pushing upward.
+///
+/// The verse climbs to its tessitura center and the pre-chorus two semitones
+/// past it, so the chorus keeps the register above both. Every other section
+/// returns -1: its contour is not bounded.
+int sectionAscentCeiling(SectionType section_type, const TessituraRange& tessitura);
+
 /// @brief Build PitchSelectionHints from current melodic state and contour info.
 PitchSelectionHints buildPitchHints(const LockedRhythmMelodicState& state, Tick hint_duration,
                                     const MelodyDesigner::SectionContext& ctx,

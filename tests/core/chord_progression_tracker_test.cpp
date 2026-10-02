@@ -64,7 +64,8 @@ TEST_F(ChordProgressionTrackerTest, ChordDegreeAt_MidBar) {
 
 TEST_F(ChordProgressionTrackerTest, ChordReplacementKeepsTritoneSubstitutionInTimeline) {
   // Bar 1 is V (G). Its tritone substitute is bII7 (Db7, degree 13).
-  tracker_.registerChordReplacement(TICKS_PER_BAR, 2 * TICKS_PER_BAR, 13, ChordExtension::Dom7);
+  tracker_.registerChordReplacement(TICKS_PER_BAR, 2 * TICKS_PER_BAR, 13, ChordExtension::Dom7,
+                                    /*secondary_dominant=*/false);
 
   EXPECT_EQ(tracker_.getChordDegreeAt(TICKS_PER_BAR), 13);
   EXPECT_EQ(tracker_.getChordExtensionAt(TICKS_PER_BAR), ChordExtension::Dom7);
@@ -75,6 +76,49 @@ TEST_F(ChordProgressionTrackerTest, ChordReplacementKeepsTritoneSubstitutionInTi
       << "Db7 chord tones";
   EXPECT_EQ(tracker_.getChordDegreeAt(2 * TICKS_PER_BAR), 5)
       << "Replacement must not leak into the following chord entry";
+}
+
+TEST_F(ChordProgressionTrackerTest, ChordReplacementStatesWhetherItIsASecondaryDominant) {
+  tracker_.registerChordReplacement(TICKS_PER_BAR - TICK_EIGHTH, TICKS_PER_BAR, 2,
+                                    ChordExtension::Dom7, /*secondary_dominant=*/true);
+  EXPECT_TRUE(tracker_.isSecondaryDominantAt(TICKS_PER_BAR - TICK_EIGHTH));
+  EXPECT_FALSE(tracker_.isSecondaryDominantAt(TICKS_PER_BAR - TICK_EIGHTH - 1));
+
+  tracker_.registerChordReplacement(TICKS_PER_BAR - TICK_EIGHTH, TICKS_PER_BAR, 4,
+                                    ChordExtension::None, /*secondary_dominant=*/false);
+  EXPECT_FALSE(tracker_.isSecondaryDominantAt(TICKS_PER_BAR - TICK_EIGHTH));
+}
+
+TEST_F(ChordProgressionTrackerTest, ToneHeldIntoASecondaryDominantItAltersIsAnAvoidNote) {
+  // Bar 1 (V) gives its second half to E7 (V/vi). A G held from the first half
+  // into E7 sounds against its G#; the degree's own tension table, built for
+  // iii, cannot see that.
+  tracker_.registerSecondaryDominant(TICKS_PER_BAR + TICK_HALF, 2 * TICKS_PER_BAR, 2);
+  ChordBoundaryInfo held_g = tracker_.analyzeChordBoundary(67, TICKS_PER_BAR, TICKS_PER_BAR);
+  EXPECT_EQ(held_g.boundary_tick, TICKS_PER_BAR + TICK_HALF);
+  EXPECT_EQ(held_g.safety, CrossBoundarySafety::AvoidNote);
+  ChordBoundaryInfo held_b = tracker_.analyzeChordBoundary(71, TICKS_PER_BAR, TICKS_PER_BAR);
+  EXPECT_EQ(held_b.safety, CrossBoundarySafety::ChordTone);
+}
+
+TEST_F(ChordProgressionTrackerTest, RestatedSpanCopiesEveryEntryAndLeavesTheRestAlone) {
+  // Bar 0 carries a secondary dominant in its second half and bar 1 a colour;
+  // restating bars 0-1 onto bars 4-5 must bring both, flags included.
+  tracker_.registerSecondaryDominant(TICK_HALF, TICKS_PER_BAR, 2);
+  tracker_.registerChordExtension(TICKS_PER_BAR, 2 * TICKS_PER_BAR, ChordExtension::Dom9);
+  tracker_.restateChordSpan(0, 4 * TICKS_PER_BAR, 2 * TICKS_PER_BAR);
+
+  for (Tick offset = 0; offset < 2 * TICKS_PER_BAR; offset += TICK_EIGHTH) {
+    Tick target = 4 * TICKS_PER_BAR + offset;
+    EXPECT_EQ(tracker_.getChordDegreeAt(target), tracker_.getChordDegreeAt(offset)) << offset;
+    EXPECT_EQ(tracker_.isSecondaryDominantAt(target), tracker_.isSecondaryDominantAt(offset))
+        << offset;
+    EXPECT_EQ(tracker_.getChordExtensionAt(target), tracker_.getChordExtensionAt(offset)) << offset;
+  }
+  EXPECT_TRUE(tracker_.isSecondaryDominantAt(4 * TICKS_PER_BAR + TICK_HALF));
+  EXPECT_EQ(tracker_.getChordDegreeAt(3 * TICKS_PER_BAR), 3) << "bar 3 is untouched";
+  EXPECT_EQ(tracker_.getChordDegreeAt(6 * TICKS_PER_BAR), 5) << "bar 6 is untouched";
+  EXPECT_EQ(tracker_.getNextChordEntryTick(6 * TICKS_PER_BAR - 1), 6 * TICKS_PER_BAR);
 }
 
 TEST_F(ChordProgressionTrackerTest, ChordDegreeAt_JustBeforeChange) {

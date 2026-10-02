@@ -16,13 +16,17 @@ namespace {
 std::vector<uint8_t> findClosestFeasibleTransition(const IKeyboardInstrument& instrument,
                                                    const std::vector<uint8_t>& previous,
                                                    const std::vector<uint8_t>& desired,
-                                                   uint32_t available_ticks, uint16_t bpm) {
+                                                   uint32_t available_ticks, uint16_t bpm,
+                                                   uint8_t lowest_allowed) {
   std::vector<uint8_t> best;
   float best_cost = std::numeric_limits<float>::infinity();
 
   auto consider = [&](std::vector<uint8_t> candidate) {
     if (candidate.empty()) return;
     std::sort(candidate.begin(), candidate.end());
+    // The instrument's range is wider than the part's: an octave shift that
+    // the keyboard can reach can still drop the voicing into the bass.
+    if (candidate.front() < lowest_allowed) return;
     if (!instrument.isVoicingPlayable(candidate) ||
         !instrument.isTransitionFeasible(previous, candidate, available_ticks, bpm)) {
       return;
@@ -82,7 +86,8 @@ KeyboardNoteFactory::KeyboardNoteFactory(const IHarmonyContext& harmony,
 
 std::vector<uint8_t> KeyboardNoteFactory::ensurePlayableVoicing(const std::vector<uint8_t>& pitches,
                                                                 uint8_t root_pitch_class,
-                                                                uint32_t start, uint32_t duration) {
+                                                                uint32_t start, uint32_t duration,
+                                                                uint8_t lowest_allowed) {
   if (pitches.empty()) return pitches;
 
   // Check if already playable
@@ -96,8 +101,8 @@ std::vector<uint8_t> KeyboardNoteFactory::ensurePlayableVoicing(const std::vecto
   if (!prev_voicing_.empty() && !result.empty()) {
     uint32_t available_ticks = duration;  // Use chord duration as available time
 
-    auto alternative =
-        findClosestFeasibleTransition(instrument_, prev_voicing_, result, available_ticks, bpm_);
+    auto alternative = findClosestFeasibleTransition(instrument_, prev_voicing_, result,
+                                                     available_ticks, bpm_, lowest_allowed);
     if (!alternative.empty()) {
       result = std::move(alternative);
     }
