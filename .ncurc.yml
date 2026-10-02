@@ -1,7 +1,13 @@
 # npm-check-updates configuration.
-#
-# typescript: pinned to 6.x. Yarn 4's builtin `compat/typescript` patch expects
-# `lib/_tsc.js`, which the native 7.x package no longer ships, so `yarn install`
-# fails during the fetch step. Revisit once Yarn drops or updates that patch.
+
+# Yarn refuses to install versions younger than npmMinimalAgeGate (24h by default),
+# so proposing them here would only produce an uninstallable package.json.
+cooldown: 1d
+
+# Packages `ncu -u` must not raise, and why. Drop an entry once its blocker is
+# gone so the next run picks the package up again.
 reject:
+  # typescript: the 7.x package ships no compiler API (lib/ holds only tsc.js,
+  # getExePath and version), and tests/wasm/package-surface.test.ts walks the
+  # published .d.ts through ts.createProgram, so the suite dies on ts.ScriptTarget.
   - typescript

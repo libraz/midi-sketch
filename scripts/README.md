@@ -123,6 +123,50 @@ Known measurement artifact: `eighth_grid_ratio` HIGH verdicts are not real findi
 references are humanized performances while generation is quantized, so this metric is
 structurally biased and should be ignored.
 
+## Pop review (`pop_review/`)
+
+Reads a song the way a pop arranger would, through `@libraz/libcantus`, which sees only the
+notes and none of the generator's intent. It takes a generated `output.json` or a reference
+`.mid` (read through its `track_roles.json` labels) and reports three layers:
+
+| Layer | Asks |
+|---|---|
+| Soundness | Do parts clash vertically, does the vocal sit on the harmony, is one key in charge, does the bass carry the root, do choruses close, do phrases land on the 2/4/8-bar grid. For a generated song also: does the sounding harmony match the declared chords, key and vocal range |
+| Pop craft | Intro length, time to the first chorus, chorus lift (register, density, loudness), the hook (how often it returns, whether it opens the chorus, its leap, rhythm and range), chorus restatement, named progressions (royal road, Komuro, axis, ...), harmonic rhythm, vocal rhythm and line |
+| Target fit | With `--target`: libcantus's structural comparison (form, harmony, motif derivation, rhythm) plus the pop layout, and a copy check of the candidate's hook against every passage of the target |
+
+```bash
+# Once per reference corpus: per-metric bands of real songs (several corpora may be pooled;
+# a melody-only file contributes only the metrics the melody decides alone)
+node scripts/pop_review/baseline.mjs <corpus> [<melody-corpus>...] --out baseline.json
+
+# One song, placed against the bands
+node scripts/pop_review/review.mjs output.json --baseline <corpus>/pop_baseline.json
+
+# Many generated songs: which metrics leave the band, and on how many songs
+node scripts/pop_review/corpus.mjs --baseline <corpus>/pop_baseline.json songs/*/output.json
+
+# Candidates aimed at a target song, ranked; the best are kept in --out
+node scripts/pop_review/search.mjs --target <corpus>/song.mid --blueprints 0,2,4 --seeds 8 --out picks
+```
+
+A metric is flagged only when it falls outside the reference band, and the band's sample
+count is printed beside it: a band drawn from one or two songs is a fingerprint, not a norm.
+
+Things to know before reading a number:
+
+- A generated song's choruses come from its declared sections. A reference's come from the
+  `_sections` labels when present, otherwise from block self-similarity, which finds only
+  the recurring part of a chorus — so chorus share and chorus-relative metrics on references
+  are conservative. `chorusRecognizedRecall` reports how much of a generated song's declared
+  chorus the self-similarity reading recovers, which is itself a measure of whether the
+  chorus is heard as a returning chorus.
+- Only libcantus's vertical-dissonance flag is counted as a clash; its interval model is not
+  the generator's, and its parallel-motion flags fire on oblique motion.
+- Velocity metrics are meaningless against references transcribed at one velocity.
+- The copy check flags a hook at 0.9 likeness or above; unrelated reference songs reach 0.84
+  at most.
+
 ## Standalone checks
 
 | Script | Purpose |

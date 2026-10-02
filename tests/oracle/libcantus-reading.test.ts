@@ -55,9 +55,13 @@ describe('the harmony that sounds', () => {
       const pool = HARMONY_TRACKS.flatMap((name) => song.track(name)?.notes ?? []);
       for (const chord of song.chords) {
         const root = DEGREE_PITCH_CLASS[chord.degree];
-        if (root === undefined) continue;
+        if (root === undefined) {
+          continue;
+        }
         const sounding = pool.filter((n) => overlaps(n, chord.startBeat, chord.endBeat));
-        if (sounding.length === 0) continue;
+        if (sounding.length === 0) {
+          continue;
+        }
         spans += 1;
         if (!sounding.some((n) => pitchClass(n.pitch) === root)) {
           rootless += 1;
@@ -82,14 +86,18 @@ describe('the harmony that sounds', () => {
       const bass = song.track('Bass')?.notes ?? [];
       for (const chord of song.chords) {
         const sounding = pool.filter((n) => overlaps(n, chord.startBeat, chord.endBeat));
-        if (sounding.length < 2) continue;
+        if (sounding.length < 2) {
+          continue;
+        }
         spans += 1;
         const bassHere = bass.filter((n) => overlaps(n, chord.startBeat, chord.endBeat));
         const detected = detectChordBest(
           sounding.map((n) => n.pitch),
           bassHere.length > 0 ? { bassPc: pitchClass(bassHere[0].pitch) } : {},
         );
-        if (detected === null) unnameable += 1;
+        if (detected === null) {
+          unnameable += 1;
+        }
       }
     }
     expect(spans).toBeGreaterThan(1000);
@@ -107,7 +115,9 @@ describe('locked riffs', () => {
     for (const { testCase, song } of corpus) {
       const motif = song.track('Motif')?.notes ?? [];
       const choruses = song.sections.filter((s) => s.type === 'Chorus');
-      if (choruses.length < 2) continue;
+      if (choruses.length < 2) {
+        continue;
+      }
 
       const heads = choruses.map((section) =>
         motif
@@ -116,10 +126,14 @@ describe('locked riffs', () => {
           )
           .map((n) => ({ ...n, startBeat: n.startBeat - section.startBeat })),
       );
-      if (heads[0].length < 3) continue;
+      if (heads[0].length < 3) {
+        continue;
+      }
 
       for (let i = 1; i < heads.length; i += 1) {
-        if (heads[i].length < 3) continue;
+        if (heads[i].length < 3) {
+          continue;
+        }
         const { rhythmSimilarity } = compareMelodies(heads[0], heads[i]);
         const bucket = byBlueprint.get(testCase.blueprint);
         if (bucket) {
@@ -143,7 +157,9 @@ describe('locked riffs', () => {
     const failures: string[] = [];
     for (const blueprint of LOCKED_RIFF_BLUEPRINTS) {
       const samples = byBlueprint.get(blueprint);
-      if (!samples || samples.length === 0) continue;
+      if (!samples || samples.length === 0) {
+        continue;
+      }
       const average = mean(samples);
       if (average < 0.85) {
         failures.push(
@@ -162,7 +178,9 @@ describe('locked riffs', () => {
     const byBlueprint = riffRhythmSimilarityByBlueprint();
     for (const blueprint of [2, 4]) {
       const samples = byBlueprint.get(blueprint);
-      if (!samples || samples.length < 4) continue;
+      if (!samples || samples.length < 4) {
+        continue;
+      }
       expect(
         mean(samples),
         `blueprint ${blueprint} declares an Evolving riff but replays it as rigidly as a Locked one`,

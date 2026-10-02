@@ -50,7 +50,9 @@ describe('chord voicing', () => {
         stacks += 1;
         if (distinctPitchClasses(stack).length === 1) {
           collapsed += 1;
-          if (worst.length < 5) worst.push(`${describeCase(testCase)} @beat ${stack[0].startBeat}`);
+          if (worst.length < 5) {
+            worst.push(`${describeCase(testCase)} @beat ${stack[0].startBeat}`);
+          }
         }
       }
     }
@@ -68,7 +70,9 @@ describe('chord voicing', () => {
     for (const { song } of corpus) {
       for (const stack of song.track('Chord')?.stacks ?? []) {
         stacks += 1;
-        if (!soundsAThird(distinctPitchClasses(stack))) thirdless += 1;
+        if (!soundsAThird(distinctPitchClasses(stack))) {
+          thirdless += 1;
+        }
       }
     }
     expect(
@@ -85,12 +89,22 @@ describe('chord voicing', () => {
       for (const stack of song.track('Chord')?.stacks ?? []) {
         stacks += 1;
         const pcs = distinctPitchClasses(stack);
-        if (pcs.length >= 3) complete += 1;
-        if (stack.length > pcs.length) doubled += 1;
+        if (pcs.length >= 3) {
+          complete += 1;
+        }
+        if (stack.length > pcs.length) {
+          doubled += 1;
+        }
       }
     }
-    expect(complete / stacks, `only ${complete}/${stacks} voicings sound three or more distinct tones`).toBeGreaterThan(0.75);
-    expect(doubled / stacks, `${doubled}/${stacks} voicings spend a voice doubling a tone already sounding`).toBeLessThan(0.25);
+    expect(
+      complete / stacks,
+      `only ${complete}/${stacks} voicings sound three or more distinct tones`,
+    ).toBeGreaterThan(0.75);
+    expect(
+      doubled / stacks,
+      `${doubled}/${stacks} voicings spend a voice doubling a tone already sounding`,
+    ).toBeLessThan(0.25);
   });
 });
 
@@ -102,7 +116,9 @@ describe('vocal line', () => {
       const notes = song.track('Vocal')?.notes ?? [];
       for (let i = 1; i < notes.length; i += 1) {
         const section = sectionAt(song, notes[i].startBeat);
-        if (!section) continue;
+        if (!section) {
+          continue;
+        }
         checked += 1;
         const ceiling = declaredLeapCeiling(section.type);
         const interval = Math.abs(notes[i].pitch - notes[i - 1].pitch);
@@ -115,7 +131,9 @@ describe('vocal line', () => {
       }
     }
     expect(checked).toBeGreaterThan(1000);
-    expect(violations, `interval ceiling exceeded:\n${violations.slice(0, 10).join('\n')}`).toEqual([]);
+    expect(violations, `interval ceiling exceeded:\n${violations.slice(0, 10).join('\n')}`).toEqual(
+      [],
+    );
   });
 
   it('stays inside the pitch range the generator was given', () => {
@@ -123,11 +141,18 @@ describe('vocal line', () => {
     // above it, so the assertion is that nothing escapes the range wholesale.
     for (const { testCase, song } of corpus) {
       const notes = song.track('Vocal')?.notes ?? [];
-      if (notes.length === 0) continue;
+      if (notes.length === 0) {
+        continue;
+      }
       const low = Math.min(...notes.map((n) => n.pitch));
       const high = Math.max(...notes.map((n) => n.pitch));
-      expect(low, `${describeCase(testCase)} sings below the range floor`).toBeGreaterThanOrEqual(55);
-      expect(high, `${describeCase(testCase)} sings above the range ceiling plus its climax lift`).toBeLessThanOrEqual(83);
+      expect(low, `${describeCase(testCase)} sings below the range floor`).toBeGreaterThanOrEqual(
+        55,
+      );
+      expect(
+        high,
+        `${describeCase(testCase)} sings above the range ceiling plus its climax lift`,
+      ).toBeLessThanOrEqual(83);
     }
   });
 });
@@ -140,7 +165,9 @@ describe('blueprint identity', () => {
     // emits no motif track has no identity left to hear.
     const riffBlueprints = new Set([1, 5, 7, 9]);
     for (const { testCase, song } of corpus) {
-      if (!riffBlueprints.has(testCase.blueprint)) continue;
+      if (!riffBlueprints.has(testCase.blueprint)) {
+        continue;
+      }
       const motif = song.track('Motif');
       expect(
         motif?.notes.length ?? 0,

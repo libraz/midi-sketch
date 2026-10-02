@@ -10,7 +10,7 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
-    include: ['tests/wasm/**/*.test.ts'],
+    include: ['tests/wasm/**/*.test.ts', 'tests/pop-review/**/*.test.ts'],
     // Every test here generates whole songs through WASM, and the heaviest
     // generate a hundred of them in one case. Against the 5s default those
     // cases pass alone and time out when the files run side by side, which

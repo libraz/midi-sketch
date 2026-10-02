@@ -80,6 +80,19 @@
     }
   },
   "files": {
-    "includes": ["js/**/*.ts", "js/**/*.js", "tests/wasm/**/*.ts"]
-  }
+    "includes": [
+      "js/**/*.ts",
+      "js/**/*.js",
+      "tests/wasm/**/*.ts",
+      "tests/oracle/**/*.ts",
+      "tests/pop-review/**/*.ts",
+      "scripts/pop_review/**/*.mjs"
+    ]
+  },
+  "overrides": [
+    {
+      "includes": ["scripts/pop_review/**/*.mjs"],
+      "linter": { "rules": { "suspicious": { "noConsole": "off" } } }
+    }
+  ]
 }
