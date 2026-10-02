@@ -214,6 +214,30 @@ void duckMotifUnderLead(MidiTrack& motif, const MidiTrack& vocal, const IHarmony
   }
 }
 
+namespace {
+
+/// @brief Which guitar notes are voices of a strum rather than notes of their own.
+///
+/// The rake spacing is the only record of a strum that survives generation, so
+/// it is what a later pass has to ask before moving a voice: the shape was
+/// chosen whole against the fretboard, and moving one voice of it makes the
+/// chord speak out of order.
+class StrumVoices {
+ public:
+  explicit StrumVoices(const MidiTrack& guitar) {
+    for (const auto& note : guitar.notes()) onsets_.insert(note.start_tick);
+  }
+  bool contains(Tick start) const {
+    return onsets_.count(start + kStringRakeTicks) != 0 ||
+           (start >= kStringRakeTicks && onsets_.count(start - kStringRakeTicks) != 0);
+  }
+
+ private:
+  std::set<Tick> onsets_;
+};
+
+}  // namespace
+
 /// @brief Lower accompaniment notes left stranded above the vocal after the
 /// RhythmSync lead DNA rewrite.
 ///
@@ -240,6 +264,7 @@ void lowerTrackCrossingsUnderVocal(MidiTrack& track, const MidiTrack& vocal,
   constexpr int kCrossingThreshold = 1;
   const int crossing_threshold = kCrossingThreshold;
 
+  const StrumVoices strum_voices(track);
   std::vector<size_t> unresolvable;
   for (size_t note_idx = 0; note_idx < track_notes.size(); ++note_idx) {
     auto& note = track_notes[note_idx];
@@ -252,6 +277,13 @@ void lowerTrackCrossingsUnderVocal(MidiTrack& track, const MidiTrack& vocal,
     }
     if (vocal_min >= 128) continue;  // No concurrent vocal
     if (static_cast<int>(note.note) - vocal_min < crossing_threshold) continue;
+
+    // A strum voice above the vocal is dropped rather than folded: folding it
+    // alone would put it under the voices raked after it.
+    if (role == TrackRole::Guitar && strum_voices.contains(note.start_tick)) {
+      unresolvable.push_back(note_idx);
+      continue;
+    }
 
     uint8_t pre_pitch = note.note;
     int candidate = static_cast<int>(note.note);
@@ -449,18 +481,7 @@ void separateGuitarFromBass(MidiTrack& guitar, const MidiTrack& bass, IHarmonyCo
     return;
   }
 
-  // Which notes are voices of a strum rather than notes of their own. The
-  // spacing is the only record of it that survives generation, so it is what
-  // has to be asked here.
-  std::set<Tick> onsets;
-  for (const auto& note : guitar.notes()) {
-    onsets.insert(note.start_tick);
-  }
-  auto voicesAStrum = [&onsets](Tick start) {
-    return onsets.count(start + kStringRakeTicks) != 0 ||
-           (start >= kStringRakeTicks && onsets.count(start - kStringRakeTicks) != 0);
-  };
-
+  const StrumVoices strum_voices(guitar);
   TrackPitchEditor editor(guitar, harmony, TrackRole::Guitar);
   for (size_t i = 0; i < editor.size(); ++i) {
     const NoteEvent& guitar_note = editor.at(i);
@@ -472,7 +493,7 @@ void separateGuitarFromBass(MidiTrack& guitar, const MidiTrack& bass, IHarmonyCo
     // so lifting a single voice an octave puts it above the voices that follow
     // it: the chord then speaks out of order, in an inversion nobody voiced,
     // to clear a bass note the chord as a whole was never crowding.
-    if (voicesAStrum(guitar_note.start_tick)) {
+    if (strum_voices.contains(guitar_note.start_tick)) {
       continue;
     }
     Tick guitar_end = guitar_note.start_tick + guitar_note.duration;
