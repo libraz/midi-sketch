@@ -46,7 +46,7 @@ jobs:
       uses: actions/cache@v6
       with:
         path: build/_deps
-        key: ${{ runner.os }}-cmake-deps-${{ hashFiles('CMakeLists.txt') }}
+        key: ${{ runner.os }}-cmake-deps-${{ hashFiles('**/CMakeLists.txt') }}
         restore-keys: |
           ${{ runner.os }}-cmake-deps-
 
