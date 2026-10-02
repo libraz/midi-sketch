@@ -15,6 +15,8 @@
  *
  * Run notes carry is_syllabic_subdivision: they are intentional same-pitch
  * rearticulation, and every pass that bounds same-pitch runs exempts that flag.
+ * The chorus hook chant (placeHookChant) is the same figure at the line's own
+ * pace and is written the same way.
  */
 
 #ifndef MIDISKETCH_TRACK_VOCAL_VOCAL_RECITATION_H
@@ -80,7 +82,9 @@ struct RecitationSpec {
  * than kMinRecitationNotes is not placed. The run hands over to a note a legal
  * scale step away: the line's own note at that tick, moved if needed, or a new
  * one held until the line's next onset. A section whose line already has a
- * same-pitch run at patter speed gets none.
+ * same-pitch run at patter speed gets none, and the run never starts on, runs
+ * into or hands over to a note flagged is_syllabic_subdivision: a chant placed
+ * before it is a device of its own.
  *
  * @param notes Section notes, sorted by start tick (modified in place)
  * @param part_start First tick of the section
@@ -92,6 +96,42 @@ struct RecitationSpec {
  */
 int placeRecitation(std::vector<NoteEvent>& notes, Tick part_start, Tick part_end,
                     const RecitationSpec& spec, const IHarmonyContext& harmony, std::mt19937& rng);
+
+/// Fewest notes that make a hook chant.
+constexpr int kMinHookChantNotes = 3;
+
+/// @brief Beats a chorus head chants on one pitch for a hook skeleton.
+///
+/// The span is the skeleton's own length in beats, rests included, for the
+/// skeletons that state a same-pitch figure (Repeat, TripleHit, RhythmRepeat,
+/// StutterRepeat, Ostinato); every other skeleton answers 0 and gets no chant.
+int hookChantBeats(HookSkeleton skeleton);
+
+/**
+ * @brief Chant the head of a chorus on one pitch.
+ *
+ * The pop chorus hook that hammers one note -- the chanted head of an idol
+ * chorus -- is the recitation run's slower sibling, and it is written the same
+ * way: a same-pitch run whose notes carry is_syllabic_subdivision, so every pass
+ * that bounds same-pitch runs leaves it alone, held on a pitch that is a chord
+ * tone clear of the other tracks at every onset. Unlike a recitation it adds no
+ * onsets: it re-pitches the line's own notes from the chorus downbeat for
+ * @p beats beats, so a rhythm locked to the coordinate axis keeps its lattice.
+ *
+ * The anchor's pitch is held when it can be; otherwise the nearest pitch within
+ * a fourth that holds at every onset. The run stops at the first onset where
+ * the pitch would not hold, and fewer than kMinHookChantNotes notes are not
+ * placed.
+ *
+ * @param notes Section notes (sorted in place, modified in place)
+ * @param section_start First tick of the chorus
+ * @param section_end Tick after the chorus
+ * @param beats Span of the chant in beats (hookChantBeats); 0 places nothing
+ * @param harmony Chord timeline and the tracks already registered
+ * @return Number of notes in the chant, 0 when none was placed
+ */
+int placeHookChant(std::vector<NoteEvent>& notes, Tick section_start, Tick section_end, int beats,
+                   const IHarmonyContext& harmony);
 
 }  // namespace midisketch
 

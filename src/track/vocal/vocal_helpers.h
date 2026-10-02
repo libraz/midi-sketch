@@ -156,13 +156,27 @@ void applyHookIntensity(std::vector<NoteEvent>& notes, SectionType section_type,
                         HookIntensity intensity, Tick section_start);
 
 /**
+ * @brief The pitch a later chorus's head lift raises a note to.
+ *
+ * The next scale tone above the note, or the one after it when the first would
+ * sit on the pitch of a neighbour the note currently moves away from.
+ *
+ * @param notes The line, sorted by start tick
+ * @param idx The note to lift
+ * @param ceiling Highest pitch the lift may reach
+ * @return The lifted pitch, or -1 when no lift fits under @p ceiling
+ */
+int headLiftPitch(const std::vector<NoteEvent>& notes, size_t idx, uint8_t ceiling);
+
+/**
  * @brief Restate a chorus's opening two bars at its midpoint.
  *
  * A pop chorus states its hook twice (hook-answer-hook). Each note in the two
  * bars at the midpoint that shares an onset with the opening takes the
  * opening's pitch, so the second statement is heard as the hook rather than a
  * new line over the same rhythm. A pitch the chord at the midpoint refuses, or
- * one the other tracks clash with, is left as generated.
+ * one the other tracks clash with, is left as generated, and so is one that
+ * would repeat an uncopied neighbour where the opening moved.
  *
  * @param notes Section notes (sorted in place)
  * @param section_start Section start tick

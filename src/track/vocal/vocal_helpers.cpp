@@ -272,23 +272,52 @@ void restateChorusHead(std::vector<NoteEvent>& notes, Tick section_start, uint8_
   const Tick offset = static_cast<Tick>(section_bars / 2) * TICKS_PER_BAR;
   const Tick answer_start = section_start + offset;
 
-  std::vector<std::pair<Tick, uint8_t>> head;
+  // A head note flagged as a same-pitch run (the hook chant) is restated as one,
+  // or the run guards would break the answer's copy of the figure.
+  struct HeadNote {
+    Tick tick;
+    uint8_t pitch;
+    bool run;
+  };
+  std::vector<HeadNote> head;
   for (const auto& note : notes) {
     if (note.start_tick >= section_start && note.start_tick < section_start + kHeadTicks) {
-      head.emplace_back(note.start_tick + offset, note.note);
+      head.push_back({note.start_tick + offset, note.note, note.is_syllabic_subdivision});
     }
   }
 
   for (size_t idx = 0; idx < notes.size(); ++idx) {
     NoteEvent& note = notes[idx];
     if (note.start_tick < answer_start || note.start_tick >= answer_start + kHeadTicks) continue;
-    auto match = std::find_if(head.begin(), head.end(), [&note](const auto& entry) {
-      return entry.first == note.start_tick;
+    auto match = std::find_if(head.begin(), head.end(), [&note](const HeadNote& entry) {
+      return entry.tick == note.start_tick;
     });
-    if (match == head.end() || match->second == note.note) continue;
+    if (match == head.end()) continue;
+    // Where the answer's onsets only partly match the head, a copied pitch can
+    // land beside an uncopied note of the same pitch. That repeat is a seam the
+    // head never sang, so the note keeps its own pitch.
+    if (match->pitch != note.note) {
+      auto copied = [&head](Tick tick) {
+        return std::any_of(head.begin(), head.end(),
+                           [tick](const HeadNote& entry) { return entry.tick == tick; });
+      };
+      const size_t head_idx = static_cast<size_t>(match - head.begin());
+      const bool seam_before = idx > 0 && !copied(notes[idx - 1].start_tick) &&
+                               notes[idx - 1].note == match->pitch &&
+                               (head_idx == 0 || head[head_idx - 1].pitch != match->pitch);
+      const bool seam_after =
+          idx + 1 < notes.size() && !copied(notes[idx + 1].start_tick) &&
+          notes[idx + 1].note == match->pitch &&
+          (head_idx + 1 >= head.size() || head[head_idx + 1].pitch != match->pitch);
+      if (seam_before || seam_after) continue;
+    }
+    if (match->pitch == note.note) {
+      note.is_syllabic_subdivision = note.is_syllabic_subdivision || match->run;
+      continue;
+    }
 
     const uint8_t before = note.note;
-    note.note = match->second;
+    note.note = match->pitch;
     const bool legal =
         melody::classifyVocalTone(harmony, note.note, melody::neighborhoodAt(notes, idx)) !=
             melody::ToneLegality::Illegal &&
@@ -298,10 +327,35 @@ void restateChorusHead(std::vector<NoteEvent>& notes, Tick section_start, uint8_
       note.note = before;
       continue;
     }
+    note.is_syllabic_subdivision = note.is_syllabic_subdivision || match->run;
 #ifdef MIDISKETCH_NOTE_PROVENANCE
     note.recordPitchMove(TransformStepType::MotionAdjust, before, note.note);
 #endif
   }
+}
+
+int headLiftPitch(const std::vector<NoteEvent>& notes, size_t idx, uint8_t ceiling) {
+  const NoteEvent& note = notes[idx];
+  auto nextScaleTone = [ceiling](int pitch) {
+    ++pitch;
+    while (pitch <= ceiling && !isScaleTone(getPitchClass(static_cast<uint8_t>(pitch)), 0)) {
+      ++pitch;
+    }
+    return pitch <= ceiling ? pitch : -1;
+  };
+  // A lift onto a neighbour the note moved away from turns written motion into
+  // a repeat; the next scale step up is still a lift.
+  auto ontoNeighbour = [&](int pitch) {
+    return (idx > 0 && notes[idx - 1].note != note.note && notes[idx - 1].note == pitch) ||
+           (idx + 1 < notes.size() && notes[idx + 1].note != note.note &&
+            notes[idx + 1].note == pitch);
+  };
+  int candidate = nextScaleTone(note.note);
+  if (candidate >= 0 && ontoNeighbour(candidate)) {
+    candidate = nextScaleTone(candidate);
+    if (candidate >= 0 && ontoNeighbour(candidate)) candidate = -1;
+  }
+  return candidate;
 }
 
 namespace {
@@ -783,8 +837,9 @@ int diatonicDown(int pitch, int steps) {
 ///
 /// The smallest diatonic shift that fits is tried first, then larger ones up
 /// to an octave. A shift is taken only when every note stays at or above
-/// @p low, clears the other tracks, and no tone the chord admitted becomes one
-/// it refuses. Returns whether the span moved.
+/// @p low, clears the other tracks, no tone the chord admitted becomes one it
+/// refuses, and neither edge lands on the pitch of its outside neighbour.
+/// Returns whether the span moved.
 bool lowerSpanAsUnit(std::vector<NoteEvent>& line, size_t begin, size_t end,
                      const IHarmonyContext& harmony, uint8_t low, uint8_t ceiling) {
   int peak = 0;
@@ -812,6 +867,16 @@ bool lowerSpanAsUnit(std::vector<NoteEvent>& line, size_t begin, size_t end,
             melody::classifyVocalTone(harmony, note.note, melody::neighborhoodAt(trial, pos)) !=
             melody::ToneLegality::Illegal;
       }
+    }
+    // An edge that lands on the pitch of the note outside the span turns two
+    // notes written apart into a repeat.
+    if (admitted && begin > 0 && line[begin - 1].note != line[begin].note &&
+        trial[begin].note == line[begin - 1].note) {
+      admitted = false;
+    }
+    if (admitted && end < line.size() && line[end].note != line[end - 1].note &&
+        trial[end - 1].note == line[end].note) {
+      admitted = false;
     }
     if (!admitted) continue;
 

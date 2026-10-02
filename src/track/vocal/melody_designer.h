@@ -217,6 +217,9 @@ class MelodyDesigner {
   /// discarded, so the betrayal threshold measures what a listener hears.
   uint8_t hookRepetitionCount() const { return hook_cache_.repetition_count; }
 
+  /// @brief The skeleton the chorus hook head was written from, once one was chosen.
+  std::optional<HookSkeleton> cachedHookSkeleton() const { return hook_cache_.skeleton; }
+
   /**
    * @brief Count a hook occurrence replayed from a cached phrase and vary it
    *        when the template's betrayal threshold is reached.

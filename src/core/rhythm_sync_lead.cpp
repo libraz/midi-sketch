@@ -175,6 +175,14 @@ void applyDnaPattern(std::vector<NoteEvent*>& notes, int base_pitch,
   for (size_t idx = 0; idx < notes.size(); ++idx) {
     NoteEvent& note = *notes[idx];
     const int interval = intervals[idx % intervals.size()];
+    // A flagged same-pitch run (the hook chant, a recitation) is already the
+    // gesture the stamp would write; it keeps its pitch.
+    if (note.is_syllabic_subdivision) {
+      previous_interval = interval;
+      previous_pitch = note.note;
+      note.velocity = vel::withDelta(note.velocity, static_cast<int>(velocity_boost));
+      continue;
+    }
     int pitch = base_pitch + interval;
     // A repeated DNA degree is an intentional hook gesture.  Re-use the
     // preceding realization when it is still valid over this note's chord

@@ -14,6 +14,7 @@
 
 #include "core/chord.h"
 #include "core/chord_utils.h"
+#include "core/hook_utils.h"
 #include "core/i_harmony_context.h"
 #include "core/melody_embellishment.h"
 #include "core/melody_evaluator.h"
@@ -417,12 +418,8 @@ void VocalGenerator::postProcessVocalNotes(
         for (size_t head_pos = 0; head_pos < head.size(); ++head_pos) {
           const size_t note_idx = head[head_pos];
           const auto& note = all_notes[note_idx];
-          int candidate = static_cast<int>(note.note) + 1;
-          while (candidate <= effective_vocal_high &&
-                 !isScaleTone(getPitchClass(static_cast<uint8_t>(candidate)), 0)) {
-            ++candidate;
-          }
-          if (candidate > effective_vocal_high) continue;
+          const int candidate = headLiftPitch(all_notes, note_idx, effective_vocal_high);
+          if (candidate < 0) continue;
           if (head_pos > 0 &&
               std::abs(candidate - static_cast<int>(all_notes[head[head_pos - 1]].note)) >
                   post_process_max_leap) {
@@ -794,7 +791,19 @@ void VocalGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContex
         }
       }
 
+      // The chant goes in before the head is restated, so the midpoint and every
+      // replayed chorus carry it. A locked-rhythm chorus never reaches the hook
+      // writer, so its skeleton is drawn here from a stream of its own.
       if (part.type == SectionType::Chorus) {
+        std::optional<HookSkeleton> skeleton = designer.cachedHookSkeleton();
+        if (!skeleton) {
+          constexpr uint32_t kChantMagic = 0x4348414E;  // "CHAN"
+          std::mt19937 chant_rng(params.seed ^ kChantMagic);
+          skeleton =
+              selectHookSkeleton(SectionType::Chorus, chant_rng,
+                                 getPositionAwareIntensity(sctx.hook_intensity, 0, part.bars));
+        }
+        placeHookChant(notes, part_start, part_end, hookChantBeats(*skeleton), harmony);
         restateChorusHead(notes, part_start, part.bars, harmony);
       }
 

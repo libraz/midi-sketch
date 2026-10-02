@@ -27,6 +27,7 @@
 #include "midisketch.h"
 #include "test_helpers/note_event_test_helper.h"
 #include "test_support/generator_test_fixture.h"
+#include "test_support/stub_harmony_context.h"
 #include "test_support/test_constants.h"
 #include "track/melody/melody_utils.h"
 #include "track/vocal/phrase_variation.h"
@@ -4111,54 +4112,35 @@ TEST(VocalRegisterCorpusTest, APassThatMovesTheLineForRegisterLeavesItSingableOv
 // semitones, calls the figure illegal, and flattens it onto a chord tone --
 // which is the one thing the downbeat snap exists not to do. The surroundings
 // are therefore read with the shared builder everywhere the vocal's legality
-// is asked, and these are the notes that survive only because of it.
+// is asked; the figure below survives only because of it.
 TEST(VocalRegisterCorpusTest, AnAccentedDissonanceSurvivesARearticulatedResolution) {
-  struct Config {
-    uint8_t style;
-    uint8_t blueprint;
-    uint32_t seed;
+  test::StubHarmonyContext harmony;
+  harmony.setAllPitchesSafe(true);
+  harmony.setChordDegree(0);
+  harmony.setChordTones({0, 4, 7});
+
+  // D5 on the downbeat over C major, sung again, then resolving down to C5.
+  const std::vector<NoteEvent> line = {
+      NoteEventTestHelper::create(0, TICK_EIGHTH, 74, 90),
+      NoteEventTestHelper::create(TICK_EIGHTH, TICK_EIGHTH, 74, 90),
+      NoteEventTestHelper::create(TICK_QUARTER, TICK_QUARTER, 72, 90),
   };
-  constexpr Config kConfigs[] = {{0, 4, 1}, {0, 4, 4}, {0, 2, 1}, {0, 3, 2}, {0, 0, 7}};
 
-  size_t downbeats = 0;
-  size_t rearticulated_figures = 0;
-  for (const Config& c : kConfigs) {
-    SongConfig config = createDefaultSongConfig(c.style);
-    config.seed = c.seed;
-    config.blueprint_id = c.blueprint;
+  const melody::ToneLegality shared =
+      melody::classifyVocalTone(harmony, 74, melody::neighborhoodAt(line, 0));
+  EXPECT_TRUE(shared == melody::ToneLegality::Appoggiatura ||
+              shared == melody::ToneLegality::Suspension)
+      << "the shared reading must see the resolution past the rearticulation";
 
-    MidiSketch sketch;
-    sketch.generateFromConfig(config);
-    const IHarmonyContext& harmony = sketch.getHarmonyContext();
-
-    std::vector<NoteEvent> line = sketch.getSong().vocal().notes();
-    std::sort(line.begin(), line.end(), [](const NoteEvent& a, const NoteEvent& b) {
-      if (a.start_tick != b.start_tick) return a.start_tick < b.start_tick;
-      return a.note < b.note;
-    });
-
-    for (size_t k = 0; k + 1 < line.size(); ++k) {
-      const NoteEvent& note = line[k];
-      if (note.start_tick % TICKS_PER_BAR >= TICKS_PER_BEAT / 4) continue;
-      ++downbeats;
-
-      // Only the notes whose resolution is hidden behind a rearticulation say
-      // anything here: everywhere else the two readings agree.
-      if (line[k + 1].note != note.note) continue;
-
-      const melody::ToneLegality legality =
-          melody::classifyVocalTone(harmony, note.note, melody::neighborhoodAt(line, k));
-      if (legality == melody::ToneLegality::Appoggiatura ||
-          legality == melody::ToneLegality::Suspension) {
-        ++rearticulated_figures;
-      }
-    }
-  }
-
-  ASSERT_GT(downbeats, 0u) << "the corpus has no vocal note on a downbeat to judge";
-  EXPECT_GT(rearticulated_figures, 0u)
-      << "no accented dissonance in the corpus resolves through a rearticulation, so nothing here "
-         "distinguishes the shared reading of a line from reading the adjacent entry";
+  // The adjacent entry alone sees a resolution of nought semitones; that
+  // reading is the one this test exists to rule out.
+  melody::MelodicNeighborhood adjacent;
+  adjacent.start = line[0].start_tick;
+  adjacent.duration = line[0].duration;
+  adjacent.next_pitch = line[1].note;
+  adjacent.next_start = line[1].start_tick;
+  ASSERT_EQ(melody::classifyVocalTone(harmony, 74, adjacent), melody::ToneLegality::Illegal)
+      << "the input does not distinguish the two readings";
 }
 
 }  // namespace

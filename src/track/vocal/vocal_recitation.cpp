@@ -11,6 +11,7 @@
 
 #include "core/i_harmony_context.h"
 #include "core/note_source.h"
+#include "core/note_timeline_utils.h"
 #include "core/pitch_utils.h"
 #include "core/rng_util.h"
 #include "core/timing_constants.h"
@@ -201,6 +202,9 @@ int placeRecitation(std::vector<NoteEvent>& notes, Tick part_start, Tick part_en
     const uint8_t held = notes[anchor].note;
     // A run joined to the same pitch before it is longer than the one placed.
     if (anchor > 0 && notes[anchor - 1].note == held) continue;
+    // A flagged run already there (a hook chant) is a device of its own; this
+    // one neither starts on it nor runs into it.
+    if (notes[anchor].is_syllabic_subdivision) continue;
 
     // Walk the run's lattice. Each lattice point is a place the run can hand
     // over to the next note: the line's own note if one starts there, otherwise
@@ -223,7 +227,8 @@ int placeRecitation(std::vector<NoteEvent>& notes, Tick part_start, Tick part_en
         if (tick >= part_end) break;
         bool off_lattice = false;
         while (scan < notes.size() && notes[scan].start_tick < tick) {
-          if (spec.keep_onsets && (notes[scan].start_tick - start) % try_step != 0) {
+          if (notes[scan].is_syllabic_subdivision ||
+              (spec.keep_onsets && (notes[scan].start_tick - start) % try_step != 0)) {
             off_lattice = true;
             break;
           }
@@ -233,6 +238,7 @@ int placeRecitation(std::vector<NoteEvent>& notes, Tick part_start, Tick part_en
         if (off_lattice) break;
         const bool onset_here = scan < notes.size() && notes[scan].start_tick == tick;
         if (!onset_here && tick >= sounding_end + TICKS_PER_BEAT) break;
+        if (onset_here && notes[scan].is_syllabic_subdivision) break;
 
         if (count >= kMinRecitationNotes &&
             (best_count == 0 || std::abs(count - target) <= std::abs(best_count - target))) {
@@ -310,6 +316,68 @@ int placeRecitation(std::vector<NoteEvent>& notes, Tick part_start, Tick part_en
                   notes.end());
     notes = std::move(placed);
     return best_count;
+  }
+  return 0;
+}
+
+int hookChantBeats(HookSkeleton skeleton) {
+  switch (skeleton) {
+    case HookSkeleton::Repeat:     // X X X
+    case HookSkeleton::TripleHit:  // X X X Y
+      return 3;
+    case HookSkeleton::RhythmRepeat:   // X _ X _ X
+    case HookSkeleton::StutterRepeat:  // X X _ X X
+      return 5;
+    case HookSkeleton::Ostinato:  // X X X X X X
+      return 6;
+    default:
+      return 0;
+  }
+}
+
+int placeHookChant(std::vector<NoteEvent>& notes, Tick section_start, Tick section_end, int beats,
+                   const IHarmonyContext& harmony) {
+  if (beats <= 0 || notes.empty()) return 0;
+  NoteTimeline::sortByStartTick(notes);
+
+  // The hook is the chorus's opening statement: the chant starts on its downbeat.
+  const auto anchor = std::find_if(notes.begin(), notes.end(), [section_start](const NoteEvent& n) {
+    return n.start_tick >= section_start && n.start_tick < section_start + TICK_EIGHTH;
+  });
+  if (anchor == notes.end()) return 0;
+
+  const Tick span_end =
+      std::min(section_end, anchor->start_tick + static_cast<Tick>(beats) * TICKS_PER_BEAT);
+  std::vector<NoteEvent*> run;
+  for (auto it = anchor; it != notes.end() && it->start_tick < span_end; ++it) {
+    run.push_back(&*it);
+    if (static_cast<int>(run.size()) == kMaxRecitationNotes) break;
+  }
+  if (static_cast<int>(run.size()) < kMinHookChantNotes) return 0;
+
+  const int anchor_pitch = anchor->note;
+  for (int delta : {0, -1, 1, -2, 2, -3, 3, -4, 4, -5, 5}) {
+    const int pitch = anchor_pitch + delta;
+    if (pitch < 0 || pitch > 127) continue;
+    int held = 0;
+    for (const NoteEvent* note : run) {
+      if (!holdsAt(harmony, static_cast<uint8_t>(pitch), note->start_tick, note->duration)) break;
+      ++held;
+    }
+    if (held < kMinHookChantNotes) continue;
+
+    for (int k = 0; k < held; ++k) {
+      NoteEvent& note = *run[static_cast<size_t>(k)];
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+      if (note.note != pitch) {
+        note.recordPitchMove(TransformStepType::MotionAdjust, note.note,
+                             static_cast<uint8_t>(pitch));
+      }
+#endif
+      note.note = static_cast<uint8_t>(pitch);
+      note.is_syllabic_subdivision = true;
+    }
+    return held;
   }
   return 0;
 }

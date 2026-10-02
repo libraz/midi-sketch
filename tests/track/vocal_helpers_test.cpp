@@ -1559,6 +1559,89 @@ TEST(NonChorusCapTest, APhraseNoShiftCanPlaceStillEndsUnderTheCeiling) {
   }
 }
 
+TEST(NonChorusCapTest, AShiftedPhraseDoesNotLandOnThePitchBeforeIt) {
+  test::StubHarmonyContext harmony;
+  harmony.setAllPitchesSafe(true);
+  harmony.setChordTones({0, 2, 4, 5, 7, 9, 11});
+
+  Section verse;
+  verse.type = SectionType::A;
+  verse.bars = 2;
+  verse.start_bar = 0;
+  verse.start_tick = 0;
+  Section chorus;
+  chorus.type = SectionType::Chorus;
+  chorus.bars = 2;
+  chorus.start_bar = 2;
+  chorus.start_tick = 2 * TICKS_PER_BAR;
+  const std::vector<Section> sections = {verse, chorus};
+
+  // E4, a rest, then C5-E5 over the C5 chorus peak. The smallest shift the
+  // chord admits puts the phrase's first note on that E4.
+  std::vector<NoteEvent> notes = {
+      NoteEventTestHelper::create(0, TICK_EIGHTH, 64, 90),
+      NoteEventTestHelper::create(TICKS_PER_BAR, TICK_EIGHTH, 72, 90),
+      NoteEventTestHelper::create(TICKS_PER_BAR + TICK_EIGHTH, TICK_EIGHTH, 76, 90),
+      NoteEventTestHelper::create(2 * TICKS_PER_BAR, TICK_QUARTER, 72, 90),
+  };
+  capNonChorusBelowChorusPeak(notes, harmony, sections, 55);
+
+  ASSERT_EQ(notes[0].note, 64);
+  EXPECT_NE(notes[1].note, notes[0].note) << "the shift made the phrase repeat the note before it";
+  EXPECT_LT(notes[1].note, 72);
+  EXPECT_LT(notes[2].note, 72);
+  EXPECT_LT(notes[1].note, notes[2].note);
+}
+
+TEST(RestateChorusHeadTest, ACopyDoesNotRepeatAnUncopiedNeighbourWhereTheHeadMoved) {
+  test::StubHarmonyContext harmony;
+  harmony.setAllPitchesSafe(true);
+  harmony.setChordTones({0, 2, 4, 5, 7, 9, 11});
+
+  // The head rises C4 -> E4. The answer has an extra onset between the two the
+  // head shares with it, so a copy onto the first would sit beside a C4 of its own.
+  const Tick answer = 4 * TICKS_PER_BAR;
+  std::vector<NoteEvent> notes = {
+      NoteEventTestHelper::create(0, TICK_QUARTER, 60, 90),
+      NoteEventTestHelper::create(TICK_QUARTER, TICK_QUARTER, 64, 90),
+      NoteEventTestHelper::create(answer, TICK_EIGHTH, 62, 90),
+      NoteEventTestHelper::create(answer + TICK_EIGHTH, TICK_EIGHTH, 60, 90),
+      NoteEventTestHelper::create(answer + TICK_QUARTER, TICK_QUARTER, 65, 90),
+  };
+  restateChorusHead(notes, 0, 8, harmony);
+
+  EXPECT_NE(notes[2].note, notes[3].note) << "the copy repeated a note the head did not repeat";
+  EXPECT_EQ(notes[4].note, 64) << "the restatement itself must still happen";
+}
+
+TEST(HeadLiftTest, ALiftDoesNotLandOnTheNeighbourItMovedAwayFrom) {
+  // F4 between G4 and B4: one scale step up is the G4 the line just left, so the
+  // lift takes the next step, A4.
+  const std::vector<NoteEvent> notes = {
+      NoteEventTestHelper::create(0, TICK_EIGHTH, 67, 90),
+      NoteEventTestHelper::create(TICK_EIGHTH, TICK_EIGHTH, 65, 90),
+      NoteEventTestHelper::create(TICK_QUARTER, TICK_EIGHTH, 71, 90),
+  };
+  EXPECT_EQ(headLiftPitch(notes, 1, 84), 69);
+
+  // With no neighbour in the way the lift is one scale step.
+  const std::vector<NoteEvent> free_notes = {
+      NoteEventTestHelper::create(0, TICK_EIGHTH, 60, 90),
+      NoteEventTestHelper::create(TICK_EIGHTH, TICK_EIGHTH, 65, 90),
+      NoteEventTestHelper::create(TICK_QUARTER, TICK_EIGHTH, 72, 90),
+  };
+  EXPECT_EQ(headLiftPitch(free_notes, 1, 84), 67);
+
+  // Both steps blocked or over the ceiling: no lift.
+  const std::vector<NoteEvent> boxed = {
+      NoteEventTestHelper::create(0, TICK_EIGHTH, 67, 90),
+      NoteEventTestHelper::create(TICK_EIGHTH, TICK_EIGHTH, 65, 90),
+      NoteEventTestHelper::create(TICK_QUARTER, TICK_EIGHTH, 69, 90),
+  };
+  EXPECT_EQ(headLiftPitch(boxed, 1, 84), -1);
+  EXPECT_EQ(headLiftPitch(free_notes, 1, 66), -1);
+}
+
 TEST(RestateChorusHeadTest, LeadDnaStampsTheMidpointLikeTheHead) {
   // The RhythmSync lead DNA rewrites the chorus head after the restatement was
   // made; it has to rewrite the midpoint the same way or the hook is sung once.
