@@ -307,7 +307,9 @@ class MelodicAnalyzer(BaseAnalyzer):
 
         The vocal is measured against the range the song was generated with,
         not a fixed window: a caller who asked for a lower voice must not be
-        told every note is too low.
+        told every note is too low. The range is the singer's, so it bounds
+        the sounding pitch: the notes here carry the key and the modulation,
+        and neither widens it.
         """
         vocal_low, vocal_high = self.vocal_range()
         for channel, (low, high) in TRACK_RANGES.items():

@@ -46,23 +46,16 @@ import { readSmf } from './smf.mjs';
 
 /**
  * Semitones above the tonic for a generator chord degree: 0-6 diatonic, 8 and
- * 10-14 borrowed. Mirrors `degreeToSemitone` in `src/core/chord.cpp`.
+ * 10-14 borrowed. Read from the table the core exports
+ * (`scripts/music_analyzer/chord_degrees.json`, checked by tests/core/chord_test.cpp).
  */
-const DEGREE_SEMITONES = {
-  0: 0,
-  1: 2,
-  2: 4,
-  3: 5,
-  4: 7,
-  5: 9,
-  6: 11,
-  8: 8,
-  10: 10,
-  11: 3,
-  12: 5,
-  13: 1,
-  14: 6,
-};
+const DEGREE_SEMITONES = Object.fromEntries(
+  Object.entries(
+    JSON.parse(
+      readFileSync(new URL('../music_analyzer/chord_degrees.json', import.meta.url), 'utf8'),
+    ).degrees,
+  ).map(([degree, row]) => [Number(degree), row.root_pc]),
+);
 
 const BEATS_PER_BAR = 4;
 
@@ -190,10 +183,9 @@ export function loadGenerated(path) {
         rootPc: ((((DEGREE_SEMITONES[c.degree] ?? 0) + keyAt(startBeat)) % 12) + 12) % 12,
       };
     }),
-    // Sounding bounds. The generator reserves the modulation's headroom inside
-    // the internal window, so no further shift applies after the key change.
-    vocalLow: (meta.vocal_low ?? 60) + keyPc,
-    vocalHigh: (meta.vocal_high ?? 79) + keyPc,
+    // The singer's range, which bounds the sounding pitch.
+    vocalLow: meta.vocal_low ?? 60,
+    vocalHigh: meta.vocal_high ?? 79,
   };
   return assemble(
     {

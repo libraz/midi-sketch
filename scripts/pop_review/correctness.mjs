@@ -203,14 +203,10 @@ function declarations(reading) {
   }
   const key = harmony.analysis.prevailingKey;
   const tonic = key.variant === 'major' ? key.scale.rootPc : (key.scale.rootPc + 3) % 12;
-  const shiftAt = (beat) =>
-    declared.modulationBeat !== null && beat >= declared.modulationBeat
-      ? declared.modulationSemitones
-      : 0;
+  // The range is the singer's, so it bounds the sounding pitch on both sides of
+  // a modulation.
   const outOfRange = song.melody.filter(
-    (n) =>
-      n.pitch < declared.vocalLow + shiftAt(n.startBeat) ||
-      n.pitch > declared.vocalHigh + shiftAt(n.startBeat),
+    (n) => n.pitch < declared.vocalLow || n.pitch > declared.vocalHigh,
   ).length;
   return {
     declaredRootAgreement: ratio(agree, voiced),

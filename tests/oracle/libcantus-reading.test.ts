@@ -8,6 +8,7 @@
  * ones the generator could make about its own state.
  */
 
+import { readFileSync } from 'node:fs';
 import { compareMelodies, detectChordBest } from '@libraz/libcantus';
 import { beforeAll, describe, expect, it } from 'vitest';
 import {
@@ -24,8 +25,20 @@ interface Generated {
   song: OracleSong;
 }
 
-/** Scale degrees, as pitch classes of the internal C major space. */
-const DEGREE_PITCH_CLASS = [0, 2, 4, 5, 7, 9, 11];
+/**
+ * Root pitch class of each chord degree in the internal C major space, borrowed
+ * degrees included, read from the table the core exports.
+ */
+const DEGREE_ROOT_PC: Record<number, number> = Object.fromEntries(
+  Object.entries(
+    JSON.parse(
+      readFileSync(
+        new URL('../../scripts/music_analyzer/chord_degrees.json', import.meta.url),
+        'utf8',
+      ),
+    ).degrees as Record<string, { root_pc: number }>,
+  ).map(([degree, row]) => [Number(degree), row.root_pc]),
+);
 
 /** Blueprints whose riff policy is Locked: the riff must be the same riff. */
 const LOCKED_RIFF_BLUEPRINTS = new Set([1, 5, 6, 7, 8, 9]);
@@ -54,7 +67,7 @@ describe('the harmony that sounds', () => {
     for (const { testCase, song } of corpus) {
       const pool = HARMONY_TRACKS.flatMap((name) => song.track(name)?.notes ?? []);
       for (const chord of song.chords) {
-        const root = DEGREE_PITCH_CLASS[chord.degree];
+        const root = DEGREE_ROOT_PC[chord.degree];
         if (root === undefined) {
           continue;
         }

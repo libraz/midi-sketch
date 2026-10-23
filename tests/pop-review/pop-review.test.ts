@@ -502,13 +502,35 @@ describe('loaders', () => {
         const declared = write(modulation);
         expect(declared.modulationBeat).toBeNull();
         expect(declared.modulationSemitones).toBe(0);
-        // I and V of D, unshifted; the range is the internal window in D.
+        // I and V of D, unshifted; the range is the singer's, in sounding pitch.
         expect(declared.chords.map((c: { rootPc: number }) => c.rootPc)).toEqual([2, 9]);
-        expect([declared.vocalLow, declared.vocalHigh]).toEqual([62, 81]);
+        expect([declared.vocalLow, declared.vocalHigh]).toEqual([60, 79]);
       }
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe('declared vocal range', () => {
+  it('bounds the sounding pitch on both sides of a modulation', () => {
+    const song = buildSong();
+    // The last chorus is declared as modulated +2; its top note 91 sounds above
+    // the singer's 89 there exactly as it does in the first chorus.
+    song.declared = {
+      ...song.declared,
+      modulationBeat: 96,
+      modulationSemitones: 2,
+      vocalLow: 60,
+      vocalHigh: 89,
+    };
+    const above = song.melody.filter((n) => n.pitch > 89);
+    expect(above.some((n) => n.startBeat >= 96)).toBe(true);
+    expect(above.some((n) => n.startBeat < 96)).toBe(true);
+    expect(correctnessOf(readSong(song)).vocalOutOfDeclaredRangeRatio).toBeCloseTo(
+      above.length / song.melody.length,
+      10,
+    );
   });
 });
 

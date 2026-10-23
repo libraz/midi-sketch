@@ -64,6 +64,18 @@ class TestRangeViolations(unittest.TestCase):
         self.assertEqual(len(issues), 1)
         self.assertEqual(issues[0].details["expected_high"], 69)
 
+    def test_the_range_bounds_the_sounding_pitch_in_any_key_and_after_a_modulation(self):
+        # Internal 79 is the top of the range; in E it sounds 83, and after a
+        # +2 modulation from bar 2 a sounding 81 is still above the singer's 79.
+        metadata = {'key': 4, 'modulation_tick': TICKS_PER_BAR, 'modulation_semitones': 2,
+                    'vocal_low': 60, 'vocal_high': 79}
+        notes = _vocal([76, 79, 83, 79]) + _vocal([79, 81, 79, 76], start_bar=2)
+
+        issues = _issues(notes, metadata, "range_high")
+
+        self.assertEqual(sorted(issue.details["pitch"] for issue in issues), [81, 83])
+        self.assertTrue(all(issue.details["expected_high"] == 79 for issue in issues))
+
     def test_a_nonsensical_declared_range_falls_back_to_the_default(self):
         metadata = {'vocal_low': 90, 'vocal_high': 40}
         notes = _vocal([72, 74, 76, 79, 76, 74, 72, 71])
