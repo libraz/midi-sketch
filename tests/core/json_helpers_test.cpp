@@ -741,7 +741,6 @@ TEST(JsonRoundTripTest, StyleMelodyParams) {
   original.tension_usage = 0.4f;
   original.note_density = 1.2f;
   original.min_note_division = 16;
-  original.sixteenth_note_ratio = 0.3f;
   original.thirtysecond_note_ratio = 0.1f;
   original.syncopation_prob = 0.25f;
   original.allow_bar_crossing = true;
@@ -763,7 +762,6 @@ TEST(JsonRoundTripTest, StyleMelodyParams) {
   EXPECT_FLOAT_EQ(restored.tension_usage, original.tension_usage);
   EXPECT_FLOAT_EQ(restored.note_density, original.note_density);
   EXPECT_EQ(restored.min_note_division, original.min_note_division);
-  EXPECT_FLOAT_EQ(restored.sixteenth_note_ratio, original.sixteenth_note_ratio);
   EXPECT_FLOAT_EQ(restored.thirtysecond_note_ratio, original.thirtysecond_note_ratio);
   EXPECT_FLOAT_EQ(restored.syncopation_prob, original.syncopation_prob);
   EXPECT_EQ(restored.allow_bar_crossing, original.allow_bar_crossing);

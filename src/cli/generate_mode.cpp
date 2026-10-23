@@ -197,6 +197,7 @@ midisketch::SongConfig configFromMetadata(const std::string& metadata,
   }
   if (p.has("enable_syncopation")) {
     config.enable_syncopation = p.getBool("enable_syncopation");
+    config.enable_syncopation_explicit = true;
   }
   if (p.has("addictive_mode")) {
     config.addictive_mode = p.getBool("addictive_mode");
@@ -407,6 +408,7 @@ int runGenerateMode(const ParsedArgs& args) {
     config.chord_extension.enable_sus = args.enable_sus;
     config.chord_extension.enable_9th = args.enable_9th;
     config.enable_syncopation = args.syncopation;
+    config.enable_syncopation_explicit = args.syncopation;
 
     // Generation parameters
     if (args.drive_feel >= 0) {

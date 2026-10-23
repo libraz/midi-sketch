@@ -36,6 +36,23 @@ TEST(SongTest, SetModulation) {
   EXPECT_EQ(song.modulationAmount(), 2);
 }
 
+// The shift at a tick is the one record read one way: the amount from the
+// point on, nothing before it, and nothing for an amount with no point.
+TEST(SongTest, ModulationAtReadsTheRecordAtATick) {
+  Song song;
+  song.setModulation(1920, 2);
+  EXPECT_EQ(song.modulationAt(0), 0);
+  EXPECT_EQ(song.modulationAt(1919), 0);
+  EXPECT_EQ(song.modulationAt(1920), 2);
+  EXPECT_EQ(song.modulationAt(100000), 2);
+
+  Song unmodulated;
+  unmodulated.setModulation(0, 3);
+  EXPECT_EQ(unmodulated.modulationAmount(), 0);
+  EXPECT_EQ(unmodulated.modulationAt(0), 0);
+  EXPECT_EQ(unmodulated.modulationAt(100000), 0);
+}
+
 TEST(SongTest, TrackAccessors) {
   Song song;
 

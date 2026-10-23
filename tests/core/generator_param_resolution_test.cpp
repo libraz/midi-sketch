@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "core/config_converter.h"
+#include "core/coordinator.h"
 #include "core/generator.h"
 #include "core/preset_data.h"
 #include "core/production_blueprint.h"
@@ -22,6 +23,7 @@
 #include "core/section_types.h"
 #include "core/song.h"
 #include "core/types.h"
+#include "midisketch.h"
 
 namespace midisketch {
 namespace {
@@ -205,6 +207,212 @@ TEST(GeneratorExplicitChoiceTest, RhythmSyncLeadKeepsAnExplicitLeap) {
   ASSERT_TRUE(isRhythmSyncLeadSetting(gen.getParams(), gen.resolvedBlueprintId()))
       << "fixture must reach the RhythmSync lead setting";
   EXPECT_EQ(gen.getParams().melody_params.max_leap_interval, 5);
+}
+
+SongConfig rhythmSyncLeadConfig() {
+  SongConfig config = createDefaultSongConfig(14);  // Anime Opening
+  config.seed = 777;
+  config.blueprint_id = 1;  // RhythmLock
+  config.mood = static_cast<uint8_t>(Mood::AnimeHighEnergy);
+  config.mood_explicit = true;
+  return config;
+}
+
+TEST(GeneratorExplicitChoiceTest, RhythmSyncLeadKeepsEveryExplicitVocalChoice) {
+  SongConfig config = rhythmSyncLeadConfig();
+  config.vocal_style = VocalStylePreset::Ballad;
+  config.hook_intensity = HookIntensity::Light;
+  config.hook_intensity_explicit = true;
+  config.vocal_groove = VocalGrooveFeel::Swing;
+  config.vocal_groove_explicit = true;
+  config.melody_syncopation_prob = 0;
+
+  Generator gen;
+  gen.generateFromConfig(config);
+  ASSERT_TRUE(isRhythmSyncLeadSetting(gen.getParams(), gen.resolvedBlueprintId()))
+      << "fixture must reach the RhythmSync lead setting";
+  const GeneratorParams& params = gen.getParams();
+  EXPECT_EQ(params.vocal_style, VocalStylePreset::Ballad);
+  EXPECT_EQ(params.hook_intensity, HookIntensity::Light);
+  EXPECT_EQ(params.vocal_groove, VocalGrooveFeel::Swing);
+  EXPECT_FLOAT_EQ(params.melody_params.syncopation_prob, 0.0f);
+}
+
+TEST(GeneratorExplicitChoiceTest, RhythmSyncLeadStyleBringsItsMelodyControlsAlong) {
+  Generator gen;
+  gen.generateFromConfig(rhythmSyncLeadConfig());
+  ASSERT_TRUE(isRhythmSyncLeadSetting(gen.getParams(), gen.resolvedBlueprintId()))
+      << "fixture must reach the RhythmSync lead setting";
+  const GeneratorParams& params = gen.getParams();
+  ASSERT_EQ(params.vocal_style, VocalStylePreset::Vocaloid);
+  const VocalStylePresetData& style = getVocalStylePresetData(VocalStylePreset::Vocaloid);
+  EXPECT_FLOAT_EQ(params.melody_params.consecutive_same_note_prob,
+                  style.consecutive_same_note_prob);
+  EXPECT_FLOAT_EQ(params.melody_params.chorus_density_modifier, style.chorus_density_modifier);
+}
+
+TEST(GeneratorExplicitChoiceTest, RhythmSyncLeadHonoursAnExplicitSyncopationOff) {
+  SongConfig config = rhythmSyncLeadConfig();
+  config.enable_syncopation = false;
+  config.enable_syncopation_explicit = true;
+
+  Generator gen;
+  gen.generateFromConfig(config);
+  ASSERT_TRUE(isRhythmSyncLeadSetting(gen.getParams(), gen.resolvedBlueprintId()))
+      << "fixture must reach the RhythmSync lead setting";
+  EXPECT_FLOAT_EQ(gen.getParams().melody_params.syncopation_prob, 0.0f);
+
+  config.enable_syncopation_explicit = false;
+  Generator defaulted;
+  defaulted.generateFromConfig(config);
+  EXPECT_GE(defaulted.getParams().melody_params.syncopation_prob, 0.30f);
+}
+
+TEST(GeneratorExplicitChoiceTest, RhythmSyncLeadStyleSwapKeepsRegisterAndSyllabicOverrides) {
+  SongConfig config = rhythmSyncLeadConfig();
+  config.melody_chorus_register_shift = 3;
+  config.syllabic_sub_rate = 20;
+
+  Generator gen;
+  gen.generateFromConfig(config);
+  ASSERT_TRUE(isRhythmSyncLeadSetting(gen.getParams(), gen.resolvedBlueprintId()))
+      << "fixture must reach the RhythmSync lead setting";
+  ASSERT_EQ(gen.getParams().vocal_style, VocalStylePreset::Vocaloid);
+  EXPECT_EQ(gen.getParams().melody_params.chorus_register_shift, 3);
+  EXPECT_FLOAT_EQ(gen.getParams().melody_params.syllabic_sub_ratio, 0.20f);
+}
+
+TEST(GeneratorExplicitChoiceTest, AddictiveModeKeepsAnExplicitHookIntensity) {
+  SongConfig config = createDefaultSongConfig(0);
+  config.seed = 4242;
+  config.addictive_mode = true;
+  config.hook_intensity = HookIntensity::Light;
+  config.hook_intensity_explicit = true;
+
+  Generator gen;
+  gen.generateFromConfig(config);
+  EXPECT_TRUE(gen.getParams().addictive_mode);
+  EXPECT_EQ(gen.getParams().hook_intensity, HookIntensity::Light);
+
+  config.hook_intensity_explicit = false;
+  Generator defaulted;
+  defaulted.generateFromConfig(config);
+  EXPECT_EQ(defaulted.getParams().hook_intensity, HookIntensity::Maximum);
+}
+
+TEST(GeneratorPlanParityTest, StandaloneCoordinatorPlansTheSectionsTheGeneratorDoes) {
+  for (uint8_t blueprint : {uint8_t{0}, uint8_t{1}}) {  // one Traditional, one RhythmSync
+    SongConfig config = createDefaultSongConfig(0);
+    config.seed = 31337;
+    config.blueprint_id = blueprint;
+    const GeneratorParams params = ConfigConverter::convert(config);
+
+    Generator gen;
+    gen.generateVocal(params);
+    const auto& expected = gen.getSong().arrangement().sections();
+    ASSERT_FALSE(expected.empty());
+
+    Coordinator coordinator;
+    coordinator.initialize(gen.getParams());
+    const auto& planned = coordinator.getArrangement().sections();
+    ASSERT_EQ(planned.size(), expected.size()) << "blueprint " << int(blueprint);
+    for (size_t i = 0; i < planned.size(); ++i) {
+      EXPECT_EQ(planned[i].density_percent, expected[i].density_percent)
+          << "blueprint " << int(blueprint) << " section " << i;
+      EXPECT_EQ(planned[i].base_velocity, expected[i].base_velocity)
+          << "blueprint " << int(blueprint) << " section " << i;
+      EXPECT_EQ(planned[i].layer_events.size(), expected[i].layer_events.size())
+          << "blueprint " << int(blueprint) << " section " << i;
+    }
+  }
+}
+
+TEST(GeneratorPlanParityTest, StandaloneCoordinatorResolvesTheImplicitTempoTheGeneratorDoes) {
+  for (uint8_t style : {uint8_t{0}, uint8_t{16}}) {  // a pop preset and Emotional Ballad
+    SongConfig config = createDefaultSongConfig(style);
+    config.seed = 5150;
+    config.bpm = 0;
+    const GeneratorParams params = ConfigConverter::convert(config);
+
+    Generator gen;
+    gen.generate(params);
+    Coordinator coordinator;
+    coordinator.initialize(params);
+    EXPECT_EQ(coordinator.getBpm(), gen.getSong().bpm()) << "style " << int(style);
+    EXPECT_EQ(coordinator.getBlueprintId(), gen.resolvedBlueprintId()) << "style " << int(style);
+  }
+}
+
+TEST(GeneratorRegenerateVocalTest, RepeatedComplexityUpdatesDoNotCompound) {
+  SongConfig config = createDefaultSongConfig(0);
+  config.seed = 2024;
+
+  VocalConfig update;
+  update.present_fields = VocalConfig::Seed | VocalConfig::MelodicComplexityField;
+  update.melodic_complexity = MelodicComplexity::Simple;
+  update.seed = 99;
+
+  MidiSketch sketch;
+  sketch.generateFromConfig(config);
+  sketch.regenerateVocal(update);
+  const float once = sketch.getParams().melody_params.note_density;
+  sketch.regenerateVocal(update);
+  sketch.regenerateVocal(update);
+  const float thrice = sketch.getParams().melody_params.note_density;
+
+  SongConfig final_config = config;
+  final_config.melodic_complexity = MelodicComplexity::Simple;
+  const float converted = ConfigConverter::convert(final_config).melody_params.note_density;
+
+  EXPECT_FLOAT_EQ(once, thrice);
+  EXPECT_FLOAT_EQ(thrice, converted);
+}
+
+TEST(GeneratorRegenerateVocalTest, UpdatesWithoutASongConfigDoNotCompoundEither) {
+  SongConfig config = createDefaultSongConfig(0);
+  config.seed = 2024;
+  config.melody_max_leap = 9;  // a caller override that must survive the rebuild
+
+  VocalConfig update;
+  update.present_fields = VocalConfig::Seed | VocalConfig::MelodicComplexityField;
+  update.melodic_complexity = MelodicComplexity::Simple;
+  update.seed = 99;
+
+  Generator gen;
+  gen.generate(ConfigConverter::convert(config));
+  gen.regenerateVocal(update);
+  const float once = gen.getParams().melody_params.note_density;
+  gen.regenerateVocal(update);
+  gen.regenerateVocal(update);
+
+  SongConfig simple = config;
+  simple.melodic_complexity = MelodicComplexity::Simple;
+  const StyleMelodyParams converted = ConfigConverter::convert(simple).melody_params;
+  const StyleMelodyParams& after = gen.getParams().melody_params;
+  EXPECT_FLOAT_EQ(after.note_density, once);
+  EXPECT_FLOAT_EQ(after.note_density, converted.note_density);
+  EXPECT_FLOAT_EQ(after.tension_usage, converted.tension_usage);
+  EXPECT_EQ(after.max_leap_interval, 9) << "the caller's leap override is not a derived control";
+}
+
+TEST(GeneratorRegenerateVocalTest, ReturningToStandardComplexityRestoresTheConvertedControls) {
+  SongConfig config = createDefaultSongConfig(0);
+  config.seed = 2024;
+
+  MidiSketch sketch;
+  sketch.generateFromConfig(config);
+  const float original = sketch.getParams().melody_params.note_density;
+
+  VocalConfig update;
+  update.present_fields = VocalConfig::Seed | VocalConfig::MelodicComplexityField;
+  update.seed = 99;
+  update.melodic_complexity = MelodicComplexity::Complex;
+  sketch.regenerateVocal(update);
+  ASSERT_NE(sketch.getParams().melody_params.note_density, original);
+
+  update.melodic_complexity = MelodicComplexity::Standard;
+  sketch.regenerateVocal(update);
+  EXPECT_FLOAT_EQ(sketch.getParams().melody_params.note_density, original);
 }
 
 TEST(GeneratorExplicitChoiceTest, AnExplicitZeroProbabilitySilencesAMoodFamilyItsFlagCannot) {

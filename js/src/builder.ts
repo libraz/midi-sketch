@@ -120,6 +120,7 @@ const EXPLICIT_FLAGS: Partial<Record<keyof SongConfig, keyof SongConfig>> = {
   formId: 'formExplicit',
   hookIntensity: 'hookIntensityExplicit',
   vocalGroove: 'vocalGrooveExplicit',
+  enableSyncopation: 'enableSyncopationExplicit',
   chordExtSusProb: 'chordExtProbExplicit',
   chordExt7thProb: 'chordExtProbExplicit',
   chordExt9thProb: 'chordExtProbExplicit',

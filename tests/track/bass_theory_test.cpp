@@ -94,7 +94,6 @@ TEST(BassAnalysisTest, Beat1FifthDoesNotReportRootOnBeat1) {
   BassAnalysis analysis = BassAnalysis::analyzeBar(track, 0, 48);
 
   EXPECT_FALSE(analysis.has_root_on_beat1);
-  EXPECT_TRUE(analysis.has_fifth);
 }
 
 TEST(BassAnalysisTest, Beat1RootReportsRootOnBeat1) {

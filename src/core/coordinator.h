@@ -39,6 +39,7 @@ namespace midisketch {
 // Forward declarations
 class Song;
 struct ChordProgression;
+struct VocalAnalysis;
 
 /// @brief Validation result for parameters.
 struct ValidationResult {
@@ -66,6 +67,23 @@ struct ValidationResult {
 /// - Generation paradigm and riff policy
 /// - Track generation order
 /// - Cross-track coordination
+/// @brief Tempo an implicit BPM stands for: the explicit mood's or the style preset's
+/// (params.auto_bpm_fallback), else the mood default.
+///
+/// The one reference Generator and Coordinator both hand to the blueprint draw and
+/// to resolveTempo().
+uint16_t implicitBpm(const GeneratorParams& params);
+
+/// @brief Register context a RhythmSync motif is voiced against: the configured vocal range.
+///
+/// The motif is generated before the vocal in that paradigm, so no vocal exists to read.
+MotifContext buildRhythmSyncMotifContext(const GeneratorParams& params);
+
+/// @brief Context a motif is voiced against when it answers an existing vocal.
+///
+/// Points into @p song and @p analysis; both must outlive the returned context.
+MotifContext buildVocalMotifContext(const Song& song, const VocalAnalysis& analysis);
+
 class Coordinator {
  public:
   Coordinator();

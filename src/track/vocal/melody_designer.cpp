@@ -92,7 +92,6 @@ Tick getPickupDuration(AnticipationRestMode mode) {
 using melody::applySequentialTransposition;
 using melody::calculatePhraseCount;
 using melody::getAnchorTonePitch;
-using melody::getBassRootPitchClass;
 using melody::getHookRhythmPatternCount;
 using melody::getHookRhythmPatterns;
 using melody::getNearestSafeChordTone;
@@ -337,6 +336,7 @@ std::vector<NoteEvent> MelodyDesigner::generateSection(
     std::mt19937& rng, bool commit_hook_repetition, bool* generated_hook_out) {
   std::vector<NoteEvent> result;
   bool generated_hook = false;
+  hook_cache_.section_statements = 0;
 
   // Phrase plan: the caller's when it supplied one (it knows the rhythm lock
   // and the section flow), otherwise planned here from the section context.

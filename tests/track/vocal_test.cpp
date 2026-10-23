@@ -792,7 +792,6 @@ TEST_F(VocalTest, SimpleMelodicComplexityReducesNoteCount) {
       std::min(static_cast<uint8_t>(5), simple_params.melody_params.max_leap_interval);
   simple_params.melody_params.hook_repetition = true;
   simple_params.melody_params.tension_usage *= 0.5f;
-  simple_params.melody_params.sixteenth_note_ratio *= 0.5f;
 
   Generator gen_simple;
   gen_simple.generate(simple_params);
@@ -851,8 +850,6 @@ TEST_F(VocalTest, ComplexMelodicComplexityIncreasesNoteCount) {
   complex_params.melody_params.note_density *= 1.3f;
   complex_params.melody_params.max_leap_interval = 12;
   complex_params.melody_params.tension_usage *= 1.5f;
-  complex_params.melody_params.sixteenth_note_ratio =
-      std::min(0.5f, complex_params.melody_params.sixteenth_note_ratio * 1.5f);
 
   Generator gen_complex;
   gen_complex.generate(complex_params);

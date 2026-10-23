@@ -191,8 +191,7 @@ TEST(SecondaryDominantPlannerTest, Dom7ChordTonesAtSecondaryDominant) {
   int8_t degree = harmony.getChordDegreeAt(sec_dom_tick);
 
   // Calculate expected Dom7 chord tones (same logic as fillPianoRollInfo)
-  int normalized = ((degree % 7) + 7) % 7;
-  int root_pc = SCALE[normalized];  // Key=C so current_key=0
+  int root_pc = degreeToSemitone(degree);  // Key=C so current_key=0
   std::vector<int> expected_dom7 = {
       root_pc,
       (root_pc + 4) % 12,  // major 3rd

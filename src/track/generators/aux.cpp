@@ -359,7 +359,6 @@ void AuxGenerator::generateFromSongContext(MidiTrack& track, const SongContext& 
       config.range_width = 6;
       config.velocity_ratio = 0.8f * aux_profile.velocity_scale;
       config.density_ratio = 1.0f * aux_profile.density_scale;
-      config.sync_phrase_boundary = true;
     } else if (section.type == SectionType::A || section.type == SectionType::B ||
                section.type == SectionType::Bridge) {
       // A/B/Bridge: Use blueprint verse function
@@ -368,7 +367,6 @@ void AuxGenerator::generateFromSongContext(MidiTrack& track, const SongContext& 
       config.range_width = 12;
       config.velocity_ratio = 0.7f * aux_profile.velocity_scale;
       config.density_ratio = 0.8f * aux_profile.density_scale;
-      config.sync_phrase_boundary = true;
 
       // MotifCounter requires VocalAnalysis - generate directly
       if (config.function == AuxFunction::MotifCounter) {
@@ -387,7 +385,6 @@ void AuxGenerator::generateFromSongContext(MidiTrack& track, const SongContext& 
         config.range_width = 12;
         config.velocity_ratio = 0.75f * aux_profile.velocity_scale;
         config.density_ratio = 0.8f * aux_profile.density_scale;
-        config.sync_phrase_boundary = true;
 
         MidiTrack section_aux = generate(config, ctx, harmony, rng, /*register_to_harmony=*/false);
         for (const auto& note : section_aux.notes()) {
@@ -407,7 +404,6 @@ void AuxGenerator::generateFromSongContext(MidiTrack& track, const SongContext& 
           config.range_width = 12;
           config.velocity_ratio = 0.75f * aux_profile.velocity_scale;
           config.density_ratio = 1.0f * aux_profile.density_scale;
-          config.sync_phrase_boundary = true;
 
           auto unison_notes = generateUnison(ctx, config, harmony, rng);
           for (const auto& note : unison_notes) {
@@ -427,7 +423,6 @@ void AuxGenerator::generateFromSongContext(MidiTrack& track, const SongContext& 
         config.range_width = 12;
         config.velocity_ratio = 0.6f * aux_profile.velocity_scale;
         config.density_ratio = 0.8f * aux_profile.density_scale;
-        config.sync_phrase_boundary = false;
       } else {
         // Rhythmic chorus functions (GrooveAccent, PulseLoop, MelodicHook, etc.)
         // Choruses are the energy peak: push aux density up toward the 3-4
@@ -436,7 +431,6 @@ void AuxGenerator::generateFromSongContext(MidiTrack& track, const SongContext& 
         config.range_width = 12;
         config.velocity_ratio = 0.75f * aux_profile.velocity_scale;
         config.density_ratio = 0.95f * aux_profile.density_scale;
-        config.sync_phrase_boundary = true;
       }
     } else if (aux_count > 0) {
       // Other sections: Use default aux config with blueprint scaling

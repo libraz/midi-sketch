@@ -304,6 +304,60 @@ TEST(MotifSectionBoundaryTest, LockedReplayThinsASectionBySectionDensity) {
   EXPECT_LT(thin_onsets, full_onsets);
 }
 
+TEST(MotifSectionBoundaryTest, LockedReplayThinsAnOchisabiChorusByItsModifier) {
+  auto replayedOnsets = [](SectionModifier modifier, uint32_t seed) {
+    GeneratorParams params;
+    params.mood = Mood::IdolPop;
+    params.seed = seed;
+    params.composition_style = CompositionStyle::BackgroundMotif;
+    params.riff_policy = RiffPolicy::LockedContour;
+
+    Section first;
+    first.type = SectionType::Chorus;
+    first.name = "Chorus1";
+    first.bars = 8;
+    first.start_tick = 0;
+    first.track_mask = TrackMask::Motif;
+    Section replay = first;
+    replay.name = "Chorus2";
+    replay.start_bar = first.bars;
+    replay.start_tick = first.endTick();
+    replay.modifier = modifier;
+
+    Song song;
+    song.setArrangement(Arrangement({first, replay}));
+    test::StubHarmonyContext harmony;
+    harmony.setAllPitchesSafe(true);
+    const auto& progression = getChordProgression(params.chord_id);
+    std::mt19937 rng(params.seed);
+    FullTrackContext ctx;
+    ctx.song = &song;
+    ctx.params = &params;
+    ctx.rng = &rng;
+    ctx.harmony = &harmony;
+    ctx.chord_progression = &progression;
+
+    MotifGenerator generator;
+    generator.generateFullTrack(song.motif(), ctx);
+
+    size_t onsets = 0;
+    for (const auto& note : song.motif().notes()) {
+      if (note.start_tick >= first.endTick()) ++onsets;
+    }
+    return onsets;
+  };
+
+  size_t full_onsets = 0;
+  size_t quiet_onsets = 0;
+  for (uint32_t seed : {1u, 42u, 77u, 2024u, 31337u}) {
+    full_onsets += replayedOnsets(SectionModifier::None, seed);
+    quiet_onsets += replayedOnsets(SectionModifier::Ochisabi, seed);
+  }
+  ASSERT_GT(full_onsets, 0u);
+  ASSERT_GT(quiet_onsets, 0u) << "a thinned replay still keeps a note in every bar";
+  EXPECT_LT(quiet_onsets, full_onsets);
+}
+
 double averageMotifPitch(const std::vector<const NoteEvent*>& notes) {
   if (notes.empty()) {
     return 0.0;

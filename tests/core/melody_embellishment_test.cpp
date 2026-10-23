@@ -100,19 +100,9 @@ TEST(MelodicEmbellisherTest, PassingToneDoesNotFillProtectedBreathRange) {
 // EmbellishmentConfig Tests
 // ============================================================================
 
-TEST(EmbellishmentConfigTest, DefaultPentatonicModeIsMajor) {
+TEST(EmbellishmentConfigTest, DefaultPrefersPentatonic) {
   EmbellishmentConfig config;
-  EXPECT_EQ(config.pentatonic_mode, PentatonicMode::Major);
   EXPECT_TRUE(config.prefer_pentatonic);
-}
-
-TEST(EmbellishmentConfigTest, PentatonicModeCanBeSet) {
-  EmbellishmentConfig config;
-  config.pentatonic_mode = PentatonicMode::Minor;
-  EXPECT_EQ(config.pentatonic_mode, PentatonicMode::Minor);
-
-  config.pentatonic_mode = PentatonicMode::Blues;
-  EXPECT_EQ(config.pentatonic_mode, PentatonicMode::Blues);
 }
 
 // ============================================================================
@@ -235,45 +225,13 @@ TEST(IsInPentatonicModeTest, KeyOffsetWorksForAllModes) {
 // getConfigForMood Tests - Pentatonic Mode Assignment
 // ============================================================================
 
-TEST(GetConfigForMoodTest, BrightMoodsUseMajorPentatonic) {
-  auto config = MelodicEmbellisher::getConfigForMood(Mood::BrightUpbeat);
-  EXPECT_EQ(config.pentatonic_mode, PentatonicMode::Major);
-  EXPECT_TRUE(config.prefer_pentatonic);
-}
-
-TEST(GetConfigForMoodTest, DarkMoodsUseMinorPentatonic) {
-  auto dark_config = MelodicEmbellisher::getConfigForMood(Mood::DarkPop);
-  EXPECT_EQ(dark_config.pentatonic_mode, PentatonicMode::Minor);
-
-  auto dramatic_config = MelodicEmbellisher::getConfigForMood(Mood::Dramatic);
-  EXPECT_EQ(dramatic_config.pentatonic_mode, PentatonicMode::Minor);
-
-  auto nostalgic_config = MelodicEmbellisher::getConfigForMood(Mood::Nostalgic);
-  EXPECT_EQ(nostalgic_config.pentatonic_mode, PentatonicMode::Minor);
-}
-
-TEST(GetConfigForMoodTest, BalladMoodsUseMinorPentatonic) {
-  auto ballad_config = MelodicEmbellisher::getConfigForMood(Mood::Ballad);
-  EXPECT_EQ(ballad_config.pentatonic_mode, PentatonicMode::Minor);
-
-  auto sentimental_config = MelodicEmbellisher::getConfigForMood(Mood::Sentimental);
-  EXPECT_EQ(sentimental_config.pentatonic_mode, PentatonicMode::Minor);
-
-  auto emotional_config = MelodicEmbellisher::getConfigForMood(Mood::EmotionalPop);
-  EXPECT_EQ(emotional_config.pentatonic_mode, PentatonicMode::Minor);
-}
-
-TEST(GetConfigForMoodTest, CityPopUsesBluesScale) {
-  auto config = MelodicEmbellisher::getConfigForMood(Mood::CityPop);
-  EXPECT_EQ(config.pentatonic_mode, PentatonicMode::Blues);
-}
-
-TEST(GetConfigForMoodTest, DefaultMoodsUseMajorPentatonic) {
-  auto config = MelodicEmbellisher::getConfigForMood(Mood::StraightPop);
-  EXPECT_EQ(config.pentatonic_mode, PentatonicMode::Major);
-
-  auto modern_config = MelodicEmbellisher::getConfigForMood(Mood::ModernPop);
-  EXPECT_EQ(modern_config.pentatonic_mode, PentatonicMode::Major);
+TEST(GetConfigForMoodTest, PentatonicSteppingFollowsTheMoodFamily) {
+  EXPECT_TRUE(MelodicEmbellisher::getConfigForMood(Mood::BrightUpbeat).prefer_pentatonic);
+  EXPECT_TRUE(MelodicEmbellisher::getConfigForMood(Mood::Ballad).prefer_pentatonic);
+  EXPECT_TRUE(MelodicEmbellisher::getConfigForMood(Mood::StraightPop).prefer_pentatonic);
+  // Dark and jazz moods step through the full scale and take chromatic approaches.
+  EXPECT_FALSE(MelodicEmbellisher::getConfigForMood(Mood::DarkPop).prefer_pentatonic);
+  EXPECT_FALSE(MelodicEmbellisher::getConfigForMood(Mood::CityPop).prefer_pentatonic);
 }
 
 // ============================================================================

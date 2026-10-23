@@ -101,6 +101,18 @@ class Generator {
   void regenerateVocal(const VocalConfig& config);
 
   /**
+   * @brief Regenerate vocal track with new configuration over the updated SongConfig.
+   *
+   * The melody controls, vocal style and their override flags come from converting
+   * @p updated, the SongConfig that already carries @p config, instead of being
+   * re-derived over the current ones. Repeated calls therefore end where one
+   * conversion of the final SongConfig would.
+   * @param config Vocal configuration with all parameters
+   * @param updated The song's SongConfig with @p config folded in
+   */
+  void regenerateVocal(const VocalConfig& config, const SongConfig& updated);
+
+  /**
    * @brief Generate all tracks with vocal-first priority.
    *
    * Vocal→Bass→Chord order. Accompaniment adapts to melody.
@@ -274,6 +286,9 @@ class Generator {
   uint8_t resolved_blueprint_id_ = 0;               ///< Resolved blueprint ID after selection
   const ProductionBlueprint* blueprint_ = nullptr;  ///< Pointer to selected blueprint
   bool blueprint_explicit_ = false;                 ///< The caller named the blueprint
+  uint32_t generation_seed_ = 0;  ///< Seed the song was generated with; regenerations keep it
+  GeneratorParams base_params_;   ///< Parameters the song was accepted with, before any derivation
+  VocalConfig vocal_updates_;     ///< Vocal updates folded together since those parameters
 
   /// Modulation set by setModulationTiming() and not yet consumed by a generation
   std::optional<std::pair<ModulationTiming, int8_t>> pending_modulation_;
@@ -329,6 +344,10 @@ class Generator {
    *  Prepares params and calls coordinator_->generateAllTracks(). */
   void generateAllTracksViaCoordinator();
 
+  /** @brief Shared body of the VocalConfig overloads of regenerateVocal().
+   *  @param updated Updated SongConfig, or nullptr to re-derive over the current parameters */
+  void regenerateVocalImpl(const VocalConfig& config, const SongConfig* updated);
+
   /** @brief Apply all post-processing effects.
    *  Staggered entry, layer schedule, dynamics, expression, humanization. */
   void applyPostProcessingEffects();
@@ -352,9 +371,6 @@ class Generator {
   /** @brief Validate and normalize vocal range parameters.
    *  Swaps low/high if inverted, clamps to valid MIDI range. */
   void validateVocalRange();
-
-  /** @brief Tempo an implicit BPM stands for: the explicit mood's, else the style preset's. */
-  uint16_t implicitBpm() const;
 
   /** @brief Resolve BPM through resolveTempo() and store it.
    *

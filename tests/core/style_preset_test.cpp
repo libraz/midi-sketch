@@ -812,27 +812,6 @@ TEST(RawAttitudeTest, RawAttitudeGeneratesNotes) {
   EXPECT_FALSE(raw_notes.empty()) << "Raw attitude should generate notes";
 }
 
-TEST(DeviationAllowedTest, SectionsHaveDeviationFlag) {
-  SongConfig config = createDefaultSongConfig(7);  // Rock Shout (ID 7)
-  config.seed = 12345;
-
-  MidiSketch sketch;
-  sketch.generateFromConfig(config);
-
-  const auto& sections = sketch.getSong().arrangement().sections();
-
-  // Check that deviation_allowed is set correctly
-  for (const auto& section : sections) {
-    if (section.type == SectionType::Chorus || section.type == SectionType::Bridge) {
-      // Chorus and Bridge should allow deviation
-      EXPECT_TRUE(section.deviation_allowed);
-    } else {
-      // Other sections should not allow deviation
-      EXPECT_FALSE(section.deviation_allowed);
-    }
-  }
-}
-
 TEST(RegenerateVocalTest, DifferentAttitudesProduceDifferentOutput) {
   // Test that different VocalAttitude settings produce different vocal output.
   // Try multiple seeds - at least one should produce different results.

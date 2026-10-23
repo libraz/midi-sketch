@@ -87,10 +87,12 @@ struct EmbellishmentConfig {
   float tension_ratio = 0.0f;    ///< Ratio of tension usage (replaces some CTs)
 
   // === Style Modifiers ===
-  bool prefer_pentatonic = true;  ///< Prefer pentatonic scale (J-POP characteristic)
-  PentatonicMode pentatonic_mode = PentatonicMode::Major;  ///< Which pentatonic scale to use
-  bool chromatic_approach = false;                         ///< Allow chromatic approach notes
-  float syncopation_level = 0.3f;                          ///< Likelihood of syncopation (0.0-1.0)
+  /// Step through the major pentatonic (yonanuki). The generator works in C
+  /// major, where the relative-minor pentatonic is the same five pitches and a
+  /// tonic-minor or blues scale would be chromatic, so there is no mode to pick.
+  bool prefer_pentatonic = true;
+  bool chromatic_approach = false;  ///< Allow chromatic approach notes
+  float syncopation_level = 0.3f;   ///< Likelihood of syncopation (0.0-1.0)
 
   // === Safety ===
   int max_consecutive_ncts = 2;  ///< Maximum consecutive non-chord tones

@@ -102,7 +102,7 @@ const StylePreset STYLE_PRESETS[17] = {
      VocalAttitude::Clean,
      ATTITUDE_CLEAN | ATTITUDE_EXPRESSIVE,
      {0, 1, 6, 13, 17, 19, 20, -1},
-     {5, true, 0.1f, 0.65f, 8, 0.0f}},  // Standard density
+     {5, true, 0.1f, 0.65f, 8}},  // Standard density
     // 1: Dance Pop Emotion
     {1,
      "dance_pop_emotion",
@@ -114,8 +114,8 @@ const StylePreset STYLE_PRESETS[17] = {
      128,
      VocalAttitude::Expressive,
      ATTITUDE_CLEAN | ATTITUDE_EXPRESSIVE,
-     {0, 1, 2, 4, 5, 14, 8, 15},        // 15 = AeolianPop: the bVI-bVII-I emotional cadence
-     {7, true, 0.3f, 0.75f, 8, 0.1f}},  // Medium-high density for dance
+     {0, 1, 2, 4, 5, 14, 8, 15},  // 15 = AeolianPop: the bVI-bVII-I emotional cadence
+     {7, true, 0.3f, 0.75f, 8}},  // Medium-high density for dance
     // 2: Bright Pop
     {2,
      "bright_pop",
@@ -128,7 +128,7 @@ const StylePreset STYLE_PRESETS[17] = {
      VocalAttitude::Clean,
      ATTITUDE_CLEAN,
      {0, 1, 3, 5, -1, -1, -1, -1},
-     {4, false, 0.05f, 0.80f, 8, 0.15f}},  // Higher density for upbeat
+     {4, false, 0.05f, 0.80f, 8}},  // Higher density for upbeat
     // ========== Idol (3-6) ==========
     // 3: Idol Standard
     {3,
@@ -142,7 +142,7 @@ const StylePreset STYLE_PRESETS[17] = {
      VocalAttitude::Clean,
      ATTITUDE_CLEAN,
      {0, 1, 3, 4, 5, 6, 9, -1},
-     {4, false, 0.05f, 0.85f, 8, 0.25f}},  // High density idol
+     {4, false, 0.05f, 0.85f, 8}},  // High density idol
     // 4: Idol Emotion
     {4,
      "idol_emotion",
@@ -155,7 +155,7 @@ const StylePreset STYLE_PRESETS[17] = {
      VocalAttitude::Expressive,
      ATTITUDE_CLEAN | ATTITUDE_EXPRESSIVE,
      {0, 1, 2, 5, 8, 15, 16, 18},
-     {6, true, 0.25f, 0.80f, 8, 0.20f}},  // Medium-high density
+     {6, true, 0.25f, 0.80f, 8}},  // Medium-high density
     // 5: Idol Energy
     {5,
      "idol_energy",
@@ -168,7 +168,7 @@ const StylePreset STYLE_PRESETS[17] = {
      VocalAttitude::Clean,
      ATTITUDE_CLEAN,
      {0, 2, 4, 6, 9, -1, -1, -1},
-     {5, false, 0.1f, 0.90f, 8, 0.30f}},  // Very high density for energy
+     {5, false, 0.1f, 0.90f, 8}},  // Very high density for energy
     // 6: Idol Minimal
     {6,
      "idol_minimal",
@@ -181,7 +181,7 @@ const StylePreset STYLE_PRESETS[17] = {
      VocalAttitude::Clean,
      ATTITUDE_CLEAN,
      {0, 6, -1, -1, -1, -1, -1, -1},
-     {3, false, 0.02f, 0.75f, 8, 0.15f}},  // Medium density
+     {3, false, 0.02f, 0.75f, 8}},  // Medium density
     // ========== Rock/Emo (7-9) ==========
     // 7: Rock Shout
     {7,
@@ -195,7 +195,7 @@ const StylePreset STYLE_PRESETS[17] = {
      VocalAttitude::Expressive,
      ATTITUDE_CLEAN | ATTITUDE_EXPRESSIVE | ATTITUDE_RAW,
      {4, 5, 6, 10, 11, 12, -1, -1},
-     {9, true, 0.5f, 0.70f, 8, 0.10f}},  // Medium density
+     {9, true, 0.5f, 0.70f, 8}},  // Medium density
     // 8: Pop Emotion
     {8,
      "pop_emotion",
@@ -208,7 +208,7 @@ const StylePreset STYLE_PRESETS[17] = {
      VocalAttitude::Expressive,
      ATTITUDE_EXPRESSIVE | ATTITUDE_RAW,
      {1, 5, 8, 15, 16, 18, -1, -1},
-     {7, true, 0.4f, 0.60f, 8, 0.05f}},  // Lower density for emotional
+     {7, true, 0.4f, 0.60f, 8}},  // Lower density for emotional
     // 9: Raw Emotional
     {9,
      "raw_emotional",
@@ -220,8 +220,8 @@ const StylePreset STYLE_PRESETS[17] = {
      102,
      VocalAttitude::Expressive,
      ATTITUDE_EXPRESSIVE | ATTITUDE_RAW,
-     {7, 8, 11, 15, 2, -1, -1, -1},     // 15 = AeolianPop: the bVI-bVII-I rock cadence
-     {9, true, 0.6f, 0.55f, 8, 0.0f}},  // Lower density, no 16th
+     {7, 8, 11, 15, 2, -1, -1, -1},  // 15 = AeolianPop: the bVI-bVII-I rock cadence
+     {9, true, 0.6f, 0.55f, 8}},     // Lower density
     // ========== Special/Derived (10-12) ==========
     // 10: Acoustic Pop
     {10,
@@ -235,7 +235,7 @@ const StylePreset STYLE_PRESETS[17] = {
      VocalAttitude::Expressive,
      ATTITUDE_CLEAN | ATTITUDE_EXPRESSIVE,
      {0, 1, 4, 6, 17, -1, -1, -1},
-     {6, true, 0.2f, 0.50f, 4, 0.0f}},  // Low density ballad
+     {6, true, 0.2f, 0.50f, 4}},  // Low density ballad
     // 11: Live Call & Response
     {11,
      "live_call_response",
@@ -248,7 +248,7 @@ const StylePreset STYLE_PRESETS[17] = {
      VocalAttitude::Clean,
      ATTITUDE_CLEAN,
      {0, 2, 4, -1, -1, -1, -1, -1},
-     {4, false, 0.05f, 0.85f, 8, 0.20f}},  // High density for live
+     {4, false, 0.05f, 0.85f, 8}},  // High density for live
     // 12: Background Motif
     {12,
      "background_motif",
@@ -261,7 +261,7 @@ const StylePreset STYLE_PRESETS[17] = {
      VocalAttitude::Clean,
      ATTITUDE_CLEAN,
      {0, 6, 13, 19, -1, -1, -1, -1},
-     {4, false, 0.05f, 0.50f, 8, 0.0f}},  // Low density, subdued
+     {4, false, 0.05f, 0.50f, 8}},  // Low density, subdued
     // ========== Genre-Specific (13-16) ==========
     // 13: City Pop
     {13,
@@ -274,8 +274,8 @@ const StylePreset STYLE_PRESETS[17] = {
      105,
      VocalAttitude::Clean,
      ATTITUDE_CLEAN | ATTITUDE_EXPRESSIVE,
-     {19, 17, 7, 8, 10, 1, 5, -1},        // 19 = CityPop (I-vi-ii-V), 17 = JazzPop (ii-V-I-vi)
-     {7, true, 0.35f, 0.65f, 8, 0.05f}},  // Medium density groove
+     {19, 17, 7, 8, 10, 1, 5, -1},  // 19 = CityPop (I-vi-ii-V), 17 = JazzPop (ii-V-I-vi)
+     {7, true, 0.35f, 0.65f, 8}},   // Medium density groove
     // 14: Anime Opening
     {14,
      "anime_opening",
@@ -287,8 +287,8 @@ const StylePreset STYLE_PRESETS[17] = {
      142,
      VocalAttitude::Expressive,
      ATTITUDE_CLEAN | ATTITUDE_EXPRESSIVE,
-     {5, 2, 6, 0, 4, 16, 18, -1},        // 16/18 = AnimeHighEnergy1/2
-     {6, true, 0.3f, 0.85f, 8, 0.25f}},  // High density anime style
+     {5, 2, 6, 0, 4, 16, 18, -1},  // 16/18 = AnimeHighEnergy1/2
+     {6, true, 0.3f, 0.85f, 8}},   // High density anime style
     // 15: EDM Synth Pop
     {15,
      "edm_synth",
@@ -301,7 +301,7 @@ const StylePreset STYLE_PRESETS[17] = {
      VocalAttitude::Clean,
      ATTITUDE_CLEAN | ATTITUDE_EXPRESSIVE,
      {0, 4, 9, 1, -1, -1, -1, -1},
-     {5, false, 0.15f, 0.75f, 16, 0.35f}},  // High 16th ratio for EDM
+     {5, false, 0.15f, 0.75f, 16}},  // 16th-note grid for EDM
     // 16: Emotional Ballad
     {16,
      "emotional_ballad",
@@ -314,7 +314,7 @@ const StylePreset STYLE_PRESETS[17] = {
      VocalAttitude::Expressive,
      ATTITUDE_CLEAN | ATTITUDE_EXPRESSIVE,
      {1, 3, 8, 11, 5, -1, -1, -1},
-     {8, true, 0.4f, 0.45f, 4, 0.0f}},  // Very low density ballad
+     {8, true, 0.4f, 0.45f, 4}},  // Very low density ballad
 };
 
 // Form compatibility by style with weights (higher = more likely)
@@ -1257,7 +1257,6 @@ SongConfig createDefaultSongConfig(uint8_t style_id) {
   config.vocal_low = 60;   // C4
   config.vocal_high = 79;  // G5
   config.humanize = false;
-  config.blueprint_id = 255;  // Random (user-facing default)
 
   // Auto-select from style recommendations during conversion.
   config.chord_progression_id = 255;
@@ -1267,7 +1266,7 @@ SongConfig createDefaultSongConfig(uint8_t style_id) {
 
 // Every SongConfig field reaches the generator through this check, so a field
 // added to visitFields needs its range decided below before the count moves.
-static_assert(json::fieldCount<SongConfig>() == 63,
+static_assert(json::fieldCount<SongConfig>() == 64,
               "a new SongConfig field needs its range check in validateSongConfig");
 
 SongConfigError validateSongConfig(const SongConfig& config) {

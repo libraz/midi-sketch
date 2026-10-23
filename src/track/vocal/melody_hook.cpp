@@ -219,7 +219,8 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& 
   // fire, varied every statement in the section including the ones the rule
   // says stay the same.
   const uint8_t threshold = tmpl.betrayal_threshold;
-  const uint8_t statements_before = hook_cache_.repetition_count;
+  const uint8_t statements_before =
+      static_cast<uint8_t>(hook_cache_.repetition_count + hook_cache_.section_statements);
   auto betrayalForStatement = [&](uint8_t rep) {
     if (threshold == 0) return HookBetrayal::None;
     const uint8_t occurrence = static_cast<uint8_t>(statements_before + rep + 1);
@@ -443,7 +444,9 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& 
     // Add gap after pattern (varies by pattern for natural breathing)
     current_tick += rhythm_pattern.gap_after;
   }
-  hook_cache_.last_section_statements = statements_emitted;
+  hook_cache_.section_statements =
+      static_cast<uint8_t>(hook_cache_.section_statements + statements_emitted);
+  hook_cache_.last_section_statements = hook_cache_.section_statements;
 
   // =========================================================================
   // APPLY HOOK BETRAYAL

@@ -205,9 +205,9 @@ struct StylePreset {
 struct SongConfig {
   /// Style selection
   uint8_t style_preset_id = 0;
-  /// Production blueprint ID (0-9, 255 = random). The struct and a JSON config
-  /// that omits it give 0 (Traditional); createDefaultSongConfig gives 255.
-  uint8_t blueprint_id = 0;
+  /// Production blueprint ID. 255 (the default everywhere) = drawn to hold the
+  /// style tempo; 0-9 names a blueprint, which plays at its own tempo.
+  uint8_t blueprint_id = 255;
   uint8_t mood = 0;            ///< Mood preset ID (0-23)
   bool mood_explicit = false;  ///< True if mood was explicitly set by user
 
@@ -292,7 +292,8 @@ struct SongConfig {
   bool vocal_groove_explicit = false;  ///< True if vocal_groove was explicitly set by user
 
   /// Syncopation control
-  bool enable_syncopation = false;  ///< Enable syncopation effects in melody rhythm
+  bool enable_syncopation = false;           ///< Enable syncopation effects in melody rhythm
+  bool enable_syncopation_explicit = false;  ///< True if enable_syncopation was set by user
 
   /// Energy curve for overall song dynamics
   EnergyCurve energy_curve = EnergyCurve::GradualBuild;
@@ -304,7 +305,7 @@ struct SongConfig {
   uint8_t melody_long_note_ratio = 0xFF;           ///< 0xFF=preset default, 0-100=override
   int8_t melody_chorus_register_shift = INT8_MIN;  ///< INT8_MIN=preset default, -12 to +12
   uint8_t melody_hook_repetition = 0;              ///< 0=preset, 1=off, 2=on
-  uint8_t melody_use_leading_tone = 0;             ///< 0=preset, 1=off, 2=on
+  uint8_t melody_use_leading_tone = 0;             ///< 0/2=table pickups, 1=none
 
   /// Motif parameter overrides (0=auto/preset, 0xFF=preset for enum fields)
   uint8_t motif_length = 0;             ///< 0=auto, 1/2/4 bars
@@ -369,6 +370,7 @@ struct SongConfig {
     v("vocal_groove", self.vocal_groove);
     v("vocal_groove_explicit", self.vocal_groove_explicit);
     v("enable_syncopation", self.enable_syncopation);
+    v("enable_syncopation_explicit", self.enable_syncopation_explicit);
     v("energy_curve", self.energy_curve);
     v("addictive_mode", self.addictive_mode);
     v("mora_rhythm_mode", self.mora_rhythm_mode);
@@ -510,6 +512,9 @@ struct GeneratorParams {
   bool vocal_style_explicit = false;         ///< True if vocal_style was not Auto in the config
   bool hook_intensity_explicit = false;      ///< True if hook_intensity was explicitly set
   bool vocal_groove_explicit = false;        ///< True if vocal_groove was explicitly set
+  bool enable_syncopation_explicit = false;  ///< True if enable_syncopation was explicitly set
+  bool melody_chorus_register_shift_override = false;  ///< True if the user set the shift
+  bool syllabic_sub_rate_override = false;             ///< True if the user set the rate
 
   /// Energy curve for overall song dynamics
   /// Controls how section energy is distributed across the song:

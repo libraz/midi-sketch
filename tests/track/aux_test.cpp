@@ -270,7 +270,6 @@ TEST(AuxTest, PulseLoopProducesNotes) {
   config.range_width = 5;
   config.velocity_ratio = 0.6f;
   config.density_ratio = 0.5f;
-  config.sync_phrase_boundary = true;
 
   auto notes = generator.generatePulseLoop(ctx, config, harmony, rng);
 
@@ -289,7 +288,6 @@ TEST(AuxTest, PulseLoopNotesInRange) {
   config.range_width = 10;
   config.velocity_ratio = 0.6f;
   config.density_ratio = 0.8f;
-  config.sync_phrase_boundary = true;
 
   auto notes = generator.generatePulseLoop(ctx, config, harmony, rng);
 
@@ -320,7 +318,6 @@ TEST(AuxTest, TargetHintWithMainMelody) {
   config.range_width = 7;
   config.velocity_ratio = 0.5f;
   config.density_ratio = 0.8f;
-  config.sync_phrase_boundary = true;
 
   std::vector<NoteEvent> notes;
   for (uint32_t seed = 1; seed <= 32 && notes.empty(); ++seed) {
@@ -350,7 +347,6 @@ TEST(AuxTest, TargetHintEmptyWithNoMelody) {
   config.range_width = 7;
   config.velocity_ratio = 0.5f;
   config.density_ratio = 1.0f;
-  config.sync_phrase_boundary = true;
 
   auto notes = generator.generateTargetHint(ctx, config, harmony, rng);
 
@@ -373,7 +369,6 @@ TEST(AuxTest, GrooveAccentProducesNotes) {
   config.range_width = 5;
   config.velocity_ratio = 0.7f;
   config.density_ratio = 0.8f;
-  config.sync_phrase_boundary = false;
 
   auto notes = generator.generateGrooveAccent(ctx, config, harmony, rng);
 
@@ -392,7 +387,6 @@ TEST(AuxTest, GrooveAccentOnBackbeats) {
   config.range_width = 5;
   config.velocity_ratio = 0.7f;
   config.density_ratio = 1.0f;
-  config.sync_phrase_boundary = false;
 
   auto notes = generator.generateGrooveAccent(ctx, config, harmony, rng);
 
@@ -445,7 +439,6 @@ TEST(AuxTest, PhraseTailWithMainMelody) {
   config.range_width = 5;
   config.velocity_ratio = 0.5f;
   config.density_ratio = 1.0f;
-  config.sync_phrase_boundary = true;
 
   auto notes = generator.generatePhraseTail(ctx, config, harmony, rng);
 
@@ -465,7 +458,6 @@ TEST(AuxTest, PhraseTailEmptyWithNoMelody) {
   config.range_width = 5;
   config.velocity_ratio = 0.5f;
   config.density_ratio = 1.0f;
-  config.sync_phrase_boundary = true;
 
   auto notes = generator.generatePhraseTail(ctx, config, harmony, rng);
 
@@ -488,7 +480,6 @@ TEST(AuxTest, EmotionalPadProducesLongNotes) {
   config.range_width = 8;
   config.velocity_ratio = 0.4f;
   config.density_ratio = 1.0f;
-  config.sync_phrase_boundary = true;
 
   auto notes = generator.generateEmotionalPad(ctx, config, harmony, rng);
 
@@ -511,7 +502,6 @@ TEST(AuxTest, EmotionalPadLowVelocity) {
   config.range_width = 8;
   config.velocity_ratio = 0.4f;
   config.density_ratio = 1.0f;
-  config.sync_phrase_boundary = true;
 
   auto notes = generator.generateEmotionalPad(ctx, config, harmony, rng);
 
@@ -537,7 +527,6 @@ TEST(AuxTest, GenerateDispatchesPulseLoop) {
   config.range_width = 5;
   config.velocity_ratio = 0.6f;
   config.density_ratio = 0.5f;
-  config.sync_phrase_boundary = true;
 
   auto track = generator.generate(config, ctx, harmony, rng);
 
@@ -556,7 +545,6 @@ TEST(AuxTest, GenerateDispatchesEmotionalPad) {
   config.range_width = 8;
   config.velocity_ratio = 0.4f;
   config.density_ratio = 1.0f;
-  config.sync_phrase_boundary = true;
 
   auto track = generator.generate(config, ctx, harmony, rng);
 
@@ -617,7 +605,6 @@ TEST(AuxTest, AvoidsClashWithMainMelody) {
   config.range_width = 4;
   config.velocity_ratio = 0.6f;
   config.density_ratio = 0.8f;
-  config.sync_phrase_boundary = true;
 
   auto notes = generator.generatePulseLoop(ctx, config, harmony, rng);
 
@@ -1088,7 +1075,6 @@ TEST(AuxTest, MotifCounterAvoidsVocalCollision) {
   // generateFullTrack() feeds MotifCounter on verse sections.
   config.range_offset = -12;
   config.range_width = 12;
-  config.sync_phrase_boundary = true;
 
   // MotifCounter places itself against the vocal's register, and picks a
   // different register for a high, a low and a middle vocal. Sweeping all three

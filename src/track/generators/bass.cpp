@@ -21,6 +21,7 @@
 #include "core/production_blueprint.h"
 #include "core/rng_util.h"
 #include "core/timing_constants.h"
+#include "core/track_collision_detector.h"
 #include "core/track_pitch_editor.h"
 #include "core/velocity.h"
 #include "core/velocity_helper.h"
@@ -222,7 +223,6 @@ BassAnalysis BassAnalysis::analyzeBar(const MidiTrack& track, Tick bar_start,
     Tick relative_tick = note.start_tick - bar_start;
     uint8_t pitch_class = getPitchClass(note.note);
     uint8_t root_class = getPitchClass(expected_root);
-    uint8_t fifth_class = (expected_root + 7) % 12;
 
     // Check beat 1 (first quarter note)
     if (relative_tick < TICKS_PER_BEAT) {
@@ -236,11 +236,6 @@ BassAnalysis BassAnalysis::analyzeBar(const MidiTrack& track, Tick bar_start,
       if (pitch_class == root_class) {
         result.has_root_on_beat3 = true;
       }
-    }
-
-    // Check for fifth usage
-    if (pitch_class == fifth_class) {
-      result.has_fifth = true;
     }
 
     // Check for octave jump
@@ -369,25 +364,21 @@ void applySlashChordOverride(BassTrackContext& ctx, uint8_t& root, int8_t degree
   if (slash_bass < BASS_LOW) {
     slash_bass += Interval::OCTAVE;
   }
-  // Check if slash bass creates major 7th with Motif track.
-  // Major 7th (pitch class interval 11) sounds harsh even at wide range.
+  // The slash bass holds the bar under the riff, so it must not clash with any
+  // motif note there, judged on the actual interval under the bar's chord.
   uint8_t candidate_bass = clampBass(slash_bass);
-  int bass_pc = candidate_bass % 12;
-  bool has_m7_clash = false;
-  auto motif_pcs = ctx.harmony.getPitchClassesFromTrackInRange(bar_start, bar_start + TICKS_PER_BAR,
-                                                               TrackRole::Motif);
-  for (int motif_pc : motif_pcs) {
-    int pc_interval = std::abs(bass_pc - motif_pc);
-    if (pc_interval > 6) pc_interval = 12 - pc_interval;
-    if (pc_interval == 11 || pc_interval == 1) {  // M7 or m2
-      has_m7_clash = true;
-      break;
+  const Tick bar_end = bar_start + TICKS_PER_BAR;
+  for (const auto& motif_note : ctx.song.motif().notes()) {
+    if (motif_note.start_tick >= bar_end ||
+        motif_note.start_tick + motif_note.duration <= bar_start) {
+      continue;
+    }
+    if (isClashingPair(candidate_bass, TrackRole::Bass, motif_note.note, TrackRole::Motif,
+                       &ctx.harmony, bar_start, std::max(bar_start, motif_note.start_tick))) {
+      return;  // Keep the original root
     }
   }
-  if (!has_m7_clash) {
-    root = candidate_bass;
-  }
-  // If slash bass clashes, keep original root (no assignment)
+  root = candidate_bass;
 }
 
 // Apply vocal motion adjustment to bass root if vocal analysis is available
@@ -468,13 +459,10 @@ bool wouldAnticipationClash(BassTrackContext& ctx, uint8_t anticipate_root, Tick
     // When vocal analysis available, also check manual vocal for unregistered cases
     if (ctx.has_vocal) {
       uint8_t vocal_pitch_at = getVocalPitchAt(*ctx.vocal_analysis, bar_start + offset);
-      if (vocal_pitch_at > 0) {
-        int interval = std::abs(static_cast<int>(anticipate_root % 12) -
-                                static_cast<int>(vocal_pitch_at % 12));
-        if (interval > 6) interval = 12 - interval;
-        if (interval == 1 || interval == 6) {  // m2 or tritone
-          return true;
-        }
+      if (vocal_pitch_at > 0 &&
+          isClashingPair(anticipate_root, TrackRole::Bass, vocal_pitch_at, TrackRole::Vocal,
+                         &ctx.harmony, bar_start + offset, bar_start + offset)) {
+        return true;
       }
     }
   }

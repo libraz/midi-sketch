@@ -87,16 +87,8 @@ CollisionType checkBgmCollision(const Song& song, const IChordLookup& chords, Ti
 }
 
 uint8_t getCurrentKey(const Song& song, Tick tick, uint8_t base_key) {
-  Tick modulation_tick = song.modulationTick();
-  int8_t modulation_amount = song.modulationAmount();
-
-  // If no modulation or before modulation point, return base key
-  if (modulation_tick == 0 || tick < modulation_tick) {
-    return base_key;
-  }
-
   // Apply modulation (wrap around 0-11)
-  int new_key = (static_cast<int>(base_key) + modulation_amount) % 12;
+  int new_key = (static_cast<int>(base_key) + song.modulationAt(tick)) % 12;
   if (new_key < 0) new_key += 12;
   return static_cast<uint8_t>(new_key);
 }

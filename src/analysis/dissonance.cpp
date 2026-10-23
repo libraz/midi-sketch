@@ -627,18 +627,16 @@ void detectSimultaneousClashes(const std::vector<TimedNote>& all_notes, const De
         }
       }
 
-      // Special handling for Bass + Major 7th in low register:
-      // Even with wide separation (2+ octaves), M7 between Bass and other tracks
-      // creates problematic harmonic clashes due to low register overtone content.
-      // Bass < C3 (48) with M7 interval (pitch_class 11) should be flagged.
-      if (!is_dissonant && actual_interval > 24) {
+      // Bass + Major 7th in low register: below C3 (48) the overtones beat at any
+      // separation, so the chord excuses the pair only when it owns it and the
+      // two are 23 semitones or more apart -- the rule generation refuses by.
+      if (!is_dissonant) {
         uint8_t pitch_class_interval = actual_interval % 12;
         bool involves_bass = (note_a.track == TrackRole::Bass || note_b.track == TrackRole::Bass);
         uint8_t bass_pitch = (note_a.track == TrackRole::Bass) ? note_a.pitch : note_b.pitch;
+        bool owned_wide = registered_root_major_seventh && actual_interval >= 23;
 
-        // Major 7th (11 semitones) with bass in low register (< C3)
-        if (pitch_class_interval == 11 && involves_bass && bass_pitch < 48 &&
-            !registered_root_major_seventh) {
+        if (pitch_class_interval == 11 && involves_bass && bass_pitch < 48 && !owned_wide) {
           is_dissonant = true;
           base_severity = DissonanceSeverity::Medium;  // Not as harsh as close voicing, but notable
         }
@@ -1054,9 +1052,8 @@ DissonanceReport analyzeDissonance(const Song& song, const GeneratorParams& para
   report.summary.modulation_amount = song.modulationAmount();
 
   // Count pre/post modulation issues
-  Tick mod_tick = song.modulationTick();
   for (const auto& issue : report.issues) {
-    if (mod_tick > 0 && issue.tick >= mod_tick) {
+    if (song.modulationAt(issue.tick) != 0) {
       report.summary.post_modulation_issues++;
     } else {
       report.summary.pre_modulation_issues++;

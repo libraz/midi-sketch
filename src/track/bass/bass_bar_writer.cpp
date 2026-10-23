@@ -63,20 +63,20 @@ uint8_t getNextDiatonic(uint8_t pitch, int direction) {
   }
 }
 
-/// Get diatonic chord tone (3rd or 5th) for the chord root in C major context.
-/// For minor chords (ii, iii, vi), returns the minor 3rd which is diatonic.
-/// For major chords (I, IV, V), returns the major 3rd which is diatonic.
+/// The chord's third (or its suspension) above the chord root, kept in the bass range.
+uint8_t getChordThirdAbove(uint8_t chord_root, const Chord& chord) {
+  return wrapToBassRange(static_cast<int>(chord_root) + chord.intervals[1]);
+}
+
+/// The third of the key's own triad on a diatonic root: minor on ii, iii and vi
+/// and on vii°, major on I, IV and V, as the degree table states them.
 uint8_t getDiatonicThird(uint8_t root) {
-  int root_pc = root % OCTAVE;
-  // In C major, the 3rd above each diatonic root is also diatonic:
-  // C->E, D->F, E->G, F->A, G->B, A->C, B->D
-  // These are all either 3 or 4 semitones, depending on the chord quality
-  // Minor chords (Dm, Em, Am): minor 3rd
-  // Major chords (C, F, G): major 3rd
-  // Diminished (Bdim): minor 3rd
-  bool is_minor_or_dim = (root_pc == 2 || root_pc == 4 || root_pc == 9 || root_pc == 11);
-  int interval = is_minor_or_dim ? MINOR_3RD : MAJOR_3RD;
-  return wrapToBassRange(static_cast<int>(root) + interval);
+  for (int8_t degree = 0; degree < 7; ++degree) {
+    if (degreeToSemitone(degree) == root % OCTAVE) {
+      return getChordThirdAbove(root, getChordNotes(degree));
+    }
+  }
+  return getChordThirdAbove(root, getChordNotes(0));
 }
 
 /// Get an octave displacement from root while staying inside bass range.
@@ -848,8 +848,7 @@ void generateRnBNeoSoulPattern(const BassBarContext& ctx) {
   addBassNoteWithTritoneCheck(ctx.track, ctx.harmony, ctx.bar_start + TICK_QUARTER, TICK_EIGHTH,
                               passing, ctx.chord_root, ctx.vel_weak);
   // The chord's own third: Fm's Ab under iv, not the A a diatonic F would take.
-  uint8_t third =
-      wrapToBassRange(ctx.chord_root + timelineChordAt(ctx.harmony, ctx.bar_start).intervals[1]);
+  uint8_t third = getChordThirdAbove(ctx.chord_root, timelineChordAt(ctx.harmony, ctx.bar_start));
   addBassNoteWithTritoneCheck(ctx.track, ctx.harmony, ctx.bar_start + TICK_QUARTER + TICK_EIGHTH,
                               TICK_EIGHTH, third, ctx.chord_root, ctx.vel_weak);
   addBassNoteWithTritoneCheck(ctx.track, ctx.harmony, ctx.bar_start + 2 * TICK_QUARTER,

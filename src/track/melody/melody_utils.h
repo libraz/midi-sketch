@@ -320,11 +320,6 @@ Tick getPlannedBreathDuration(SectionType section, Mood mood, VocalStylePreset v
 /// @return Tick duration for the rhythm unit
 Tick getRhythmUnit(RhythmGrid grid, bool is_eighth);
 
-/// @brief Get bass root pitch class for chord degree.
-/// @param chord_degree Chord degree (0-6)
-/// @return Pitch class (0-11)
-int getBassRootPitchClass(int8_t chord_degree);
-
 /// @brief Check if pitch is an avoid note with chord tones.
 /// @param pitch_pc Pitch class (0-11)
 /// @param chord_tones Chord tone pitch classes

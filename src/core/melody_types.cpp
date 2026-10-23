@@ -15,7 +15,6 @@ void StyleMelodyParams::writeTo(json::Writer& w) const {
       .write("tension_usage", tension_usage)
       .write("note_density", note_density)
       .write("min_note_division", static_cast<int>(min_note_division))
-      .write("sixteenth_note_ratio", sixteenth_note_ratio)
       .write("thirtysecond_note_ratio", thirtysecond_note_ratio)
       .write("syncopation_prob", syncopation_prob)
       .write("allow_bar_crossing", allow_bar_crossing)
@@ -53,7 +52,6 @@ void StyleMelodyParams::readFrom(const json::Parser& p) {
   tension_usage = p.getFloat("tension_usage", 0.2f);
   note_density = p.getFloat("note_density", 0.7f);
   min_note_division = static_cast<uint8_t>(p.getInt("min_note_division", 8));
-  sixteenth_note_ratio = p.getFloat("sixteenth_note_ratio", 0.0f);
   thirtysecond_note_ratio = p.getFloat("thirtysecond_note_ratio", 0.0f);
   syncopation_prob = p.getFloat("syncopation_prob", 0.15f);
   allow_bar_crossing = p.getBool("allow_bar_crossing", false);

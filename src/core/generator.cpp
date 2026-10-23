@@ -20,7 +20,6 @@
 #include <cmath>
 #include <initializer_list>
 #include <limits>
-#include <map>
 #include <vector>
 
 #include "core/chord.h"
@@ -64,14 +63,6 @@ namespace midisketch {
 
 namespace {
 
-// ============================================================================
-// Density Progression Constants (RhythmSync style)
-// ============================================================================
-constexpr float kDensityProgressionPerOccurrence = 0.15f;  // +15% density per section occurrence
-constexpr int kVelocityBoostPerOccurrence = 3;             // +3 velocity per occurrence
-constexpr int kMaxVelocityBoost = 10;                      // Maximum velocity boost cap
-constexpr int kMaxBaseVelocity = 100;                      // Maximum base velocity
-
 void deduplicatePitchOnsets(MidiTrack& track);
 
 void reregisterTrack(IHarmonyCoordinator& harmony, MidiTrack& track, TrackRole role) {
@@ -87,36 +78,128 @@ void reregisterTracks(IHarmonyCoordinator& harmony,
 }
 void trimBassBoundaryOverhangs(MidiTrack& bass, const IHarmonyContext& harmony);
 
-/// Apply density progression to sections for RhythmSync style.
-/// "Peak is a temporal event" - density increases over time.
-void applyDensityProgressionToSections(std::vector<Section>& sections,
-                                       GenerationParadigm paradigm) {
-  if (paradigm != GenerationParadigm::RhythmSync) {
-    return;  // Only apply for RhythmSync style
+}  // anonymous namespace
+
+namespace {
+
+/// The RhythmSync lead treatment over converted parameters; a field the caller set stays as set.
+void applyRhythmSyncLeadParams(GeneratorParams& params) {
+  if (!params.vocal_style_explicit && params.vocal_style != VocalStylePreset::Vocaloid) {
+    // The style's melody controls travel with it, so re-derive them and carry over what the
+    // caller pinned.
+    const StyleMelodyParams chosen = params.melody_params;
+    params.vocal_style = VocalStylePreset::Vocaloid;
+    ConfigConverter::applyVocalStylePreset(params);
+    if (params.melody_max_leap_override) {
+      params.melody_params.max_leap_interval = chosen.max_leap_interval;
+    }
+    if (params.melody_syncopation_override) {
+      params.melody_params.syncopation_prob = chosen.syncopation_prob;
+    }
+    if (params.melody_chorus_register_shift_override) {
+      params.melody_params.chorus_register_shift = chosen.chorus_register_shift;
+    }
+    if (params.syllabic_sub_rate_override) {
+      params.melody_params.syllabic_sub_ratio = chosen.syllabic_sub_ratio;
+    }
+    // The syncopation master switch outranks the style, as in ConfigConverter::convert.
+    if (!params.enable_syncopation) {
+      params.melody_params.syncopation_prob = 0.0f;
+      params.melody_params.allow_bar_crossing = false;
+    }
   }
+  if (params.melody_template == MelodyTemplateId::Auto) {
+    params.melody_template = MelodyTemplateId::RunUpTarget;
+  }
+  if (!params.hook_intensity_explicit) params.hook_intensity = HookIntensity::Maximum;
+  if (!params.vocal_groove_explicit) params.vocal_groove = VocalGrooveFeel::Driving16th;
+  params.drive_feel = std::max<uint8_t>(params.drive_feel, 88);
+  if (!params.melody_max_leap_override) {
+    params.melody_params.max_leap_interval =
+        std::max<uint8_t>(params.melody_params.max_leap_interval, 12);
+  }
+  params.melody_params.note_density = std::max(params.melody_params.note_density, 1.25f);
+  const bool syncopation_off = !params.enable_syncopation && params.enable_syncopation_explicit;
+  if (!params.melody_syncopation_override && !syncopation_off) {
+    params.melody_params.syncopation_prob = std::max(params.melody_params.syncopation_prob, 0.30f);
+  }
+  params.melody_params.hook_repetition = true;
+  params.melody_params.disable_vowel_constraints = true;
+}
 
-  // Track occurrence count per section type
-  std::map<SectionType, int> occurrence_count;
+/// Fold the fields @p from carries into the accumulated vocal updates.
+void mergeVocalUpdates(VocalConfig& into, const VocalConfig& from) {
+  using F = VocalConfig;
+  if (from.has(F::VocalLow)) into.vocal_low = from.vocal_low;
+  if (from.has(F::VocalHigh)) into.vocal_high = from.vocal_high;
+  if (from.has(F::VocalAttitudeField)) into.vocal_attitude = from.vocal_attitude;
+  if (from.has(F::VocalStyleField) && from.vocal_style != VocalStylePreset::Auto) {
+    into.vocal_style = from.vocal_style;
+    into.present_fields |= F::VocalStyleField;
+  }
+  if (from.has(F::MelodyTemplateField) && from.melody_template != MelodyTemplateId::Auto) {
+    into.melody_template = from.melody_template;
+    into.present_fields |= F::MelodyTemplateField;
+  }
+  if (from.has(F::MelodicComplexityField)) into.melodic_complexity = from.melodic_complexity;
+  if (from.has(F::HookIntensityField)) into.hook_intensity = from.hook_intensity;
+  if (from.has(F::VocalGrooveField)) into.vocal_groove = from.vocal_groove;
+  if (from.has(F::CompositionStyleField)) into.composition_style = from.composition_style;
+  constexpr uint32_t kMerged = F::VocalLow | F::VocalHigh | F::VocalAttitudeField |
+                               F::MelodicComplexityField | F::HookIntensityField |
+                               F::VocalGrooveField | F::CompositionStyleField;
+  into.present_fields |= from.present_fields & kMerged;
+}
 
-  for (auto& section : sections) {
-    int occurrence = occurrence_count[section.type]++;
-
-    // Increase density per occurrence (max 100%)
-    // 1st occurrence: 1.0x, 2nd: 1.15x, 3rd: 1.30x, etc.
-    float progression_factor = 1.0f + (occurrence * kDensityProgressionPerOccurrence);
-
-    // Apply to density_percent
-    uint8_t new_density =
-        static_cast<uint8_t>(std::min(100.0f, section.density_percent * progression_factor));
-    section.density_percent = new_density;
-
-    // Also boost base_velocity slightly for later occurrences
-    int velocity_boost = std::min(occurrence * kVelocityBoostPerOccurrence, kMaxVelocityBoost);
-    section.base_velocity = static_cast<uint8_t>(
-        std::min(kMaxBaseVelocity, static_cast<int>(section.base_velocity) + velocity_boost));
+/// Melody controls the preset, style and complexity produce, in ConfigConverter's order.
+void deriveMelodyControls(GeneratorParams& params) {
+  params.melody_params = getStylePreset(params.style_preset_id).melody;
+  ConfigConverter::applyVocalStylePreset(params);
+  ConfigConverter::applyMelodicComplexity(params);
+  if (!params.enable_syncopation) {
+    params.melody_params.syncopation_prob = 0.0f;
+    params.melody_params.allow_bar_crossing = false;
   }
 }
-}  // anonymous namespace
+
+/// Parameters a vocal take derives from the song's original parameters plus every update so far.
+///
+/// Style and complexity are applied to the preset's melody, never to controls already derived
+/// from them. A control the base holds that its own style/complexity would not produce is a
+/// caller override and carries over.
+GeneratorParams rebuildVocalParams(const GeneratorParams& base, const VocalConfig& updates) {
+  GeneratorParams baseline = base;
+  deriveMelodyControls(baseline);
+
+  GeneratorParams next = base;
+  if (updates.has(VocalConfig::VocalStyleField)) {
+    next.vocal_style = updates.vocal_style;
+    next.vocal_style_explicit = true;
+  }
+  if (updates.has(VocalConfig::MelodicComplexityField)) {
+    next.melodic_complexity = updates.melodic_complexity;
+  }
+  deriveMelodyControls(next);
+
+  // The controls ConfigConverter::convert lets a SongConfig override after deriving them.
+  const auto carry = [&](auto StyleMelodyParams::*field) {
+    if (base.melody_params.*field != baseline.melody_params.*field) {
+      next.melody_params.*field = base.melody_params.*field;
+    }
+  };
+  carry(&StyleMelodyParams::max_leap_interval);
+  carry(&StyleMelodyParams::syncopation_prob);
+  carry(&StyleMelodyParams::phrase_length_bars);
+  carry(&StyleMelodyParams::long_note_ratio);
+  carry(&StyleMelodyParams::chorus_register_shift);
+  carry(&StyleMelodyParams::hook_repetition);
+  carry(&StyleMelodyParams::use_leading_tone);
+  carry(&StyleMelodyParams::syllabic_sub_ratio);
+  carry(&StyleMelodyParams::mora_rhythm_mode);
+  return next;
+}
+
+}  // namespace
 
 Generator::Generator()
     : rng_(42),
@@ -150,7 +233,7 @@ void Generator::initializeBlueprint(uint32_t seed) {
   // Drawn from its own seed-derived stream, so main rng_ state is undisturbed.
   // A drawn blueprint has to be one that plays at the implicit BPM.
   blueprint_explicit_ = params_.blueprint_id < getProductionBlueprintCount();
-  const uint16_t implicit_bpm = params_.bpm == 0 ? implicitBpm() : 0;
+  const uint16_t implicit_bpm = params_.bpm == 0 ? implicitBpm(params_) : 0;
   resolved_blueprint_id_ = resolveProductionBlueprintId(
       seed, params_.blueprint_id, static_cast<uint8_t>(params_.mood), implicit_bpm);
   blueprint_ = &getProductionBlueprint(resolved_blueprint_id_);
@@ -180,28 +263,11 @@ void Generator::initializeBlueprint(uint32_t seed) {
   if (blueprint_->addictive_mode || params_.addictive_mode) {
     params_.addictive_mode = true;
     params_.riff_policy = RiffPolicy::LockedPitch;
-    params_.hook_intensity = HookIntensity::Maximum;
+    if (!params_.hook_intensity_explicit) params_.hook_intensity = HookIntensity::Maximum;
   }
 
   if (isRhythmSyncLeadSetting(params_, resolved_blueprint_id_)) {
-    params_.vocal_style = VocalStylePreset::Vocaloid;
-    if (params_.melody_template == MelodyTemplateId::Auto) {
-      params_.melody_template = MelodyTemplateId::RunUpTarget;
-    }
-    params_.hook_intensity = HookIntensity::Maximum;
-    params_.vocal_groove = VocalGrooveFeel::Driving16th;
-    params_.drive_feel = std::max<uint8_t>(params_.drive_feel, 88);
-    if (!params_.melody_max_leap_override) {
-      params_.melody_params.max_leap_interval =
-          std::max<uint8_t>(params_.melody_params.max_leap_interval, 12);
-    }
-    params_.melody_params.note_density = std::max(params_.melody_params.note_density, 1.25f);
-    params_.melody_params.sixteenth_note_ratio =
-        std::max(params_.melody_params.sixteenth_note_ratio, 0.45f);
-    params_.melody_params.syncopation_prob =
-        std::max(params_.melody_params.syncopation_prob, 0.30f);
-    params_.melody_params.hook_repetition = true;
-    params_.melody_params.disable_vowel_constraints = true;
+    applyRhythmSyncLeadParams(params_);
   }
 
   // Validate mood compatibility with blueprint
@@ -271,14 +337,9 @@ void Generator::validateVocalRange() {
   }
 }
 
-uint16_t Generator::implicitBpm() const {
-  return params_.auto_bpm_fallback > 0 ? params_.auto_bpm_fallback
-                                       : getMoodDefaultBpm(params_.mood);
-}
-
 uint16_t Generator::resolveAndClampBpm() {
   auto [bpm, warn] = resolveTempo(params_.bpm, params_.bpm_explicit, blueprint_explicit_,
-                                  implicitBpm(), *blueprint_);
+                                  implicitBpm(params_), *blueprint_);
   if (warn) warnings_.push_back(*warn);
   song_.setBpm(bpm);
   params_.bpm = bpm;  // Propagate clamped BPM to params for Coordinator
@@ -400,6 +461,9 @@ void Generator::generateFromConfig(const SongConfig& config) {
 
 void Generator::acceptParams(const GeneratorParams& params) {
   params_ = params;
+  base_params_ = params;
+  vocal_updates_ = VocalConfig{};
+  vocal_updates_.present_fields = 0;
 
   // A pre-set modulation belongs to this generation only; an earlier
   // generation's modulation left in params_ is not a pre-set.
@@ -427,6 +491,7 @@ uint16_t Generator::initializeGenerationState() {
   // (metadata, CLI summaries, and subsequent regeneration) observes the seed
   // that actually drove this generation.
   params_.seed = seed;
+  generation_seed_ = seed;
   rng_.seed(seed);
   song_.setMelodySeed(seed);
   song_.setMotifSeed(seed);
@@ -444,11 +509,7 @@ uint16_t Generator::initializeGenerationState() {
   // Build song structure
   std::vector<Section> sections = buildSongStructure(bpm);
 
-  // Apply density progression for RhythmSync style
-  applyDensityProgressionToSections(sections, params_.paradigm);
-
-  // Apply default layer scheduling for staggered track entrances/exits
-  applyDefaultLayerSchedule(sections);
+  applyDefaultSectionPlan(sections, params_.paradigm);
 
   song_.setArrangement(Arrangement(sections));
   song_.clearAll();
@@ -995,7 +1056,13 @@ void Generator::regenerateVocal(uint32_t new_seed) {
   harmony_context_->registerTrack(song_.vocal(), TrackRole::Vocal);
 }
 
-void Generator::regenerateVocal(const VocalConfig& config) {
+void Generator::regenerateVocal(const VocalConfig& config) { regenerateVocalImpl(config, nullptr); }
+
+void Generator::regenerateVocal(const VocalConfig& config, const SongConfig& updated) {
+  regenerateVocalImpl(config, &updated);
+}
+
+void Generator::regenerateVocalImpl(const VocalConfig& config, const SongConfig* updated) {
   // Apply vocal configuration to generator params
   if (config.has(VocalConfig::VocalLow)) params_.vocal_low = config.vocal_low;
   if (config.has(VocalConfig::VocalHigh)) params_.vocal_high = config.vocal_high;
@@ -1006,6 +1073,7 @@ void Generator::regenerateVocal(const VocalConfig& config) {
   // Apply vocal style if not Auto
   if (config.has(VocalConfig::VocalStyleField) && config.vocal_style != VocalStylePreset::Auto) {
     params_.vocal_style = config.vocal_style;
+    params_.vocal_style_explicit = true;
   }
 
   // Apply melody template if not Auto
@@ -1017,17 +1085,42 @@ void Generator::regenerateVocal(const VocalConfig& config) {
   // Apply melodic complexity, hook intensity, and groove
   if (config.has(VocalConfig::MelodicComplexityField))
     params_.melodic_complexity = config.melodic_complexity;
-  if (config.has(VocalConfig::HookIntensityField)) params_.hook_intensity = config.hook_intensity;
-  if (config.has(VocalConfig::VocalGrooveField)) params_.vocal_groove = config.vocal_groove;
-
-  // Re-derive style internals only when those knobs were explicitly present.
-  // A seed-only/partial JSON update must preserve the existing seven
-  // StyleMelodyParams controls.
-  if (config.has(VocalConfig::VocalStyleField)) {
-    ConfigConverter::applyVocalStylePreset(params_);
+  if (config.has(VocalConfig::HookIntensityField)) {
+    params_.hook_intensity = config.hook_intensity;
+    params_.hook_intensity_explicit = true;
   }
-  if (config.has(VocalConfig::MelodicComplexityField)) {
-    ConfigConverter::applyMelodicComplexity(params_);
+  if (config.has(VocalConfig::VocalGrooveField)) {
+    params_.vocal_groove = config.vocal_groove;
+    params_.vocal_groove_explicit = true;
+  }
+
+  // Style and complexity are derived from the song's original parameters (or its
+  // SongConfig) plus every update so far, never from controls already derived. A
+  // seed-only/partial update that never touched them preserves the current controls.
+  mergeVocalUpdates(vocal_updates_, config);
+  std::optional<GeneratorParams> rebuilt;
+  if (updated != nullptr) {
+    // An automatic style resolves from the seed the song was generated with, so a new
+    // vocal take does not re-roll it.
+    SongConfig source = *updated;
+    source.seed = generation_seed_;
+    rebuilt = ConfigConverter::convert(source);
+  } else if (vocal_updates_.has(VocalConfig::VocalStyleField) ||
+             vocal_updates_.has(VocalConfig::MelodicComplexityField)) {
+    rebuilt = rebuildVocalParams(base_params_, vocal_updates_);
+  }
+  if (rebuilt) {
+    params_.vocal_style = rebuilt->vocal_style;
+    params_.vocal_style_explicit = rebuilt->vocal_style_explicit;
+    params_.melody_params = rebuilt->melody_params;
+    params_.melody_max_leap_override = rebuilt->melody_max_leap_override;
+    params_.melody_long_note_ratio_override = rebuilt->melody_long_note_ratio_override;
+    params_.melody_syncopation_override = rebuilt->melody_syncopation_override;
+    params_.melody_chorus_register_shift_override = rebuilt->melody_chorus_register_shift_override;
+    params_.syllabic_sub_rate_override = rebuilt->syllabic_sub_rate_override;
+    if (isRhythmSyncLeadSetting(params_, resolved_blueprint_id_)) {
+      applyRhythmSyncLeadParams(params_);
+    }
   }
 
   // Resolve and apply seed. params_.seed is what the exported metadata carries,
@@ -1464,20 +1557,12 @@ void Generator::generateMotif() {
   MotifContext motif_ctx;
   if (params_.paradigm == GenerationParadigm::RhythmSync) {
     if (!params_.rhythm_sync_motif_ctx.has_value()) {
-      MotifContext mctx;
-      mctx.vocal_low = params_.vocal_low;
-      mctx.vocal_high = params_.vocal_high;
-      params_.rhythm_sync_motif_ctx = mctx;
+      params_.rhythm_sync_motif_ctx = buildRhythmSyncMotifContext(params_);
     }
     ctx.vocal_ctx = &params_.rhythm_sync_motif_ctx.value();
   } else if (!song_.vocal().notes().empty()) {
     if (const VocalAnalysis* va = getCachedVocalAnalysis()) {
-      motif_ctx.phrase_boundaries = &song_.phraseBoundaries();
-      motif_ctx.rest_positions = &va->rest_positions;
-      motif_ctx.vocal_low = va->lowest_pitch;
-      motif_ctx.vocal_high = va->highest_pitch;
-      motif_ctx.vocal_density = va->density;
-      motif_ctx.direction_at_tick = &va->direction_at_tick;
+      motif_ctx = buildVocalMotifContext(song_, *va);
       ctx.vocal_ctx = &motif_ctx;
     }
   }

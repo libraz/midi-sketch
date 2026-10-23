@@ -95,7 +95,6 @@ EmbellishmentConfig MelodicEmbellisher::getConfigForMood(Mood mood) {
       config.anticipation_ratio = 0.06f;
       config.suspension_ratio = 0.03f;
       config.prefer_pentatonic = false;
-      config.pentatonic_mode = PentatonicMode::Minor;
       config.chromatic_approach = true;
       config.syncopation_level = 0.4f;
       break;
@@ -111,7 +110,6 @@ EmbellishmentConfig MelodicEmbellisher::getConfigForMood(Mood mood) {
       config.enable_tensions = true;
       config.tension_ratio = 0.05f;
       config.prefer_pentatonic = false;
-      config.pentatonic_mode = PentatonicMode::Blues;
       config.chromatic_approach = true;
       config.syncopation_level = 0.6f;
       break;
@@ -130,7 +128,6 @@ EmbellishmentConfig MelodicEmbellisher::getConfigForMood(Mood mood) {
       config.enable_tensions = true;
       config.tension_ratio = 0.06f;  // Doubled: richer 9th/13th color for emotional depth
       config.prefer_pentatonic = true;
-      config.pentatonic_mode = PentatonicMode::Minor;
       config.syncopation_level = 0.3f;
       break;
 

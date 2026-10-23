@@ -63,6 +63,8 @@ describe('Struct Roundtrip Tests', () => {
     expect(noteFingerprint(configuredEvents)).not.toBe(noteFingerprint(baselineEvents));
   }
 
+  // A field-plumbing case pins the blueprint: a drawn one (the 255 default) may
+  // not use the field at all, which would say nothing about whether it arrived.
   describe('SongConfig offset 42+ fields', () => {
     it('should apply vocalStyle parameter (offset 42)', () => {
       const events = generateEvents({
@@ -74,50 +76,50 @@ describe('Struct Roundtrip Tests', () => {
 
     it('should apply melodyTemplate parameter (offset 43)', () => {
       expectConfigChangesNotes(
-        { seed: 12345, melodyTemplate: 0 },
-        { seed: 12345, melodyTemplate: 1 }, // PlateauTalk
+        { seed: 12345, blueprintId: 0, melodyTemplate: 0 },
+        { seed: 12345, blueprintId: 0, melodyTemplate: 1 }, // PlateauTalk
       );
     });
 
     it('should apply arrangementGrowth parameter (offset 44)', () => {
       expectConfigChangesNotes(
-        { seed: 12345, arrangementGrowth: 0 },
-        { seed: 12345, arrangementGrowth: 1 }, // RegisterAdd
+        { seed: 12345, blueprintId: 0, arrangementGrowth: 0 },
+        { seed: 12345, blueprintId: 0, arrangementGrowth: 1 }, // RegisterAdd
       );
     });
 
     it('should apply arpeggioSyncChord parameter (offset 45)', () => {
       expectConfigChangesNotes(
-        { seed: 12345, arpeggioEnabled: true, arpeggioSyncChord: true },
-        { seed: 12345, arpeggioEnabled: true, arpeggioSyncChord: false },
+        { seed: 12345, blueprintId: 0, arpeggioEnabled: true, arpeggioSyncChord: true },
+        { seed: 12345, blueprintId: 0, arpeggioEnabled: true, arpeggioSyncChord: false },
       );
     });
 
     it('should apply motifRepeatScope parameter (offset 46)', () => {
       expectConfigChangesNotes(
-        { seed: 12345, compositionStyle: 1, motifRepeatScope: 0 },
-        { seed: 12345, compositionStyle: 1, motifRepeatScope: 1 }, // Section
+        { seed: 12345, blueprintId: 0, compositionStyle: 1, motifRepeatScope: 0 },
+        { seed: 12345, blueprintId: 0, compositionStyle: 1, motifRepeatScope: 1 }, // Section
       );
     });
 
     it('should apply melodicComplexity parameter (offset 52)', () => {
       expectConfigChangesNotes(
-        { seed: 12345, melodicComplexity: 0 },
-        { seed: 12345, melodicComplexity: 2 }, // Complex
+        { seed: 12345, blueprintId: 0, melodicComplexity: 0 },
+        { seed: 12345, blueprintId: 0, melodicComplexity: 2 }, // Complex
       );
     });
 
     it('should apply hookIntensity parameter (offset 53)', () => {
       expectConfigChangesNotes(
-        { seed: 12345, hookIntensity: HookIntensity.Off },
-        { seed: 12345, hookIntensity: HookIntensity.Strong },
+        { seed: 12345, blueprintId: 0, hookIntensity: HookIntensity.Off },
+        { seed: 12345, blueprintId: 0, hookIntensity: HookIntensity.Strong },
       );
     });
 
     it('should apply vocalGroove parameter (offset 54)', () => {
       expectConfigChangesNotes(
-        { seed: 12345, vocalGroove: VocalGrooveFeel.Straight },
-        { seed: 12345, vocalGroove: VocalGrooveFeel.Syncopated },
+        { seed: 12345, blueprintId: 0, vocalGroove: VocalGrooveFeel.Straight },
+        { seed: 12345, blueprintId: 0, vocalGroove: VocalGrooveFeel.Syncopated },
       );
     });
 
@@ -170,8 +172,8 @@ describe('Struct Roundtrip Tests', () => {
 
     it('should correctly apply melodyTemplate at offset 43', () => {
       expectConfigChangesNotes(
-        { seed: 99999, melodyTemplate: 0 },
-        { seed: 99999, melodyTemplate: 7 }, // JumpAccent
+        { seed: 99999, blueprintId: 0, melodyTemplate: 0 },
+        { seed: 99999, blueprintId: 0, melodyTemplate: 7 }, // JumpAccent
       );
     });
   });

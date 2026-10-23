@@ -298,6 +298,17 @@ std::vector<LayerEvent> generateDefaultLayerEvents(const Section& section, size_
  */
 void applyDefaultLayerSchedule(std::vector<Section>& sections);
 
+/**
+ * @brief Finish a freshly planned structure the way every generation entry point does.
+ *
+ * RhythmSync raises section density and velocity with each repeat of a section
+ * type; every paradigm then gets the default layer schedule.
+ *
+ * @param sections Sections to modify (in-place)
+ * @param paradigm Generation paradigm of the song
+ */
+void applyDefaultSectionPlan(std::vector<Section>& sections, GenerationParadigm paradigm);
+
 /// @}
 
 }  // namespace midisketch

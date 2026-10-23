@@ -25,8 +25,9 @@ class Midi2Writer {
 
   // Build a single-track clip file from MidiTrack
   // Output format: SMF2CLIP
+  // `modulation` is the song whose modulationAt() shifts each note; none when null.
   void buildClip(const MidiTrack& track, const std::string& name, uint8_t channel, uint8_t program,
-                 uint16_t bpm, Key key, Tick mod_tick = 0, int8_t mod_amount = 0);
+                 uint16_t bpm, Key key, const Song* modulation = nullptr);
 
   // Build a multi-track container file from Song
   // Output format: ktmidi container (AAAAAAAAEEEEEEEE header)
@@ -53,12 +54,12 @@ class Midi2Writer {
 
   // Write track data as UMP messages with delta clockstamps
   void writeTrackData(const MidiTrack& track, uint8_t group, uint8_t channel, uint8_t program,
-                      Key key, Tick mod_tick, int8_t mod_amount);
+                      Key key, const Song* modulation);
 
   // Write marker/text events (for SE track)
   void writeMarkerData(const MidiTrack& track, uint8_t group, uint16_t bpm,
                        const std::vector<TempoEvent>& tempo_map, const std::string& metadata,
-                       Key key, Tick mod_tick, int8_t mod_amount);
+                       Key key, const Song* modulation);
 };
 
 }  // namespace midisketch

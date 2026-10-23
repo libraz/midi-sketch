@@ -37,7 +37,6 @@ TEST(MelodyTemplatesTest, GetTemplatePlateauTalk) {
   EXPECT_EQ(t.tessitura_range, 4);
   EXPECT_FLOAT_EQ(t.plateau_ratio, 0.7f);
   EXPECT_TRUE(t.rhythm_driven);
-  EXPECT_TRUE(t.allow_talk_sing);
 }
 
 TEST(MelodyTemplatesTest, GetTemplateRunUpTarget) {
@@ -62,7 +61,6 @@ TEST(MelodyTemplatesTest, GetTemplateHookRepeat) {
   EXPECT_EQ(t.tessitura_range, 4);    // Compact idol hook range
   EXPECT_EQ(t.max_step, 2);           // Stepwise whole-tone motion allowed
   EXPECT_EQ(t.hook_note_count, 3);    // Chantable idol motif size
-  EXPECT_EQ(t.max_phrase_beats, 4);   // Very short
   EXPECT_EQ(t.hook_repeat_count, 5);  // Increased repetition for addictiveness (was 4)
 }
 
@@ -71,22 +69,19 @@ TEST(MelodyTemplatesTest, GetTemplateSparseAnchor) {
   EXPECT_STREQ(t.name, "SparseAnchor");
   EXPECT_EQ(t.tessitura_range, 7);           // Wide
   EXPECT_FLOAT_EQ(t.long_note_ratio, 0.4f);  // Many long notes
-  EXPECT_EQ(t.max_phrase_beats, 12);         // Longer phrases
 }
 
 TEST(MelodyTemplatesTest, GetTemplateCallResponse) {
   const MelodyTemplate& t = getTemplate(MelodyTemplateId::CallResponse);
   EXPECT_STREQ(t.name, "CallResponse");
-  EXPECT_EQ(t.max_phrase_beats, 4);  // Short for call-response
   EXPECT_TRUE(t.rhythm_driven);
 }
 
 TEST(MelodyTemplatesTest, GetTemplateJumpAccent) {
   const MelodyTemplate& t = getTemplate(MelodyTemplateId::JumpAccent);
   EXPECT_STREQ(t.name, "JumpAccent");
-  EXPECT_EQ(t.tessitura_range, 8);              // Widest
-  EXPECT_EQ(t.max_step, 5);                     // Large steps for jumps
-  EXPECT_FLOAT_EQ(t.tension_allowance, 0.35f);  // High for drama
+  EXPECT_EQ(t.tessitura_range, 8);  // Widest
+  EXPECT_EQ(t.max_step, 5);         // Large steps for jumps
 }
 
 TEST(MelodyTemplatesTest, GetTemplateAutoReturnsFallback) {
@@ -214,7 +209,6 @@ TEST(MelodyTemplatesTest, AuxConfigsForCallResponse) {
   // CallResponse should have MotifCounter + TargetHint for vocal-aux interaction
   EXPECT_EQ(count, 2);
   EXPECT_EQ(configs[0].function, AuxFunction::MotifCounter);
-  EXPECT_TRUE(configs[0].sync_phrase_boundary);  // Should sync with vocal phrases
   EXPECT_EQ(configs[1].function, AuxFunction::TargetHint);
 }
 

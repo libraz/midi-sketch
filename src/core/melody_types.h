@@ -165,21 +165,17 @@ struct MelodyTemplate {
   /// @name Vocal constraints
   /// @{
   bool vowel_constraint;  ///< Apply vowel section rules
-  bool leap_as_event;     ///< Leaps only at trigger points
   /// @}
 
   /// @name Phrase characteristics
   /// @{
   float phrase_end_resolution;  ///< Resolution probability at phrase end
   float long_note_ratio;        ///< Long note ratio
-  float tension_allowance;      ///< Allowed tension (0.0-1.0)
   /// @}
 
   /// @name Human body constraints
   /// @{
-  uint8_t max_phrase_beats;           ///< Maximum phrase length (beats)
   float high_register_plateau_boost;  ///< Plateau boost in high register
-  uint8_t post_high_rest_beats;       ///< Rest beats after high notes
   /// @}
 
   /// @name Modern pop features
@@ -188,18 +184,16 @@ struct MelodyTemplate {
                                ///< statement comes from the hook rhythm pattern
   uint8_t hook_repeat_count;   ///< Hook statements per hook phrase (2-5)
   uint8_t betrayal_threshold;  ///< Repetitions before betrayal (0=never, 4=default)
-  bool allow_talk_sing;        ///< Allow talk-sing style
   /// @}
 };
 
 /// @brief Aux track configuration for sub-track generation.
 struct AuxConfig {
   AuxFunction function = AuxFunction::PulseLoop;  ///< Aux track function type
-  int8_t range_offset = 0;           ///< Offset from main melody range (negative = below)
-  int8_t range_width = 12;           ///< Range width (semitones)
-  float velocity_ratio = 0.7f;       ///< Velocity ratio vs main melody (0.5-0.8)
-  float density_ratio = 1.0f;        ///< Density ratio vs main melody
-  bool sync_phrase_boundary = true;  ///< Sync with main melody phrase boundaries
+  int8_t range_offset = 0;      ///< Offset from main melody range (negative = below)
+  int8_t range_width = 12;      ///< Range width (semitones)
+  float velocity_ratio = 0.7f;  ///< Velocity ratio vs main melody (0.5-0.8)
+  float density_ratio = 1.0f;   ///< Density ratio vs main melody
 };
 
 /// @brief Hook intensity for controlling catchiness at key positions.
@@ -372,7 +366,6 @@ struct StyleMelodyParams {
                                   ///< 0.3=ballad, 0.7=standard, 1.0=idol
                                   ///< 1.5=vocaloid, 2.0=ultra vocaloid
   uint8_t min_note_division = 8;  ///< Minimum note division (4=quarter, 8=eighth, 16=16th, 32=32nd)
-  float sixteenth_note_ratio = 0.0f;     ///< Ratio of 16th notes (0.0-0.5)
   float thirtysecond_note_ratio = 0.0f;  ///< Base ratio of 32nd notes (0.0-1.0)
   /// @}
 
@@ -387,7 +380,7 @@ struct StyleMelodyParams {
   float long_note_ratio = 0.2f;    ///< Ratio of long notes in phrases
   uint8_t phrase_length_bars = 2;  ///< Default phrase length in bars
   bool hook_repetition = false;    ///< Enable hook repetition in chorus
-  bool use_leading_tone = true;    ///< Use leading tone for resolution
+  bool use_leading_tone = true;    ///< False drops the transition table's boundary pickups
   /// @}
 
   /// @name Section register shifts (semitones)

@@ -65,12 +65,12 @@ class MidiWriter {
                  uint8_t blueprint_id = 0);
 #endif
   void writeHeader(uint16_t num_tracks, uint16_t division);
+  // `modulation` is the song whose modulationAt() shifts each note; none when null.
   void writeTrack(const MidiTrack& track, const std::string& name, uint8_t channel, uint8_t program,
-                  uint16_t bpm, Key key, bool is_first_track, Tick mod_tick = 0,
-                  int8_t mod_amount = 0);
+                  uint16_t bpm, Key key, bool is_first_track, const Song* modulation = nullptr);
   void writeMarkerTrack(const MidiTrack& track, uint16_t bpm,
                         const std::vector<TempoEvent>& tempo_map, const std::string& metadata = "",
-                        Key key = Key::C, Tick mod_tick = 0, int8_t mod_amount = 0);
+                        Key key = Key::C, const Song* modulation = nullptr);
   static void writeVariableLength(std::vector<uint8_t>& buf, uint32_t value);
 };
 

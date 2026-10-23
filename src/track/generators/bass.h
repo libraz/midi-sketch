@@ -26,12 +26,11 @@ struct KickPatternCache;
 struct BassAnalysis {
   bool has_root_on_beat1 = false;  ///< Root note sounds on beat 1 (strong)
   bool has_root_on_beat3 = false;  ///< Root note sounds on beat 3 (secondary strong)
-  bool has_fifth = false;          ///< Pattern includes 5th above root
   bool uses_octave_jump = false;   ///< Pattern includes octave leaps
   uint8_t root_note = 0;           ///< MIDI pitch of the root being played
   std::vector<Tick> accent_ticks;  ///< Tick positions of accented notes (vel >= 90)
 
-  /// Analyze bar for root positions, 5th usage, and accents.
+  /// Analyze bar for root positions, octave jumps, and accents.
   static BassAnalysis analyzeBar(const MidiTrack& track, Tick bar_start, uint8_t expected_root);
 };
 

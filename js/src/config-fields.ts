@@ -22,7 +22,7 @@ interface NestedField {
 // Top-level SongConfig fields
 export const CONFIG_FIELDS: readonly ConfigField[] = [
   { js: 'stylePresetId', cpp: 'style_preset_id', default: 0, type: 'number' },
-  { js: 'blueprintId', cpp: 'blueprint_id', default: 0, type: 'number' },
+  { js: 'blueprintId', cpp: 'blueprint_id', default: 255, type: 'number' },
   { js: 'mood', cpp: 'mood', default: 0, type: 'number' },
   { js: 'moodExplicit', cpp: 'mood_explicit', default: false, type: 'boolean' },
   { js: 'key', cpp: 'key', default: 0, type: 'number' },
@@ -74,6 +74,12 @@ export const CONFIG_FIELDS: readonly ConfigField[] = [
   { js: 'vocalGroove', cpp: 'vocal_groove', default: 0, type: 'number' },
   { js: 'vocalGrooveExplicit', cpp: 'vocal_groove_explicit', default: false, type: 'boolean' },
   { js: 'enableSyncopation', cpp: 'enable_syncopation', default: false, type: 'boolean' },
+  {
+    js: 'enableSyncopationExplicit',
+    cpp: 'enable_syncopation_explicit',
+    default: false,
+    type: 'boolean',
+  },
   { js: 'energyCurve', cpp: 'energy_curve', default: 0, type: 'number' },
   { js: 'addictiveMode', cpp: 'addictive_mode', default: false, type: 'boolean' },
   { js: 'moraRhythmMode', cpp: 'mora_rhythm_mode', default: 2, type: 'number' },

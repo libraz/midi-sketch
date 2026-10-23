@@ -522,12 +522,6 @@ Tick getRhythmUnit(RhythmGrid grid, bool is_eighth) {
   }
 }
 
-int getBassRootPitchClass(int8_t chord_degree) {
-  constexpr int DEGREE_TO_ROOT[] = {0, 2, 4, 5, 7, 9, 11};
-  int normalized = ((chord_degree % 7) + 7) % 7;
-  return DEGREE_TO_ROOT[normalized];
-}
-
 bool isAvoidNoteWithChord(int pitch_pc, const ChordTones& chord_tones, int root_pc) {
   for (int ct : chord_tones) {
     int interval = std::abs(pitch_pc - ct);

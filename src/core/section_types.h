@@ -501,8 +501,6 @@ struct Section {
   Tick start_tick;                                  ///< Start position in ticks (computed)
   VocalDensity vocal_density = VocalDensity::Full;  ///< Vocal density
   BackingDensity backing_density = BackingDensity::Normal;  ///< Backing density
-  bool deviation_allowed = false;                           ///< Allow raw vocal attitude
-  bool se_allowed = true;                                   ///< Allow sound effects
 
   /// @brief Track enable mask for this section (from ProductionBlueprint).
   /// Default is All (0xFF) for backward compatibility.

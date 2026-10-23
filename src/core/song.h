@@ -128,12 +128,18 @@ class Song {
   /// @{
   void setBpm(uint16_t bpm) { bpm_ = bpm; }
   uint16_t bpm() const { return bpm_; }
+  /// Tick 0 means no modulation, so an amount is kept only with a point after it.
   void setModulation(Tick tick, int8_t amount) {
     modulationTick_ = tick;
-    modulationAmount_ = amount;
+    modulationAmount_ = tick > 0 ? amount : 0;
   }
   Tick modulationTick() const { return modulationTick_; }
   int8_t modulationAmount() const { return modulationAmount_; }
+  /// Semitones the output adds to a note starting at @p tick: the modulation
+  /// amount from its point on, 0 before it and in a song that does not modulate.
+  int8_t modulationAt(Tick tick) const {
+    return modulationTick_ > 0 && tick >= modulationTick_ ? modulationAmount_ : 0;
+  }
   /// @}
 
   /// @name Seed Tracking

@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <string>
 
+#include "core/chord.h"
 #include "core/section_types.h"
 #include "core/timing_constants.h"
 
@@ -314,7 +315,7 @@ struct DissonanceCheckOptions {
   /// @brief Maximum actual semitone distance at which major 2nd is dissonant.
   /// Only applies when `check_major_2nd` is true.
   /// Default: 12 (only close-range major 2nds are dissonant).
-  /// Set to 24 for stricter checking (e.g., vocal clash detection).
+  /// Set to 24 to also flag the major 9th.
   int major_2nd_max_distance = Interval::OCTAVE;
 
   /// @brief Apply 3-octave cutoff (>= 36 semitones = not dissonant).
@@ -342,15 +343,6 @@ struct DissonanceCheckOptions {
   static DissonanceCheckOptions closeVoicing() {
     DissonanceCheckOptions opts;
     opts.check_tritone = false;
-    return opts;
-  }
-
-  /// @brief Static factory: Vocal clash detection (wider M2 threshold).
-  /// Used in generator's findVocalClashes with 2-octave M2 threshold.
-  static DissonanceCheckOptions vocalClash() {
-    DissonanceCheckOptions opts;
-    opts.check_tritone = false;
-    opts.major_2nd_max_distance = Interval::TWO_OCTAVES;
     return opts;
   }
 };
@@ -421,9 +413,14 @@ inline std::string pitchToNoteName(uint8_t pitch) {
 enum class ChordFunction : uint8_t { Tonic, Dominant, Subdominant };
 
 /**
- * @brief Get the harmonic function of a chord from its scale degree.
+ * @brief Get the harmonic function of a chord from its degree identifier.
  *
- * @param degree Scale degree (0=I, 1=ii, 2=iii, 3=IV, 4=V, 5=vi, 6=vii°, 10=bVII)
+ * Every borrowed degree is predominant colour on the way to V or back to I:
+ * bVI, bVII, bIII and iv from the parallel minor, the Neapolitan bII, and
+ * #IVdim, the chromatic predominant that leads into V. scripts/music_analyzer
+ * reads this mapping through chord_degrees.json.
+ *
+ * @param degree Degree identifier (0-6 diatonic; 8, 10-14 borrowed)
  * @return ChordFunction (Tonic, Dominant, or Subdominant)
  */
 inline ChordFunction getChordFunction(int8_t degree) {
@@ -437,7 +434,12 @@ inline ChordFunction getChordFunction(int8_t degree) {
       return ChordFunction::Dominant;
     case 1:   // ii - supertonic (subdominant function)
     case 3:   // IV - subdominant
-    case 10:  // bVII - borrowed subdominant
+    case 8:   // bVI
+    case 10:  // bVII
+    case 11:  // bIII
+    case 12:  // iv
+    case 13:  // bII (Neapolitan)
+    case 14:  // #IVdim
     default:
       return ChordFunction::Subdominant;
   }
@@ -465,22 +467,19 @@ inline uint8_t transposePitch(uint8_t pitch, Key key) {
 /**
  * @brief Transpose pitch by key and apply modulation if applicable.
  *
- * Combines key transposition and time-based modulation into a single call.
- * This is used by MIDI writers and JSON export to convert internal pitches
- * (in C major) to the output key, with optional modulation after a given tick.
+ * Used by MIDI writers and JSON export to convert internal pitches (in C major)
+ * to the output key. Whether the note falls after the key change is the
+ * caller's question, answered by Song::modulationAt().
  *
  * @param pitch Original MIDI pitch (0-127)
  * @param key Key to transpose to
- * @param note_tick Tick at which the note starts
- * @param mod_tick Tick after which modulation is applied (0 = no modulation)
- * @param mod_amount Semitone modulation offset
+ * @param modulation Semitones the song adds at the note's start, resolved by the caller
  * @return Transposed (and possibly modulated) pitch clamped to 0-127
  */
-inline uint8_t transposeAndModulate(uint8_t pitch, Key key, Tick note_tick, Tick mod_tick,
-                                    int8_t mod_amount) {
+inline uint8_t transposeAndModulate(uint8_t pitch, Key key, int8_t modulation) {
   pitch = transposePitch(pitch, key);
-  if (mod_tick > 0 && note_tick >= mod_tick && mod_amount != 0) {
-    int new_pitch = pitch + mod_amount;
+  if (modulation != 0) {
+    int new_pitch = pitch + modulation;
     pitch = static_cast<uint8_t>(std::clamp(new_pitch, 0, 127));
   }
   return pitch;
@@ -776,15 +775,16 @@ int snapToNearestScaleTone(int pitch, int key_offset);
  * Avoid notes are the classical exception to passing/neighbor-tone freedom: a
  * weak-beat diatonic passing tone that forms a tritone/m2/M7 with the chord
  * root (e.g. B over IV=F) audibly clashes with the root the bass MUST play,
- * so it may not be kept as a non-chord tone. Degrees outside 0-6 (secondary
- * dominants, borrowed chords) report avoid=true conservatively: their roots
- * are not derivable from the diatonic table.
+ * so it may not be kept as a non-chord tone. A borrowed degree (8, 10-14)
+ * reports avoid=true conservatively: the rule is stated over the key's own
+ * triads, and a passing tone of the key over a borrowed chord is the
+ * cross-relation it would have to clear first.
  */
 inline bool isAvoidNoteForDegree(int pitch, int8_t degree) {
   if (degree < 0 || degree > 6) return true;
-  static constexpr int kDegreeRootPc[7] = {0, 2, 4, 5, 7, 9, 11};
-  bool is_minor = (degree == 1 || degree == 2 || degree == 5);
-  return isAvoidNoteSimple(pitch, static_cast<uint8_t>(kDegreeRootPc[degree]), is_minor);
+  const ChordDegreeInfo* info = findChordDegree(degree);
+  return isAvoidNoteSimple(pitch, static_cast<uint8_t>(info->root_pc),
+                           info->quality == ChordQuality::Minor);
 }
 
 inline bool isLegalSuspensionTone(int prev_pitch, int cur_pitch, int next_pitch, Tick cur_start,

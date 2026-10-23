@@ -67,7 +67,7 @@ void Midi2Writer::writeClipConfig(uint16_t ticksPerQuarter, uint16_t bpm) {
 // transposePitch moved to core/pitch_utils.h
 
 void Midi2Writer::writeTrackData(const MidiTrack& track, uint8_t group, uint8_t channel,
-                                 uint8_t program, Key key, Tick mod_tick, int8_t mod_amount) {
+                                 uint8_t program, Key key, const Song* modulation) {
   // Program change at start (skip for drums channel 9)
   if (channel != 9) {
     ump::writeDeltaClockstamp(data_, group, 0);
@@ -91,7 +91,8 @@ void Midi2Writer::writeTrackData(const MidiTrack& track, uint8_t group, uint8_t 
   for (const auto& note : track.notes()) {
     uint8_t pitch = note.note;
     if (!percussive) {
-      pitch = transposeAndModulate(pitch, key, note.start_tick, mod_tick, mod_amount);
+      pitch = transposeAndModulate(pitch, key,
+                                   modulation ? modulation->modulationAt(note.start_tick) : 0);
     }
     serialized.push_back({note.start_tick, note.start_tick + note.duration, pitch, note.velocity});
   }
@@ -161,8 +162,7 @@ void Midi2Writer::writeTrackData(const MidiTrack& track, uint8_t group, uint8_t 
 
 void Midi2Writer::writeMarkerData(const MidiTrack& track, uint8_t group, uint16_t bpm,
                                   const std::vector<TempoEvent>& tempo_map,
-                                  const std::string& metadata, Key key, Tick mod_tick,
-                                  int8_t mod_amount) {
+                                  const std::string& metadata, Key key, const Song* modulation) {
   // Write metadata as text event if present
   if (!metadata.empty()) {
     std::string metaText = "MIDISKETCH:" + metadata;
@@ -194,8 +194,8 @@ void Midi2Writer::writeMarkerData(const MidiTrack& track, uint8_t group, uint16_
   std::vector<SerializedNote> serialized;
   serialized.reserve(track.notes().size());
   for (const auto& note : track.notes()) {
-    const uint8_t pitch =
-        transposeAndModulate(note.note, key, note.start_tick, mod_tick, mod_amount);
+    const uint8_t pitch = transposeAndModulate(
+        note.note, key, modulation ? modulation->modulationAt(note.start_tick) : 0);
     serialized.push_back({note.start_tick, note.start_tick + note.duration, pitch, note.velocity});
   }
   const std::vector<SerializedNote> se_notes =
@@ -250,8 +250,7 @@ void Midi2Writer::writeMarkerData(const MidiTrack& track, uint8_t group, uint16_
 }
 
 void Midi2Writer::buildClip(const MidiTrack& track, const std::string& name, uint8_t channel,
-                            uint8_t program, uint16_t bpm, Key key, Tick mod_tick,
-                            int8_t mod_amount) {
+                            uint8_t program, uint16_t bpm, Key key, const Song* modulation) {
   data_.clear();
 
   // SMF2CLIP header
@@ -265,7 +264,7 @@ void Midi2Writer::buildClip(const MidiTrack& track, const std::string& name, uin
   }
 
   // Track data
-  writeTrackData(track, 0, channel, program, key, mod_tick, mod_amount);
+  writeTrackData(track, 0, channel, program, key, modulation);
 
   // DCS(0) + End of Clip
   ump::writeDeltaClockstamp(data_, 0, 0);
@@ -282,18 +281,14 @@ void Midi2Writer::buildContainer(const Song& song, Key key, const std::string& m
   // Container header
   writeContainerHeader(numTracks, TICKS_PER_BEAT);
 
-  Tick mod_tick = song.modulationTick();
-  int8_t mod_amount = song.modulationAmount();
-
   // Helper to write a complete clip for a track
   auto writeTrackClip = [this](const MidiTrack& track, const std::string& name, uint8_t channel,
-                               uint8_t program, uint16_t bpm, Key key, Tick mod_tick,
-                               int8_t mod_amount) {
+                               uint8_t program, uint16_t bpm, Key key, const Song* modulation) {
     writeClipHeader();
     writeClipConfig(TICKS_PER_BEAT, bpm);
     ump::writeDeltaClockstamp(data_, 0, 0);
     ump::writeMetadataText(data_, 0, "TRACK:" + name);
-    writeTrackData(track, 0, channel, program, key, mod_tick, mod_amount);
+    writeTrackData(track, 0, channel, program, key, modulation);
     ump::writeDeltaClockstamp(data_, 0, 0);
     ump::writeEndOfClip(data_);
   };
@@ -304,7 +299,7 @@ void Midi2Writer::buildContainer(const Song& song, Key key, const std::string& m
     writeClipConfig(TICKS_PER_BEAT, song.bpm());
     ump::writeDeltaClockstamp(data_, 0, 0);
     ump::writeMetadataText(data_, 0, "TRACK:Markers");
-    writeMarkerData(song.se(), 0, song.bpm(), song.tempoMap(), metadata, key, mod_tick, mod_amount);
+    writeMarkerData(song.se(), 0, song.bpm(), song.tempoMap(), metadata, key, &song);
     ump::writeDeltaClockstamp(data_, 0, 0);
     ump::writeEndOfClip(data_);
   }
@@ -313,42 +308,37 @@ void Midi2Writer::buildContainer(const Song& song, Key key, const std::string& m
 
   // Musical tracks
   if (!song.vocal().empty()) {
-    writeTrackClip(song.vocal(), "Vocal", VOCAL_CH, programs.vocal, song.bpm(), key, mod_tick,
-                   mod_amount);
+    writeTrackClip(song.vocal(), "Vocal", VOCAL_CH, programs.vocal, song.bpm(), key, &song);
   }
 
   if (!song.chord().empty()) {
-    writeTrackClip(song.chord(), "Chord", CHORD_CH, programs.chord, song.bpm(), key, mod_tick,
-                   mod_amount);
+    writeTrackClip(song.chord(), "Chord", CHORD_CH, programs.chord, song.bpm(), key, &song);
   }
 
   if (!song.bass().empty()) {
-    writeTrackClip(song.bass(), "Bass", BASS_CH, programs.bass, song.bpm(), key, mod_tick,
-                   mod_amount);
+    writeTrackClip(song.bass(), "Bass", BASS_CH, programs.bass, song.bpm(), key, &song);
   }
 
   if (!song.motif().empty()) {
-    writeTrackClip(song.motif(), "Motif", MOTIF_CH, programs.motif, song.bpm(), key, mod_tick,
-                   mod_amount);
+    writeTrackClip(song.motif(), "Motif", MOTIF_CH, programs.motif, song.bpm(), key, &song);
   }
 
   if (!song.arpeggio().empty()) {
     writeTrackClip(song.arpeggio(), "Arpeggio", ARPEGGIO_CH, programs.arpeggio, song.bpm(), key,
-                   mod_tick, mod_amount);
+                   &song);
   }
 
   if (!song.aux().empty()) {
-    writeTrackClip(song.aux(), "Aux", AUX_CH, programs.aux, song.bpm(), key, mod_tick, mod_amount);
+    writeTrackClip(song.aux(), "Aux", AUX_CH, programs.aux, song.bpm(), key, &song);
   }
 
   if (!song.guitar().empty()) {
-    writeTrackClip(song.guitar(), "Guitar", GUITAR_CH, programs.guitar, song.bpm(), key, mod_tick,
-                   mod_amount);
+    writeTrackClip(song.guitar(), "Guitar", GUITAR_CH, programs.guitar, song.bpm(), key, &song);
   }
 
   if (!song.drums().empty()) {
-    writeTrackClip(song.drums(), "Drums", DRUMS_CH, DRUMS_PROG, song.bpm(), key, 0,
-                   0);  // No modulation for drums
+    // No modulation for drums
+    writeTrackClip(song.drums(), "Drums", DRUMS_CH, DRUMS_PROG, song.bpm(), key, nullptr);
   }
 }
 

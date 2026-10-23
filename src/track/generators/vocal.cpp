@@ -212,6 +212,7 @@ MelodyDesigner::SectionContext VocalGenerator::buildSectionContext(
 
   // Set transition info for next section (if any). Matched by end tick: the
   // context may cover only the closing bars of an arrangement section.
+  sctx.use_leading_tone = params.melody_params.use_leading_tone;
   const auto& sections = song.arrangement().sections();
   for (size_t idx = 0; idx < sections.size(); ++idx) {
     if (sections[idx].endTick() == section.endTick() && idx + 1 < sections.size()) {
@@ -407,9 +408,7 @@ void VocalGenerator::postProcessVocalNotes(
     return static_cast<double>(sum) / static_cast<double>(indices.size());
   };
   auto modulationOffset = [&song](const Section& section) {
-    return song.modulationAmount() != 0 && section.start_tick >= song.modulationTick()
-               ? static_cast<double>(song.modulationAmount())
-               : 0.0;
+    return static_cast<double>(song.modulationAt(section.start_tick));
   };
   if (choruses.size() > 1) {
     const auto first_head = headIndices(*choruses.front());

@@ -91,10 +91,11 @@ void MelodyDesigner::applyTransitionApproach(std::vector<NoteEvent>& notes,
     note.velocity = vel::scale(note.velocity, vel_factor);
   }
 
-  // 3. Insert leading tone if requested. insertLeadingTone() applies the same
-  // interval bound to the pitch it actually chooses, so screening here against
-  // a differently-derived candidate would reject usable pickups.
-  if (trans.use_leading_tone && !notes.empty()) {
+  // 3. Insert leading tone where the transition table calls for one, unless the
+  // caller switched pickups off (melodyUseLeadingTone = 1). insertLeadingTone()
+  // applies the same interval bound to the pitch it actually chooses, so
+  // screening here against a differently-derived candidate would reject usable pickups.
+  if (trans.use_leading_tone && ctx.use_leading_tone && !notes.empty()) {
     insertLeadingTone(notes, ctx, harmony);
   }
 }

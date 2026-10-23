@@ -35,23 +35,18 @@ constexpr MelodyTemplate kPlateauTalk = {
 
     // Vocal constraints
     true,  // vowel_constraint
-    true,  // leap_as_event
 
     // Phrase characteristics
-    0.6f,   // phrase_end_resolution
-    0.1f,   // long_note_ratio: few long notes
-    0.15f,  // tension_allowance: low tension
+    0.6f,  // phrase_end_resolution
+    0.1f,  // long_note_ratio: few long notes
 
     // Human body constraints
-    8,     // max_phrase_beats
     0.2f,  // high_register_plateau_boost
-    1,     // post_high_rest_beats
 
     // Modern pop features
-    3,    // hook_note_count
-    3,    // hook_repeat_count
-    4,    // betrayal_threshold: default (every 4th)
-    true  // allow_talk_sing
+    3,  // hook_note_count
+    3,  // hook_repeat_count
+    4,  // betrayal_threshold: default (every 4th)
 };
 
 // Template 2: RunUpTarget (AnimeHighEnergy/dramatic pop style)
@@ -75,23 +70,18 @@ constexpr MelodyTemplate kRunUpTarget = {
 
     // Vocal constraints
     true,  // vowel_constraint
-    true,  // leap_as_event
 
     // Phrase characteristics
     0.9f,   // phrase_end_resolution: high resolution
     0.15f,  // long_note_ratio
-    0.25f,  // tension_allowance: moderate
 
     // Human body constraints
-    6,     // max_phrase_beats: shorter phrases
     0.3f,  // high_register_plateau_boost
-    2,     // post_high_rest_beats
 
     // Modern pop features
-    4,     // hook_note_count
-    2,     // hook_repeat_count
-    3,     // betrayal_threshold: AnimeHighEnergy style = early variation
-    false  // allow_talk_sing: not talk-sing
+    4,  // hook_note_count
+    2,  // hook_repeat_count
+    3,  // betrayal_threshold: AnimeHighEnergy style = early variation
 };
 
 // Template 3: DownResolve (B-melody generic)
@@ -118,23 +108,18 @@ constexpr MelodyTemplate kDownResolve = {
 
     // Vocal constraints
     true,  // vowel_constraint
-    true,  // leap_as_event
 
     // Phrase characteristics
     0.95f,  // phrase_end_resolution: very high
     0.25f,  // long_note_ratio
-    0.2f,   // tension_allowance
 
     // Human body constraints
-    8,      // max_phrase_beats
     0.15f,  // high_register_plateau_boost
-    1,      // post_high_rest_beats
 
     // Modern pop features
-    2,     // hook_note_count
-    2,     // hook_repeat_count
-    4,     // betrayal_threshold: default
-    false  // allow_talk_sing
+    2,  // hook_note_count
+    2,  // hook_repeat_count
+    4,  // betrayal_threshold: default
 };
 
 // Template 4: HookRepeat (Idol/K-POP)
@@ -163,23 +148,18 @@ constexpr MelodyTemplate kHookRepeat = {
 
     // Vocal constraints
     false,  // vowel_constraint: less strict for hooks
-    true,   // leap_as_event
 
     // Phrase characteristics
     0.8f,   // phrase_end_resolution
     0.12f,  // long_note_ratio: keep idol hooks rhythmically active
-    0.1f,   // tension_allowance: low
 
     // Human body constraints
-    4,     // max_phrase_beats: very short
     0.1f,  // high_register_plateau_boost
-    1,     // post_high_rest_beats
 
     // Modern pop features
-    3,    // hook_note_count: chantable 3-note idol motif
-    5,    // hook_repeat_count: increased repetition (was 4)
-    4,    // betrayal_threshold: delay variation for pattern establishment (was 3)
-    true  // allow_talk_sing
+    3,  // hook_note_count: chantable 3-note idol motif
+    5,  // hook_repeat_count: increased repetition (was 4)
+    4,  // betrayal_threshold: delay variation for pattern establishment (was 3)
 };
 
 // Template 5: SparseAnchor (Official HIGEDAN style)
@@ -203,23 +183,18 @@ constexpr MelodyTemplate kSparseAnchor = {
 
     // Vocal constraints
     true,  // vowel_constraint
-    true,  // leap_as_event
 
     // Phrase characteristics
     0.85f,  // phrase_end_resolution
     0.4f,   // long_note_ratio: many long notes
-    0.3f,   // tension_allowance: higher
 
     // Human body constraints
-    12,     // max_phrase_beats: longer phrases
     0.25f,  // high_register_plateau_boost
-    2,      // post_high_rest_beats
 
     // Modern pop features
-    3,     // hook_note_count
-    2,     // hook_repeat_count
-    5,     // betrayal_threshold: ballad style = late variation
-    false  // allow_talk_sing
+    3,  // hook_note_count
+    2,  // hook_repeat_count
+    5,  // betrayal_threshold: ballad style = late variation
 };
 
 // Template 6: CallResponse (Duet style)
@@ -243,23 +218,18 @@ constexpr MelodyTemplate kCallResponse = {
 
     // Vocal constraints
     true,  // vowel_constraint
-    true,  // leap_as_event
 
     // Phrase characteristics
     0.75f,  // phrase_end_resolution
     0.2f,   // long_note_ratio
-    0.2f,   // tension_allowance
 
     // Human body constraints
-    4,     // max_phrase_beats: short for call-response
     0.2f,  // high_register_plateau_boost
-    1,     // post_high_rest_beats
 
     // Modern pop features
-    3,     // hook_note_count
-    2,     // hook_repeat_count
-    4,     // betrayal_threshold: default
-    false  // allow_talk_sing
+    3,  // hook_note_count
+    2,  // hook_repeat_count
+    4,  // betrayal_threshold: default
 };
 
 // Template 7: JumpAccent (Emotional peak)
@@ -283,23 +253,18 @@ constexpr MelodyTemplate kJumpAccent = {
 
     // Vocal constraints
     true,  // vowel_constraint
-    true,  // leap_as_event: important for jumps
 
     // Phrase characteristics
     0.9f,   // phrase_end_resolution: high
     0.35f,  // long_note_ratio
-    0.35f,  // tension_allowance: high for drama
 
     // Human body constraints
-    6,     // max_phrase_beats
     0.3f,  // high_register_plateau_boost: significant
-    2,     // post_high_rest_beats
 
     // Modern pop features
-    3,     // hook_note_count
-    2,     // hook_repeat_count
-    4,     // betrayal_threshold: default
-    false  // allow_talk_sing
+    3,  // hook_note_count
+    2,  // hook_repeat_count
+    4,  // betrayal_threshold: default
 };
 
 // Template array for lookup
@@ -453,7 +418,6 @@ void getAuxConfigsForTemplate(MelodyTemplateId id, AuxConfig* out_configs, uint8
           5,     // range_width
           0.6f,  // velocity_ratio
           0.5f,  // density_ratio
-          true   // sync_phrase_boundary
       };
       *out_count = 1;
       break;
@@ -466,7 +430,6 @@ void getAuxConfigsForTemplate(MelodyTemplateId id, AuxConfig* out_configs, uint8
           7,     // range_width
           0.5f,  // velocity_ratio
           0.3f,  // density_ratio
-          true   // sync_phrase_boundary
       };
       out_configs[1] = {
           AuxFunction::GrooveAccent,
@@ -474,7 +437,6 @@ void getAuxConfigsForTemplate(MelodyTemplateId id, AuxConfig* out_configs, uint8
           5,     // range_width
           0.7f,  // velocity_ratio
           0.4f,  // density_ratio
-          false  // sync_phrase_boundary
       };
       *out_count = 2;
       break;
@@ -487,7 +449,6 @@ void getAuxConfigsForTemplate(MelodyTemplateId id, AuxConfig* out_configs, uint8
           5,     // range_width
           0.5f,  // velocity_ratio
           0.2f,  // density_ratio
-          true   // sync_phrase_boundary
       };
       *out_count = 1;
       break;
@@ -500,7 +461,6 @@ void getAuxConfigsForTemplate(MelodyTemplateId id, AuxConfig* out_configs, uint8
           4,     // range_width: narrow
           0.7f,  // velocity_ratio
           0.6f,  // density_ratio
-          false  // sync_phrase_boundary
       };
       *out_count = 1;
       break;
@@ -513,7 +473,6 @@ void getAuxConfigsForTemplate(MelodyTemplateId id, AuxConfig* out_configs, uint8
           8,      // range_width: wide
           0.4f,   // velocity_ratio: soft
           0.15f,  // density_ratio: very sparse
-          true    // sync_phrase_boundary
       };
       *out_count = 1;
       break;
@@ -526,7 +485,6 @@ void getAuxConfigsForTemplate(MelodyTemplateId id, AuxConfig* out_configs, uint8
           6,     // range_width
           0.7f,  // velocity_ratio: slightly softer than vocal
           0.5f,  // density_ratio: active response
-          true   // sync_phrase_boundary: align with vocal phrases
       };
       // Add target hint for harmonic support
       out_configs[1] = {
@@ -535,7 +493,6 @@ void getAuxConfigsForTemplate(MelodyTemplateId id, AuxConfig* out_configs, uint8
           5,     // range_width
           0.5f,  // velocity_ratio: softer background
           0.3f,  // density_ratio: sparse
-          true   // sync_phrase_boundary
       };
       *out_count = 2;
       break;
@@ -548,7 +505,6 @@ void getAuxConfigsForTemplate(MelodyTemplateId id, AuxConfig* out_configs, uint8
           5,      // range_width
           0.5f,   // velocity_ratio
           0.25f,  // density_ratio
-          true    // sync_phrase_boundary
       };
       out_configs[1] = {
           AuxFunction::EmotionalPad,
@@ -556,7 +512,6 @@ void getAuxConfigsForTemplate(MelodyTemplateId id, AuxConfig* out_configs, uint8
           6,     // range_width
           0.4f,  // velocity_ratio
           0.2f,  // density_ratio
-          true   // sync_phrase_boundary
       };
       *out_count = 2;
       break;

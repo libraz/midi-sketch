@@ -134,8 +134,7 @@ namespace {
 //      narrows the blueprint's leap budget, see resolveContextMaxLeap)
 // [5] force_hook            - force hook_repetition = true
 // [6] tension_mult          - tension_usage multiplier
-// [7] sixteenth_mult        - sixteenth_note_ratio multiplier (capped at 0.5)
-// [8] syncopation_mult      - syncopation_prob multiplier (capped at 0.5)
+// [7] syncopation_mult      - syncopation_prob multiplier (capped at 0.5)
 //
 struct ComplexityModifier {
   MelodicComplexity complexity;
@@ -144,7 +143,6 @@ struct ComplexityModifier {
   uint8_t leap_cap;
   bool force_hook;
   float tension_mult;
-  float sixteenth_mult;
   float syncopation_mult;
 };
 
@@ -156,11 +154,10 @@ constexpr ComplexityModifier kComplexityModifiers[] = {
      5,      // leap_cap: max 4th interval
      true,   // force_hook: enable repetition
      0.5f,   // tension: 50% (safer notes)
-     0.5f,   // sixteenth: 50% (fewer fast notes)
      0.5f},  // syncopation: 50% (more on-beat)
 
     // Standard: no changes (multipliers = 1.0)
-    {MelodicComplexity::Standard, 1.0f, 1.0f, 12, false, 1.0f, 1.0f, 1.0f},
+    {MelodicComplexity::Standard, 1.0f, 1.0f, 12, false, 1.0f, 1.0f},
 
     // Complex: more intricate, varied melodies
     {MelodicComplexity::Complex,
@@ -169,7 +166,6 @@ constexpr ComplexityModifier kComplexityModifiers[] = {
      12,     // leap_cap: max octave
      false,  // force_hook: no forced repetition
      1.5f,   // tension: 150% (more color)
-     1.5f,   // sixteenth: 150% (more fast notes, capped at 0.5)
      1.5f},  // syncopation: 150% (more off-beat, capped at 0.5)
 };
 
@@ -204,9 +200,6 @@ void ConfigConverter::applyMelodicComplexity(GeneratorParams& params) {
   }
 
   params.melody_params.tension_usage *= modifier->tension_mult;
-
-  params.melody_params.sixteenth_note_ratio =
-      std::min(0.5f, params.melody_params.sixteenth_note_ratio * modifier->sixteenth_mult);
 
   params.melody_params.syncopation_prob =
       std::min(0.5f, params.melody_params.syncopation_prob * modifier->syncopation_mult);
@@ -434,6 +427,7 @@ GeneratorParams ConfigConverter::convert(const SongConfig& config) {
   params.vocal_groove = config.vocal_groove;
   params.vocal_groove_explicit = config.vocal_groove_explicit;
   params.enable_syncopation = config.enable_syncopation;
+  params.enable_syncopation_explicit = config.enable_syncopation_explicit;
   params.drive_feel = config.drive_feel;
   params.melody_params.mora_rhythm_mode = static_cast<MoraRhythmMode>(config.mora_rhythm_mode);
 
@@ -534,6 +528,7 @@ GeneratorParams ConfigConverter::convert(const SongConfig& config) {
   }
   if (config.melody_chorus_register_shift != INT8_MIN) {
     params.melody_params.chorus_register_shift = config.melody_chorus_register_shift;
+    params.melody_chorus_register_shift_override = true;
   }
   if (config.melody_hook_repetition == 1) {
     params.melody_params.hook_repetition = false;
@@ -549,6 +544,7 @@ GeneratorParams ConfigConverter::convert(const SongConfig& config) {
   // Syllabic subdivision rate override
   if (config.syllabic_sub_rate > 0 && config.syllabic_sub_rate <= 100) {
     params.melody_params.syllabic_sub_ratio = config.syllabic_sub_rate / 100.0f;
+    params.syllabic_sub_rate_override = true;
   }
 
   // Master switch: when syncopation is off, zero all syncopation params.

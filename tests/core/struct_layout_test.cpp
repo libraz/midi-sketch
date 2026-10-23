@@ -299,6 +299,7 @@ SongConfig makeFullyNonDefaultConfig() {
   config.vocal_groove = VocalGrooveFeel::Swing;
   config.vocal_groove_explicit = true;
   config.enable_syncopation = true;
+  config.enable_syncopation_explicit = true;
   config.energy_curve = EnergyCurve::FrontLoaded;
   config.addictive_mode = true;
   config.mora_rhythm_mode = 1;
@@ -523,6 +524,7 @@ TEST(SongConfigJsonTest, RoundtripNonDefaultValues) {
   EXPECT_EQ(restored.vocal_groove, VocalGrooveFeel::Swing);
   EXPECT_TRUE(restored.vocal_groove_explicit);
   EXPECT_TRUE(restored.enable_syncopation);
+  EXPECT_TRUE(restored.enable_syncopation_explicit);
   EXPECT_EQ(restored.energy_curve, EnergyCurve::FrontLoaded);
   EXPECT_TRUE(restored.addictive_mode);
   EXPECT_EQ(restored.mora_rhythm_mode, 1);
@@ -876,7 +878,10 @@ TEST(SongConfigJsonTest, ExplicitChoiceFlagsRoundTripAndReachGeneratorParams) {
   original.vocal_groove_explicit = true;
   original.vocal_style = VocalStylePreset::Rock;
   original.melody_syncopation_prob = 0;
-  original.enable_syncopation = true;
+  original.enable_syncopation = false;
+  original.enable_syncopation_explicit = true;
+  original.melody_chorus_register_shift = -3;
+  original.syllabic_sub_rate = 30;
 
   std::ostringstream oss;
   json::Writer w(oss);
@@ -889,19 +894,29 @@ TEST(SongConfigJsonTest, ExplicitChoiceFlagsRoundTripAndReachGeneratorParams) {
   ASSERT_TRUE(p.isValid());
   EXPECT_TRUE(restored.hook_intensity_explicit);
   EXPECT_TRUE(restored.vocal_groove_explicit);
+  EXPECT_TRUE(restored.enable_syncopation_explicit);
 
   GeneratorParams params = ConfigConverter::convert(restored);
   EXPECT_TRUE(params.hook_intensity_explicit);
   EXPECT_TRUE(params.vocal_groove_explicit);
   EXPECT_TRUE(params.vocal_style_explicit);
   EXPECT_TRUE(params.melody_syncopation_override);
+  EXPECT_TRUE(params.enable_syncopation_explicit);
+  EXPECT_FALSE(params.enable_syncopation);
+  EXPECT_TRUE(params.melody_chorus_register_shift_override);
+  EXPECT_EQ(params.melody_params.chorus_register_shift, -3);
+  EXPECT_TRUE(params.syllabic_sub_rate_override);
+  EXPECT_FLOAT_EQ(params.melody_params.syllabic_sub_ratio, 0.30f);
 
-  // Left at their defaults, none of the four reads as the caller's choice.
+  // Left at their defaults, none of them reads as the caller's choice.
   GeneratorParams implicit = ConfigConverter::convert(createDefaultSongConfig(0));
   EXPECT_FALSE(implicit.hook_intensity_explicit);
   EXPECT_FALSE(implicit.vocal_groove_explicit);
   EXPECT_FALSE(implicit.vocal_style_explicit);
   EXPECT_FALSE(implicit.melody_syncopation_override);
+  EXPECT_FALSE(implicit.enable_syncopation_explicit);
+  EXPECT_FALSE(implicit.melody_chorus_register_shift_override);
+  EXPECT_FALSE(implicit.syllabic_sub_rate_override);
 }
 
 TEST(ConfigConverterHookTest, AddictiveModeKeepsAnExplicitHookIntensity) {

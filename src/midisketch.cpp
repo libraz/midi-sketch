@@ -227,8 +227,12 @@ void MidiSketch::regenerateVocal(uint32_t new_seed) {
 }
 
 void MidiSketch::regenerateVocal(const VocalConfig& config) {
-  generator_.regenerateVocal(config);
   applyVocalConfigTo(config_, config);
+  if (has_config_) {
+    generator_.regenerateVocal(config, config_);
+  } else {
+    generator_.regenerateVocal(config);
+  }
   rebuildMidi();
 }
 
@@ -379,7 +383,7 @@ std::string MidiSketch::getEventsJson() const {
     for (const auto& note : track.notes()) {
       uint8_t pitch = note.note;
       if (apply_transpose) {
-        pitch = transposeAndModulate(pitch, key, note.start_tick, mod_tick, mod_amount);
+        pitch = transposeAndModulate(pitch, key, song.modulationAt(note.start_tick));
       }
       serialized.push_back(
           {note.start_tick, note.start_tick + note.duration, pitch, note.velocity});

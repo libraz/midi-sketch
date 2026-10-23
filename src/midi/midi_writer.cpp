@@ -71,7 +71,7 @@ void MidiWriter::writeHeader(uint16_t num_tracks, uint16_t division) {
 
 void MidiWriter::writeTrack(const MidiTrack& track, const std::string& name, uint8_t channel,
                             uint8_t program, uint16_t bpm, Key key, bool is_first_track,
-                            Tick mod_tick, int8_t mod_amount) {
+                            const Song* modulation) {
   std::vector<uint8_t> track_data;
 
   // Defensive: BPM should be validated at buildSMF1() entry point
@@ -136,7 +136,8 @@ void MidiWriter::writeTrack(const MidiTrack& track, const std::string& name, uin
   for (const auto& note : track.notes()) {
     uint8_t pitch = note.note;
     if (!percussive) {
-      pitch = transposeAndModulate(pitch, key, note.start_tick, mod_tick, mod_amount);
+      pitch = transposeAndModulate(pitch, key,
+                                   modulation ? modulation->modulationAt(note.start_tick) : 0);
     }
     serialized.push_back({note.start_tick, note.start_tick + note.duration, pitch, note.velocity});
   }
@@ -228,8 +229,7 @@ void MidiWriter::writeTrack(const MidiTrack& track, const std::string& name, uin
 
 void MidiWriter::writeMarkerTrack(const MidiTrack& track, uint16_t bpm,
                                   const std::vector<TempoEvent>& tempo_map,
-                                  const std::string& metadata, Key key, Tick mod_tick,
-                                  int8_t mod_amount) {
+                                  const std::string& metadata, Key key, const Song* modulation) {
   std::vector<uint8_t> track_data;
 
   // Defensive: BPM should be validated at buildSMF1() entry point
@@ -291,7 +291,8 @@ void MidiWriter::writeMarkerTrack(const MidiTrack& track, uint16_t bpm,
   MidiTrack transposed;
   for (const auto& note : track.notes()) {
     NoteEvent shifted = note;
-    shifted.note = transposeAndModulate(note.note, key, note.start_tick, mod_tick, mod_amount);
+    shifted.note = transposeAndModulate(note.note, key,
+                                        modulation ? modulation->modulationAt(note.start_tick) : 0);
     transposed.addNote(shifted);
   }
   const auto note_events = transposed.toMidiEvents(SE_CH);
@@ -415,45 +416,40 @@ void MidiWriter::buildSMF1(const Song& song, Key key, Mood mood, const std::stri
 
   writeHeader(num_tracks, TICKS_PER_BEAT);
 
-  Tick mod_tick = song.modulationTick();
-  int8_t mod_amount = song.modulationAmount();
-
   // SE track first (contains tempo, markers, and metadata)
-  writeMarkerTrack(song.se(), bpm, song.tempoMap(), metadata, key, mod_tick, mod_amount);
+  writeMarkerTrack(song.se(), bpm, song.tempoMap(), metadata, key, &song);
 
   if (!song.vocal().empty()) {
-    writeTrack(song.vocal(), "Vocal", VOCAL_CH, progs.vocal, bpm, key, false, mod_tick, mod_amount);
+    writeTrack(song.vocal(), "Vocal", VOCAL_CH, progs.vocal, bpm, key, false, &song);
   }
 
   if (!song.chord().empty()) {
-    writeTrack(song.chord(), "Chord", CHORD_CH, progs.chord, bpm, key, false, mod_tick, mod_amount);
+    writeTrack(song.chord(), "Chord", CHORD_CH, progs.chord, bpm, key, false, &song);
   }
 
   if (!song.bass().empty()) {
-    writeTrack(song.bass(), "Bass", BASS_CH, progs.bass, bpm, key, false, mod_tick, mod_amount);
+    writeTrack(song.bass(), "Bass", BASS_CH, progs.bass, bpm, key, false, &song);
   }
 
   if (!song.motif().empty()) {
-    writeTrack(song.motif(), "Motif", MOTIF_CH, progs.motif, bpm, key, false, mod_tick, mod_amount);
+    writeTrack(song.motif(), "Motif", MOTIF_CH, progs.motif, bpm, key, false, &song);
   }
 
   if (!song.arpeggio().empty()) {
-    writeTrack(song.arpeggio(), "Arpeggio", ARPEGGIO_CH, progs.arpeggio, bpm, key, false, mod_tick,
-               mod_amount);
+    writeTrack(song.arpeggio(), "Arpeggio", ARPEGGIO_CH, progs.arpeggio, bpm, key, false, &song);
   }
 
   if (!song.aux().empty()) {
-    writeTrack(song.aux(), "Aux", AUX_CH, progs.aux, bpm, key, false, mod_tick, mod_amount);
+    writeTrack(song.aux(), "Aux", AUX_CH, progs.aux, bpm, key, false, &song);
   }
 
   if (!song.guitar().empty()) {
-    writeTrack(song.guitar(), "Guitar", GUITAR_CH, progs.guitar, bpm, key, false, mod_tick,
-               mod_amount);
+    writeTrack(song.guitar(), "Guitar", GUITAR_CH, progs.guitar, bpm, key, false, &song);
   }
 
   if (!song.drums().empty()) {
-    writeTrack(song.drums(), "Drums", DRUMS_CH, DRUMS_PROG, bpm, key, false, 0,
-               0);  // No modulation for drums
+    // No modulation for drums
+    writeTrack(song.drums(), "Drums", DRUMS_CH, DRUMS_PROG, bpm, key, false);
   }
 }
 
@@ -507,22 +503,18 @@ void MidiWriter::buildVocalPreview(const Song& song, const IHarmonyContext& harm
   writeMarkerTrack(empty_se, song.bpm(), {}, "");
 
   // Both tracks modulate with the full song, so the preview sings in the key getMidi() plays.
-  const Tick mod_tick = song.modulationTick();
-  const int8_t mod_amount = song.modulationAmount();
-
   // Vocal track
   constexpr uint8_t VOCAL_CH = 0;
   constexpr uint8_t VOCAL_PROG = 0;  // Piano
   if (!song.vocal().empty()) {
-    writeTrack(song.vocal(), "Vocal", VOCAL_CH, VOCAL_PROG, song.bpm(), key, false, mod_tick,
-               mod_amount);
+    writeTrack(song.vocal(), "Vocal", VOCAL_CH, VOCAL_PROG, song.bpm(), key, false, &song);
   }
 
   // Root bass track
   constexpr uint8_t BASS_CH = 2;
   constexpr uint8_t BASS_PROG = 33;  // Electric Bass
   if (!root_bass.empty()) {
-    writeTrack(root_bass, "Bass", BASS_CH, BASS_PROG, song.bpm(), key, false, mod_tick, mod_amount);
+    writeTrack(root_bass, "Bass", BASS_CH, BASS_PROG, song.bpm(), key, false, &song);
   }
 }
 

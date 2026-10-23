@@ -643,8 +643,6 @@ TEST(VocalDensityTest, StyleMelodyParamsDefaults) {
   StyleMelodyParams params{};
   EXPECT_FLOAT_EQ(params.note_density, 0.7f) << "Default note_density should be 0.7";
   EXPECT_EQ(params.min_note_division, 8) << "Default min_note_division should be 8 (eighth notes)";
-  EXPECT_FLOAT_EQ(params.sixteenth_note_ratio, 0.0f)
-      << "Default sixteenth_note_ratio should be 0.0";
 }
 
 TEST(VocalDensityTest, SongConfigDefaults) {

@@ -44,11 +44,6 @@ BackingDensity getBackingDensityForType(SectionType type) {
   return getSectionProperties(type).backing_density;
 }
 
-// Check if section allows raw vocal deviation
-bool getAllowDeviationForType(SectionType type) {
-  return getSectionProperties(type).allow_deviation;
-}
-
 // Assign density gradient across Verse→PreChorus→Chorus sequences.
 // Creates progressive energy increase within each sequence:
 // - A (Verse): 80% density - space for melody but maintains arpeggio rhythm
@@ -122,8 +117,6 @@ Section makePatternSection(SectionType type, uint8_t bars) {
   section.bars = bars;
   section.vocal_density = getVocalDensityForType(type);
   section.backing_density = getBackingDensityForType(type);
-  section.deviation_allowed = getAllowDeviationForType(type);
-  section.se_allowed = true;
   if (type == SectionType::Intro) {
     section.entry_pattern = EntryPattern::Stagger;
   }
@@ -647,8 +640,6 @@ void insertCallSections(std::vector<Section>& sections, IntroChant intro_chant,
     chant.vocal_density = getVocalDensityForType(SectionType::Chant);
     chant.backing_density = getBackingDensityForType(SectionType::Chant);
     chant.density_percent = getSectionProperties(SectionType::Chant).default_density_percent;
-    chant.deviation_allowed = false;
-    chant.se_allowed = true;
 
     // Find Intro and insert after it
     auto it = std::find_if(sections.begin(), sections.end(),
@@ -675,7 +666,6 @@ void insertCallSections(std::vector<Section>& sections, IntroChant intro_chant,
         existing.bars = std::max(existing.bars, mix_bars);
         existing.name = mix_name;
         existing.track_mask = existing.track_mask | TrackMask::SE;
-        existing.se_allowed = true;
       } else {
         Section mix;
         mix.type = SectionType::MixBreak;
@@ -684,8 +674,6 @@ void insertCallSections(std::vector<Section>& sections, IntroChant intro_chant,
         mix.vocal_density = getVocalDensityForType(SectionType::MixBreak);
         mix.backing_density = getBackingDensityForType(SectionType::MixBreak);
         mix.density_percent = getSectionProperties(SectionType::MixBreak).default_density_percent;
-        mix.deviation_allowed = false;
-        mix.se_allowed = true;
         sections.insert(chorus_it, mix);
       }
     }
@@ -822,10 +810,6 @@ std::vector<Section> flowSections(const ProductionBlueprint& blueprint) {
     // Convert TrackMask to densities
     section.vocal_density = trackMaskToVocalDensity(slot.enabled_tracks);
     section.backing_density = trackMaskToBackingDensity(slot.enabled_tracks);
-
-    // Deviation allowed in Chorus and Bridge (same as existing)
-    section.deviation_allowed = getAllowDeviationForType(slot.type);
-    section.se_allowed = hasTrack(slot.enabled_tracks, TrackMask::SE);
 
     // Store track control information
     section.track_mask = slot.enabled_tracks;
@@ -999,7 +983,6 @@ void applyBlueprintOverlay(std::vector<Section>& sections, const ProductionBluep
     // Derive vocal_density and backing_density from the overlaid track_mask
     section.vocal_density = trackMaskToVocalDensity(slot.enabled_tracks);
     section.backing_density = trackMaskToBackingDensity(slot.enabled_tracks);
-    section.se_allowed = hasTrack(slot.enabled_tracks, TrackMask::SE);
 
     // Derive fill_before from PeakLevel
     section.fill_before = (slot.peak_level != PeakLevel::None);
@@ -1236,6 +1219,34 @@ void applyDefaultLayerSchedule(std::vector<Section>& sections) {
       section.layer_events = generateDefaultLayerEvents(section, idx, sections.size());
     }
   }
+}
+
+namespace {
+
+constexpr float kDensityProgressionPerOccurrence = 0.15f;  // +15% density per section occurrence
+constexpr int kVelocityBoostPerOccurrence = 3;             // +3 velocity per occurrence
+constexpr int kMaxVelocityBoost = 10;                      // Maximum velocity boost cap
+constexpr int kMaxBaseVelocity = 100;                      // Maximum base velocity
+
+}  // namespace
+
+void applyDefaultSectionPlan(std::vector<Section>& sections, GenerationParadigm paradigm) {
+  if (paradigm == GenerationParadigm::RhythmSync) {
+    // "Peak is a temporal event": 1st occurrence 1.0x, 2nd 1.15x, 3rd 1.30x, ...
+    std::map<SectionType, int> occurrence_count;
+    for (auto& section : sections) {
+      const int occurrence = occurrence_count[section.type]++;
+      const float progression_factor = 1.0f + (occurrence * kDensityProgressionPerOccurrence);
+      section.density_percent =
+          static_cast<uint8_t>(std::min(100.0f, section.density_percent * progression_factor));
+
+      const int velocity_boost =
+          std::min(occurrence * kVelocityBoostPerOccurrence, kMaxVelocityBoost);
+      section.base_velocity = static_cast<uint8_t>(
+          std::min(kMaxBaseVelocity, static_cast<int>(section.base_velocity) + velocity_boost));
+    }
+  }
+  applyDefaultLayerSchedule(sections);
 }
 
 }  // namespace midisketch

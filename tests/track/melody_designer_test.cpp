@@ -7,6 +7,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <random>
 #include <set>
 
@@ -421,6 +422,32 @@ TEST(MelodyDesignerTest, GenerateHookStatesTheHookAsOftenAsTheTemplateDeclares) 
       << "a fifth statement was declared and not sung";
 }
 
+TEST(MelodyDesignerTest, ChorusWithTwoHookPhrasesCommitsBothPhrasesStatements) {
+  // An 8-bar chorus plans hook phrases at phrase 0 and phrase 2; a 4-bar one
+  // only at phrase 0. The committed count has to include both phrases.
+  const MelodyTemplate& tmpl = getTemplate(MelodyTemplateId::HookRepeat);
+  HarmonyContext harmony;
+  auto committedStatements = [&](uint8_t bars) {
+    auto ctx = createTestContext();
+    ctx.section_type = SectionType::Chorus;
+    ctx.section_bars = bars;
+    ctx.section_end = TICKS_PER_BAR * bars;
+    ctx.phrase_length_bars = 2;
+    MelodyDesigner designer;
+    std::mt19937 rng(42);
+    bool generated_hook = false;
+    designer.generateSection(tmpl, ctx, harmony, rng, true, &generated_hook);
+    EXPECT_TRUE(generated_hook) << bars << " bars";
+    return designer.hookRepetitionCount();
+  };
+
+  const uint8_t one_hook_phrase = committedStatements(4);
+  const uint8_t two_hook_phrases = committedStatements(8);
+  ASSERT_GT(one_hook_phrase, 0);
+  EXPECT_GT(two_hook_phrases, one_hook_phrase)
+      << "the second hook phrase's statements were not committed";
+}
+
 TEST(MelodyDesignerTest, GenerateHookHonorsConfiguredRepetitionMode) {
   const MelodyTemplate& tmpl = getTemplate(MelodyTemplateId::HookRepeat);
   auto repeated_ctx = createTestContext();
@@ -601,6 +628,42 @@ TEST(MelodyDesignerTest, ApplyTransitionApproachModifiesNotes) {
       ++idx;
     }
   }
+}
+
+TEST(MelodyDesignerTest, LeadingToneSwitchOffDropsTheTablePickup) {
+  auto ctx = createTestContext();
+  ctx.section_type = SectionType::B;
+  ctx.transition_to_next = getTransition(SectionType::B, SectionType::Chorus);
+  ASSERT_NE(ctx.transition_to_next, nullptr);
+  ASSERT_TRUE(ctx.transition_to_next->use_leading_tone);
+  HarmonyContext harmony;
+  const Tick pickup_tick = ctx.section_end - TICKS_PER_BEAT / 4;
+  auto pickups = [pickup_tick](const std::vector<NoteEvent>& notes) {
+    return std::count_if(notes.begin(), notes.end(),
+                         [pickup_tick](const NoteEvent& n) { return n.start_tick == pickup_tick; });
+  };
+
+  // A line sung right up to the pickup slot: the shape insertLeadingTone takes
+  // (no breath gap before the slot, last note near the tessitura centre). A
+  // generated phrase ends on a breath, which the pickup rightly refuses.
+  std::vector<NoteEvent> written;
+  for (Tick start = 0; start + TICKS_PER_BEAT <= pickup_tick; start += TICKS_PER_BEAT) {
+    written.push_back(NoteEventTestHelper::create(start, TICKS_PER_BEAT, ctx.tessitura.center, 90));
+  }
+  ASSERT_FALSE(written.empty());
+  written.back().duration = pickup_tick - written.back().start_tick;
+  ASSERT_EQ(pickups(written), 0);
+
+  MelodyDesigner designer;
+  auto on = written;
+  ctx.use_leading_tone = true;
+  designer.applyTransitionApproach(on, ctx, harmony);
+  ASSERT_EQ(pickups(on), 1) << "the B-to-Chorus table pickup did not reach this line";
+
+  auto off = written;
+  ctx.use_leading_tone = false;
+  designer.applyTransitionApproach(off, ctx, harmony);
+  EXPECT_EQ(pickups(off), 0);
 }
 
 TEST(MelodyDesignerTest, ApplyTransitionApproachNoOpWithoutTransition) {
@@ -825,20 +888,12 @@ TEST(MelodyDesignerTest, PhraseGapsProvideBreathingRoom) {
 // Downbeat Chord-Tone Constraint Tests
 // ============================================================================
 
-// Helper to get chord tones for a given degree
+// Helper to get the triad tones a degree names, borrowed degrees included
 std::vector<int> getChordTonePCs(int8_t degree) {
-  // Diatonic triads in C major: I=CEG, ii=DFA, iii=EGB, IV=FAC, V=GBD, vi=ACE, vii°=BDF
-  constexpr int CHORD_TONES[7][3] = {
-      {0, 4, 7},   // I: C E G
-      {2, 5, 9},   // ii: D F A
-      {4, 7, 11},  // iii: E G B
-      {5, 9, 0},   // IV: F A C
-      {7, 11, 2},  // V: G B D
-      {9, 0, 4},   // vi: A C E
-      {11, 2, 5},  // vii°: B D F
-  };
-  int normalized = ((degree % 7) + 7) % 7;
-  return {CHORD_TONES[normalized][0], CHORD_TONES[normalized][1], CHORD_TONES[normalized][2]};
+  const Chord triad = getChordNotes(degree);
+  const int root_pc = degreeToSemitone(degree);
+  return {(root_pc + triad.intervals[0]) % 12, (root_pc + triad.intervals[1]) % 12,
+          (root_pc + triad.intervals[2]) % 12};
 }
 
 // Test that downbeat notes are always chord tones

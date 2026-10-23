@@ -35,8 +35,9 @@ export interface SongConfig {
   drumsEnabledExplicit: boolean;
   /**
    * Blueprint ID: 0=Traditional, 1=RhythmLock, 2=StoryPop, 3=Ballad, 4=IdolStandard,
-   * 5=IdolHyper, 6=IdolKawaii, 7=IdolCoolPop, 8=IdolEmo, 9=BehavioralLoop, 255=random.
-   * createDefaultConfig() gives 255; a JSON config that omits the field gives 0.
+   * 5=IdolHyper, 6=IdolKawaii, 7=IdolCoolPop, 8=IdolEmo, 9=BehavioralLoop.
+   * 255 (the default everywhere) draws a blueprint that holds the style tempo; a
+   * named blueprint 0-9 plays at its own tempo.
    */
   blueprintId: number;
 
@@ -185,6 +186,8 @@ export interface SongConfig {
   // Syncopation
   /** Enable syncopation effects (default=false) */
   enableSyncopation: boolean;
+  /** True if enableSyncopation was explicitly set by user (an explicit false keeps it off) */
+  enableSyncopationExplicit: boolean;
 
   // Energy curve
   /** Energy curve: 0=GradualBuild, 1=FrontLoaded, 2=WavePattern, 3=SteadyState */
@@ -206,7 +209,11 @@ export interface SongConfig {
   melodyChorusRegisterShift: number;
   /** Hook repetition: 0=preset, 1=off, 2=on */
   melodyHookRepetition: number;
-  /** Leading tone: 0=preset, 1=off, 2=on */
+  /**
+   * Section-boundary pickup notes: 0 or 2 = the pickups the section transition
+   * calls for (B to Chorus, Intro to A, ...), 1 = none. 2 adds no pickup where
+   * the transition has none.
+   */
   melodyUseLeadingTone: number;
 
   // Motif overrides

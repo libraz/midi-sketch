@@ -58,8 +58,7 @@ TEST(ClashGateTest, ASustainedNoteIsTrimmedForAShortClashInsideIt) {
   bool found = false;
   for (Tick tick = TICK_QUARTER; tick < 4 * TICKS_PER_BAR; tick += TICK_QUARTER) {
     const int8_t degree = degreeAt(harmony, tick);
-    const int normalized = ((degree % 7) + 7) % 7;
-    if (normalized != 4 && normalized != 6 && degreeAt(harmony, tick - TICK_QUARTER) == degree) {
+    if (!chordDegreeOwnsATritone(degree) && degreeAt(harmony, tick - TICK_QUARTER) == degree) {
       clash_tick = tick;
       found = true;
       break;
@@ -106,7 +105,7 @@ TEST(ClashGateTest, TheGateLeavesTheTritoneASeventhChordIsBuiltOn) {
   Tick chord_tick = 0;
   bool found = false;
   for (Tick tick = 0; tick < 4 * TICKS_PER_BAR; tick += TICKS_PER_BAR) {
-    if (((degreeAt(harmony, tick) % 7) + 7) % 7 == 5) {
+    if (degreeAt(harmony, tick) == 5) {
       chord_tick = tick;
       found = true;
       break;
@@ -146,7 +145,7 @@ TEST(ClashGateTest, TheGateStillTakesASemitoneBetweenChordTones) {
   Tick chord_tick = 0;
   bool found = false;
   for (Tick tick = 0; tick < 4 * TICKS_PER_BAR; tick += TICKS_PER_BAR) {
-    if (((degreeAt(harmony, tick) % 7) + 7) % 7 == 0) {
+    if (degreeAt(harmony, tick) == 0) {
       chord_tick = tick;
       found = true;
       break;
@@ -181,8 +180,7 @@ TEST(ClashGateTest, TheRegistryDescribesTheNotesTheGateLeaves) {
   Tick clash_tick = 0;
   bool found = false;
   for (Tick tick = 0; tick < 4 * TICKS_PER_BAR; tick += TICK_QUARTER) {
-    const int normalized = ((degreeAt(harmony, tick) % 7) + 7) % 7;
-    if (normalized != 4 && normalized != 6) {
+    if (!chordDegreeOwnsATritone(degreeAt(harmony, tick))) {
       clash_tick = tick;
       found = true;
       break;
@@ -348,8 +346,7 @@ TEST(ClashGateTest, TheDeletePassHandsATailToTheGateAndTheGateShortensIt) {
   bool found = false;
   for (Tick tick = 0; tick + remainder + kTailGateMaxOverlap < 4 * TICKS_PER_BAR;
        tick += TICK_QUARTER) {
-    const int normalized = ((degreeAt(harmony, tick + remainder) % 7) + 7) % 7;
-    if (normalized == 4 || normalized == 6) continue;
+    if (chordDegreeOwnsATritone(degreeAt(harmony, tick + remainder))) continue;
     if (bothVoicesAreChordTones(chord_pitch, vocal_pitch,
                                 harmony.getChordTonesAt(tick + remainder))) {
       continue;

@@ -63,35 +63,16 @@ std::set<int> getChordTonePitchClasses(int8_t degree) {
   return pitch_classes;
 }
 
-// Helper: Get extension pitch classes (7th, 9th) for a degree
+// Helper: Get extension pitch classes (7th, 9th) for a degree: the 9th, and the
+// major seventh on I and IV or the minor seventh everywhere else (vii° included,
+// as its half-diminished seventh).
 std::set<int> getExtensionPitchClasses(int8_t degree) {
-  int root_pc = degreeToRoot(degree, Key::C) % 12;
-  int normalized_degree = ((degree % 7) + 7) % 7;
+  int root_pc = degreeToSemitone(degree);
   std::set<int> extensions;
 
   // 9th is always major 2nd above root
   extensions.insert((root_pc + 2) % 12);
-
-  // 7th depends on chord quality
-  int seventh = -1;
-  switch (normalized_degree) {
-    case 0:  // I - maj7
-    case 3:  // IV - maj7
-      seventh = (root_pc + 11) % 12;
-      break;
-    case 1:  // ii - min7
-    case 2:  // iii - min7
-    case 5:  // vi - min7
-    case 4:  // V - dom7
-      seventh = (root_pc + 10) % 12;
-      break;
-    case 6:  // vii° - dim7
-      seventh = (root_pc + 9) % 12;
-      break;
-  }
-  if (seventh >= 0) {
-    extensions.insert(seventh);
-  }
+  extensions.insert((root_pc + (isDiatonicMajorSeventhDegree(degree) ? 11 : 10)) % 12);
 
   return extensions;
 }
@@ -213,6 +194,7 @@ TEST(StylePresetMappingTest, RockShoutUsesLightRockMood) {
 TEST(StylePresetMappingTest, AcousticPopMapsToBalladWithBlueprintTempoPriority) {
   SongConfig config;
   config.style_preset_id = 10;  // Acoustic Pop
+  config.blueprint_id = 0;      // a named blueprint plays at its own tempo
   config.form = StructurePattern::StandardPop;
   config.chord_progression_id = 0;
   config.key = Key::C;

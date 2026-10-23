@@ -345,14 +345,7 @@ FullTrackContext Coordinator::buildFullTrackContext(TrackRole role, Song& song, 
   // Generator::generateMotif builds, so every entry point voices it alike.
   if (role == TrackRole::Motif && !ctx.vocal_ctx && vocal_analysis_ &&
       !song.vocal().notes().empty()) {
-    MotifContext motif_ctx;
-    motif_ctx.phrase_boundaries = &song.phraseBoundaries();
-    motif_ctx.rest_positions = &vocal_analysis_->rest_positions;
-    motif_ctx.vocal_low = vocal_analysis_->lowest_pitch;
-    motif_ctx.vocal_high = vocal_analysis_->highest_pitch;
-    motif_ctx.vocal_density = vocal_analysis_->density;
-    motif_ctx.direction_at_tick = &vocal_analysis_->direction_at_tick;
-    motif_vocal_ctx_ = motif_ctx;
+    motif_vocal_ctx_ = buildVocalMotifContext(song, *vocal_analysis_);
     ctx.vocal_ctx = &motif_vocal_ctx_.value();
   }
 
@@ -370,10 +363,7 @@ void Coordinator::generateAllTracks(Song& song) {
 
   // Set up RhythmSync motif context for register separation
   if (paradigm_ == GenerationParadigm::RhythmSync && !params_.rhythm_sync_motif_ctx.has_value()) {
-    MotifContext mctx;
-    mctx.vocal_low = params_.vocal_low;
-    mctx.vocal_high = params_.vocal_high;
-    params_.rhythm_sync_motif_ctx = mctx;
+    params_.rhythm_sync_motif_ctx = buildRhythmSyncMotifContext(params_);
   }
 
   // Get generation order
@@ -535,19 +525,32 @@ void Coordinator::applyHookToSections(const std::vector<NoteEvent>& hook,
 // Private: Initialization Helpers
 // ============================================================================
 
-namespace {
-
-/// Tempo an implicit BPM stands for; the same reference Generator uses.
-uint16_t implicitBpmOf(const GeneratorParams& params) {
+uint16_t implicitBpm(const GeneratorParams& params) {
   return params.auto_bpm_fallback > 0 ? params.auto_bpm_fallback : getMoodDefaultBpm(params.mood);
 }
 
-}  // namespace
+MotifContext buildRhythmSyncMotifContext(const GeneratorParams& params) {
+  MotifContext ctx;
+  ctx.vocal_low = params.vocal_low;
+  ctx.vocal_high = params.vocal_high;
+  return ctx;
+}
+
+MotifContext buildVocalMotifContext(const Song& song, const VocalAnalysis& analysis) {
+  MotifContext ctx;
+  ctx.phrase_boundaries = &song.phraseBoundaries();
+  ctx.rest_positions = &analysis.rest_positions;
+  ctx.vocal_low = analysis.lowest_pitch;
+  ctx.vocal_high = analysis.highest_pitch;
+  ctx.vocal_density = analysis.density;
+  ctx.direction_at_tick = &analysis.direction_at_tick;
+  return ctx;
+}
 
 void Coordinator::initializeBlueprint() {
   // A drawn blueprint has to be one that plays at the implicit BPM.
   blueprint_explicit_ = params_.blueprint_id < getProductionBlueprintCount();
-  const uint16_t implicit_bpm = params_.bpm == 0 ? implicitBpmOf(params_) : 0;
+  const uint16_t implicit_bpm = params_.bpm == 0 ? implicitBpm(params_) : 0;
   blueprint_id_ = resolveProductionBlueprintId(params_.seed, params_.blueprint_id,
                                                static_cast<uint8_t>(params_.mood), implicit_bpm);
   blueprint_ = &getProductionBlueprint(blueprint_id_);
@@ -620,12 +623,14 @@ void Coordinator::buildArrangement() {
   request.addictive_mode = params_.addictive_mode || (blueprint_ && blueprint_->addictive_mode);
   request.energy_curve = params_.energy_curve;
   request.blueprint = blueprint_;
-  arrangement_ = Arrangement(planSongStructure(request, warnings_));
+  std::vector<Section> sections = planSongStructure(request, warnings_);
+  applyDefaultSectionPlan(sections, paradigm_);
+  arrangement_ = Arrangement(sections);
 }
 
 void Coordinator::resolveBpm() {
   auto [bpm, warn] = resolveTempo(params_.bpm, params_.bpm_explicit, blueprint_explicit_,
-                                  implicitBpmOf(params_), *blueprint_);
+                                  implicitBpm(params_), *blueprint_);
   bpm_ = bpm;
   if (warn) warnings_.push_back(*warn);
 }

@@ -553,6 +553,29 @@ TEST(PitchUtilsTest, GetChordFunction_Subdominant) {
   EXPECT_EQ(getChordFunction(10), ChordFunction::Subdominant);  // bVII
 }
 
+TEST(PitchUtilsTest, GetChordFunction_EveryBorrowedDegreeIsPredominant) {
+  for (const ChordDegreeInfo& row : getChordDegreeTable()) {
+    if (row.degree <= 6) continue;
+    EXPECT_EQ(getChordFunction(row.degree), ChordFunction::Subdominant)
+        << "degree " << static_cast<int>(row.degree);
+  }
+}
+
+// The avoid-note rule reads each diatonic triad's root and quality from the
+// degree table, and keeps its conservative answer on borrowed chords.
+TEST(PitchUtilsTest, AvoidNoteForDegreeReadsTheDegreeTable) {
+  for (const ChordDegreeInfo& row : getChordDegreeTable()) {
+    for (int pitch = 60; pitch < 72; ++pitch) {
+      const bool expected =
+          row.degree > 6 || isAvoidNoteSimple(pitch, static_cast<uint8_t>(row.root_pc),
+                                              row.quality == ChordQuality::Minor);
+      EXPECT_EQ(isAvoidNoteForDegree(pitch, row.degree), expected)
+          << "degree " << static_cast<int>(row.degree) << " pitch " << pitch;
+    }
+  }
+  EXPECT_TRUE(isAvoidNoteForDegree(71, 3)) << "B over IV is the textbook avoid note";
+}
+
 // ============================================================================
 // Passaggio Dynamic Tests
 // ============================================================================
@@ -908,17 +931,6 @@ TEST(UnifiedDissonanceTest, TheIntervalOnlyRuleCannotExcuseADominantsTritone) {
   EXPECT_FALSE(chordDegreeOwnsATritone(0));  // I
   EXPECT_FALSE(isDissonantActualInterval(6, 4));
   EXPECT_TRUE(isDissonantActualInterval(6, 0));
-}
-
-TEST(UnifiedDissonanceTest, VocalClashPreset) {
-  auto opts = DissonanceCheckOptions::vocalClash();
-  // m2, M7, M2 within 2 octaves - no tritone
-  EXPECT_TRUE(isDissonantSemitoneInterval(1, opts));    // m2
-  EXPECT_TRUE(isDissonantSemitoneInterval(2, opts));    // M2 (< 24)
-  EXPECT_TRUE(isDissonantSemitoneInterval(14, opts));   // M9 (pc=2, < 24)
-  EXPECT_TRUE(isDissonantSemitoneInterval(11, opts));   // M7
-  EXPECT_FALSE(isDissonantSemitoneInterval(6, opts));   // tritone skipped
-  EXPECT_FALSE(isDissonantSemitoneInterval(26, opts));  // M2 compound (>= 24)
 }
 
 // --- isDissonantPitchPair convenience function ---

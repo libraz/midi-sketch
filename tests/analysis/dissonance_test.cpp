@@ -22,6 +22,7 @@
 #include "core/pitch_utils.h"
 #include "core/preset_data.h"
 #include "core/song.h"
+#include "core/track_collision_detector.h"
 #include "midi/midi_reader.h"
 #include "midisketch.h"
 #include "test_helpers/note_event_test_helper.h"
@@ -161,6 +162,53 @@ TEST(DissonanceTest, RegisteredWideBassMajorSeventhIsNotReportedAsClash) {
 
   EXPECT_EQ(report.summary.simultaneous_clashes, 0u)
       << "Registered Imaj7 root/seventh voicings must not be reported as bass clashes";
+}
+
+// Below C3 a bass major seventh beats however the chord is spelled, so the
+// report and generation both refuse it unless the chord owns the pair and the
+// two are 23 semitones or more apart.
+TEST(DissonanceTest, LowBassMajorSeventhIsJudgedAsGenerationJudgesIt) {
+  Section chorus;
+  chorus.type = SectionType::Chorus;
+  chorus.start_tick = 0;
+  chorus.bars = 1;
+  chorus.name = "Chorus";
+  Arrangement arrangement({chorus});
+
+  ChordProgression progression{};
+  progression.degrees = {0, -1, -1, -1, -1, -1, -1, -1};
+  progression.length = 1;
+  ChordProgressionTracker timeline;
+  timeline.initialize(arrangement, progression, Mood::StraightPop);
+  timeline.registerChordExtension(0, TICKS_PER_BAR, ChordExtension::Maj7);
+
+  GeneratorParams params{};
+  params.chord_id = 0;
+  params.mood = Mood::StraightPop;
+
+  struct Case {
+    uint8_t bass;
+    uint8_t chord;
+    bool clash;
+  };
+  const Case cases[] = {
+      {36, 47, true},   // C2-B2: owned, 11 apart, low bass
+      {36, 59, false},  // C2-B3: owned, 23 apart
+      {48, 59, false},  // C3-B3: owned, bass at C3
+  };
+  for (const Case& c : cases) {
+    Song song;
+    song.setArrangement(arrangement);
+    song.bass().addNote(NoteEventTestHelper::create(0, TICKS_PER_BEAT, c.bass, 100));
+    song.chord().addNote(NoteEventTestHelper::create(0, TICKS_PER_BEAT, c.chord, 100));
+    const auto report = analyzeDissonance(song, params, timeline);
+
+    EXPECT_EQ(report.summary.simultaneous_clashes, c.clash ? 1u : 0u)
+        << static_cast<int>(c.bass) << "-" << static_cast<int>(c.chord);
+    EXPECT_EQ(isClashingPair(c.chord, TrackRole::Chord, c.bass, TrackRole::Bass, &timeline, 0, 0),
+              c.clash)
+        << static_cast<int>(c.bass) << "-" << static_cast<int>(c.chord);
+  }
 }
 
 TEST(DissonanceTest, RegisteredSecondaryDominantTritoneIsNotReportedAsClash) {

@@ -64,6 +64,7 @@ class MelodyDesigner {
     bool disable_vowel_constraints = false;   ///< Allow large intervals within syllables
     bool disable_breathing_gaps = false;      ///< Remove breathing rests between phrases
     const SectionTransition* transition_to_next = nullptr;  ///< Transition to next section
+    bool use_leading_tone = true;      ///< False suppresses the transition table's boundary pickup
     bool enable_embellishment = true;  ///< Enable melodic embellishment (NCT insertion)
     VocalAttitude vocal_attitude = VocalAttitude::Expressive;  ///< Vocal style attitude
     HookIntensity hook_intensity = HookIntensity::Normal;      ///< Hook pattern selection intensity
@@ -416,12 +417,18 @@ class MelodyDesigner {
     /// templates declare never happens.
     uint8_t repetition_count = 0;
 
-    /// Statements the last generated hook section contributed to the count.
+    /// Statements the last generated hook section contributed to the count,
+    /// summed over every hook phrase in it.
     ///
     /// Candidates are generated speculatively and only the winner is committed,
     /// so the count advances at commit time and has to know what the winning
     /// candidate actually emitted.
     uint8_t last_section_statements = 0;
+
+    /// Statements already emitted by earlier hook phrases of the section being
+    /// generated, so a second hook phrase continues the ordinals instead of
+    /// restarting them. Reset when generateSection starts a section.
+    uint8_t section_statements = 0;
 
     /// Cached sabi (chorus) head pitches for consistency (first 8 notes).
     std::array<uint8_t, 8> sabi_pitches{};
@@ -442,6 +449,7 @@ class MelodyDesigner {
       rhythm_pattern_idx = SIZE_MAX;
       repetition_count = 0;
       last_section_statements = 0;
+      section_statements = 0;
       pitches_cached = false;
       rhythm_cached = false;
     }

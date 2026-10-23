@@ -638,9 +638,14 @@ describe('SongConfigBuilder', () => {
       expect(untouched.hookIntensityExplicit).toBe(false);
       expect(untouched.vocalGrooveExplicit).toBe(false);
 
-      const builder = new SongConfigBuilder(0).setHookIntensity(1).setVocalGroove(2);
+      const builder = new SongConfigBuilder(0)
+        .setHookIntensity(1)
+        .setVocalGroove(2)
+        .setSyncopation(false);
       builder.resetKeepExplicit();
       const config = builder.build();
+      expect(config.enableSyncopation).toBe(false);
+      expect(config.enableSyncopationExplicit).toBe(true);
       expect(config.hookIntensity).toBe(1);
       expect(config.hookIntensityExplicit).toBe(true);
       expect(config.vocalGroove).toBe(2);
