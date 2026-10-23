@@ -645,10 +645,10 @@ constexpr SectionSlot BALLAD_FLOW[] = {
      70,
      15},
 
-    // Ochisabi Chorus: Strum, voice limit=2, guide tone 65%, vocal range 15st
+    // Ochisabi Chorus: stripped to vocal + keys, voice limit=2, guide tone 65%, vocal range 15st
     {SectionType::Chorus,
      8,
-     TrackMask::All,
+     TrackMask::Vocal | TrackMask::Chord | TrackMask::SE,
      EntryPattern::GradualBuild,
      SectionEnergy::High,
      82,
@@ -1266,10 +1266,11 @@ constexpr SectionSlot IDOL_KAWAII_FLOW[] = {
      60,
      12},
 
-    // 2nd Chorus: Strum, voice limit=3, guide tone 55%, vocal range 12st
+    // 2nd Chorus (Ochisabi): stripped to vocal + keys, voice limit=3, guide tone 55%, vocal range
+    // 12st
     {SectionType::Chorus,
      8,
-     TrackMask::All,
+     TrackMask::Vocal | TrackMask::Chord | TrackMask::SE,
      EntryPattern::DropIn,
      SectionEnergy::High,
      75,

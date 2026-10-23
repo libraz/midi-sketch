@@ -214,8 +214,8 @@ int runRegenerateMode(const ParsedArgs& args) {
   // With --json, stdout carries the analysis document and nothing else, so the
   // human-readable inspections are announced on stderr rather than appended.
   const bool machine_readable_stdout = args.json_output && args.analyze;
-  if (machine_readable_stdout && (args.dump_collisions_requested || args.bar_num > 0)) {
-    std::cerr << "Note: note inspection output is omitted because stdout carries JSON.\n";
+  if (machine_readable_stdout && inspectionRequested(args)) {
+    noteInspectionOmitted();
   }
 
   if (args.dump_collisions_requested && !machine_readable_stdout) {

@@ -18,8 +18,8 @@ namespace midisketch {
 // ============================================================================
 // ChordTones
 // ============================================================================
-// Note: Use SCALE from pitch_utils.h for degree to pitch class conversion.
-// SCALE[degree] gives the pitch class offset for diatonic degrees (0-6).
+// Degree to root pitch class goes through degreeToSemitone() in chord.h, which
+// covers the borrowed degrees the seven-entry SCALE table cannot index.
 
 // Chord tones as pitch classes (0-11, semitones from C)
 struct ChordTones {

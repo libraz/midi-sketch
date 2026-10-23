@@ -52,6 +52,18 @@ void generateChordTrack(MidiTrack& track, const TrackGenerationContext& ctx);
  */
 void generateChordTrackWithContext(MidiTrack& track, const TrackGenerationContext& ctx);
 
+/**
+ * @brief Pitch of the low root a peak section adds under the bar's voicing.
+ *
+ * The chord's root at the highest pitch below the voicing, whichever chord
+ * member the voicing puts at the bottom.
+ *
+ * @param lowest_voice Lowest pitch of the voicing
+ * @param chord_root Any pitch carrying the chord root's pitch class
+ * @return The root pitch, or -1 when it would fall below CHORD_LOW
+ */
+int peakLowRootPitch(uint8_t lowest_voice, uint8_t chord_root);
+
 // ============================================================================
 // ChordGenerator Class
 // ============================================================================

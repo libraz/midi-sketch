@@ -5,6 +5,7 @@
 
 #include "midi/midi_writer.h"
 
+#include "core/chord.h"
 #include "core/harmony_context.h"
 #include "core/pitch_utils.h"
 #include "core/preset_data.h"
@@ -483,8 +484,8 @@ void MidiWriter::buildVocalPreview(const Song& song, const IHarmonyContext& harm
       next_change = total_ticks;  // Last chord extends to end
     }
 
-    // Calculate root pitch (C2 base + scale degree)
-    int root_pc = SCALE[((degree % 7) + 7) % 7];
+    // Calculate root pitch (C2 base + the degree's root pitch class)
+    int root_pc = degreeToSemitone(degree);
     uint8_t root_pitch = BASS_OCTAVE + static_cast<uint8_t>(root_pc);
 
     // Add whole note (or duration until next chord change)
@@ -505,18 +506,23 @@ void MidiWriter::buildVocalPreview(const Song& song, const IHarmonyContext& harm
   MidiTrack empty_se;
   writeMarkerTrack(empty_se, song.bpm(), {}, "");
 
+  // Both tracks modulate with the full song, so the preview sings in the key getMidi() plays.
+  const Tick mod_tick = song.modulationTick();
+  const int8_t mod_amount = song.modulationAmount();
+
   // Vocal track
   constexpr uint8_t VOCAL_CH = 0;
   constexpr uint8_t VOCAL_PROG = 0;  // Piano
   if (!song.vocal().empty()) {
-    writeTrack(song.vocal(), "Vocal", VOCAL_CH, VOCAL_PROG, song.bpm(), key, false, 0, 0);
+    writeTrack(song.vocal(), "Vocal", VOCAL_CH, VOCAL_PROG, song.bpm(), key, false, mod_tick,
+               mod_amount);
   }
 
   // Root bass track
   constexpr uint8_t BASS_CH = 2;
   constexpr uint8_t BASS_PROG = 33;  // Electric Bass
   if (!root_bass.empty()) {
-    writeTrack(root_bass, "Bass", BASS_CH, BASS_PROG, song.bpm(), key, false, 0, 0);
+    writeTrack(root_bass, "Bass", BASS_CH, BASS_PROG, song.bpm(), key, false, mod_tick, mod_amount);
   }
 }
 

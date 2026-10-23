@@ -78,8 +78,14 @@ void applyVocalConfigTo(SongConfig& config, const VocalConfig& vocal) {
   if (vocal.has(VocalConfig::MelodicComplexityField)) {
     config.melodic_complexity = vocal.melodic_complexity;
   }
-  if (vocal.has(VocalConfig::HookIntensityField)) config.hook_intensity = vocal.hook_intensity;
-  if (vocal.has(VocalConfig::VocalGrooveField)) config.vocal_groove = vocal.vocal_groove;
+  if (vocal.has(VocalConfig::HookIntensityField)) {
+    config.hook_intensity = vocal.hook_intensity;
+    config.hook_intensity_explicit = true;
+  }
+  if (vocal.has(VocalConfig::VocalGrooveField)) {
+    config.vocal_groove = vocal.vocal_groove;
+    config.vocal_groove_explicit = true;
+  }
   if (vocal.has(VocalConfig::CompositionStyleField)) {
     config.composition_style = vocal.composition_style;
     config.composition_style_explicit = true;

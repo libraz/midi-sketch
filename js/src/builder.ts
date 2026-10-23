@@ -118,6 +118,8 @@ const EXPLICIT_FLAGS: Partial<Record<keyof SongConfig, keyof SongConfig>> = {
   compositionStyle: 'compositionStyleExplicit',
   mood: 'moodExplicit',
   formId: 'formExplicit',
+  hookIntensity: 'hookIntensityExplicit',
+  vocalGroove: 'vocalGrooveExplicit',
   chordExtSusProb: 'chordExtProbExplicit',
   chordExt7thProb: 'chordExtProbExplicit',
   chordExt9thProb: 'chordExtProbExplicit',
@@ -659,7 +661,10 @@ export class SongConfigBuilder {
     return this;
   }
 
-  /** Set the optional per-song melody overrides. */
+  /**
+   * Set the optional per-song melody overrides. `maxLeap` caps the blueprint's
+   * leap budget; left unset, the style's leap value does not narrow it.
+   */
   setMelodyOverrides(opts: {
     maxLeap?: number;
     syncopationProb?: number;
@@ -905,8 +910,9 @@ export class SongConfigBuilder {
    *
    * Setting composition style may automatically change arpeggioEnabled (for
    * SynthDriven), restored when the style changes again. BackgroundMotif and
-   * SynthDriven have no vocal; the core leaves it out itself, so skipVocal is
-   * not touched.
+   * SynthDriven songs generated in one call have no vocal; the core leaves it
+   * out itself, so skipVocal is not touched. The vocal-first calls
+   * (generateVocal, generateWithVocal) still sing the vocal they are asked for.
    *
    * @param style 0=MelodyLead, 1=BackgroundMotif, 2=SynthDriven
    */

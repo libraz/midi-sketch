@@ -1045,7 +1045,9 @@ MidiSketchPianoRollInfo s_single_info;
 const char* TRACK_NAMES[] = {"Vocal", "Chord",    "Bass", "Drums", "SE",
                              "Motif", "Arpeggio", "Aux",  "Guitar"};
 
-// Fill piano roll info for a single tick
+// Fill piano roll info for a single tick.
+// Notes are classified in the internal C major space the song's tracks, vocal
+// range and timeline live in; current_key reports the output shift separately.
 void fillPianoRollInfo(MidiSketchPianoRollInfo* info, const midisketch::Song& song,
                        const midisketch::IHarmonyContext& harmony,
                        const midisketch::GeneratorParams& params, uint32_t tick,
@@ -1057,23 +1059,19 @@ void fillPianoRollInfo(MidiSketchPianoRollInfo* info, const midisketch::Song& so
   uint8_t base_key = static_cast<uint8_t>(params.key);
   info->current_key = midisketch::getCurrentKey(song, tick, base_key);
 
-  // Get chord tones and tensions for current degree
-  bool is_sec_dom = harmony.isSecondaryDominantAt(tick);
-  std::vector<int> chord_tones;
+  // The timeline's chord at the tick, registered extensions and secondary
+  // dominants included.
+  midisketch::ChordTones timeline_tones = harmony.getChordTonesAt(tick);
+  std::vector<int> chord_tones(timeline_tones.begin(), timeline_tones.end());
   std::vector<int> tensions;
-  if (is_sec_dom) {
-    // Secondary dominants use Dom7 quality regardless of diatonic chord type
-    int normalized = ((info->chord_degree % 7) + 7) % 7;
-    int root_pc = (midisketch::SCALE[normalized] + info->current_key) % 12;
-    // Dom7 intervals: root, major 3rd, perfect 5th, minor 7th
-    chord_tones = {root_pc, (root_pc + 4) % 12, (root_pc + 7) % 12, (root_pc + 10) % 12};
+  if (harmony.isSecondaryDominantAt(tick)) {
     // Dom7 tensions: 9th and 13th
+    int root_pc = midisketch::degreeToSemitone(info->chord_degree);
     tensions = {(root_pc + 2) % 12, (root_pc + 9) % 12};
   } else {
-    chord_tones = midisketch::getChordTonePitchClasses(info->chord_degree);
     tensions = midisketch::getAvailableTensionPitchClasses(info->chord_degree);
   }
-  auto scale_tones = midisketch::getScalePitchClasses(info->current_key);
+  auto scale_tones = midisketch::getScalePitchClasses(0);
 
   // Clear recommended notes
   info->recommended_count = 0;
@@ -1099,7 +1097,7 @@ void fillPianoRollInfo(MidiSketchPianoRollInfo* info, const midisketch::Song& so
 
     // 1. BGM collision check
     midisketch::CollisionResult collision =
-        midisketch::checkBgmCollisionDetailed(song, tick, static_cast<uint8_t>(note));
+        midisketch::checkBgmCollisionDetailed(song, harmony, tick, static_cast<uint8_t>(note));
 
     if (collision.type == midisketch::CollisionType::Severe) {
       info->safety[note] = MIDISKETCH_NOTE_DISSONANT;

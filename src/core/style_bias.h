@@ -21,26 +21,16 @@ namespace midisketch {
 /// @brief Style-specific probability weights for melody generation.
 ///
 /// All weights are multipliers (1.0 = neutral, >1.0 = encouraged, <1.0 = discouraged).
-/// Used during pitch candidate selection and rhythm generation.
+/// Scores each whole melody candidate by its interval mix when the designer picks
+/// a winner; no weight biases an individual pitch or rhythm choice.
 struct StyleBias {
   // === Interval Selection Weights ===
   float stepwise_weight;  ///< 2nd intervals (1-2 semitones)
   float skip_weight;      ///< 3rd intervals (3-4 semitones)
   float leap_weight;      ///< 5th+ intervals (5+ semitones)
 
-  // === Register Weights ===
-  float center_weight;  ///< Middle register preference
-  float high_weight;    ///< High register preference
-  float low_weight;     ///< Low register preference
-
-  // === Rhythm Weights ===
-  float onbeat_weight;       ///< Notes on strong beats
-  float offbeat_weight;      ///< Notes on weak beats
-  float syncopation_weight;  ///< Off-grid placements
-
   // === Repetition Weights ===
-  float same_pitch_weight;    ///< Same note repetition
-  float motif_repeat_weight;  ///< Pattern repetition
+  float same_pitch_weight;  ///< Same note repetition
 };
 
 // ============================================================================
@@ -69,40 +59,6 @@ inline StyleBias adjustBiasForComplexity(const StyleBias& base, MelodicComplexit
       break;
   }
   return adjusted;
-}
-
-/// @brief Apply interval bias to a score.
-/// @param interval Interval size in semitones
-/// @param bias Style bias to apply
-/// @returns Weighted score multiplier
-inline float applyIntervalBias(int interval, const StyleBias& bias) {
-  int abs_interval = (interval < 0) ? -interval : interval;
-  if (abs_interval <= 2) {
-    return bias.stepwise_weight;
-  } else if (abs_interval <= 4) {
-    return bias.skip_weight;
-  } else {
-    return bias.leap_weight;
-  }
-}
-
-/// @brief Apply register bias to a score.
-/// @param pitch MIDI pitch
-/// @param center Center of vocal range
-/// @param range_width Width of vocal range
-/// @param bias Style bias to apply
-/// @returns Weighted score multiplier
-inline float applyRegisterBias(int pitch, int center, int range_width, const StyleBias& bias) {
-  int distance = pitch - center;
-  int quarter_range = range_width / 4;
-
-  if (distance > quarter_range) {
-    return bias.high_weight;
-  } else if (distance < -quarter_range) {
-    return bias.low_weight;
-  } else {
-    return bias.center_weight;
-  }
 }
 
 }  // namespace midisketch

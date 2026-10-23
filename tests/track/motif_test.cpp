@@ -1228,6 +1228,60 @@ TEST_F(MotifRhythmLockTest, LockedPitchSkipsCycleRhythmVariation) {
   }
 }
 
+TEST_F(MotifRhythmLockTest, LockedPitchChorusReplaysTheFirstStatementPitches) {
+  params_.blueprint_id = 9;                       // BehavioralLoop: RhythmSync + LockedPitch
+  params_.structure = StructurePattern::FullPop;  // two choruses
+  int compared = 0;
+  int moved_without_record = 0;
+
+  for (uint32_t seed : {12345u, 777u, 20260903u}) {
+    params_.seed = seed;
+    Generator gen;
+    gen.generate(params_);
+    ASSERT_EQ(gen.getParams().riff_policy, RiffPolicy::LockedPitch);
+
+    // A replayed pitch may be reseated onto the chord now sounding, so a move
+    // only counts when the chord under it is the one the riff was stated over.
+    const IHarmonyContext& harmony = gen.getHarmonyContext();
+    auto soundingTones = [&harmony](Tick tick) {
+      const ChordTones tones = harmony.getChordTonesAt(tick);
+      return std::set<int>(tones.begin(), tones.end());
+    };
+    std::map<Tick, std::set<uint8_t>> first_statement;
+    std::map<Tick, std::set<int>> first_chord;
+    const Section* first_chorus = nullptr;
+    for (const auto& section : gen.getSong().arrangement().sections()) {
+      if (section.type != SectionType::Chorus) continue;
+      const bool is_first = first_chorus == nullptr;
+      if (is_first) first_chorus = &section;
+      for (const auto& note : gen.getSong().motif().notes()) {
+        if (note.start_tick < section.start_tick || note.start_tick >= section.endTick()) continue;
+        const Tick rel = note.start_tick - section.start_tick;
+        if (is_first) {
+          first_statement[rel].insert(note.note);
+          first_chord[rel] = soundingTones(note.start_tick);
+          continue;
+        }
+        auto found = first_statement.find(rel);
+        if (found == first_statement.end()) continue;
+        ++compared;
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+        if (found->second.count(note.note) == 0 && !note.hasTransformHistory() &&
+            first_chord[rel] == soundingTones(note.start_tick)) {
+          ++moved_without_record;
+        }
+#endif
+      }
+    }
+    ASSERT_NE(first_chorus, nullptr);
+  }
+
+  ASSERT_GT(compared, 0) << "no later chorus onset lined up with the first statement";
+  // Not verified in the shipping build: without the transform record a collision
+  // move cannot be told apart from a pitch that was never held.
+  EXPECT_EQ(moved_without_record, 0);
+}
+
 TEST_F(MotifRhythmLockTest, LockedContourAllowsCycleRhythmVariation) {
   std::vector<NoteEvent> base;
   base.push_back(NoteEventBuilder::create(0, TICK_EIGHTH, 60, 90));

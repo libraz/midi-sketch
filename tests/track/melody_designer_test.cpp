@@ -391,9 +391,34 @@ TEST(MelodyDesignerTest, GenerateHookRepeatsPattern) {
 
   auto result = designer.generateHook(tmpl, 0, ctx.section_end, ctx, -1, harmony, rng);
 
-  // HookRepeat has hook_note_count=2, hook_repeat_count=4
-  // So expect 2*4 = 8 notes minimum
+  // HookRepeat states its hook several times; every statement has at least two notes
   EXPECT_GE(result.notes.size(), 8u);
+}
+
+TEST(MelodyDesignerTest, GenerateHookStatesTheHookAsOftenAsTheTemplateDeclares) {
+  MelodyTemplate five = getTemplate(MelodyTemplateId::HookRepeat);
+  ASSERT_EQ(five.hook_repeat_count, 5);
+  MelodyTemplate four = five;
+  four.hook_repeat_count = 4;
+
+  auto ctx = createTestContext();
+  ctx.section_type = SectionType::Chorus;
+  ctx.section_bars = 16;
+  ctx.section_end = TICKS_PER_BAR * 16;  // room for every statement
+  HarmonyContext harmony;
+
+  MelodyDesigner five_designer;
+  MelodyDesigner four_designer;
+  std::mt19937 five_rng(42);
+  std::mt19937 four_rng(42);
+  const auto five_result =
+      five_designer.generateHook(five, 0, ctx.section_end, ctx, -1, harmony, five_rng);
+  const auto four_result =
+      four_designer.generateHook(four, 0, ctx.section_end, ctx, -1, harmony, four_rng);
+
+  ASSERT_FALSE(four_result.notes.empty());
+  EXPECT_GT(five_result.notes.size(), four_result.notes.size())
+      << "a fifth statement was declared and not sung";
 }
 
 TEST(MelodyDesignerTest, GenerateHookHonorsConfiguredRepetitionMode) {

@@ -134,9 +134,6 @@ std::vector<int> getAvailableTensionPitchClasses(int8_t degree) {
     return result;
   }
 
-  // Normalize degree to 0-6 range (only reached for diatonic degrees).
-  int normalized = ((degree % 7) + 7) % 7;
-
   // Available tensions by degree (in semitones from root):
   // I (0): 9th (+2), 13th (+9) - avoid 11th (#4 clashes with 3rd)
   // ii (1): 9th (+2), 11th (+5), 13th (+9)
@@ -146,7 +143,7 @@ std::vector<int> getAvailableTensionPitchClasses(int8_t degree) {
   // vi (5): 9th (+2), 11th (+5) - avoid 13th (b13)
   // vii° (6): 11th (+5) - limited use
 
-  switch (normalized) {
+  switch (degree) {
     case 0:                                  // I major
       result.push_back((root_pc + 2) % 12);  // 9th
       result.push_back((root_pc + 9) % 12);  // 13th

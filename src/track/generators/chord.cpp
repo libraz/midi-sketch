@@ -34,6 +34,7 @@
 #include "core/velocity.h"
 #include "instrument/keyboard/keyboard_note_factory.h"
 #include "instrument/keyboard/piano_model.h"
+#include "track/bass/bass_bar_writer.h"
 #include "track/chord/bass_coordination.h"
 #include "track/chord/chord_note_writer.h"
 #include "track/chord/chord_rhythm.h"
@@ -186,6 +187,13 @@ VoicedChord soundedVoicing(const MidiTrack& track, Tick entry_start, const Voice
 }
 
 }  // namespace
+
+int peakLowRootPitch(uint8_t lowest_voice, uint8_t chord_root) {
+  // 1-12 semitones down: a root already at the bottom is doubled an octave below.
+  const int below = (static_cast<int>(lowest_voice) - chord_root % 12 + 11) % 12 + 1;
+  const int pitch = static_cast<int>(lowest_voice) - below;
+  return pitch >= CHORD_LOW ? pitch : -1;
+}
 
 // =========================================================================
 // Unified chord generation implementation
@@ -592,9 +600,12 @@ void applyBarOrnaments(ChordBarContext& ctx, const VoicedChord& primary_voicing,
     uint8_t vel = calculateVelocity(ctx.section->type, 0, ctx.params.mood);
     uint8_t doubling_vel = static_cast<uint8_t>(vel * 0.75f);
 
-    int root_pitch = primary_voicing.pitches[0];
-    int low_root = root_pitch - 12;
-    if (low_root >= CHORD_LOW && low_root <= CHORD_HIGH) {
+    uint8_t lowest_voice = primary_voicing.pitches[0];
+    for (size_t idx = 1; idx < primary_voicing.count; ++idx) {
+      lowest_voice = std::min(lowest_voice, primary_voicing.pitches[idx]);
+    }
+    const int low_root = peakLowRootPitch(lowest_voice, primary_root);
+    if (low_root >= 0) {
       if (ctx.is_basic) {
         // Basic: implicit (always add)
         addSafeChordNote(ctx.track, ctx.harmony, ctx.bar_start, primary_duration,
@@ -884,12 +895,12 @@ void generateChordTrackUnified(ChordGenerationMode mode, MidiTrack& track, const
           chord_voicing::buildBassPitchMask(bass_track, ctx.bar_start, ctx.bar_end);
 
       bool bass_has_root = true;
-      uint8_t bar_root = degreeToRoot(harmony.getChordDegreeAt(ctx.bar_start), Key::C);
+      const int8_t bar_degree = harmony.getChordDegreeAt(ctx.bar_start);
+      uint8_t bar_root = degreeToRoot(bar_degree, Key::C);
       if (bass_track != nullptr && !bass_track->notes().empty()) {
-        uint8_t bass_root =
-            static_cast<uint8_t>(std::clamp(static_cast<int>(bar_root) - 12, 28, 55));
+        // The bass track's own register for this root, which keeps its pitch class.
         BassAnalysis bass_analysis =
-            BassAnalysis::analyzeBar(*bass_track, ctx.bar_start, bass_root);
+            BassAnalysis::analyzeBar(*bass_track, ctx.bar_start, getBassRoot(bar_degree));
         bass_has_root = bass_analysis.has_root_on_beat1;
       }
       if (ctx.bass_pitch_mask == 0) {

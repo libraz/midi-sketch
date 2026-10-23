@@ -279,6 +279,18 @@ uint8_t calculateArpeggioVelocity(uint8_t base_velocity, SectionType section, in
 
 }  // namespace
 
+uint8_t resolveArpeggioOctaveRange(uint8_t requested, PeakLevel peak_level, bool prefer_stepwise) {
+  constexpr int kMaxOctaveRange = 3;
+  int range = std::min(static_cast<int>(requested), kMaxOctaveRange);
+  if (peak_level == PeakLevel::Max) {
+    range = std::min(range + 1, kMaxOctaveRange);
+  }
+  if (prefer_stepwise) {
+    range = 1;
+  }
+  return static_cast<uint8_t>(range);
+}
+
 // ============================================================================
 // Arpeggio Generation Helpers
 // ============================================================================
@@ -333,13 +345,9 @@ ArpeggioSectionParams calculateArpeggioSectionParams(const Section& section,
   constexpr int BASE_OCTAVE_DEFAULT = 72;  // C5
   result.base_octave = std::clamp(BASE_OCTAVE_DEFAULT + style.octave_offset, 36, 96);
 
-  // Calculate octave range
-  result.octave_range = arp.octave_range;
-
-  // Apply blueprint constraints
-  if (params.blueprint_ref != nullptr && params.blueprint_ref->constraints.prefer_stepwise) {
-    result.octave_range = std::min(result.octave_range, static_cast<uint8_t>(1));
-  }
+  result.octave_range = resolveArpeggioOctaveRange(
+      arp.octave_range, section.peak_level,
+      params.blueprint_ref != nullptr && params.blueprint_ref->constraints.prefer_stepwise);
 
   // Apply section density
   result.effective_density = section.getModifiedDensity(section.density_percent);
@@ -360,12 +368,6 @@ ArpeggioSectionParams calculateArpeggioSectionParams(const Section& section,
   if (result.effective_density > 90 && result.speed == ArpeggioSpeed::Eighth && !user_set_speed &&
       !style_has_special_speed) {
     result.speed = ArpeggioSpeed::Sixteenth;
-  }
-
-  // PeakLevel max: expand octave range
-  if (section.peak_level == PeakLevel::Max) {
-    result.octave_range =
-        std::min(static_cast<uint8_t>(4), static_cast<uint8_t>(arp.octave_range + 1));
   }
 
   return result;

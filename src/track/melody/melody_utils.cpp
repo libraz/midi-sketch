@@ -10,6 +10,7 @@
 
 #include "core/chord.h"
 #include "core/chord_utils.h"
+#include "core/hook_utils.h"
 #include "core/i_harmony_context.h"
 #include "core/pitch_monotony_tracker.h"
 #include "core/pitch_utils.h"
@@ -45,16 +46,18 @@ float getMotifWeightForSection(SectionType section, int section_occurrence) {
 }
 
 uint8_t resolveContextMaxLeap(const GeneratorParams& params) {
-  if (params.melody_max_leap_override) {
-    return params.melody_params.max_leap_interval;
+  // Without a blueprint the cap matches BlueprintConstraints::max_leap_semitones
+  // and SectionContext's own default.
+  const uint8_t blueprint_cap = params.blueprint_ref != nullptr
+                                    ? params.blueprint_ref->constraints.max_leap_semitones
+                                    : static_cast<uint8_t>(kDefaultMaxLeapSemitones);
+  // Only the caller's own maxLeap narrows the budget. Preset and complexity
+  // values are defaults of 3-9 semitones that would flatten a pop line well
+  // below the blueprint's allowance, so they do not.
+  if (params.melody_max_leap_override && params.melody_params.max_leap_interval > 0) {
+    return std::min(params.melody_params.max_leap_interval, blueprint_cap);
   }
-  if (params.blueprint_ref != nullptr) {
-    return params.blueprint_ref->constraints.max_leap_semitones;
-  }
-  // Matches BlueprintConstraints::max_leap_semitones and SectionContext's own
-  // default. The per-section table in getMaxMelodicIntervalForSection is what
-  // narrows a Verse back to a major 6th; this value is the budget, not the cap.
-  return static_cast<uint8_t>(kDefaultMaxLeapSemitones);
+  return blueprint_cap;
 }
 
 int getEffectiveMaxInterval(SectionType section_type, uint8_t ctx_max_leap) {
@@ -593,6 +596,11 @@ uint8_t calculatePhraseCount(uint8_t section_bars, uint8_t phrase_length_bars) {
   return (section_bars + phrase_length_bars - 1) / phrase_length_bars;
 }
 
+int8_t blendHookContourStep(int8_t contour_semitones, int8_t skeleton_degrees) {
+  const int hint_semitones = scaleDegreesToSemitones(skeleton_degrees);
+  return static_cast<int8_t>(std::lround(contour_semitones * 0.8f + hint_semitones * 0.2f));
+}
+
 void applySequentialTransposition(std::vector<NoteEvent>& notes, uint8_t phrase_index,
                                   SectionType section_type, int key_offset, uint8_t vocal_low,
                                   uint8_t vocal_high) {
@@ -603,12 +611,22 @@ void applySequentialTransposition(std::vector<NoteEvent>& notes, uint8_t phrase_
   constexpr int8_t kSequenceIntervals[] = {0, 2, 4, 5};
   int transpose = (phrase_index < 4) ? kSequenceIntervals[phrase_index] : 5;
 
+  // The sequence rises only as far as the headroom above the phrase's top note,
+  // so the whole phrase moves together instead of piling onto the ceiling.
+  int phrase_top = 0;
+  for (const auto& note : notes) phrase_top = std::max(phrase_top, static_cast<int>(note.note));
+  transpose = std::clamp(static_cast<int>(vocal_high) - phrase_top, 0, transpose);
+  if (transpose == 0) return;
+
   for (auto& note : notes) {
 #ifdef MIDISKETCH_NOTE_PROVENANCE
     uint8_t old_pitch = note.note;
 #endif
     int new_pitch = note.note + transpose;
     new_pitch = snapToNearestScaleTone(new_pitch, key_offset);
+    // A scale snap can still step past an edge; an octave fold keeps the pitch class.
+    while (new_pitch > vocal_high && new_pitch - 12 >= vocal_low) new_pitch -= 12;
+    while (new_pitch < vocal_low && new_pitch + 12 <= vocal_high) new_pitch += 12;
     new_pitch = std::clamp(new_pitch, static_cast<int>(vocal_low), static_cast<int>(vocal_high));
     note.note = static_cast<uint8_t>(new_pitch);
 #ifdef MIDISKETCH_NOTE_PROVENANCE

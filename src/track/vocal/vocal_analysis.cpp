@@ -294,6 +294,13 @@ int8_t getVocalDirectionAt(const VocalAnalysis& va, Tick tick) {
     return 0;  // Query is before any notes
   }
   --it;
+
+  // A finished note no longer steers anything
+  auto end_it = va.note_end_at_tick.find(it->first);
+  if (end_it != va.note_end_at_tick.end() && tick >= end_it->second) {
+    return 0;
+  }
+
   return it->second;
 }
 

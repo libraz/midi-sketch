@@ -207,12 +207,13 @@ void EmotionCurve::adjustForContext() {
       emotions_[i].density_factor = std::min(1.5f, emotions_[i].density_factor + boost);
     }
 
-    // Rule 4: Last Chorus gets maximum energy
+    // Rule 4: Last Chorus gets maximum energy (an ochisabi is a quiet chorus, never the peak)
     bool is_last_chorus = false;
-    if (current == SectionType::Chorus) {
+    if (current == SectionType::Chorus && sections_[i].modifier != SectionModifier::Ochisabi) {
       is_last_chorus = true;
       for (size_t j = i + 1; j < emotions_.size(); ++j) {
-        if (sections_[j].type == SectionType::Chorus) {
+        if (sections_[j].type == SectionType::Chorus &&
+            sections_[j].modifier != SectionModifier::Ochisabi) {
           is_last_chorus = false;
           break;
         }
@@ -227,6 +228,10 @@ void EmotionCurve::adjustForContext() {
     if (i > 0 && current == SectionType::A && sections_[i - 1].type == SectionType::Intro) {
       emotions_[i].energy = std::max(0.4f, emotions_[i].energy - 0.1f);
     }
+
+    // Rule 6: The section's modifier scales its energy (ochisabi lowers it, climactic raises it)
+    emotions_[i].energy =
+        std::min(1.0f, emotions_[i].energy * sections_[i].getModifierVelocityMultiplier());
   }
 }
 

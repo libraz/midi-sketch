@@ -12,7 +12,6 @@ namespace midisketch {
 void StyleMelodyParams::writeTo(json::Writer& w) const {
   w.write("max_leap_interval", static_cast<int>(max_leap_interval))
       .write("allow_unison_repeat", allow_unison_repeat)
-      .write("phrase_end_resolution", phrase_end_resolution)
       .write("tension_usage", tension_usage)
       .write("note_density", note_density)
       .write("min_note_division", static_cast<int>(min_note_division))
@@ -51,7 +50,6 @@ void StyleMelodyParams::writeTo(json::Writer& w) const {
 void StyleMelodyParams::readFrom(const json::Parser& p) {
   max_leap_interval = static_cast<uint8_t>(p.getInt("max_leap_interval", 7));
   allow_unison_repeat = p.getBool("allow_unison_repeat", true);
-  phrase_end_resolution = p.getFloat("phrase_end_resolution", 0.8f);
   tension_usage = p.getFloat("tension_usage", 0.2f);
   note_density = p.getFloat("note_density", 0.7f);
   min_note_division = static_cast<uint8_t>(p.getInt("min_note_division", 8));

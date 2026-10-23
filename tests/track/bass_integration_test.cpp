@@ -29,6 +29,7 @@
 #include "instrument/fretted/fingering.h"
 #include "instrument/fretted/playability.h"
 #include "test_support/generator_test_fixture.h"
+#include "track/bass/bass_motion.h"
 #include "track/generators/bass.h"
 #include "track/generators/vocal.h"
 #include "track/vocal/vocal_analysis.h"
@@ -1169,6 +1170,26 @@ TEST(SkillLevelPlayabilityCostTest, BeginnerHasStricterThreshold) {
 
   EXPECT_EQ(beginner_constraints.bass_skill, InstrumentSkillLevel::Beginner);
   EXPECT_EQ(advanced_constraints.bass_skill, InstrumentSkillLevel::Advanced);
+}
+
+// --- Motion adjustment against the vocal ---
+
+// The bass yields to the vocal on the actual distance: a minor second two
+// octaves apart does not beat, a minor ninth does, and a major seventh the
+// chord is spelled with is that chord.
+TEST(BassMotionVocalClashTest, JudgesTheActualIntervalAgainstTheVocal) {
+  constexpr int8_t kMediant = 2;  // iii: E G B
+  const ChordTones mediant = getChordTones(kMediant);
+  EXPECT_EQ(adjustPitchForMotion(40, MotionType::Oblique, 0, 65, 0, mediant), 40)
+      << "E2 under F4 is 25 semitones apart and is kept";
+  EXPECT_EQ(adjustPitchForMotion(52, MotionType::Oblique, 0, 65, 0, mediant), 40)
+      << "E3 under F4 is a minor ninth, so the bass drops an octave";
+
+  const ChordTones fmaj7 = {{5, 9, 0, 4, -1}, 4};
+  EXPECT_EQ(adjustPitchForMotion(41, MotionType::Oblique, 0, 64, 0, fmaj7), 41)
+      << "F2 under E4 is the root and seventh of the Fmaj7 that sounds";
+  EXPECT_NE(adjustPitchForMotion(41, MotionType::Oblique, 0, 64, 0, getChordTones(3)), 41)
+      << "over a plain IV triad the same E4 is a major seventh nobody owns";
 }
 
 }  // namespace

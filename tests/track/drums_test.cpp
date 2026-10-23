@@ -3645,6 +3645,44 @@ TEST(DrumSectionEntryTest, QuietChorusGetsNeitherCrashNorLeadInFill) {
   EXPECT_EQ(quiet_crash, 0);
 }
 
+TEST_F(DrumsTest, FxOnlySectionsKeepNoBeatKitInTheFinalTrack) {
+  // Timing offsets move a note by a few milliseconds across a section edge; fills
+  // belong to the last beat, so both edges are left out of the comparison.
+  constexpr Tick kEdgeSlack = 30;
+  int fx_only_sections = 0;
+  int beat_kit_notes = 0;
+  std::string detail;
+
+  for (uint8_t blueprint : {3, 6, 8}) {
+    for (uint32_t seed : {42u, 777u, 20260903u}) {
+      params_.blueprint_id = blueprint;
+      params_.seed = seed;
+      generate();
+
+      const auto& kit_notes = song().drums().notes();
+      for (const auto& section : song().arrangement().sections()) {
+        if (section.getEffectiveDrumRole() != DrumRole::FXOnly) continue;
+        ++fx_only_sections;
+        const Tick from = section.start_tick + kEdgeSlack;
+        const Tick to = section.endTick() - TICKS_PER_BEAT;
+        for (const auto& note : kit_notes) {
+          if (note.start_tick < from || note.start_tick >= to) continue;
+          if (note.note == KICK || note.note == SNARE || note.note == CHH ||
+              note.note == drums::FHH || note.note == drums::OHH) {
+            ++beat_kit_notes;
+            detail += "\n  blueprint=" + std::to_string(blueprint) +
+                      " seed=" + std::to_string(seed) + " tick=" + std::to_string(note.start_tick) +
+                      " note=" + std::to_string(note.note);
+          }
+        }
+      }
+    }
+  }
+
+  ASSERT_GT(fx_only_sections, 0) << "no blueprint produced an FX-only section";
+  EXPECT_EQ(beat_kit_notes, 0) << detail;
+}
+
 TEST(DrumGrooveGridTest, MelodyDrivenKeepsTheStyleKickGrid) {
   // A style defined by its kick grid is untouched by the vocal-aware layer, so
   // the kicks are those of the same section written without a vocal.

@@ -9,6 +9,7 @@
 #include <gtest/gtest.h>
 
 #include <random>
+#include <string>
 
 #include "core/chord.h"
 #include "core/chord_extension_planner.h"
@@ -176,6 +177,73 @@ TEST(ChordExtensionPlannerTest, SusProbabilityDoesNotStarveSevenths) {
       << "sevenths appeared " << sevenths << " times in " << kTrials
       << " trials; a 0.30 seventh probability behind a 0.40 sus probability must "
          "not collapse to the sliver of one shared roll";
+}
+
+// Whatever colour the planner and the chorus reharmonization choose, the
+// chord keeps the third and fifth its degree names: a diminished degree never
+// becomes B D F A# or loses its diminished fifth to a suspension.
+TEST(ChordExtensionPlannerTest, EveryDegreeKeepsTheTriadItNames) {
+  ChordExtensionParams params;
+  params.enable_sus = true;
+  params.enable_7th = true;
+  params.enable_9th = true;
+  params.sus_probability = 0.5f;
+  params.seventh_probability = 0.5f;
+  params.ninth_probability = 0.5f;
+
+  auto expectFits = [](int8_t degree, ChordExtension extension, const char* source) {
+    const Chord triad = getChordNotes(degree);
+    const Chord chord = getExtendedChord(degree, extension);
+    const std::string where = std::string(source) + " degree " + std::to_string(degree) + " " +
+                              chordExtensionToString(extension);
+    EXPECT_EQ(chord.intervals[2], triad.intervals[2]) << where << " changed the fifth";
+    if (getChordQuality(degree) != ChordQuality::Major) {
+      EXPECT_NE(extension, ChordExtension::Maj7) << where;
+      EXPECT_NE(extension, ChordExtension::Maj9) << where;
+    }
+    if (getChordQuality(degree) == ChordQuality::Diminished) {
+      EXPECT_EQ(chord.intervals[1], 3) << where;
+      for (uint8_t i = 0; i < chord.note_count; ++i) {
+        EXPECT_NE(chord.intervals[i], 11) << where << " put a major seventh on a diminished triad";
+        EXPECT_NE(chord.intervals[i], 14) << where << " put a ninth on a diminished triad";
+      }
+    }
+  };
+
+  size_t diminished_draws = 0;
+  for (const ChordDegreeInfo& row : getChordDegreeTable()) {
+    std::mt19937 rng(20261023);
+    for (SectionType section : {SectionType::A, SectionType::B, SectionType::Chorus}) {
+      for (int bar = 0; bar < 8; ++bar) {
+        for (int trial = 0; trial < 20; ++trial) {
+          expectFits(row.degree, selectChordExtension(row.degree, section, bar, 8, params, rng),
+                     "planner");
+          if (row.quality == ChordQuality::Diminished) ++diminished_draws;
+        }
+      }
+      const bool is_minor = row.quality == ChordQuality::Minor;
+      expectFits(row.degree,
+                 reharmonizeForSection(row.degree, section, is_minor, row.degree == 4).extension,
+                 "reharmonization");
+    }
+  }
+  ASSERT_GT(diminished_draws, 0u);
+  EXPECT_EQ(fitExtensionToDegree(6, ChordExtension::Maj7), ChordExtension::Min7);
+  EXPECT_EQ(fitExtensionToDegree(14, ChordExtension::Maj9), ChordExtension::Min7);
+  EXPECT_EQ(fitExtensionToDegree(6, ChordExtension::Dom7), ChordExtension::Dom7)
+      << "B7, the secondary dominant of iii, rebuilds the degree on purpose";
+  // Every row: a major seventh only where the table says major.
+  for (const ChordDegreeInfo& row : getChordDegreeTable()) {
+    const bool major = row.quality == ChordQuality::Major;
+    for (ChordExtension extension : {ChordExtension::Maj7, ChordExtension::Maj9}) {
+      const ChordExtension fitted = fitExtensionToDegree(row.degree, extension);
+      EXPECT_EQ(fitted == ChordExtension::Maj7 || fitted == ChordExtension::Maj9, major)
+          << "degree " << static_cast<int>(row.degree) << " " << chordExtensionToString(extension);
+    }
+  }
+  EXPECT_EQ(fitExtensionToDegree(5, ChordExtension::Maj7), ChordExtension::Min7) << "Am7, not AmM7";
+  EXPECT_EQ(fitExtensionToDegree(10, ChordExtension::Maj7), ChordExtension::Maj7);
+  EXPECT_EQ(fitExtensionToDegree(8, ChordExtension::Maj9), ChordExtension::Maj9);
 }
 
 }  // namespace

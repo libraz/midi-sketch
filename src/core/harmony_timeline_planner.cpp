@@ -10,6 +10,7 @@
 #include "core/harmonic_rhythm.h"
 #include "core/i_chord_lookup.h"
 #include "core/i_harmony_coordinator.h"
+#include "core/modulation_calculator.h"
 #include "core/preset_data.h"
 #include "core/rng_util.h"
 #include "core/secondary_dominant_planner.h"
@@ -127,6 +128,11 @@ int8_t diminishedDegreeForSemitone(int semitone) {
 }
 
 /// @brief Register the chromatic approach chord that leads a pre-chorus out.
+///
+/// It fires on the last beat of a B section's second-to-last bar only when that
+/// bar holds one chord, which in practice means ballad moods (other moods split
+/// B bars in half), and only before I or V: B and F# are the only roots the
+/// degree table spells diminished.
 void planAndRegisterPassingDiminished(const Arrangement& arrangement,
                                       IHarmonyCoordinator& harmony) {
   for (const auto& section : arrangement.sections()) {
@@ -345,7 +351,8 @@ void registerPlannedHarmonyTimeline(const Arrangement& arrangement, const Genera
   std::mt19937 sec_dom_rng(sec_dom_seed);
   // Secondary dominants are planned first and every later planner writes around
   // them, so the order below is what keeps two devices from cancelling out.
-  planAndRegisterSecondaryDominants(arrangement, progression, params.mood, sec_dom_rng, harmony);
+  planAndRegisterSecondaryDominants(arrangement, progression, params.mood, sec_dom_rng, harmony,
+                                    ModulationCalculator::plan(params, arrangement.sections()));
   planAndRegisterCadenceFixes(arrangement, params, progression, harmony);
   planAndRegisterDominantPreparation(arrangement, params, harmony);
   planAndRegisterPassingDiminished(arrangement, harmony);

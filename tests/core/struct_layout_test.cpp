@@ -295,7 +295,9 @@ SongConfig makeFullyNonDefaultConfig() {
   config.melody_template = MelodyTemplateId::PlateauTalk;
   config.melodic_complexity = MelodicComplexity::Complex;
   config.hook_intensity = HookIntensity::Light;
+  config.hook_intensity_explicit = true;
   config.vocal_groove = VocalGrooveFeel::Swing;
+  config.vocal_groove_explicit = true;
   config.enable_syncopation = true;
   config.energy_curve = EnergyCurve::FrontLoaded;
   config.addictive_mode = true;
@@ -517,7 +519,9 @@ TEST(SongConfigJsonTest, RoundtripNonDefaultValues) {
   EXPECT_EQ(restored.melody_template, MelodyTemplateId::PlateauTalk);
   EXPECT_EQ(restored.melodic_complexity, MelodicComplexity::Complex);
   EXPECT_EQ(restored.hook_intensity, HookIntensity::Light);
+  EXPECT_TRUE(restored.hook_intensity_explicit);
   EXPECT_EQ(restored.vocal_groove, VocalGrooveFeel::Swing);
+  EXPECT_TRUE(restored.vocal_groove_explicit);
   EXPECT_TRUE(restored.enable_syncopation);
   EXPECT_EQ(restored.energy_curve, EnergyCurve::FrontLoaded);
   EXPECT_TRUE(restored.addictive_mode);
@@ -861,6 +865,80 @@ TEST(ConfigConverterSyncopationTest, MasterSwitchOffOverridesUserSyncopationProb
 
   EXPECT_FLOAT_EQ(params.melody_params.syncopation_prob, 0.0f);
   EXPECT_FALSE(params.melody_params.allow_bar_crossing);
+}
+
+TEST(SongConfigJsonTest, ExplicitChoiceFlagsRoundTripAndReachGeneratorParams) {
+  SongConfig original = createDefaultSongConfig(0);
+  original.seed = 7;
+  original.hook_intensity = HookIntensity::Light;
+  original.hook_intensity_explicit = true;
+  original.vocal_groove = VocalGrooveFeel::Swing;
+  original.vocal_groove_explicit = true;
+  original.vocal_style = VocalStylePreset::Rock;
+  original.melody_syncopation_prob = 0;
+  original.enable_syncopation = true;
+
+  std::ostringstream oss;
+  json::Writer w(oss);
+  w.beginObject();
+  original.writeTo(w);
+  w.endObject();
+  json::Parser p(oss.str());
+  SongConfig restored;
+  restored.readFrom(p);
+  ASSERT_TRUE(p.isValid());
+  EXPECT_TRUE(restored.hook_intensity_explicit);
+  EXPECT_TRUE(restored.vocal_groove_explicit);
+
+  GeneratorParams params = ConfigConverter::convert(restored);
+  EXPECT_TRUE(params.hook_intensity_explicit);
+  EXPECT_TRUE(params.vocal_groove_explicit);
+  EXPECT_TRUE(params.vocal_style_explicit);
+  EXPECT_TRUE(params.melody_syncopation_override);
+
+  // Left at their defaults, none of the four reads as the caller's choice.
+  GeneratorParams implicit = ConfigConverter::convert(createDefaultSongConfig(0));
+  EXPECT_FALSE(implicit.hook_intensity_explicit);
+  EXPECT_FALSE(implicit.vocal_groove_explicit);
+  EXPECT_FALSE(implicit.vocal_style_explicit);
+  EXPECT_FALSE(implicit.melody_syncopation_override);
+}
+
+TEST(ConfigConverterHookTest, AddictiveModeKeepsAnExplicitHookIntensity) {
+  SongConfig config = createDefaultSongConfig(0);
+  config.seed = 3;
+  config.addictive_mode = true;
+  EXPECT_EQ(ConfigConverter::convert(config).hook_intensity, HookIntensity::Maximum);
+
+  config.hook_intensity = HookIntensity::Light;
+  config.hook_intensity_explicit = true;
+  EXPECT_EQ(ConfigConverter::convert(config).hook_intensity, HookIntensity::Light);
+}
+
+TEST(SongConfigJsonTest, OutOfRangeMotifMaxChordCountInvalidatesTheParse) {
+  for (const char* json : {R"({"motif_chord":{"max_chord_count":260}})",
+                           R"({"motif_chord":{"max_chord_count":-254}})"}) {
+    json::Parser p(json);
+    SongConfig config;
+    config.readFrom(p);
+    EXPECT_FALSE(p.isValid()) << json;
+  }
+  json::Parser ok(R"({"motif_chord":{"max_chord_count":8}})");
+  SongConfig config;
+  config.readFrom(ok);
+  EXPECT_TRUE(ok.isValid());
+  EXPECT_EQ(config.motif_chord.max_chord_count, 8);
+}
+
+TEST(SongConfigValidationTest, VocalAttitudeAboveRawIsRejectedBeforeTheShift) {
+  // Rock Shout allows every attitude, so only the range check can reject these.
+  SongConfig config = createDefaultSongConfig(7);
+  config.vocal_attitude = VocalAttitude::Raw;
+  ASSERT_EQ(validateSongConfig(config), SongConfigError::OK);
+  for (int value : {3, 31, 32, 255}) {
+    config.vocal_attitude = static_cast<VocalAttitude>(value);
+    EXPECT_EQ(validateSongConfig(config), SongConfigError::InvalidVocalAttitude) << value;
+  }
 }
 
 TEST(ConfigConverterSyncopationTest, MasterSwitchOffOverridesMelodicComplexity) {

@@ -93,7 +93,6 @@ struct EmbellishmentConfig {
   float syncopation_level = 0.3f;                          ///< Likelihood of syncopation (0.0-1.0)
 
   // === Safety ===
-  bool resolve_all_ncts = true;  ///< Ensure all NCTs resolve properly
   int max_consecutive_ncts = 2;  ///< Maximum consecutive non-chord tones
 
   /**

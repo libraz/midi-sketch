@@ -8,8 +8,12 @@
 #include <cstdint>
 #include <cstring>
 
+#include "core/arrangement.h"
+#include "core/chord.h"
+#include "core/chord_progression_tracker.h"
 #include "core/chord_utils.h"
 #include "core/piano_roll_safety.h"
+#include "core/track_collision_detector.h"
 #include "midisketch.h"
 #include "midisketch_c.h"
 
@@ -35,15 +39,66 @@ class PianoRollTest : public ::testing::Test {
 // Basic API Tests
 // ============================================================================
 
+// Canon progression over two bars: bar 0 is I, bar 1 is V.
+ChordProgressionTracker canonTracker() {
+  Section section;
+  section.type = SectionType::Chorus;
+  section.start_tick = 0;
+  section.bars = 2;
+  section.name = "Chorus";
+  ChordProgressionTracker tracker;
+  tracker.initialize(Arrangement({section}), getChordProgression(0), Mood::StraightPop);
+  return tracker;
+}
+
 TEST(PianoRollCollisionTest, GuitarNotesParticipateInSafetyChecks) {
   Song song;
   song.guitar().addNote(NoteEventBuilder::create(0, 480, 64, 90));
+  const ChordProgressionTracker tracker = canonTracker();
 
-  const CollisionResult collision = checkBgmCollisionDetailed(song, 0, 65);
+  const CollisionResult collision = checkBgmCollisionDetailed(song, tracker, 0, 65);
   EXPECT_EQ(collision.type, CollisionType::Severe);
   EXPECT_EQ(collision.track, TrackRole::Guitar);
   EXPECT_EQ(collision.colliding_pitch, 64);
   EXPECT_EQ(collision.interval, 1);
+}
+
+// The safety class is the verdict generation reaches for the same pair under the
+// chord sounding at the tick, so a vocal note the engine would keep is not shown
+// as a collision and one it would refuse is.
+TEST(PianoRollCollisionTest, SafetyClassMatchesTheGenerationVerdict) {
+  struct Case {
+    const char* what;
+    uint8_t chord_pitch;
+    uint8_t vocal_pitch;
+    Tick tick;
+    bool register_maj7;
+    CollisionType expected;
+  };
+  const Case cases[] = {
+      {"minor 9th (13) is harsh", 60, 73, 0, false, CollisionType::Severe},
+      {"minor 2nd two octaves up (25) is not", 60, 85, 0, false, CollisionType::None},
+      {"major 7th over an unregistered triad", 60, 71, 0, false, CollisionType::Severe},
+      {"major 7th of a registered Imaj7", 60, 71, 0, true, CollisionType::None},
+      {"tritone on I", 65, 71, 0, false, CollisionType::Mild},
+      {"tritone on V is the dominant seventh", 65, 71, TICKS_PER_BAR, false, CollisionType::None},
+      {"major 9th (14) is add9 colour", 60, 74, 0, false, CollisionType::None},
+  };
+
+  for (const Case& c : cases) {
+    ChordProgressionTracker tracker = canonTracker();
+    if (c.register_maj7) {
+      tracker.registerChordExtension(0, TICKS_PER_BAR, ChordExtension::Maj7);
+    }
+    Song song;
+    song.chord().addNote(NoteEventBuilder::create(c.tick, TICKS_PER_BAR, c.chord_pitch, 90));
+
+    const bool generation_clash = isClashingPair(c.vocal_pitch, TrackRole::Vocal, c.chord_pitch,
+                                                 TrackRole::Chord, &tracker, c.tick, c.tick);
+    const CollisionType type = checkBgmCollision(song, tracker, c.tick, c.vocal_pitch);
+    EXPECT_EQ(type, c.expected) << c.what;
+    EXPECT_EQ(type != CollisionType::None, generation_clash) << c.what;
+  }
 }
 
 TEST_F(PianoRollTest, GetSafetyAtReturnsValidData) {

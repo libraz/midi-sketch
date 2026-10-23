@@ -47,10 +47,9 @@ void generateDrumsTrackWithVocal(MidiTrack& track, const Song& song, const Gener
 /**
  * @brief Generate drum track for MelodyDriven paradigm.
  *
- * MelodyDriven drums adapt to vocal phrases rather than syncing to onsets:
- * - Fill placement at phrase boundaries (not beat-locked)
- * - Kick density increases during dense vocal sections
- * - Drum breaks during vocal rests
+ * MelodyDriven drums adapt to vocal phrase density rather than syncing to onsets:
+ * dense vocal bars add off-beat supporting kicks to the style's pattern. Fills and
+ * breaks are not written by the vocal-aware layer.
  *
  * @param track Target MidiTrack to populate with drum events
  * @param song Song containing arrangement and section information

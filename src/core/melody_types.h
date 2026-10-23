@@ -184,8 +184,9 @@ struct MelodyTemplate {
 
   /// @name Modern pop features
   /// @{
-  uint8_t hook_note_count;     ///< Notes in hook (2-4)
-  uint8_t hook_repeat_count;   ///< Hook repetition count (2-4)
+  uint8_t hook_note_count;     ///< Hook gate: 0 = no hook phrase; the note count per
+                               ///< statement comes from the hook rhythm pattern
+  uint8_t hook_repeat_count;   ///< Hook statements per hook phrase (2-5)
   uint8_t betrayal_threshold;  ///< Repetitions before betrayal (0=never, 4=default)
   bool allow_talk_sing;        ///< Allow talk-sing style
   /// @}
@@ -218,13 +219,6 @@ enum class HookTechnique : uint8_t {
   Accent = 3,           ///< Accent (high velocity)
   Repetition = 4,       ///< Pitch repetition
   DescendingPhrase = 5  ///< Descending phrase
-};
-
-/// @brief Vocal rhythm bias.
-enum class VocalRhythmBias : uint8_t {
-  OnBeat,   ///< On-beat emphasis
-  OffBeat,  ///< Off-beat emphasis
-  Sparse    ///< Sparse rhythm
 };
 
 /// @brief Vocal groove feel - controls timing nuances and rhythmic character.
@@ -368,10 +362,9 @@ struct GlobalMotif {
 
 /// @brief Melody constraint parameters for StylePreset.
 struct StyleMelodyParams {
-  uint8_t max_leap_interval = 7;       ///< Max leap in semitones (7 = 5th)
-  bool allow_unison_repeat = true;     ///< Allow consecutive same notes
-  float phrase_end_resolution = 0.8f;  ///< Probability of resolving at phrase end
-  float tension_usage = 0.2f;          ///< Probability of using tensions (0.0-1.0)
+  uint8_t max_leap_interval = 7;    ///< Leap default; caps the blueprint only when user-set
+  bool allow_unison_repeat = true;  ///< Allow consecutive same notes
+  float tension_usage = 0.2f;       ///< Probability of using tensions (0.0-1.0)
 
   /// @name Vocal density parameters
   /// @{

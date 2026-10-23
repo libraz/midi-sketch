@@ -159,6 +159,7 @@ class EmotionCurve {
    * - B before Chorus gets higher tension
    * - Bridge after Chorus gets lower energy
    * - Repeated sections get progressive intensity
+   * - A section modifier (ochisabi, climactic) scales the section's energy
    */
   void adjustForContext();
 

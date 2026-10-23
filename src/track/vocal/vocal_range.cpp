@@ -29,8 +29,8 @@ VocalRangeResult calculateEffectiveVocalRange(const GeneratorParams& params, con
     }
   }
 
-  // Adjust vocal_high to account for modulation
-  int8_t mod_amount = song.modulationAmount();
+  // Reserve the headroom of a modulation that actually happens
+  int8_t mod_amount = song.modulationTick() > 0 ? song.modulationAmount() : 0;
   if (mod_amount > 0) {
     int adjusted_high = static_cast<int>(result.effective_high) - mod_amount;
     int min_high = static_cast<int>(result.effective_low) + 12;  // At least 1 octave

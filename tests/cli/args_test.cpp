@@ -71,6 +71,8 @@ TEST(CliArgsTest, UsageMatchesPublicEnumValuesAndRanges) {
   EXPECT_NE(usage.find("0=None, 1=Minimal, 2=Standard"), std::string::npos);
   EXPECT_NE(usage.find("5=Ostinato"), std::string::npos);
   EXPECT_NE(usage.find("1=RegisterAdd"), std::string::npos);
+  EXPECT_NE(usage.find("0=Eighth, 1=Sixteenth, 2=Triplet"), std::string::npos);
+  EXPECT_NE(usage.find("0=None, 1=Standard, 2=Tiger"), std::string::npos);
 }
 
 TEST(CliArgsTest, FormatExplicitTracksSmf2Selection) {
@@ -117,6 +119,27 @@ TEST(CliArgsTest, ConfigAndNoGuitarOptionsParse) {
   EXPECT_FALSE(args.parse_error);
   EXPECT_EQ(args.config_file, "song.json");
   EXPECT_TRUE(args.no_guitar);
+}
+
+TEST(CliArgsTest, ConfigAloneOrWithNoGuitarIsNotAGenerationOverride) {
+  const char* alone_argv[] = {"midisketch", "--config", "song.json", "--format",
+                              "smf1",       "--bar",    "2",         "--no-guitar"};
+  ParsedArgs alone = parseArgs(8, const_cast<char**>(alone_argv));
+  EXPECT_FALSE(alone.parse_error);
+  EXPECT_FALSE(alone.config_overrides_specified);
+
+  const char* overridden_argv[] = {"midisketch", "--config", "song.json", "--key", "2"};
+  ParsedArgs overridden = parseArgs(5, const_cast<char**>(overridden_argv));
+  EXPECT_FALSE(overridden.parse_error);
+  EXPECT_TRUE(overridden.config_overrides_specified);
+}
+
+TEST(CliArgsTest, ConfigIsExclusiveWithTheFileTakingModes) {
+  const char* argv[] = {"midisketch", "--config", "song.json", "--regenerate", "song.mid"};
+
+  ParsedArgs args = parseArgs(5, const_cast<char**>(argv));
+
+  EXPECT_TRUE(args.parse_error);
 }
 
 TEST(CliArgsTest, OutputOptionAcceptsLongAndShortForms) {

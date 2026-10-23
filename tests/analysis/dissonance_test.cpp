@@ -498,6 +498,158 @@ TEST(DissonanceTest, MajorNinthAgainstChordVoiceDoesNotRaiseNonChordTone) {
       << "A major 9th was escalated as though it were a second";
 }
 
+// ============================================================================
+// Chord names and degree-keyed rules read the degree table
+// ============================================================================
+
+// One motif note over two bars of a single chord, the extension registered.
+// A chorus, because a verse substitutes ii for IV before the timeline is read.
+DissonanceReport analyzeMotifOverChord(int8_t degree, ChordExtension extension, Tick tick,
+                                       uint8_t motif_pitch, uint8_t chord_pitch = 0) {
+  Section chorus;
+  chorus.type = SectionType::Chorus;
+  chorus.start_tick = 0;
+  chorus.bars = 2;
+  chorus.name = "Chorus";
+  Arrangement arrangement({chorus});
+
+  Song song;
+  song.setArrangement(arrangement);
+  song.motif().addNote(NoteEventTestHelper::create(tick, TICKS_PER_BEAT, motif_pitch, 100));
+  if (chord_pitch != 0) {
+    song.chord().addNote(NoteEventTestHelper::create(tick, TICKS_PER_BEAT, chord_pitch, 80));
+  }
+
+  ChordProgression progression{};
+  progression.degrees = {degree, -1, -1, -1, -1, -1, -1, -1};
+  progression.length = 1;
+  ChordProgressionTracker timeline;
+  timeline.initialize(arrangement, progression, Mood::StraightPop);
+  timeline.registerChordExtension(0, 2 * TICKS_PER_BAR, extension);
+  EXPECT_EQ(timeline.getChordDegreeAt(tick), degree) << "the fixture must state the degree asked";
+  EXPECT_EQ(timeline.getChordExtensionAt(tick), extension);
+
+  GeneratorParams params{};
+  params.chord_id = 0;
+  params.mood = Mood::StraightPop;
+  return analyzeDissonance(song, params, timeline);
+}
+
+TEST(DissonanceTest, ChordNamesSpellTheChordWhoseTonesAreReported) {
+  struct Case {
+    int8_t degree;
+    ChordExtension extension;
+    const char* name;
+  };
+  // Borrowed degrees, a secondary dominant (iii played as E7) and a tritone
+  // substitute (bII played as Db7).
+  const Case cases[] = {
+      {8, ChordExtension::None, "Ab"},    {10, ChordExtension::None, "Bb"},
+      {11, ChordExtension::None, "Eb"},   {12, ChordExtension::None, "Fm"},
+      {13, ChordExtension::None, "Db"},   {14, ChordExtension::None, "F#dim"},
+      {2, ChordExtension::Dom7, "E7"},    {13, ChordExtension::Dom7, "Db7"},
+      {0, ChordExtension::Maj7, "Cmaj7"}, {5, ChordExtension::Min7, "Am7"},
+      {6, ChordExtension::Min7, "Bm7b5"}, {3, ChordExtension::Add9, "Fadd9"},
+  };
+  for (const Case& c : cases) {
+    // A semitone above the root is neither a tone nor a tension of any of them.
+    const int root_pc = degreeToSemitone(c.degree);
+    const auto report = analyzeMotifOverChord(c.degree, c.extension, kOffbeatTick,
+                                              static_cast<uint8_t>(61 + root_pc));
+    const DissonanceIssue* issue = nullptr;
+    for (const auto& candidate : report.issues) {
+      if (candidate.type == DissonanceType::NonChordTone) issue = &candidate;
+    }
+    ASSERT_NE(issue, nullptr) << "No non-chord tone reported over " << c.name;
+    EXPECT_EQ(issue->chord_name, c.name) << "degree " << static_cast<int>(c.degree);
+    ASSERT_FALSE(issue->chord_tones.empty());
+    EXPECT_EQ(issue->chord_tones.front(), NOTE_NAMES[root_pc])
+        << "The name and the reported tones must share a root over " << c.name;
+  }
+}
+
+// A bass the time feel pushes a few ticks ahead of the chord it was written for
+// is that chord's root, not a non-chord tone of the chord it leaves.
+TEST(DissonanceTest, PushedBassIsJudgedAgainstTheChordItArrivesFor) {
+  Section verse;
+  verse.type = SectionType::A;
+  verse.start_tick = 0;
+  verse.bars = 4;
+  verse.name = "Verse";
+  Arrangement arrangement({verse});
+
+  ChordProgression progression{};
+  progression.degrees = {4, 0, 4, 0, -1, -1, -1, -1};  // V - I
+  progression.length = 4;
+  ChordProgressionTracker timeline;
+  timeline.initialize(arrangement, progression, Mood::StraightPop);
+  constexpr Tick kEntry = TICKS_PER_BAR;
+  ASSERT_EQ(timeline.getChordDegreeAt(kEntry - 5), 4);
+  ASSERT_EQ(timeline.getChordDegreeAt(kEntry), 0);
+  ASSERT_EQ(timeline.getChordDegreeAt(kEntry - TICKS_PER_BEAT), 4);
+
+  auto bassNonChordTones = [&](Tick start, Tick duration) {
+    Song song;
+    song.setArrangement(arrangement);
+    song.bass().addNote(NoteEventTestHelper::create(start, duration, 48, 100));  // C3
+    GeneratorParams params{};
+    params.chord_id = 0;
+    params.mood = Mood::StraightPop;
+    return analyzeDissonance(song, params, timeline).summary.non_chord_tones;
+  };
+
+  EXPECT_EQ(bassNonChordTones(kEntry - 5, TICK_EIGHTH), 0u)
+      << "C pushed five ticks ahead of I was judged against the V it leaves";
+  EXPECT_EQ(bassNonChordTones(kEntry - TICKS_PER_BEAT, TICKS_PER_BEAT + TICK_EIGHTH), 1u)
+      << "A C sounding a beat over V is that chord's non-chord tone";
+}
+
+// The chord root under its major seventh, on beat 2 and a half of the second
+// bar, a close (11) or a compound (23) interval apart.
+const DissonanceIssue* rootUnderSeventhClash(const DissonanceReport& report) {
+  for (const auto& issue : report.issues) {
+    if (issue.type == DissonanceType::SimultaneousClash) return &issue;
+  }
+  return nullptr;
+}
+
+DissonanceReport analyzeRootUnderSeventh(int8_t degree, ChordExtension extension, int interval) {
+  constexpr Tick kTick = TICKS_PER_BAR + kOffbeatTick;
+  const uint8_t root = static_cast<uint8_t>(48 + degreeToSemitone(degree));
+  return analyzeMotifOverChord(degree, extension, kTick, static_cast<uint8_t>(root + interval),
+                               root);
+}
+
+TEST(DissonanceTest, RegisteredMajorSeventhOwnsItsSeventhOnAnyDegree) {
+  // I, IV and the borrowed bVI, bVII, bIII and bII all take maj7 in this repertoire.
+  for (int8_t degree : {0, 3, 8, 10, 11, 13}) {
+    for (ChordExtension extension : {ChordExtension::Maj7, ChordExtension::Maj9}) {
+      for (int interval : {11, 23}) {
+        EXPECT_EQ(rootUnderSeventhClash(analyzeRootUnderSeventh(degree, extension, interval)),
+                  nullptr)
+            << "degree " << static_cast<int>(degree) << " " << chordExtensionToString(extension)
+            << " interval " << interval << ": the registered chord owns its seventh";
+      }
+    }
+  }
+}
+
+TEST(DissonanceTest, UnregisteredMajorSeventhSoftensOnlyOverTheKeysOwnMajorSevenths) {
+  auto severity = [](int8_t degree, int interval) {
+    const auto report = analyzeRootUnderSeventh(degree, ChordExtension::None, interval);
+    const DissonanceIssue* issue = rootUnderSeventhClash(report);
+    EXPECT_NE(issue, nullptr) << "No clash for an unregistered major seventh over degree "
+                              << static_cast<int>(degree) << " at " << interval;
+    return issue != nullptr ? issue->severity : DissonanceSeverity::Low;
+  };
+
+  EXPECT_EQ(severity(3, 11), DissonanceSeverity::Medium) << "IV may be voiced as IVmaj7";
+  EXPECT_EQ(severity(10, 11), DissonanceSeverity::High)
+      << "bVII is a borrowed identifier, not IV reduced modulo 7";
+  EXPECT_EQ(severity(8, 11), DissonanceSeverity::High);
+  severity(10, 23);  // a compound seventh the chord did not register is still reported
+}
+
 TEST(DissonanceTest, JsonOutputFormat) {
   DissonanceReport report{};
   report.summary.total_issues = 2;

@@ -63,7 +63,9 @@ struct LeapResolutionState {
 /// @return Weight multiplier (0.05 - 0.35)
 float getMotifWeightForSection(SectionType section, int section_occurrence = 1);
 
-/// @brief Resolve the song-wide melodic leap budget: override > blueprint > default.
+/// @brief Resolve the song-wide melodic leap budget: the blueprint's
+/// max_leap_semitones, capped by an explicit user maxLeap. A preset- or
+/// complexity-derived max_leap_interval is a default and never narrows it.
 ///
 /// This is the only place the budget is derived. Every pass that bounds a
 /// melodic interval pairs the result with the note's own section and asks
@@ -361,7 +363,16 @@ int getAnchorTonePitch(int8_t chord_degree, int tessitura_center, uint8_t vocal_
 /// @return Number of phrases
 uint8_t calculatePhraseCount(uint8_t section_bars, uint8_t phrase_length_bars);
 
+/// @brief Blend one chorus-hook contour step with a hook-skeleton hint.
+/// @param contour_semitones Hook contour offset in semitones
+/// @param skeleton_degrees Skeleton offset in scale degrees
+/// @return 80% contour, 20% skeleton, in semitones, rounded to nearest
+int8_t blendHookContourStep(int8_t contour_semitones, int8_t skeleton_degrees);
+
 /// @brief Apply sequential transposition to B section phrases.
+///
+/// The rise is bounded by the headroom above the phrase's top note; a note a
+/// scale snap pushes past an edge is folded by octaves, never clamped onto it.
 /// @param notes Notes to transpose
 /// @param phrase_index Phrase index (0-based)
 /// @param section_type Section type

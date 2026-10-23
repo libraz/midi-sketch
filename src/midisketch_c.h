@@ -451,14 +451,18 @@ typedef struct {
 } MidiSketchCollisionInfo;
 
 /// @brief Piano roll safety info for a single tick.
+///
+/// safety, reason, collision and recommended are indexed by pitch in the
+/// internal C major space the song is generated in; current_key is the shift
+/// the output applies on top of it.
 typedef struct {
   uint32_t tick;                           ///< Tick position
   int8_t chord_degree;                     ///< Current chord degree (0=I, 1=ii, etc.)
-  uint8_t current_key;                     ///< Current key (0-11, considering modulation)
-  uint8_t safety[128];                     ///< Safety level for each MIDI note (0-127)
-  uint16_t reason[128];                    ///< Reason flags for each note
+  uint8_t current_key;                     ///< Output key shift (0-11, considering modulation)
+  uint8_t safety[128];                     ///< Safety level per internal pitch (0-127)
+  uint16_t reason[128];                    ///< Reason flags per internal pitch
   MidiSketchCollisionInfo collision[128];  ///< Collision details (valid only if colliding)
-  uint8_t recommended[8];                  ///< Recommended notes (priority order, max 8)
+  uint8_t recommended[8];                  ///< Recommended internal pitches (priority order, max 8)
   uint8_t recommended_count;               ///< Number of recommended notes
 } MidiSketchPianoRollInfo;
 

@@ -14,6 +14,7 @@
 #include "core/pitch_utils.h"
 #include "core/song.h"
 #include "core/timing_constants.h"
+#include "core/track_collision_detector.h"
 
 namespace midisketch {
 
@@ -229,7 +230,6 @@ void trimClashingNoteTails(Song& song, IHarmonyContext& harmony) {
   // bass G3 spilling 42 ticks into a motif A3 = M2 the analyzer counts.)
   auto isAlwaysDissonant = [&harmony](int semitones, uint8_t pitch_a, TrackRole role_a,
                                       uint8_t pitch_b, TrackRole role_b, Tick at) {
-    const int8_t degree = harmony.getChordDegreeAt(at);
     if (semitones <= kChordOnlyDissonanceSpan) {
       return clashesUnderSoundingChord(semitones, pitch_a, pitch_b, harmony, at);
     }
@@ -242,23 +242,9 @@ void trimClashingNoteTails(Song& song, IHarmonyContext& harmony) {
     if (!involves_bass) return false;
     const uint8_t bass_pitch = (role_a == TrackRole::Bass) ? pitch_a : pitch_b;
     if (bass_pitch >= 48) return false;
-    // A tonic or subdominant major-seventh chord the timeline actually asked
-    // for is the chord itself, not a clash, and the analyzer exempts it.
-    if (semitones >= 23) {
-      const ChordExtension extension = harmony.getChordExtensionAt(at);
-      if (extension == ChordExtension::Maj7 || extension == ChordExtension::Maj9) {
-        const int normalized = ((degree % 7) + 7) % 7;
-        if (normalized == 0 || normalized == 3) {
-          const int root_pc = ((degreeToSemitone(degree) % 12) + 12) % 12;
-          const int seventh_pc = (root_pc + 11) % 12;
-          if ((pitch_a % 12 == root_pc && pitch_b % 12 == seventh_pc) ||
-              (pitch_b % 12 == root_pc && pitch_a % 12 == seventh_pc)) {
-            return false;
-          }
-        }
-      }
-    }
-    return true;
+    // A major-seventh chord the timeline actually asked for is the chord
+    // itself, not a clash, and the analyzer exempts it.
+    return !(semitones >= 23 && registeredMajorSeventhOwnsPair(pitch_a, pitch_b, harmony, at));
   };
 
   // A track is compared against itself as well. One instrument sustaining a

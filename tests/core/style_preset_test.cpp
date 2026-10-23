@@ -5,6 +5,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <limits>
 #include <set>
 
@@ -134,6 +135,31 @@ TEST(StylePresetTest, SeedSelectsAmongRecommendedProgressions) {
   }
 }
 
+TEST(StylePresetTest, GenrePresetsRecommendTheirGenreProgressions) {
+  auto recommends = [](uint8_t style_id, uint8_t progression_id) {
+    for (int8_t rec : getStylePreset(style_id).recommended_progressions) {
+      if (rec < 0) break;
+      if (static_cast<uint8_t>(rec) == progression_id) return true;
+    }
+    return false;
+  };
+  ASSERT_STREQ(getChordProgressionName(19), "CityPop");
+  ASSERT_STREQ(getChordProgressionName(16), "AnimeHighEnergy1");
+  ASSERT_STREQ(getChordProgressionName(18), "AnimeHighEnergy2");
+  EXPECT_TRUE(recommends(13, 19));  // City Pop
+  EXPECT_TRUE(recommends(14, 16));  // Anime Opening
+  EXPECT_TRUE(recommends(14, 18));
+
+  // The emotion presets carry the bVI-bVII-I cadence (AeolianPop); the bII of
+  // NeapolitanPop is no pop staple, so none of them recommends it.
+  ASSERT_STREQ(getChordProgressionName(15), "AeolianPop");
+  ASSERT_STREQ(getChordProgressionName(21), "NeapolitanPop");
+  for (uint8_t style_id : {1, 4, 8, 9}) {
+    EXPECT_TRUE(recommends(style_id, 15)) << static_cast<int>(style_id);
+    EXPECT_FALSE(recommends(style_id, 21)) << static_cast<int>(style_id);
+  }
+}
+
 TEST(StylePresetTest, ExplicitChordProgressionIsPreserved) {
   SongConfig config = createDefaultSongConfig(0);
   config.seed = 7;
@@ -243,16 +269,47 @@ TEST(ChordProgressionMetaTest, BuiltInProgressionsHaveUniqueDegreeSequences) {
 
 TEST(FormCandidatesTest, GetFormsByStyle) {
   auto forms = getFormsByStyle(0);  // Minimal Groove Pop
-  EXPECT_EQ(forms.size(), 8u);      // Expanded to 8 slots (including new patterns)
-  // First form should be StandardPop
+  ASSERT_FALSE(forms.empty());
   EXPECT_EQ(forms[0], StructurePattern::StandardPop);
+  // ChorusFirst sits in the table with weight 0, so it is never drawn.
+  EXPECT_EQ(std::count(forms.begin(), forms.end(), StructurePattern::ChorusFirst), 0);
 }
 
 TEST(FormCandidatesTest, DancePopHasFullForms) {
   auto forms = getFormsByStyle(1);  // Dance Pop Emotion
-  EXPECT_EQ(forms.size(), 8u);      // Expanded to 8 slots (including new patterns)
-  // First form should be FullPop
+  ASSERT_FALSE(forms.empty());
   EXPECT_EQ(forms[0], StructurePattern::FullPop);
+}
+
+TEST(FormCandidatesTest, ReportedFormsAreExactlyTheDrawableOnes) {
+  for (uint8_t style_id = 0; style_id < STYLE_PRESET_COUNT; ++style_id) {
+    auto reported = getFormsByStyle(style_id);
+    std::set<StructurePattern> reported_set(reported.begin(), reported.end());
+    std::set<StructurePattern> drawn;
+    for (uint32_t seed = 1; seed <= 4000; ++seed) {
+      drawn.insert(selectRandomForm(style_id, seed));
+    }
+    ASSERT_FALSE(drawn.empty());
+    EXPECT_EQ(reported_set, drawn) << "style " << static_cast<int>(style_id);
+  }
+}
+
+TEST(StylePresetTest, EdmSynthPopIsInstrumentalUnlessTheVocalIsAskedFor) {
+  SongConfig config = createDefaultSongConfig(15);
+  config.seed = 11;
+  config.blueprint_id = 0;
+
+  MidiSketch full_song;
+  full_song.generateFromConfig(config);
+  EXPECT_TRUE(full_song.getSong().vocal().empty());
+
+  MidiSketch vocal_first;
+  vocal_first.generateVocal(config);
+  EXPECT_FALSE(vocal_first.getSong().vocal().empty());
+
+  MidiSketch with_vocal;
+  with_vocal.generateWithVocal(config);
+  EXPECT_FALSE(with_vocal.getSong().vocal().empty());
 }
 
 TEST(FormCandidatesTest, OutOfRangeFallback) {
@@ -605,8 +662,6 @@ TEST(StyleMelodyParamsTest, IdolHasSmallLeapInterval) {
   EXPECT_EQ(idol.melody.max_leap_interval, 4);
   // Idol Standard should not allow unison repeat
   EXPECT_FALSE(idol.melody.allow_unison_repeat);
-  // Idol Standard should have very high phrase resolution
-  EXPECT_GE(idol.melody.phrase_end_resolution, 0.9f);
   // Idol Standard should have minimal tension usage
   EXPECT_LE(idol.melody.tension_usage, 0.1f);
 }

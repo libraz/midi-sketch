@@ -754,6 +754,17 @@ void breakLongPitchRuns(MidiTrack& track, const IHarmonyContext& harmony, uint8_
       }
       return false;
     };
+    // A unison is consonant by every rule asked below, so it is where a break
+    // lands when nothing else fits, and the broken note vanishes into the
+    // other track's voice. Keeping the run beats that.
+    auto doublesSoundingNote = [&](uint8_t cand) {
+      for (const auto& info : snapshot.notes_in_range) {
+        if (info.track == role || info.track == TrackRole::Drums) continue;
+        if (note.start_tick >= info.end || run_note_end <= info.start) continue;
+        if (info.pitch == cand) return true;
+      }
+      return false;
+    };
     // Step-first order: whole steps, then diatonic half steps (E-F/B-C),
     // then increasingly wide leaps. Breaking a run with a step preserves the
     // melodic line; a leap should be the last resort.
@@ -774,7 +785,7 @@ void breakLongPitchRuns(MidiTrack& track, const IHarmonyContext& harmony, uint8_
       if (candidate == original) {
         continue;
       }
-      if (landsCloseSecond(candidate)) {
+      if (landsCloseSecond(candidate) || doublesSoundingNote(candidate)) {
         continue;
       }
       // The bass was voiced against the vocal as it stood before this pass, so

@@ -83,8 +83,8 @@ void PostProcessor::applySectionAwareVelocityHumanization(std::vector<MidiTrack*
 
       int new_vel = static_cast<int>(note.velocity) +
                     static_cast<int>(rng_util::rollFloat(rng, -max_variation, max_variation));
-      // Preserve intentional ghost notes (25-35), but prevent non-ghost notes from
-      // falling into ghost range. Notes originally above 35 should stay above 35.
+      // Notes at or below 35 are already ghost-level and may move freely within the (small)
+      // variation; notes above 35 must not drop into that range.
       int min_velocity = (note.velocity <= 35) ? 1 : 36;
 #ifdef MIDISKETCH_NOTE_PROVENANCE
       uint8_t old_vel = note.velocity;

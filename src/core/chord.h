@@ -7,6 +7,7 @@
 #define MIDISKETCH_CORE_CHORD_H
 
 #include <array>
+#include <cstddef>
 #include <vector>
 
 #include "core/types.h"
@@ -26,6 +27,30 @@ struct Chord {
 
 /// @brief Triad quality implied by a scale degree.
 enum class ChordQuality : uint8_t { Major, Minor, Diminished };
+
+/**
+ * @brief What a chord degree identifier names, in C major.
+ *
+ * A borrowed degree (8, 10-14) is an identifier rather than a scale step, so
+ * reducing it modulo 7 lands on an unrelated chord: bVII on IV, bVI on ii,
+ * #IVdim on I. Root, spelling and quality are therefore read from this one
+ * table, never from the major scale indexed by the degree modulo 7.
+ */
+struct ChordDegreeInfo {
+  int8_t degree;         ///< Identifier used by progressions and the timeline
+  int8_t root_pc;        ///< Root pitch class (0-11)
+  int8_t letter;         ///< Scale letter the root is spelled on (0=C .. 6=B)
+  ChordQuality quality;  ///< Triad quality
+};
+
+/// Number of degree identifiers a progression or the timeline can name.
+constexpr size_t kChordDegreeCount = 13;
+
+/// @brief The degree table: the seven diatonic degrees, then the borrowed ones.
+const std::array<ChordDegreeInfo, kChordDegreeCount>& getChordDegreeTable();
+
+/// @brief Row of the degree table, or nullptr for an identifier it does not hold.
+const ChordDegreeInfo* findChordDegree(int8_t degree);
 
 /// Maximum chords in a progression (most are 4-6).
 constexpr uint8_t MAX_PROGRESSION_LENGTH = 8;
@@ -151,6 +176,23 @@ struct ChromaticAlteration {
  * @return One entry per altered member, empty for a diatonic chord
  */
 std::vector<ChromaticAlteration> getChromaticAlterations(int8_t degree, ChordExtension extension);
+
+/**
+ * @brief The colour a degree can carry without becoming a different chord.
+ *
+ * Read from the degree table's quality. A major seventh belongs to a major
+ * triad only: over a minor one (ii, iii, vi, iv) it becomes the minor seventh.
+ * A diminished triad (vii°, #IVdim) keeps its diminished fifth and minor
+ * third, so its only seventh is the half-diminished one: a major seventh, a
+ * ninth or a suspension over it spells a chord that does not exist (B D F A#)
+ * or replaces the fifth that makes it diminished. Dom7/Dom9 stay, being the
+ * secondary dominant that deliberately rebuilds the degree as a major chord.
+ *
+ * @param degree Degree identifier, borrowed degrees included
+ * @param extension Colour asked for
+ * @return The colour itself, or the nearest one the degree's triad admits
+ */
+ChordExtension fitExtensionToDegree(int8_t degree, ChordExtension extension);
 
 /**
  * @brief Check if the extension is a suspended chord (Sus2 or Sus4).
@@ -349,11 +391,13 @@ ReharmonizationResult reharmonizeForSection(int8_t degree, SectionType section_t
                                             int8_t prev_degree = kReharmNoNeighbor);
 
 /**
- * @brief Check if a passing diminished chord should be inserted in B sections.
+ * @brief Propose the diminished chord a half-step below the next chord, for B sections.
  *
- * In pre-chorus (B) sections, a diminished chord a half-step below the target
- * chord can be inserted on the last beat before a chord change. This creates
- * chromatic tension leading into the next chord.
+ * This only names the candidate. planAndRegisterPassingDiminished() is what
+ * places it, on the last beat of a B section's second-to-last bar, and only
+ * when that bar holds one chord (in practice ballad moods; other moods split
+ * B bars in half) and the target is I or V, since B and F# are the only roots
+ * the degree table spells diminished. A C#dim proposed before Dm is dropped.
  *
  * @param current_degree Current chord's scale degree
  * @param next_degree Next chord's scale degree
@@ -408,6 +452,18 @@ SlashChordInfo checkSlashChord(int8_t current_degree, int8_t next_degree, Sectio
  * @return Pitch class in semitones from C (0-11)
  */
 int degreeToSemitone(int8_t degree);
+
+/**
+ * @brief Whether the degree is I or IV, the two chords whose major seventh is in the key.
+ *
+ * A major seventh over these roots may be the chord's own colour; over any
+ * other degree, borrowed ones included, it is a clash unless the timeline
+ * registered the extension.
+ *
+ * @param degree Degree identifier, borrowed degrees included
+ * @return true for degree 0 (I) and 3 (IV) only
+ */
+bool isDiatonicMajorSeventhDegree(int8_t degree);
 
 }  // namespace midisketch
 

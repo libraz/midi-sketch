@@ -5,6 +5,9 @@
 
 #include "core/modulation_calculator.h"
 
+#include <random>
+
+#include "core/preset_types.h"
 #include "core/rng_util.h"
 
 namespace midisketch {
@@ -28,85 +31,16 @@ Tick ModulationCalculator::findChorusAfterBridge(const std::vector<Section>& sec
   return 0;
 }
 
-Tick ModulationCalculator::calculateLegacyModulation(StructurePattern structure,
-                                                     const std::vector<Section>& sections) {
-  switch (structure) {
-    case StructurePattern::RepeatChorus:
-    case StructurePattern::DriveUpbeat:
-    case StructurePattern::AnthemStyle: {
-      // Modulate at second Chorus
-      int chorus_count = 0;
-      for (const auto& section : sections) {
-        if (section.type == SectionType::Chorus) {
-          chorus_count++;
-          if (chorus_count == 2) {
-            return section.start_tick;
-          }
-        }
-      }
-      break;
-    }
-    case StructurePattern::StandardPop:
-    case StructurePattern::BuildUp:
-    case StructurePattern::FullPop: {
-      // Modulate at first Chorus following B section
-      for (size_t i = 0; i < sections.size(); ++i) {
-        if (sections[i].type == SectionType::Chorus) {
-          if (i > 0 && sections[i - 1].type == SectionType::B) {
-            return sections[i].start_tick;
-          }
-        }
-      }
-      break;
-    }
-    case StructurePattern::FullWithBridge:
-    case StructurePattern::Ballad:
-    case StructurePattern::ExtendedFull: {
-      // Modulate after Bridge or Interlude, at last Chorus
-      for (size_t i = sections.size(); i > 0; --i) {
-        size_t idx = i - 1;
-        if (sections[idx].type == SectionType::Chorus) {
-          if (idx > 0 && (sections[idx - 1].type == SectionType::Bridge ||
-                          sections[idx - 1].type == SectionType::Interlude ||
-                          sections[idx - 1].type == SectionType::B)) {
-            return sections[idx].start_tick;
-          }
-        }
-      }
-      break;
-    }
-    case StructurePattern::DirectChorus:
-    case StructurePattern::ShortForm:
-    case StructurePattern::ChorusFirst:
-    case StructurePattern::ChorusFirstShort:
-    case StructurePattern::ChorusFirstFull:
-    case StructurePattern::ImmediateVocal:
-    case StructurePattern::ImmediateVocalFull:
-    case StructurePattern::AChorusB:
-    case StructurePattern::DoubleVerse:
-      return 0;  // No modulation for short/chorus-first structures
-  }
-
-  return 0;
-}
-
-ModulationCalculator::ModulationResult ModulationCalculator::calculate(
-    ModulationTiming timing, int8_t semitones, StructurePattern structure,
-    const std::vector<Section>& sections, std::mt19937& rng) {
+ModulationCalculator::ModulationResult ModulationCalculator::plan(
+    const GeneratorParams& params, const std::vector<Section>& sections) {
+  const ModulationTiming timing = params.modulation_timing;
+  const StructurePattern structure = params.structure;
   ModulationResult result;
-
-  // No modulation if timing is None
-  if (timing == ModulationTiming::None) {
-    return result;
-  }
 
   // Short structures don't support modulation (no meaningful modulation point)
   if (structure == StructurePattern::DirectChorus || structure == StructurePattern::ShortForm) {
     return result;
   }
-
-  // Use configured semitones (default 2 if not set)
-  result.amount = (semitones > 0) ? semitones : 2;
 
   Tick mod_tick = 0;
 
@@ -131,27 +65,32 @@ ModulationCalculator::ModulationResult ModulationCalculator::calculate(
       break;
 
     case ModulationTiming::Random: {
-      // Pick a random chorus
+      // Pick a random chorus; one opening the song has no key to modulate from.
       std::vector<Tick> chorus_ticks;
       for (const auto& section : sections) {
-        if (section.type == SectionType::Chorus) {
+        if (section.type == SectionType::Chorus && section.start_tick > 0) {
           chorus_ticks.push_back(section.start_tick);
         }
       }
       if (!chorus_ticks.empty()) {
+        constexpr uint32_t kModulationSalt = 0x30D0A7E5U;
+        uint32_t modulation_seed = params.seed ^ kModulationSalt;
+        if (modulation_seed == 0) modulation_seed = kModulationSalt;
+        std::mt19937 rng(modulation_seed);
         mod_tick = rng_util::selectRandom(rng, chorus_ticks);
       }
       break;
     }
 
     case ModulationTiming::None:
-    default:
-      // Use legacy behavior based on structure pattern
-      mod_tick = calculateLegacyModulation(structure, sections);
       break;
   }
 
-  result.tick = mod_tick;
+  // Tick 0 is "no modulation", so an amount is only ever stated with its point.
+  if (mod_tick > 0) {
+    result.tick = mod_tick;
+    result.amount = (params.modulation_semitones > 0) ? params.modulation_semitones : 2;
+  }
   return result;
 }
 

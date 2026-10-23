@@ -6,7 +6,10 @@
 #include <gtest/gtest.h>
 
 #include <cstring>
+#include <vector>
 
+#include "core/chord.h"
+#include "core/harmony_context.h"
 #include "core/structure.h"
 #include "core/timing_constants.h"
 #include "midi/byte_order.h"
@@ -946,6 +949,78 @@ TEST(MidiWriterSmf1Test, CallNotesFollowTheOutputKeyLikeEveryOtherPitchedTrack) 
   EXPECT_EQ(se->notes[0].note, kCallPitch + shift)
       << "Calls stayed in C while the harmony moved to the output key";
   EXPECT_EQ(drums->notes[0].note, kDrumPitch) << "Percussion note numbers must not be transposed";
+}
+
+// Four verse bars of AeolianPop (vi - bVI - bVII - I), one vocal note per bar.
+Song makeAeolianPopVerse(HarmonyContext& harmony) {
+  Section verse;
+  verse.type = SectionType::A;
+  verse.start_tick = 0;
+  verse.bars = 4;
+  verse.name = "Verse";
+  Arrangement arrangement({verse});
+
+  Song song;
+  song.setBpm(120);
+  song.setArrangement(arrangement);
+  for (Tick bar = 0; bar < 4; ++bar) {
+    song.vocal().addNote(NoteEventBuilder::create(bar * TICKS_PER_BAR, TICK_HALF, 64, 100));
+  }
+  harmony.initialize(arrangement, getChordProgression(15), Mood::StraightPop);
+  return song;
+}
+
+TEST(MidiWriterSmf1Test, VocalPreviewBassPlaysBorrowedRoots) {
+  HarmonyContext harmony;
+  const Song song = makeAeolianPopVerse(harmony);
+  for (Tick bar = 0; bar < 4; ++bar) {
+    ASSERT_EQ(harmony.getChordDegreeAt(bar * TICKS_PER_BAR), getChordProgression(15).at(bar))
+        << "The verse must state AeolianPop unchanged at bar " << bar;
+  }
+
+  MidiWriter writer;
+  writer.buildVocalPreview(song, harmony, Key::C);
+  MidiReader reader;
+  ASSERT_TRUE(reader.read(writer.toBytes())) << reader.getError();
+  const ParsedTrack* bass = reader.getParsedMidi().getTrack("Bass");
+  ASSERT_NE(bass, nullptr);
+
+  std::vector<int> bar_head_pcs;
+  for (const auto& note : bass->notes) {
+    if (note.start_tick % TICKS_PER_BAR == 0) bar_head_pcs.push_back(note.note % 12);
+  }
+  EXPECT_EQ(bar_head_pcs, (std::vector<int>{9, 8, 10, 0}))
+      << "The preview bass must play A, Ab, Bb, C under vi - bVI - bVII - I";
+}
+
+TEST(MidiWriterSmf1Test, VocalPreviewModulatesWithTheFullSong) {
+  HarmonyContext harmony;
+  Song song = makeAeolianPopVerse(harmony);
+  song.setModulation(2 * TICKS_PER_BAR, 2);
+
+  MidiWriter full_writer;
+  full_writer.build(song, Key::D, Mood::StraightPop, "", MidiFormat::SMF1);
+  MidiWriter preview_writer;
+  preview_writer.buildVocalPreview(song, harmony, Key::D);
+
+  MidiReader full_reader;
+  ASSERT_TRUE(full_reader.read(full_writer.toBytes())) << full_reader.getError();
+  MidiReader preview_reader;
+  ASSERT_TRUE(preview_reader.read(preview_writer.toBytes())) << preview_reader.getError();
+  const ParsedTrack* full_vocal = full_reader.getParsedMidi().getTrack("Vocal");
+  const ParsedTrack* preview_vocal = preview_reader.getParsedMidi().getTrack("Vocal");
+  ASSERT_NE(full_vocal, nullptr);
+  ASSERT_NE(preview_vocal, nullptr);
+  ASSERT_EQ(full_vocal->notes.size(), 4u);
+  ASSERT_EQ(preview_vocal->notes.size(), full_vocal->notes.size());
+  ASSERT_NE(full_vocal->notes[3].note, full_vocal->notes[0].note)
+      << "The full song must modulate for this comparison to mean anything";
+
+  for (size_t i = 0; i < full_vocal->notes.size(); ++i) {
+    EXPECT_EQ(preview_vocal->notes[i].start_tick, full_vocal->notes[i].start_tick);
+    EXPECT_EQ(preview_vocal->notes[i].note, full_vocal->notes[i].note)
+        << "Preview vocal note " << i << " sings in a different key from getMidi()";
+  }
 }
 
 }  // namespace

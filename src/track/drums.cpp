@@ -118,7 +118,7 @@ Tick applyTimeFeel(Tick base_tick, TimeFeel feel, uint16_t bpm) {
   // At 120 BPM: 1 beat = 500ms, 1 tick = 500/480 ms ≈ 1.04ms
   // For laid back: +10ms = +9-10 ticks at 120 BPM
   // For pushed: -7ms = -6-7 ticks at 120 BPM
-  // Scale with BPM: faster tempo means smaller tick offset for same ms
+  // Scale with BPM: faster tempo means a larger tick offset for the same ms
 
   // ticks_per_ms = (TICKS_PER_BEAT * bpm) / 60000
   // offset_ticks = offset_ms * ticks_per_ms = offset_ms * TICKS_PER_BEAT * bpm / 60000
@@ -135,8 +135,7 @@ Tick applyTimeFeel(Tick base_tick, TimeFeel feel, uint16_t bpm) {
       offset_ticks = -static_cast<int>((7 * bpm) / 125);
       break;
     case TimeFeel::Triplet:
-      // Triplet feel: quantize to triplet grid (not an offset, but handled here for convenience)
-      // This would require more complex logic; for now, just return base_tick
+      // Triplet grid quantization is not applied here; onsets stay on the base tick.
       return base_tick;
     default:
       break;

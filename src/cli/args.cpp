@@ -12,7 +12,9 @@
 #include <limits>
 
 #include "core/preset_data.h"
+#include "core/preset_types.h"
 #include "core/production_blueprint.h"
+#include "core/section_types.h"
 #include "core/structure.h"
 
 namespace cli {
@@ -194,7 +196,6 @@ bool optionRequiresValue(const char* option) {
 
 bool isGenerationOption(const char* option) {
   static const char* kOptions[] = {
-      "--config",
       "--seed",
       "--style",
       "--blueprint",
@@ -265,6 +266,7 @@ bool hasModeConflict(const ParsedArgs& args) {
   if (!args.input_file.empty()) ++mode_count;
   if (!args.validate_file.empty()) ++mode_count;
   if (!args.regenerate_file.empty()) ++mode_count;
+  if (!args.config_file.empty()) ++mode_count;
   return mode_count > 1;
 }
 
@@ -381,6 +383,14 @@ bool parseFormatArg(const char* arg, midisketch::MidiFormat& out) {
 
 }  // namespace
 
+bool inspectionRequested(const ParsedArgs& args) {
+  return args.bar_num > 0 || args.dump_collisions_requested;
+}
+
+void noteInspectionOmitted() {
+  std::cerr << "Note: note inspection output is omitted because stdout carries JSON.\n";
+}
+
 void printUsage(const char* program) {
   std::cout << "Usage: " << program << " [options]\n\n";
   std::cout << "Options:\n";
@@ -449,7 +459,7 @@ void printUsage(const char* program) {
   std::cout << "\n";
   std::cout << "Arpeggio:\n";
   std::cout << "  --arpeggio-pattern N   Arpeggio pattern (0-7)\n";
-  std::cout << "  --arpeggio-speed N     Arpeggio speed (0=Slow, 1=Normal, 2=Fast)\n";
+  std::cout << "  --arpeggio-speed N     Arpeggio speed (0=Eighth, 1=Sixteenth, 2=Triplet)\n";
   std::cout << "  --arpeggio-octave N    Arpeggio octave range (1-3)\n";
   std::cout << "  --arpeggio-gate N      Arpeggio gate (0-100)\n";
   std::cout << "\n";
@@ -458,7 +468,7 @@ void printUsage(const char* program) {
   std::cout << "  --call N               Call setting (0=Auto, 1=Enabled, 2=Disabled)\n";
   std::cout << "  --no-call-notes        Disable call notes output\n";
   std::cout << "  --intro-chant N        Intro chant (0=None, 1=Gachikoi, 2=Shouting)\n";
-  std::cout << "  --mix-pattern N        MIX pattern (0=None, 1=Short, 2=Full)\n";
+  std::cout << "  --mix-pattern N        MIX pattern (0=None, 1=Standard, 2=Tiger)\n";
   std::cout << "  --call-density N       Call density (0=None, 1=Minimal, 2=Standard, "
                "3=Intense)\n";
   std::cout << "\n";
@@ -501,6 +511,7 @@ ParsedArgs parseArgs(int argc, char* argv[]) {
   for (int i = 1; i < argc; ++i) {
     if (isGenerationOption(argv[i])) {
       args.generation_options_specified = true;
+      if (std::strcmp(argv[i], "--no-guitar") != 0) args.config_overrides_specified = true;
     }
     if (std::strcmp(argv[i], "--analyze") == 0) {
       args.analyze = true;
@@ -680,7 +691,9 @@ ParsedArgs parseArgs(int argc, char* argv[]) {
         return args;
       }
     } else if (std::strcmp(argv[i], "--arpeggio-speed") == 0 && i + 1 < argc) {
-      if (!parseIntInRange("--arpeggio-speed", argv[++i], 0, 2, args.arpeggio_speed)) {
+      if (!parseIntInRange("--arpeggio-speed", argv[++i], 0,
+                           static_cast<int>(midisketch::ArpeggioSpeed::Triplet),
+                           args.arpeggio_speed)) {
         args.parse_error = true;
         return args;
       }
@@ -709,7 +722,8 @@ ParsedArgs parseArgs(int argc, char* argv[]) {
         return args;
       }
     } else if (std::strcmp(argv[i], "--mix-pattern") == 0 && i + 1 < argc) {
-      if (!parseIntInRange("--mix-pattern", argv[++i], 0, 2, args.mix_pattern)) {
+      if (!parseIntInRange("--mix-pattern", argv[++i], 0,
+                           static_cast<int>(midisketch::MixPattern::Tiger), args.mix_pattern)) {
         args.parse_error = true;
         return args;
       }
@@ -816,7 +830,7 @@ ParsedArgs parseArgs(int argc, char* argv[]) {
   }
 
   if (!args.show_help && hasModeConflict(args)) {
-    std::cerr << "Error: --input, --validate, and --regenerate are mutually exclusive\n";
+    std::cerr << "Error: --input, --validate, --regenerate, and --config are mutually exclusive\n";
     args.parse_error = true;
   }
 

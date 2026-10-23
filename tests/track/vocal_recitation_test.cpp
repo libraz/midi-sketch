@@ -12,8 +12,11 @@
 #include <random>
 #include <vector>
 
+#include "core/arrangement.h"
+#include "core/chord.h"
 #include "core/config_converter.h"
 #include "core/generator.h"
+#include "core/harmony_context.h"
 #include "core/midi_track.h"
 #include "core/note_source.h"
 #include "core/preset_data.h"
@@ -324,6 +327,49 @@ TEST(VocalHookChantTest, ChantSurvivesTheSamePitchRunGuards) {
   for (int idx = 0; idx < placed; ++idx) {
     EXPECT_EQ(after[static_cast<size_t>(idx)].note, 64) << "chant note " << idx << " moved";
   }
+}
+
+// A run break that lands on a pitch another track is sounding has not broken
+// the run so much as hidden the note inside that track's voice; the break goes
+// elsewhere or the run stays.
+TEST(VocalRunBreakTest, ABreakNeverLandsOnAPitchAnotherTrackIsSounding) {
+  Section section;
+  section.type = SectionType::A;
+  section.start_tick = 0;
+  section.bars = 2;
+  section.name = "A";
+  const Arrangement arrangement({section});
+  constexpr uint8_t kRunPitch = 64;  // E4 over I
+  constexpr int kRunLength = 5;
+
+  auto runTrack = [&] {
+    MidiTrack track;
+    for (int idx = 0; idx < kRunLength; ++idx) {
+      track.addNote(NoteEventBuilder::create(static_cast<Tick>(idx) * TICKS_PER_BEAT,
+                                             TICKS_PER_BEAT, kRunPitch, 90));
+    }
+    return track;
+  };
+
+  // Control: where the break lands when nothing else is sounding.
+  HarmonyContext bare;
+  bare.initialize(arrangement, getChordProgression(0), Mood::StraightPop);
+  MidiTrack control = runTrack();
+  bare.registerTrack(control, TrackRole::Vocal);
+  breakLongPitchRuns(control, bare, 55, 84, 4, TrackRole::Vocal, {}, 84);
+  const NoteEvent& control_break = control.notes().back();
+  ASSERT_NE(control_break.note, kRunPitch) << "the control must break the run";
+
+  // The same run with a chord voice holding that very pitch under the break.
+  HarmonyContext harmony;
+  harmony.initialize(arrangement, getChordProgression(0), Mood::StraightPop);
+  harmony.registerNote(control_break.start_tick, control_break.duration, control_break.note,
+                       TrackRole::Chord);
+  MidiTrack guarded = runTrack();
+  harmony.registerTrack(guarded, TrackRole::Vocal);
+  breakLongPitchRuns(guarded, harmony, 55, 84, 4, TrackRole::Vocal, {}, 84);
+  EXPECT_NE(guarded.notes().back().note, control_break.note)
+      << "the break doubled the chord voice at " << static_cast<int>(control_break.note);
 }
 
 TEST(VocalHookChantTest, RestatedChorusHeadCarriesTheChant) {

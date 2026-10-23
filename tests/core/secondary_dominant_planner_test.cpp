@@ -7,6 +7,8 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
+
 #include "core/chord.h"
 #include "core/chord_utils.h"
 #include "core/generator.h"
@@ -261,6 +263,106 @@ TEST(SecondaryDominantPlannerTest, ChorusBoundaryTargetsNextSectionFirstChord) {
   EXPECT_EQ(harmony.getChordDegreeAt(boundary_tick), 0)
       << "Boundary SD should be V/IV (I7 in C), based on the Chorus first chord, "
          "not V/vi from the previous section tail.";
+}
+
+// The half-bar before a key change sounds in the old key and the chorus after it
+// in the new one, so the dominant has to be spelled a fifth above the chorus's
+// sounding first chord, whatever degree the chorus opens on.
+TEST(SecondaryDominantPlannerTest, KeyChangeChorusIsPreparedByTheDominantOfTheNewKey) {
+  Section prechorus{};
+  prechorus.type = SectionType::B;
+  prechorus.name = "B";
+  prechorus.bars = 4;
+  prechorus.start_tick = 0;
+
+  Section chorus{};
+  chorus.type = SectionType::Chorus;
+  chorus.name = "CHORUS";
+  chorus.bars = 4;
+  chorus.start_bar = 4;
+  chorus.start_tick = 4 * TICKS_PER_BAR;
+  Arrangement arrangement({prechorus, chorus});
+  const Tick boundary_tick = chorus.start_tick - TICK_HALF;
+
+  for (int8_t first_degree = 0; first_degree < 7; ++first_degree) {
+    for (int8_t amount = 1; amount <= 4; ++amount) {
+      ChordProgression progression{};
+      progression.degrees = {first_degree, 4, 5, 3};
+      progression.length = 4;
+
+      HarmonyContext harmony;
+      harmony.initialize(arrangement, progression, Mood::AnimeHighEnergy);
+      std::mt19937 rng(12345);
+      planAndRegisterSecondaryDominants(arrangement, progression, Mood::AnimeHighEnergy, rng,
+                                        harmony, {chorus.start_tick, amount});
+
+      ASSERT_EQ(harmony.getChordDegreeAt(chorus.start_tick), first_degree);
+      ASSERT_TRUE(harmony.isSecondaryDominantAt(boundary_tick))
+          << "degree " << static_cast<int>(first_degree) << " +" << static_cast<int>(amount);
+      const ChordTones dominant = harmony.getChordTonesAt(boundary_tick);
+      ASSERT_GE(dominant.size(), 4u);
+      const int root = dominant[0];
+      const int sounding_target = (degreeToSemitone(first_degree) + amount) % 12;
+      EXPECT_EQ((root - sounding_target + 12) % 12, 7)
+          << "degree " << static_cast<int>(first_degree) << " +" << static_cast<int>(amount);
+      EXPECT_EQ(dominant[1], (root + 4) % 12);
+      EXPECT_EQ(dominant[3], (root + 10) % 12);
+    }
+  }
+}
+
+// The same through generation: the timeline, the bass under it and the
+// modulation the song reports agree on the new key's dominant.
+TEST(SecondaryDominantPlannerTest, GeneratedKeyChangeIsPreparedInTheNewKey) {
+  for (int8_t amount = 1; amount <= 4; ++amount) {
+    GeneratorParams params;
+    params.structure = StructurePattern::FullPop;
+    params.mood = Mood::StraightPop;
+    params.chord_id = 0;
+    params.key = Key::D;
+    params.seed = 4242;
+
+    Generator gen;
+    gen.setModulationTiming(ModulationTiming::LastChorus, amount);
+    gen.generate(params);
+
+    const Song& song = gen.getSong();
+    const auto& harmony = gen.getHarmonyContext();
+    const Tick mod_tick = song.modulationTick();
+    ASSERT_GT(mod_tick, 0u);
+    ASSERT_EQ(song.modulationAmount(), amount);
+
+    const Tick boundary_tick = mod_tick - TICK_HALF;
+    ASSERT_TRUE(harmony.isSecondaryDominantAt(boundary_tick)) << "+" << static_cast<int>(amount);
+    const int root = harmony.getChordTonesAt(boundary_tick)[0];
+    const int sounding_target =
+        (degreeToSemitone(harmony.getChordDegreeAt(mod_tick)) + amount) % 12;
+    EXPECT_EQ((root - sounding_target + 12) % 12, 7) << "+" << static_cast<int>(amount);
+
+    // The bass spells the dominant, and states its root from where that root
+    // began: a dominant on the root of the chord before it continues that
+    // chord's bass line rather than restating the root at its own onset.
+    const ChordTones dominant = harmony.getChordTonesAt(boundary_tick);
+    Tick root_from = boundary_tick;
+    while (root_from >= boundary_tick - TICKS_PER_BAR + TICK_EIGHTH &&
+           harmony.getChordTonesAt(root_from - TICK_EIGHTH)[0] == root) {
+      root_from -= TICK_EIGHTH;
+    }
+    bool bass_states_root = false;
+    int bass_in_dominant = 0;
+    for (const auto& note : song.bass().notes()) {
+      if (note.start_tick >= root_from && note.start_tick < mod_tick && note.note % 12 == root) {
+        bass_states_root = true;
+      }
+      if (note.start_tick < boundary_tick || note.start_tick >= mod_tick) continue;
+      ++bass_in_dominant;
+      EXPECT_NE(std::find(dominant.begin(), dominant.end(), note.note % 12), dominant.end())
+          << "+" << static_cast<int>(amount) << " bass " << static_cast<int>(note.note) << " at "
+          << note.start_tick;
+    }
+    ASSERT_GT(bass_in_dominant, 0) << "+" << static_cast<int>(amount);
+    EXPECT_TRUE(bass_states_root) << "+" << static_cast<int>(amount);
+  }
 }
 
 TEST(SecondaryDominantPlannerTest, BSectionUsesAdjacentTimelineEntriesForSecondaryDominants) {

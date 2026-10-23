@@ -106,6 +106,24 @@ TEST(BassAnalysisTest, Beat1RootReportsRootOnBeat1) {
   EXPECT_TRUE(analysis.has_root_on_beat1);
 }
 
+// The chord track asks analyzeBar whether the bass states the root, passing
+// getBassRoot(degree): it must keep the root's pitch class for every degree,
+// vi, bVI, bVII and vii included, rather than clamping them onto G.
+TEST(BassAnalysisTest, BassRootKeepsThePitchClassOfEveryDegree) {
+  for (const ChordDegreeInfo& row : getChordDegreeTable()) {
+    const uint8_t root = getBassRoot(row.degree);
+    EXPECT_EQ(root % 12, row.root_pc) << "degree " << static_cast<int>(row.degree);
+    EXPECT_GE(root, BASS_LOW);
+    EXPECT_LE(root, BASS_HIGH);
+
+    MidiTrack track;
+    track.addNote(
+        NoteEventBuilder::create(0, TICKS_PER_BEAT, static_cast<uint8_t>(36 + row.root_pc), 100));
+    EXPECT_TRUE(BassAnalysis::analyzeBar(track, 0, root).has_root_on_beat1)
+        << "degree " << static_cast<int>(row.degree);
+  }
+}
+
 TEST(BassDensityAdjustmentTest, PreservesHintedSyncopatedTresilloAndSlapPopOffbeats) {
   for (BassPattern pattern :
        {BassPattern::Syncopated, BassPattern::Tresillo, BassPattern::SlapPop}) {
@@ -307,6 +325,66 @@ TEST_F(BassDiatonicTest, ViiChordUsesDiminishedFifth) {
           << "Pattern " << static_cast<int>(pattern)
           << " put a perfect 5th (F#) over vii; it should use the diminished 5th (F)";
     }
+  }
+}
+
+// The passing #IVdim (F#-A-C) takes its diminished fifth C, and iv (Fm) its
+// minor third Ab: the root's pitch class alone cannot tell iv from IV.
+TEST_F(BassDiatonicTest, BorrowedChordsTakeTheirOwnFifthAndThird) {
+  struct Case {
+    int8_t degree;
+    BassPattern pattern;
+    int foreign_pc;  // the pitch class a diatonic reading of the root would add
+    const char* what;
+  };
+  const Case cases[] = {
+      {14, BassPattern::RootFifth, 1, "C# as the fifth of #IVdim"},
+      {14, BassPattern::Driving, 1, "C# as the fifth of #IVdim"},
+      {12, BassPattern::RnBNeoSoul, 9, "A as the third of iv"},
+  };
+  for (const Case& c : cases) {
+    test::StubHarmonyContext harmony;
+    harmony.setChordDegree(c.degree);
+    harmony.setAllPitchesSafe(true);
+    const uint8_t root = getBassRoot(c.degree);
+
+    MidiTrack track;
+    generateBassBar(track, 0, root, root, root, c.degree, c.pattern, SectionType::Chorus,
+                    Mood::StraightPop, false, harmony);
+
+    ASSERT_FALSE(track.notes().empty()) << "Pattern " << static_cast<int>(c.pattern);
+    for (const auto& note : track.notes()) {
+      EXPECT_NE(note.note % 12, c.foreign_pc)
+          << "Pattern " << static_cast<int>(c.pattern) << " played " << c.what;
+    }
+  }
+}
+
+// A chord held into the next bar is not approached, whichever octave the bar's
+// root was moved to: the figure must be the one written with no chord change.
+TEST_F(BassDiatonicTest, HeldChordIsNotApproachedFromAnotherOctave) {
+  constexpr int8_t kTonic = 0;
+  const uint8_t next_root = getBassRoot(kTonic);
+  const uint8_t moved_root =
+      static_cast<uint8_t>(next_root + 12 <= BASS_HIGH ? next_root + 12 : next_root - 12);
+
+  for (BassPattern pattern : {BassPattern::WholeNote, BassPattern::RootFifth, BassPattern::Walking,
+                              BassPattern::Driving}) {
+    auto render = [&](uint8_t following_root) {
+      test::StubHarmonyContext harmony;
+      harmony.setChordDegree(kTonic);
+      harmony.setAllPitchesSafe(true);
+      MidiTrack track;
+      generateBassBar(track, 0, moved_root, moved_root, following_root, kTonic, pattern,
+                      SectionType::A, Mood::Ballad, false, harmony);
+      std::vector<std::pair<Tick, uint8_t>> notes;
+      for (const auto& note : track.notes()) notes.emplace_back(note.start_tick, note.note);
+      return notes;
+    };
+    const auto held = render(moved_root);
+    ASSERT_FALSE(held.empty()) << "Pattern " << static_cast<int>(pattern);
+    EXPECT_EQ(render(next_root), held) << "Pattern " << static_cast<int>(pattern)
+                                       << " wrote an approach into the same chord an octave away";
   }
 }
 

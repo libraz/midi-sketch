@@ -22,23 +22,9 @@ namespace midisketch {
 
 namespace {
 
-bool isDominantFunctionContext(int8_t chord_degree, const ChordProgressionTracker* chord_tracker,
-                               Tick tick) {
+bool isDominantFunctionContext(int8_t chord_degree, const IChordLookup* chord_tracker, Tick tick) {
   return chordDegreeOwnsATritone(chord_degree) ||
          (chord_tracker != nullptr && chord_tracker->isSecondaryDominantAt(tick));
-}
-
-bool isRootMajorSeventhContext(uint8_t a, uint8_t b, int8_t chord_degree) {
-  int normalized = ((chord_degree % 7) + 7) % 7;
-  if (normalized != 0 && normalized != 3) {
-    return false;
-  }
-
-  int root_pc = ((degreeToSemitone(chord_degree) % 12) + 12) % 12;
-  int maj7_pc = (root_pc + 11) % 12;
-  int a_pc = a % 12;
-  int b_pc = b % 12;
-  return (a_pc == root_pc && b_pc == maj7_pc) || (b_pc == root_pc && a_pc == maj7_pc);
 }
 
 /// @brief Whether the chord sounding here is the one this major seventh names.
@@ -53,15 +39,11 @@ bool isRootMajorSeventhContext(uint8_t a, uint8_t b, int8_t chord_degree) {
 /// for is answered by the bass-register rule at the caller, which keeps its own
 /// threshold.
 bool isRegisteredRootMajorSeventhContext(uint8_t a, uint8_t b, int actual_semitones,
-                                         int8_t chord_degree,
-                                         const ChordProgressionTracker* chord_tracker, Tick tick) {
-  if (actual_semitones < 11 || actual_semitones % 12 != 11 || chord_tracker == nullptr ||
-      !isRootMajorSeventhContext(a, b, chord_degree)) {
+                                         const IChordLookup* chord_tracker, Tick tick) {
+  if (actual_semitones < 11 || actual_semitones % 12 != 11 || chord_tracker == nullptr) {
     return false;
   }
-
-  ChordExtension extension = chord_tracker->getChordExtensionAt(tick);
-  return extension == ChordExtension::Maj7 || extension == ChordExtension::Maj9;
+  return registeredMajorSeventhOwnsPair(a, b, *chord_tracker, tick);
 }
 
 // A major second between two voices that both belong to the chord being sounded
@@ -78,7 +60,7 @@ bool isRegisteredRootMajorSeventhContext(uint8_t a, uint8_t b, int actual_semito
 // report forgives also relaxes the melodic tracks against each other, which is
 // a different question from what a chord owns.
 bool isSoundingChordItself(int actual_semitones, uint8_t a, uint8_t b,
-                           const ChordProgressionTracker* chord_tracker, Tick tick) {
+                           const IChordLookup* chord_tracker, Tick tick) {
   if (actual_semitones != 2 || chord_tracker == nullptr) {
     return false;
   }
@@ -117,6 +99,66 @@ std::vector<size_t>& noteIndexScratch() {
 }
 
 }  // namespace
+
+bool registeredMajorSeventhOwnsPair(uint8_t a, uint8_t b, const IChordLookup& chords, Tick tick) {
+  ChordExtension extension = chords.getChordExtensionAt(tick);
+  if (extension != ChordExtension::Maj7 && extension != ChordExtension::Maj9) {
+    return false;
+  }
+  int root_pc = ((degreeToSemitone(chords.getChordDegreeAt(tick)) % 12) + 12) % 12;
+  int maj7_pc = (root_pc + 11) % 12;
+  int a_pc = a % 12;
+  int b_pc = b % 12;
+  return (a_pc == root_pc && b_pc == maj7_pc) || (b_pc == root_pc && a_pc == maj7_pc);
+}
+
+bool isClashingPair(uint8_t pitch, TrackRole role, uint8_t other_pitch, TrackRole other_role,
+                    const IChordLookup* chords, Tick chord_tick, Tick overlap_start) {
+  int actual_semitones = std::abs(static_cast<int>(pitch) - static_cast<int>(other_pitch));
+  int8_t chord_degree = chords != nullptr ? chords->getChordDegreeAt(chord_tick) : 0;
+  int pc_interval = actual_semitones % 12;
+
+  // Mirror the analyzer's compound-interval rules (analysis/dissonance.cpp
+  // checkIntervalDissonance + bass M7 special case) so generation never
+  // accepts an interval the dissonance gate counts as a clash.
+  bool registered_root_major_seventh =
+      pc_interval == 11 &&
+      isRegisteredRootMajorSeventhContext(pitch, other_pitch, actual_semitones, chords, chord_tick);
+
+  // Major-7th pitch class against a low bass note (< C3): the low register
+  // overtone content makes this clash audible even with 2+ octaves of
+  // separation. Being the chord's own seventh does not answer this one. Down
+  // there the beating is a property of the register rather than of the
+  // harmony, so the chord only excuses it at the wide separation that has
+  // always been the exception here; in the chord register the chord decides.
+  if (pc_interval == 11) {
+    uint8_t bass_side_pitch = 128;
+    if (other_role == TrackRole::Bass) bass_side_pitch = other_pitch;
+    if (role == TrackRole::Bass) bass_side_pitch = std::min(bass_side_pitch, pitch);
+    const bool wide_registered = registered_root_major_seventh && actual_semitones >= 23;
+    if (bass_side_pitch < 48 && !wide_registered) {
+      return true;
+    }
+  }
+
+  if (registered_root_major_seventh) {
+    return false;
+  }
+
+  // The tritone the interval table forbids is the one no chord accounts for.
+  // A secondary dominant owns its tritone the same way a diatonic V does, and
+  // the table cannot see it -- it is told a scale degree, and the substitution
+  // lives on the timeline.
+  if (pc_interval == 6 && isDominantFunctionContext(chord_degree, chords, chord_tick)) {
+    return false;
+  }
+
+  if (isSoundingChordItself(actual_semitones, pitch, other_pitch, chords, overlap_start)) {
+    return false;
+  }
+
+  return isDissonantActualInterval(actual_semitones, chord_degree);
+}
 
 void TrackCollisionDetector::registerNote(Tick start, Tick duration, uint8_t pitch,
                                           TrackRole track) {
@@ -165,12 +207,6 @@ bool TrackCollisionDetector::isConsonantWithOtherTracks(
     const ChordProgressionTracker* chord_tracker, bool allow_accented_nct) const {
   Tick end = start + duration;
 
-  // Get chord context for smarter dissonance detection
-  int8_t chord_degree = 0;
-  if (chord_tracker) {
-    chord_degree = chord_tracker->getChordDegreeAt(start);
-  }
-
   // Use beat-indexed lookup
   auto& indices = noteIndexScratch();
   collectNoteIndices(start, end, indices);
@@ -201,52 +237,8 @@ bool TrackCollisionDetector::isConsonantWithOtherTracks(
         continue;
       }
 
-      // Mirror the analyzer's compound-interval rules (analysis/dissonance.cpp
-      // checkIntervalDissonance + bass M7 special case) so generation never
-      // accepts an interval the dissonance gate counts as a clash:
-      {
-        int pc_interval = actual_semitones % 12;
-        bool registered_root_major_seventh =
-            pc_interval == 11 &&
-            isRegisteredRootMajorSeventhContext(pitch, note.pitch, actual_semitones, chord_degree,
-                                                chord_tracker, start);
-        // Major-7th pitch class against a low bass note (< C3): the low
-        // register overtone content makes this clash audible even with
-        // 2+ octaves of separation.
-        //
-        // Being the chord's own seventh does not answer this one. Down there
-        // the beating is a property of the register rather than of the harmony,
-        // so the chord only excuses it at the wide separation that has always
-        // been the exception here; in the chord register the chord decides.
-        if (pc_interval == 11) {
-          uint8_t bass_side_pitch = 128;
-          if (note.track == TrackRole::Bass) bass_side_pitch = note.pitch;
-          if (exclude == TrackRole::Bass) bass_side_pitch = std::min(bass_side_pitch, pitch);
-          const bool wide_registered = registered_root_major_seventh && actual_semitones >= 23;
-          if (bass_side_pitch < 48 && !wide_registered) {
-            return false;
-          }
-        }
-
-        if (registered_root_major_seventh) {
-          continue;
-        }
-
-        // The tritone the interval table forbids is the one no chord accounts
-        // for. A secondary dominant owns its tritone the same way a diatonic V
-        // does, and the table cannot see it -- it is told a scale degree, and
-        // the substitution lives on the timeline.
-        if (pc_interval == 6 && isDominantFunctionContext(chord_degree, chord_tracker, start)) {
-          continue;
-        }
-      }
-
-      if (isSoundingChordItself(actual_semitones, pitch, note.pitch, chord_tracker,
-                                overlap_start)) {
-        continue;
-      }
-
-      if (isDissonantActualInterval(actual_semitones, chord_degree)) {
+      if (isClashingPair(pitch, exclude, note.pitch, note.track, chord_tracker, start,
+                         overlap_start)) {
         return false;
       }
     }
@@ -260,11 +252,6 @@ CollisionInfo TrackCollisionDetector::getCollisionInfo(
   CollisionInfo info;
   Tick end = start + duration;
 
-  int8_t chord_degree = 0;
-  if (chord_tracker) {
-    chord_degree = chord_tracker->getChordDegreeAt(start);
-  }
-
   auto& indices = noteIndexScratch();
   collectNoteIndices(start, end, indices);
 
@@ -276,7 +263,6 @@ CollisionInfo TrackCollisionDetector::getCollisionInfo(
 
     if (note.start < end && note.end > start) {
       int actual_semitones = std::abs(static_cast<int>(pitch) - static_cast<int>(note.pitch));
-      int pc_interval = actual_semitones % 12;
 
       Tick overlap_duration = std::min(end, note.end) - std::max(start, note.start);
       Tick overlap_start = std::max(start, note.start);
@@ -285,35 +271,8 @@ CollisionInfo TrackCollisionDetector::getCollisionInfo(
         continue;
       }
 
-      bool registered_root_major_seventh =
-          pc_interval == 11 &&
-          isRegisteredRootMajorSeventhContext(pitch, note.pitch, actual_semitones, chord_degree,
-                                              chord_tracker, start);
-      if (registered_root_major_seventh) {
-        continue;
-      }
-      if (pc_interval == 11) {
-        uint8_t bass_side_pitch = 128;
-        if (note.track == TrackRole::Bass) bass_side_pitch = note.pitch;
-        if (exclude == TrackRole::Bass) bass_side_pitch = std::min(bass_side_pitch, pitch);
-        if (bass_side_pitch < 48) {
-          info.has_collision = true;
-          info.colliding_pitch = note.pitch;
-          info.colliding_track = note.track;
-          info.interval_semitones = actual_semitones;
-          return info;
-        }
-      }
-      if (pc_interval == 6 && isDominantFunctionContext(chord_degree, chord_tracker, start)) {
-        continue;
-      }
-
-      if (isSoundingChordItself(actual_semitones, pitch, note.pitch, chord_tracker,
-                                overlap_start)) {
-        continue;
-      }
-
-      if (isDissonantActualInterval(actual_semitones, chord_degree)) {
+      if (isClashingPair(pitch, exclude, note.pitch, note.track, chord_tracker, start,
+                         overlap_start)) {
         info.has_collision = true;
         info.colliding_pitch = note.pitch;
         info.colliding_track = note.track;
@@ -602,42 +561,17 @@ Tick TrackCollisionDetector::getMaxSafeEnd(Tick note_start, uint8_t pitch, Track
 
     int actual_semitones = std::abs(static_cast<int>(pitch) - static_cast<int>(note.pitch));
     Tick overlap_start = std::max(note_start, note.start);
-    int8_t chord_degree =
-        chord_tracker != nullptr ? chord_tracker->getChordDegreeAt(overlap_start) : 0;
-    int pc_interval = actual_semitones % 12;
 
-    // Keep duration extension consistent with candidate generation: brief
-    // melodic seconds, tonic/mediant root-M7 colour, and dominant/secondary-
-    // dominant tritones are intentional and must not be shortened away.
+    // Keep duration extension consistent with candidate generation: the same
+    // pair verdict isConsonantWithOtherTracks asks, after the same tolerance.
     Tick overlap_duration = std::min(desired_end, note.end) - overlap_start;
     if (isToleratedMelodicTension(actual_semitones, overlap_duration, pitch, note.pitch,
                                   overlap_start, exclude, note.track)) {
       continue;
     }
-    bool registered_root_major_seventh =
-        pc_interval == 11 &&
-        isRegisteredRootMajorSeventhContext(pitch, note.pitch, actual_semitones, chord_degree,
-                                            chord_tracker, overlap_start);
-    if (registered_root_major_seventh) {
-      continue;
-    }
-    if (pc_interval == 6 && isDominantFunctionContext(chord_degree, chord_tracker, overlap_start)) {
-      continue;
-    }
-    bool low_bass_major_seventh = false;
-    if (pc_interval == 11) {
-      uint8_t bass_side_pitch = 128;
-      if (note.track == TrackRole::Bass) bass_side_pitch = note.pitch;
-      if (exclude == TrackRole::Bass) bass_side_pitch = std::min(bass_side_pitch, pitch);
-      low_bass_major_seventh = bass_side_pitch < 48;
-    }
-    if (isSoundingChordItself(actual_semitones, pitch, note.pitch, chord_tracker, overlap_start)) {
-      continue;
-    }
-    bool is_dissonant =
-        low_bass_major_seventh || isDissonantActualInterval(actual_semitones, chord_degree);
 
-    if (is_dissonant) {
+    if (isClashingPair(pitch, exclude, note.pitch, note.track, chord_tracker, overlap_start,
+                       overlap_start)) {
       if (note.start <= note_start) {
         // The clash is already sounding when this note begins, so no prefix of
         // it is safe. Pulling back only to a *later* onset leaves the full span

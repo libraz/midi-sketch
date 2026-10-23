@@ -7,8 +7,9 @@
 
 #include <gtest/gtest.h>
 
-#include <random>
+#include <set>
 
+#include "core/preset_types.h"
 #include "core/structure.h"
 
 namespace midisketch {
@@ -23,16 +24,27 @@ Section makeSection(SectionType type, uint8_t bars, Tick start_tick) {
   return s;
 }
 
+// Plan the modulation for the given settings.
+ModulationCalculator::ModulationResult planFor(ModulationTiming timing, int8_t semitones,
+                                               StructurePattern structure,
+                                               const std::vector<Section>& sections,
+                                               uint32_t seed = 42) {
+  GeneratorParams params;
+  params.modulation_timing = timing;
+  params.modulation_semitones = semitones;
+  params.structure = structure;
+  params.seed = seed;
+  return ModulationCalculator::plan(params, sections);
+}
+
 // ============================================================================
 // ModulationTiming::None Tests
 // ============================================================================
 
 TEST(ModulationCalculatorTest, TimingNoneReturnsZero) {
-  std::mt19937 rng(42);
   auto sections = buildStructure(StructurePattern::StandardPop);
 
-  auto result = ModulationCalculator::calculate(ModulationTiming::None, 2,
-                                                StructurePattern::StandardPop, sections, rng);
+  auto result = planFor(ModulationTiming::None, 2, StructurePattern::StandardPop, sections);
 
   EXPECT_EQ(result.tick, 0u);
   EXPECT_EQ(result.amount, 0);
@@ -43,31 +55,25 @@ TEST(ModulationCalculatorTest, TimingNoneReturnsZero) {
 // ============================================================================
 
 TEST(ModulationCalculatorTest, LastChorusFindsLastChorus) {
-  std::mt19937 rng(42);
-
   std::vector<Section> sections = {
       makeSection(SectionType::Intro, 4, 0), makeSection(SectionType::Chorus, 8, 4 * TICKS_PER_BAR),
       makeSection(SectionType::A, 8, 12 * TICKS_PER_BAR),
       makeSection(SectionType::Chorus, 8, 20 * TICKS_PER_BAR),  // Last chorus
   };
 
-  auto result = ModulationCalculator::calculate(ModulationTiming::LastChorus, 2,
-                                                StructurePattern::StandardPop, sections, rng);
+  auto result = planFor(ModulationTiming::LastChorus, 2, StructurePattern::StandardPop, sections);
 
   EXPECT_EQ(result.tick, 20u * TICKS_PER_BAR);
   EXPECT_EQ(result.amount, 2);
 }
 
 TEST(ModulationCalculatorTest, LastChorusNoChorus) {
-  std::mt19937 rng(42);
-
   std::vector<Section> sections = {
       makeSection(SectionType::Intro, 4, 0),
       makeSection(SectionType::A, 8, 4 * TICKS_PER_BAR),
   };
 
-  auto result = ModulationCalculator::calculate(ModulationTiming::LastChorus, 2,
-                                                StructurePattern::StandardPop, sections, rng);
+  auto result = planFor(ModulationTiming::LastChorus, 2, StructurePattern::StandardPop, sections);
 
   EXPECT_EQ(result.tick, 0u);  // No chorus found
 }
@@ -77,30 +83,25 @@ TEST(ModulationCalculatorTest, LastChorusNoChorus) {
 // ============================================================================
 
 TEST(ModulationCalculatorTest, AfterBridgeFindsChorusAfterBridge) {
-  std::mt19937 rng(42);
-
   std::vector<Section> sections = {
       makeSection(SectionType::Chorus, 8, 0),
       makeSection(SectionType::Bridge, 8, 8 * TICKS_PER_BAR),
       makeSection(SectionType::Chorus, 8, 16 * TICKS_PER_BAR),  // After bridge
   };
 
-  auto result = ModulationCalculator::calculate(ModulationTiming::AfterBridge, 2,
-                                                StructurePattern::FullWithBridge, sections, rng);
+  auto result =
+      planFor(ModulationTiming::AfterBridge, 2, StructurePattern::FullWithBridge, sections);
 
   EXPECT_EQ(result.tick, 16u * TICKS_PER_BAR);
 }
 
 TEST(ModulationCalculatorTest, AfterBridgeFallbackToLastChorus) {
-  std::mt19937 rng(42);
-
   std::vector<Section> sections = {
       makeSection(SectionType::A, 8, 0),
       makeSection(SectionType::Chorus, 8, 8 * TICKS_PER_BAR),  // No bridge before
   };
 
-  auto result = ModulationCalculator::calculate(ModulationTiming::AfterBridge, 2,
-                                                StructurePattern::StandardPop, sections, rng);
+  auto result = planFor(ModulationTiming::AfterBridge, 2, StructurePattern::StandardPop, sections);
 
   // Falls back to last chorus
   EXPECT_EQ(result.tick, 8u * TICKS_PER_BAR);
@@ -111,8 +112,6 @@ TEST(ModulationCalculatorTest, AfterBridgeFallbackToLastChorus) {
 // ============================================================================
 
 TEST(ModulationCalculatorTest, EachChorusFallsBackToLastChorus) {
-  std::mt19937 rng(42);
-
   std::vector<Section> sections = {
       makeSection(SectionType::Intro, 4, 0),
       makeSection(SectionType::Chorus, 8, 4 * TICKS_PER_BAR),  // First
@@ -120,8 +119,7 @@ TEST(ModulationCalculatorTest, EachChorusFallsBackToLastChorus) {
       makeSection(SectionType::Chorus, 8, 20 * TICKS_PER_BAR),  // Second
   };
 
-  auto result = ModulationCalculator::calculate(ModulationTiming::EachChorus, 3,
-                                                StructurePattern::StandardPop, sections, rng);
+  auto result = planFor(ModulationTiming::EachChorus, 3, StructurePattern::StandardPop, sections);
 
   // Song has one modulation boundary, so EachChorus uses the final chorus.
   EXPECT_EQ(result.tick, 20u * TICKS_PER_BAR);
@@ -133,8 +131,6 @@ TEST(ModulationCalculatorTest, EachChorusFallsBackToLastChorus) {
 // ============================================================================
 
 TEST(ModulationCalculatorTest, RandomSelectsChorus) {
-  std::mt19937 rng(42);
-
   std::vector<Section> sections = {
       makeSection(SectionType::Chorus, 8, 0),
       makeSection(SectionType::A, 8, 8 * TICKS_PER_BAR),
@@ -142,41 +138,96 @@ TEST(ModulationCalculatorTest, RandomSelectsChorus) {
       makeSection(SectionType::Chorus, 8, 24 * TICKS_PER_BAR),
   };
 
-  auto result = ModulationCalculator::calculate(ModulationTiming::Random, 1,
-                                                StructurePattern::StandardPop, sections, rng);
+  auto result = planFor(ModulationTiming::Random, 1, StructurePattern::StandardPop, sections);
 
-  // Should select one of the chorus ticks
-  EXPECT_TRUE(result.tick == 0 || result.tick == 16u * TICKS_PER_BAR ||
-              result.tick == 24u * TICKS_PER_BAR);
+  // Should select one of the choruses the song can modulate into
+  EXPECT_TRUE(result.tick == 16u * TICKS_PER_BAR || result.tick == 24u * TICKS_PER_BAR);
   EXPECT_EQ(result.amount, 1);
 }
 
-TEST(ModulationCalculatorTest, RandomDeterministic) {
+// A chorus opening the song has no earlier key to leave, so Random never picks
+// it while a later chorus exists, on any chorus-first form and any seed.
+TEST(ModulationCalculatorTest, RandomModulatesChorusFirstFormsAfterTheStart) {
+  const StructurePattern forms[] = {StructurePattern::ChorusFirst,
+                                    StructurePattern::ChorusFirstShort,
+                                    StructurePattern::ChorusFirstFull};
+  for (StructurePattern form : forms) {
+    auto sections = buildStructure(form);
+    ASSERT_FALSE(sections.empty());
+    ASSERT_EQ(sections.front().type, SectionType::Chorus);
+    bool has_later_chorus = false;
+    for (const auto& section : sections) {
+      has_later_chorus |= section.type == SectionType::Chorus && section.start_tick > 0;
+    }
+    ASSERT_TRUE(has_later_chorus) << static_cast<int>(form);
+
+    for (uint32_t seed = 1; seed <= 64; ++seed) {
+      auto result = planFor(ModulationTiming::Random, 2, form, sections, seed);
+      EXPECT_GT(result.tick, 0u) << static_cast<int>(form) << " seed " << seed;
+      EXPECT_EQ(result.amount, 2) << static_cast<int>(form) << " seed " << seed;
+    }
+  }
+}
+
+// The record is one fact: no exit path states an amount without its point.
+TEST(ModulationCalculatorTest, AmountIsStatedOnlyWithAModulationPoint) {
+  const std::vector<std::vector<Section>> layouts = {
+      {},
+      {makeSection(SectionType::Chorus, 8, 0)},
+      {makeSection(SectionType::Intro, 4, 0), makeSection(SectionType::A, 8, 4 * TICKS_PER_BAR)},
+      {makeSection(SectionType::Chorus, 8, 0), makeSection(SectionType::A, 8, 8 * TICKS_PER_BAR),
+       makeSection(SectionType::Chorus, 8, 16 * TICKS_PER_BAR)},
+  };
+  const ModulationTiming timings[] = {ModulationTiming::None, ModulationTiming::LastChorus,
+                                      ModulationTiming::AfterBridge, ModulationTiming::EachChorus,
+                                      ModulationTiming::Random};
+  int modulated = 0;
+  int unmodulated = 0;
+  for (const auto& sections : layouts) {
+    for (ModulationTiming timing : timings) {
+      for (uint32_t seed = 1; seed <= 8; ++seed) {
+        auto result = planFor(timing, 3, StructurePattern::StandardPop, sections, seed);
+        EXPECT_EQ(result.amount != 0, result.tick > 0)
+            << "timing " << static_cast<int>(timing) << " tick " << result.tick << " amount "
+            << static_cast<int>(result.amount);
+        (result.tick > 0 ? modulated : unmodulated)++;
+      }
+    }
+  }
+  ASSERT_GT(modulated, 0);
+  ASSERT_GT(unmodulated, 0);
+}
+
+// The planner and the song both ask plan() and must get the same answer, so
+// Random draws from the seed alone: one seed always lands on the same chorus,
+// and the seeds between them still reach more than one.
+TEST(ModulationCalculatorTest, RandomDrawsFromTheSeedAlone) {
   std::vector<Section> sections = {
-      makeSection(SectionType::Chorus, 8, 0),
+      makeSection(SectionType::A, 8, 0),
       makeSection(SectionType::Chorus, 8, 8 * TICKS_PER_BAR),
       makeSection(SectionType::Chorus, 8, 16 * TICKS_PER_BAR),
+      makeSection(SectionType::Chorus, 8, 24 * TICKS_PER_BAR),
   };
 
-  // Same seed should give same result
-  std::mt19937 rng1(12345);
-  auto result1 = ModulationCalculator::calculate(ModulationTiming::Random, 2,
-                                                 StructurePattern::StandardPop, sections, rng1);
-
-  std::mt19937 rng2(12345);
-  auto result2 = ModulationCalculator::calculate(ModulationTiming::Random, 2,
-                                                 StructurePattern::StandardPop, sections, rng2);
-
-  EXPECT_EQ(result1.tick, result2.tick);
+  std::set<Tick> reached;
+  for (uint32_t seed = 1; seed <= 32; ++seed) {
+    auto first =
+        planFor(ModulationTiming::Random, 2, StructurePattern::StandardPop, sections, seed);
+    auto again =
+        planFor(ModulationTiming::Random, 2, StructurePattern::StandardPop, sections, seed);
+    ASSERT_GT(first.tick, 0u);
+    EXPECT_EQ(first.tick, again.tick) << "seed " << seed;
+    EXPECT_EQ(first.amount, again.amount) << "seed " << seed;
+    reached.insert(first.tick);
+  }
+  EXPECT_GT(reached.size(), 1u);
 }
 
 // ============================================================================
-// Legacy Structure Pattern Tests
+// Structure Pattern Tests
 // ============================================================================
 
 TEST(ModulationCalculatorTest, RepeatChorusSecondChorus) {
-  std::mt19937 rng(42);
-
   std::vector<Section> sections = {
       makeSection(SectionType::Chorus, 8, 0),  // First chorus
       makeSection(SectionType::A, 8, 8 * TICKS_PER_BAR),
@@ -184,24 +235,20 @@ TEST(ModulationCalculatorTest, RepeatChorusSecondChorus) {
   };
 
   // Use LastChorus timing to find modulation point
-  auto result = ModulationCalculator::calculate(ModulationTiming::LastChorus, 2,
-                                                StructurePattern::RepeatChorus, sections, rng);
+  auto result = planFor(ModulationTiming::LastChorus, 2, StructurePattern::RepeatChorus, sections);
 
   // Should find second chorus as the last chorus
   EXPECT_EQ(result.tick, 16u * TICKS_PER_BAR);
 }
 
 TEST(ModulationCalculatorTest, StandardPopChorusAfterB) {
-  std::mt19937 rng(42);
-
   std::vector<Section> sections = {
       makeSection(SectionType::Intro, 4, 0), makeSection(SectionType::B, 8, 4 * TICKS_PER_BAR),
       makeSection(SectionType::Chorus, 8, 12 * TICKS_PER_BAR),  // After B
   };
 
   // Use AfterBridge timing to find chorus after B section
-  auto result = ModulationCalculator::calculate(ModulationTiming::AfterBridge, 2,
-                                                StructurePattern::StandardPop, sections, rng);
+  auto result = planFor(ModulationTiming::AfterBridge, 2, StructurePattern::StandardPop, sections);
 
   // Should find the chorus after B section (using fallback to last chorus)
   EXPECT_EQ(result.tick, 12u * TICKS_PER_BAR);
@@ -212,21 +259,17 @@ TEST(ModulationCalculatorTest, StandardPopChorusAfterB) {
 // ============================================================================
 
 TEST(ModulationCalculatorTest, ShortFormNoModulation) {
-  std::mt19937 rng(42);
   auto sections = buildStructure(StructurePattern::ShortForm);
 
-  auto result = ModulationCalculator::calculate(ModulationTiming::LastChorus, 2,
-                                                StructurePattern::ShortForm, sections, rng);
+  auto result = planFor(ModulationTiming::LastChorus, 2, StructurePattern::ShortForm, sections);
 
   EXPECT_EQ(result.tick, 0u);  // Short form doesn't support modulation
 }
 
 TEST(ModulationCalculatorTest, DirectChorusNoModulation) {
-  std::mt19937 rng(42);
   auto sections = buildStructure(StructurePattern::DirectChorus);
 
-  auto result = ModulationCalculator::calculate(ModulationTiming::LastChorus, 2,
-                                                StructurePattern::DirectChorus, sections, rng);
+  auto result = planFor(ModulationTiming::LastChorus, 2, StructurePattern::DirectChorus, sections);
 
   EXPECT_EQ(result.tick, 0u);  // Direct chorus doesn't support modulation
 }
@@ -236,27 +279,23 @@ TEST(ModulationCalculatorTest, DirectChorusNoModulation) {
 // ============================================================================
 
 TEST(ModulationCalculatorTest, SemitonesDefaultsToTwo) {
-  std::mt19937 rng(42);
-
   std::vector<Section> sections = {
-      makeSection(SectionType::Chorus, 8, 0),
+      makeSection(SectionType::A, 8, 0),
+      makeSection(SectionType::Chorus, 8, 8 * TICKS_PER_BAR),
   };
 
-  auto result = ModulationCalculator::calculate(ModulationTiming::LastChorus, 0,
-                                                StructurePattern::StandardPop, sections, rng);
+  auto result = planFor(ModulationTiming::LastChorus, 0, StructurePattern::StandardPop, sections);
 
   EXPECT_EQ(result.amount, 2);  // Default when 0 is passed
 }
 
 TEST(ModulationCalculatorTest, SemitonesRespected) {
-  std::mt19937 rng(42);
-
   std::vector<Section> sections = {
-      makeSection(SectionType::Chorus, 8, 0),
+      makeSection(SectionType::A, 8, 0),
+      makeSection(SectionType::Chorus, 8, 8 * TICKS_PER_BAR),
   };
 
-  auto result = ModulationCalculator::calculate(ModulationTiming::LastChorus, 4,
-                                                StructurePattern::StandardPop, sections, rng);
+  auto result = planFor(ModulationTiming::LastChorus, 4, StructurePattern::StandardPop, sections);
 
   EXPECT_EQ(result.amount, 4);
 }
@@ -266,11 +305,9 @@ TEST(ModulationCalculatorTest, SemitonesRespected) {
 // ============================================================================
 
 TEST(ModulationCalculatorTest, EmptySections) {
-  std::mt19937 rng(42);
   std::vector<Section> sections;
 
-  auto result = ModulationCalculator::calculate(ModulationTiming::LastChorus, 2,
-                                                StructurePattern::StandardPop, sections, rng);
+  auto result = planFor(ModulationTiming::LastChorus, 2, StructurePattern::StandardPop, sections);
 
   EXPECT_EQ(result.tick, 0u);
 }
@@ -280,22 +317,18 @@ TEST(ModulationCalculatorTest, EmptySections) {
 // ============================================================================
 
 TEST(ModulationCalculatorTest, StandardPopIntegration) {
-  std::mt19937 rng(42);
   auto sections = buildStructure(StructurePattern::StandardPop);
 
-  auto result = ModulationCalculator::calculate(ModulationTiming::LastChorus, 2,
-                                                StructurePattern::StandardPop, sections, rng);
+  auto result = planFor(ModulationTiming::LastChorus, 2, StructurePattern::StandardPop, sections);
 
   // StandardPop should have a chorus and thus a modulation point
   EXPECT_GT(result.tick, 0u);
 }
 
 TEST(ModulationCalculatorTest, ExtendedFullIntegration) {
-  std::mt19937 rng(42);
   auto sections = buildStructure(StructurePattern::ExtendedFull);
 
-  auto result = ModulationCalculator::calculate(ModulationTiming::AfterBridge, 2,
-                                                StructurePattern::ExtendedFull, sections, rng);
+  auto result = planFor(ModulationTiming::AfterBridge, 2, StructurePattern::ExtendedFull, sections);
 
   // ExtendedFull should have chorus after bridge
   EXPECT_GT(result.tick, 0u);

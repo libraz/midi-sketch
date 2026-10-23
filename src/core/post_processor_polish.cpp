@@ -192,9 +192,9 @@ void removeClashingNotesAgainstReference(MidiTrack& track, const MidiTrack& refe
         // removing it takes the leading tone out of the dominant, which is the
         // note that made it one. The analysis rule already answers this way, so
         // asking the sounding degree is what keeps one question from having two
-        // answers.
-        if (interval % 12 == 6 &&
-            chordDegreeOwnsATritone(chord_lookup->getChordDegreeAt(overlap_start))) {
+        // answers. Of the intervals the options flag, the degree only excuses
+        // that tritone.
+        if (!isDissonantActualInterval(interval, chord_lookup->getChordDegreeAt(overlap_start))) {
           return false;
         }
         return !tailGateWillShortenEarlier(note, ref_note, *chord_lookup);
@@ -252,13 +252,17 @@ uint8_t resolveMotifAboveVocalImpl(uint8_t original_pitch, uint8_t ceiling, Tick
   if (best != 0) return best;
 
   // Strategy 2: octave-down shift that lands at or below the ceiling and stays
-  // in register, without clashing with the vocal.
+  // in register, without clashing with the vocal or the other tracks. The shift
+  // changes every actual interval to them, so a pair that was consonant can land
+  // on a minor second or a minor ninth.
   int shifted = static_cast<int>(original_pitch);
   while (shifted > static_cast<int>(ceiling) && shifted - 12 >= floor_limit) {
     shifted -= 12;
   }
   if (shifted >= floor_limit && shifted <= static_cast<int>(ceiling) && shifted != original_pitch &&
-      !clashesWithVocal(static_cast<uint8_t>(shifted), start, end, vocal, harmony)) {
+      !clashesWithVocal(static_cast<uint8_t>(shifted), start, end, vocal, harmony) &&
+      harmony.isConsonantWithOtherTracks(static_cast<uint8_t>(shifted), start, duration,
+                                         TrackRole::Motif)) {
     return static_cast<uint8_t>(shifted);
   }
 
@@ -790,21 +794,31 @@ void PostProcessor::smoothLargeLeaps(MidiTrack& track, int max_semitones) {
     return lhs.start_tick < rhs.start_tick;
   });
 
-  // Iterative removal: each pass removes at most one note per large leap,
-  // then re-checks.  This avoids over-removal when the note AFTER a
-  // removed note would have been fine (e.g. A->B->C where B is removed
-  // and A->C turns out to be small).
+  // A rest longer than a beat separates phrases, so no leap is judged across it.
+  auto followsWithoutRest = [](const NoteEvent& earlier, const NoteEvent& later) {
+    return later.start_tick <= earlier.start_tick + earlier.duration + TICKS_PER_BEAT;
+  };
+  auto leapBetween = [](const NoteEvent& a, const NoteEvent& b) {
+    return std::abs(static_cast<int>(a.note) - static_cast<int>(b.note));
+  };
+
+  // Only an isolated spike is removed: a note that leaps away from the line and
+  // is not continued by the note after it. A note the next one stays near is a
+  // register change, and removing it would take the rest of the line with it.
+  // Each removal makes a new adjacency, so the scan restarts after it.
   bool changed = true;
   while (changed) {
     changed = false;
     for (size_t idx = 1; idx < notes.size(); ++idx) {
-      int leap =
-          std::abs(static_cast<int>(notes[idx].note) - static_cast<int>(notes[idx - 1].note));
-      if (leap > max_semitones) {
-        notes.erase(notes.begin() + static_cast<std::ptrdiff_t>(idx));
-        changed = true;
-        break;  // Restart scan after each removal
-      }
+      const NoteEvent& prev = notes[idx - 1];
+      const NoteEvent& cur = notes[idx];
+      if (!followsWithoutRest(prev, cur) || leapBetween(prev, cur) <= max_semitones) continue;
+      const bool continued = idx + 1 < notes.size() && followsWithoutRest(cur, notes[idx + 1]) &&
+                             leapBetween(cur, notes[idx + 1]) <= max_semitones;
+      if (continued) continue;
+      notes.erase(notes.begin() + static_cast<std::ptrdiff_t>(idx));
+      changed = true;
+      break;
     }
   }
 }

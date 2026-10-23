@@ -41,8 +41,11 @@ constexpr StylePresetMapping kStylePresetMappings[] = {
      CompositionStyle::MelodyLead},  // 12: Background Motif (deprecated, now MelodyLead)
     {Mood::CityPop, CompositionStyle::MelodyLead},          // 13: City Pop
     {Mood::AnimeHighEnergy, CompositionStyle::MelodyLead},  // 14: Anime Opening
-    {Mood::FutureBass, CompositionStyle::SynthDriven},      // 15: EDM Synth Pop
-    {Mood::Ballad, CompositionStyle::MelodyLead},           // 16: Emotional Ballad
+    // 15: EDM Synth Pop. SynthDriven: full-song generation is instrumental (no
+    // Vocal or Aux), while the vocal-first API (generateVocal, generateWithVocal)
+    // still sings the vocal it is explicitly asked for.
+    {Mood::FutureBass, CompositionStyle::SynthDriven},
+    {Mood::Ballad, CompositionStyle::MelodyLead},  // 16: Emotional Ballad
 };
 
 constexpr size_t kStylePresetCount = sizeof(kStylePresetMappings) / sizeof(kStylePresetMappings[0]);
@@ -127,6 +130,8 @@ namespace {
 // [2] density_mult          - note_density multiplier
 // [3] leap_mult             - max_leap_interval multiplier (capped by leap_cap)
 // [4] leap_cap              - max_leap_interval upper limit
+//     (max_leap_interval is a recorded default; only a user melody_max_leap
+//      narrows the blueprint's leap budget, see resolveContextMaxLeap)
 // [5] force_hook            - force hook_repetition = true
 // [6] tension_mult          - tension_usage multiplier
 // [7] sixteenth_mult        - sixteenth_note_ratio multiplier (capped at 0.5)
@@ -397,6 +402,7 @@ GeneratorParams ConfigConverter::convert(const SongConfig& config) {
   // Apply VocalAttitude, VocalStylePreset and StyleMelodyParams
   params.vocal_attitude = config.vocal_attitude;
   params.vocal_style = config.vocal_style;
+  params.vocal_style_explicit = (config.vocal_style != VocalStylePreset::Auto);
 
   // If VocalStylePreset::Auto, the blueprint's singer decides; a blueprint
   // without one falls back to the StylePreset's table.
@@ -424,7 +430,9 @@ GeneratorParams ConfigConverter::convert(const SongConfig& config) {
   // Transfer melodic complexity, hook intensity, groove feel, and drive
   params.melodic_complexity = config.melodic_complexity;
   params.hook_intensity = config.hook_intensity;
+  params.hook_intensity_explicit = config.hook_intensity_explicit;
   params.vocal_groove = config.vocal_groove;
+  params.vocal_groove_explicit = config.vocal_groove_explicit;
   params.enable_syncopation = config.enable_syncopation;
   params.drive_feel = config.drive_feel;
   params.melody_params.mora_rhythm_mode = static_cast<MoraRhythmMode>(config.mora_rhythm_mode);
@@ -466,7 +474,9 @@ GeneratorParams ConfigConverter::convert(const SongConfig& config) {
   params.addictive_mode = config.addictive_mode;
   if (config.addictive_mode) {
     params.riff_policy = RiffPolicy::LockedPitch;
-    params.hook_intensity = HookIntensity::Maximum;
+    if (!params.hook_intensity_explicit) {
+      params.hook_intensity = HookIntensity::Maximum;
+    }
   }
 
   // Energy curve
@@ -513,6 +523,7 @@ GeneratorParams ConfigConverter::convert(const SongConfig& config) {
   }
   if (config.melody_syncopation_prob != 0xFF) {
     params.melody_params.syncopation_prob = config.melody_syncopation_prob / 100.0f;
+    params.melody_syncopation_override = true;
   }
   if (config.melody_phrase_length > 0) {
     params.melody_params.phrase_length_bars = config.melody_phrase_length;

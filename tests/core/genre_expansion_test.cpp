@@ -105,10 +105,6 @@ TEST_F(GenreMoodTest, LofiMoodExists) {
   // Bass genre should be Lofi
   BassGenre bass_genre = getMoodBassGenre(Mood::Lofi);
   EXPECT_EQ(bass_genre, BassGenre::Lofi);
-
-  // Density should be low (sparse, relaxed)
-  float density = getMoodDensity(Mood::Lofi);
-  EXPECT_LE(density, 0.40f);
 }
 
 // Test mood count updated to 24

@@ -220,6 +220,24 @@ TEST_F(ProductionBlueprintTest, IdolKawaiiSignatureTracksStartBeforeSecondChorus
       << "IdolKawaii signature tracks should not be silent until the second Chorus";
 }
 
+TEST_F(ProductionBlueprintTest, OchisabiSlotsAreStrippedToVocalKeysAndCalls) {
+  int ochisabi_slots = 0;
+  for (uint8_t id = 0; id < getProductionBlueprintCount(); ++id) {
+    const auto& bp = getProductionBlueprint(id);
+    if (bp.section_flow == nullptr) continue;
+    for (uint8_t i = 0; i < bp.section_count; ++i) {
+      const auto& slot = bp.section_flow[i];
+      if (slot.modifier != SectionModifier::Ochisabi) continue;
+      ++ochisabi_slots;
+      const TrackMask allowed = TrackMask::Vocal | TrackMask::Chord | TrackMask::SE;
+      EXPECT_EQ(slot.enabled_tracks & allowed, slot.enabled_tracks)
+          << bp.name << " slot " << static_cast<int>(i)
+          << " keeps tracks beyond vocal + keys + call figures";
+    }
+  }
+  ASSERT_GT(ochisabi_slots, 0);
+}
+
 TEST_F(ProductionBlueprintTest, IdolKawaiiAllowsClimaxAboveG5) {
   const auto& bp = getProductionBlueprint(6);
 

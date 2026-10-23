@@ -1712,6 +1712,38 @@ TEST(PostProcessorTest, RegressionIdolHyperSeed88888) {
   EXPECT_NE(result, 59) << "Should not remain B3 (59) which creates minor 2nd with C4 (60)";
 }
 
+// An octave shift changes every actual interval to the other tracks: G5 sits a
+// compound minor second (25) above a bass F#3, which is consonant, and G4 sits a
+// minor ninth (13) above it, which is not. Every chord tone under the vocal is
+// blocked too, so the crossing has no consonant answer and is kept -- a crossing
+// is a warning, a moved note that clashes is deleted by the harmony sweep.
+TEST(PostProcessorTest, FixMotifVocalClashesKeepsACrossingTheOctaveShiftWouldTurnIntoAClash) {
+  Section section;
+  section.type = SectionType::A;
+  section.start_tick = 0;
+  section.bars = 1;
+  Arrangement arrangement({section});
+  HarmonyContext harmony;
+  harmony.initialize(arrangement, getChordProgression(0), Mood::StraightPop);
+  ASSERT_EQ(harmony.getChordDegreeAt(0), 0);
+  harmony.registerNote(0, TICKS_PER_BEAT, 54, TrackRole::Bass);   // F#3
+  harmony.registerNote(0, TICKS_PER_BEAT, 65, TrackRole::Chord);  // F4
+
+  MidiTrack motif, vocal;
+  motif.addNote(NoteEventBuilder::create(0, TICKS_PER_BEAT, 79, 80));  // G5, above the vocal
+  vocal.addNote(NoteEventBuilder::create(0, TICKS_PER_BEAT, 72, 80));  // C5
+  ASSERT_TRUE(harmony.isConsonantWithOtherTracks(79, 0, TICKS_PER_BEAT, TrackRole::Motif));
+  ASSERT_FALSE(harmony.isConsonantWithOtherTracks(67, 0, TICKS_PER_BEAT, TrackRole::Motif));
+
+  PostProcessor::fixMotifVocalClashes(motif, vocal, harmony);
+  ASSERT_EQ(motif.notes().size(), 1u);
+  EXPECT_EQ(motif.notes()[0].note, 79) << "the shift to G4 would clash with the bass";
+
+  PostProcessor::fixMotifHarmonyClashes(motif, vocal, harmony);
+  ASSERT_EQ(motif.notes().size(), 1u) << "a note left consonant is not erased";
+  EXPECT_EQ(motif.notes()[0].note, 79);
+}
+
 // ============================================================================
 // fixTrackVocalClashes Tests (unified vocal clash resolution)
 // ============================================================================
@@ -2873,12 +2905,7 @@ TEST_F(SmoothLargeLeapsTest, CustomMaxSemitones) {
 // Regression: Aux Large Leap at Section Boundaries (seed=17, bp=5)
 // ============================================================================
 
-TEST_F(SmoothLargeLeapsTest, SectionBoundaryLeapRegression) {
-  // Simulates the case where post-processing removes notes between sections,
-  // creating new adjacencies with large leaps.
-  // Before fix: pitch 76 -> 57 (19 semitones) at bar 3 (Intro->Chorus boundary)
-  // After fix: the 57 note should be removed
-
+TEST_F(SmoothLargeLeapsTest, NoLeapIsJudgedAcrossAPhraseRest) {
   // Intro notes (high register ~72-76)
   track_.addNote(NoteEventBuilder::create(0, 240, 72, 70));
   track_.addNote(NoteEventBuilder::create(240, 240, 72, 70));
@@ -2886,29 +2913,48 @@ TEST_F(SmoothLargeLeapsTest, SectionBoundaryLeapRegression) {
   track_.addNote(NoteEventBuilder::create(960, 240, 72, 70));
   track_.addNote(NoteEventBuilder::create(1440, 240, 76, 70));
 
-  // Gap (simulating removed notes from fixTrackVocalClashes)
-
-  // Chorus notes (low register ~55-57)
+  // More than a bar of rest, then the chorus line enters low (~55-57).
   track_.addNote(NoteEventBuilder::create(3840, 1920, 57, 60));
   track_.addNote(NoteEventBuilder::create(5760, 1920, 55, 60));
   track_.addNote(NoteEventBuilder::create(7680, 1920, 57, 60));
 
   PostProcessor::smoothLargeLeaps(track_);
 
-  // The 57 at tick 3840 creates a leap of |57-76| = 19 > 12, so removed.
-  // Then 55 at tick 5760 creates a leap of |55-76| = 21 > 12, so also removed.
-  // Then 57 at tick 7680 creates a leap of |57-76| = 19 > 12, so also removed.
-  // Only intro notes remain.
-  EXPECT_EQ(track_.notes().size(), 5u);
+  // 76 -> 57 is 19 semitones, but across the rest it is a new phrase entering,
+  // not a leap inside one.
+  EXPECT_EQ(track_.notes().size(), 8u);
+}
 
-  // Verify all remaining notes have no large leaps
-  for (size_t idx = 1; idx < track_.notes().size(); ++idx) {
-    int leap = std::abs(static_cast<int>(track_.notes()[idx].note) -
-                        static_cast<int>(track_.notes()[idx - 1].note));
-    EXPECT_LE(leap, 12) << "Large leap at index " << idx << ": "
-                        << static_cast<int>(track_.notes()[idx - 1].note) << " -> "
-                        << static_cast<int>(track_.notes()[idx].note);
+TEST_F(SmoothLargeLeapsTest, PersistentRegisterShiftIsKept) {
+  // A line that moves up more than an octave and stays there. Every note after
+  // the shift is also more than an octave from the last note before it, so
+  // judging each against that note alone deletes the whole remainder.
+  const uint8_t pitches[] = {57, 59, 60, 74, 76, 74, 72, 74};
+  Tick tick = 0;
+  for (uint8_t pitch : pitches) {
+    track_.addNote(NoteEventBuilder::create(tick, TICKS_PER_BEAT, pitch, 70));
+    tick += TICKS_PER_BEAT;
   }
+  ASSERT_GT(std::abs(74 - 60), 12);
+
+  PostProcessor::smoothLargeLeaps(track_);
+
+  ASSERT_EQ(track_.notes().size(), std::size(pitches));
+  for (size_t idx = 0; idx < std::size(pitches); ++idx) {
+    EXPECT_EQ(track_.notes()[idx].note, pitches[idx]) << idx;
+  }
+}
+
+TEST_F(SmoothLargeLeapsTest, AnIsolatedSpikeInsideAPhraseIsStillRemoved) {
+  track_.addNote(NoteEventBuilder::create(0, TICKS_PER_BEAT, 60, 70));
+  track_.addNote(NoteEventBuilder::create(TICKS_PER_BEAT, TICKS_PER_BEAT, 79, 70));
+  track_.addNote(NoteEventBuilder::create(2 * TICKS_PER_BEAT, TICKS_PER_BEAT, 62, 70));
+
+  PostProcessor::smoothLargeLeaps(track_);
+
+  ASSERT_EQ(track_.notes().size(), 2u);
+  EXPECT_EQ(track_.notes()[0].note, 60);
+  EXPECT_EQ(track_.notes()[1].note, 62);
 }
 
 TEST(PostProcessorTest, FixMotifVocalClashesPinchedRangeResolvesBelowVocal) {

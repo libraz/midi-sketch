@@ -12,7 +12,7 @@
 
 #include "core/basic_types.h"   // For NoteEvent, HihatDensity, Tick, PhraseBoundary
 #include "core/json_helpers.h"  // For json::Writer, json::Parser
-#include "core/melody_types.h"  // For VocalProminence, VocalRhythmBias
+#include "core/melody_types.h"  // For VocalProminence
 
 namespace midisketch {
 
@@ -86,7 +86,6 @@ struct MotifParams {
 
   // Vocal coordination parameters (MelodyLead mode)
   bool response_mode = true;              ///< Increase activity during vocal rests
-  float response_probability = 0.6f;      ///< Probability of playing during vocal rests
   bool contrary_motion = true;            ///< Apply contrary motion to vocal direction
   float contrary_motion_strength = 0.5f;  ///< Strength of contrary motion adjustment
   bool dynamic_register = true;           ///< Dynamically adjust register to avoid vocal
@@ -104,7 +103,6 @@ struct MotifParams {
         .write("rhythm_template", static_cast<int>(rhythm_template))
         .write("melodic_freedom", melodic_freedom)
         .write("response_mode", response_mode)
-        .write("response_probability", response_probability)
         .write("contrary_motion", contrary_motion)
         .write("contrary_motion_strength", contrary_motion_strength)
         .write("dynamic_register", dynamic_register)
@@ -123,7 +121,6 @@ struct MotifParams {
     rhythm_template = static_cast<MotifRhythmTemplate>(p.getInt("rhythm_template", 0));
     melodic_freedom = p.getFloat("melodic_freedom", 0.4f);
     response_mode = p.getBool("response_mode", true);
-    response_probability = p.getFloat("response_probability", 0.6f);
     contrary_motion = p.getBool("contrary_motion", true);
     contrary_motion_strength = p.getFloat("contrary_motion_strength", 0.5f);
     dynamic_register = p.getBool("dynamic_register", true);
@@ -157,7 +154,8 @@ struct MotifChordParams {
   }
 
   void readFrom(const json::Parser& p) {
-    max_chord_count = static_cast<uint8_t>(p.getInt("max_chord_count", 4));
+    json::ReadVisitor v{p};
+    v("max_chord_count", max_chord_count);
   }
 };
 
@@ -179,19 +177,11 @@ struct MotifDrumParams {
 /// @brief Background motif vocal suppression.
 struct MotifVocalParams {
   VocalProminence prominence = VocalProminence::Background;
-  VocalRhythmBias rhythm_bias = VocalRhythmBias::Sparse;
-  uint8_t interval_limit = 4;  ///< Max interval in semitones (3rd=4, 5th=7)
 
-  void writeTo(json::Writer& w) const {
-    w.write("prominence", static_cast<int>(prominence))
-        .write("rhythm_bias", static_cast<int>(rhythm_bias))
-        .write("interval_limit", static_cast<int>(interval_limit));
-  }
+  void writeTo(json::Writer& w) const { w.write("prominence", static_cast<int>(prominence)); }
 
   void readFrom(const json::Parser& p) {
     prominence = static_cast<VocalProminence>(p.getInt("prominence", 1));
-    rhythm_bias = static_cast<VocalRhythmBias>(p.getInt("rhythm_bias", 2));
-    interval_limit = static_cast<uint8_t>(p.getInt("interval_limit", 4));
   }
 };
 

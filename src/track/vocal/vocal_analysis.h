@@ -61,7 +61,7 @@ VocalAnalysis analyzeVocal(const MidiTrack& vocal_track);
 /// Get vocal note density for a section (0.0-1.0).
 float getVocalDensityForSection(const VocalAnalysis& va, const Section& section);
 
-/// Get vocal pitch direction at tick: +1=up, -1=down, 0=none.
+/// Get vocal pitch direction at tick: +1=up, -1=down, 0=none (also 0 once the note has ended).
 int8_t getVocalDirectionAt(const VocalAnalysis& va, Tick tick);
 
 /// Get vocal MIDI pitch at tick (0-127), or 0 if silent.

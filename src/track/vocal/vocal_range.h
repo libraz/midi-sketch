@@ -30,6 +30,10 @@ struct VocalRangeResult {
 /// consider the other tracks -- a part that wants to stay out of the vocal's way
 /// moves itself, because the vocal is written first.
 ///
+/// The bounds are internal C major pitches: the vocal sounds them shifted by the
+/// key. Lowering the ceiling by the modulation keeps every note after the key
+/// change inside the same key-shifted window as the notes before it.
+///
 /// @param params Generation parameters
 /// @param song Song with modulation info
 /// @return Calculated vocal range

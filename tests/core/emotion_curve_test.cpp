@@ -47,6 +47,35 @@ TEST(EmotionCurveTest, PlannedAfterPlan) {
   EXPECT_EQ(curve.size(), sections.size());
 }
 
+TEST(EmotionCurveTest, OchisabiChorusIsQuieterThanTheChorusAroundItAndNeverThePeak) {
+  std::vector<Section> sections = buildStructure(StructurePattern::DriveUpbeat);
+  std::vector<size_t> choruses;
+  for (size_t idx = 0; idx < sections.size(); ++idx) {
+    if (sections[idx].type == SectionType::Chorus) choruses.push_back(idx);
+  }
+  ASSERT_GE(choruses.size(), 3u);
+
+  // The middle chorus is the quiet one; the final chorus stays the peak.
+  const size_t quiet = choruses[choruses.size() - 2];
+  const size_t last = choruses.back();
+  EmotionCurve baseline;
+  baseline.plan(sections, Mood::ModernPop);
+  sections[quiet].modifier = SectionModifier::Ochisabi;
+  sections[quiet].modifier_intensity = 100;
+  EmotionCurve curve;
+  curve.plan(sections, Mood::ModernPop);
+
+  EXPECT_LT(curve.getEmotion(quiet).energy, baseline.getEmotion(quiet).energy);
+  EXPECT_LT(curve.getEmotion(quiet).energy, curve.getEmotion(last).energy);
+
+  // An ochisabi that is the final chorus must not be promoted to the peak.
+  sections[last].modifier = SectionModifier::Ochisabi;
+  sections[last].modifier_intensity = 100;
+  EmotionCurve trailing;
+  trailing.plan(sections, Mood::ModernPop);
+  EXPECT_LT(trailing.getEmotion(last).energy, baseline.getEmotion(last).energy);
+}
+
 // The post-processing pipeline hands energy to calculateVelocityCeiling and to
 // the section velocity factor, both of which are written for a 0.0-1.0 level.
 // Mood scaling multiplies the whole curve by up to 1.2 before the clamp, so it

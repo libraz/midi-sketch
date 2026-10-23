@@ -16,6 +16,7 @@
 #include "core/arrangement.h"
 #include "core/basic_types.h"
 #include "core/chord.h"
+#include "core/chord_utils.h"
 #include "core/config_converter.h"
 #include "core/generator.h"
 #include "core/i_harmony_coordinator.h"
@@ -1760,5 +1761,53 @@ TEST_F(GuitarGenerationTest, StrumVoicesKeepDistinctPitchesThroughTheVoiceLimitF
     EXPECT_EQ(collapsed, 0u) << where << " rakes " << collapsed
                              << " chords that state one pitch on two strings, the first at tick "
                              << first_bad;
+  }
+}
+
+// Power chords and the RhythmChord figure take the chord's own fifth: over a
+// diminished chord that is the diminished fifth, not a perfect fifth outside it.
+TEST_F(GuitarGenerationTest, RootFifthFiguresStateTheDiminishedFifth) {
+  params_.mood = Mood::Anthem;  // Overdriven = power chords
+  params_.seed = 42;
+  Generator gen;
+  gen.generate(params_);
+
+  auto* harmony = dynamic_cast<IHarmonyCoordinator*>(&gen.getHarmonyContext());
+  ASSERT_NE(harmony, nullptr);
+  const Tick song_end = gen.getSong().arrangement().totalTicks();
+  ASSERT_GT(song_end, 0u);
+
+  for (int8_t degree : {int8_t{6}, int8_t{14}}) {  // vii° and #IVdim
+    harmony->registerChordReplacement(0, song_end, degree, ChordExtension::None, false);
+    const ChordTones tones = harmony->getChordTonesAt(0);
+    const std::set<int> chord_pcs(tones.begin(), tones.end());
+    ASSERT_EQ(chord_pcs.size(), 3u);
+
+    for (GuitarStyle style : {GuitarStyle::PowerChord, GuitarStyle::RhythmChord}) {
+      const uint8_t hint = static_cast<uint8_t>(static_cast<uint8_t>(style) + 1);
+      auto sections = gen.getSong().arrangement().sections();
+      for (auto& section : sections) section.guitar_style_hint = hint;
+      gen.getSong().setArrangement(Arrangement(sections));
+
+      gen.getSong().guitar().clear();
+      GuitarGenerator guitar_gen;
+      std::mt19937 rng(42);
+      FullTrackContext ctx;
+      ctx.song = &gen.getSong();
+      ctx.params = &gen.getParams();
+      ctx.rng = &rng;
+      ctx.harmony = harmony;
+      guitar_gen.generateFullTrack(gen.getSong().guitar(), ctx);
+
+      const auto& notes = gen.getSong().guitar().notes();
+      ASSERT_FALSE(notes.empty()) << "degree " << static_cast<int>(degree) << " hint "
+                                  << static_cast<int>(hint);
+      for (const auto& note : notes) {
+        EXPECT_EQ(chord_pcs.count(note.note % 12), 1u)
+            << "degree " << static_cast<int>(degree) << " hint " << static_cast<int>(hint)
+            << ": pitch class " << note.note % 12 << " at tick " << note.start_tick
+            << " is not a tone of the diminished chord";
+      }
+    }
   }
 }

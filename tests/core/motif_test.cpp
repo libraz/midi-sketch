@@ -301,7 +301,6 @@ TEST_F(MotifTest, MotifRoleMetaHookProperties) {
 
   EXPECT_EQ(meta.role, MotifRole::Hook);
   EXPECT_GT(meta.exact_repeat_prob, 0.8f);  // High repetition
-  EXPECT_LT(meta.variation_range, 0.2f);    // Low variation
   EXPECT_GT(meta.velocity_base, 80u);       // Prominent
   EXPECT_TRUE(meta.allow_octave_layer);
 }
@@ -311,7 +310,6 @@ TEST_F(MotifTest, MotifRoleMetaTextureProperties) {
 
   EXPECT_EQ(meta.role, MotifRole::Texture);
   EXPECT_LT(meta.exact_repeat_prob, 0.7f);  // More variation allowed
-  EXPECT_GT(meta.variation_range, 0.3f);    // Moderate variation
   EXPECT_LT(meta.velocity_base, 80u);       // Softer
   EXPECT_FALSE(meta.allow_octave_layer);    // No octave for texture
 }
@@ -321,7 +319,6 @@ TEST_F(MotifTest, MotifRoleMetaCounterProperties) {
 
   EXPECT_EQ(meta.role, MotifRole::Counter);
   EXPECT_GT(meta.exact_repeat_prob, 0.5f);  // Moderate repetition
-  EXPECT_LT(meta.variation_range, 0.5f);    // Some variation
   EXPECT_TRUE(meta.allow_octave_layer);
 }
 

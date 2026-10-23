@@ -88,19 +88,19 @@ class PostProcessor {
   // @param harmony Harmony context for inter-track collision checking during sustain
   static void applyAllExitPatterns(std::vector<MidiTrack*>& tracks,
                                    const std::vector<Section>& sections,
-                                   ICollisionDetector* harmony = nullptr);
+                                   IHarmonyContext* harmony = nullptr);
   static void applyAllExitPatterns(std::vector<MidiTrack*>& tracks,
                                    const std::vector<TrackRole>& roles,
                                    const std::vector<Section>& sections,
-                                   ICollisionDetector* harmony = nullptr);
+                                   IHarmonyContext* harmony = nullptr);
 
   // Applies a single exit pattern to one track within a section.
   // @param track Track to modify (in-place)
   // @param section Section defining the exit pattern and time range
-  // @param harmony Collision detector for inter-track collision checking
+  // @param harmony Harmony context for inter-track collision checking
   // @param track_role TrackRole for collision checking
   static void applyExitPattern(MidiTrack& track, const Section& section,
-                               ICollisionDetector* harmony = nullptr,
+                               IHarmonyContext* harmony = nullptr,
                                TrackRole track_role = TrackRole::Vocal);
 
   // ============================================================================
@@ -292,7 +292,7 @@ class PostProcessor {
   static void applyExitCutOff(std::vector<NoteEvent>& notes, Tick section_start, Tick section_end);
   static void applyExitSustain(std::vector<NoteEvent>& notes, Tick section_start, Tick section_end,
                                const IChordLookup* chord_lookup = nullptr,
-                               const ICollisionDetector* harmony = nullptr,
+                               const IHarmonyContext* harmony = nullptr,
                                TrackRole track_role = TrackRole::Vocal);
 };
 

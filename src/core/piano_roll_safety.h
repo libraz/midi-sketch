@@ -12,23 +12,25 @@
 
 namespace midisketch {
 
+class IChordLookup;
 class Song;
 
 // ============================================================================
 // Collision Detection Types
 // ============================================================================
 
-// Collision severity with BGM notes.
+// Collision severity with BGM notes, as the generation rule (isClashingPair)
+// judges the pair under the chord sounding at the tick.
 enum class CollisionType : uint8_t {
   None,   // No collision
-  Mild,   // Tritone (context-dependent)
-  Severe  // Minor 2nd or Major 7th (always dissonant)
+  Mild,   // Tritone the sounding chord does not own
+  Severe  // Minor 2nd/9th, or a major 7th the sounding chord does not own
 };
 
 // Detailed collision result.
 struct CollisionResult {
   CollisionType type = CollisionType::None;
-  uint8_t interval = 0;                // Interval in semitones (1, 6, or 11)
+  uint8_t interval = 0;                // Interval class in semitones (1, 6, or 11)
   TrackRole track = TrackRole::Vocal;  // Which track caused collision
   uint8_t colliding_pitch = 0;         // The colliding note's pitch
 };
@@ -38,19 +40,23 @@ struct CollisionResult {
 // ============================================================================
 
 // Check for BGM collision at a specific tick.
-// Checks against Chord, Bass, Arpeggio, and Aux tracks.
+// Checks against Chord, Bass, Arpeggio, Aux, Motif, and Guitar tracks.
 // @param song The generated song containing all tracks
+// @param chords Chord timeline the song was generated against
 // @param tick Position to check
 // @param pitch MIDI pitch to check for collision
 // @returns CollisionResult with collision details
-CollisionResult checkBgmCollisionDetailed(const Song& song, Tick tick, uint8_t pitch);
+CollisionResult checkBgmCollisionDetailed(const Song& song, const IChordLookup& chords, Tick tick,
+                                          uint8_t pitch);
 
 // Simple collision check returning only the type.
 // @param song The generated song
+// @param chords Chord timeline the song was generated against
 // @param tick Position to check
 // @param pitch MIDI pitch to check
 // @returns CollisionType (None, Mild, or Severe)
-CollisionType checkBgmCollision(const Song& song, Tick tick, uint8_t pitch);
+CollisionType checkBgmCollision(const Song& song, const IChordLookup& chords, Tick tick,
+                                uint8_t pitch);
 
 // ============================================================================
 // Key Detection Functions

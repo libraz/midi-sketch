@@ -38,14 +38,12 @@ bool avoidsVocalUnison(TrackRole role) {
 
 /// Pull an extension's end back to just before the vocal first sounds the note's
 /// pitch inside it. The note's own length is kept: only the stretch is limited.
-Tick clampExtensionBeforeVocalUnison(const ICollisionDetector* detector, TrackRole role,
-                                     uint8_t pitch, Tick start, Tick original_end,
-                                     Tick proposed_end) {
-  if (detector == nullptr || !avoidsVocalUnison(role) || proposed_end <= original_end) {
+Tick clampExtensionBeforeVocalUnison(const IHarmonyContext* harmony, TrackRole role, uint8_t pitch,
+                                     Tick start, Tick original_end, Tick proposed_end) {
+  if (harmony == nullptr || !avoidsVocalUnison(role) || proposed_end <= original_end) {
     return proposed_end;
   }
-  const auto* harmony = dynamic_cast<const IHarmonyContext*>(detector);
-  if (harmony == nullptr || !vocalSoundsPitch(*harmony, pitch, start, proposed_end)) {
+  if (!vocalSoundsPitch(*harmony, pitch, start, proposed_end)) {
     return proposed_end;
   }
   // Smallest end whose window [start, end) reaches the vocal's unison.
@@ -143,7 +141,7 @@ void PostProcessor::applyExitCutOff(std::vector<NoteEvent>& notes, Tick section_
 
 void PostProcessor::applyExitSustain(std::vector<NoteEvent>& notes, Tick section_start,
                                      Tick section_end, const IChordLookup* chord_lookup,
-                                     const ICollisionDetector* harmony, TrackRole track_role) {
+                                     const IHarmonyContext* harmony, TrackRole track_role) {
   // Extend duration of notes in the last bar to reach section boundary,
   // but cap each note's extension at the start of the next chord to prevent overlaps
   Tick last_bar_start = section_end - TICKS_PER_BAR;
@@ -222,7 +220,7 @@ void PostProcessor::applyExitSustain(std::vector<NoteEvent>& notes, Tick section
 // ============================================================================
 
 void PostProcessor::applyExitPattern(MidiTrack& track, const Section& section,
-                                     ICollisionDetector* harmony, TrackRole track_role) {
+                                     IHarmonyContext* harmony, TrackRole track_role) {
   if (section.exit_pattern == ExitPattern::None) {
     return;
   }
@@ -253,7 +251,7 @@ void PostProcessor::applyExitPattern(MidiTrack& track, const Section& section,
 
 void PostProcessor::applyAllExitPatterns(std::vector<MidiTrack*>& tracks,
                                          const std::vector<Section>& sections,
-                                         ICollisionDetector* harmony) {
+                                         IHarmonyContext* harmony) {
   std::vector<TrackRole> empty_roles;
   applyAllExitPatterns(tracks, empty_roles, sections, harmony);
 }
@@ -261,7 +259,7 @@ void PostProcessor::applyAllExitPatterns(std::vector<MidiTrack*>& tracks,
 void PostProcessor::applyAllExitPatterns(std::vector<MidiTrack*>& tracks,
                                          const std::vector<TrackRole>& roles,
                                          const std::vector<Section>& sections,
-                                         ICollisionDetector* harmony) {
+                                         IHarmonyContext* harmony) {
   for (const auto& section : sections) {
     if (section.exit_pattern == ExitPattern::None) {
       continue;

@@ -31,6 +31,7 @@
 #include "midisketch.h"
 #include "test_helpers/note_event_test_helper.h"
 #include "test_support/stub_harmony_context.h"
+#include "track/aux/aux_pitch.h"
 
 namespace midisketch {
 namespace {
@@ -1525,6 +1526,34 @@ TEST(AuxChorusBehaviorTest, EmotionalPadProducesSustainedNotes) {
 // ============================================================================
 // Part 15: Dissonance Regression Tests (from aux_dissonance_regression_test.cpp)
 // ============================================================================
+
+// The aux check against the lead answers on the actual interval, as the engine's
+// one rule does: a compound minor second two octaves up is not a clash, and a
+// tritone the dominant owns is not one either.
+TEST(AuxPitchSafety, MelodyCheckAgreesWithTheActualIntervalRule) {
+  Section section = makeSection(SectionType::Chorus, 2, 0);
+  Arrangement arrangement({section});
+  HarmonyContext harmony;
+  harmony.initialize(arrangement, getChordProgression(0), Mood::StraightPop);
+  const Tick on_tonic = 0;
+  const Tick on_dominant = TICKS_PER_BAR;
+  ASSERT_EQ(harmony.getChordDegreeAt(on_tonic), 0);
+  ASSERT_EQ(harmony.getChordDegreeAt(on_dominant), 4);
+
+  // The lead sits low so every interval stays inside the aux register above it.
+  const uint8_t lead = 41;  // F2
+  for (Tick tick : {on_tonic, on_dominant}) {
+    const std::vector<NoteEvent> melody = {
+        NoteEventBuilder::create(tick, TICKS_PER_BEAT, lead, 90)};
+    for (int semitones : {1, 11, 13, 23, 25, 35, 6, 18, 30}) {
+      const uint8_t pitch = static_cast<uint8_t>(lead + semitones);
+      const bool expected = !isDissonantActualInterval(semitones, harmony.getChordDegreeAt(tick));
+      EXPECT_EQ(isConsonantWithMelodyAndTracks(pitch, tick, TICKS_PER_BEAT, &melody, harmony, 0.0f),
+                expected)
+          << "interval " << semitones << " at tick " << tick;
+    }
+  }
+}
 
 TEST(AuxChordBoundaryRegression, SmallOverlapShouldBeTrimmed) {
   Section section = makeSection(SectionType::Chorus, 8, 0);

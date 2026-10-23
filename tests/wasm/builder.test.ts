@@ -633,6 +633,20 @@ describe('SongConfigBuilder', () => {
       expect(config.chordExtProbExplicit).toBe(true);
     });
 
+    it('should mark hook intensity and vocal groove explicit for the core', () => {
+      const untouched = new SongConfigBuilder(0).build();
+      expect(untouched.hookIntensityExplicit).toBe(false);
+      expect(untouched.vocalGrooveExplicit).toBe(false);
+
+      const builder = new SongConfigBuilder(0).setHookIntensity(1).setVocalGroove(2);
+      builder.resetKeepExplicit();
+      const config = builder.build();
+      expect(config.hookIntensity).toBe(1);
+      expect(config.hookIntensityExplicit).toBe(true);
+      expect(config.vocalGroove).toBe(2);
+      expect(config.vocalGrooveExplicit).toBe(true);
+    });
+
     it('should keep explicitly set values', () => {
       const builder = new SongConfigBuilder(0).setSeed(12345).setBpm(150);
 

@@ -103,10 +103,13 @@ int runInputMode(const ParsedArgs& args) {
       std::cout << "\nSaved: " << absoluteOutputPath(analysis_output) << "\n";
     }
 
+    if (args.json_output && inspectionRequested(args)) {
+      noteInspectionOmitted();
+    }
     if (!args.json_output && args.bar_num > 0) {
       showBarNotes(midi, args.bar_num);
     }
-    if (!args.json_output && args.dump_collisions_tick > 0) {
+    if (!args.json_output && args.dump_collisions_requested) {
       showTickNotes(midi, args.dump_collisions_tick);
     }
   } else if (midisketch::MidiReader::isSMF2Format(file_data.data(), file_data.size())) {
@@ -142,7 +145,7 @@ int runInputMode(const ParsedArgs& args) {
 
       std::cout << "Note: Dissonance analysis for SMF2 is not yet implemented.\n";
       std::cout << "Use --format smf1 when generating to enable full analysis.\n";
-      if (args.bar_num > 0 || args.dump_collisions_tick > 0) {
+      if (inspectionRequested(args)) {
         std::cout << "Bar/tick note inspection for SMF2 input is not implemented.\n";
       }
     }

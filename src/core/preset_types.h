@@ -53,7 +53,7 @@ enum class Mood : uint8_t {
 enum class CompositionStyle : uint8_t {
   MelodyLead = 0,   ///< Traditional: melody is foreground
   BackgroundMotif,  ///< chord-pulse style: motif is foreground
-  SynthDriven       ///< Synth/arpeggio as foreground, vocals subdued
+  SynthDriven       ///< Synth/arpeggio as foreground; no vocal unless generateVocal asks
 };
 
 // Note: MotifLength, MotifRhythmDensity, MotifMotion, MotifRepeatScope
@@ -199,20 +199,23 @@ struct StylePreset {
 
   /// Constraint parameters
   StyleMelodyParams melody;
-  uint8_t se_density;  ///< 0=none, 1=low, 2=med, 3=high
 };
 
 /// @brief Song configuration replacing GeneratorParams (new API).
 struct SongConfig {
   /// Style selection
   uint8_t style_preset_id = 0;
-  uint8_t blueprint_id = 0;    ///< Production blueprint ID (0 = Traditional, 255 = random)
-  uint8_t mood = 0;            ///< Mood preset ID (0-19)
+  /// Production blueprint ID (0-9, 255 = random). The struct and a JSON config
+  /// that omits it give 0 (Traditional); createDefaultSongConfig gives 255.
+  uint8_t blueprint_id = 0;
+  uint8_t mood = 0;            ///< Mood preset ID (0-23)
   bool mood_explicit = false;  ///< True if mood was explicitly set by user
 
   /// Layer 1: Song base
   Key key = Key::C;
-  uint16_t bpm = 0;   ///< 0 = use style default
+  /// 0 = implicit: a named blueprint's tempo, else the explicit mood's, else the
+  /// style preset's (resolveTempo)
+  uint16_t bpm = 0;
   uint32_t seed = 0;  ///< 0 = random
 
   /// Layer 2: Chord progression
@@ -284,7 +287,9 @@ struct SongConfig {
   /// === Melodic complexity and hook control ===
   MelodicComplexity melodic_complexity = MelodicComplexity::Standard;
   HookIntensity hook_intensity = HookIntensity::Normal;
+  bool hook_intensity_explicit = false;  ///< True if hook_intensity was explicitly set by user
   VocalGrooveFeel vocal_groove = VocalGrooveFeel::Straight;
+  bool vocal_groove_explicit = false;  ///< True if vocal_groove was explicitly set by user
 
   /// Syncopation control
   bool enable_syncopation = false;  ///< Enable syncopation effects in melody rhythm
@@ -293,7 +298,7 @@ struct SongConfig {
   EnergyCurve energy_curve = EnergyCurve::GradualBuild;
 
   /// Melody parameter overrides (0/0xFF = use preset default)
-  uint8_t melody_max_leap = 0;                     ///< 0=preset default, 1-12=override
+  uint8_t melody_max_leap = 0;                     ///< 0=blueprint budget, 1-12=caps it
   uint8_t melody_syncopation_prob = 0xFF;          ///< 0xFF=preset default, 0-100=override
   uint8_t melody_phrase_length = 0;                ///< 0=preset default, 1-8 bars
   uint8_t melody_long_note_ratio = 0xFF;           ///< 0xFF=preset default, 0-100=override
@@ -320,7 +325,7 @@ struct SongConfig {
   /// Visitor-based JSON serialization for config interchange (WASM/CLI/metadata)
   /// Field list is defined once in visitFields; writeTo/readFrom delegate to visitors.
   template <typename Self, typename V>
-  static void visitFields(Self&& self, V&& v) {
+  static constexpr void visitFields(Self&& self, V&& v) {
     v("style_preset_id", self.style_preset_id);
     v("blueprint_id", self.blueprint_id);
     v("mood", self.mood);
@@ -360,7 +365,9 @@ struct SongConfig {
     v("melody_template", self.melody_template);
     v("melodic_complexity", self.melodic_complexity);
     v("hook_intensity", self.hook_intensity);
+    v("hook_intensity_explicit", self.hook_intensity_explicit);
     v("vocal_groove", self.vocal_groove);
+    v("vocal_groove_explicit", self.vocal_groove_explicit);
     v("enable_syncopation", self.enable_syncopation);
     v("energy_curve", self.energy_curve);
     v("addictive_mode", self.addictive_mode);
@@ -406,9 +413,9 @@ struct SongConfig {
 /// @brief Input parameters for MIDI generation.
 struct GeneratorParams {
   /// Core parameters
-  StructurePattern structure = StructurePattern::StandardPop;  ///< Song structure pattern (0-4)
-  Mood mood = Mood::StraightPop;                               ///< Mood/groove preset (0-15)
-  uint8_t chord_id = 0;                                        ///< Chord progression ID (0-15)
+  StructurePattern structure = StructurePattern::StandardPop;  ///< Song structure pattern (0-17)
+  Mood mood = Mood::StraightPop;                               ///< Mood/groove preset (0-23)
+  uint8_t chord_id = 0;                                        ///< Chord progression ID (0-21)
   Key key = Key::C;                                            ///< Output key
   uint8_t style_preset_id = 0;  ///< Style preset ID (for metadata/regeneration)
   uint8_t blueprint_id = 0;     ///< Production blueprint ID (0 = Traditional, 255 = random)
@@ -429,7 +436,7 @@ struct GeneratorParams {
   /// Note: Modulation is controlled via params_.modulation_timing (set from SongConfig)
   uint8_t vocal_low = 60;                ///< Vocal range lower bound (MIDI note)
   uint8_t vocal_high = 79;               ///< Vocal range upper bound (MIDI note)
-  uint16_t bpm = 0;                      ///< Tempo (0 = use mood default)
+  uint16_t bpm = 0;                      ///< Tempo (0 = implicit, see resolveTempo)
   uint32_t seed = 0;                     ///< Random seed (0 = auto)
   uint16_t target_duration_seconds = 0;  ///< 0 = use structure pattern, >0 = auto-generate
 
@@ -468,8 +475,7 @@ struct GeneratorParams {
   /// Vocal expression parameters
   VocalAttitude vocal_attitude = VocalAttitude::Clean;
   VocalStylePreset vocal_style = VocalStylePreset::Auto;  ///< Vocal style preset
-  StyleMelodyParams melody_params =
-      {};  ///< Default: 7 semitone leap, unison ok, 0.8 resolution, 0.2 tension
+  StyleMelodyParams melody_params = {};  ///< Default: 7 semitone leap, unison ok, 0.2 tension
 
   /// Melody template (Auto = use style default)
   MelodyTemplateId melody_template = MelodyTemplateId::Auto;
@@ -490,13 +496,20 @@ struct GeneratorParams {
   bool addictive_mode = false;  ///< Enable Behavioral Loop mode (fixed riff, maximum hook)
 
   /// Explicit parameter flags (true = user explicitly set the value)
-  bool bpm_explicit = false;           ///< True if BPM was explicitly set (skip RhythmSync clamp)
-  uint16_t auto_bpm_fallback = 120;    ///< Mood/style fallback when blueprint has no tempo
-  bool motif_length_explicit = false;  ///< True if motif length was explicitly set
+  bool bpm_explicit = false;  ///< True if BPM was explicitly set (skip RhythmSync clamp)
+  /// Implicit tempo reference (explicit mood's, else style preset's): a drawn
+  /// blueprint is drawn to hold it and resolveTempo clamps it into that
+  /// blueprint's range; a named blueprint's own tempo outranks it.
+  uint16_t auto_bpm_fallback = 120;
+  bool motif_length_explicit = false;          ///< True if motif length was explicitly set
   bool motif_note_count_explicit = false;      ///< True if motif note_count was explicitly set
   bool motif_rhythm_density_explicit = false;  ///< True if motif rhythm_density was explicitly set
-  bool melody_max_leap_override = false;
+  bool melody_max_leap_override = false;  ///< True if melody_max_leap was set; only then it caps
   bool melody_long_note_ratio_override = false;
+  bool melody_syncopation_override = false;  ///< True if melody_syncopation_prob was set by user
+  bool vocal_style_explicit = false;         ///< True if vocal_style was not Auto in the config
+  bool hook_intensity_explicit = false;      ///< True if hook_intensity was explicitly set
+  bool vocal_groove_explicit = false;        ///< True if vocal_groove was explicitly set
 
   /// Energy curve for overall song dynamics
   /// Controls how section energy is distributed across the song:

@@ -11,6 +11,7 @@
 #include "core/generator.h"
 #include "core/types.h"
 #include "midi/midi_writer.h"
+#include "track/vocal/vocal_range.h"
 
 namespace midisketch {
 namespace {
@@ -212,6 +213,22 @@ TEST_F(ModulationVocalRangeTest, BGMModeVocalRangeWithModulation) {
   // Allow +1 semitone tolerance for BGM mode edge cases (similar to other tests allowing +2)
   EXPECT_LE(max_after_mod, params.vocal_high + 1)
       << "BGM mode vocal should stay close to specified range after modulation";
+}
+
+// The ceiling gives up headroom only for a modulation that happens: an amount
+// with no point after the start is no modulation and leaves the range alone.
+TEST_F(ModulationVocalRangeTest, CeilingReservesHeadroomOnlyForARealModulation) {
+  GeneratorParams params;
+  params.vocal_low = 60;
+  params.vocal_high = 79;
+
+  Song unmodulated;
+  unmodulated.setModulation(0, 4);
+  EXPECT_EQ(calculateEffectiveVocalRange(params, unmodulated).effective_high, 79);
+
+  Song modulated;
+  modulated.setModulation(16 * TICKS_PER_BAR, 4);
+  EXPECT_EQ(calculateEffectiveVocalRange(params, modulated).effective_high, 75);
 }
 
 }  // namespace

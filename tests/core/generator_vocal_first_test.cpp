@@ -5,8 +5,12 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
+
 #include "core/generator.h"
 #include "core/json_helpers.h"
+#include "core/note_creator.h"
+#include "core/track_collision_detector.h"
 #include "core/types.h"
 #include "test_support/generator_test_fixture.h"
 #include "test_support/test_constants.h"
@@ -663,8 +667,12 @@ TEST_F(GeneratorVocalFirstTest, RefineVocalForAccompanimentReducesClashes) {
   const auto& song = gen.getSong();
   const auto& vocal = song.vocal().notes();
   const auto& chord = song.chord().notes();
+  const IHarmonyContext& harmony = gen.getHarmonyContext();
+  ASSERT_FALSE(vocal.empty());
+  ASSERT_FALSE(chord.empty());
 
-  // Count dissonant intervals (minor 2nd = 1, major 7th = 11 semitones)
+  // Count clashes under the pair verdict the refinement answers to: a seventh
+  // or ninth the sounding chord owns is not one.
   int dissonant_count = 0;
   for (const auto& v_note : vocal) {
     Tick v_start = v_note.start_tick;
@@ -676,8 +684,13 @@ TEST_F(GeneratorVocalFirstTest, RefineVocalForAccompanimentReducesClashes) {
 
       // Check for overlap
       if (v_start < c_end && c_start < v_end) {
-        int interval = std::abs(static_cast<int>(v_note.note) - static_cast<int>(c_note.note)) % 12;
-        if (interval == 1 || interval == 11) {
+        int interval = std::abs(static_cast<int>(v_note.note) - static_cast<int>(c_note.note));
+        Tick overlap_start = std::max(v_start, c_start);
+        Tick overlap = std::min(v_end, c_end) - overlap_start;
+        if (!isToleratedMelodicTension(interval, overlap, v_note.note, c_note.note, overlap_start,
+                                       TrackRole::Vocal, TrackRole::Chord) &&
+            isClashingPair(v_note.note, TrackRole::Vocal, c_note.note, TrackRole::Chord, &harmony,
+                           v_start, overlap_start)) {
           dissonant_count++;
         }
       }
@@ -689,6 +702,120 @@ TEST_F(GeneratorVocalFirstTest, RefineVocalForAccompanimentReducesClashes) {
       static_cast<float>(dissonant_count) / std::max(1u, static_cast<unsigned>(vocal.size()));
   EXPECT_LE(clash_ratio, 0.05f) << "Vocal feedback loop should minimize clashes. Found: "
                                 << (clash_ratio * 100) << "%";
+}
+
+// The seventh of a registered maj7 is the colour the chord is named for, so the
+// vocal-first refinement leaves a sung seventh where the singer put it.
+TEST_F(GeneratorVocalFirstTest, RefinementKeepsTheSeventhOfARegisteredMaj7) {
+  params_.chord_extension.enable_7th = true;
+  params_.chord_extension.seventh_probability = 1.0f;
+
+  auto isMaj7OnRoot = [](const IHarmonyContext& harmony, Tick tick) {
+    const int8_t degree = harmony.getChordDegreeAt(tick);
+    if (degree != 0 && degree != 3) return false;
+    if (harmony.getChordExtensionAt(tick) != ChordExtension::Maj7) return false;
+    const Tick next = harmony.getNextChordEntryTick(tick);
+    return next == 0 || next >= tick + TICKS_PER_BEAT;
+  };
+
+  Generator probe;
+  probe.generateWithVocal(params_);
+  const Tick total = probe.getSong().arrangement().totalTicks();
+  Tick maj7_tick = 0;
+  bool found = false;
+  for (Tick tick = 0; tick < total && !found; tick += TICKS_PER_BAR) {
+    if (isMaj7OnRoot(probe.getHarmonyContext(), tick)) {
+      maj7_tick = tick;
+      found = true;
+    }
+  }
+  ASSERT_TRUE(found) << "the plan must contain a maj7 on I or IV";
+
+  // B4 over Cmaj7, E5 over Fmaj7: both inside the 60-84 vocal window.
+  const uint8_t seventh =
+      probe.getHarmonyContext().getChordDegreeAt(maj7_tick) == 0 ? uint8_t{71} : uint8_t{76};
+  Generator gen;
+  gen.setVocalNotes(params_, {NoteEventBuilder::create(maj7_tick, TICKS_PER_BEAT, seventh, 100)});
+  gen.generateAccompanimentForVocal();
+
+  ASSERT_TRUE(isMaj7OnRoot(gen.getHarmonyContext(), maj7_tick))
+      << "the accompaniment pass must plan the same maj7 at tick " << maj7_tick;
+  const auto& vocal = gen.getSong().vocal().notes();
+  auto it = std::find_if(vocal.begin(), vocal.end(),
+                         [&](const NoteEvent& n) { return n.start_tick == maj7_tick; });
+  ASSERT_NE(it, vocal.end());
+  EXPECT_EQ(it->note, seventh) << "the chord's own seventh is not a clash to refine away";
+}
+
+// A unison is consonant by every interval rule, so a resolver that only asks
+// for consonance can move the vocal onto a pitch the accompaniment is already
+// sounding, where the melody is no longer heard as its own line.
+TEST_F(GeneratorVocalFirstTest, RefinementNeverMovesTheVocalOntoASoundingAccompanimentPitch) {
+  // The generation paths voice the accompaniment around the vocal, so the
+  // state is built directly: an E4 sung over I against a chord holding C4, F4
+  // and G4. F4 is a minor second above the vocal; C4 is a consonant pitch the
+  // candidate search offers, and the one the vocal must not move onto.
+  Generator gen;
+  gen.setVocalNotes(params_, {NoteEventBuilder::create(0, TICKS_PER_BEAT, 64, 100)});
+  ASSERT_EQ(gen.getHarmonyContext().getChordDegreeAt(0), 0);
+  for (uint8_t pitch : {uint8_t{60}, uint8_t{65}, uint8_t{67}}) {
+    gen.getSong().chord().addNote(NoteEventBuilder::create(0, TICKS_PER_BEAT, pitch, 80));
+    gen.getHarmonyContext().registerNote(0, TICKS_PER_BEAT, pitch, TrackRole::Chord);
+  }
+  const IHarmonyContext& harmony = gen.getHarmonyContext();
+  const auto& chord = gen.getSong().chord().notes();
+
+  // What the refinement is about to see: notes that clash, and among the
+  // replacements offered for them, those that would double the accompaniment.
+  int clashing = 0;
+  int unison_candidates = 0;
+  for (const auto& note : gen.getSong().vocal().notes()) {
+    const Tick end = note.start_tick + note.duration;
+    bool clashes = false;
+    for (const auto& other : chord) {
+      const int interval = std::abs(static_cast<int>(note.note) - other.note);
+      const Tick overlap_start = std::max(note.start_tick, other.start_tick);
+      const Tick overlap = std::min(end, other.start_tick + other.duration) - overlap_start;
+      if (!isToleratedMelodicTension(interval, overlap, note.note, other.note, overlap_start,
+                                     TrackRole::Vocal, TrackRole::Chord) &&
+          isClashingPair(note.note, TrackRole::Vocal, other.note, TrackRole::Chord, &harmony,
+                         note.start_tick, overlap_start)) {
+        clashes = true;
+      }
+    }
+    if (!clashes) continue;
+    ++clashing;
+    const auto sounding = harmony.getSoundingPitches(note.start_tick, end, TrackRole::Vocal);
+    for (const auto& candidate :
+         getSafePitchCandidates(harmony, note.note, note.start_tick, note.duration,
+                                TrackRole::Vocal, params_.vocal_low, params_.vocal_high)) {
+      if (std::find(sounding.begin(), sounding.end(), candidate.pitch) != sounding.end()) {
+        ++unison_candidates;
+      }
+    }
+  }
+
+  const std::vector<NoteEvent> before = gen.getSong().vocal().notes();
+  gen.refineVocalForAccompaniment(2);
+  const auto& after = gen.getSong().vocal().notes();
+  ASSERT_EQ(after.size(), before.size());
+  int moved = 0;
+  for (size_t idx = 0; idx < after.size(); ++idx) {
+    const auto& note = after[idx];
+    if (note.note == before[idx].note) continue;
+    ++moved;
+    const Tick end = note.start_tick + note.duration;
+    for (const auto& other : chord) {
+      const bool overlaps =
+          other.start_tick < end && other.start_tick + other.duration > note.start_tick;
+      EXPECT_FALSE(overlaps && other.note == note.note)
+          << "vocal moved to " << static_cast<int>(note.note) << " at tick " << note.start_tick
+          << " doubles a sounding accompaniment note";
+    }
+  }
+  ASSERT_GT(clashing, 0) << "the vocal must form a clash for the refinement to answer";
+  ASSERT_GT(unison_candidates, 0) << "without the guard some replacement would be a unison";
+  ASSERT_GT(moved, 0) << "the refinement must move something for the property to be tested";
 }
 
 TEST_F(GeneratorVocalFirstTest, DetectVocalAccompanimentClashesFindsDissonance) {

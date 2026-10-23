@@ -19,6 +19,7 @@ namespace midisketch {
 
 class MidiTrack;
 class ChordProgressionTracker;
+class IChordLookup;
 
 /**
  * @brief Detects pitch collisions between tracks.
@@ -371,6 +372,38 @@ inline bool isToleratedMelodicTension(int actual_semitones, Tick overlap_duratio
   }
   return overlap_duration <= TICKS_PER_BEAT;
 }
+
+/// @brief Whether a registered maj7/maj9 names this pair as its root and seventh.
+///
+/// The registered extension is the authority on any degree, borrowed ones
+/// included; the degree only supplies the root.
+///
+/// @param a One voice
+/// @param b The other voice
+/// @param chords Chord timeline
+/// @param tick Tick whose degree and extension apply
+/// @return true when the pair is the seventh the sounding chord is named for
+bool registeredMajorSeventhOwnsPair(uint8_t a, uint8_t b, const IChordLookup& chords, Tick tick);
+
+/// @brief Whether two overlapping pitches clash under the generation rule.
+///
+/// The one cross-track pair verdict: isConsonantWithOtherTracks, getCollisionInfo
+/// and getMaxSafeEnd ask it after the duration-aware melodic tolerance, and a
+/// caller with no note duration asks it directly. It is isDissonantActualInterval
+/// plus what a scale degree cannot express: a registered root-maj7/maj9 owning
+/// its seventh, a secondary dominant owning its tritone, a major second between
+/// two tones of the sounding chord, and the low-bass major seventh.
+///
+/// @param pitch Pitch being judged
+/// @param role Track of the pitch being judged
+/// @param other_pitch Pitch it overlaps
+/// @param other_role Track of the overlapped pitch
+/// @param chords Chord timeline, or nullptr to judge against a tonic context
+/// @param chord_tick Tick whose degree, extension and secondary dominant apply
+/// @param overlap_start Tick whose chord tones excuse a major second
+/// @return true if the pair is a clash
+bool isClashingPair(uint8_t pitch, TrackRole role, uint8_t other_pitch, TrackRole other_role,
+                    const IChordLookup* chords, Tick chord_tick, Tick overlap_start);
 
 }  // namespace midisketch
 

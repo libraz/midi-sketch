@@ -221,6 +221,18 @@ TEST(VocalAnalysisTest, DirectionBeforeFirstNoteIsZero) {
   EXPECT_EQ(dir, 0);
 }
 
+TEST(VocalAnalysisTest, DirectionIsZeroAfterTheNoteEnds) {
+  MidiTrack track;
+  track.addNote(NoteEventBuilder::create(0, TICKS_PER_BEAT, 60, 100));
+  track.addNote(NoteEventBuilder::create(TICKS_PER_BEAT, TICKS_PER_BEAT, 64, 100));
+  VocalAnalysis va = analyzeVocal(track);
+
+  ASSERT_EQ(getVocalDirectionAt(va, TICKS_PER_BEAT), 1);
+  EXPECT_EQ(getVocalDirectionAt(va, TICKS_PER_BEAT + TICKS_PER_BEAT - 1), 1);
+  EXPECT_EQ(getVocalDirectionAt(va, TICKS_PER_BEAT * 2), 0);
+  EXPECT_EQ(getVocalDirectionAt(va, TICKS_PER_BAR), 0);
+}
+
 // ============================================================================
 // selectMotionType Tests
 // ============================================================================

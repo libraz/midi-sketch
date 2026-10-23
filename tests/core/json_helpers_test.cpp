@@ -606,7 +606,6 @@ TEST(JsonRoundTripTest, MotifParams) {
   original.velocity_fixed = false;
   original.melodic_freedom = 0.7f;
   original.response_mode = false;
-  original.response_probability = 0.8f;
   original.contrary_motion = false;
   original.contrary_motion_strength = 0.3f;
   original.dynamic_register = false;
@@ -632,7 +631,6 @@ TEST(JsonRoundTripTest, MotifParams) {
   EXPECT_EQ(restored.velocity_fixed, original.velocity_fixed);
   EXPECT_FLOAT_EQ(restored.melodic_freedom, original.melodic_freedom);
   EXPECT_EQ(restored.response_mode, original.response_mode);
-  EXPECT_FLOAT_EQ(restored.response_probability, original.response_probability);
   EXPECT_EQ(restored.contrary_motion, original.contrary_motion);
   EXPECT_FLOAT_EQ(restored.contrary_motion_strength, original.contrary_motion_strength);
   EXPECT_EQ(restored.dynamic_register, original.dynamic_register);
@@ -740,7 +738,6 @@ TEST(JsonRoundTripTest, StyleMelodyParams) {
   StyleMelodyParams original;
   original.max_leap_interval = 12;
   original.allow_unison_repeat = false;
-  original.phrase_end_resolution = 0.5f;
   original.tension_usage = 0.4f;
   original.note_density = 1.2f;
   original.min_note_division = 16;
@@ -763,7 +760,6 @@ TEST(JsonRoundTripTest, StyleMelodyParams) {
 
   EXPECT_EQ(restored.max_leap_interval, original.max_leap_interval);
   EXPECT_EQ(restored.allow_unison_repeat, original.allow_unison_repeat);
-  EXPECT_FLOAT_EQ(restored.phrase_end_resolution, original.phrase_end_resolution);
   EXPECT_FLOAT_EQ(restored.tension_usage, original.tension_usage);
   EXPECT_FLOAT_EQ(restored.note_density, original.note_density);
   EXPECT_EQ(restored.min_note_division, original.min_note_division);

@@ -677,28 +677,11 @@ TEST_F(ArpeggioTest, SyncChordFalsePatternRefreshedPerSection) {
 // Helper: Get pitch class (0-11) from MIDI note
 inline int getPitchClass(uint8_t note) { return note % 12; }
 
-// Helper: Check if a note is a chord tone for a given degree
-// Degrees: I=0(C), ii=1(D), iii=2(E), IV=3(F), V=4(G), vi=5(A)
-// In C major: I=C,E,G  ii=D,F,A  iii=E,G,B  IV=F,A,C  V=G,B,D  vi=A,C,E
+// Helper: Check if a note is a tone of the triad a degree names, borrowed
+// degrees included.
 inline bool isChordTone(uint8_t note, int8_t degree) {
-  // C major scale pitch classes: C=0, D=2, E=4, F=5, G=7, A=9, B=11
-  constexpr int SCALE[] = {0, 2, 4, 5, 7, 9, 11};
-  int pc = getPitchClass(note);
-
-  // Get root pitch class for this degree
-  int root_pc = SCALE[degree % 7];
-
-  // Chord intervals (simplified): root, 3rd (3 or 4 semitones), 5th (7 semitones)
-  // Minor chords: ii, iii, vi have minor 3rd (3 semitones)
-  // Major chords: I, IV, V have major 3rd (4 semitones)
-  bool is_minor = (degree == 1 || degree == 2 || degree == 5);
-  int third_interval = is_minor ? 3 : 4;
-
-  int root = root_pc;
-  int third = (root_pc + third_interval) % 12;
-  int fifth = (root_pc + 7) % 12;
-
-  return (pc == root || pc == third || pc == fifth);
+  const ChordTones tones = getChordTones(degree);
+  return std::find(tones.begin(), tones.end(), getPitchClass(note)) != tones.end();
 }
 
 TEST_F(ArpeggioTest, HarmonicDensitySlowInIntro) {
@@ -1451,6 +1434,20 @@ TEST_F(ArpeggioTest, SectionSpeedOverridesPreserved) {
 // ============================================================================
 // BlueprintConstraints Tests
 // ============================================================================
+
+// The peak expansion stays inside the option's 1-3 and does not undo the
+// stepwise constraint: a Ballad or IdolKawaii ラスサビ keeps one octave.
+TEST(ArpeggioOctaveRangeTest, PeakExpansionRespectsTheRangeAndTheStepwiseCap) {
+  for (uint8_t requested = 1; requested <= 3; ++requested) {
+    EXPECT_EQ(resolveArpeggioOctaveRange(requested, PeakLevel::None, false), requested);
+    EXPECT_EQ(resolveArpeggioOctaveRange(requested, PeakLevel::Max, false),
+              std::min<uint8_t>(requested + 1, 3));
+    for (PeakLevel peak : {PeakLevel::None, PeakLevel::Medium, PeakLevel::Max}) {
+      EXPECT_EQ(resolveArpeggioOctaveRange(requested, peak, true), 1u)
+          << "requested " << static_cast<int>(requested) << " peak " << static_cast<int>(peak);
+    }
+  }
+}
 
 TEST_F(ArpeggioTest, PreferStepwiseLimitsOctaveRangePerSection) {
   // Test that prefer_stepwise=true limits octave_range to 1 within sections

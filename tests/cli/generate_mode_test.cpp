@@ -684,15 +684,161 @@ TEST(CliGenerateModeTest, JsonStdoutStaysMachineReadableAlongsideNoteInspection)
   regenerate_args.dump_collisions_tick = midisketch::TICKS_PER_BAR;
 
   std::string regenerate_stdout;
+  std::string regenerate_stderr;
   {
     ScopedStreamCapture stdout_capture(std::cout);
     ScopedStreamCapture stderr_capture(std::cerr);
     ASSERT_EQ(runRegenerateMode(regenerate_args), 0);
     regenerate_stdout = stdout_capture.str();
+    regenerate_stderr = stderr_capture.str();
   }
+  EXPECT_NE(regenerate_stderr.find("note inspection output is omitted"), std::string::npos)
+      << regenerate_stderr;
   const midisketch::json::Parser regenerate_json(regenerate_stdout);
   EXPECT_TRUE(regenerate_json.isValid()) << regenerate_stdout;
   EXPECT_TRUE(regenerate_json.has("summary"));
+}
+
+TEST(CliGenerateModeTest, BarInspectionOfSmf2OutputSaysItIsSmf1Only) {
+  ScopedTempDirectory temp_dir;
+
+  ParsedArgs args;
+  args.seed = 12345;
+  args.midi_format = midisketch::MidiFormat::SMF2;
+  args.midi_format_explicit = true;
+  args.bar_num = 1;
+  args.output_file = (temp_dir.path() / "bar-smf2.mid").string();
+
+  std::string out;
+  std::string err;
+  {
+    ScopedStreamCapture stdout_capture(std::cout);
+    ScopedStreamCapture stderr_capture(std::cerr);
+    ASSERT_EQ(runGenerateMode(args), 0);
+    out = stdout_capture.str();
+    err = stderr_capture.str();
+  }
+
+  EXPECT_NE(out.find("Bar note inspection is only available for SMF1 output."), std::string::npos);
+  EXPECT_EQ(err.find("Error reading"), std::string::npos) << err;
+}
+
+TEST(CliGenerateModeTest, InputModeDumpsTickZeroAndAnnouncesInspectionDroppedUnderJson) {
+  ScopedTempDirectory temp_dir;
+  const auto source_path = temp_dir.path() / "inspect.mid";
+
+  auto config = midisketch::createDefaultSongConfig(0);
+  config.seed = 12345;
+  midisketch::MidiSketch source;
+  source.setMidiFormat(midisketch::MidiFormat::SMF1);
+  source.generateFromConfig(config);
+  writeBinaryFile(source_path, source.getMidi());
+
+  ParsedArgs dump_args;
+  dump_args.input_file = source_path.string();
+  dump_args.output_file = (temp_dir.path() / "inspect-analysis.json").string();
+  dump_args.dump_collisions_requested = true;
+  dump_args.dump_collisions_tick = 0;
+  std::string dump_out;
+  {
+    ScopedStreamCapture stdout_capture(std::cout);
+    ASSERT_EQ(runInputMode(dump_args), 0);
+    dump_out = stdout_capture.str();
+  }
+  EXPECT_NE(dump_out.find("=== Notes at tick 0 ==="), std::string::npos);
+
+  ParsedArgs json_args;
+  json_args.input_file = source_path.string();
+  json_args.json_output = true;
+  json_args.bar_num = 1;
+  json_args.dump_collisions_requested = true;
+  std::string json_out;
+  std::string json_err;
+  {
+    ScopedStreamCapture stdout_capture(std::cout);
+    ScopedStreamCapture stderr_capture(std::cerr);
+    ASSERT_EQ(runInputMode(json_args), 0);
+    json_out = stdout_capture.str();
+    json_err = stderr_capture.str();
+  }
+  EXPECT_TRUE(midisketch::json::Parser(json_out).isValid()) << json_out;
+  EXPECT_NE(json_err.find("note inspection output is omitted"), std::string::npos) << json_err;
+}
+
+TEST(CliGenerateModeTest, ConfigFileWithAGenerationFlagFailsBeforeGenerating) {
+  ScopedTempDirectory temp_dir;
+  const auto config_path = temp_dir.path() / "config.json";
+  const auto output_path = temp_dir.path() / "never.mid";
+  {
+    std::ofstream config_file(config_path);
+    ASSERT_TRUE(config_file);
+    config_file << R"({"style_preset_id":0,"seed":12345,"bpm":120})";
+  }
+
+  const std::string config_arg = config_path.string();
+  const std::string output_arg = output_path.string();
+  const char* argv[] = {"midisketch", "--config", config_arg.c_str(), "--key",
+                        "2",          "-o",       output_arg.c_str()};
+  ParsedArgs args = parseArgs(7, const_cast<char**>(argv));
+  ASSERT_FALSE(args.parse_error);
+
+  std::string err;
+  int rc = 0;
+  {
+    ScopedStreamCapture stdout_capture(std::cout);
+    ScopedStreamCapture stderr_capture(std::cerr);
+    rc = runGenerateMode(args);
+    err = stderr_capture.str();
+  }
+
+  EXPECT_NE(rc, 0);
+  EXPECT_NE(err.find("cannot be combined with --config"), std::string::npos) << err;
+  EXPECT_FALSE(std::filesystem::exists(output_path));
+}
+
+TEST(CliGenerateModeTest, HookIntensityAndVocalGrooveAreMarkedExplicitOnlyWhenGiven) {
+  ScopedTempDirectory temp_dir;
+
+  const auto stored_config = [&](const ParsedArgs& args) {
+    ScopedStreamCapture stdout_capture(std::cout);
+    EXPECT_EQ(runGenerateMode(args), 0);
+    const midisketch::json::Parser metadata(metadataOf(readBinaryFile(args.output_file)));
+    EXPECT_TRUE(metadata.isValid());
+    return metadata.getObject("config");
+  };
+
+  ParsedArgs given;
+  given.seed = 12345;
+  given.midi_format = midisketch::MidiFormat::SMF1;
+  given.midi_format_explicit = true;
+  given.hook_intensity = 3;
+  given.vocal_groove = 2;
+  given.output_file = (temp_dir.path() / "explicit.mid").string();
+  const midisketch::json::Parser given_config = stored_config(given);
+  EXPECT_TRUE(given_config.getBool("hook_intensity_explicit", false));
+  EXPECT_TRUE(given_config.getBool("vocal_groove_explicit", false));
+
+  ParsedArgs absent;
+  absent.seed = 12345;
+  absent.midi_format = midisketch::MidiFormat::SMF1;
+  absent.midi_format_explicit = true;
+  absent.output_file = (temp_dir.path() / "implicit.mid").string();
+  const midisketch::json::Parser absent_config = stored_config(absent);
+  EXPECT_TRUE(absent_config.has("hook_intensity_explicit"));
+  EXPECT_FALSE(absent_config.getBool("hook_intensity_explicit", true));
+  EXPECT_TRUE(absent_config.has("vocal_groove_explicit"));
+  EXPECT_FALSE(absent_config.getBool("vocal_groove_explicit", true));
+}
+
+TEST(CliGenerateModeTest, LegacyMetadataRestoreMarksHookIntensityAndGrooveExplicit) {
+  const auto restored =
+      configFromMetadata(R"({"format_version":3,"seed":1,"hook_intensity":2,"vocal_groove":1})");
+  EXPECT_TRUE(restored.hook_intensity_explicit);
+  EXPECT_TRUE(restored.vocal_groove_explicit);
+
+  const auto bare = configFromMetadata(R"({"format_version":3,"seed":1})");
+  EXPECT_FALSE(bare.hook_intensity_explicit);
+  EXPECT_FALSE(bare.vocal_groove_explicit);
 }
 
 TEST(CliGenerateModeTest, BannerDoesNotAnnounceATempoTheSongDoesNotUse) {

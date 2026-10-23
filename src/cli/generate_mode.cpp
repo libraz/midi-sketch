@@ -136,6 +136,7 @@ midisketch::SongConfig configFromMetadata(const std::string& metadata,
   }
   if (p.has("hook_intensity")) {
     config.hook_intensity = static_cast<midisketch::HookIntensity>(p.getInt("hook_intensity"));
+    config.hook_intensity_explicit = true;
   }
   if (p.has("composition_style")) {
     config.composition_style =
@@ -144,6 +145,7 @@ midisketch::SongConfig configFromMetadata(const std::string& metadata,
   }
   if (p.has("vocal_groove")) {
     config.vocal_groove = static_cast<midisketch::VocalGrooveFeel>(p.getInt("vocal_groove"));
+    config.vocal_groove_explicit = true;
   }
   if (p.has("target_duration")) {
     config.target_duration_seconds = static_cast<uint16_t>(p.getInt("target_duration"));
@@ -311,6 +313,14 @@ midisketch::SongConfig configFromMetadata(const std::string& metadata,
 }
 
 int runGenerateMode(const ParsedArgs& args) {
+  // A config file is the whole song description; a generation flag beside it would be dropped.
+  if (!args.config_file.empty() && args.config_overrides_specified) {
+    std::cerr << "Error: Generation options cannot be combined with --config. "
+                 "Edit the config file instead; only --no-guitar, --format, --output, "
+                 "--analyze, --json, --bar, and --dump-collisions-at apply.\n";
+    return 1;
+  }
+
   std::ostringstream suppressed_stdout;
   std::streambuf* original_stdout = nullptr;
   // JSON output is defined for dissonance analysis. In ordinary generation mode,
@@ -408,6 +418,7 @@ int runGenerateMode(const ParsedArgs& args) {
     }
     if (args.vocal_groove >= 0) {
       config.vocal_groove = static_cast<midisketch::VocalGrooveFeel>(args.vocal_groove);
+      config.vocal_groove_explicit = true;
     }
     if (args.melodic_complexity >= 0) {
       config.melodic_complexity =
@@ -415,6 +426,7 @@ int runGenerateMode(const ParsedArgs& args) {
     }
     if (args.hook_intensity >= 0) {
       config.hook_intensity = static_cast<midisketch::HookIntensity>(args.hook_intensity);
+      config.hook_intensity_explicit = true;
     }
     if (args.melody_template >= 0) {
       config.melody_template = static_cast<midisketch::MelodyTemplateId>(args.melody_template);
@@ -646,8 +658,8 @@ int runGenerateMode(const ParsedArgs& args) {
   // human-readable inspections are announced on stderr rather than swallowed by
   // the suppression buffer or appended after the JSON.
   const bool machine_readable_stdout = args.json_output && args.analyze;
-  if (machine_readable_stdout && (args.dump_collisions_requested || args.bar_num > 0)) {
-    std::cerr << "Note: note inspection output is omitted because stdout carries JSON.\n";
+  if (machine_readable_stdout && inspectionRequested(args)) {
+    noteInspectionOmitted();
   }
 
   if (args.dump_collisions_requested && !machine_readable_stdout) {
@@ -678,13 +690,17 @@ int runGenerateMode(const ParsedArgs& args) {
   }
 
   if (args.bar_num > 0 && !machine_readable_stdout) {
-    std::vector<uint8_t> written;
-    std::string read_error;
-    midisketch::MidiReader reader;
-    if (readInputFile(midi_output, written, read_error) && reader.read(written)) {
-      showBarNotes(reader.getParsedMidi(), args.bar_num);
+    if (args.midi_format == midisketch::MidiFormat::SMF1) {
+      std::vector<uint8_t> written;
+      std::string read_error;
+      midisketch::MidiReader reader;
+      if (readInputFile(midi_output, written, read_error) && reader.read(written)) {
+        showBarNotes(reader.getParsedMidi(), args.bar_num);
+      } else {
+        std::cerr << "Error reading " << midi_output << " for bar inspection\n";
+      }
     } else {
-      std::cerr << "Error reading " << midi_output << " for bar inspection\n";
+      std::cout << "Bar note inspection is only available for SMF1 output.\n";
     }
   }
 

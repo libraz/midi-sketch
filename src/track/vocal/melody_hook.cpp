@@ -184,13 +184,12 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& 
   SkeletonPattern skeleton_contour = getSkeletonPattern(selected_skeleton);
 
   // Blend skeleton contour with Motif contour (Motif 80%, Skeleton 20%)
-  // This preserves the existing system while adding HookSkeleton influence
+  // This preserves the existing system while adding HookSkeleton influence.
   for (size_t i = 0; i < hook.contour_degrees.size() && i < skeleton_contour.length; ++i) {
     int8_t skeleton_hint = skeleton_contour.intervals[i % skeleton_contour.length];
     if (skeleton_hint != -128) {  // Skip rest markers
-      // Blend: 80% existing Motif, 20% HookSkeleton hint
-      int blended = static_cast<int>(hook.contour_degrees[i] * 0.8f + skeleton_hint * 0.2f);
-      hook.contour_degrees[i] = static_cast<int8_t>(blended);
+      hook.contour_degrees[i] =
+          melody::blendHookContourStep(hook.contour_degrees[i], skeleton_hint);
     }
   }
 
@@ -200,9 +199,9 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& 
   }
   const HookRhythmPattern& rhythm_pattern = getHookRhythmPatterns()[hook_cache_.rhythm_pattern_idx];
 
-  // Use template settings for repetition count
-  uint8_t repeat_count =
-      std::clamp(tmpl.hook_repeat_count, static_cast<uint8_t>(2), static_cast<uint8_t>(4));
+  // The template's repetition count, as declared; the phrase end still stops a
+  // statement that would not fit.
+  const uint8_t repeat_count = tmpl.hook_repeat_count;
 
   // =========================================================================
   // HOOK BETRAYAL: Apply variation based on template threshold

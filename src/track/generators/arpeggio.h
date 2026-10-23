@@ -67,6 +67,20 @@ class ArpeggioGenerator : public TrackBase {
  */
 ArpeggioStyle getArpeggioStyleForMood(Mood mood);
 
+/**
+ * @brief Octave span a section's arpeggio covers.
+ *
+ * A PeakLevel::Max section reaches one octave further, within the 1-3 the
+ * option allows; a blueprint that prefers stepwise motion keeps one octave
+ * there as everywhere else.
+ *
+ * @param requested ArpeggioParams::octave_range (1-3)
+ * @param peak_level The section's peak level
+ * @param prefer_stepwise The blueprint's stepwise constraint
+ * @return Octave range, at most 3
+ */
+uint8_t resolveArpeggioOctaveRange(uint8_t requested, PeakLevel peak_level, bool prefer_stepwise);
+
 }  // namespace midisketch
 
 #endif  // MIDISKETCH_TRACK_GENERATORS_ARPEGGIO_H

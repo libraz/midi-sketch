@@ -15,9 +15,23 @@
 
 namespace midisketch {
 
+namespace {
+
+/// The degree whose root is @p pitch_class, diatonic before borrowed.
+int8_t degreeOnPitchClass(int pitch_class) {
+  constexpr int8_t kHighestDegree = 14;
+  for (int8_t degree = 0; degree <= kHighestDegree; ++degree) {
+    if (degreeToSemitone(degree) == pitch_class) return degree;
+  }
+  return -1;
+}
+
+}  // namespace
+
 void planAndRegisterSecondaryDominants(const Arrangement& arrangement,
                                        const ChordProgression& /*progression*/, Mood mood,
-                                       std::mt19937& rng, IHarmonyContext& harmony) {
+                                       std::mt19937& rng, IHarmonyContext& harmony,
+                                       const ModulationCalculator::ModulationResult& modulation) {
   const auto& sections = arrangement.sections();
 
   // Pop-appropriate SD frequency control parameters.
@@ -41,12 +55,19 @@ void planAndRegisterSecondaryDominants(const Arrangement& arrangement,
                              target_degree == 3 ||  // IV
                              target_degree == 4 ||  // V
                              target_degree == 5);   // vi
+      bool is_key_change =
+          modulation.tick > 0 && modulation.amount != 0 && section.start_tick == modulation.tick;
 
-      if (is_good_target) {
+      if (is_good_target || is_key_change) {
         Tick prev_section_end = section.start_tick;
         Tick insert_start = prev_section_end - TICK_HALF;
 
-        int8_t sec_dom_degree = getSecondaryDominantDegree(target_degree);
+        // Before the key change the dominant sounds unshifted while its target
+        // sounds raised by the modulation, so its root moves up with the target.
+        constexpr int kFifth = 7;
+        int dominant_root = degreeToSemitone(target_degree) + modulation.amount + kFifth;
+        int8_t sec_dom_degree = is_key_change ? degreeOnPitchClass(((dominant_root % 12) + 12) % 12)
+                                              : getSecondaryDominantDegree(target_degree);
         if (sec_dom_degree >= 0) {
           harmony.registerSecondaryDominant(insert_start, prev_section_end, sec_dom_degree);
           // Reflect boundary SD in cooldown to prevent cross-section consecutive SDs.

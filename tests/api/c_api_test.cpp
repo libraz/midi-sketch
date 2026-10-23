@@ -83,6 +83,56 @@ TEST(CApiTest, PianoRollBatchLimitStatusIsInspectable) {
   EXPECT_EQ(midisketch_piano_roll_data_was_truncated(&truncated), 1);
 }
 
+// The key only transposes at output, so the same song in D classifies every note
+// exactly as it does in C, before and after the modulation, secondary dominants
+// included; only current_key carries the shift.
+TEST(CApiTest, PianoRollClassifiesInTheInternalKeySpace) {
+  auto sample = [](int key) {
+    MidiSketchHandle handle = midisketch_create();
+    std::string config = R"({"style_preset_id":0,"seed":12345,"modulation_timing":1,)"
+                         R"("modulation_semitones":2,"key":)" +
+                         std::to_string(key) + "}";
+    EXPECT_EQ(midisketch_generate_from_json(handle, config.c_str(), config.size()), MIDISKETCH_OK);
+    MidiSketchPianoRollData* data =
+        midisketch_get_piano_roll_safety(handle, 0, std::numeric_limits<uint32_t>::max(), 480);
+    std::vector<MidiSketchPianoRollInfo> infos;
+    if (data != nullptr) {
+      infos.assign(data->data, data->data + midisketch_piano_roll_data_count(data));
+      midisketch_free_piano_roll_data(data);
+    }
+    midisketch_destroy(handle);
+    return infos;
+  };
+  const std::vector<MidiSketchPianoRollInfo> in_c = sample(0);
+  const std::vector<MidiSketchPianoRollInfo> in_d = sample(2);
+  ASSERT_FALSE(in_c.empty());
+  ASSERT_EQ(in_c.size(), in_d.size());
+
+  constexpr bool kCMajor[12] = {true,  false, true,  false, true,  true,
+                                false, true,  false, true,  false, true};
+  int modulated_samples = 0;
+  int chromatic_chord_tone_samples = 0;
+  for (size_t i = 0; i < in_c.size(); ++i) {
+    const auto& c = in_c[i];
+    const auto& d = in_d[i];
+    ASSERT_EQ(c.tick, d.tick);
+    EXPECT_EQ(d.current_key, (c.current_key + 2) % 12) << "tick " << c.tick;
+    if (c.current_key != 0) ++modulated_samples;
+    EXPECT_EQ(c.chord_degree, d.chord_degree) << "tick " << c.tick;
+    bool chromatic_chord_tone = false;
+    for (int note = 0; note < 128; ++note) {
+      EXPECT_EQ(c.safety[note], d.safety[note]) << "tick " << c.tick << " note " << note;
+      EXPECT_EQ(c.reason[note], d.reason[note]) << "tick " << c.tick << " note " << note;
+      if ((c.reason[note] & MIDISKETCH_REASON_CHORD_TONE) && !kCMajor[note % 12]) {
+        chromatic_chord_tone = true;
+      }
+    }
+    if (chromatic_chord_tone) ++chromatic_chord_tone_samples;
+  }
+  ASSERT_GT(modulated_samples, 0);
+  ASSERT_GT(chromatic_chord_tone_samples, 0);
+}
+
 TEST(CApiTest, MelodyJsonRoundTripsSeedAndNotes) {
   MidiSketchHandle handle = midisketch_create();
   ASSERT_NE(handle, nullptr);

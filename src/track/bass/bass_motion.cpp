@@ -36,12 +36,17 @@ constexpr int kMinOctaveSeparation = 24;
   return "Unknown";
 }
 
-// Check if bass pitch would form a minor 2nd (1 semitone) with vocal
-bool wouldClashWithVocal(int bass_pitch, int vocal_pitch) {
+// Whether the bass would clash with the vocal, judged as the bass-vs-vocal sweep
+// that runs after it judges the pair: a minor 2nd/9th or a major 7th on the
+// actual distance, unless both voices are tones of the sounding chord.
+bool wouldClashWithVocal(int bass_pitch, int vocal_pitch, const ChordTones& chord_tones) {
   if (vocal_pitch <= 0) return false;  // No vocal sounding
-  int interval = std::abs((bass_pitch % 12) - (vocal_pitch % 12));
-  if (interval > 6) interval = 12 - interval;
-  return interval == 1;  // Minor 2nd is a harsh clash
+  int semitones = std::abs(bass_pitch - vocal_pitch);
+  if (!isDissonantSemitoneInterval(semitones, DissonanceCheckOptions::minimalClash())) {
+    return false;
+  }
+  return !chordExcusesFlaggedPair(semitones, static_cast<uint8_t>(bass_pitch),
+                                  static_cast<uint8_t>(vocal_pitch), chord_tones);
 }
 
 // Check if a pitch belongs to the given chord-tone set.
@@ -176,12 +181,12 @@ uint8_t adjustPitchForMotion(uint8_t base_pitch, MotionType motion, int8_t vocal
 
   // Final check: if the current bass_pitch still clashes with vocal, try to fix it
   // CRITICAL: All alternatives must be chord tones to maintain harmonic integrity
-  if (wouldClashWithVocal(bass_pitch, v_pitch)) {
+  if (wouldClashWithVocal(bass_pitch, v_pitch, chord_tones)) {
     // Vocal priority: bass must yield, but only to chord tones
     // Try moving bass down by a whole step (more musical than half step)
     if (bass_pitch - 2 >= BASS_LOW && isDiatonic(bass_pitch - 2) &&
         isPitchChordTone(bass_pitch - 2, chord_tones) &&
-        !wouldClashWithVocal(bass_pitch - 2, v_pitch)) {
+        !wouldClashWithVocal(bass_pitch - 2, v_pitch, chord_tones)) {
 #if BASS_DEBUG_LOG
       std::cerr << "    [vocal_priority] clash fix (chord tone): " << bass_pitch << " -> "
                 << (bass_pitch - 2) << "\n";
@@ -191,14 +196,14 @@ uint8_t adjustPitchForMotion(uint8_t base_pitch, MotionType motion, int8_t vocal
     // Try moving up by a whole step
     else if (bass_pitch + 2 <= BASS_HIGH && isDiatonic(bass_pitch + 2) &&
              isPitchChordTone(bass_pitch + 2, chord_tones) &&
-             !wouldClashWithVocal(bass_pitch + 2, v_pitch)) {
+             !wouldClashWithVocal(bass_pitch + 2, v_pitch, chord_tones)) {
 #if BASS_DEBUG_LOG
       std::cerr << "    [vocal_priority] clash fix (chord tone): " << bass_pitch << " -> "
                 << (bass_pitch + 2) << "\n";
 #endif
       bass_pitch += 2;
     }
-    // Try octave down - always safe for same pitch class
+    // Try octave down: the same pitch class, spaced wider from the vocal
     else if (bass_pitch - 12 >= BASS_LOW) {
 #if BASS_DEBUG_LOG
       std::cerr << "    [vocal_priority] octave down: " << bass_pitch << " -> " << (bass_pitch - 12)

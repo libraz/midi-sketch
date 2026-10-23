@@ -46,6 +46,7 @@
 #include "core/swing_quantize.h"
 #include "core/timing_constants.h"
 #include "core/track_clash_gates.h"
+#include "core/track_collision_detector.h"
 #include "core/track_pitch_editor.h"
 #include "core/track_registration_guard.h"
 #include "core/track_separation.h"
@@ -1145,7 +1146,9 @@ std::vector<Generator::VocalClash> Generator::detectVocalAccompanimentClashes() 
     // Get previous note pitch for melodic continuity
     uint8_t prev_pitch = (i > 0) ? vocal_notes[i - 1].note : v_pitch;
 
+    bool found_clash = false;
     for (const auto& tc : tracks_to_check) {
+      if (found_clash) break;  // One clash per vocal note is enough
       if (tc.track->notes().empty()) continue;
 
       for (const auto& acc_note : tc.track->notes()) {
@@ -1158,17 +1161,32 @@ std::vector<Generator::VocalClash> Generator::detectVocalAccompanimentClashes() 
           continue;  // No overlap
         }
 
-        // Check for dissonant interval using unified API:
-        // m2/m9 always, M2 within 2 octaves, M7, no tritone check
+        // The pair verdict the candidate search below answers with, so a pitch
+        // is moved only for a clash the replacement is chosen to avoid.
         int actual_interval = std::abs(static_cast<int>(v_pitch) - static_cast<int>(a_pitch));
+        Tick overlap_start = std::max(v_start, a_start);
+        Tick overlap_duration = std::min(v_end, a_end) - overlap_start;
         bool is_dissonant =
-            isDissonantSemitoneInterval(actual_interval, DissonanceCheckOptions::vocalClash());
+            !isToleratedMelodicTension(actual_interval, overlap_duration, v_pitch, a_pitch,
+                                       overlap_start, TrackRole::Vocal, tc.role) &&
+            isClashingPair(v_pitch, TrackRole::Vocal, a_pitch, tc.role, harmony_context_.get(),
+                           v_start, overlap_start);
 
         if (is_dissonant) {
           // Find a safe pitch using getSafePitchCandidates
           auto candidates =
               getSafePitchCandidates(*harmony_context_, v_pitch, v_start, vocal_note.duration,
                                      TrackRole::Vocal, params_.vocal_low, params_.vocal_high);
+          // A unison passes every interval rule, so it is the escape a resolver
+          // reaches for; a vocal doubled by the accompaniment disappears into it.
+          const auto sounding =
+              harmony_context_->getSoundingPitches(v_start, v_end, TrackRole::Vocal);
+          candidates.erase(std::remove_if(candidates.begin(), candidates.end(),
+                                          [&](const PitchCandidate& c) {
+                                            return std::find(sounding.begin(), sounding.end(),
+                                                             c.pitch) != sounding.end();
+                                          }),
+                           candidates.end());
 
           // Select best candidate with musical intent (prefer small intervals for melodic
           // continuity)
@@ -1188,7 +1206,8 @@ std::vector<Generator::VocalClash> Generator::detectVocalAccompanimentClashes() 
           clash.clashing_track = tc.role;
           clash.suggested_pitch = safe_pitch;
           clashes.push_back(clash);
-          break;  // One clash per vocal note is enough
+          found_clash = true;
+          break;
         }
       }
     }
@@ -1381,9 +1400,7 @@ void Generator::calculateModulation() {
         "EachChorus modulation currently falls back to a single final-chorus modulation.");
   }
   // Use ModulationCalculator for modulation calculation
-  auto result =
-      ModulationCalculator::calculate(params_.modulation_timing, params_.modulation_semitones,
-                                      params_.structure, song_.arrangement().sections(), rng_);
+  auto result = ModulationCalculator::plan(params_, song_.arrangement().sections());
 
   song_.setModulation(result.tick, result.amount);
 }

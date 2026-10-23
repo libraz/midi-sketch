@@ -38,14 +38,7 @@ constexpr VocalStyleProfile kIdolProfile = {
         1.45f,  // stepwise_weight - singable group melody
         1.0f,   // skip_weight - allows memorable 3rd/4th movement
         0.45f,  // leap_weight - limited, but not flattened
-        1.15f,  // center_weight - preferred
-        0.85f,  // high_weight - idol hooks often sit bright/high
-        0.75f,  // low_weight - less preferred
-        1.2f,   // onbeat_weight - clear danceable accents
-        0.95f,  // offbeat_weight - light upbeat motion
-        0.75f,  // syncopation_weight - enough for 8th/16th J-pop push
         1.25f,  // same_pitch_weight - chantable repetition
-        1.65f,  // motif_repeat_weight - strong hook identity
     },
     // EvaluatorConfig (total = 1.0)
     {
@@ -67,14 +60,7 @@ constexpr VocalStyleProfile kRockProfile = {
         0.8f,  // stepwise_weight
         1.0f,  // skip_weight
         0.8f,  // leap_weight - allowed
-        0.9f,  // center_weight
-        1.2f,  // high_weight - emphasized
-        1.0f,  // low_weight
-        1.0f,  // onbeat_weight
-        1.0f,  // offbeat_weight
-        0.8f,  // syncopation_weight
         0.8f,  // same_pitch_weight
-        1.0f,  // motif_repeat_weight
     },
     // EvaluatorConfig (total = 1.0)
     {
@@ -96,14 +82,7 @@ constexpr VocalStyleProfile kBalladProfile = {
         1.6f,  // stepwise_weight - strong preference
         1.0f,  // skip_weight
         0.2f,  // leap_weight - rare
-        1.4f,  // center_weight - very centered
-        0.5f,  // high_weight - sparse
-        0.7f,  // low_weight
-        1.3f,  // onbeat_weight - emphasis
-        0.6f,  // offbeat_weight
-        0.3f,  // syncopation_weight - minimal
         1.0f,  // same_pitch_weight
-        1.1f,  // motif_repeat_weight
     },
     // EvaluatorConfig (total = 1.0)
     {
@@ -125,14 +104,7 @@ constexpr VocalStyleProfile kAnimeProfile = {
         1.0f,  // stepwise_weight
         1.2f,  // skip_weight - encouraged
         0.6f,  // leap_weight - some OK
-        0.8f,  // center_weight
-        1.3f,  // high_weight - dramatic
-        1.1f,  // low_weight - variety
-        0.9f,  // onbeat_weight
-        1.1f,  // offbeat_weight - interest
-        1.0f,  // syncopation_weight
         1.3f,  // same_pitch_weight - hooks
-        1.4f,  // motif_repeat_weight - strong
     },
     // EvaluatorConfig (total = 1.0)
     {
@@ -154,14 +126,7 @@ constexpr VocalStyleProfile kVocaloidProfile = {
         0.7f,  // stepwise_weight - less
         1.0f,  // skip_weight
         1.0f,  // leap_weight - allowed
-        0.7f,  // center_weight - less centered
-        1.2f,  // high_weight - OK
-        1.2f,  // low_weight - OK
-        0.8f,  // onbeat_weight
-        1.2f,  // offbeat_weight - emphasis
-        1.3f,  // syncopation_weight - encouraged
         0.9f,  // same_pitch_weight
-        1.2f,  // motif_repeat_weight
     },
     // EvaluatorConfig (total = 1.0)
     {
@@ -183,14 +148,7 @@ constexpr VocalStyleProfile kStandardProfile = {
         1.0f,  // stepwise_weight
         1.0f,  // skip_weight
         0.5f,  // leap_weight
-        1.0f,  // center_weight
-        0.8f,  // high_weight
-        0.9f,  // low_weight
-        1.0f,  // onbeat_weight
-        0.9f,  // offbeat_weight
-        0.6f,  // syncopation_weight
         1.0f,  // same_pitch_weight
-        1.0f,  // motif_repeat_weight
     },
     // EvaluatorConfig (total = 1.0)
     {
@@ -212,14 +170,7 @@ constexpr VocalStyleProfile kCityPopProfile = {
         1.2f,  // stepwise_weight - smooth
         1.1f,  // skip_weight
         0.4f,  // leap_weight - limited
-        1.1f,  // center_weight
-        0.9f,  // high_weight
-        1.0f,  // low_weight
-        0.9f,  // onbeat_weight
-        1.2f,  // offbeat_weight - groove
-        1.1f,  // syncopation_weight - OK
         0.9f,  // same_pitch_weight
-        1.0f,  // motif_repeat_weight
     },
     // EvaluatorConfig (total = 1.0)
     {
@@ -241,14 +192,7 @@ constexpr VocalStyleProfile kKPopProfile = {
         0.9f,  // stepwise_weight - slightly less (allows interval variety)
         1.1f,  // skip_weight - moderate
         0.6f,  // leap_weight - some allowed
-        0.9f,  // center_weight
-        1.1f,  // high_weight - moderate highs
-        1.0f,  // low_weight
-        0.8f,  // onbeat_weight - less emphasis (offbeat preferred)
-        1.3f,  // offbeat_weight - syncopation emphasis
-        1.2f,  // syncopation_weight - strong
         1.4f,  // same_pitch_weight - rap-like repetition
-        1.5f,  // motif_repeat_weight - pattern-driven hooks
     },
     // EvaluatorConfig (total = 1.0)
     {

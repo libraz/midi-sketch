@@ -2769,5 +2769,25 @@ TEST_F(ChordTrackTest, EveryVoicingPassLeavesPitchesAscending) {
   expectAscending(fallback, "buildFallbackVoicing");
 }
 
+// The peak section's low root is the chord's root under any voicing, not the
+// voicing's lowest member an octave down.
+TEST(ChordPeakLowRootTest, LowRootIsTheChordRootBelowEveryInversion) {
+  constexpr uint8_t kC4 = 60;
+  EXPECT_EQ(peakLowRootPitch(60, kC4), 48) << "root position: an octave under the root";
+  EXPECT_EQ(peakLowRootPitch(64, kC4), 60) << "C/E: the C just under the E";
+  EXPECT_EQ(peakLowRootPitch(67, kC4), 60) << "C/G: the C just under the G";
+  EXPECT_EQ(peakLowRootPitch(52, kC4), 48);
+  EXPECT_EQ(peakLowRootPitch(52, 69), -1) << "A below E3 would leave the chord register";
+  for (int lowest = CHORD_LOW + 12; lowest <= 72; ++lowest) {
+    for (int root = 60; root < 72; ++root) {
+      const int low = peakLowRootPitch(static_cast<uint8_t>(lowest), static_cast<uint8_t>(root));
+      ASSERT_GE(low, CHORD_LOW);
+      EXPECT_EQ(low % 12, root % 12);
+      EXPECT_LT(low, lowest);
+      EXPECT_GE(low, lowest - 12);
+    }
+  }
+}
+
 }  // namespace
 }  // namespace midisketch

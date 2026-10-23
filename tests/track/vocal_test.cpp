@@ -3556,11 +3556,8 @@ TEST_F(VocalTest, KPopStyleGeneratesValidOutput) {
 TEST_F(VocalTest, KPopProfileHasExpectedBiases) {
   const auto& profile = getVocalStyleProfile(VocalStylePreset::KPop);
   EXPECT_STREQ(profile.name, "KPop");
-  // K-POP emphasizes offbeat, syncopation, same-pitch repetition, and motif hooks
-  EXPECT_GT(profile.bias.offbeat_weight, 1.0f);
-  EXPECT_GT(profile.bias.syncopation_weight, 1.0f);
+  // K-POP candidate scoring favours same-pitch repetition
   EXPECT_GT(profile.bias.same_pitch_weight, 1.0f);
-  EXPECT_GT(profile.bias.motif_repeat_weight, 1.0f);
   // Catchiness is high priority in evaluator
   EXPECT_GE(profile.evaluator.catchiness_weight, 0.18f);
 }
@@ -3685,21 +3682,53 @@ int widestContiguousLeap(const std::vector<const NoteEvent*>& notes) {
   return widest;
 }
 
+TEST_F(VocalTest, ExplicitMaxLeapCapsEveryAdjoiningVocalLeap) {
+  params_.melody_max_leap_override = true;
+  params_.melody_params.max_leap_interval = 5;
+  size_t pairs_checked = 0;
+
+  // Traditional and MelodyDriven blueprints: the skeleton path writes their vocal.
+  for (uint8_t bp : {0, 2, 4}) {
+    params_.blueprint_id = bp;
+    for (uint32_t seed : {7u, 21u, 1234u}) {
+      params_.seed = seed;
+      Generator gen;
+      gen.generate(params_);
+      const auto& song = gen.getSong();
+      ASSERT_FALSE(song.vocal().empty()) << "bp " << int(bp) << " seed " << seed;
+      for (const auto& section : song.arrangement().sections()) {
+        auto notes = collectNotesInSection(song.vocal(), section, 0);
+        if (notes.size() < 2) continue;
+        pairs_checked += notes.size() - 1;
+        EXPECT_LE(widestContiguousLeap(notes), 5) << "bp " << int(bp) << " seed " << seed
+                                                  << " section " << static_cast<int>(section.type);
+      }
+    }
+  }
+  ASSERT_GT(pairs_checked, 0u);
+}
+
 TEST_F(VocalTest, SectionLeapTableIsInEffectRatherThanAFlatBound) {
   // The per-section table (Chorus 12 / Bridge 14 / B 10 / else 9) only means
   // something if the wide sections actually exceed the standard 9 while the
   // Verse does not. A single flat bound would satisfy the Verse half of this
   // and silently fail the other, which is exactly what a hardcoded 9 looked
   // like: every section capped at the "else" row of the table.
+  // An explicit leap only caps the blueprint's budget, so the wide rows can show
+  // only in a blueprint whose own budget is wider than the standard 9.
   params_.melody_max_leap_override = true;
   params_.melody_params.max_leap_interval = 12;
   int verse_pairs = 0;
+  int wide_section_pairs = 0;
   int wide_section_leaps_beyond_standard = 0;
   int widest_wide_section = 0;
 
-  for (uint8_t bp : {0, 3, 4, 6, 7, 9}) {
+  for (uint8_t bp = 0; bp < getProductionBlueprintCount(); ++bp) {
     params_.blueprint_id = bp;
-    for (uint32_t seed : {5u, 11u, 42u, 4242u, 12345u, 424242u}) {  // probe
+    const bool budget_allows_wide =
+        getProductionBlueprint(bp).constraints.max_leap_semitones > kMaxMelodicInterval;
+    for (uint32_t seed :
+         {5u, 11u, 42u, 77u, 101u, 777u, 2024u, 4242u, 9001u, 12345u, 65535u, 424242u}) {
       params_.seed = seed;
       Generator gen;
       gen.generate(params_);
@@ -3719,6 +3748,8 @@ TEST_F(VocalTest, SectionLeapTableIsInEffectRatherThanAFlatBound) {
             section.type != SectionType::Bridge) {
           continue;
         }
+        if (!budget_allows_wide) continue;
+        wide_section_pairs += static_cast<int>(notes.size()) - 1;
         const int widest = widestContiguousLeap(notes);
         widest_wide_section = std::max(widest_wide_section, widest);
         if (widest > kMaxMelodicInterval) ++wide_section_leaps_beyond_standard;
@@ -3726,6 +3757,7 @@ TEST_F(VocalTest, SectionLeapTableIsInEffectRatherThanAFlatBound) {
     }
   }
   ASSERT_GT(verse_pairs, 0) << "The tested songs must contain a sung Verse";
+  ASSERT_GT(wide_section_pairs, 0) << "No sung Chorus/Bridge/Drop under a wide leap budget";
   EXPECT_GT(wide_section_leaps_beyond_standard, 0)
       << "No Chorus/Bridge/Drop leap went beyond the standard " << kMaxMelodicInterval
       << " semitones, so the section table is not reaching the melody. Widest seen: "

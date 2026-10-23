@@ -7,45 +7,41 @@
 
 #include <cstdlib>
 
+#include "core/i_chord_lookup.h"
 #include "core/song.h"
+#include "core/track_collision_detector.h"
 
 namespace midisketch {
 
 namespace {
 
-// Check if interval creates a severe collision (minor 2nd or major 7th).
-bool isSevereInterval(int interval) {
-  int normalized = interval % 12;
-  if (normalized < 0) normalized += 12;
-  return normalized == 1 || normalized == 11;
-}
-
-// Check if interval is a tritone (6 semitones).
-bool isTritone(int interval) {
-  int normalized = interval % 12;
-  if (normalized < 0) normalized += 12;
-  return normalized == 6;
-}
-
 // Check collision with a single track.
-CollisionResult checkTrackCollision(const MidiTrack& track, TrackRole role, Tick tick,
-                                    uint8_t pitch) {
+// The verdict is the generation rule for a vocal note held across the tick; a
+// one-tick query has no duration, so the brief passing-tone tolerance does not
+// apply. Only the classes this API reports are surfaced: the major second the
+// rule refuses has no reason flag here and stays unreported.
+CollisionResult checkTrackCollision(const MidiTrack& track, TrackRole role,
+                                    const IChordLookup& chords, Tick tick, uint8_t pitch) {
   CollisionResult result;
 
   for (const auto& note : track.notes()) {
     // Check if note is sounding at this tick
     if (note.start_tick <= tick && tick < note.start_tick + note.duration) {
-      int interval = std::abs(static_cast<int>(pitch) - static_cast<int>(note.note));
+      int pc_interval = std::abs(static_cast<int>(pitch) - static_cast<int>(note.note)) % 12;
+      if (pc_interval != 1 && pc_interval != 6 && pc_interval != 11) continue;
+      if (!isClashingPair(pitch, TrackRole::Vocal, note.note, role, &chords, tick, tick)) {
+        continue;
+      }
 
-      if (isSevereInterval(interval)) {
+      if (pc_interval != 6) {
         result.type = CollisionType::Severe;
-        result.interval = static_cast<uint8_t>(interval % 12);
+        result.interval = static_cast<uint8_t>(pc_interval);
         result.track = role;
         result.colliding_pitch = note.note;
         return result;  // Severe is worst, return immediately
       }
 
-      if (isTritone(interval) && result.type == CollisionType::None) {
+      if (result.type == CollisionType::None) {
         result.type = CollisionType::Mild;
         result.interval = 6;
         result.track = role;
@@ -60,7 +56,8 @@ CollisionResult checkTrackCollision(const MidiTrack& track, TrackRole role, Tick
 
 }  // namespace
 
-CollisionResult checkBgmCollisionDetailed(const Song& song, Tick tick, uint8_t pitch) {
+CollisionResult checkBgmCollisionDetailed(const Song& song, const IChordLookup& chords, Tick tick,
+                                          uint8_t pitch) {
   CollisionResult worst_result;
 
   // Check tracks in order of typical musical importance
@@ -70,7 +67,7 @@ CollisionResult checkBgmCollisionDetailed(const Song& song, Tick tick, uint8_t p
 
   for (TrackRole role : tracks_to_check) {
     const MidiTrack& track = song.track(role);
-    CollisionResult result = checkTrackCollision(track, role, tick, pitch);
+    CollisionResult result = checkTrackCollision(track, role, chords, tick, pitch);
 
     // Update worst result if this is worse
     if (result.type == CollisionType::Severe) {
@@ -84,8 +81,9 @@ CollisionResult checkBgmCollisionDetailed(const Song& song, Tick tick, uint8_t p
   return worst_result;
 }
 
-CollisionType checkBgmCollision(const Song& song, Tick tick, uint8_t pitch) {
-  return checkBgmCollisionDetailed(song, tick, pitch).type;
+CollisionType checkBgmCollision(const Song& song, const IChordLookup& chords, Tick tick,
+                                uint8_t pitch) {
+  return checkBgmCollisionDetailed(song, chords, tick, pitch).type;
 }
 
 uint8_t getCurrentKey(const Song& song, Tick tick, uint8_t base_key) {

@@ -81,10 +81,6 @@ std::vector<std::string> getScaleTones(Key key) {
   return tones;
 }
 
-// Chord names for each scale degree (C major).
-constexpr const char* CHORD_NAMES[12] = {"C",  "C#", "D",     "D#/Eb", "E",     "F",
-                                         "F#", "G",  "G#/Ab", "A",     "A#/Bb", "B"};
-
 // ChordTones struct and getChordTones() are now in chord_utils.h.
 // getRootPitchClass() logic is handled by degreeToSemitone() in chord.h.
 
@@ -160,10 +156,10 @@ std::pair<bool, DissonanceSeverity> checkIntervalDissonance(uint8_t actual_semit
     return {true, DissonanceSeverity::High};
   }
 
-  // Major 7th (11): check chord context
+  // Major 7th (11) left unexcused by a registered maj7: only I and IV, whose
+  // major seventh is in the key, may still be an unplanned maj7 colour.
   if (actual_semitones == 11) {
-    int normalized = ((chord_degree % 7) + 7) % 7;
-    if (normalized == 0 || normalized == 3) {
+    if (isDiatonicMajorSeventhDegree(chord_degree)) {
       return {true, DissonanceSeverity::Medium};  // Could be intentional Maj7
     }
     return {true, DissonanceSeverity::High};
@@ -183,30 +179,47 @@ std::pair<bool, DissonanceSeverity> checkIntervalDissonance(uint8_t actual_semit
   return {true, DissonanceSeverity::Medium};
 }
 
-// Get chord name from scale degree (in C major).
-std::string getChordNameFromDegree(int8_t degree) {
-  int normalized = ((degree % 7) + 7) % 7;
-  int root_pc = SCALE[normalized];
-
-  // Determine chord quality suffix
-  std::string suffix;
-  switch (normalized) {
-    case 0:
-    case 3:
-    case 4:
-      suffix = "";  // Major
-      break;
-    case 1:
-    case 2:
-    case 5:
-      suffix = "m";  // Minor
-      break;
-    case 6:
-      suffix = "dim";  // Diminished
-      break;
+// Chord symbol suffix spelled from the chord's intervals above its root.
+std::string getChordSymbolSuffix(const Chord& chord) {
+  bool has[15] = {};
+  for (uint8_t i = 0; i < chord.note_count; ++i) {
+    if (chord.intervals[i] >= 0 && chord.intervals[i] < 15) has[chord.intervals[i]] = true;
   }
+  if (!has[3] && !has[4]) {
+    if (has[2]) return "sus2";
+    if (has[5]) return "sus4";
+  }
+  const bool minor_third = has[3];
+  const bool diminished = minor_third && has[6] && !has[7];
+  const char* triad = diminished ? "dim" : (minor_third ? "m" : "");
+  if (has[10]) {
+    if (diminished) return has[14] ? "m9b5" : "m7b5";
+    return std::string(minor_third ? "m" : "") + (has[14] ? "9" : "7");
+  }
+  if (has[11]) {
+    return std::string(triad) + (minor_third ? "(maj" : "maj") + (has[14] ? "9" : "7") +
+           (minor_third ? ")" : "");
+  }
+  if (has[14]) {
+    return minor_third ? std::string(triad) + "(add9)" : "add9";
+  }
+  return triad;
+}
 
-  return std::string(CHORD_NAMES[root_pc]) + suffix;
+// Name of the chord the timeline holds at a tick (in C major), built from the
+// same degree and extension its reported chord tones come from.
+std::string getChordNameAt(Tick tick, const IChordLookup& chord_lookup) {
+  const int8_t degree = chord_lookup.getChordDegreeAt(tick);
+  const ChordDegreeInfo* info = findChordDegree(degree);
+  if (info == nullptr) return "?";
+  // The root is spelled on its letter, so bVI reads Ab and #IVdim reads F#.
+  static constexpr char kLetters[] = "CDEFGAB";
+  const int offset = (info->root_pc - SCALE[info->letter] + 12) % 12;
+  std::string name(1, kLetters[info->letter]);
+  if (offset == 1) name += '#';
+  if (offset == 11) name += 'b';
+  const Chord chord = getExtendedChord(degree, chord_lookup.getChordExtensionAt(tick));
+  return name + getChordSymbolSuffix(chord);
 }
 
 std::vector<std::string> getChordToneNamesAt(Tick tick, const IChordLookup& chord_lookup) {
@@ -233,26 +246,15 @@ struct TimedNote {
   bool has_provenance = false;
 };
 
+// The generation rule decides which pair a registered maj7/maj9 owns; the
+// report asks it for the compound sevenths the chord-tone excuse leaves.
 bool isRegisteredRootMajorSeventhContext(const TimedNote& a, const TimedNote& b,
-                                         uint8_t actual_semitones, int8_t chord_degree, Tick tick,
+                                         uint8_t actual_semitones, Tick tick,
                                          const IChordLookup& chord_lookup) {
   if (actual_semitones < 23 || actual_semitones % 12 != 11) {
     return false;
   }
-
-  ChordExtension extension = chord_lookup.getChordExtensionAt(tick);
-  if (extension != ChordExtension::Maj7 && extension != ChordExtension::Maj9) {
-    return false;
-  }
-
-  int normalized = ((chord_degree % 7) + 7) % 7;
-  if (normalized != 0 && normalized != 3) {
-    return false;
-  }
-  int root_pc = ((degreeToSemitone(chord_degree) % 12) + 12) % 12;
-  int major_seventh_pc = (root_pc + 11) % 12;
-  return (a.pitch % 12 == root_pc && b.pitch % 12 == major_seventh_pc) ||
-         (b.pitch % 12 == root_pc && a.pitch % 12 == major_seventh_pc);
+  return registeredMajorSeventhOwnsPair(a.pitch, b.pitch, chord_lookup, tick);
 }
 
 // Collect all pitched notes from melodic tracks (excluding drums and SE).
@@ -513,19 +515,27 @@ bool isPreparedResolvingSuspension(const std::vector<TimedNote>& notes, size_t n
 // chordExcusesFlaggedPair() at the overlap start and stop there, so a pair
 // excused here can still be one they act on; what they do to such a pair is
 // their own question rather than a disagreement about this one.
-bool enteringChordExcusesEarlyArrival(uint8_t actual_interval, uint8_t pitch_a, uint8_t pitch_b,
-                                      Tick overlap_start, Tick overlap_end,
-                                      const IChordLookup& chord_lookup) {
+//
+// earlyArrivalEntry() states the bound, and a single note arriving that early
+// is judged against the entering chord by the non-chord-tone check as well.
+Tick earlyArrivalEntry(Tick start, Tick end, const IChordLookup& chord_lookup) {
   // Every timeline entry, not just the next change of degree: an entry that
   // keeps the degree and adds a ninth states different tones, and those tones
   // are the whole question here.
-  const Tick entry = chord_lookup.getNextChordEntryTick(overlap_start);
-  if (entry <= overlap_start || entry >= overlap_end) return false;
+  const Tick entry = chord_lookup.getNextChordEntryTick(start);
+  if (entry <= start || entry >= end) return 0;
 
-  const Tick before_entry = entry - overlap_start;
-  const Tick after_entry = overlap_end - entry;
-  if (before_entry >= TICK_32ND || before_entry > after_entry) return false;
+  const Tick before_entry = entry - start;
+  const Tick after_entry = end - entry;
+  if (before_entry >= TICK_32ND || before_entry > after_entry) return 0;
+  return entry;
+}
 
+bool enteringChordExcusesEarlyArrival(uint8_t actual_interval, uint8_t pitch_a, uint8_t pitch_b,
+                                      Tick overlap_start, Tick overlap_end,
+                                      const IChordLookup& chord_lookup) {
+  const Tick entry = earlyArrivalEntry(overlap_start, overlap_end, chord_lookup);
+  if (entry == 0) return false;
   return chordExcusesFlaggedPair(actual_interval, pitch_a, pitch_b,
                                  chord_lookup.getChordTonesAt(entry));
 }
@@ -594,7 +604,7 @@ void detectSimultaneousClashes(const std::vector<TimedNote>& all_notes, const De
       }
 
       bool registered_root_major_seventh = isRegisteredRootMajorSeventhContext(
-          note_a, note_b, actual_interval, degree, overlap_start, ctx.chord_lookup);
+          note_a, note_b, actual_interval, overlap_start, ctx.chord_lookup);
       if (registered_root_major_seventh) {
         is_dissonant = false;
       }
@@ -703,10 +713,14 @@ void detectNonChordTonesInTrack(const MidiTrack& track, TrackRole role, bool is_
                                 const DetectionContext& ctx, DissonanceReport& report) {
   for (const auto& note : track.notes()) {
     uint32_t bar = tickToBar(note.start_tick);
-    int8_t degree = ctx.chord_lookup.getChordDegreeAt(note.start_tick);
+    // A note pushed a few ticks ahead of a chord entry was written for that chord.
+    const Tick early_entry =
+        earlyArrivalEntry(note.start_tick, note.start_tick + note.duration, ctx.chord_lookup);
+    const Tick harmony_tick = early_entry != 0 ? early_entry : note.start_tick;
+    int8_t degree = ctx.chord_lookup.getChordDegreeAt(harmony_tick);
     int pitch_class = getPitchClass(note.note);
 
-    if (chordOrTensionContains(pitch_class, note.start_tick, ctx.chord_lookup)) continue;
+    if (chordOrTensionContains(pitch_class, harmony_tick, ctx.chord_lookup)) continue;
 
     MetricPosition metric_position = getMetricPosition(note.start_tick);
     DissonanceSeverity severity;
@@ -741,7 +755,7 @@ void detectNonChordTonesInTrack(const MidiTrack& track, TrackRole role, bool is_
     // reporting it would call the rule generation follows an error -- unless a
     // chord voice sits close enough to make it a clash.
     if (role == TrackRole::Vocal && !has_close_interval &&
-        !ctx.chord_lookup.isSecondaryDominantAt(note.start_tick) &&
+        !ctx.chord_lookup.isSecondaryDominantAt(harmony_tick) &&
         isMelodicColourPitchClass(degree, pitch_class)) {
       continue;
     }
@@ -769,8 +783,8 @@ void detectNonChordTonesInTrack(const MidiTrack& track, TrackRole role, bool is_
     issue.pitch = note.note;
     issue.pitch_name = midiNoteToNameInternal(note.note);
     issue.chord_degree = degree;
-    issue.chord_name = getChordNameFromDegree(degree);
-    issue.chord_tones = getChordToneNamesAt(note.start_tick, ctx.chord_lookup);
+    issue.chord_name = getChordNameAt(harmony_tick, ctx.chord_lookup);
+    issue.chord_tones = getChordToneNamesAt(harmony_tick, ctx.chord_lookup);
 #ifdef MIDISKETCH_NOTE_PROVENANCE
     issue.has_provenance = note.hasValidProvenance();
     issue.prov_chord_degree = note.prov_chord_degree;
@@ -832,8 +846,6 @@ void detectSustainedInTrack(const MidiTrack& track, TrackRole role,
     Tick note_end = note.start_tick + note.duration;
     int pitch_class = getPitchClass(note.note);
 
-    int8_t start_degree = ctx.chord_lookup.getChordDegreeAt(note_start);
-
     if (!chordOrTensionContains(pitch_class, note_start, ctx.chord_lookup)) {
       continue;
     }
@@ -866,10 +878,10 @@ void detectSustainedInTrack(const MidiTrack& track, TrackRole role,
         issue.pitch = note.note;
         issue.pitch_name = midiNoteToNameInternal(note.note);
         issue.chord_degree = new_degree;
-        issue.chord_name = getChordNameFromDegree(new_degree);
+        issue.chord_name = getChordNameAt(change.tick, ctx.chord_lookup);
         issue.chord_tones = getChordToneNamesAt(change.tick, ctx.chord_lookup);
         issue.note_start_tick = note_start;
-        issue.original_chord_name = getChordNameFromDegree(start_degree);
+        issue.original_chord_name = getChordNameAt(note_start, ctx.chord_lookup);
 #ifdef MIDISKETCH_NOTE_PROVENANCE
         issue.has_provenance = note.hasValidProvenance();
         issue.prov_chord_degree = note.prov_chord_degree;

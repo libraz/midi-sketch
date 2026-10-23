@@ -7,13 +7,178 @@
 
 #include <gtest/gtest.h>
 
+#include <filesystem>
+#include <fstream>
+#include <set>
+#include <sstream>
+#include <string>
 #include <utility>
 #include <vector>
 
+#include "core/chord_progression_tracker.h"
+#include "core/generator.h"
+#include "core/pitch_utils.h"
 #include "core/preset_data.h"
 
 namespace midisketch {
 namespace {
+
+// ===== The degree table =====
+
+TEST(ChordDegreeTableTest, EveryProgressionDegreeHasARow) {
+  for (uint8_t id = 0; id < CHORD_COUNT; ++id) {
+    const ChordProgression& progression = getChordProgression(id);
+    for (uint8_t slot = 0; slot < progression.length; ++slot) {
+      EXPECT_NE(findChordDegree(progression.degrees[slot]), nullptr)
+          << getChordProgressionName(id) << " names degree "
+          << static_cast<int>(progression.degrees[slot]) << ", which the table does not hold";
+    }
+  }
+  EXPECT_EQ(findChordDegree(7), nullptr);
+  EXPECT_EQ(findChordDegree(9), nullptr);
+}
+
+TEST(ChordDegreeTableTest, EveryConsumerReadsTheRowItsDegreeNames) {
+  for (const ChordDegreeInfo& row : getChordDegreeTable()) {
+    SCOPED_TRACE(static_cast<int>(row.degree));
+    EXPECT_EQ(degreeToSemitone(row.degree), row.root_pc);
+    EXPECT_EQ(degreeToRoot(row.degree, Key::C) % 12, row.root_pc);
+    EXPECT_EQ(getChordQuality(row.degree), row.quality);
+
+    const Chord triad = getChordNotes(row.degree);
+    const int third = row.quality == ChordQuality::Major ? 4 : 3;
+    const int fifth = row.quality == ChordQuality::Diminished ? 6 : 7;
+    EXPECT_EQ(triad.intervals[1], third);
+    EXPECT_EQ(triad.intervals[2], fifth);
+
+    // A diatonic root sits on its own letter. A borrowed chord differs from the
+    // diatonic one on its letter by its root (bVI, #IVdim) or, on the same root,
+    // by its quality (iv against IV).
+    const int offset = (row.root_pc - SCALE[row.letter] + 12) % 12;
+    if (row.degree <= 6) {
+      EXPECT_EQ(row.letter, row.degree);
+      EXPECT_EQ(offset, 0);
+    } else if (offset == 0) {
+      EXPECT_NE(row.quality, getChordQuality(row.letter)) << "same chord as the diatonic one";
+    } else {
+      EXPECT_TRUE(offset == 1 || offset == 11) << "offset " << offset;
+    }
+  }
+}
+
+TEST(ChordDegreeTableTest, OnlyIAndIVOwnADiatonicMajorSeventh) {
+  for (const ChordDegreeInfo& row : getChordDegreeTable()) {
+    EXPECT_EQ(isDiatonicMajorSeventhDegree(row.degree), row.degree == 0 || row.degree == 3)
+        << "degree " << static_cast<int>(row.degree);
+  }
+}
+
+// The analyzer scripts load scripts/music_analyzer/chord_degrees.json instead
+// of keeping a table of their own, so the file must be this table, exported.
+std::string exportChordDegreeTable() {
+  auto quality_name = [](ChordQuality quality) {
+    switch (quality) {
+      case ChordQuality::Minor:
+        return "minor";
+      case ChordQuality::Diminished:
+        return "diminished";
+      case ChordQuality::Major:
+      default:
+        return "major";
+    }
+  };
+  auto function_letter = [](ChordFunction function) {
+    switch (function) {
+      case ChordFunction::Tonic:
+        return "T";
+      case ChordFunction::Dominant:
+        return "D";
+      case ChordFunction::Subdominant:
+      default:
+        return "S";
+    }
+  };
+
+  std::ostringstream out;
+  out << "{\n"
+      << "  \"source\": \"src/core/chord.cpp degree table, checked by "
+         "tests/core/chord_test.cpp\",\n"
+      << "  \"degrees\": {\n";
+  const auto& table = getChordDegreeTable();
+  for (size_t i = 0; i < table.size(); ++i) {
+    const ChordDegreeInfo& row = table[i];
+    const Chord triad = getChordNotes(row.degree);
+    out << "    \"" << static_cast<int>(row.degree)
+        << "\": {\"root_pc\": " << static_cast<int>(row.root_pc) << ", \"quality\": \""
+        << quality_name(row.quality) << "\", \"triad\": [" << static_cast<int>(triad.intervals[0])
+        << ", " << static_cast<int>(triad.intervals[1]) << ", "
+        << static_cast<int>(triad.intervals[2]) << "], \"function\": \""
+        << function_letter(getChordFunction(row.degree)) << "\"}"
+        << (i + 1 < table.size() ? "," : "") << "\n";
+  }
+  out << "  }\n}\n";
+  return out.str();
+}
+
+TEST(ChordDegreeTableTest, AnalyzerTableIsTheExportOfThisOne) {
+  const auto path = std::filesystem::path(__FILE__).parent_path().parent_path().parent_path() /
+                    "scripts/music_analyzer/chord_degrees.json";
+  std::ifstream file(path);
+  ASSERT_TRUE(file.is_open()) << path;
+  std::stringstream contents;
+  contents << file.rdbuf();
+
+  const std::string expected = exportChordDegreeTable();
+  EXPECT_EQ(contents.str(), expected) << "Write this to " << path << ":\n" << expected;
+}
+
+// ===== Named progressions reach the timeline =====
+
+// The cadence fix rewrites the closing bars of a section and a secondary
+// dominant is recorded on its entry, so neither is compared.
+TEST(ChordProgressionSweepTest, EveryNamedProgressionSoundsAsItsPlanNamesIt) {
+  constexpr uint8_t kCadenceBars = 2;
+  for (uint8_t id = 0; id < CHORD_COUNT; ++id) {
+    SCOPED_TRACE(getChordProgressionName(id));
+    GeneratorParams params{};
+    params.seed = 4242;
+    params.chord_id = id;
+    params.mood = Mood::StraightPop;
+    params.structure = StructurePattern::StandardPop;
+    params.blueprint_id = 0;
+
+    Generator gen;
+    gen.generate(params);
+    const Song& song = gen.getSong();
+    const IHarmonyContext& harmony = gen.getHarmonyContext();
+
+    ChordProgressionTracker plan;
+    plan.initialize(song.arrangement(), getChordProgression(id), gen.getParams().mood);
+
+    size_t compared = 0;
+    std::set<int8_t> sounded;
+    for (const Section& section : song.arrangement().sections()) {
+      for (uint8_t bar = 0; bar + kCadenceBars < section.bars; ++bar) {
+        const Tick tick = section.start_tick + bar * TICKS_PER_BAR;
+        if (harmony.isSecondaryDominantAt(tick)) continue;
+        ++compared;
+        const int8_t degree = harmony.getChordDegreeAt(tick);
+        sounded.insert(degree);
+        EXPECT_EQ(degree, plan.getChordDegreeAt(tick))
+            << section.name << " bar " << static_cast<int>(bar) << " sounds a chord no record "
+            << "accounts for";
+      }
+    }
+    ASSERT_GT(compared, 0u);
+
+    const ChordProgression& progression = getChordProgression(id);
+    for (uint8_t slot = 0; slot < progression.length; ++slot) {
+      EXPECT_EQ(sounded.count(progression.degrees[slot]), 1u)
+          << "degree " << static_cast<int>(progression.degrees[slot])
+          << " of the named progression never sounds at a bar head";
+    }
+  }
+}
 
 TEST(ChordTest, FourChordPopProgression) {
   const auto& prog = getChordProgression(0);

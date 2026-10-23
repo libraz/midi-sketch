@@ -153,6 +153,24 @@ constexpr size_t safeProgressionIndex(uint8_t chord_id, const T (&)[N]) {
   return chord_id < N ? static_cast<size_t>(chord_id) : 0;
 }
 
+// Every degree identifier, with the root, the letter it is spelled on and the
+// triad quality (see the degree system documentation below).
+constexpr std::array<ChordDegreeInfo, kChordDegreeCount> kChordDegrees = {{
+    {0, 0, 0, ChordQuality::Major},        // I
+    {1, 2, 1, ChordQuality::Minor},        // ii
+    {2, 4, 2, ChordQuality::Minor},        // iii
+    {3, 5, 3, ChordQuality::Major},        // IV
+    {4, 7, 4, ChordQuality::Major},        // V
+    {5, 9, 5, ChordQuality::Minor},        // vi
+    {6, 11, 6, ChordQuality::Diminished},  // vii°
+    {8, 8, 5, ChordQuality::Major},        // bVI on A
+    {10, 10, 6, ChordQuality::Major},      // bVII on B
+    {11, 3, 2, ChordQuality::Major},       // bIII on E
+    {12, 5, 3, ChordQuality::Minor},       // iv on F
+    {13, 1, 1, ChordQuality::Major},       // bII on D
+    {14, 6, 3, ChordQuality::Diminished},  // #IVdim on F
+}};
+
 // Builds a chord from scale degree.
 // Degrees: I=0, ii=1, iii=2, IV=3, V=4, vi=5, vii=6, bVI=8, bVII=10, bIII=11,
 //          iv=12, bII=13, #IVdim=14
@@ -238,61 +256,29 @@ Chord buildChord(int8_t degree) {
 
 }  // namespace
 
-// Converts degree to pitch class (0-11) in C major.
-// Uses SCALE from pitch_utils.h for diatonic degrees.
-// Public API: declared in chord.h for slash chord and other external use.
-int degreeToSemitone(int8_t degree) {
-  // Borrowed chords from parallel minor (see documentation above)
-  switch (degree) {
-    case 10:
-      return 10;  // bVII = Bb (10 semitones from C)
-    case 8:
-      return 8;  // bVI  = Ab (8 semitones from C)
-    case 11:
-      return 3;  // bIII = Eb (3 semitones from C)
-    case 12:
-      return 5;  // iv   = F  (5 semitones from C, minor quality)
-    case 13:
-      return 1;  // bII  = Db (1 semitone from C, Neapolitan)
-    case 14:
-      return 6;  // #IVdim = F# (6 semitones from C, diminished)
-    default:
-      break;
-  }
-
-  // Diatonic degrees (0-6) use SCALE from pitch_utils.h
-  if (degree >= 0 && degree < 7) {
-    return SCALE[degree];
-  }
-
-  return 0;
+const std::array<ChordDegreeInfo, kChordDegreeCount>& getChordDegreeTable() {
+  return kChordDegrees;
 }
 
-std::vector<ChromaticAlteration> getChromaticAlterations(int8_t degree, ChordExtension extension) {
-  // Letter of the chord's root on the key's scale, borrowed degrees included.
-  int letter;
-  switch (degree) {
-    case 8:
-      letter = 5;  // bVI on A
-      break;
-    case 10:
-      letter = 6;  // bVII on B
-      break;
-    case 11:
-      letter = 2;  // bIII on E
-      break;
-    case 12:
-    case 14:
-      letter = 3;  // iv on F, #IVdim on F
-      break;
-    case 13:
-      letter = 1;  // bII on D
-      break;
-    default:
-      if (degree < 0 || degree > 6) return {};
-      letter = degree;
-      break;
+const ChordDegreeInfo* findChordDegree(int8_t degree) {
+  for (const ChordDegreeInfo& info : kChordDegrees) {
+    if (info.degree == degree) return &info;
   }
+  return nullptr;
+}
+
+// An identifier the table does not hold falls back to the tonic.
+int degreeToSemitone(int8_t degree) {
+  const ChordDegreeInfo* info = findChordDegree(degree);
+  return info != nullptr ? info->root_pc : 0;
+}
+
+bool isDiatonicMajorSeventhDegree(int8_t degree) { return degree == 0 || degree == 3; }
+
+std::vector<ChromaticAlteration> getChromaticAlterations(int8_t degree, ChordExtension extension) {
+  const ChordDegreeInfo* info = findChordDegree(degree);
+  if (info == nullptr) return {};
+  const int letter = info->letter;
   // Letters above the root each chord interval stands on.
   auto letterStep = [](int interval) {
     switch (interval % 12) {
@@ -342,16 +328,34 @@ uint8_t degreeToRoot(int8_t degree, Key key) {
 }
 
 ChordQuality getChordQuality(int8_t degree) {
-  if (degree == 6 || degree == 14) {
-    return ChordQuality::Diminished;
-  }
-  if (degree == 1 || degree == 2 || degree == 5 || degree == 12) {
-    return ChordQuality::Minor;
-  }
-  return ChordQuality::Major;
+  const ChordDegreeInfo* info = findChordDegree(degree);
+  return info != nullptr ? info->quality : ChordQuality::Major;
 }
 
 Chord getChordNotes(int8_t degree) { return buildChord(degree); }
+
+ChordExtension fitExtensionToDegree(int8_t degree, ChordExtension extension) {
+  const ChordQuality quality = getChordQuality(degree);
+  if (quality == ChordQuality::Major) return extension;
+  if (quality == ChordQuality::Minor) {
+    // A minor triad's seventh is the minor one; a major seventh over it is mM7.
+    if (extension == ChordExtension::Maj7) return ChordExtension::Min7;
+    if (extension == ChordExtension::Maj9) return ChordExtension::Min9;
+    return extension;
+  }
+  switch (extension) {
+    case ChordExtension::Maj7:
+    case ChordExtension::Maj9:
+    case ChordExtension::Min9:
+      return ChordExtension::Min7;
+    case ChordExtension::Add9:
+    case ChordExtension::Sus2:
+    case ChordExtension::Sus4:
+      return ChordExtension::None;
+    default:
+      return extension;
+  }
+}
 
 Chord getExtendedChord(int8_t degree, ChordExtension extension) {
   Chord base = buildChord(degree);
@@ -602,6 +606,7 @@ ReharmonizationResult reharmonizeForSection(int8_t degree, SectionType section_t
         } else {
           result.extension = ChordExtension::Add9;
         }
+        result.extension = fitExtensionToDegree(degree, result.extension);
       }
       break;
     }

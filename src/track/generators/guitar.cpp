@@ -83,14 +83,14 @@ static std::vector<uint8_t> buildGuitarChordPitches(uint8_t root, const Chord& c
   std::vector<uint8_t> pitches;
 
   if (style == GuitarStyle::PowerChord) {
-    // Power chord: root + 5th only
+    // Power chord: root + the chord's own 5th (diminished on vii and #IVdim)
     uint8_t r = root;
     while (r < kBaseOctave) r += 12;
     while (r >= kBaseOctave + 12) r -= 12;
     pitches.push_back(r);
-    // Perfect 5th: keep within guitar range. If above kGuitarHigh, fold down an
-    // octave (becomes a perfect 4th below the root) so the chord stays in range.
-    int fifth = static_cast<int>(r) + 7;
+    // Keep the fifth within guitar range. If above kGuitarHigh, fold it down an
+    // octave below the root so the chord stays in range.
+    int fifth = static_cast<int>(r) + chord.intervals[2];
     if (fifth > kGuitarHigh) fifth -= 12;
     if (fifth >= kGuitarLow && fifth <= kGuitarHigh) {
       pitches.push_back(static_cast<uint8_t>(fifth));
@@ -153,12 +153,16 @@ class OnsetVoicing {
     extension_ = extension;
     const StrummedChord chord = chordToStrumAt(harmony_, tick);
     root_ = chord.root;
+    fifth_interval_ = chord.chord.intervals[2];
     pitches_ = buildGuitarChordPitches(root_, chord.chord, style_);
     return true;
   }
 
   /// @brief Root of the chord sounding at the last onset asked about.
   uint8_t root() const { return root_; }
+
+  /// @brief Semitones from that root to the chord's fifth (6 on a diminished chord).
+  int fifthInterval() const { return fifth_interval_; }
 
   /// @brief Chord pitches in guitar range, empty when the chord has none there.
   const std::vector<uint8_t>& pitches() const { return pitches_; }
@@ -170,6 +174,7 @@ class OnsetVoicing {
   int8_t degree_ = -1;
   ChordExtension extension_ = ChordExtension::None;
   uint8_t root_ = 0;
+  int fifth_interval_ = 7;
   std::vector<uint8_t> pitches_;
 };
 
@@ -595,10 +600,10 @@ static void generatePedalToneBar(MidiTrack& track, IHarmonyContext& harmony, Tic
       pitch = base_root + 12;
     }
 
-    // Occasional decoration on non-accent positions: 5th (+7) or extra octave
+    // Occasional decoration on non-accent positions: the chord's 5th
     bool is_accent = (pos_idx % 4 == 0);
     if (!is_accent && rng_util::rollRange(rng, 0, 14) == 0) {  // ~7% chance
-      pitch = base_root + 7;                                   // perfect 5th
+      pitch = static_cast<uint8_t>(base_root + voicing.fifthInterval());
     }
 
     // Clamp to guitar range
@@ -646,7 +651,7 @@ static void generateRhythmChordBar(MidiTrack& track, IHarmonyContext& harmony, T
     // harmony no other track is playing.
     voicing.moveTo(pos);
     const uint8_t base_root = static_cast<uint8_t>(normalizeToOctave(voicing.root(), kBaseOctave));
-    const uint8_t fifth = static_cast<uint8_t>(base_root + 7);  // perfect 5th
+    const uint8_t fifth = static_cast<uint8_t>(base_root + voicing.fifthInterval());
 
     int beat_pos = pos_idx / 4;
     uint8_t vel = calculateGuitarVelocity(base_vel, section, GuitarStyle::RhythmChord, beat_pos);

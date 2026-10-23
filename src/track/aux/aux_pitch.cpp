@@ -13,6 +13,7 @@
 #include "core/note_timeline_utils.h"
 #include "core/pitch_utils.h"
 #include "core/timing_constants.h"
+#include "core/track_collision_detector.h"
 
 namespace midisketch {
 
@@ -50,34 +51,29 @@ void calculateAuxRange(const AuxConfig& config, const TessituraRange& main_tessi
 bool isConsonantWithMelodyAndTracks(uint8_t pitch, Tick start, Tick duration,
                                     const std::vector<NoteEvent>* main_melody,
                                     const IHarmonyContext& harmony, float dissonance_tolerance) {
-  // Check against main melody
+  // Check against main melody with the collision detector's own pair verdict,
+  // so the lead is judged on the actual interval under the sounding chord.
+  // The tolerance only relaxes that verdict.
   if (main_melody) {
+    Tick end = start + duration;
     for (const auto& note : *main_melody) {
-      if (NoteTimeline::overlaps(start, start + duration, note.start_tick,
-                                 note.start_tick + note.duration)) {
-        int interval = std::abs(static_cast<int>(pitch) - static_cast<int>(note.note));
-        interval = interval % 12;
+      Tick note_end = note.start_tick + note.duration;
+      if (!NoteTimeline::overlaps(start, end, note.start_tick, note_end)) continue;
 
-        // A7: With higher tolerance, allow more intervals
-        // Base case: minor 2nd (1) and major 7th (11) are dissonant
-        bool is_dissonant = (interval == 1 || interval == 11);
-
-        // With tolerance > 0.3, also allow tritone (6)
-        if (dissonance_tolerance < 0.3f && interval == 6) {
-          is_dissonant = true;
-        }
-
-        // With tolerance > 0, probabilistically allow dissonance
-        if (is_dissonant && dissonance_tolerance > 0.0f) {
-          // Random check would need RNG, so just use threshold
-          if (dissonance_tolerance < 0.5f) {
-            return false;  // Still reject
-          }
-          // High tolerance: allow
-        } else if (is_dissonant) {
-          return false;
-        }
+      int semitones = std::abs(static_cast<int>(pitch) - static_cast<int>(note.note));
+      Tick overlap_start = std::max(start, note.start_tick);
+      Tick overlap_duration = std::min(end, note_end) - overlap_start;
+      if (isToleratedMelodicTension(semitones, overlap_duration, pitch, note.note, overlap_start,
+                                    TrackRole::Aux, TrackRole::Vocal) ||
+          !isClashingPair(pitch, TrackRole::Aux, note.note, TrackRole::Vocal, &harmony, start,
+                          overlap_start)) {
+        continue;
       }
+
+      // Tolerance 0.3 and above lets a tritone through, 0.5 and above any clash.
+      if (dissonance_tolerance >= 0.5f) continue;
+      if (dissonance_tolerance >= 0.3f && semitones % 12 == 6) continue;
+      return false;
     }
   }
 

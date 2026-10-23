@@ -1,12 +1,17 @@
 /**
  * @file melody_utils_test.cpp
- * @brief Unit tests for enforceMaxPhraseDuration in melody_utils.
+ * @brief Unit tests for melody_utils phrase helpers.
  */
 
 #include "track/melody/melody_utils.h"
 
 #include <gtest/gtest.h>
 
+#include <set>
+
+#include "core/config_converter.h"
+#include "core/preset_data.h"
+#include "core/production_blueprint.h"
 #include "core/timing_constants.h"
 #include "core/types.h"
 #include "test_helpers/note_event_test_helper.h"
@@ -447,6 +452,96 @@ TEST_F(EnforceMaxPhraseDurationTest, NoteRemovalCreatesCorrectGap) {
           << "Gap before note " << idx << " should be at least breath_ticks";
     }
   }
+}
+
+// ============================================================================
+// Leap budget
+// ============================================================================
+
+TEST(ResolveContextMaxLeapTest, ExplicitMaxLeapCapsTheBlueprintBudget) {
+  SongConfig config = createDefaultSongConfig(0);
+  config.seed = 5;
+  config.blueprint_id = 0;
+  config.melody_max_leap = 5;
+  GeneratorParams params = ConfigConverter::convert(config);
+  params.blueprint_ref = &getProductionBlueprint(0);
+  const uint8_t cap = params.blueprint_ref->constraints.max_leap_semitones;
+  ASSERT_GT(cap, 5);
+  ASSERT_TRUE(params.melody_max_leap_override);
+  EXPECT_EQ(resolveContextMaxLeap(params), 5);
+
+  // An explicit value above the blueprint's allowance is bounded by it.
+  params.melody_params.max_leap_interval = static_cast<uint8_t>(cap + 2);
+  EXPECT_EQ(resolveContextMaxLeap(params), cap);
+}
+
+TEST(ResolveContextMaxLeapTest, PresetLeapDefaultsDoNotNarrowTheBlueprintBudget) {
+  SongConfig config = createDefaultSongConfig(2);  // Bright Pop: a 4-semitone preset leap
+  config.seed = 5;
+  config.blueprint_id = 0;
+  config.melodic_complexity = MelodicComplexity::Simple;  // and Simple caps it at 5
+  GeneratorParams params = ConfigConverter::convert(config);
+  params.blueprint_ref = &getProductionBlueprint(0);
+  ASSERT_FALSE(params.melody_max_leap_override);
+  ASSERT_LT(params.melody_params.max_leap_interval,
+            params.blueprint_ref->constraints.max_leap_semitones);
+  EXPECT_EQ(resolveContextMaxLeap(params), params.blueprint_ref->constraints.max_leap_semitones);
+}
+
+// ============================================================================
+// Hook contour blend
+// ============================================================================
+
+TEST(BlendHookContourStepTest, SkeletonDegreesAreSemitonesBeforeBlending) {
+  // A skeleton step equal to the contour step leaves it alone once both are semitones.
+  EXPECT_EQ(blendHookContourStep(7, 4), 7);  // 4 degrees = a fifth
+  EXPECT_EQ(blendHookContourStep(4, 2), 4);  // 2 degrees = a major third
+  EXPECT_EQ(blendHookContourStep(-4, -2), -4);
+  // Rounded, not truncated toward zero: 0.8 * 2 = 1.6 becomes 2.
+  EXPECT_EQ(blendHookContourStep(2, 0), 2);
+  EXPECT_EQ(blendHookContourStep(-2, 0), -2);
+  // A wide skeleton step moves the contour by its semitone weight: 0.8*0 + 0.2*7.
+  EXPECT_EQ(blendHookContourStep(0, 4), 1);
+  EXPECT_EQ(blendHookContourStep(0, 7), 2);  // 7 degrees = an octave
+}
+
+// ============================================================================
+// applySequentialTransposition Tests
+// ============================================================================
+
+TEST(SequentialTranspositionTest, RiseStopsAtTheCeilingInsteadOfPilingOntoIt) {
+  constexpr uint8_t kLow = 55;
+  constexpr uint8_t kHigh = 72;
+  std::vector<NoteEvent> notes;
+  for (uint8_t pitch : {60, 64, 67, 71}) {
+    notes.push_back(
+        NoteEventTestHelper::create(static_cast<Tick>(notes.size() * 480), 480, pitch, 80));
+  }
+  // The fourth B phrase asks for +5; only +1 fits under the ceiling.
+  applySequentialTransposition(notes, 3, SectionType::B, 0, kLow, kHigh);
+
+  ASSERT_EQ(notes.size(), 4u);
+  std::set<uint8_t> distinct;
+  for (const auto& note : notes) {
+    EXPECT_GE(note.note, kLow);
+    EXPECT_LE(note.note, kHigh);
+    distinct.insert(note.note);
+  }
+  EXPECT_EQ(distinct.size(), 4u) << "transposed notes collapsed onto the range edge";
+  EXPECT_EQ(notes.back().note, kHigh);
+}
+
+TEST(SequentialTranspositionTest, FullRiseWhenTheRangeHasRoom) {
+  std::vector<NoteEvent> notes;
+  for (uint8_t pitch : {60, 64, 67}) {
+    notes.push_back(
+        NoteEventTestHelper::create(static_cast<Tick>(notes.size() * 480), 480, pitch, 80));
+  }
+  applySequentialTransposition(notes, 3, SectionType::B, 0, 55, 84);
+  // +5 in C major: C->F, E->A, G->C.
+  EXPECT_EQ(notes[0].note, 65);
+  EXPECT_EQ(notes[1].note, 69);
+  EXPECT_EQ(notes[2].note, 72);
 }
 
 }  // namespace

@@ -16,7 +16,7 @@ namespace midisketch {
 
 /// @brief Musical function classification for motifs.
 enum class MotifRole : uint8_t {
-  Hook,     ///< Primary hook - exact repetition, high prominence
+  Hook,     ///< Primary hook - high prominence, most likely to reuse the base pattern
   Texture,  ///< Background texture - flexible, fills harmonic space
   Counter   ///< Counter melody - complementary to main theme
 };
@@ -26,8 +26,7 @@ enum class MotifRole : uint8_t {
  */
 struct MotifRoleMeta {
   MotifRole role;           ///< Which role this describes
-  float exact_repeat_prob;  ///< Probability of exact repetition (0.0-1.0)
-  float variation_range;    ///< Allowed variation (0.0=none, 1.0=full)
+  float exact_repeat_prob;  ///< Chance a new section type (Free policy) reuses the base pattern
   uint8_t velocity_base;    ///< Base MIDI velocity for this role
   bool allow_octave_layer;  ///< Whether octave doubling is appropriate
 };
@@ -43,16 +42,16 @@ struct MotifRoleMeta {
 inline MotifRoleMeta getMotifRoleMeta(MotifRole role) {
   switch (role) {
     case MotifRole::Hook:
-      // Hooks: 90% exact, minimal variation, prominent velocity, octave OK
-      return {role, 0.90f, 0.1f, 85, true};
+      // Hooks: 90% reuse the base pattern, prominent velocity, octave OK
+      return {role, 0.90f, 85, true};
     case MotifRole::Texture:
-      // Texture: 60% exact, moderate variation, softer, no octave
-      return {role, 0.60f, 0.5f, 65, false};
+      // Texture: 60% reuse, softer, no octave
+      return {role, 0.60f, 65, false};
     case MotifRole::Counter:
-      // Counter: 70% exact, some variation, moderate velocity, octave OK
-      return {role, 0.70f, 0.3f, 75, true};
+      // Counter: 70% reuse, moderate velocity, octave OK
+      return {role, 0.70f, 75, true};
   }
-  return {MotifRole::Hook, 0.90f, 0.1f, 85, true};
+  return {MotifRole::Hook, 0.90f, 85, true};
 }
 
 /// @brief A short musical idea that can be repeated and varied.

@@ -94,14 +94,17 @@ uint8_t getOctave(uint8_t root) {
   return root;
 }
 
+/// The chord the timeline holds at a tick, as intervals above its root.
+Chord timelineChordAt(const IHarmonyContext& harmony, Tick tick) {
+  return getExtendedChord(harmony.getChordDegreeAt(tick), harmony.getChordExtensionAt(tick));
+}
+
 /// The chord's fifth in the register of the bar's bass note.
 /// Under a slash bass the bass note is not the root, and a fifth stacked on it
-/// is not the chord's: C/E would sound B against C.
-uint8_t getChordFifthAbove(uint8_t chord_root, uint8_t bass_note) {
-  if (chord_root % OCTAVE == bass_note % OCTAVE) {
-    return getDiatonicFifth(bass_note);
-  }
-  int fifth_pc = getDiatonicFifth(chord_root) % OCTAVE;
+/// is not the chord's: C/E would sound B against C. The fifth is the chord's
+/// own, so it is diminished on vii and #IVdim and perfect on a secondary B7.
+uint8_t getChordFifthAbove(uint8_t chord_root, uint8_t bass_note, const Chord& chord) {
+  int fifth_pc = (chord_root + chord.intervals[2]) % OCTAVE;
   int fifth = bass_note + (fifth_pc - bass_note % OCTAVE + OCTAVE) % OCTAVE;
   if (fifth > BASS_HIGH) fifth -= OCTAVE;
   return clampBass(fifth);
@@ -133,8 +136,7 @@ bool clashesWithAnyChordTone(int pitch_class, const ChordTones& chord_tones, int
 ///        secondary dominant: its third is raised and its seventh is lowered.
 uint8_t getApproachNote(uint8_t current_root, uint8_t next_root, int8_t target_degree,
                         const ChordTones& chord_tones) {
-  int diff = static_cast<int>(next_root) - static_cast<int>(current_root);
-  if (diff == 0) return current_root;
+  if (next_root % OCTAVE == current_root % OCTAVE) return current_root;
 
   ChordFunction func = getChordFunction(target_degree);
 
@@ -435,8 +437,10 @@ struct BassBarContext {
   bool steady_cell = false;  ///< RhythmSync: keep near-constant 8th cells
 };
 
+// The same pitch class an octave away is the same chord: the bar's root may sit
+// in another register after motion or vocal adjustment, the next one does not.
 bool hasApproachTarget(uint8_t current_root, uint8_t next_root) {
-  return next_root != 0 && next_root != current_root;
+  return next_root != 0 && next_root % OCTAVE != current_root % OCTAVE;
 }
 
 bool hasApproachTarget(const BassBarContext& ctx) {
@@ -843,7 +847,9 @@ void generateRnBNeoSoulPattern(const BassBarContext& ctx) {
   uint8_t passing = getNextDiatonic(ctx.root, +1);
   addBassNoteWithTritoneCheck(ctx.track, ctx.harmony, ctx.bar_start + TICK_QUARTER, TICK_EIGHTH,
                               passing, ctx.chord_root, ctx.vel_weak);
-  uint8_t third = getDiatonicThird(ctx.chord_root);
+  // The chord's own third: Fm's Ab under iv, not the A a diatonic F would take.
+  uint8_t third =
+      wrapToBassRange(ctx.chord_root + timelineChordAt(ctx.harmony, ctx.bar_start).intervals[1]);
   addBassNoteWithTritoneCheck(ctx.track, ctx.harmony, ctx.bar_start + TICK_QUARTER + TICK_EIGHTH,
                               TICK_EIGHTH, third, ctx.chord_root, ctx.vel_weak);
   addBassNoteWithTritoneCheck(ctx.track, ctx.harmony, ctx.bar_start + 2 * TICK_QUARTER,
@@ -1040,7 +1046,7 @@ void generateBassBar(MidiTrack& track, Tick bar_start, uint8_t root, uint8_t cho
   uint8_t vel = calculateVelocity(section, 0, mood);
   uint8_t vel_weak = static_cast<uint8_t>(vel * 0.85f);
   // Keep the intended fifth here; actual safety is checked at each emitted note's tick.
-  uint8_t fifth = getChordFifthAbove(chord_root, root);
+  uint8_t fifth = getChordFifthAbove(chord_root, root, timelineChordAt(harmony, bar_start));
   uint8_t octave = getOctave(root);
 
   // Build context for pattern functions
@@ -1234,7 +1240,7 @@ void generateBassHalfBar(MidiTrack& track, Tick half_start, uint8_t root, uint8_
   uint8_t vel = calculateVelocity(section, 0, mood);
   uint8_t vel_weak = static_cast<uint8_t>(vel * 0.85f);
   // Keep the intended fifth here; actual safety is checked at each emitted note's tick.
-  uint8_t fifth = getChordFifthAbove(chord_root, root);
+  uint8_t fifth = getChordFifthAbove(chord_root, root, timelineChordAt(harmony, half_start));
 
   if (isDenseBassPattern(pattern)) {
     // 8th-note pulse across the half bar (Driving-style): R R R/5 R

@@ -10,9 +10,11 @@
 
 namespace midisketch {
 
-ChordExtension selectChordExtension(int8_t degree, SectionType section, int bar_in_section,
-                                    int section_bars, const ChordExtensionParams& ext_params,
-                                    std::mt19937& rng) {
+namespace {
+
+ChordExtension rollChordExtension(int8_t degree, SectionType section, int bar_in_section,
+                                  int section_bars, const ChordExtensionParams& ext_params,
+                                  std::mt19937& rng) {
   if (!ext_params.enable_sus && !ext_params.enable_7th && !ext_params.enable_9th) {
     return ChordExtension::None;
   }
@@ -87,6 +89,17 @@ ChordExtension selectChordExtension(int8_t degree, SectionType section, int bar_
   }
 
   return ChordExtension::None;
+}
+
+}  // namespace
+
+// The rolls are taken first and the fit applied after, so a diminished degree
+// draws the same random stream as any other.
+ChordExtension selectChordExtension(int8_t degree, SectionType section, int bar_in_section,
+                                    int section_bars, const ChordExtensionParams& ext_params,
+                                    std::mt19937& rng) {
+  return fitExtensionToDegree(
+      degree, rollChordExtension(degree, section, bar_in_section, section_bars, ext_params, rng));
 }
 
 }  // namespace midisketch

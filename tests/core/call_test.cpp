@@ -5,6 +5,7 @@
 
 #include "core/generator.h"
 #include "core/preset_data.h"
+#include "core/production_blueprint.h"
 #include "core/section_properties.h"
 #include "core/structure.h"
 #include "core/types.h"
@@ -334,6 +335,36 @@ TEST_F(CallSystemTest, Validation_SufficientDuration_ReturnsOK) {
 
   SongConfigError error = validateSongConfig(config);
   EXPECT_EQ(error, SongConfigError::OK);
+}
+
+TEST_F(CallSystemTest, Validation_CallDurationUsesTheTempoGenerationResolves) {
+  // Emotional Ballad's own tempo is slow; a named fast blueprint plays at its own tempo.
+  SongConfig config = createDefaultSongConfig(16);
+  config.call_setting = CallSetting::Enabled;
+  config.intro_chant = IntroChant::Gachikoi;
+  config.mix_pattern = MixPattern::Tiger;
+
+  const uint8_t fast_blueprint = 5;  // IdolHyper
+  const uint16_t style_bpm = getStylePreset(16).tempo_default;
+  const uint16_t blueprint_bpm =
+      resolveTempo(0, false, true, style_bpm, getProductionBlueprint(fast_blueprint)).first;
+  const uint16_t at_style =
+      getMinimumSecondsForCall(config.intro_chant, config.mix_pattern, style_bpm);
+  const uint16_t at_blueprint =
+      getMinimumSecondsForCall(config.intro_chant, config.mix_pattern, blueprint_bpm);
+  ASSERT_LT(at_blueprint, at_style);
+  config.target_duration_seconds = at_blueprint;
+
+  config.blueprint_id = fast_blueprint;
+  EXPECT_EQ(validateSongConfig(config), SongConfigError::OK);
+
+  // Drawn at random, the blueprint is drawn to hold the style's own tempo.
+  config.blueprint_id = 255;
+  EXPECT_EQ(validateSongConfig(config), SongConfigError::DurationTooShortForCall);
+
+  // An explicit tempo outranks both.
+  config.bpm = blueprint_bpm;
+  EXPECT_EQ(validateSongConfig(config), SongConfigError::OK);
 }
 
 TEST_F(CallSystemTest, Validation_InvalidModulationAmount_ReturnsError) {

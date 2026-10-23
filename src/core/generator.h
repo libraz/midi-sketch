@@ -248,8 +248,10 @@ class Generator {
   /**
    * @brief Refine vocal track after accompaniment generation.
    *
-   * Detects clashes between vocal and accompaniment (minor 2nd, major 7th),
-   * and adjusts vocal pitches to minimize dissonance while preserving melody.
+   * Detects clashes between vocal and accompaniment under the collision
+   * detector's pair verdict (isClashingPair, so a 7th or 9th the sounding chord
+   * owns is kept), and moves each clashing vocal note at most once per iteration
+   * to a candidate the same detector accepts.
    * Called automatically at the end of generateWithVocal().
    *
    * @param max_iterations Maximum refinement passes (default 2)

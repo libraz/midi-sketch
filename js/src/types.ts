@@ -15,7 +15,11 @@ export interface SongConfig {
   stylePresetId: number;
   /** Key (0-11) */
   key: number;
-  /** BPM (0 = use style default) */
+  /**
+   * BPM. 0 = implicit: a blueprint set by blueprintId plays at its own tempo;
+   * otherwise the explicit mood's tempo, else the style preset's, with a random
+   * blueprint drawn from those whose range holds it.
+   */
   bpm: number;
   /** Random seed (0 = random) */
   seed: number;
@@ -29,7 +33,11 @@ export interface SongConfig {
   drumsEnabled: boolean;
   /** True if drumsEnabled was explicitly set by user */
   drumsEnabledExplicit: boolean;
-  /** Blueprint ID: 0=Traditional, 1=RhythmLock, 2=StoryPop, 3=Ballad, 255=random */
+  /**
+   * Blueprint ID: 0=Traditional, 1=RhythmLock, 2=StoryPop, 3=Ballad, 4=IdolStandard,
+   * 5=IdolHyper, 6=IdolKawaii, 7=IdolCoolPop, 8=IdolEmo, 9=BehavioralLoop, 255=random.
+   * createDefaultConfig() gives 255; a JSON config that omits the field gives 0.
+   */
   blueprintId: number;
 
   // Arpeggio settings
@@ -145,8 +153,12 @@ export interface SongConfig {
   melodicComplexity: number;
   /** Hook intensity: 0=Off, 1=Light, 2=Normal, 3=Strong, 4=Maximum */
   hookIntensity: number;
+  /** True if hookIntensity was explicitly set by user (blueprint and mode defaults keep it) */
+  hookIntensityExplicit: boolean;
   /** Vocal groove feel: 0=Straight, 1=OffBeat, 2=Swing, 3=Syncopated, 4=Driving16th, 5=Bouncy8th */
   vocalGroove: number;
+  /** True if vocalGroove was explicitly set by user (blueprint defaults keep it) */
+  vocalGrooveExplicit: boolean;
 
   // Mood override
   /** Mood preset override (0-23, used when moodExplicit=true) */
@@ -179,7 +191,10 @@ export interface SongConfig {
   energyCurve: number;
 
   // Melody overrides
-  /** Max leap interval: 0=preset, 1-12=override */
+  /**
+   * Max leap interval: 0 = the blueprint's leap budget, 1-12 = caps that budget.
+   * Style preset and complexity leap values are defaults and never narrow it.
+   */
   melodyMaxLeap: number;
   /** Syncopation probability: 0xFF=preset, 0-100=override */
   melodySyncopationProb: number;
@@ -394,22 +409,26 @@ export interface CollisionInfo {
 }
 
 /**
- * Piano roll safety info for a single tick
+ * Piano roll safety info for a single tick.
+ *
+ * `safety`, `reason` and `recommended` are in the generator's internal C-major
+ * pitch space; `currentKey` is the separate shift the output applies, so add it
+ * to map an entry onto the pitch that sounds.
  */
 export interface PianoRollInfo {
   /** Tick position */
   tick: number;
   /** Current chord degree (0=I, 1=ii, etc.) */
   chordDegree: number;
-  /** Current key (0-11, considering modulation) */
+  /** Output key shift (0-11, considering modulation), not applied to the arrays below */
   currentKey: number;
-  /** Safety level for each MIDI note (0-127) */
+  /** Safety level for each internal C-major MIDI pitch (index 0-127) */
   safety: NoteSafetyLevel[];
-  /** Reason flags for each note (0-127) */
+  /** Reason flags for each internal C-major MIDI pitch (index 0-127) */
   reason: NoteReasonFlags[];
   /** Collision details for each note */
   collision: CollisionInfo[];
-  /** Recommended notes (priority order, max 8) */
+  /** Recommended internal C-major pitches (priority order, max 8) */
   recommended: number[];
 }
 

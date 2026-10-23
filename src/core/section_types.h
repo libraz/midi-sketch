@@ -209,9 +209,9 @@ enum class GenerationParadigm : uint8_t {
 
 /// @brief Riff management policy across sections.
 enum class RiffPolicy : uint8_t {
-  Free = 0,           ///< Free variation per section (existing behavior)
-  LockedContour = 1,  ///< Pitch contour fixed, expression variable (recommended)
-  LockedPitch = 2,    ///< Pitch completely fixed, velocity variable
+  Free = 0,           ///< No lock; with the FullSong repeat scope one riff is still shared
+  LockedContour = 1,  ///< The riff's contour is fixed; its rhythm may vary per cycle
+  LockedPitch = 2,    ///< The riff's pitches are fixed; only velocity varies
   LockedAll = 3,      ///< Completely fixed (monotonous, not recommended)
   Evolving = 4,       ///< Gradual evolution with variations (AnimeHighEnergy style)
   // Backward compatibility alias
@@ -369,7 +369,8 @@ enum class SectionType {
   Outro,      ///< Ending section
   Chant,      ///< Chant section (e.g., Gachikoi) - 6-12 bars
   MixBreak,   ///< MIX section (e.g., Tiger) - 4-8 bars
-  Drop  ///< EDM drop section: all melodic instruments cut, kick + sub-bass only, then re-entry
+  Drop        ///< EDM drop: melodic instruments cut, kick + sub-bass, then re-entry.
+              ///< No shipped form or blueprint flow produces one.
 };
 
 // ============================================================================

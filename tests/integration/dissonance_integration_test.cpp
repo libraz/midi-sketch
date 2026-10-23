@@ -713,14 +713,20 @@ TEST(LockedRiffCorpusTest, AReplayedRiffSoundsNoChordItIsNotPlayingOver) {
   // above a different one. Rejecting the dissonances that can be named -- an
   // avoid note, the tone the chord replaced -- leaves the borrowed chord's
   // colour tones untouched, because the flat sixth of bVI is neither of those
-  // things when it is heard over bVII. These are configurations whose riff was
-  // recorded over a borrowed chord.
+  // things when it is heard over bVII. AeolianPop (vi-bVI-bVII-I) is pinned so
+  // the riff is recorded over a borrowed chord whatever the style would draw.
+  constexpr uint8_t kAeolianPop = 15;
+  constexpr uint8_t kAutoProgression = 255;
   struct Config {
     uint8_t style;
     uint8_t blueprint;
     uint32_t seed;
+    uint8_t progression;
   };
-  constexpr Config kConfigs[] = {{1, 1, 5}, {1, 1, 9}, {1, 1, 11}, {0, 1, 20}};
+  constexpr Config kConfigs[] = {{1, 1, 5, kAeolianPop},
+                                 {1, 1, 9, kAeolianPop},
+                                 {1, 1, 11, kAeolianPop},
+                                 {0, 1, 20, kAutoProgression}};
 
   size_t songs = 0;
   size_t borrowed_chord_notes = 0;
@@ -728,6 +734,7 @@ TEST(LockedRiffCorpusTest, AReplayedRiffSoundsNoChordItIsNotPlayingOver) {
     SongConfig config = createDefaultSongConfig(c.style);
     config.seed = c.seed;
     config.blueprint_id = c.blueprint;
+    config.chord_progression_id = c.progression;
 
     MidiSketch sketch;
     sketch.generateFromConfig(config);

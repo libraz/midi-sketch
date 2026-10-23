@@ -125,11 +125,6 @@ struct BassGenrePatterns {
 // @returns Default BPM (60-180)
 uint16_t getMoodDefaultBpm(Mood mood);
 
-// Returns the note density parameter for a mood.
-// @param mood Mood preset
-// @returns Density value (0.0 - 1.0)
-float getMoodDensity(Mood mood);
-
 // Returns the name of a structure pattern.
 // @param pattern Structure pattern
 // @returns Pattern name (e.g., "StandardPop")

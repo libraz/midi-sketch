@@ -860,7 +860,8 @@ bool addPickupBefore(std::vector<NoteEvent>& pattern, size_t idx) {
 /// High/Peak sections receive an extra op (denser, busier riffs in choruses).
 /// LockedPitch/LockedAll patterns are returned verbatim to preserve their
 /// fixed-pitch/fixed-riff contracts; LockedContour may still receive light
-/// rhythmic expression while preserving the contour.
+/// rhythmic expression while preserving the contour. Under the RhythmSync
+/// coordinate axis the caller skips this entirely, so the two policies coincide.
 /// Deterministic via motifVariationHash for seed reproducibility.
 std::vector<NoteEvent> applyCycleRhythmVariation(const std::vector<NoteEvent>& base, uint32_t seed,
                                                  size_t sec_idx, size_t cycle_idx,
@@ -872,7 +873,7 @@ std::vector<NoteEvent> applyCycleRhythmVariation(const std::vector<NoteEvent>& b
   // First cycle of the first section presents the riff verbatim.
   if (sec_idx == 0 && cycle_idx == 0) return pattern;
 
-  bool locked = (policy == RiffPolicy::LockedContour || policy == RiffPolicy::LockedPitch);
+  bool locked = (policy == RiffPolicy::LockedContour);
   bool high_energy = (energy == SectionEnergy::High || energy == SectionEnergy::Peak);
   int ops = locked ? 1 : 2;
   if (high_energy) ++ops;

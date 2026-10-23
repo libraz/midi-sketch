@@ -114,7 +114,15 @@ struct ParsedArgs {
   bool show_help = false;
   bool parse_error = false;
   bool generation_options_specified = false;
+  /// Any generation option other than --config and --no-guitar, which --config cannot honour.
+  bool config_overrides_specified = false;
 };
+
+/// True when --bar or --dump-collisions-at asks for note inspection output.
+bool inspectionRequested(const ParsedArgs& args);
+
+/// Tells the user on stderr that inspection output was dropped because stdout carries JSON.
+void noteInspectionOmitted();
 
 // Parse command-line arguments
 ParsedArgs parseArgs(int argc, char* argv[]);
