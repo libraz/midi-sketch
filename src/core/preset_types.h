@@ -46,7 +46,7 @@ enum class Mood : uint8_t {
   RnBNeoSoul,  ///< R&B/Neo-Soul (85-100 BPM, heavy swing, extended chords)
   LatinPop,    ///< Latin Pop (95 BPM, dembow rhythm, tresillo bass)
   Trap,        ///< Trap (70 BPM half-time, 808 sub-bass, hi-hat rolls)
-  Lofi         ///< Lo-fi (80 BPM, heavy swing, velocity ceiling max 90)
+  Lofi         ///< Lo-fi (80 BPM, heavy swing)
 };
 
 /// @brief Composition style determines overall musical approach.
