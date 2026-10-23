@@ -162,6 +162,105 @@ describe('pop review on a hand-written control song', () => {
   });
 });
 
+/** A chord as a root pitch class, minor or major third, and an optional minor seventh. */
+interface LoopChord {
+  root: number;
+  minor?: boolean;
+  seventh?: boolean;
+}
+
+/**
+ * A verse then a chorus, each cycling `loop` over its own length in bars, with
+ * a root-position bass and the chord held in the harmony part.
+ */
+function buildLoopSong(
+  verse: LoopChord[],
+  verseBars: number,
+  chorus: LoopChord[],
+  chorusBars: number,
+) {
+  const melody: Note[] = [];
+  const bass: Note[] = [];
+  const harmony: Note[] = [];
+  const sections: { type: string; startBeat: number; endBeat: number }[] = [];
+  let beat = 0;
+  for (const [type, loop, bars] of [
+    ['A', verse, verseBars],
+    ['Chorus', chorus, chorusBars],
+  ] as const) {
+    sections.push({ type, startBeat: beat, endBeat: beat + bars * 4 });
+    for (let bar = 0; bar < bars; bar += 1) {
+      const chord = loop[bar % loop.length];
+      const tones = [0, chord.minor ? 3 : 4, 7, ...(chord.seventh ? [10] : [])];
+      bass.push(note(36 + chord.root, beat, 4));
+      for (const t of tones) {
+        harmony.push(note(60 + chord.root + t, beat, 4));
+      }
+      melody.push(
+        note(72 + chord.root + tones[1], beat, 2),
+        note(72 + chord.root + 7, beat + 2, 2),
+      );
+      beat += 4;
+    }
+  }
+  const parts = [
+    { name: 'Vocal', role: 'melody', notes: melody },
+    { name: 'Bass', role: 'bass', notes: bass },
+    { name: 'Chord', role: 'harmony', notes: harmony },
+  ];
+  return {
+    source: 'generated',
+    label: 'loop',
+    bpm: 120,
+    tempos: [{ beat: 0, bpm: 120 }],
+    totalBeats: beat,
+    parts,
+    melody,
+    bass,
+    harmony,
+    drums: [],
+    sections,
+    blueprint: null,
+    declared: null,
+  };
+}
+
+const popOfLoops = (...args: Parameters<typeof buildLoopSong>) =>
+  popOf(readSong(buildLoopSong(...args)));
+
+describe('named progressions match on root and quality', () => {
+  const IV = { root: 5 };
+  const III7 = { root: 4, seventh: true };
+  const iii = { root: 4, minor: true };
+  const vi = { root: 9, minor: true };
+  const I = { root: 0 };
+
+  it('reports the 丸サ shape for IV-III7-vi-I', () => {
+    expect(
+      popOfLoops([IV, III7, vi, I], 8, [IV, III7, vi, I], 8).progressions.justTheTwo,
+    ).toBeGreaterThan(0);
+  });
+
+  it('does not report it for IV-iii-vi-I', () => {
+    expect(
+      popOfLoops([IV, iii, vi, I], 8, [IV, iii, vi, I], 8).progressions.justTheTwo,
+    ).toBeUndefined();
+  });
+});
+
+describe('verse and chorus harmony comparison', () => {
+  const axis = [{ root: 0 }, { root: 7 }, { root: 9, minor: true }, { root: 5 }];
+  const royalRoad = [{ root: 5 }, { root: 7 }, { root: 4, minor: true }, { root: 9, minor: true }];
+
+  it('is 0 when both sides loop the same chords over different lengths', () => {
+    expect(popOfLoops(axis, 4, axis, 8).verseChorusHarmonyDiffers).toBe(0);
+  });
+
+  it('is 1 when the loops differ', () => {
+    expect(popOfLoops(axis, 8, royalRoad, 8).verseChorusHarmonyDiffers).toBe(1);
+  });
+});
+
 describe('a bass moved off the root', () => {
   it('is read as such by the downbeat check', () => {
     const song = buildSong();

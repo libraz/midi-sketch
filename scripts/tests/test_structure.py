@@ -109,6 +109,23 @@ class TestBaseAnalyzerSections(unittest.TestCase):
         self.assertEqual(resolved[1]['type'], 'chorus')
         self.assertEqual(resolved[1]['start_ticks'], 8 * TICKS_PER_BAR)
 
+    def test_section_type_wins_over_display_name_and_name_is_the_fallback(self):
+        sections = [
+            _make_section('MixBreak', 'TigerMix', 1, 8),
+            _make_section('Chant', 'Gachikoi', 9, 16),
+            {'name': 'Chorus', 'start_ticks': 16 * TICKS_PER_BAR,
+             'end_ticks': 24 * TICKS_PER_BAR},
+        ]
+        notes = _fill_notes(1, 24, 2, channels=[0])
+        analyzer = DummyAnalyzer(
+            notes=notes, notes_by_channel={0: notes},
+            metadata={'sections': sections},
+        )
+
+        types = [sec['type'] for sec in analyzer.sections]
+
+        self.assertEqual(types, ['chorus', 'instrumental', 'chorus'])
+
     def test_generated_zero_based_start_bar_is_normalized_from_ticks(self):
         """Generated start_bar must not shift analyzer section boundaries."""
         sections = [

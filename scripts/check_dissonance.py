@@ -46,19 +46,6 @@ INTERVAL_NAMES = {
     11: "major 7th",
 }
 
-# Section types
-SECTION_NAMES = {
-    0: "Intro",
-    1: "A",
-    2: "B",
-    3: "Chorus",
-    4: "Bridge",
-    5: "Outro",
-    6: "Interlude",
-    7: "Chant",
-    8: "MixBreak",
-    9: "Drop",
-}
 
 @dataclass
 class TestResult:

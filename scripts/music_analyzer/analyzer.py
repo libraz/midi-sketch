@@ -5,6 +5,7 @@ rhythm, arrangement, structure), then runs hook detection, energy curve
 calculation, and blueprint-aware scoring.
 """
 
+import warnings
 from collections import defaultdict
 from typing import List, Tuple
 
@@ -41,7 +42,14 @@ class MusicAnalyzer:
         try:
             resolved_blueprint = int(resolved_blueprint)
         except (TypeError, ValueError):
+            warnings.warn(
+                f"blueprint {resolved_blueprint!r} is not an integer; "
+                "scoring with the Traditional profile", stacklevel=2)
             resolved_blueprint = 0
+        if resolved_blueprint not in BLUEPRINT_PROFILES:
+            warnings.warn(
+                f"blueprint {resolved_blueprint} has no scoring profile; "
+                "scoring with the Traditional profile", stacklevel=2)
         self.issues: List[Issue] = []
         # Metadata-free analysis is a Traditional analysis, not an unrelated
         # sixth weighting profile.
@@ -254,6 +262,36 @@ class MusicAnalyzer:
     _DEFAULT_PENALTY = {
         Severity.ERROR: 1.0, Severity.WARNING: 0.5, Severity.INFO: 0.1,
     }
+
+    # Category-score points lost per unit of accumulated penalty.
+    _CATEGORY_PENALTY_SCALE = {
+        Category.MELODIC: 5,
+        Category.HARMONIC: 5,
+        Category.RHYTHM: 6,
+        Category.ARRANGEMENT: 5,
+        Category.STRUCTURE: 9,
+    }
+
+    # One subcategory may deduct at most this many category-score points, so
+    # no single subcategory can empty the whole 100-point budget.
+    _SUBCATEGORY_MAX_DEDUCTION = 90.0
+
+    # A subcategory counts its issues at full weight up to this many times the
+    # largest single penalty; further issues add a fraction of their weight.
+    _SUBCATEGORY_CAP_MULTIPLIER = 5
+    _OVERFLOW_FRACTION = 0.15
+
+    @classmethod
+    def _subcategory_penalty(cls, singles: list, scale: int) -> float:
+        """Penalty one subcategory contributes, independent of issue order."""
+        cap = max(singles) * cls._SUBCATEGORY_CAP_MULTIPLIER
+        total = 0.0
+        for penalty in sorted(singles, reverse=True):
+            if total < cap:
+                total += min(penalty, cap - total)
+            else:
+                total += penalty * cls._OVERFLOW_FRACTION
+        return min(total, cls._SUBCATEGORY_MAX_DEDUCTION / scale)
 
     def _calculate_scores(self, bonuses: list = None) -> QualityScore:
         """Calculate quality scores based on issues with blueprint-aware weighting."""
@@ -529,13 +567,11 @@ class MusicAnalyzer:
         }
 
         category_penalties = defaultdict(float)
-        subcategory_penalties = defaultdict(float)
         subcategory_counts = defaultdict(int)
 
-        # Cap per subcategory: max penalty = single_penalty × 5
-        # Prevents a single subcategory from destroying the entire category score
-        _SUBCATEGORY_CAP_MULTIPLIER = 5
-
+        # Group single penalties per subcategory so the cap sees the whole
+        # multiset and the total does not depend on issue order.
+        penalties_by_subcat = defaultdict(list)
         for issue in self.issues:
             cat = issue.category
             subcat = issue.subcategory
@@ -550,16 +586,14 @@ class MusicAnalyzer:
                 continue
 
             subcat_key = f"{cat.value}.{subcat}"
-            max_penalty = penalty * _SUBCATEGORY_CAP_MULTIPLIER
-            if subcategory_penalties[subcat_key] < max_penalty:
-                effective = min(penalty, max_penalty - subcategory_penalties[subcat_key])
-                category_penalties[cat] += effective
-                subcategory_penalties[subcat_key] += effective
-            else:
-                overflow_penalty = penalty * 0.15
-                category_penalties[cat] += overflow_penalty
-                subcategory_penalties[subcat_key] += overflow_penalty
+            penalties_by_subcat[(cat, subcat_key)].append(penalty)
             subcategory_counts[subcat_key] += 1
+
+        for (cat, _), singles in sorted(
+                penalties_by_subcat.items(), key=lambda item: item[0][1]):
+            category_penalties[cat] += self._subcategory_penalty(
+                singles, self._CATEGORY_PENALTY_SCALE[cat]
+            )
 
         total_notes = len(self.notes)
         melodic_notes = sum(1 for n in self.notes if n.channel != 9)
@@ -568,19 +602,24 @@ class MusicAnalyzer:
         # Dividing by note count made dense arrangements artificially safer and
         # punished sparse blueprints for precisely the same issue set.
         melodic_base = max(
-            0, 100 - category_penalties[Category.MELODIC] * 5
+            0, 100 - category_penalties[Category.MELODIC]
+            * self._CATEGORY_PENALTY_SCALE[Category.MELODIC]
         )
         harmonic_base = max(
-            0, 100 - category_penalties[Category.HARMONIC] * 5
+            0, 100 - category_penalties[Category.HARMONIC]
+            * self._CATEGORY_PENALTY_SCALE[Category.HARMONIC]
         )
         rhythm_base = max(
-            0, 100 - category_penalties[Category.RHYTHM] * 6
+            0, 100 - category_penalties[Category.RHYTHM]
+            * self._CATEGORY_PENALTY_SCALE[Category.RHYTHM]
         )
         arrangement_base = max(
-            0, 100 - category_penalties[Category.ARRANGEMENT] * 5
+            0, 100 - category_penalties[Category.ARRANGEMENT]
+            * self._CATEGORY_PENALTY_SCALE[Category.ARRANGEMENT]
         )
         structure_base = max(
-            0, 100 - category_penalties[Category.STRUCTURE] * 9
+            0, 100 - category_penalties[Category.STRUCTURE]
+            * self._CATEGORY_PENALTY_SCALE[Category.STRUCTURE]
         )
 
         # Apply bonus layer

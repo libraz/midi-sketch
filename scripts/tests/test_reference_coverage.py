@@ -40,6 +40,9 @@ class TestReferenceCoverage(unittest.TestCase):
         self.assertEqual(check_dissonance.PRODUCTION_BLUEPRINT_COUNT,
                          len(PRODUCTION_BLUEPRINT_IDS))
 
+    def test_no_section_name_table_can_drift_from_section_type(self):
+        self.assertFalse(hasattr(check_dissonance, "SECTION_NAMES"))
+
     def test_batch_all_and_quick_include_every_public_blueprint(self):
         all_args = SimpleNamespace(quick=False, styles="all", chords="all",
                                    blueprints="all")

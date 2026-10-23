@@ -1,6 +1,8 @@
 """Tests for quality scoring system."""
 
 import unittest
+import warnings
+from types import SimpleNamespace
 
 from conftest import (
     Category,
@@ -12,6 +14,7 @@ from conftest import (
     TICKS_PER_BEAT,
 )
 from music_analyzer.blueprints import BLUEPRINT_PROFILES
+from music_analyzer.cli import _resolve_blueprint
 from music_analyzer.models import QualityScore
 
 
@@ -85,6 +88,51 @@ class TestScoring(unittest.TestCase):
     def test_metadata_blueprint_selects_its_profile(self):
         analyzer = MusicAnalyzer([], metadata={"blueprint": 1})
         self.assertIs(analyzer.profile, BLUEPRINT_PROFILES[1])
+
+    def test_unknown_blueprint_is_reported(self):
+        with self.assertWarns(UserWarning):
+            analyzer = MusicAnalyzer([], blueprint=42)
+        self.assertIs(analyzer.profile, BLUEPRINT_PROFILES[0])
+
+    def test_known_blueprint_raises_no_warning(self):
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            MusicAnalyzer([], blueprint=1)
+
+    def test_generate_mode_takes_blueprint_from_metadata(self):
+        args = SimpleNamespace(generate=True, blueprint=0, blueprint_single=None)
+        self.assertEqual(_resolve_blueprint(args, {"blueprint": 5}), 5)
+        self.assertEqual(_resolve_blueprint(args, {}), 0)
+
+    def test_file_mode_falls_back_to_the_single_blueprint_flag(self):
+        args = SimpleNamespace(generate=False, blueprint=0, blueprint_single=3)
+        self.assertEqual(_resolve_blueprint(args, {}), 3)
+        self.assertEqual(_resolve_blueprint(args, {"blueprint": 5}), 5)
+
+    def test_score_does_not_depend_on_issue_order(self):
+        issues = [
+            Issue(Severity.INFO, Category.HARMONIC, "dissonance", "", 0),
+            Issue(Severity.ERROR, Category.HARMONIC, "dissonance", "", 0),
+            Issue(Severity.WARNING, Category.HARMONIC, "dissonance", "", 0),
+        ] * 4
+        scores = []
+        for ordering in (issues, list(reversed(issues)),
+                         sorted(issues, key=lambda i: i.severity.value)):
+            analyzer = MusicAnalyzer([])
+            analyzer.issues = ordering
+            scores.append(analyzer._calculate_scores([]).harmonic)
+        self.assertEqual(len(set(scores)), 1)
+
+    def test_one_subcategory_cannot_empty_its_category(self):
+        analyzer = MusicAnalyzer([])
+        analyzer.issues = [
+            Issue(Severity.ERROR, Category.STRUCTURE, "empty_track", "", 0)
+            for _ in range(500)
+        ]
+
+        score = analyzer._calculate_scores([])
+
+        self.assertGreater(score.details["structure_base"], 0)
 
     def test_same_issue_set_has_same_score_at_any_note_density(self):
         issue = Issue(Severity.WARNING, Category.HARMONIC, "dissonance", "", 0)

@@ -105,6 +105,11 @@ class TestContourPreservationByPolicy(unittest.TestCase):
         self.assertEqual(len(_contour_issues(_KEEPS_SOME_OF_THE_SHAPE, "Evolving")), 1)
         self.assertEqual(_contour_issues(_KEEPS_SOME_OF_THE_SHAPE, "Free"), [])
 
+    def test_contour_drift_on_a_locked_riff_is_a_warning(self):
+        issues = _contour_issues(_KEEPS_MOST_OF_THE_SHAPE, "Locked")
+
+        self.assertEqual([issue.severity for issue in issues], [Severity.WARNING])
+
     def test_a_riff_that_is_gone_is_reported_under_every_policy(self):
         for policy in ("Locked", "Evolving", "Free"):
             with self.subTest(policy=policy):
@@ -189,6 +194,37 @@ class TestSectionLengthDoesNotCountAsRiffChange(unittest.TestCase):
             len([issue for issue in analyzer.issues
                  if issue.subcategory == "motif_rhythm_preservation"]),
             1,
+        )
+
+
+class TestLockedContourToleratesLightRhythmVariation(unittest.TestCase):
+    """LockedContour holds the contour; the generator varies the rhythm lightly."""
+
+    def test_one_subdivided_onset_per_bar_is_not_reported(self):
+        notes = _motif(0, _RIFF)
+        step = TICKS_PER_BEAT // 2
+        for bar in range(4):
+            bar_start = 8 * TICKS_PER_BAR + bar * TICKS_PER_BAR
+            for idx, pitch in enumerate(_RIFF):
+                if idx == 3:
+                    notes.append(Note(start=bar_start + idx * step,
+                                      duration=step // 2, pitch=pitch,
+                                      velocity=80, channel=3))
+                    notes.append(Note(start=bar_start + idx * step + step // 2,
+                                      duration=step // 2, pitch=pitch,
+                                      velocity=80, channel=3))
+                else:
+                    notes.append(Note(start=bar_start + idx * step, duration=step,
+                                      pitch=pitch, velocity=80, channel=3))
+        analyzer = _analyzer(notes, BlueprintProfile("Test", "RhythmSync", "Locked"),
+                             {'sections': _SECTIONS})
+
+        analyzer._analyze_motif_rhythm_preservation()
+
+        self.assertEqual(
+            [issue for issue in analyzer.issues
+             if issue.subcategory == "motif_rhythm_preservation"],
+            [],
         )
 
 

@@ -45,6 +45,14 @@ def _batch_values(args):
     return styles, chords, blueprints
 
 
+def _resolve_blueprint(args, metadata):
+    """Blueprint ID for scoring: the song's own metadata, else the CLI flag."""
+    bp_value = metadata.get('blueprint')
+    if bp_value is None:
+        bp_value = args.blueprint if args.generate else args.blueprint_single
+    return bp_value
+
+
 def main():
     """CLI entry point for the music analyzer.
 
@@ -256,12 +264,7 @@ Examples:
 
     # Determine blueprint and metadata for analysis
     metadata = load_json_metadata(input_file)
-    if args.generate:
-        bp_value = args.blueprint
-    else:
-        bp_value = metadata.get('blueprint')
-        if bp_value is None:
-            bp_value = args.blueprint_single
+    bp_value = _resolve_blueprint(args, metadata)
     analyzer = MusicAnalyzer(notes, blueprint=bp_value, metadata=metadata)
 
     result = analyzer.analyze_all()

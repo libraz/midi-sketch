@@ -11,15 +11,19 @@ import { analyzeRhythm, melodicSimilarity } from '@libraz/libcantus';
 import { BEATS_PER_BAR } from './analysis.mjs';
 import { secondsAt } from './song.mjs';
 
-/** Named four-chord pop progressions, as major-key degrees in semitones. */
+/**
+ * Named four-chord pop progressions as roman numerals, written the way
+ * `romanOf` spells a chord: the case carries minor against major quality, so a
+ * progression matches only when root and quality both do.
+ */
 export const POP_PROGRESSIONS = {
-  royalRoad: [5, 7, 4, 9], // IV V iii vi
-  komuro: [9, 5, 7, 0], // vi IV V I
-  axis: [0, 7, 9, 5], // I V vi IV
-  axisMinor: [9, 5, 0, 7], // vi IV I V
-  canonHead: [0, 7, 9, 4], // I V vi iii
-  justTheTwo: [5, 4, 9, 0], // IV III vi I (the 丸サ shape)
-  fifties: [0, 9, 5, 7], // I vi IV V
+  royalRoad: ['IV', 'V', 'iii', 'vi'],
+  komuro: ['vi', 'IV', 'V', 'I'],
+  axis: ['I', 'V', 'vi', 'IV'],
+  axisMinor: ['vi', 'IV', 'I', 'V'],
+  canonHead: ['I', 'V', 'vi', 'iii'],
+  justTheTwo: ['IV', 'III', 'vi', 'I'], // the 丸サ shape: III is the major (7th) chord
+  fifties: ['I', 'vi', 'IV', 'V'],
 };
 
 const mean = (xs) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
@@ -144,12 +148,54 @@ function chorusConsistency(reading) {
   return { chorusRestatementLikeness: mean(likeness) };
 }
 
+const chordsWithin = (chords, span) =>
+  chords.filter((c) => c.startBeat >= span.startBeat && c.startBeat < span.endBeat);
+
+/** The first verse: the declared first A section, else the sung stretch before the first chorus. */
+function verseSpan(song, firstChorus) {
+  const declared = song.sections?.find((s) => s.type === 'A');
+  if (declared) {
+    return declared;
+  }
+  const vocalStart = song.melody[0]?.startBeat;
+  return firstChorus && vocalStart !== undefined && vocalStart < firstChorus.startBeat
+    ? { startBeat: vocalStart, endBeat: firstChorus.startBeat }
+    : null;
+}
+
+/** Chord degrees in order with immediate repeats collapsed. */
+function degreeLoop(chords) {
+  const degrees = [];
+  for (const c of chords) {
+    if (degrees[degrees.length - 1] !== c.degree) {
+      degrees.push(c.degree);
+    }
+  }
+  return degrees;
+}
+
+/** The shortest prefix that, repeated, reproduces the whole sequence. */
+function loopUnit(degrees) {
+  for (let period = 1; period < degrees.length; period += 1) {
+    if (degrees.every((d, i) => d === degrees[i % period])) {
+      return degrees.slice(0, period);
+    }
+  }
+  return degrees;
+}
+
+/** Whether two degree sequences cycle through the same chords, however often each repeats. */
+const sameLoop = (a, b) => {
+  const [x, y] = [loopUnit(a), loopUnit(b)];
+  return x.length === y.length && x.every((d, i) => d === y[i]);
+};
+
 /** Which named progressions occur, and how varied the harmony is. */
 function harmonyIdioms(reading) {
   const { harmony, runs, song } = reading;
   const sequence = [];
   for (const c of harmony.chords) {
-    if (sequence[sequence.length - 1]?.degree !== c.degree) {
+    if (sequence[sequence.length - 1]?.roman !== c.roman) {
       sequence.push(c);
     }
   }
@@ -157,7 +203,7 @@ function harmonyIdioms(reading) {
   for (const [name, pattern] of Object.entries(POP_PROGRESSIONS)) {
     let count = 0;
     for (let i = 0; i + 4 <= sequence.length; i += 1) {
-      if (pattern.every((d, j) => sequence[i + j].degree === d)) {
+      if (pattern.every((r, j) => sequence[i + j].roman === r)) {
         count += 1;
       }
     }
@@ -165,9 +211,10 @@ function harmonyIdioms(reading) {
       found[name] = count;
     }
   }
-  const chorusChords = harmony.chords.filter((c) => inRuns(c.startBeat, runs));
-  const verseChords = harmony.chords.filter((c) => c.startBeat < (runs[0]?.startBeat ?? 0));
-  const loop = (chords) => chords.map((c) => c.degree).join(',');
+  const firstChorus = runs[0];
+  const verse = verseSpan(song, firstChorus);
+  const verseChords = verse ? chordsWithin(harmony.chords, verse) : [];
+  const chorusChords = firstChorus ? chordsWithin(harmony.chords, firstChorus) : [];
   const distinctRomans = new Set(harmony.chords.map((c) => c.roman)).size;
   const nonDiatonic = harmony.chords.filter((c) => ![0, 2, 4, 5, 7, 9, 11].includes(c.degree));
   const bars = song.totalBeats / BEATS_PER_BAR;
@@ -180,7 +227,7 @@ function harmonyIdioms(reading) {
       : null,
     verseChorusHarmonyDiffers:
       verseChords.length && chorusChords.length
-        ? Number(loop(verseChords) !== loop(chorusChords))
+        ? Number(!sameLoop(degreeLoop(verseChords), degreeLoop(chorusChords)))
         : null,
   };
 }

@@ -22,23 +22,23 @@ from .base import BaseAnalyzer
 
 # How much of a motif a repeat has to keep across same-type sections, per riff
 # policy. LockedPitch repeats the riff verbatim and is bounded accordingly.
-# Locked is LockedContour: the rhythm is what is held fixed, while the pitches
-# are re-voiced against the new harmony, so Locked is strict on the rhythm axis
-# and its contour bound only has to catch a riff that stopped being the same
+# Locked is LockedContour: the contour is what is held fixed, while light
+# rhythmic variation is applied per cycle, so Locked is strict on the contour
+# axis and its rhythm bound only has to catch a riff that stopped being the same
 # riff. Evolving transforms the motif on purpose and therefore sits below Locked
 # on both axes, and Free starts fresh each section. Every policy must resolve to
 # a different bound on each axis, ordered LockedPitch >= Locked >= Evolving >=
 # Free, or the scoring cannot tell the policies apart.
 RIFF_CONTOUR_MIN_SIMILARITY = {
     "LockedPitch": 0.95,
-    "Locked": 0.70,
+    "Locked": 0.90,
     "Evolving": 0.45,
     "Free": 0.30,
 }
 RIFF_RHYTHM_MIN_SIMILARITY = {
     "LockedPitch": 0.95,
-    "Locked": 0.90,
-    "Evolving": 0.70,
+    "Locked": 0.70,
+    "Evolving": 0.50,
     "Free": 0.30,
 }
 
@@ -292,9 +292,9 @@ class ArrangementAnalyzer(BaseAnalyzer):
             for entry in entries[1:]:
                 sim = _pattern_similarity(reference['intervals'], entry['intervals'])
                 rhythm_sim = _pattern_similarity(reference['rhythm_cell'], entry['rhythm_cell'])
-                # A LockedContour riff holds its rhythm and re-voices its
-                # pitches, so a chord-pulse cell that kept its rhythm has not
-                # broken the policy. A verbatim (LockedPitch) riff has.
+                # A chord-pulse cell that kept its rhythm repeats one chord
+                # tone, so its interval signature says nothing about the
+                # contour. A verbatim (LockedPitch) riff is still held to it.
                 harmonic_variation_ok = (
                     self.profile is not None
                     and self.profile.riff_policy == "Locked"
@@ -830,14 +830,8 @@ class ArrangementAnalyzer(BaseAnalyzer):
                         sec_list[idx_b]['signatures'],
                     )
                     if sim < min_similarity:
-                        severity = Severity.WARNING
-                        # A policy that re-voices the pitches on purpose reports
-                        # contour drift as a note, not a fault.
-                        if (self.profile is not None
-                                and self.profile.riff_policy == "Locked"):
-                            severity = Severity.INFO
                         self.add_issue(
-                            severity=severity,
+                            severity=Severity.WARNING,
                             category=Category.ARRANGEMENT,
                             subcategory="motif_contour_preservation",
                             message=(
