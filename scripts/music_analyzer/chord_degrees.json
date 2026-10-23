@@ -1,0 +1,18 @@
+{
+  "source": "src/core/chord.cpp degree table, checked by tests/core/chord_test.cpp",
+  "degrees": {
+    "0": {"root_pc": 0, "quality": "major", "triad": [0, 4, 7], "function": "T"},
+    "1": {"root_pc": 2, "quality": "minor", "triad": [0, 3, 7], "function": "S"},
+    "2": {"root_pc": 4, "quality": "minor", "triad": [0, 3, 7], "function": "T"},
+    "3": {"root_pc": 5, "quality": "major", "triad": [0, 4, 7], "function": "S"},
+    "4": {"root_pc": 7, "quality": "major", "triad": [0, 4, 7], "function": "D"},
+    "5": {"root_pc": 9, "quality": "minor", "triad": [0, 3, 7], "function": "T"},
+    "6": {"root_pc": 11, "quality": "diminished", "triad": [0, 3, 6], "function": "D"},
+    "8": {"root_pc": 8, "quality": "major", "triad": [0, 4, 7], "function": "S"},
+    "10": {"root_pc": 10, "quality": "major", "triad": [0, 4, 7], "function": "S"},
+    "11": {"root_pc": 3, "quality": "major", "triad": [0, 4, 7], "function": "S"},
+    "12": {"root_pc": 5, "quality": "minor", "triad": [0, 3, 7], "function": "S"},
+    "13": {"root_pc": 1, "quality": "major", "triad": [0, 4, 7], "function": "S"},
+    "14": {"root_pc": 6, "quality": "diminished", "triad": [0, 3, 6], "function": "S"}
+  }
+}

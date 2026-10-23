@@ -170,10 +170,14 @@ export function loadGenerated(path) {
   }));
   const meta = raw.metadata ?? {};
   const keyPc = meta.key ?? 0;
-  const modulationBeat = meta.modulation_semitones ? meta.modulation_tick / ppq : null;
-  const modulationSemitones = meta.modulation_semitones ?? 0;
-  const shiftAt = (beat) =>
-    modulationBeat !== null && beat >= modulationBeat ? modulationSemitones : 0;
+  // One modulation record: a shift is real only with a point after the start.
+  const semitones = Number(meta.modulation_semitones) || 0;
+  const modulationTick = Number(meta.modulation_tick);
+  const modulated = semitones !== 0 && modulationTick > 0;
+  const modulationBeat = modulated ? modulationTick / ppq : null;
+  const modulationSemitones = modulated ? semitones : 0;
+  const keyAt = (beat) =>
+    keyPc + (modulationBeat !== null && beat >= modulationBeat ? modulationSemitones : 0);
   const declared = {
     keyPc,
     modulationBeat,
@@ -183,11 +187,13 @@ export function loadGenerated(path) {
       return {
         startBeat,
         endBeat: c.endTick / ppq,
-        rootPc: ((((DEGREE_SEMITONES[c.degree] ?? 0) + keyPc + shiftAt(startBeat)) % 12) + 12) % 12,
+        rootPc: ((((DEGREE_SEMITONES[c.degree] ?? 0) + keyAt(startBeat)) % 12) + 12) % 12,
       };
     }),
-    vocalLow: meta.vocal_low ?? 60,
-    vocalHigh: meta.vocal_high ?? 79,
+    // Sounding bounds. The generator reserves the modulation's headroom inside
+    // the internal window, so no further shift applies after the key change.
+    vocalLow: (meta.vocal_low ?? 60) + keyPc,
+    vocalHigh: (meta.vocal_high ?? 79) + keyPc,
   };
   return assemble(
     {

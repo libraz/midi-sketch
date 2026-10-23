@@ -223,17 +223,24 @@ class TestDissonanceDetection(unittest.TestCase):
         self.assertIn("minor 2nd", dissonance_issues[0].message)
 
     def test_major_seventh_detection(self):
-        """Major 7th interval should be flagged."""
-        notes = [
-            Note(start=0, duration=TICKS_PER_BAR, pitch=48, velocity=80, channel=2),
-            Note(start=0, duration=TICKS_PER_BAR, pitch=59, velocity=80, channel=1),
-        ]
+        """Major 7th is flagged under a known chord and left unjudged without one."""
+        def notes(provenance):
+            return [
+                Note(start=0, duration=TICKS_PER_BAR, pitch=48, velocity=80, channel=2,
+                     provenance=provenance),
+                Note(start=0, duration=TICKS_PER_BAR, pitch=59, velocity=80, channel=1,
+                     provenance=provenance),
+            ]
 
-        result = MusicAnalyzer(notes).analyze_all()
-
+        result = MusicAnalyzer(notes({"chord_degree": 5})).analyze_all()
         dissonance_issues = [i for i in result.issues if i.subcategory == "dissonance"]
         self.assertGreater(len(dissonance_issues), 0)
         self.assertIn("major 7th", dissonance_issues[0].message)
+
+        # Without harmony a major 7th may be the chord itself, as in C++.
+        result = MusicAnalyzer(notes(None)).analyze_all()
+        self.assertEqual(
+            [i for i in result.issues if i.subcategory == "dissonance"], [])
 
     def test_tonic_major_seventh_stays_warning_on_downbeat(self):
         notes = [
@@ -450,6 +457,21 @@ class TestBassChordDegrees(unittest.TestCase):
         infos = [i for i in degree_issues if i.severity == Severity.INFO]
         self.assertEqual(len(infos), 1)
 
+    def test_borrowed_degrees_are_counted_and_judged(self):
+        """bVI, bVII, iv and #IVdim bars count, and a note foreign to them is reported."""
+        # Each root, then a semitone above it, which none of the four chords holds.
+        roots = [(8, 44), (10, 46), (12, 41), (14, 42)]  # Ab, Bb, F, F#
+        notes = [self._bass_with_prov(i * TICKS_PER_BEAT, pitch, degree)
+                 for i, (degree, pitch) in enumerate(roots)]
+        notes += [self._bass_with_prov((4 + i) * TICKS_PER_BEAT, pitch + 1, degree)
+                  for i, (degree, pitch) in enumerate(roots)]
+        result = MusicAnalyzer(notes).analyze_all()
+        degree_issues = [i for i in result.issues if i.subcategory == "bass_chord_degrees"]
+        self.assertEqual(len(degree_issues), 1)
+        self.assertEqual(degree_issues[0].severity, Severity.WARNING)
+        self.assertEqual(degree_issues[0].details['total_checked'], 8)
+        self.assertAlmostEqual(degree_issues[0].details['non_chord_tone_ratio'], 0.5)
+
 
 class TestBassDownbeatRoot(unittest.TestCase):
     """Test bass downbeat root analysis."""
@@ -500,6 +522,15 @@ class TestBassDownbeatRoot(unittest.TestCase):
         warnings = [i for i in result.issues
                     if i.subcategory == "bass_downbeat_root" and i.severity == Severity.WARNING]
         self.assertEqual(len(warnings), 1)
+
+    def test_diminished_fifth_is_the_fifth_of_a_passing_diminished_chord(self):
+        """C under F#dim is its fifth, so the bars count as root/5th, not as misses."""
+        notes = [self._bass_beat1(bar, 48, 14) for bar in range(4)]  # C under #IVdim
+        result = MusicAnalyzer(notes).analyze_all()
+        issues = [i for i in result.issues if i.subcategory == "bass_downbeat_root"]
+        self.assertEqual(len(issues), 1, "the bars must be evaluated, not skipped")
+        self.assertEqual(issues[0].severity, Severity.INFO)
+        self.assertEqual(issues[0].details['fifth_ratio'], 1.0)
 
     def test_aggregate_single_issue(self):
         """Should produce at most one aggregate issue, not per-note."""

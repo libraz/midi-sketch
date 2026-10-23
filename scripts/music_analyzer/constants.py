@@ -4,7 +4,9 @@ All MIDI constants, track definitions, interval classifications,
 and severity/category enums used across the music analyzer.
 """
 
+import json
 from enum import Enum
+from pathlib import Path
 
 from melodic_metrics import LEAP_SMALL_MAX, STEP_MAX
 
@@ -118,37 +120,53 @@ SECTION_LENGTH_BARS = 8
 BASS_PREFERRED_DEGREES = {0, 4}  # Root, 5th
 BASS_ACCEPTABLE_DEGREES = {0, 2, 4}  # Root, 3rd, 5th
 
-# Chord degree to root pitch class mapping (C major, 0-indexed degrees)
-# degree 0=I(C), 1=ii(D), 2=iii(E), 3=IV(F), 4=V(G), 5=vi(A), 6=vii(B)
-DEGREE_TO_ROOT_PC = {0: 0, 1: 2, 2: 4, 3: 5, 4: 7, 5: 9, 6: 11}
+def _load_chord_degrees():
+    """Read the chord-degree table the C++ core exports.
 
-# Chord degree to chord tones (pitch classes in C major)
-# Each chord has root, 3rd, 5th as diatonic chord tones
-DEGREE_TO_CHORD_TONES = {
-    0: {0, 4, 7},    # I:   C, E, G
-    1: {2, 5, 9},    # ii:  D, F, A
-    2: {4, 7, 11},   # iii: E, G, B
-    3: {5, 9, 0},    # IV:  F, A, C
-    4: {7, 11, 2},   # V:   G, B, D
-    5: {9, 0, 4},    # vi:  A, C, E
-    6: {11, 2, 5},   # vii: B, D, F
-}
+    Keyed by degree identifier, borrowed degrees (8, 10-14) included: a
+    borrowed degree is not a scale step, so it is looked up, never reduced
+    modulo 7. tests/core/chord_test.cpp fails when this file and the core's
+    table disagree.
+    """
+    path = Path(__file__).with_name('chord_degrees.json')
+    with path.open(encoding='utf-8') as handle:
+        rows = json.load(handle)['degrees']
+    return {int(degree): row for degree, row in rows.items()}
 
-# Harmonic function of each scale degree: T=Tonic, S=Subdominant, D=Dominant.
-# I, iii and vi share the tonic's notes and stand in for it; ii and IV are the
-# subdominant pair; V and vii carry the leading tone and pull back to the tonic.
+
+# Root pitch class, triad quality and intervals, and harmonic function
+# (T=Tonic, S=Subdominant, D=Dominant) of every chord degree, in C major.
 # Keyed by degree rather than by root pitch class: a degree is what the chord
 # timeline and the note provenance both speak in, and going through a pitch
 # class invites reading a chord by whichever of its notes the bass happens to
 # be playing.
-DEGREE_TO_FUNCTION = {0: 'T', 1: 'S', 2: 'T', 3: 'S', 4: 'D', 5: 'T', 6: 'D'}
+CHORD_DEGREES = _load_chord_degrees()
+
+
+def degree_root_pc(degree: int):
+    """Root pitch class of a chord degree, or None when the degree is unknown."""
+    row = CHORD_DEGREES.get(degree)
+    return None if row is None else row['root_pc']
+
+
+def degree_chord_tones(degree: int):
+    """Triad pitch classes of a chord degree, or an empty set when unknown."""
+    row = CHORD_DEGREES.get(degree)
+    if row is None:
+        return set()
+    return {(row['root_pc'] + interval) % 12 for interval in row['triad']}
+
+
+def degree_fifth_pc(degree: int):
+    """Pitch class of the triad's fifth (diminished on vii and #IVdim), or None."""
+    row = CHORD_DEGREES.get(degree)
+    return None if row is None else (row['root_pc'] + row['triad'][2]) % 12
 
 
 def chord_function(degree: int):
-    """Harmonic function of a scale degree, or None when it is unknown."""
-    if degree < 0:
-        return None
-    return DEGREE_TO_FUNCTION.get(degree % 7)
+    """Harmonic function of a chord degree, or None when it is unknown."""
+    row = CHORD_DEGREES.get(degree)
+    return None if row is None else row['function']
 
 # Beat strength weights (1-indexed beat positions in 4/4)
 BEAT_STRENGTH = {1: 1.0, 2: 0.4, 3: 0.7, 4: 0.4}

@@ -11,8 +11,8 @@ from ..constants import (
     TICKS_PER_BAR,
     TICKS_PER_BEAT,
     Category,
-    DEGREE_TO_ROOT_PC,
     chord_function,
+    degree_root_pc,
 )
 from ..models import Bonus
 from ..helpers import tick_to_bar
@@ -35,7 +35,7 @@ def _tension_value(degree: int) -> Optional[float]:
     """Get the numeric tension value for a chord degree.
 
     Args:
-        degree: Chord degree (0-6).
+        degree: Chord degree identifier, borrowed degrees included.
 
     Returns:
         Tension value (0.0 for tonic, 0.5 for subdominant, 1.0 for dominant)
@@ -261,8 +261,8 @@ class BonusHarmonicAnalyzer(BaseBonusAnalyzer):
         if end_degree != 4 or start_degree != 0:
             return 0.0
 
-        dominant_root = DEGREE_TO_ROOT_PC.get(4)
-        tonic_root = DEGREE_TO_ROOT_PC.get(0)
+        dominant_root = degree_root_pc(4)
+        tonic_root = degree_root_pc(0)
 
         if end_bass_pc is None or start_bass_pc is None:
             return 0.5
@@ -473,7 +473,7 @@ class BonusHarmonicAnalyzer(BaseBonusAnalyzer):
             beat_one_tick = (bar_num - 1) * TICKS_PER_BAR
             degree = self.get_chord_degree_at(beat_one_tick)
             if degree >= 0:
-                root_pc = DEGREE_TO_ROOT_PC.get(degree)
+                root_pc = degree_root_pc(degree)
                 if root_pc is not None:
                     root_pcs.add(root_pc)
 

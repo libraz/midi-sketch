@@ -13,7 +13,7 @@ from typing import List
 from ..constants import (
     TICKS_PER_BEAT, TICKS_PER_BAR, TRACK_NAMES, TRACK_CHANNELS,
     BASS_PREFERRED_DEGREES, BASS_ACCEPTABLE_DEGREES,
-    DEGREE_TO_ROOT_PC, DEGREE_TO_CHORD_TONES,
+    degree_chord_tones, degree_fifth_pc, degree_root_pc,
     GUITAR_CHANNEL, GUITAR_BASS_MUD_THRESHOLD, GUITAR_STRUM_MIN_VOICES,
     Severity, Category, chord_function,
 )
@@ -85,7 +85,6 @@ class HarmonicAnalyzer(BaseAnalyzer):
         track_a = TRACK_NAMES.get(note_a.channel, f"Ch{note_a.channel}")
         track_b = TRACK_NAMES.get(note_b.channel, f"Ch{note_b.channel}")
         name = interval_name(raw_interval)
-        normalized_degree = chord_degree % 7 if chord_degree >= 0 else -1
         self.add_issue(
             severity=severity,
             category=Category.HARMONIC,
@@ -105,7 +104,7 @@ class HarmonicAnalyzer(BaseAnalyzer):
                 "chord_degree": chord_degree,
                 "intentional_maj7": (raw_interval % 12 == 11
                                      and raw_interval <= 12
-                                     and normalized_degree in MAJOR_SEVENTH_COLOUR_DEGREES),
+                                     and chord_degree in MAJOR_SEVENTH_COLOUR_DEGREES),
             },
         )
 
@@ -667,23 +666,19 @@ class HarmonicAnalyzer(BaseAnalyzer):
                 continue
 
             degree = note.provenance['chord_degree']
-            if degree < 0 or degree not in DEGREE_TO_ROOT_PC:
+            root_pc = degree_root_pc(degree)
+            if root_pc is None:
                 continue
 
             total_checked += 1
             bass_pc = self.internal_pitch_class(note)
-            root_pc = DEGREE_TO_ROOT_PC[degree]
-            chord_tones = DEGREE_TO_CHORD_TONES.get(degree, set())
+            chord_tones = degree_chord_tones(degree)
 
             if bass_pc == root_pc:
                 root_count += 1
             elif bass_pc in chord_tones:
-                # Identify 3rd vs 5th
-                # 5th is 7 semitones above root (or tritone for vii)
-                fifth_pc = (root_pc + 7) % 12
-                if degree == 6:
-                    fifth_pc = (root_pc + 6) % 12  # diminished 5th for vii
-                if bass_pc == fifth_pc:
+                # The fifth is the triad's own: diminished on vii and #IVdim.
+                if bass_pc == degree_fifth_pc(degree):
                     fifth_count += 1
                 else:
                     third_count += 1
@@ -752,15 +747,13 @@ class HarmonicAnalyzer(BaseAnalyzer):
                 continue
 
             degree = note.provenance['chord_degree']
-            if degree < 0 or degree not in DEGREE_TO_ROOT_PC:
+            root_pc = degree_root_pc(degree)
+            if root_pc is None:
                 continue
 
             total_beat1 += 1
             bass_pc = self.internal_pitch_class(note)
-            root_pc = DEGREE_TO_ROOT_PC[degree]
-            fifth_pc = (root_pc + 7) % 12
-            if degree == 6:
-                fifth_pc = (root_pc + 6) % 12
+            fifth_pc = degree_fifth_pc(degree)
 
             if bass_pc == root_pc:
                 root_count += 1

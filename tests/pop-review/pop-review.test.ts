@@ -465,6 +465,51 @@ describe('loaders', () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it('reads a modulation amount without a point after the start as no modulation', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'pop-review-json-'));
+    try {
+      const path = join(dir, 'output.json');
+      const write = (modulation: Record<string, number>) => {
+        writeFileSync(
+          path,
+          JSON.stringify({
+            bpm: 120,
+            division: 480,
+            duration_ticks: 2 * 1920,
+            metadata: {
+              blueprint: 0,
+              seed: 1,
+              key: 2,
+              vocal_low: 60,
+              vocal_high: 79,
+              ...modulation,
+            },
+            tracks: [],
+            sections: [{ type: 'Chorus', start_ticks: 0, end_ticks: 2 * 1920 }],
+            chords: [
+              { tick: 0, endTick: 1920, degree: 0 },
+              { tick: 1920, endTick: 3840, degree: 4 },
+            ],
+          }),
+        );
+        return loadGenerated(path).declared;
+      };
+      for (const modulation of [
+        { modulation_tick: 0, modulation_semitones: 2 },
+        { modulation_semitones: 2 },
+      ]) {
+        const declared = write(modulation);
+        expect(declared.modulationBeat).toBeNull();
+        expect(declared.modulationSemitones).toBe(0);
+        // I and V of D, unshifted; the range is the internal window in D.
+        expect(declared.chords.map((c: { rootPc: number }) => c.rootPc)).toEqual([2, 9]);
+        expect([declared.vocalLow, declared.vocalHigh]).toEqual([62, 81]);
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('vocal drive', () => {

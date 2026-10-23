@@ -51,8 +51,22 @@ class TestIntervalClassification(unittest.TestCase):
             self.assertEqual(classify_interval_dissonance(6, degree), Severity.WARNING)
             self.assertEqual(classify_interval_dissonance(18, degree), Severity.INFO)
 
-    def test_unknown_harmony_does_not_excuse_a_tritone(self):
-        self.assertEqual(classify_interval_dissonance(6, -1), Severity.WARNING)
+    def test_unknown_harmony_leaves_the_context_dependent_intervals_unjudged(self):
+        # Without a chord the analyzer reports only what clashes under every
+        # harmony; a major 2nd, tritone or major 7th may be the chord itself.
+        for semitones in (2, 6, 11, 18, 23):
+            self.assertIsNone(classify_interval_dissonance(semitones, -1), semitones)
+        self.assertEqual(classify_interval_dissonance(1, -1), Severity.ERROR)
+        self.assertEqual(classify_interval_dissonance(13, -1), Severity.ERROR)
+
+    def test_borrowed_degrees_are_asked_by_their_chord_not_modulo_seven(self):
+        # #IVdim (14) owns its diminished fifth; bIII (11) and bII (13) own no
+        # tritone although 11 % 7 and 13 % 7 land on V and vii.
+        self.assertIsNone(classify_interval_dissonance(6, 14))
+        for degree in (11, 13):
+            self.assertEqual(classify_interval_dissonance(6, degree), Severity.WARNING)
+        # bVII (10) is not a major-7th colour degree although 10 % 7 is IV.
+        self.assertEqual(classify_interval_dissonance(11, 10), Severity.ERROR)
 
     def test_wide_separation_ends_the_clash(self):
         for semitones in (25, 30, 35, 36, 47):

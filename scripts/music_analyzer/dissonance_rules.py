@@ -1,15 +1,19 @@
-"""Vertical dissonance classification, mirroring the shipped analyzer.
+"""Vertical dissonance classification, mirroring the shipped analyzer's interval step.
 
-The generator refuses to place a note that clashes with the notes already
-registered around it, so re-deriving that decision here can only ever confirm
-it. What this module is for is the other half: a single place that classifies a
-sounding interval the same way ``src/analysis/dissonance.cpp`` does, so the
-Python report and the C++ ``--analyze`` report cannot drift, and so the checks
-that ask questions the generator never asks (see ``harmonic.py``) have one
-definition of "dissonant" to build on.
+One place that classifies a sounding interval over a chord degree the way
+``checkIntervalDissonance`` in ``src/analysis/dissonance.cpp`` does, so the
+checks in ``harmonic.py`` have one definition to build on.
 
-The classification is a property of the sounding interval and the chord under
-it, not of how the note came to be there.
+The reach is the analyzer's, judged on the actual interval: the minor 2nd at 1
+and 13, the major 2nd at 2 only, the major 7th and the tritone on every octave
+up to 24 semitones. Generation (``isDissonantActualInterval``) still refuses a
+tritone at 30 and a major 7th at 35; neither report sees those.
+
+``output.json`` does not carry what the C++ report excuses after this step:
+the realized chord tones (``chordExcusesFlaggedPair``), the registered
+root-maj7, the prepared-suspension tolerance, and the track roles the low-bass
+major 7th rule needs. A count from this module is the raw interval rule, an
+upper bound on what ``--analyze`` reports, not a copy of it.
 """
 
 from .constants import Severity
@@ -20,12 +24,18 @@ _MAJOR_SECOND = 2
 _TRITONE = 6
 _MAJOR_SEVENTH = 11
 
+# Intervals whose verdict depends on the chord; with no harmony known they are
+# left unreported rather than judged against an assumed chord.
+_CONTEXT_DEPENDENT = (_MAJOR_SECOND, _TRITONE, _MAJOR_SEVENTH)
+
 # Two octaves apart the two notes occupy different registral space and the
 # beating is no longer part of the same sonority.
 WIDE_SEPARATION_SEMITONES = 24
 
-# Chord degrees the tritone belongs to: it is what defines V7 and vii.
-TRITONE_HOME_DEGREES = (4, 6)
+# Chord degrees whose chord owns a tritone: V7 and vii, and the borrowed
+# #IVdim (14). Borrowed degrees are identifiers, not scale steps, so they are
+# never reduced modulo 7.
+TRITONE_HOME_DEGREES = (4, 6, 14)
 
 # Chord degrees on which a major 7th is a conventional colour rather than a
 # clash (I and IV take a major 7th in pop harmony).
@@ -52,8 +62,9 @@ def classify_interval_dissonance(semitones: int, chord_degree: int):
 
     Args:
         semitones: Absolute distance between the two sounding pitches.
-        chord_degree: Scale degree of the chord under them, or a negative
-            value when the harmony at that point is unknown.
+        chord_degree: Chord degree under them as ``output.json`` names it
+            (0-6 diatonic, 8 and above borrowed), or a negative value when the
+            harmony at that point is unknown.
 
     Returns:
         The Severity of the clash, or None when the interval is not dissonant.
@@ -63,7 +74,9 @@ def classify_interval_dissonance(semitones: int, chord_degree: int):
 
     pitch_class = semitones % 12
     compound = semitones > 12
-    normalized_degree = chord_degree % 7 if chord_degree >= 0 else -1
+
+    if chord_degree < 0 and pitch_class in _CONTEXT_DEPENDENT:
+        return None
 
     if pitch_class == _MINOR_SECOND:
         # Within the separation limit only the minor 2nd and the minor 9th
@@ -77,12 +90,12 @@ def classify_interval_dissonance(semitones: int, chord_degree: int):
     if pitch_class == _MAJOR_SEVENTH:
         if compound:
             return Severity.INFO
-        if normalized_degree in MAJOR_SEVENTH_COLOUR_DEGREES:
+        if chord_degree in MAJOR_SEVENTH_COLOUR_DEGREES:
             return Severity.WARNING
         return Severity.ERROR
 
     if pitch_class == _TRITONE:
-        if normalized_degree in TRITONE_HOME_DEGREES:
+        if chord_degree in TRITONE_HOME_DEGREES:
             return None
         return Severity.INFO if compound else Severity.WARNING
 

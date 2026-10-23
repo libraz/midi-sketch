@@ -308,6 +308,28 @@ class TestHarmonicFunctionTable(unittest.TestCase):
 
     def test_unknown_harmony_has_no_function(self):
         self.assertIsNone(chord_function(-1))
+        self.assertIsNone(chord_function(7))
+
+    def test_borrowed_degrees_are_subdominant_as_in_the_core(self):
+        # The core's getChordFunction answers Subdominant for every borrowed
+        # identifier; reducing them modulo 7 would call iv tonic and bII dominant.
+        for degree in (8, 10, 11, 12, 13, 14):  # bVI, bVII, bIII, iv, bII, #IVdim
+            with self.subTest(degree=degree):
+                self.assertEqual(chord_function(degree), 'S')
+
+    def test_root_variety_counts_borrowed_roots(self):
+        # I, bVI, bVII and iv are four different roots: C, Ab, Bb and F.
+        degrees = (0, 8, 10, 12)
+        notes = [Note(start=bar * TICKS_PER_BAR, duration=TICKS_PER_BAR, pitch=60,
+                      velocity=80, channel=1) for bar in range(len(degrees))]
+        metadata = {'chords': [
+            {'tick': bar * TICKS_PER_BAR, 'endTick': (bar + 1) * TICKS_PER_BAR,
+             'degree': degree}
+            for bar, degree in enumerate(degrees)
+        ]}
+        analyzer = BonusHarmonicAnalyzer(notes=notes, notes_by_channel={1: notes},
+                                         metadata=metadata)
+        self.assertEqual(analyzer._evaluate_root_variety(), 1.0)
 
     def test_tension_follows_the_function(self):
         # iii resolves nothing, IV leans, V pulls.
