@@ -9,11 +9,14 @@ and 13, the major 2nd at 2 only, the major 7th and the tritone on every octave
 up to 24 semitones. Generation (``isDissonantActualInterval``) still refuses a
 tritone at 30 and a major 7th at 35; neither report sees those.
 
-``output.json`` does not carry what the C++ report excuses after this step:
-the realized chord tones (``chordExcusesFlaggedPair``), the registered
-root-maj7, the prepared-suspension tolerance, and the track roles the low-bass
-major 7th rule needs. A count from this module is the raw interval rule, an
-upper bound on what ``--analyze`` reports, not a copy of it.
+This module is the interval step alone. The chord-tone excuse the C++ report
+applies next (``chordExcusesFlaggedPair``, which also covers a registered
+root-maj7) is reproducible from ``output.json``: ``harmonic.py`` reads the
+chord tones of each exported (degree, extension) from ``chord_degrees.json``
+and applies it. What neither file can reproduce, because ``output.json`` does
+not carry the data, is the early-arrival excuse, the prepared-suspension and
+brief passing-tone tolerances, and the low-register bass major 7th rule, so a
+count from ``harmonic.py`` is an upper bound on what ``--analyze`` reports.
 """
 
 from .constants import Severity

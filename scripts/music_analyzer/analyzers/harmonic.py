@@ -12,7 +12,7 @@ from typing import List
 
 from ..constants import (
     TICKS_PER_BEAT, TICKS_PER_BAR, TRACK_NAMES, TRACK_CHANNELS,
-    BASS_PREFERRED_DEGREES, BASS_ACCEPTABLE_DEGREES,
+    BASS_PREFERRED_DEGREES, BASS_ACCEPTABLE_DEGREES, CHORD_DEGREES,
     degree_chord_tones, degree_fifth_pc, degree_root_pc,
     GUITAR_CHANNEL, GUITAR_BASS_MUD_THRESHOLD, GUITAR_STRUM_MIN_VOICES,
     Severity, Category, chord_function,
@@ -61,15 +61,19 @@ class HarmonicAnalyzer(BaseAnalyzer):
     # -----------------------------------------------------------------
 
     def _overlapping_pairs(self):
-        """Yield (note_a, note_b, overlap_start, overlap_end) across tracks."""
-        pitched_notes = [note for note in self.notes if note.channel != 9]
+        """Yield (note_a, note_b, overlap_start, overlap_end) for every sounding pair.
+
+        Two voices of one track state the interval two tracks would, so pairs
+        inside a track are judged too, as the shipped analyzer judges them. As
+        there, drums and SE cues are not pitched material.
+        """
+        unpitched = (TRACK_CHANNELS["Drums"], TRACK_CHANNELS["SE"])
+        pitched_notes = [note for note in self.notes if note.channel not in unpitched]
 
         for idx, note_a in enumerate(pitched_notes):
             for note_b in pitched_notes[idx + 1:]:
                 if note_b.start >= note_a.end and note_a.start <= note_b.start:
                     break
-                if note_a.channel == note_b.channel:
-                    continue
 
                 overlap_start = max(note_a.start, note_b.start)
                 overlap_end = min(note_a.end, note_b.end)
@@ -108,20 +112,60 @@ class HarmonicAnalyzer(BaseAnalyzer):
             },
         )
 
+    def _chord_tones_at(self, tick):
+        """Pitch classes of the exported chord at ``tick``, or None if none is exported.
+
+        The tones are the core's own for that degree and registered extension
+        (chord_degrees.json), so a secondary dominant or a maj7 states its
+        altered or added tone here as it does on the timeline.
+        """
+        chord = self.chord_at(tick)
+        if chord is None:
+            return None
+        try:
+            row = CHORD_DEGREES.get(int(chord.get("degree")))
+        except (TypeError, ValueError):
+            return None
+        if row is None:
+            return None
+        return set(row["tones"].get(chord.get("extension", "none"), ()))
+
+    def _chord_owns_pair(self, raw_interval, note_a, note_b, tick):
+        """Whether the chord at ``tick`` accounts for a flagged pair.
+
+        Mirrors chordExcusesFlaggedPair: both pitches are tones of the chord,
+        and the pair is not a minor 2nd or minor 9th, which no chord owns.
+        """
+        if raw_interval in (1, 13):
+            return False
+        tones = self._chord_tones_at(tick)
+        return bool(tones) and (self.internal_pitch_class(note_a) in tones and
+                                self.internal_pitch_class(note_b) in tones)
+
     def _analyze_dissonance(self):
-        """Detect dissonant intervals between simultaneous notes across channels.
+        """Detect dissonant intervals between simultaneous notes.
 
         The generator refuses to place a note that clashes with what is already
         sounding, so on generated material this check mostly confirms that
         contract; it earns its keep on imported MIDI and on notes that later
-        passes moved. Classification is shared with the shipped analyzer so the
-        two reports cannot disagree about the same interval.
+        passes moved.
+
+        This is not the shipped analyzer's verdict. It applies the interval
+        rule (dissonance_rules.py) and the chord-tone excuse, both reproducible
+        from output.json. It cannot apply the exemptions the C++ report adds on
+        top, which need data output.json does not carry: the early-arrival
+        excuse (a pushed note judged at the chord it arrives for), the
+        prepared-suspension and brief passing-tone tolerances (track roles and
+        neighbouring notes the analyzer reads from the Song), and the
+        low-register bass major 7th rule. Counts here are an upper bound.
         """
         for note_a, note_b, overlap_start, overlap_end in self._overlapping_pairs():
             raw_interval = abs(note_a.pitch - note_b.pitch)
             chord_degree = self.get_chord_degree_at(overlap_start)
             severity = classify_interval_dissonance(raw_interval, chord_degree)
             if severity is None:
+                continue
+            if self._chord_owns_pair(raw_interval, note_a, note_b, overlap_start):
                 continue
 
             self._add_dissonance_issue(
@@ -140,14 +184,16 @@ class HarmonicAnalyzer(BaseAnalyzer):
         for note_a, note_b, overlap_start, overlap_end in self._overlapping_pairs():
             raw_interval = abs(note_a.pitch - note_b.pitch)
             start_degree = self.get_chord_degree_at(overlap_start)
-            if classify_interval_dissonance(raw_interval, start_degree) is not None:
+            if (classify_interval_dissonance(raw_interval, start_degree) is not None and
+                    not self._chord_owns_pair(raw_interval, note_a, note_b, overlap_start)):
                 continue  # Already reported by the interval check.
 
             boundary = self.get_next_chord_change(overlap_start)
             while boundary is not None and boundary < overlap_end:
                 degree = self.get_chord_degree_at(boundary)
                 severity = classify_interval_dissonance(raw_interval, degree)
-                if severity is not None:
+                if (severity is not None and
+                        not self._chord_owns_pair(raw_interval, note_a, note_b, boundary)):
                     self._add_dissonance_issue(
                         "dissonance_after_chord_change", severity, note_a, note_b,
                         boundary, overlap_end, degree,

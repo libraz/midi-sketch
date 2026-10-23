@@ -393,6 +393,43 @@ class TestDissonanceDetection(unittest.TestCase):
         self.assertEqual(len(dissonance_errors), 0)
 
 
+class TestDissonanceReadsTheRegisteredChord(unittest.TestCase):
+    """The chord-tone excuse, read from the exported timeline as C++ reads it."""
+
+    @staticmethod
+    def _issues(notes, degree, extension="none"):
+        metadata = {'chords': [{'tick': 0, 'endTick': TICKS_PER_BAR, 'degree': degree,
+                                'extension': extension, 'isSecondaryDominant': False}]}
+        result = MusicAnalyzer(notes, metadata=metadata).analyze_all()
+        return [i for i in result.issues if i.subcategory == "dissonance"]
+
+    @staticmethod
+    def _note(pitch, channel, start=0):
+        return Note(start=start, duration=TICKS_PER_BAR - start, pitch=pitch, velocity=80,
+                    channel=channel)
+
+    def test_secondary_dominant_tritone_is_the_chord(self):
+        # E7 over iii: G# and D are its third and seventh.
+        notes = [self._note(56, 1), self._note(62, 6)]
+        self.assertEqual(self._issues(notes, 2, "dom7"), [])
+        self.assertNotEqual(self._issues(notes, 2), [], "over plain Em the same pair clashes")
+
+    def test_add9_second_inside_one_track_is_the_chord(self):
+        # C and D voiced together by the chord track over Cadd9.
+        notes = [self._note(60, 1), self._note(62, 1), self._note(64, 1)]
+        self.assertEqual(self._issues(notes, 0, "add9"), [])
+        self.assertNotEqual(self._issues(notes, 0), [],
+                            "a second inside one track is judged like one across two")
+
+    def test_no_chord_owns_a_minor_second(self):
+        notes = [self._note(71, 1), self._note(72, 0)]  # B and C over Cmaj7
+        self.assertNotEqual(self._issues(notes, 0, "maj7"), [])
+
+    def test_se_cues_are_not_pitched_material(self):
+        notes = [self._note(60, 1), self._note(61, 15)]
+        self.assertEqual(self._issues(notes, 0), [])
+
+
 class TestBassChordDegrees(unittest.TestCase):
     """Test bass chord degree analysis (pitch vs chord root)."""
 

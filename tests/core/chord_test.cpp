@@ -113,8 +113,19 @@ std::string exportChordDegreeTable() {
         << quality_name(row.quality) << "\", \"triad\": [" << static_cast<int>(triad.intervals[0])
         << ", " << static_cast<int>(triad.intervals[1]) << ", "
         << static_cast<int>(triad.intervals[2]) << "], \"function\": \""
-        << function_letter(getChordFunction(row.degree)) << "\"}"
-        << (i + 1 < table.size() ? "," : "") << "\n";
+        << function_letter(getChordFunction(row.degree)) << "\",\n"
+        << "      \"tones\": {";
+    // The chord tones the timeline reports for each registered extension.
+    for (int ext = 0; ext <= static_cast<int>(ChordExtension::Dom9); ++ext) {
+      const auto extension = static_cast<ChordExtension>(ext);
+      const Chord chord = getExtendedChord(row.degree, extension);
+      out << (ext > 0 ? ", " : "") << "\"" << chordExtensionToString(extension) << "\": [";
+      for (uint8_t n = 0; n < chord.note_count; ++n) {
+        out << (n > 0 ? ", " : "") << (row.root_pc + chord.intervals[n]) % 12;
+      }
+      out << "]";
+    }
+    out << "}}" << (i + 1 < table.size() ? "," : "") << "\n";
   }
   out << "  }\n}\n";
   return out.str();
