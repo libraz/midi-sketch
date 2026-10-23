@@ -14,6 +14,16 @@
 
 namespace midisketch {
 
+namespace {
+
+/// Formats a byte as "0x" plus two uppercase hex digits.
+std::string hexByte(uint8_t value) {
+  static const char kDigits[] = "0123456789ABCDEF";
+  return std::string("0x") + kDigits[value >> 4] + kDigits[value & 0x0F];
+}
+
+}  // namespace
+
 // MidiValidationReport methods
 
 size_t MidiValidationReport::errorCount() const {
@@ -442,10 +452,10 @@ bool MidiValidator::validateSMF1Track(const uint8_t* data, size_t size, int trac
                    pos - 1, track_index);
       }
     } else {
-      addError(report,
-               "Unknown status byte 0x" + std::to_string(static_cast<int>(status)) + " at track " +
-                   std::to_string(track_index),
-               pos, track_index);
+      addError(
+          report,
+          "Unknown status byte " + hexByte(status) + " at track " + std::to_string(track_index),
+          pos, track_index);
       return false;
     }
 
@@ -480,8 +490,7 @@ bool MidiValidator::validateSMF2Clip(const uint8_t* data, size_t size,
 
   // First message should typically be utility (0x0) or stream (0xF)
   if (first_mt != 0x0 && first_mt != 0xF) {
-    addWarning(report, "First UMP message type is 0x" + std::to_string(first_mt) +
-                           " (expected 0x0 or 0xF)");
+    addWarning(report, "First UMP message type is " + hexByte(first_mt) + " (expected 0x0 or 0xF)");
   }
 
   // Scan UMP messages to count events and check structure

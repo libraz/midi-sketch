@@ -143,10 +143,13 @@ TEST_F(UmpTest, SysEx8ContinuationDoesNotInjectNullPayloadBytes) {
 
   std::vector<uint8_t> decoded;
   for (size_t packet = 0; packet < buf_.size(); packet += 16) {
+    // The count covers the Stream ID byte, so the data length is count - 1.
     const uint8_t count = buf_[packet + 1] & 0x0F;
-    ASSERT_LE(count, 13u);
-    if (count > 0) decoded.push_back(buf_[packet + 3]);
-    for (size_t idx = 1; idx < count; ++idx) {
+    ASSERT_GE(count, 1u);
+    ASSERT_LE(count, 14u);
+    const size_t data_len = count - 1u;
+    if (data_len > 0) decoded.push_back(buf_[packet + 3]);
+    for (size_t idx = 1; idx < data_len; ++idx) {
       decoded.push_back(buf_[packet + 3 + idx]);
     }
   }
@@ -154,6 +157,43 @@ TEST_F(UmpTest, SysEx8ContinuationDoesNotInjectNullPayloadBytes) {
   ASSERT_GE(decoded.size(), expected_header.size());
   EXPECT_TRUE(std::equal(expected_header.begin(), expected_header.end(), decoded.begin()));
   EXPECT_EQ(std::string(decoded.begin() + expected_header.size(), decoded.end()), text);
+}
+
+TEST_F(UmpTest, SysEx8CountCoversStreamIdForEveryTextLength) {
+  const std::vector<uint8_t> header = {0, 0, 0, 0, 0, 0xFF, 0xFF, 0xFF, 0x01};
+  for (size_t len = 0; len <= 40; ++len) {
+    const std::string text(len, 'x');
+    buf_.clear();
+    writeMetadataText(buf_, 0, text);
+    ASSERT_FALSE(buf_.empty());
+    ASSERT_EQ(buf_.size() % 16, 0u);
+
+    std::vector<uint8_t> decoded;
+    for (size_t packet = 0; packet < buf_.size(); packet += 16) {
+      const size_t count = buf_[packet + 1] & 0x0F;
+      ASSERT_GE(count, 1u) << "len " << len;
+      const size_t data_len = count - 1;
+      // Data starts after the Stream ID byte and spans at most 13 bytes.
+      ASSERT_LE(data_len, 13u) << "len " << len;
+      for (size_t idx = 0; idx < data_len; ++idx) decoded.push_back(buf_[packet + 3 + idx]);
+    }
+    ASSERT_EQ(decoded.size(), header.size() + len) << "len " << len;
+    EXPECT_TRUE(std::equal(header.begin(), header.end(), decoded.begin())) << "len " << len;
+  }
+}
+
+TEST_F(UmpTest, TempoAndDivisionCodecRoundTrips) {
+  uint16_t ticks = 0;
+  writeDCTPQ(buf_, 480);
+  const uint32_t word =
+      (static_cast<uint32_t>(buf_[0]) << 24) | (buf_[1] << 16) | (buf_[2] << 8) | buf_[3];
+  ASSERT_TRUE(decodeDCTPQ(word, ticks));
+  EXPECT_EQ(ticks, 480);
+  EXPECT_FALSE(decodeDCTPQ(makeDeltaClockstamp(0, 480), ticks));
+
+  EXPECT_EQ(bpmFromTempo(tempoToTenNs(500000)), 120);
+  EXPECT_EQ(bpmFromTempo(0), 0);
+  EXPECT_EQ(bpmFromTempo(1), 65535);
 }
 
 TEST_F(UmpTest, WriteTimeSignature) {

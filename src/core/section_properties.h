@@ -90,6 +90,35 @@ inline const SectionProperties& getSectionProperties(SectionType type) {
   return kSectionProperties[static_cast<size_t>(type)];
 }
 
+/// @brief Get the canonical name of a SectionType (the enumerator name, e.g. "MixBreak").
+/// @param type Section type to name
+/// @return Static name string; empty for an out-of-range value
+inline const char* getSectionTypeName(SectionType type) {
+  switch (type) {
+    case SectionType::Intro:
+      return "Intro";
+    case SectionType::A:
+      return "A";
+    case SectionType::B:
+      return "B";
+    case SectionType::Chorus:
+      return "Chorus";
+    case SectionType::Bridge:
+      return "Bridge";
+    case SectionType::Interlude:
+      return "Interlude";
+    case SectionType::Outro:
+      return "Outro";
+    case SectionType::Chant:
+      return "Chant";
+    case SectionType::MixBreak:
+      return "MixBreak";
+    case SectionType::Drop:
+      return "Drop";
+  }
+  return "";
+}
+
 }  // namespace midisketch
 
 #endif  // MIDISKETCH_CORE_SECTION_PROPERTIES_H

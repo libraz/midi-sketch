@@ -157,6 +157,7 @@ export class MidiSketch {
    * Regenerate vocal track with new configuration or seed.
    * Keeps the same chord progression and structure.
    * @param configOrSeed VocalConfig object or seed number (default: 0 = new random)
+   * @throws {MidiSketchConfigError} If the vocal config fails validation
    * @throws {MidiSketchGenerationError} If regeneration fails
    */
   regenerateVocal(configOrSeed: VocalConfig | number = 0): void {
@@ -164,9 +165,7 @@ export class MidiSketch {
 
     if (typeof configOrSeed === 'number' && configOrSeed === 0) {
       const result = a.regenerateVocalFromJson(this.handle, '', 0);
-      if (result !== 0) {
-        this.throwGenerationError(result, 'Vocal regeneration');
-      }
+      this.handleGenerationResult(result, 'Vocal regeneration');
       return;
     }
 
@@ -175,9 +174,7 @@ export class MidiSketch {
 
     const json = serializeVocalConfig(vocalConfig);
     const result = a.regenerateVocalFromJson(this.handle, json, json.length);
-    if (result !== 0) {
-      this.throwGenerationError(result, 'Vocal regeneration');
-    }
+    this.handleGenerationResult(result, 'Vocal regeneration');
   }
 
   /**
@@ -185,6 +182,7 @@ export class MidiSketch {
    * Must be called after generateVocal() or generateWithVocal().
    * Generates: Aux -> Bass -> Chord -> Drums (adapting to vocal).
    * @param config Optional accompaniment configuration
+   * @throws {MidiSketchConfigError} If the accompaniment config fails validation
    * @throws {MidiSketchGenerationError} If generation fails
    */
   generateAccompaniment(config?: AccompanimentConfig): void {
@@ -197,9 +195,7 @@ export class MidiSketch {
     } else {
       const json = serializeAccompanimentConfig(config);
       const result = a.generateAccompanimentFromJson(this.handle, json, json.length);
-      if (result !== 0) {
-        this.throwGenerationError(result, 'Accompaniment generation');
-      }
+      this.handleGenerationResult(result, 'Accompaniment generation');
     }
   }
 
@@ -209,6 +205,7 @@ export class MidiSketch {
    * (Aux, Bass, Chord, Drums, etc.) with the specified seed/config.
    * Must have existing vocal (call generateVocal() first).
    * @param seedOrConfig Random seed (0 = auto-generate) or AccompanimentConfig
+   * @throws {MidiSketchConfigError} If the accompaniment config fails validation
    * @throws {MidiSketchGenerationError} If regeneration fails
    */
   regenerateAccompaniment(seedOrConfig: number | AccompanimentConfig = 0): void {
@@ -221,9 +218,7 @@ export class MidiSketch {
     } else {
       const json = serializeAccompanimentConfig(seedOrConfig);
       const result = a.regenerateAccompanimentFromJson(this.handle, json, json.length);
-      if (result !== 0) {
-        this.throwGenerationError(result, 'Accompaniment regeneration');
-      }
+      this.handleGenerationResult(result, 'Accompaniment regeneration');
     }
   }
 

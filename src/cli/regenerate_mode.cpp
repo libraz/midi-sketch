@@ -190,7 +190,7 @@ int runRegenerateMode(const ParsedArgs& args) {
   std::cout << "  Total bars: " << song.arrangement().totalBars() << "\n";
   std::cout << "  Total ticks: " << song.arrangement().totalTicks() << "\n";
   std::cout << "  BPM: " << song.bpm() << "\n";
-  std::cout << "  Seed: " << config.seed << "\n";
+  std::cout << "  Seed: " << sketch.getParams().seed << "\n";
 
   if (args.analyze) {
     const auto& params = sketch.getParams();

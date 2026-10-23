@@ -206,6 +206,20 @@ TEST(MidiValidatorErrorTest, RejectsMissingEotAndUnknownStatus) {
   EXPECT_TRUE(unknown_status_report.hasErrors());
 }
 
+TEST(MidiValidatorErrorTest, UnknownStatusByteIsPrintedAsHex) {
+  const std::vector<uint8_t> header = {
+      'M', 'T', 'h', 'd', 0, 0, 0, 6, 0, 1, 0, 1, 1, 224, 'M', 'T', 'r', 'k',
+  };
+  auto data = header;
+  data.insert(data.end(), {0, 0, 0, 2, 0, 0xF1});
+  MidiValidator validator;
+  const auto report = validator.validate(data);
+  ASSERT_TRUE(report.hasErrors());
+
+  EXPECT_NE(report.toTextReport().find("Unknown status byte 0xF1 at track"), std::string::npos);
+  EXPECT_NE(report.toJson().find("Unknown status byte 0xF1 at track"), std::string::npos);
+}
+
 TEST(MidiValidatorErrorTest, RejectsHeaderDivisionsThatMidiReaderCannotRead) {
   const std::vector<uint8_t> empty_track = {'M', 'T', 'r', 'k', 0, 0, 0, 4, 0, 0xFF, 0x2F, 0x00};
   const auto withDivision = [&empty_track](uint8_t high, uint8_t low) {

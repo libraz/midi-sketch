@@ -27,6 +27,25 @@ TEST(DisplayHelpersTest, ShowBarNotesUsesParsedMidiDivision) {
   EXPECT_NE(output.find("beat 1.0: C4 (1 beat)"), std::string::npos);
 }
 
+TEST(DisplayHelpersTest, ShowBarNotesPastTheEndOfTheFileShowsNoNotes) {
+  midisketch::ParsedMidi midi;
+  midi.division = 480;
+  midisketch::ParsedTrack vocal;
+  vocal.name = "Vocal";
+  vocal.notes.push_back(midisketch::NoteEventTestHelper::create(0, 480, 60, 100));
+  midi.tracks.push_back(vocal);
+
+  // (bar - 1) * 1920 equals 2^32 for the second bar number, which a 32-bit tick wraps to bar 1.
+  for (int bar : {2147483647, 33554433}) {
+    testing::internal::CaptureStdout();
+    cli::showBarNotes(midi, bar);
+    const std::string output = testing::internal::GetCapturedStdout();
+
+    EXPECT_EQ(output.find("Vocal:"), std::string::npos) << "bar " << bar;
+    EXPECT_EQ(output.find("C4"), std::string::npos) << "bar " << bar;
+  }
+}
+
 TEST(DisplayHelpersTest, EveryVocalStyleTheCliAcceptsHasADisplayName) {
   std::set<std::string> names;
   for (int value = 0;; ++value) {

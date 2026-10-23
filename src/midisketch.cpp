@@ -15,6 +15,7 @@
 #include "core/note_source.h"
 #include "core/pitch_utils.h"
 #include "core/preset_data.h"
+#include "core/section_properties.h"
 #include "core/timing_constants.h"
 #include "midi/track_config.h"
 #include "track/generators/arpeggio.h"
@@ -501,7 +502,7 @@ std::string MidiSketch::getEventsJson() const {
 
     w.beginObject()
         .write("name", section.name)
-        .write("type", section.name)
+        .write("type", getSectionTypeName(section.type))
         .write("startTick", section.start_tick)
         .write("endTick", end_tick)
         .write("start_bar", section.start_bar)

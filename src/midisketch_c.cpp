@@ -731,7 +731,11 @@ MidiSketchConfigError validateAccompanimentUpdate(const midisketch::GeneratorPar
 
 MidiSketchError midisketch_generate_from_json(MidiSketchHandle handle, const char* config_json,
                                               size_t json_length) {
-  if (!handle || !config_json) {
+  if (!handle) {
+    return MIDISKETCH_ERROR_INVALID_PARAM;
+  }
+  asState(handle)->last_config_error = MIDISKETCH_CONFIG_OK;
+  if (!config_json) {
     return MIDISKETCH_ERROR_INVALID_PARAM;
   }
 
@@ -776,7 +780,11 @@ MidiSketchConfigError midisketch_validate_config_json(const char* config_json, s
 
 MidiSketchError midisketch_generate_vocal_from_json(MidiSketchHandle handle,
                                                     const char* config_json, size_t json_length) {
-  if (!handle || !config_json) {
+  if (!handle) {
+    return MIDISKETCH_ERROR_INVALID_PARAM;
+  }
+  asState(handle)->last_config_error = MIDISKETCH_CONFIG_OK;
+  if (!config_json) {
     return MIDISKETCH_ERROR_INVALID_PARAM;
   }
 
@@ -791,7 +799,11 @@ MidiSketchError midisketch_generate_vocal_from_json(MidiSketchHandle handle,
 MidiSketchError midisketch_generate_with_vocal_from_json(MidiSketchHandle handle,
                                                          const char* config_json,
                                                          size_t json_length) {
-  if (!handle || !config_json) {
+  if (!handle) {
+    return MIDISKETCH_ERROR_INVALID_PARAM;
+  }
+  asState(handle)->last_config_error = MIDISKETCH_CONFIG_OK;
+  if (!config_json) {
     return MIDISKETCH_ERROR_INVALID_PARAM;
   }
 
@@ -877,11 +889,14 @@ MidiSketchError midisketch_regenerate_vocal_from_json(MidiSketchHandle handle,
 MidiSketchError midisketch_generate_accompaniment_from_json(MidiSketchHandle handle,
                                                             const char* config_json,
                                                             size_t json_length) {
-  if (!handle || !config_json || !hasGeneratedSong(handle)) {
+  if (!handle) {
+    return MIDISKETCH_ERROR_INVALID_PARAM;
+  }
+  asState(handle)->last_config_error = MIDISKETCH_CONFIG_OK;
+  if (!config_json || !hasGeneratedSong(handle)) {
     return MIDISKETCH_ERROR_INVALID_PARAM;
   }
 
-  asState(handle)->last_config_error = MIDISKETCH_CONFIG_OK;
   midisketch::AccompanimentConfig config;
   if (!parseAndValidateAccompanimentConfig(handle, config_json, json_length, config)) {
     return MIDISKETCH_ERROR_INVALID_PARAM;
@@ -893,11 +908,14 @@ MidiSketchError midisketch_generate_accompaniment_from_json(MidiSketchHandle han
 MidiSketchError midisketch_regenerate_accompaniment_from_json(MidiSketchHandle handle,
                                                               const char* config_json,
                                                               size_t json_length) {
-  if (!handle || !config_json || !hasGeneratedSong(handle)) {
+  if (!handle) {
+    return MIDISKETCH_ERROR_INVALID_PARAM;
+  }
+  asState(handle)->last_config_error = MIDISKETCH_CONFIG_OK;
+  if (!config_json || !hasGeneratedSong(handle)) {
     return MIDISKETCH_ERROR_INVALID_PARAM;
   }
 
-  asState(handle)->last_config_error = MIDISKETCH_CONFIG_OK;
   midisketch::AccompanimentConfig config;
   if (!parseAndValidateAccompanimentConfig(handle, config_json, json_length, config)) {
     return MIDISKETCH_ERROR_INVALID_PARAM;
@@ -908,11 +926,13 @@ MidiSketchError midisketch_regenerate_accompaniment_from_json(MidiSketchHandle h
 
 MidiSketchError midisketch_set_vocal_notes_from_json(MidiSketchHandle handle, const char* json,
                                                      size_t json_length) {
-  if (!handle || !json) {
+  if (!handle) {
     return MIDISKETCH_ERROR_INVALID_PARAM;
   }
-
   asState(handle)->last_config_error = MIDISKETCH_CONFIG_OK;
+  if (!json) {
+    return MIDISKETCH_ERROR_INVALID_PARAM;
+  }
 
   const std::string json_string(json, json_length);
   midisketch::json::Parser p(json_string);
@@ -973,11 +993,13 @@ const char* midisketch_get_melody_json(MidiSketchHandle handle) {
 
 MidiSketchError midisketch_set_melody_from_json(MidiSketchHandle handle, const char* json,
                                                 size_t json_length) {
-  if (!handle || !json) {
+  if (!handle) {
     return MIDISKETCH_ERROR_INVALID_PARAM;
   }
-
   asState(handle)->last_config_error = MIDISKETCH_CONFIG_OK;
+  if (!json) {
+    return MIDISKETCH_ERROR_INVALID_PARAM;
+  }
 
   const std::string json_string(json, json_length);
   midisketch::json::Parser parser(json_string);

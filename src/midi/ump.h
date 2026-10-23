@@ -33,10 +33,17 @@ inline size_t messageSize(uint8_t message_type) {
   switch (message_type) {
     case static_cast<uint8_t>(MessageType::Data64):
     case static_cast<uint8_t>(MessageType::Midi2ChannelVoice):
+    case 0x8:
+    case 0x9:
+    case 0xA:
       return 8;
+    case 0xB:
+    case 0xC:
+      return 12;
     case static_cast<uint8_t>(MessageType::Data128):
     case static_cast<uint8_t>(MessageType::FlexData):
     case static_cast<uint8_t>(MessageType::UmpStream):
+    case 0xE:
       return 16;
     default:
       return 4;
@@ -97,6 +104,20 @@ uint32_t makeDeltaClockstamp(uint8_t group, uint16_t ticks);
 // Write Delta Clockstamp for large tick values (up to 20 bits)
 // Uses two 32-bit words if needed
 void writeDeltaClockstamp(std::vector<uint8_t>& buf, uint8_t group, uint32_t ticks);
+
+/// Utility status code of the DCTPQ message (bits 23:20 of the first word).
+constexpr uint32_t kUtilityStatusDCTPQ = 0x3;
+
+/// @brief Decodes a DCTPQ message; returns false when the word is any other message.
+bool decodeDCTPQ(uint32_t word0, uint16_t& ticksPerQuarter);
+
+/// @brief Converts microseconds per quarter note to the 10 ns units of a Set Tempo message.
+/// Saturates at the 32-bit field limit.
+uint32_t tempoToTenNs(uint32_t microsPerQuarter);
+
+/// @brief Converts a Set Tempo word (10 ns per quarter note) to BPM; 0 when the word is 0.
+/// Saturates at the 16-bit BPM limit.
+uint16_t bpmFromTempo(uint32_t tenNsPerQuarter);
 
 // Write DCTPQ (Delta Clockstamp Ticks Per Quarter Note) message
 // 32-bit Utility message (status 0x3)

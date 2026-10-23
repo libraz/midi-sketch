@@ -7,7 +7,6 @@
 
 #include <cstring>
 
-#include "core/timing_constants.h"
 #include "midi/byte_order.h"
 #include "midi/midi2_format.h"
 #include "midi/ump.h"
@@ -28,19 +27,19 @@ bool Midi2Reader::read(const uint8_t* data, size_t size) {
   midi_ = ParsedMidi2();
   error_.clear();
 
-  if (size < kContainerMagicLen) {
-    error_ = "File too small";
-    return false;
-  }
-
   // Check for ktmidi container
-  if (std::memcmp(data, kContainerMagic, kContainerMagicLen) == 0) {
+  if (size >= kContainerMagicLen && std::memcmp(data, kContainerMagic, kContainerMagicLen) == 0) {
     return parseContainer(data, size);
   }
 
   // Check for SMF2 Clip
   if (size >= kClipMagicLen && std::memcmp(data, kClipMagic, kClipMagicLen) == 0) {
     return parseClip(data, size);
+  }
+
+  if (size < kClipMagicLen) {
+    error_ = "File too small";
+    return false;
   }
 
   error_ = "Unknown MIDI 2.0 format";
@@ -91,31 +90,38 @@ void Midi2Reader::parseUmpMessages(const uint8_t* data, size_t size, size_t offs
   // - Tempo
   // - MIDISKETCH metadata (via string search)
 
+  bool have_division = false;
+  bool have_tempo = false;
+
   while (offset + 4 <= size) {
-    uint32_t word0 = readUint32BE(data + offset);
-    uint8_t mt = (word0 >> 28) & 0x0F;  // Message Type
+    // A container embeds whole clips; step over each clip's "SMF2CLIP" header.
+    if (offset + kClipMagicLen <= size &&
+        std::memcmp(data + offset, kClipMagic, kClipMagicLen) == 0) {
+      offset += kClipMagicLen;
+      continue;
+    }
+
+    const uint32_t word0 = readUint32BE(data + offset);
+    const uint8_t mt = (word0 >> 28) & 0x0F;  // Message Type
 
     const size_t msgSize = ump::messageSize(mt);
 
     if (offset + msgSize > size) break;
 
-    // Handle specific message types
-    if (mt == 0xF) {
-      // UMP Stream message
-      uint16_t status = (word0 >> 16) & 0x3FF;
-      if (status == 0x00 && offset + 16 <= size) {
-        // DCTPQ message
-        uint32_t word1 = readUint32BE(data + offset + 4);
-        midi_.division = static_cast<uint16_t>((word1 >> 16) & 0xFFFF);
+    if (mt == static_cast<uint8_t>(ump::MessageType::Utility)) {
+      uint16_t ticks = 0;
+      if (!have_division && ump::decodeDCTPQ(word0, ticks) && ticks > 0) {
+        midi_.division = ticks;
+        have_division = true;
       }
-    } else if (mt == 0xD) {
-      // Flex Data message
-      uint8_t statusByte = word0 & 0xFF;
-      if (statusByte == 0x00 && offset + 16 <= size) {
-        // Tempo message
-        uint32_t word1 = readUint32BE(data + offset + 4);
-        if (word1 > 0) {
-          midi_.bpm = static_cast<uint16_t>(kMicrosecondsPerMinute / word1);
+    } else if (mt == static_cast<uint8_t>(ump::MessageType::FlexData)) {
+      // Set Tempo: status byte 0x00, word 1 in 10 ns units per quarter note.
+      const uint8_t statusByte = word0 & 0xFF;
+      if (!have_tempo && statusByte == 0x00) {
+        const uint16_t bpm = ump::bpmFromTempo(readUint32BE(data + offset + 4));
+        if (bpm > 0) {
+          midi_.bpm = bpm;
+          have_tempo = true;
         }
       }
     }

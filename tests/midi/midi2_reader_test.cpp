@@ -7,10 +7,14 @@
 
 #include <gtest/gtest.h>
 
+#include "core/basic_types.h"
 #include "core/json_helpers.h"
 #include "core/preset_data.h"
+#include "core/timing_constants.h"
+#include "midi/midi2_format.h"
 #include "midi/midi2_writer.h"
 #include "midi/midi_reader.h"
+#include "midi/ump.h"
 #include "midisketch.h"
 
 namespace midisketch {
@@ -207,6 +211,60 @@ TEST(Midi2ReaderTest, SMF1AndSMF2HaveSameMetadata) {
 
   // Metadata content should be identical (same parameters)
   EXPECT_EQ(reader1.getParsedMidi().metadata, reader2.getParsedMidi().metadata);
+}
+
+// ============================================================================
+// Tempo and division codec
+// ============================================================================
+
+TEST(Midi2ReaderTest, ClipTempoAndDivisionRoundTripThroughSharedCodec) {
+  for (uint16_t bpm : {1, 40, 90, 120, 187, 300, 1000}) {
+    std::vector<uint8_t> clip(kClipMagic, kClipMagic + kClipMagicLen);
+    ump::writeDCTPQ(clip, 960);
+    ump::writeTempo(clip, 0, kMicrosecondsPerMinute / bpm);
+
+    Midi2Reader reader;
+    ASSERT_TRUE(reader.read(clip.data(), clip.size()));
+    EXPECT_EQ(reader.getParsedMidi().division, 960) << "bpm " << bpm;
+    EXPECT_NEAR(reader.getParsedMidi().bpm, bpm, 1) << "bpm " << bpm;
+  }
+}
+
+TEST(Midi2ReaderTest, ZeroTempoWordKeepsDefaultBpm) {
+  std::vector<uint8_t> clip(kClipMagic, kClipMagic + kClipMagicLen);
+  ump::writeTempo(clip, 0, 0);
+
+  Midi2Reader reader;
+  ASSERT_TRUE(reader.read(clip.data(), clip.size()));
+  EXPECT_EQ(reader.getParsedMidi().bpm, ParsedMidi2().bpm);
+}
+
+TEST(Midi2ReaderTest, GeneratedSmf2ReportsWrittenBpmAndDivision) {
+  for (uint16_t bpm : {90, 133, 170}) {
+    SongConfig config = createDefaultSongConfig(0);
+    config.bpm = bpm;
+    config.seed = 7;
+    MidiSketch sketch;
+    sketch.setMidiFormat(MidiFormat::SMF2);
+    sketch.generateFromConfig(config);
+    auto data = sketch.getMidi();
+    ASSERT_FALSE(data.empty());
+
+    Midi2Reader reader;
+    ASSERT_TRUE(reader.read(data.data(), data.size()));
+    EXPECT_NEAR(reader.getParsedMidi().bpm, bpm, 1);
+    EXPECT_EQ(reader.getParsedMidi().division, TICKS_PER_BEAT);
+  }
+}
+
+TEST(Midi2ReaderTest, TruncatedUmpTailNeverReadsPastTheBuffer) {
+  std::vector<uint8_t> clip(kClipMagic, kClipMagic + kClipMagicLen);
+  ump::writeTempo(clip, 0, 500000);
+  // Every prefix of a valid clip, including cuts inside a 128-bit message.
+  for (size_t len = kClipMagicLen; len <= clip.size(); ++len) {
+    Midi2Reader reader;
+    EXPECT_TRUE(reader.read(clip.data(), len));
+  }
 }
 
 }  // namespace

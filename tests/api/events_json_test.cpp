@@ -10,6 +10,7 @@
 #include <string>
 #include <vector>
 
+#include "core/section_properties.h"
 #include "midisketch.h"
 
 namespace midisketch {
@@ -48,6 +49,34 @@ GeneratorParams makeTraditionalParams(uint32_t seed = 42) {
 // ============================================================================
 // Chord Timeline Structure Tests
 // ============================================================================
+
+TEST(EventsJsonTest, SectionTypeIsTheCanonicalTypeNameWhileNameStaysTheLabel) {
+  GeneratorParams params = makeTraditionalParams();
+  params.call_enabled = true;
+  params.intro_chant = IntroChant::Gachikoi;
+  params.mix_pattern = MixPattern::Tiger;
+
+  MidiSketch sketch;
+  sketch.generate(params);
+  const auto& sections = sketch.getSong().arrangement().sections();
+  bool has_chant = false;
+  bool has_mix_break = false;
+  for (const auto& section : sections) {
+    has_chant = has_chant || section.type == SectionType::Chant;
+    has_mix_break = has_mix_break || section.type == SectionType::MixBreak;
+  }
+  ASSERT_TRUE(has_chant);
+  ASSERT_TRUE(has_mix_break);
+
+  const std::string json = sketch.getEventsJson();
+  for (const auto& section : sections) {
+    const std::string expected =
+        "\"name\":\"" + section.name + "\",\"type\":\"" + getSectionTypeName(section.type) + "\"";
+    EXPECT_NE(json.find(expected), std::string::npos) << expected;
+  }
+  EXPECT_NE(json.find("\"type\":\"Chant\""), std::string::npos);
+  EXPECT_NE(json.find("\"type\":\"MixBreak\""), std::string::npos);
+}
 
 TEST(EventsJsonTest, ChordTimelineExists) {
   MidiSketch sketch;

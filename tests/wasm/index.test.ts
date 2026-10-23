@@ -3,6 +3,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import {
   ArpeggioPattern,
   ArpeggioSpeed,
+  ConfigError,
   createDefaultConfig,
   GenerationParadigm,
   getBlueprintCount,
@@ -16,6 +17,7 @@ import {
   init,
   MidiFormat,
   MidiSketch,
+  MidiSketchConfigError,
   RiffPolicy,
 } from '../../js/src/index';
 
@@ -281,6 +283,65 @@ describe('MidiSketch JS API', () => {
           sketch.destroy();
         }
       });
+    });
+  });
+
+  describe('MidiSketch partial update validation', () => {
+    const generate = (sketch: MidiSketch) => {
+      const config = createDefaultConfig(0);
+      config.seed = 12345;
+      sketch.generateFromConfig(config);
+    };
+
+    it('regenerateVocal throws the native config error for an out-of-range vocal range', () => {
+      const sketch = new MidiSketch();
+      try {
+        generate(sketch);
+        let thrown: unknown;
+        try {
+          sketch.regenerateVocal({ vocalLow: 20 });
+        } catch (error) {
+          thrown = error;
+        }
+        expect(thrown).toBeInstanceOf(MidiSketchConfigError);
+        expect((thrown as MidiSketchConfigError).code).toBe(ConfigError.InvalidVocalRange);
+      } finally {
+        sketch.destroy();
+      }
+    });
+
+    it('generateAccompaniment throws the native config error for an invalid arpeggio pattern', () => {
+      const sketch = new MidiSketch();
+      try {
+        generate(sketch);
+        let thrown: unknown;
+        try {
+          sketch.generateAccompaniment({ arpeggioPattern: 99 });
+        } catch (error) {
+          thrown = error;
+        }
+        expect(thrown).toBeInstanceOf(MidiSketchConfigError);
+        expect((thrown as MidiSketchConfigError).code).toBe(ConfigError.InvalidArpeggioPattern);
+      } finally {
+        sketch.destroy();
+      }
+    });
+
+    it('regenerateAccompaniment throws the native config error for an invalid arpeggio pattern', () => {
+      const sketch = new MidiSketch();
+      try {
+        generate(sketch);
+        let thrown: unknown;
+        try {
+          sketch.regenerateAccompaniment({ arpeggioPattern: 99 });
+        } catch (error) {
+          thrown = error;
+        }
+        expect(thrown).toBeInstanceOf(MidiSketchConfigError);
+        expect((thrown as MidiSketchConfigError).code).toBe(ConfigError.InvalidArpeggioPattern);
+      } finally {
+        sketch.destroy();
+      }
     });
   });
 

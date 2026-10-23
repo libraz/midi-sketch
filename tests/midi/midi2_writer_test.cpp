@@ -39,9 +39,11 @@ std::vector<uint8_t> collectSysEx8Payload(const std::vector<uint8_t>& data) {
   for (size_t offset = 8; offset + 15 < data.size();) {
     const uint8_t message_type = data[offset] >> 4;
     if (message_type == static_cast<uint8_t>(ump::MessageType::Data128)) {
+      // The count covers the Stream ID byte, so the data length is count - 1.
       const uint8_t count = data[offset + 1] & 0x0F;
-      if (count > 0) payload.push_back(data[offset + 3]);
-      for (size_t idx = 1; idx < count; ++idx) payload.push_back(data[offset + 3 + idx]);
+      const size_t data_len = count > 0 ? count - 1u : 0u;
+      if (data_len > 0) payload.push_back(data[offset + 3]);
+      for (size_t idx = 1; idx < data_len; ++idx) payload.push_back(data[offset + 3 + idx]);
       offset += 16;
     } else {
       offset += ump::messageSize(message_type);

@@ -457,6 +457,38 @@ TEST(CliGenerateModeTest, AutoSeedRegenerationIsByteIdentical) {
   EXPECT_EQ(readBinaryFile(output_path), source_midi);
 }
 
+TEST(CliGenerateModeTest, RegenerateWithAutoSeedPrintsTheSeedWrittenToMetadata) {
+  ScopedTempDirectory temp_dir;
+  const auto source_path = temp_dir.path() / "source.mid";
+  const auto output_path = temp_dir.path() / "regenerated.mid";
+
+  auto config = midisketch::createDefaultSongConfig(0);
+  config.seed = 12345;
+  midisketch::MidiSketch source;
+  source.setMidiFormat(midisketch::MidiFormat::SMF1);
+  source.generateFromConfig(config);
+  writeBinaryFile(source_path, source.getMidi());
+
+  ParsedArgs args;
+  args.regenerate_file = source_path.string();
+  args.output_file = output_path.string();
+  args.use_new_seed = true;
+  args.new_seed = 0;
+  std::string printed;
+  {
+    ScopedStreamCapture stdout_capture(std::cout);
+    ASSERT_EQ(runRegenerateMode(args), 0);
+    printed = stdout_capture.str();
+  }
+
+  const midisketch::json::Parser metadata(metadataOf(readBinaryFile(output_path)));
+  ASSERT_TRUE(metadata.isValid());
+  const uint32_t written = metadata.getObject("config").getUint("seed");
+  ASSERT_NE(written, 0u);
+  EXPECT_NE(printed.find("  Seed: " + std::to_string(written) + "\n"), std::string::npos)
+      << printed;
+}
+
 TEST(CliGenerateModeTest, VocalFirstWorkflowKeepsSongConfigInMetadata) {
   auto config = midisketch::createDefaultSongConfig(0);
   config.seed = 0;

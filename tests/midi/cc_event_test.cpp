@@ -537,10 +537,7 @@ TEST(ExpressionCurveTest, AuxTrackHasExpressionCurves) {
   generator.generate(params);
   const Song& song = generator.getSong();
 
-  if (song.aux().notes().empty()) {
-    SUCCEED() << "Aux track has no notes, CC generation skipped (expected)";
-    return;
-  }
+  ASSERT_FALSE(song.aux().notes().empty()) << "Aux track should have notes";
 
   bool has_expression = false;
   for (const auto& cc_evt : song.aux().ccEvents()) {
@@ -599,10 +596,7 @@ TEST(SustainPedalTest, SentimentalMoodHasSustainPedal) {
   generator.generate(params);
   const Song& song = generator.getSong();
 
-  if (song.chord().notes().empty()) {
-    SUCCEED() << "Chord track has no notes";
-    return;
-  }
+  ASSERT_FALSE(song.chord().notes().empty()) << "Chord track should have notes";
 
   bool has_sustain = false;
   for (const auto& cc_evt : song.chord().ccEvents()) {

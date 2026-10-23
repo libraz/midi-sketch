@@ -9,6 +9,8 @@
 #include <limits>
 #include <string>
 
+#include "core/timing_constants.h"
+
 namespace midisketch {
 namespace ump {
 
@@ -69,11 +71,33 @@ void writeDeltaClockstamp(std::vector<uint8_t>& buf, uint8_t group, uint32_t tic
   }
 }
 
+bool decodeDCTPQ(uint32_t word0, uint16_t& ticksPerQuarter) {
+  const uint32_t mt = word0 >> 28;
+  const uint32_t status = (word0 >> 20) & 0x0F;
+  if (mt != static_cast<uint32_t>(MessageType::Utility) || status != kUtilityStatusDCTPQ) {
+    return false;
+  }
+  ticksPerQuarter = static_cast<uint16_t>(word0 & 0xFFFF);
+  return true;
+}
+
+uint32_t tempoToTenNs(uint32_t microsPerQuarter) {
+  const uint64_t ten_ns_units = static_cast<uint64_t>(microsPerQuarter) * 100u;
+  return static_cast<uint32_t>(
+      std::min<uint64_t>(ten_ns_units, std::numeric_limits<uint32_t>::max()));
+}
+
+uint16_t bpmFromTempo(uint32_t tenNsPerQuarter) {
+  if (tenNsPerQuarter == 0) return 0;
+  const uint64_t bpm = (static_cast<uint64_t>(kMicrosecondsPerMinute) * 100u) / tenNsPerQuarter;
+  return static_cast<uint16_t>(std::min<uint64_t>(bpm, std::numeric_limits<uint16_t>::max()));
+}
+
 void writeDCTPQ(std::vector<uint8_t>& buf, uint16_t ticksPerQuarter) {
-  // DCTPQ is a 32-bit Utility message, status 0x3. It is not an UMP Stream
-  // message; the low 16 bits carry the ticks-per-quarter value.
-  const uint32_t word = (static_cast<uint32_t>(MessageType::Utility) << 28) | (0x3u << 20) |
-                        static_cast<uint32_t>(ticksPerQuarter);
+  // DCTPQ is a 32-bit Utility message, not an UMP Stream message; the low 16 bits carry the
+  // ticks-per-quarter value.
+  const uint32_t word = (static_cast<uint32_t>(MessageType::Utility) << 28) |
+                        (kUtilityStatusDCTPQ << 20) | static_cast<uint32_t>(ticksPerQuarter);
   writeUint32BE(buf, word);
 }
 
@@ -116,9 +140,7 @@ void writeTempo(std::vector<uint8_t>& buf, uint8_t group, uint32_t microsPerQuar
       (0xD << 28) | ((group & 0x0F) << 24) | (0x0 << 22) | (0x0 << 20) | (0x00 << 8) | 0x00;
 
   writeUint32BE(buf, word0);
-  const uint64_t ten_ns_units = static_cast<uint64_t>(microsPerQuarter) * 100u;
-  writeUint32BE(buf, static_cast<uint32_t>(
-                         std::min<uint64_t>(ten_ns_units, std::numeric_limits<uint32_t>::max())));
+  writeUint32BE(buf, tempoToTenNs(microsPerQuarter));
   writeUint32BE(buf, 0);
   writeUint32BE(buf, 0);
 }
@@ -173,20 +195,21 @@ void writeMetadataText(std::vector<uint8_t>& buf, uint8_t group, const std::stri
   while (offset < textLen || offset == 0) {
     const size_t dataBytes = std::min<size_t>(13, textLen - offset);
 
-    // Status: 0x0 = start, 0x1 = continue, 0x2 = end, 0x3 = complete
+    // Status: 0x0 = complete, 0x1 = start, 0x2 = continue, 0x3 = end
     uint8_t status;
     if (textLen <= 13 && offset == 0) {
-      status = 0x0;  // Complete in single message (start and end)
+      status = 0x0;
     } else if (offset == 0) {
-      status = 0x1;  // Start
+      status = 0x1;
     } else if (offset + dataBytes >= textLen) {
-      status = 0x3;  // End
+      status = 0x3;
     } else {
-      status = 0x2;  // Continue
+      status = 0x2;
     }
 
-    uint32_t word0 = (0x5 << 28) | ((group & 0x0F) << 24) | (status << 20) |
-                     ((dataBytes & 0x0F) << 16);  // stream ID = 0
+    // The byte count covers the Stream ID byte (0) plus the data bytes.
+    uint32_t word0 =
+        (0x5 << 28) | ((group & 0x0F) << 24) | (status << 20) | (((dataBytes + 1) & 0x0F) << 16);
     if (dataBytes > 0) word0 |= payload[offset++];
     writeUint32BE(buf, word0);
 

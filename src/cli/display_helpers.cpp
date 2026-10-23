@@ -363,8 +363,9 @@ void printDissonanceSummary(const midisketch::DissonanceReport& report,
 void showBarNotes(const midisketch::ParsedMidi& midi, int bar_num) {
   const midisketch::Tick ticks_per_beat = midi.division;
   const midisketch::Tick ticks_per_bar = ticks_per_beat * 4;
-  midisketch::Tick bar_start = static_cast<midisketch::Tick>(bar_num - 1) * ticks_per_bar;
-  midisketch::Tick bar_end = bar_start + ticks_per_bar;
+  // 64-bit so a huge --bar selects an empty bar instead of wrapping onto an unrelated one.
+  const uint64_t bar_start = static_cast<uint64_t>(bar_num > 1 ? bar_num - 1 : 0) * ticks_per_bar;
+  const uint64_t bar_end = bar_start + ticks_per_bar;
 
   std::cout << "\n=== Bar " << bar_num << " (tick " << bar_start << "-" << bar_end << ") ===\n\n";
 
@@ -380,7 +381,7 @@ void showBarNotes(const midisketch::ParsedMidi& midi, int bar_num) {
     std::vector<std::pair<float, std::string>> bar_notes;  // beat, description
 
     for (const auto& note : track->notes) {
-      midisketch::Tick note_end = note.start_tick + note.duration;
+      const uint64_t note_end = static_cast<uint64_t>(note.start_tick) + note.duration;
 
       // Note starts in this bar OR note started before and extends into this bar
       bool starts_in_bar = (note.start_tick >= bar_start && note.start_tick < bar_end);

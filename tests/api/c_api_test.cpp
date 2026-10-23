@@ -7,6 +7,7 @@
 
 #include <cstdlib>
 #include <cstring>
+#include <functional>
 #include <limits>
 #include <string>
 #include <thread>
@@ -1010,6 +1011,38 @@ TEST(CApiTest, TrackCountReportsTheEngineTrackRoles) {
   EXPECT_EQ(midisketch_get_info(handle).track_count, kTrackCount);
 
   midisketch_destroy(handle);
+}
+
+TEST(CApiTest, EarlyRejectedJsonEntryDoesNotReportAStaleConfigError) {
+  const char* malformed = "totally not json {{{";
+  const char* update = R"({"seed":1})";
+
+  // Each call is rejected before any config is parsed (no song yet, or no JSON pointer).
+  const std::vector<std::function<MidiSketchError(MidiSketchHandle)>> early_rejected = {
+      [&](MidiSketchHandle h) {
+        return midisketch_generate_accompaniment_from_json(h, update, 10);
+      },
+      [&](MidiSketchHandle h) {
+        return midisketch_regenerate_accompaniment_from_json(h, update, 10);
+      },
+      [](MidiSketchHandle h) { return midisketch_generate_from_json(h, nullptr, 0); },
+      [](MidiSketchHandle h) { return midisketch_generate_vocal_from_json(h, nullptr, 0); },
+      [](MidiSketchHandle h) { return midisketch_generate_with_vocal_from_json(h, nullptr, 0); },
+      [](MidiSketchHandle h) { return midisketch_set_vocal_notes_from_json(h, nullptr, 0); },
+      [](MidiSketchHandle h) { return midisketch_set_melody_from_json(h, nullptr, 0); },
+  };
+
+  for (size_t i = 0; i < early_rejected.size(); ++i) {
+    MidiSketchHandle handle = midisketch_create();
+    ASSERT_NE(handle, nullptr);
+    ASSERT_EQ(midisketch_generate_from_json(handle, malformed, strlen(malformed)),
+              MIDISKETCH_ERROR_INVALID_PARAM);
+    ASSERT_EQ(midisketch_get_last_config_error(handle), MIDISKETCH_CONFIG_INVALID_JSON);
+
+    EXPECT_EQ(early_rejected[i](handle), MIDISKETCH_ERROR_INVALID_PARAM) << "entry " << i;
+    EXPECT_EQ(midisketch_get_last_config_error(handle), MIDISKETCH_CONFIG_OK) << "entry " << i;
+    midisketch_destroy(handle);
+  }
 }
 
 TEST(CApiTest, IndependentHandlesGenerateConcurrently) {
