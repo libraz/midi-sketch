@@ -20,12 +20,49 @@
 #include "core/post_processor.h"
 #include "core/timing_constants.h"
 #include "core/velocity_helper.h"
+#include "track/accompaniment_ceiling.h"
 
 namespace midisketch {
 
 // ============================================================================
 // ExitPattern Helper Functions
 // ============================================================================
+
+namespace {
+
+/// Roles whose notes must not come to sound the vocal's own pitch.
+bool avoidsVocalUnison(TrackRole role) {
+  return role == TrackRole::Chord || role == TrackRole::Motif || role == TrackRole::Arpeggio ||
+         role == TrackRole::Guitar || role == TrackRole::Bass;
+}
+
+/// Pull an extension's end back to just before the vocal first sounds the note's
+/// pitch inside it. The note's own length is kept: only the stretch is limited.
+Tick clampExtensionBeforeVocalUnison(const ICollisionDetector* detector, TrackRole role,
+                                     uint8_t pitch, Tick start, Tick original_end,
+                                     Tick proposed_end) {
+  if (detector == nullptr || !avoidsVocalUnison(role) || proposed_end <= original_end) {
+    return proposed_end;
+  }
+  const auto* harmony = dynamic_cast<const IHarmonyContext*>(detector);
+  if (harmony == nullptr || !vocalSoundsPitch(*harmony, pitch, start, proposed_end)) {
+    return proposed_end;
+  }
+  // Smallest end whose window [start, end) reaches the vocal's unison.
+  Tick low = original_end;
+  Tick high = proposed_end;
+  while (low < high) {
+    const Tick mid = low + (high - low) / 2;
+    if (vocalSoundsPitch(*harmony, pitch, start, mid)) {
+      high = mid;
+    } else {
+      low = mid + 1;
+    }
+  }
+  return std::max(original_end, high - 1);
+}
+
+}  // namespace
 
 void PostProcessor::applyExitFadeout(std::vector<NoteEvent>& notes, Tick section_end,
                                      uint8_t section_bars) {
@@ -166,6 +203,10 @@ void PostProcessor::applyExitSustain(std::vector<NoteEvent>& notes, Tick section
           new_duration = safe_end - note->start_tick;
         }
       }
+      new_duration = clampExtensionBeforeVocalUnison(
+                         harmony, track_role, note->note, note->start_tick,
+                         note->start_tick + note->duration, note->start_tick + new_duration) -
+                     note->start_tick;
 #ifdef MIDISKETCH_NOTE_PROVENANCE
       if (new_duration != note->duration) {
         note->addTransformStep(TransformStepType::PostProcessDuration, 0, 0, 1, 0);
@@ -311,7 +352,7 @@ void PostProcessor::applyChorusDrop(std::vector<MidiTrack*>& tracks,
       }
     }
 
-    // Dramatic/DrumHit: also truncate drum track (except fills)
+    // Dramatic/DrumHit: also erase the drum notes of the drop zone, fills included
     //
     // A crash in the last sixteenth of the zone is noted before the cut. The kit
     // writes the chorus entry accent only when no crash is already sounding
@@ -581,6 +622,9 @@ void PostProcessor::applyEnhancedFinalHit(MidiTrack* bass_track, MidiTrack* drum
         Tick safe_end =
             harmony.getMaxSafeEnd(note.start_tick, note.note, TrackRole::Chord, section_end);
         safe_end = clipAtChordBoundary(note, safe_end);
+        safe_end =
+            clampExtensionBeforeVocalUnison(&harmony, TrackRole::Chord, note.note, note.start_tick,
+                                            note.start_tick + note.duration, safe_end);
         if (safe_end > note.start_tick) {
 #ifdef MIDISKETCH_NOTE_PROVENANCE
           if (safe_end - note.start_tick != note.duration) {
@@ -607,6 +651,9 @@ void PostProcessor::applyEnhancedFinalHit(MidiTrack* bass_track, MidiTrack* drum
         Tick safe_end =
             harmony.getMaxSafeEnd(note.start_tick, note.note, TrackRole::Chord, section_end);
         safe_end = clipAtChordBoundary(note, safe_end);
+        safe_end =
+            clampExtensionBeforeVocalUnison(&harmony, TrackRole::Chord, note.note, note.start_tick,
+                                            note.start_tick + note.duration, safe_end);
         if (safe_end > note.start_tick + note.duration) {
 #ifdef MIDISKETCH_NOTE_PROVENANCE
           if (safe_end - note.start_tick != note.duration) {

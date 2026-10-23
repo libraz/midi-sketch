@@ -214,7 +214,7 @@ constexpr SectionSlot RHYTHMLOCK_FLOW[] = {
 
     // Drop chorus: vocal-forward breakdown with a light rhythm floor.
     {SectionType::Chorus, 4,
-     TrackMask::Vocal | TrackMask::Drums | TrackMask::Bass | TrackMask::Motif,
+     TrackMask::Vocal | TrackMask::Drums | TrackMask::Bass | TrackMask::Motif | TrackMask::SE,
      EntryPattern::Immediate, SectionEnergy::High, 85, 70, PeakLevel::None, DrumRole::Full, -1.0f,
      SectionModifier::None, 100, ExitPattern::CutOff, TimeFeel::OnBeat, 1.0f,
      ChorusDropStyle::DrumHit},
@@ -496,9 +496,9 @@ constexpr SectionSlot STORYPOP_FLOW[] = {
 // Uses LaidBack time_feel for relaxed timing, sparse harmonic_rhythm (2.0) in intro
 constexpr SectionSlot BALLAD_FLOW[] = {
     // Intro: chord only (all defaults)
-    {SectionType::Intro, 4, TrackMask::Chord, EntryPattern::Immediate, SectionEnergy::Low, 60, 60,
-     PeakLevel::None, DrumRole::Full, 0.15f, SectionModifier::None, 100, ExitPattern::None,
-     TimeFeel::LaidBack, 2.0f, ChorusDropStyle::None},
+    {SectionType::Intro, 4, TrackMask::Chord | TrackMask::SE, EntryPattern::Immediate,
+     SectionEnergy::Low, 60, 60, PeakLevel::None, DrumRole::Full, 0.15f, SectionModifier::None, 100,
+     ExitPattern::None, TimeFeel::LaidBack, 2.0f, ChorusDropStyle::None},
 
     // A melody: Fingerpick, voice limit=2, guide tone 70%, vocal range 15st, phrase tail rest
     {SectionType::A,
@@ -531,7 +531,7 @@ constexpr SectionSlot BALLAD_FLOW[] = {
     // B melody: Fingerpick, voice limit=2, guide tone 70%, vocal range 15st, phrase tail rest
     {SectionType::B,
      8,
-     TrackMask::Vocal | TrackMask::Chord | TrackMask::Bass,
+     TrackMask::Vocal | TrackMask::Chord | TrackMask::Bass | TrackMask::SE,
      EntryPattern::GradualBuild,
      SectionEnergy::Medium,
      70,
@@ -559,7 +559,7 @@ constexpr SectionSlot BALLAD_FLOW[] = {
     // Chorus: Strum, voice limit=2, guide tone 65%, vocal range 15st, phrase tail rest
     {SectionType::Chorus,
      8,
-     TrackMask::Basic,
+     TrackMask::Basic | TrackMask::SE,
      EntryPattern::GradualBuild,
      SectionEnergy::High,
      78,
@@ -620,7 +620,7 @@ constexpr SectionSlot BALLAD_FLOW[] = {
     // 2nd B melody: Fingerpick, voice limit=2, guide tone 70%, vocal range 15st, phrase tail rest
     {SectionType::B,
      8,
-     TrackMask::Vocal | TrackMask::Chord | TrackMask::Bass,
+     TrackMask::Vocal | TrackMask::Chord | TrackMask::Bass | TrackMask::SE,
      EntryPattern::GradualBuild,
      SectionEnergy::Medium,
      73,
@@ -713,9 +713,9 @@ constexpr SectionSlot BALLAD_FLOW[] = {
 // Uses OnBeat time_feel for clean idol pop timing, Subtle drops for smooth transitions
 constexpr SectionSlot IDOL_STANDARD_FLOW[] = {
     // Intro: kick only (all defaults)
-    {SectionType::Intro, 4, TrackMask::Drums, EntryPattern::Immediate, SectionEnergy::Low, 60, 50,
-     PeakLevel::None, DrumRole::Minimal, -1.0f, SectionModifier::None, 100, ExitPattern::None,
-     TimeFeel::OnBeat, 1.0f, ChorusDropStyle::None},
+    {SectionType::Intro, 4, TrackMask::Drums | TrackMask::SE, EntryPattern::Immediate,
+     SectionEnergy::Low, 60, 50, PeakLevel::None, DrumRole::Minimal, -1.0f, SectionModifier::None,
+     100, ExitPattern::None, TimeFeel::OnBeat, 1.0f, ChorusDropStyle::None},
 
     // A melody: Strum, voice limit=3, guide tone 55%, phrase tail rest
     // Bass joins from 1st A: idol references keep bass through verses
@@ -751,7 +751,7 @@ constexpr SectionSlot IDOL_STANDARD_FLOW[] = {
     {SectionType::B,
      8,
      TrackMask::Vocal | TrackMask::Drums | TrackMask::Bass | TrackMask::Chord | TrackMask::Guitar |
-         TrackMask::Aux,
+         TrackMask::Aux | TrackMask::SE,
      EntryPattern::GradualBuild,
      SectionEnergy::Medium,
      72,
@@ -841,7 +841,7 @@ constexpr SectionSlot IDOL_STANDARD_FLOW[] = {
     {SectionType::B,
      8,
      TrackMask::Vocal | TrackMask::Drums | TrackMask::Bass | TrackMask::Chord | TrackMask::Guitar |
-         TrackMask::Aux | TrackMask::Motif,
+         TrackMask::Aux | TrackMask::Motif | TrackMask::SE,
      EntryPattern::GradualBuild,
      SectionEnergy::High,
      75,
@@ -961,7 +961,7 @@ constexpr SectionSlot IDOL_STANDARD_FLOW[] = {
 
 // IdolHyper: High-energy idol pop - chorus-first, high BPM, dense arrangement
 // Structure: Intro(2) -> Chorus(8) -> A(4) -> Chorus(8) -> B(4) -> Chorus(8)
-//            -> Drop(4) -> LastChorus(16) = 54 bars
+//            -> MixBreak(4) -> LastChorus(16) = 54 bars
 // Strong swing (0.5f) for high energy shuffle feel
 // Uses Pushed time_feel for driving energy, Dramatic drop before chorus
 constexpr SectionSlot IDOL_HYPER_FLOW[] = {
@@ -1134,9 +1134,10 @@ constexpr SectionSlot IDOL_HYPER_FLOW[] = {
      0},
 
     // MixBreak (all defaults)
-    {SectionType::MixBreak, 4, TrackMask::Vocal | TrackMask::Drums, EntryPattern::Immediate,
-     SectionEnergy::High, 80, 70, PeakLevel::None, DrumRole::Ambient, 0.3f, SectionModifier::None,
-     100, ExitPattern::CutOff, TimeFeel::OnBeat, 1.0f, ChorusDropStyle::DrumHit},
+    {SectionType::MixBreak, 4, TrackMask::Vocal | TrackMask::Drums | TrackMask::SE,
+     EntryPattern::Immediate, SectionEnergy::High, 80, 70, PeakLevel::None, DrumRole::Ambient, 0.3f,
+     SectionModifier::None, 100, ExitPattern::CutOff, TimeFeel::OnBeat, 1.0f,
+     ChorusDropStyle::DrumHit},
 
     // Last Chorus: TremoloPick, FastRun bass, guide tone 55%
     {SectionType::Chorus,
@@ -1174,7 +1175,8 @@ constexpr SectionSlot IDOL_HYPER_FLOW[] = {
 // Uses OnBeat time_feel for bouncy feel, Subtle drops for gentle transitions
 constexpr SectionSlot IDOL_KAWAII_FLOW[] = {
     // Intro: soft, cute (all defaults)
-    {SectionType::Intro, 4, TrackMask::Chord | TrackMask::Drums | TrackMask::Aux | TrackMask::Motif,
+    {SectionType::Intro, 4,
+     TrackMask::Chord | TrackMask::Drums | TrackMask::Aux | TrackMask::Motif | TrackMask::SE,
      EntryPattern::Immediate, SectionEnergy::Low, 55, 50, PeakLevel::None, DrumRole::Minimal, -1.0f,
      SectionModifier::None, 100, ExitPattern::None, TimeFeel::OnBeat, 1.0f, ChorusDropStyle::None},
 
@@ -1210,7 +1212,7 @@ constexpr SectionSlot IDOL_KAWAII_FLOW[] = {
     {SectionType::Chorus,
      8,
      TrackMask::Vocal | TrackMask::Drums | TrackMask::Chord | TrackMask::Bass | TrackMask::Aux |
-         TrackMask::Motif,
+         TrackMask::Motif | TrackMask::SE,
      EntryPattern::DropIn,
      SectionEnergy::Medium,
      70,
@@ -1514,9 +1516,9 @@ constexpr SectionSlot IDOL_COOLPOP_FLOW[] = {
 // Uses LaidBack time_feel for intimate sections, Pushed for climax
 constexpr SectionSlot IDOL_EMO_FLOW[] = {
     // Intro: chord only (all defaults)
-    {SectionType::Intro, 4, TrackMask::Chord, EntryPattern::Immediate, SectionEnergy::Low, 55, 50,
-     PeakLevel::None, DrumRole::Ambient, -1.0f, SectionModifier::None, 100, ExitPattern::None,
-     TimeFeel::LaidBack, 2.0f, ChorusDropStyle::None},
+    {SectionType::Intro, 4, TrackMask::Chord | TrackMask::SE, EntryPattern::Immediate,
+     SectionEnergy::Low, 55, 50, PeakLevel::None, DrumRole::Ambient, -1.0f, SectionModifier::None,
+     100, ExitPattern::None, TimeFeel::LaidBack, 2.0f, ChorusDropStyle::None},
 
     // A melody: Fingerpick, voice limit=2, guide tone 70%, vocal range 12st, phrase tail rest
     {SectionType::A,
@@ -1549,7 +1551,7 @@ constexpr SectionSlot IDOL_EMO_FLOW[] = {
     // B melody: Strum, voice limit=3, guide tone 65%, vocal range 15st, phrase tail rest
     {SectionType::B,
      8,
-     TrackMask::Vocal | TrackMask::Chord | TrackMask::Bass,
+     TrackMask::Vocal | TrackMask::Chord | TrackMask::Bass | TrackMask::SE,
      EntryPattern::GradualBuild,
      SectionEnergy::Medium,
      65,
@@ -1577,7 +1579,7 @@ constexpr SectionSlot IDOL_EMO_FLOW[] = {
     // First Chorus: PowerChord, voice limit=3, guide tone 60%
     {SectionType::Chorus,
      8,
-     TrackMask::Vocal | TrackMask::Drums | TrackMask::Chord | TrackMask::Bass,
+     TrackMask::Vocal | TrackMask::Drums | TrackMask::Chord | TrackMask::Bass | TrackMask::SE,
      EntryPattern::DropIn,
      SectionEnergy::High,
      78,
@@ -2158,48 +2160,71 @@ uint8_t selectProductionBlueprint(std::mt19937& rng, uint8_t explicit_id) {
   return 0;  // Fallback
 }
 
-uint8_t selectProductionBlueprintForMood(std::mt19937& rng, uint8_t explicit_id, uint8_t mood) {
+uint8_t selectProductionBlueprintForMood(std::mt19937& rng, uint8_t explicit_id, uint8_t mood,
+                                         uint16_t implicit_bpm) {
   if (explicit_id < BLUEPRINT_COUNT) {
     return explicit_id;
   }
 
-  auto compatible = [mood](uint8_t id) {
+  auto mood_compatible = [mood](uint8_t id) {
     uint32_t mask = BLUEPRINTS[id].mood_mask;
     return mask == 0 || (mask & (1u << mood)) != 0;
   };
+  auto plays_at_implicit_tempo = [implicit_bpm](uint8_t id) {
+    const auto& bp = BLUEPRINTS[id];
+    return implicit_bpm == 0 || bp.tempo_min == 0 || bp.tempo_max == 0 ||
+           (bp.tempo_min <= implicit_bpm && implicit_bpm <= bp.tempo_max);
+  };
 
-  uint32_t total_weight = 0;
-  for (uint8_t i = 0; i < BLUEPRINT_COUNT; ++i) {
-    if (!compatible(i)) {
-      continue;
+  auto draw = [&rng](auto&& eligible) -> std::optional<uint8_t> {
+    uint32_t total_weight = 0;
+    for (uint8_t i = 0; i < BLUEPRINT_COUNT; ++i) {
+      if (eligible(i)) total_weight += BLUEPRINTS[i].weight;
     }
-    total_weight += BLUEPRINTS[i].weight;
-  }
+    if (total_weight == 0) return std::nullopt;
 
-  if (total_weight == 0) {
-    return selectProductionBlueprint(rng, explicit_id);
-  }
-
-  uint32_t roll =
-      static_cast<uint32_t>(rng_util::rollRange(rng, 0, static_cast<int>(total_weight - 1)));
-  uint32_t cumulative = 0;
-  for (uint8_t i = 0; i < BLUEPRINT_COUNT; ++i) {
-    if (!compatible(i)) {
-      continue;
+    uint32_t roll =
+        static_cast<uint32_t>(rng_util::rollRange(rng, 0, static_cast<int>(total_weight - 1)));
+    uint32_t cumulative = 0;
+    for (uint8_t i = 0; i < BLUEPRINT_COUNT; ++i) {
+      if (!eligible(i)) continue;
+      cumulative += BLUEPRINTS[i].weight;
+      if (roll < cumulative) return i;
     }
-    cumulative += BLUEPRINTS[i].weight;
-    if (roll < cumulative) {
-      return i;
-    }
-  }
+    return std::nullopt;
+  };
 
-  return 0;
+  if (auto id = draw([&](uint8_t i) { return mood_compatible(i) && plays_at_implicit_tempo(i); })) {
+    return *id;
+  }
+  if (auto id = draw(mood_compatible)) {
+    return *id;
+  }
+  return selectProductionBlueprint(rng, explicit_id);
 }
 
-uint8_t resolveProductionBlueprintId(uint32_t seed, uint8_t explicit_id, uint8_t mood) {
+uint8_t resolveProductionBlueprintId(uint32_t seed, uint8_t explicit_id, uint8_t mood,
+                                     uint16_t implicit_bpm) {
   constexpr uint32_t kBlueprintMagic = 0x424C5052;  // "BLPR"
   std::mt19937 blueprint_rng(seed ^ kBlueprintMagic);
-  return selectProductionBlueprintForMood(blueprint_rng, explicit_id, mood);
+  return selectProductionBlueprintForMood(blueprint_rng, explicit_id, mood, implicit_bpm);
+}
+
+std::pair<uint16_t, std::optional<std::string>> resolveTempo(uint16_t bpm, bool bpm_explicit,
+                                                             bool blueprint_explicit,
+                                                             uint16_t implicit_bpm,
+                                                             const ProductionBlueprint& blueprint) {
+  if (bpm != 0) {
+    return clampBlueprintBpm(bpm, blueprint, bpm_explicit);
+  }
+  if (blueprint_explicit && blueprint.tempo_default > 0) {
+    return {blueprint.tempo_default, std::nullopt};
+  }
+  uint16_t resolved = implicit_bpm > 0 ? implicit_bpm : blueprint.tempo_default;
+  if (blueprint.tempo_min > 0 && blueprint.tempo_max > 0) {
+    resolved = std::clamp(resolved, blueprint.tempo_min, blueprint.tempo_max);
+  }
+  return {resolved, std::nullopt};
 }
 
 const char* getProductionBlueprintName(uint8_t id) {

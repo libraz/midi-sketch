@@ -106,16 +106,21 @@ TEST(QuantizeToSwingGrid16thTest, FullSwingMovesPosition2ToTriplet) {
 }
 
 TEST(QuantizeToSwingGrid16thTest, FullSwingMovesPosition3) {
-  // Position 3 (360) moves with combined 8th + 16th swing deltas
-  // = 240 + 80 (8th swing) + 120 + 40 (16th swing) = 480? No.
-  // Actually: TICK_EIGHTH + swing_delta_8th + TICK_SIXTEENTH + swing_delta_16th
-  // = 240 + 80 + 120 + 40 = 480
-  // But that's the next beat! Let me check what the implementation does.
-  Tick result = quantizeToSwingGrid16th(360, 1.0f);
-  // Should be > 360 (shifted forward)
-  EXPECT_GT(result, 360u);
-  // Should not exceed the beat boundary
-  EXPECT_LT(result, TICKS_PER_BEAT);
+  // Position 3 moves by the 16th-note delta only: 360 + 40 at full swing
+  EXPECT_EQ(quantizeToSwingGrid16th(360, 1.0f), 400u);
+}
+
+TEST(QuantizeToSwingGrid16thTest, SwungPositionsStayOrderedWithinTheBeat) {
+  for (int step = 0; step <= 20; ++step) {
+    const float swing = static_cast<float>(step) / 20.0f;
+    const Tick p1 = quantizeToSwingGrid16th(120, swing);
+    const Tick p2 = quantizeToSwingGrid16th(240, swing);
+    const Tick p3 = quantizeToSwingGrid16th(360, swing);
+    EXPECT_GT(p1, 0u) << "swing=" << swing;
+    EXPECT_LT(p1, p2) << "swing=" << swing;
+    EXPECT_LT(p2, p3) << "swing=" << swing;
+    EXPECT_LT(p3, static_cast<Tick>(TICKS_PER_BEAT)) << "swing=" << swing;
+  }
 }
 
 TEST(QuantizeToSwingGrid16thTest, OnBeatNeverAffected) {

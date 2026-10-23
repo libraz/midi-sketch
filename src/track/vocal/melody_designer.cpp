@@ -375,8 +375,10 @@ std::vector<NoteEvent> MelodyDesigner::generateSection(
 
     // Generate hook or melody phrase
     // Skip hook for UltraVocaloid (high thirtysecond_ratio) - needs continuous machine-gun passages
+    // HookIntensity::Off writes no hook: the phrase is an ordinary melody phrase.
     bool use_hook = planned.is_hook_position && tmpl.hook_note_count > 0 &&
-                    phrase_ctx.thirtysecond_ratio < 0.8f;
+                    phrase_ctx.thirtysecond_ratio < 0.8f &&
+                    phrase_ctx.hook_intensity != HookIntensity::Off;
 
     PhraseResult phrase_result;
     if (use_hook) {
@@ -531,7 +533,9 @@ std::vector<NoteEvent> MelodyDesigner::generateSection(
   // Apply melodic embellishment (non-chord tones) if enabled
   if (ctx.enable_embellishment && !result.empty()) {
     EmbellishmentConfig emb_config = MelodicEmbellisher::getConfigForMood(ctx.mood);
-    // Scale NCT density for later occurrences (2nd chorus gets 1.2x, 3rd+ gets 1.4x)
+    // Scale NCT density for later occurrences (2nd chorus gets 1.2x, 3rd+ gets 1.4x).
+    // A later occurrence restates its cached melody, so this reaches only the
+    // bars it writes past the restated ones.
     emb_config.adjustForOccurrence(ctx.section_occurrence);
     std::vector<std::pair<Tick, Tick>> breath_ranges;
     breath_ranges.reserve(plan.phrases.size());
@@ -762,7 +766,7 @@ std::vector<NoteEvent> MelodyDesigner::generateSectionWithEvaluation(
     // - Chorus: 0.35 (maximum hook recognition)
     // - A (1st): 0.15 (introduce motif fragments)
     // - B: 0.22 (strong tension building)
-    // - A (2nd+): 0.25 (reinforce recognition)
+    // - A (2nd+): 0.25 (reinforce recognition; written only past a restated head)
     // - Bridge: 0.05 (contrast, deliberately different)
     // Uses section-specific variant for appropriate transformation:
     // - Chorus: original motif (strongest recognition)
@@ -774,7 +778,7 @@ std::vector<NoteEvent> MelodyDesigner::generateSectionWithEvaluation(
       const GlobalMotif& motif_variant = getMotifForSection(ctx.section_type);
       float raw_motif_bonus = evaluateWithGlobalMotif(melody, motif_variant);
       // Apply section-specific weight multiplier
-      float section_weight = getMotifWeightForSection(ctx.section_type);
+      float section_weight = getMotifWeightForSection(ctx.section_type, ctx.section_occurrence);
       float motif_bonus = raw_motif_bonus * (section_weight / 0.35f);  // Normalize to max 0.35
       combined_score += motif_bonus;
     }

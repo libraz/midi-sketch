@@ -568,9 +568,9 @@ int runGenerateMode(const ParsedArgs& args) {
   } else {
     std::cout << static_cast<int>(config.chord_progression_id) << "\n";
   }
-  // An unset BPM is resolved during generation from mood and blueprint, not from
-  // the preset default, so the banner defers to the generation result below
-  // instead of naming a tempo the song will not have.
+  // An unset BPM is resolved during generation (a named blueprint brings its own
+  // tempo), so the banner defers to the generation result below instead of
+  // naming a tempo the song may not have.
   std::cout << "  BPM: ";
   if (config.bpm == 0) {
     std::cout << "auto (selected during generation)\n";

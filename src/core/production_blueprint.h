@@ -414,6 +414,26 @@ inline std::pair<uint16_t, std::optional<std::string>> clampBlueprintBpm(
                        std::to_string(blueprint.tempo_max) + ")"};
 }
 
+/**
+ * @brief Resolve a song's tempo; the one precedence chain every caller uses.
+ *
+ * Explicit BPM > the tempo of a blueprint the caller chose > the implicit
+ * reference (an explicit mood's tempo, else the style preset's) brought into
+ * the blueprint's range. A blueprint drawn at random is drawn from those whose
+ * range holds the reference, so an implicit tempo stays the style's own.
+ *
+ * @param bpm Caller's tempo; 0 = implicit
+ * @param bpm_explicit The caller set @p bpm deliberately (never clamped)
+ * @param blueprint_explicit The caller named the blueprint rather than drawing one
+ * @param implicit_bpm Tempo an implicit BPM stands for
+ * @param blueprint Resolved blueprint
+ * @return Tempo, plus a warning when a non-explicit caller tempo had to be moved
+ */
+std::pair<uint16_t, std::optional<std::string>> resolveTempo(uint16_t bpm, bool bpm_explicit,
+                                                             bool blueprint_explicit,
+                                                             uint16_t implicit_bpm,
+                                                             const ProductionBlueprint& blueprint);
+
 // ============================================================================
 // API Functions
 // ============================================================================
@@ -440,13 +460,20 @@ uint8_t getProductionBlueprintCount();
 uint8_t selectProductionBlueprint(std::mt19937& rng, uint8_t explicit_id = 255);
 
 /**
- * @brief Select a blueprint while respecting mood compatibility for random choices.
+ * @brief Select a blueprint while respecting mood and tempo for random choices.
+ *
+ * A random pick comes from the mood-compatible blueprints whose tempo range
+ * holds @p implicit_bpm; when none does, from the mood-compatible ones; when
+ * none is, from all.
+ *
  * @param rng Random number generator
  * @param explicit_id If < 255, use this ID directly; otherwise random selection
  * @param mood Mood enum value used to filter random candidates
+ * @param implicit_bpm Tempo the song takes when its BPM is implicit; 0 = BPM is explicit
  * @return Selected blueprint ID
  */
-uint8_t selectProductionBlueprintForMood(std::mt19937& rng, uint8_t explicit_id, uint8_t mood);
+uint8_t selectProductionBlueprintForMood(std::mt19937& rng, uint8_t explicit_id, uint8_t mood,
+                                         uint16_t implicit_bpm);
 
 /**
  * @brief Resolve the blueprint a song with this seed is generated with.
@@ -457,9 +484,11 @@ uint8_t selectProductionBlueprintForMood(std::mt19937& rng, uint8_t explicit_id,
  * @param seed Resolved song seed
  * @param explicit_id If < 255, use this ID directly; otherwise random selection
  * @param mood Mood enum value used to filter random candidates
+ * @param implicit_bpm Tempo the song takes when its BPM is implicit; 0 = BPM is explicit
  * @return Selected blueprint ID
  */
-uint8_t resolveProductionBlueprintId(uint32_t seed, uint8_t explicit_id, uint8_t mood);
+uint8_t resolveProductionBlueprintId(uint32_t seed, uint8_t explicit_id, uint8_t mood,
+                                     uint16_t implicit_bpm);
 
 /**
  * @brief Get blueprint name by ID.

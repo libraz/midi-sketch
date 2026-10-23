@@ -964,7 +964,25 @@ struct LockedNoteEntry {
 struct LockedNoteCache {
   Tick source_length = 0;
   std::vector<LockedNoteEntry> entries;
+  uint8_t density = 100;  ///< Effective density of the section the entries were recorded from
 };
+
+/// @brief Density percent a section plays at: its modifier and backing density applied.
+uint8_t effectiveMotifDensity(const Section& section) {
+  float density_mult = 1.0f;
+  switch (section.getEffectiveBackingDensity()) {
+    case BackingDensity::Thin:
+      density_mult = 0.85f;
+      break;
+    case BackingDensity::Normal:
+      break;
+    case BackingDensity::Thick:
+      density_mult = 1.10f;
+      break;
+  }
+  const uint8_t modified = section.getModifiedDensity(section.density_percent);
+  return static_cast<uint8_t>(std::min(100.0f, static_cast<float>(modified) * density_mult));
+}
 
 /// @brief Shared state for motif generation across sections.
 struct MotifGenerationState {
@@ -1140,7 +1158,7 @@ uint8_t reseatCachedPitch(uint8_t pitch, const IHarmonyCoordinator& harmony, Tic
 bool replayCachedNotesLocked(MidiTrack& track, const Section& section, IHarmonyCoordinator* harmony,
                              MotifGenerationState& state, uint8_t motif_range_high,
                              uint8_t motif_range_low, const MotifParams& motif_params,
-                             bool enforce_vocal_ceiling) {
+                             bool enforce_vocal_ceiling, std::mt19937& rng) {
   (void)motif_params;  // Reserved for future use
   auto cache_it = state.locked_note_cache.find(section.type);
   if (cache_it == state.locked_note_cache.end()) {
@@ -1153,11 +1171,31 @@ bool replayCachedNotesLocked(MidiTrack& track, const Section& section, IHarmonyC
   std::vector<uint8_t> onset_pitches;
   Tick onset_tick = 0;
   bool has_onset = false;
+  // The cache already carries its source section's thinning, so this section
+  // only thins by the density it has beyond that (a bar keeps at least one note).
+  const float keep_percent =
+      std::min(100.0f, 100.0f * static_cast<float>(effectiveMotifDensity(section)) /
+                           static_cast<float>(std::max<uint8_t>(cache.density, 1)));
+  std::map<uint8_t, size_t> bar_note_count;
+  Tick decided_tick = 0;
+  bool has_decision = false;
+  bool skip_onset = false;
   for (Tick tile_start = section.start_tick; tile_start < section.endTick();
        tile_start += tile_length) {
     for (const auto& entry : cache.entries) {
       Tick absolute_tick = tile_start + entry.relative_tick;
       if (absolute_tick >= section.endTick()) continue;
+
+      const uint8_t current_bar =
+          static_cast<uint8_t>(tickToBar(absolute_tick - section.start_tick));
+      if (!has_decision || absolute_tick != decided_tick) {
+        decided_tick = absolute_tick;
+        has_decision = true;
+        skip_onset = keep_percent < 100.0f &&
+                     rng_util::rollFloat(rng, 0.0f, 100.0f) > keep_percent &&
+                     bar_note_count[current_bar] > 0;
+      }
+      if (skip_onset) continue;
 
       // Per-onset vocal ceiling: the cached pitch was vocal-clamped for its
       // ORIGINAL section, but the vocal differs in the replay section, so the
@@ -1208,6 +1246,7 @@ bool replayCachedNotesLocked(MidiTrack& track, const Section& section, IHarmonyC
 
       auto result = createNoteAndAdd(track, *harmony, opts);
       if (result) {
+        ++bar_note_count[current_bar];
         onset_pitches.push_back(result->note);
         if (result->note == state.motif_prev_pitch) {
           state.motif_consecutive_same++;
@@ -1349,11 +1388,8 @@ std::vector<NoteEvent>* resolveCurrentPattern(
     current_pattern = &state.riff_cache.pattern;
   } else if (policy == RiffPolicy::Free) {
     if (motif_params.repeat_scope == MotifRepeatScope::FullSong) {
-      // Free takes precedence over the otherwise song-wide repeat scope: it
-      // must supply a fresh motif identity for every section rather than
-      // silently falling through to the original global pattern.
-      section_pattern = generateMotifPattern(params, rng);
-      current_pattern = &section_pattern;
+      // FullSong keeps one motif identity for the whole song, Free or not.
+      current_pattern = &pattern;
     } else {
       auto iter = state.section_patterns.find(section.type);
       if (iter == state.section_patterns.end()) {
@@ -1424,21 +1460,7 @@ bool shouldSkipMotifNote(const Section& section, Tick absolute_tick, Tick pos, s
   }
 
   // Apply density_percent to skip notes
-  uint8_t effective_density = section.getModifiedDensity(section.density_percent);
-
-  float density_mult = 1.0f;
-  switch (section.getEffectiveBackingDensity()) {
-    case BackingDensity::Thin:
-      density_mult = 0.85f;
-      break;
-    case BackingDensity::Normal:
-      break;
-    case BackingDensity::Thick:
-      density_mult = 1.10f;
-      break;
-  }
-  effective_density =
-      static_cast<uint8_t>(std::min(100.0f, static_cast<float>(effective_density) * density_mult));
+  const uint8_t effective_density = effectiveMotifDensity(section);
 
   // In coordinate axis mode (RhythmLock), skip density/response thinning
   // to maintain riff consistency - the motif pattern should repeat exactly.
@@ -1726,7 +1748,7 @@ void cacheMotifNotes(const MidiTrack& track, const Section& section, bool is_loc
     }
     if (!entries.empty()) {
       state.locked_note_cache[section.type] = {section.endTick() - section.start_tick,
-                                               std::move(entries)};
+                                               std::move(entries), effectiveMotifDensity(section)};
     }
   }
 
@@ -1825,20 +1847,7 @@ void generateMotifForSection(MidiTrack& track, const Section& section, const Ful
       }
 
       // Apply density_percent for note context
-      uint8_t effective_density = section.getModifiedDensity(section.density_percent);
-      float density_mult = 1.0f;
-      switch (section.getEffectiveBackingDensity()) {
-        case BackingDensity::Thin:
-          density_mult = 0.85f;
-          break;
-        case BackingDensity::Normal:
-          break;
-        case BackingDensity::Thick:
-          density_mult = 1.10f;
-          break;
-      }
-      effective_density = static_cast<uint8_t>(
-          std::min(100.0f, static_cast<float>(effective_density) * density_mult));
+      const uint8_t effective_density = effectiveMotifDensity(section);
 
       // Per-onset vocal ceiling: lower the effective upper limit to the vocal
       // skyline at this note's time span so the motif never crosses above the
@@ -1945,21 +1954,22 @@ void MotifGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContex
     Tick song_end = ctx.song->arrangement().totalTicks();
     uint8_t vocal_high = harmony->getHighestPitchForTrackInRange(0, song_end, TrackRole::Vocal);
     uint8_t vocal_low = harmony->getLowestPitchForTrackInRange(0, song_end, TrackRole::Vocal);
+    // Floor never drops below MOTIF_LOW; the ceiling keeps at least an octave above it.
+    const auto fitToVocalMedian = [&](int vocal_median) {
+      motif_range_low =
+          static_cast<uint8_t>(std::max(static_cast<int>(MOTIF_LOW), vocal_median - 15));
+      motif_range_high = static_cast<uint8_t>(
+          std::min(static_cast<int>(MOTIF_HIGH),
+                   std::max(vocal_median + 3, static_cast<int>(motif_range_low) + 12)));
+    };
     if (vocal_high > 0 && vocal_low > 0) {
       // Use actual vocal data from harmony context (available when vocal is generated first)
-      int vocal_median = (static_cast<int>(vocal_low) + static_cast<int>(vocal_high)) / 2;
-      motif_range_high =
-          static_cast<uint8_t>(std::min(static_cast<int>(MOTIF_HIGH), vocal_median + 3));
-      // Guard against Chord/Bass interference in low register
-      motif_range_low = static_cast<uint8_t>(std::max(55, vocal_median - 15));
+      fitToVocalMedian((static_cast<int>(vocal_low) + static_cast<int>(vocal_high)) / 2);
     } else if (vocal_ctx) {
       // Fallback: use config-based vocal range from MotifContext
       // (for RhythmSync where motif is generated before vocal)
-      int vocal_median =
-          (static_cast<int>(vocal_ctx->vocal_low) + static_cast<int>(vocal_ctx->vocal_high)) / 2;
-      motif_range_high =
-          static_cast<uint8_t>(std::min(static_cast<int>(MOTIF_HIGH), vocal_median + 3));
-      motif_range_low = static_cast<uint8_t>(std::max(55, vocal_median - 15));
+      fitToVocalMedian(
+          (static_cast<int>(vocal_ctx->vocal_low) + static_cast<int>(vocal_ctx->vocal_high)) / 2);
     }
   }
 
@@ -1995,7 +2005,7 @@ void MotifGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContex
     // Locked mode: replay cached notes for repeat section types
     if (is_locked && !is_rhythm_lock_global) {
       if (replayCachedNotesLocked(track, section, harmony, state, motif_range_high, motif_range_low,
-                                  motif_params, enforce_vocal_ceiling)) {
+                                  motif_params, enforce_vocal_ceiling, rng)) {
         state.sec_idx++;
         continue;
       }

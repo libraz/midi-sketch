@@ -29,6 +29,7 @@
 #include "core/arrangement.h"
 #include "core/i_harmony_coordinator.h"
 #include "core/i_track_base.h"
+#include "core/motif_types.h"
 #include "core/production_blueprint.h"
 #include "core/section_types.h"
 #include "core/types.h"
@@ -229,6 +230,7 @@ class Coordinator {
   GenerationParadigm paradigm_ = GenerationParadigm::Traditional;
   RiffPolicy riff_policy_ = RiffPolicy::Free;
   uint8_t blueprint_id_ = 0;                        ///< Resolved blueprint ID
+  bool blueprint_explicit_ = false;                 ///< The caller named the blueprint
   const ProductionBlueprint* blueprint_ = nullptr;  ///< Blueprint pointer
 
   // =========================================================================
@@ -258,6 +260,8 @@ class Coordinator {
   DrumGrid drum_grid_;                             ///< Drum grid for RhythmSync paradigm
   std::optional<KickPatternCache> kick_cache_;     ///< Predicted kick positions (Bass-Kick sync)
   std::unique_ptr<VocalAnalysis> vocal_analysis_;  ///< Cached vocal analysis (Bass/Chord/Drums)
+  std::optional<MotifContext>
+      motif_vocal_ctx_;  ///< Vocal-derived Motif context (outside RhythmSync)
 
   // =========================================================================
   // Initialization Helpers
@@ -272,8 +276,8 @@ class Coordinator {
   /// @brief Build the song arrangement.
   void buildArrangement();
 
-  /// @brief Validate BPM for the current paradigm.
-  void validateBpm();
+  /// @brief Resolve the tempo through resolveTempo() and store it in bpm_.
+  void resolveBpm();
 
   /// @brief Register track generators.
   void registerTrackGenerators();

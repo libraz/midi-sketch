@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "core/generator.h"
+#include "core/preset_data.h"
 #include "core/production_blueprint.h"
 #include "core/song.h"
 #include "core/types.h"
@@ -476,7 +477,8 @@ TEST_F(BassTest, WalkingBassInCityPopMood) {
   const auto& bass_track = gen.getSong().bass();
   const auto& sections = gen.getSong().arrangement().sections();
 
-  EXPECT_FALSE(bass_track.empty()) << "Bass track should be generated";
+  ASSERT_FALSE(bass_track.empty()) << "Bass track should be generated";
+  bool found_walking_density = false;
 
   // Walking bass has 4 notes per bar (quarter notes on each beat)
   // Check A or B sections for walking pattern
@@ -494,15 +496,13 @@ TEST_F(BassTest, WalkingBassInCityPopMood) {
     // CityPop should have more notes than simple root-fifth patterns
     float notes_per_bar = static_cast<float>(notes_in_section) / sec.bars;
     if (notes_per_bar >= 3.5f) {
-      // Found walking pattern (4 notes per bar)
-      SUCCEED() << "CityPop uses walking bass with ~4 notes per bar";
-      return;
+      found_walking_density = true;
+      break;
     }
   }
 
-  // If no walking pattern found in A/B sections, it might be using other patterns
-  // which is acceptable based on random selection
-  EXPECT_GT(bass_track.notes().size(), 0u) << "Should have bass notes";
+  EXPECT_TRUE(found_walking_density)
+      << "CityPop A/B sections should carry walking-bass density (>=3.5 notes per bar)";
 }
 
 TEST_F(BassTest, WalkingBassScaleTones) {
@@ -1277,6 +1277,8 @@ TEST_F(BassTest, WholeNoteBalladHasLegato) {
     for (uint32_t seed = 40; seed < 60; ++seed) {
       params_.mood = mood;
       params_.structure = StructurePattern::BuildUp;  // Has Intro with WholeNote pattern
+      // A drawn blueprint follows the mood's tempo; pin it so only the mood is compared.
+      params_.blueprint_id = 0;
       params_.seed = seed;
       Generator gen;
       gen.generate(params_);
@@ -1521,7 +1523,7 @@ TEST_F(BassTest, IntroBassEnabledFlagDifferenceTest) {
 
   for (uint32_t seed : test_seeds) {
     params_.seed = seed;
-    params_.structure = StructurePattern::StandardPop;
+    params_.structure = StructurePattern::BuildUp;  // Has an Intro that carries bass
 
     // Generate with Traditional blueprint (intro_bass_enabled = true)
     params_.blueprint_id = 0;
@@ -1547,11 +1549,8 @@ TEST_F(BassTest, IntroBassEnabledFlagDifferenceTest) {
     }
   }
 
-  // If no seed produced bass in intro even with enabled flag, the test is inconclusive
-  // This could happen if the section's track_mask doesn't include Bass in intro
-  if (!found_difference) {
-    SUCCEED() << "No test seed produced bass in intro - section may not enable bass track";
-  }
+  ASSERT_TRUE(found_difference)
+      << "No seed produced bass in an intro whose blueprint enables it, so the flag went untested";
 }
 
 // ============================================================================
@@ -1652,6 +1651,195 @@ TEST(BassSlapPopWriterTest, EmitsOctaveDisplacement) {
   }
   EXPECT_TRUE(found_octave_displacement)
       << "SlapPop should emit a real octave displacement instead of repeating the root";
+}
+
+TEST(BassHalfBarWriterTest, SustainedPatternsKeepOneNotePerHalf) {
+  constexpr uint8_t kC3 = 48;
+  for (BassPattern pattern : {BassPattern::WholeNote, BassPattern::SubBass808}) {
+    for (bool first_half : {true, false}) {
+      test::StubHarmonyContext harmony;
+      harmony.setAllPitchesSafe(true);
+      MidiTrack track;
+      generateBassHalfBar(track, 0, kC3, kC3, SectionType::A, Mood::Ballad, first_half, harmony,
+                          pattern);
+      ASSERT_EQ(track.notes().size(), 1u)
+          << "Pattern " << static_cast<int>(pattern) << " first_half=" << first_half;
+      EXPECT_EQ(track.notes()[0].duration, TICK_HALF);
+    }
+  }
+}
+
+TEST(BassHalfBarWriterTest, PedalToneKeepsOnePitchClassAcrossASplitBar) {
+  constexpr uint8_t kC3 = 48;
+  constexpr uint8_t kG2 = 43;
+  for (SectionType section : {SectionType::Intro, SectionType::Bridge}) {
+    test::StubHarmonyContext harmony;
+    harmony.setAllPitchesSafe(true);
+    MidiTrack track;
+    generateBassHalfBar(track, 0, kC3, kC3, section, Mood::Ballad, true, harmony,
+                        BassPattern::PedalTone);
+    generateBassHalfBar(track, TICK_HALF, kG2, kG2, section, Mood::Ballad, false, harmony,
+                        BassPattern::PedalTone);
+    ASSERT_EQ(track.notes().size(), 2u);
+    EXPECT_EQ(track.notes()[0].note % 12, track.notes()[1].note % 12)
+        << "The pedal must not follow the chord root across the split";
+    EXPECT_EQ(track.notes()[0].note % 12, section == SectionType::Bridge ? 7 : 0);
+  }
+}
+
+TEST(BassHalfBarWriterTest, DensePatternsKeepTheirPulse) {
+  constexpr uint8_t kC3 = 48;
+  test::StubHarmonyContext harmony;
+  harmony.setAllPitchesSafe(true);
+  MidiTrack track;
+  generateBassHalfBar(track, 0, kC3, kC3, SectionType::Chorus, Mood::StraightPop, true, harmony,
+                      BassPattern::Driving);
+  EXPECT_GE(track.notes().size(), 3u) << "A driving half bar keeps an 8th-note pulse";
+}
+
+// The row a section draws from, mirroring the section mapping of the selector.
+const BassPatternChoice& genreRowFor(Mood mood, SectionType type) {
+  BassSection section = BassSection::A;
+  switch (type) {
+    case SectionType::Intro:
+    case SectionType::Interlude:
+    case SectionType::Chant:
+      section = BassSection::Intro;
+      break;
+    case SectionType::A:
+      section = BassSection::A;
+      break;
+    case SectionType::B:
+      section = BassSection::B;
+      break;
+    case SectionType::Chorus:
+    case SectionType::Drop:
+      section = BassSection::Chorus;
+      break;
+    case SectionType::Bridge:
+      section = BassSection::Bridge;
+      break;
+    case SectionType::Outro:
+      section = BassSection::Outro;
+      break;
+    case SectionType::MixBreak:
+      section = BassSection::Mix;
+      break;
+  }
+  return getBassGenrePatterns(getMoodBassGenre(mood)).sections[static_cast<int>(section)];
+}
+
+TEST(BassPatternSelectionTest, VocalPathStaysInsideTheGenreRow) {
+  const SectionType kTypes[] = {SectionType::Intro,  SectionType::A,        SectionType::B,
+                                SectionType::Chorus, SectionType::Bridge,   SectionType::Interlude,
+                                SectionType::Outro,  SectionType::MixBreak, SectionType::Drop};
+  const Mood kMoods[] = {Mood::Ballad,    Mood::Sentimental, Mood::EnergeticDance,
+                         Mood::LightRock, Mood::CityPop,     Mood::StraightPop};
+  size_t checked = 0;
+  for (Mood mood : kMoods) {
+    GeneratorParams params;
+    params.mood = mood;
+    for (SectionType type : kTypes) {
+      const BassPatternChoice& row = genreRowFor(mood, type);
+      for (float density : {0.1f, 0.5f, 0.9f}) {
+        for (uint32_t seed = 1; seed <= 12; ++seed) {
+          Section section;
+          section.type = type;
+          section.peak_level = PeakLevel::None;
+          section.backing_density = BackingDensity::Normal;
+          std::mt19937 rng(seed);
+          const BassPattern got = selectPatternForVocalDensity(density, section, params, rng);
+          const auto id = static_cast<BassPatternId>(static_cast<uint8_t>(got));
+          EXPECT_TRUE(id == row.primary || id == row.secondary || id == row.tertiary)
+              << "mood=" << static_cast<int>(mood) << " section=" << static_cast<int>(type)
+              << " density=" << density << " got=" << static_cast<int>(got);
+          ++checked;
+        }
+      }
+    }
+  }
+  EXPECT_EQ(checked, 6u * 9u * 3u * 12u);
+}
+
+TEST(BassPatternSelectionTest, BalladInterludeIsNotDriven) {
+  GeneratorParams params;
+  params.mood = Mood::Ballad;
+  Section interlude;
+  interlude.type = SectionType::Interlude;
+  interlude.backing_density = BackingDensity::Normal;
+  for (uint32_t seed = 1; seed <= 24; ++seed) {
+    std::mt19937 rng(seed);
+    EXPECT_NE(selectPatternForVocalDensity(0.0f, interlude, params, rng), BassPattern::Driving);
+  }
+}
+
+TEST(BassPatternSelectionTest, DrumsOffTakesTheDensestCandidateOfTheGenreRow) {
+  GeneratorParams params;
+  params.mood = Mood::StraightPop;
+  params.drums_enabled = false;
+  Section verse;
+  verse.type = SectionType::A;
+  verse.backing_density = BackingDensity::Normal;
+  for (float density : {0.1f, 0.5f, 0.9f}) {
+    std::mt19937 rng(3);
+    // The Standard verse row is RootFifth / WholeNote / Syncopated.
+    EXPECT_EQ(selectPatternForVocalDensity(density, verse, params, rng), BassPattern::Syncopated);
+  }
+}
+
+TEST(BassPatternSelectionTest, DrumlessBalladKeepsASustainedBass) {
+  GeneratorParams params;
+  params.mood = Mood::Ballad;
+  params.drums_enabled = false;
+  size_t checked = 0;
+  for (SectionType type : {SectionType::Intro, SectionType::A, SectionType::B, SectionType::Chorus,
+                           SectionType::Outro}) {
+    Section section;
+    section.type = type;
+    section.backing_density = BackingDensity::Normal;
+    const BassPatternChoice& row = genreRowFor(params.mood, type);
+    for (float density : {0.1f, 0.5f, 0.9f}) {
+      for (uint32_t seed = 1; seed <= 12; ++seed) {
+        std::mt19937 rng(seed);
+        const BassPattern got = selectPatternForVocalDensity(density, section, params, rng);
+        const auto id = static_cast<BassPatternId>(static_cast<uint8_t>(got));
+        EXPECT_TRUE(id == row.primary || id == row.secondary || id == row.tertiary)
+            << "section=" << static_cast<int>(type) << " got=" << static_cast<int>(got);
+        EXPECT_NE(got, BassPattern::RhythmicDrive);
+        EXPECT_NE(got, BassPattern::Driving);
+        ++checked;
+      }
+    }
+  }
+  EXPECT_EQ(checked, 5u * 3u * 12u);
+}
+
+TEST(BassPatternSelectionTest, ArpeggioPedalVetoAgreesBetweenVocalAndNoVocalSelectors) {
+  GeneratorParams params;
+  params.mood = Mood::Ballad;
+  params.riff_policy = RiffPolicy::Free;
+
+  auto pedal_seen = [&](SectionType type, bool with_vocal) {
+    Section section;
+    section.type = type;
+    section.backing_density = BackingDensity::Normal;
+    section.track_mask = TrackMask::Bass | TrackMask::Arpeggio;
+    bool seen = false;
+    for (uint32_t seed = 1; seed <= 60; ++seed) {
+      BassRiffCache cache;
+      std::mt19937 rng(seed);
+      BassPattern got = with_vocal
+                            ? selectPatternWithPolicyForVocal(cache, section, 0, params, 0.5f, rng)
+                            : selectPatternWithPolicy(cache, section, 0, params, rng);
+      seen = seen || got == BassPattern::PedalTone;
+    }
+    return seen;
+  };
+
+  EXPECT_TRUE(pedal_seen(SectionType::Bridge, false)) << "A Bridge keeps its pedal under arpeggio";
+  EXPECT_TRUE(pedal_seen(SectionType::Bridge, true));
+  EXPECT_FALSE(pedal_seen(SectionType::Intro, false));
+  EXPECT_FALSE(pedal_seen(SectionType::Intro, true));
 }
 
 TEST_F(BassTest, FastRunViaHintProducesNotes) {

@@ -270,7 +270,7 @@ uint8_t calculateArpeggioVelocity(uint8_t base_velocity, SectionType section, in
   // Use centralized section velocity multiplier
   float section_mult = getSectionVelocityMultiplier(section);
 
-  // Add slight accent on beat 1 notes
+  // Slight accent on the first note of each pattern cycle (not tied to the beat)
   float accent = (note_in_pattern == 0) ? 1.1f : 1.0f;
 
   int velocity = static_cast<int>(base_velocity * section_mult * accent);
@@ -344,13 +344,18 @@ ArpeggioSectionParams calculateArpeggioSectionParams(const Section& section,
   // Apply section density
   result.effective_density = section.getModifiedDensity(section.density_percent);
 
+  // RhythmSync locks to the 16th grid with a held gate, for whatever the user left on Auto
+  const bool user_set_speed = (arp.speed != ArpeggioSpeed::Auto);
   if (params.paradigm == GenerationParadigm::RhythmSync) {
-    result.speed = ArpeggioSpeed::Sixteenth;
-    result.gate = std::max(result.gate, 0.95f);
+    if (!user_set_speed) {
+      result.speed = ArpeggioSpeed::Sixteenth;
+    }
+    if (arp.gate < 0.0f) {
+      result.gate = std::max(result.gate, 0.95f);
+    }
   }
 
   // Promote to 16th if density > 90% and speed is 8th
-  bool user_set_speed = (arp.speed != ArpeggioSpeed::Auto);
   bool style_has_special_speed = (style.speed != ArpeggioSpeed::Sixteenth);
   if (result.effective_density > 90 && result.speed == ArpeggioSpeed::Eighth && !user_set_speed &&
       !style_has_special_speed) {

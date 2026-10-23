@@ -1,6 +1,6 @@
 /**
  * @file accompaniment_ceiling.h
- * @brief Single derivation of an accompaniment track's upper pitch bound.
+ * @brief Upper pitch bound for a track that stays under the sounding vocal.
  */
 
 #ifndef MIDISKETCH_TRACK_ACCOMPANIMENT_CEILING_H
@@ -14,16 +14,12 @@
 
 namespace midisketch {
 
-/// @brief Semitones an accompaniment track keeps between itself and the vocal.
+/// @brief Semitones a track keeps between itself and the vocal, for tracks that
+/// derive their ceiling through resolveVocalCeiling().
 ///
-/// Deliberately one value per track rather than one shared number: a dense chord bed
-/// masks the lead far more than a single guitar line does, so they need different
-/// room. Both sit inside the tolerance the generated output is scored against, which
-/// allows an accompaniment note up to 2 semitones above the vocal.
+/// The chord track does not use this: its voicings follow getVocalCeilingForRange(),
+/// which keeps a minimum register and falls back to a bar-level ceiling.
 namespace VocalCeilingMargin {
-
-/// Chord voicings sit a minor third under the lead.
-inline constexpr uint8_t kChord = 3;
 
 /// A single guitar line may reach the lead's pitch but not pass it.
 inline constexpr uint8_t kGuitar = 0;
@@ -63,6 +59,30 @@ inline uint8_t resolveVocalCeiling(const IHarmonyContext& harmony, Tick start, T
   const int ceiling = static_cast<int>(vocal_high) - static_cast<int>(margin_below_vocal);
   return static_cast<uint8_t>(
       std::max(static_cast<int>(range_low), std::min(static_cast<int>(range_high), ceiling)));
+}
+
+/**
+ * @brief Whether the vocal sounds exactly @p pitch anywhere in [start, end).
+ *
+ * The cross-track consonance check treats a unison as consonant, so a resolver
+ * can settle an accompaniment note on the lead's own pitch; this is the screen
+ * that refuses it. The context reports the vocal's extremes per window rather
+ * than its pitches, so the window is halved until a pitch is an extreme of one.
+ *
+ * @param harmony Harmony context with the vocal registered.
+ * @param pitch Accompaniment pitch to test.
+ * @param start Start of the window (inclusive).
+ * @param end End of the window (exclusive).
+ */
+inline bool vocalSoundsPitch(const IHarmonyContext& harmony, uint8_t pitch, Tick start, Tick end) {
+  const uint8_t high = harmony.getHighestPitchForTrackInRange(start, end, TrackRole::Vocal);
+  if (high == 0 || pitch > high) return false;
+  const uint8_t low = harmony.getLowestPitchForTrackInRange(start, end, TrackRole::Vocal);
+  if (pitch < low) return false;
+  if (pitch == high || pitch == low) return true;
+  if (end - start <= 1) return false;
+  const Tick mid = start + (end - start) / 2;
+  return vocalSoundsPitch(harmony, pitch, start, mid) || vocalSoundsPitch(harmony, pitch, mid, end);
 }
 
 }  // namespace midisketch

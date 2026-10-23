@@ -8,6 +8,7 @@
 #include <gtest/gtest.h>
 
 #include "core/chord.h"
+#include "core/generator.h"
 #include "core/harmony_coordinator.h"
 #include "core/harmony_timeline_planner.h"
 #include "core/i_track_base.h"
@@ -29,7 +30,11 @@ TEST(CoordinatorTest, InitializeWithDefaultParams) {
 
   coord.initialize(params);
 
-  EXPECT_EQ(coord.getBpm(), getMoodDefaultBpm(params.mood));
+  // A named blueprint (the default is Traditional) supplies its own tempo.
+  ASSERT_NE(coord.getBlueprint(), nullptr);
+  EXPECT_EQ(
+      coord.getBpm(),
+      resolveTempo(0, false, true, getMoodDefaultBpm(params.mood), *coord.getBlueprint()).first);
   EXPECT_EQ(coord.getParadigm(), GenerationParadigm::Traditional);
   EXPECT_EQ(coord.getRiffPolicy(), RiffPolicy::Free);
 }
@@ -761,6 +766,63 @@ TEST(CoordinatorTest, RegenerateBass_ReproducibleAcrossInstances) {
     return song.bass().notes().size();
   };
   EXPECT_EQ(run(), run());
+}
+
+// ============================================================================
+// Coordinator and Generator resolve the same structure and tempo
+// ============================================================================
+
+namespace {
+
+void expectCoordinatorMatchesGenerator(const GeneratorParams& params, const char* label) {
+  Generator generator;
+  generator.generate(params);
+  const auto& generated = generator.getSong().arrangement().sections();
+
+  Coordinator coordinator;
+  coordinator.initialize(params);
+  const auto& planned = coordinator.getArrangement().sections();
+
+  ASSERT_FALSE(generated.empty()) << label;
+  ASSERT_EQ(planned.size(), generated.size()) << label;
+  for (size_t idx = 0; idx < generated.size(); ++idx) {
+    EXPECT_EQ(planned[idx].type, generated[idx].type) << label << " section " << idx;
+    EXPECT_EQ(planned[idx].bars, generated[idx].bars) << label << " section " << idx;
+    EXPECT_EQ(planned[idx].start_tick, generated[idx].start_tick) << label << " section " << idx;
+  }
+  EXPECT_EQ(coordinator.getBpm(), generator.getSong().bpm()) << label;
+  EXPECT_EQ(coordinator.getBlueprintId(), generator.getParams().blueprint_id) << label;
+}
+
+}  // namespace
+
+TEST(CoordinatorTest, AgreesWithGeneratorOnImplicitTempoForABalladStyle) {
+  GeneratorParams params;
+  params.seed = 4242;
+  params.mood = Mood::Ballad;
+  params.bpm = 0;
+  params.blueprint_id = 255;
+  expectCoordinatorMatchesGenerator(params, "ballad, implicit bpm");
+}
+
+TEST(CoordinatorTest, AgreesWithGeneratorOnATargetDuration) {
+  GeneratorParams params;
+  params.seed = 99;
+  params.bpm = 120;
+  params.bpm_explicit = true;
+  params.target_duration_seconds = 150;
+  params.blueprint_id = 0;
+  expectCoordinatorMatchesGenerator(params, "target duration");
+}
+
+TEST(CoordinatorTest, AgreesWithGeneratorOnANamedBlueprintWithCalls) {
+  GeneratorParams params;
+  params.seed = 7;
+  params.bpm = 0;
+  params.blueprint_id = 5;
+  params.call_enabled = true;
+  params.mix_pattern = MixPattern::Tiger;
+  expectCoordinatorMatchesGenerator(params, "named blueprint, calls");
 }
 
 }  // namespace

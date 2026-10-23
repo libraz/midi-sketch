@@ -599,6 +599,42 @@ TEST_F(BassWithVocalTest, KickSyncDoesNotCreateOffGridPartialAdjustment) {
   }
 }
 
+TEST_F(BassWithVocalTest, KickSyncNeverStacksTwoBassNotesOnOneOnset) {
+  Song song;
+  Section chorus;
+  chorus.type = SectionType::Chorus;
+  chorus.start_tick = 0;
+  chorus.bars = 2;
+  chorus.track_mask = TrackMask::Bass;
+  chorus.bass_style_hint = static_cast<uint8_t>(BassPattern::FastRun) + 1;
+  song.setArrangement(Arrangement({chorus}));
+
+  params_.mood = Mood::StraightPop;
+  params_.chord_id = 0;
+  params_.paradigm = GenerationParadigm::Traditional;
+
+  // A sparse kick on every beat reaches the 32nd-note runs sitting just off the beat.
+  KickPatternCache kick_cache;
+  for (size_t i = 0; i < 8; ++i) kick_cache.kick_ticks[i] = static_cast<Tick>(i) * TICKS_PER_BEAT;
+  kick_cache.kick_count = 8;
+  kick_cache.kicks_per_bar = 1.0f;
+  kick_cache.dominant_interval = TICKS_PER_BAR;
+
+  HarmonyContext harmony;
+  harmony.initialize(song.arrangement(), getChordProgression(params_.chord_id), params_.mood);
+
+  MidiTrack bass_track;
+  std::mt19937 rng(params_.seed);
+  generateBassTrack(bass_track, song, params_, rng, harmony, &kick_cache, nullptr);
+
+  ASSERT_FALSE(bass_track.notes().empty());
+  std::set<Tick> starts;
+  for (const auto& note : bass_track.notes()) {
+    EXPECT_TRUE(starts.insert(note.start_tick).second)
+        << "Two bass notes start together at tick " << note.start_tick;
+  }
+}
+
 TEST_F(BassWithVocalTest, SameRootSectionEndDoesNotEmitApproachEighth) {
   Song song;
   Section verse;
@@ -660,6 +696,48 @@ TEST_F(BassWithVocalTest, SameRootMicrovariationDoesNotCreateApproachTone) {
           << "Same-root RootFifth microvariation should keep root/fifth pitch classes, seed="
           << seed << " note=" << static_cast<int>(note.note);
     }
+  }
+}
+
+TEST_F(BassWithVocalTest, FinishedVocalNoteDoesNotSteerBassMotion) {
+  Song song;
+  Section verse;
+  verse.type = SectionType::A;
+  verse.start_tick = TICKS_PER_BAR;
+  verse.bars = 8;
+  verse.track_mask = TrackMask::Bass;
+  verse.bass_style_hint = static_cast<uint8_t>(BassPattern::RootFifth) + 1;
+  song.setArrangement(Arrangement({verse}));
+
+  params_.mood = Mood::StraightPop;
+  params_.paradigm = GenerationParadigm::Traditional;
+
+  ChordProgression one_chord{{0, -1, -1, -1, -1, -1, -1, -1}, 1};
+
+  // One rising vocal note that has ended long before the section begins.
+  VocalAnalysis ended;
+  ended.pitch_at_tick[0] = 72;
+  ended.note_end_at_tick[0] = TICK_QUARTER;
+  ended.direction_at_tick[0] = 1;
+  const VocalAnalysis silent{};
+
+  auto render = [&](const VocalAnalysis& analysis, uint32_t seed) {
+    HarmonyContext harmony;
+    harmony.initialize(song.arrangement(), one_chord, params_.mood);
+    MidiTrack bass_track;
+    std::mt19937 rng(seed);
+    generateBassTrack(bass_track, song, params_, rng, harmony, nullptr, &analysis);
+    std::vector<std::pair<Tick, uint8_t>> notes;
+    for (const auto& note : bass_track.notes()) notes.emplace_back(note.start_tick, note.note);
+    return notes;
+  };
+
+  for (uint32_t seed = 1; seed <= 16; ++seed) {
+    const auto baseline = render(silent, seed);
+    ASSERT_FALSE(baseline.empty()) << "seed=" << seed;
+    EXPECT_EQ(render(ended, seed), baseline)
+        << "A vocal direction with no sounding note must leave the bass register alone, seed="
+        << seed;
   }
 }
 

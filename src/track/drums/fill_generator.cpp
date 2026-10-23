@@ -199,6 +199,16 @@ bool generateFill(MidiTrack& track, const GrooveGrid& grid, Tick beat_tick, uint
   uint8_t fill_vel = static_cast<uint8_t>(velocity * 0.9f);
   uint8_t accent_vel = static_cast<uint8_t>(velocity * 0.95f);
 
+  // Subtle fills write only in the last two beats; the groove plays through the
+  // earlier ones, so a fill window opened early by a high-energy section does
+  // not turn them into a burst.
+  const bool subtle_fill = fill_type == FillType::SimpleCrash ||
+                           fill_type == FillType::BreakdownFill ||
+                           fill_type == FillType::HalfTimeFill;
+  if (beat < 2 && subtle_fill) {
+    return false;
+  }
+
   if (beat == 0) {
     add(beat_tick, EIGHTH, BD, fill_vel);
     add(beat_tick + EIGHTH, EIGHTH, SD, static_cast<uint8_t>(fill_vel - 5));

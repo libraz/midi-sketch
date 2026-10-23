@@ -761,17 +761,23 @@ void generateOctaveJumpPattern(const BassBarContext& ctx) {
   }
 }
 
+// Tonic pedal (C, degree 0) for Intro/Outro: stability and resolution.
+// Dominant pedal (G, degree 4) for Bridge: tension before return to chorus.
+uint8_t pedalPitchFor(SectionType section) {
+  return getBassRoot(section == SectionType::Bridge ? 4 : 0);
+}
+
+// Drop into the sub-bass octave, but never below the physical bass floor.
+uint8_t subBassPitchFor(uint8_t root) {
+  while (root > 40 && root - 12 >= BASS_LOW) {
+    root -= 12;
+  }
+  return root;
+}
+
 void generatePedalTonePattern(const BassBarContext& ctx) {
   // Pedal tone: sustained tonic or dominant note regardless of chord changes.
-  // Tonic pedal (C, degree 0) for Intro/Outro: stability and resolution.
-  // Dominant pedal (G, degree 4) for Bridge: tension before return to chorus.
-  bool use_dominant = (ctx.section == SectionType::Bridge);
-  uint8_t pedal_pitch;
-  if (use_dominant) {
-    pedal_pitch = getBassRoot(4);  // Dominant pedal: G
-  } else {
-    pedal_pitch = getBassRoot(0);  // Tonic pedal: C
-  }
+  uint8_t pedal_pitch = pedalPitchFor(ctx.section);
 
   // Rhythm: half notes with optional re-attack on beat 3. The pedal holds its
   // pitch through whatever the timeline puts above it, including a secondary
@@ -802,19 +808,12 @@ void generateTresilloPattern(const BassBarContext& ctx) {
 }
 
 void generateSubBass808Pattern(const BassBarContext& ctx) {
-  uint8_t sub_pitch = ctx.root;
-  // Drop into sub-bass octave, but never below the physical bass floor.
-  while (sub_pitch > 40 && sub_pitch - 12 >= BASS_LOW) {
-    sub_pitch -= 12;
-  }
+  uint8_t sub_pitch = subBassPitchFor(ctx.root);
   uint8_t sub_vel = static_cast<uint8_t>(std::min(127, ctx.vel + 10));
   if (hasApproachTarget(ctx)) {
     addBassNotePreferRoot(ctx.track, ctx.bar_start, 3 * TICK_QUARTER + TICK_EIGHTH, sub_pitch,
                           sub_vel, ctx.harmony);
-    uint8_t next_sub = ctx.next_root;
-    while (next_sub > 40 && next_sub - 12 >= BASS_LOW) {
-      next_sub -= 12;
-    }
+    uint8_t next_sub = subBassPitchFor(ctx.next_root);
     // Chromatic slide toward the next root while preserving the pitch class
     // across range boundaries.
     int slide_raw =
@@ -1259,6 +1258,25 @@ void generateBassHalfBar(MidiTrack& track, Tick half_start, uint8_t root, uint8_
       }
     }
     return;
+  }
+
+  // Sustained figures keep one held note per half; a pedal keeps its pitch through
+  // the chord change that split the bar.
+  switch (pattern) {
+    case BassPattern::WholeNote:
+      addBassNotePreferRoot(track, half_start, TICK_HALF, root, vel, harmony);
+      return;
+    case BassPattern::SubBass808:
+      addBassNotePreferRoot(track, half_start, TICK_HALF, subBassPitchFor(root),
+                            static_cast<uint8_t>(std::min(127, vel + 10)), harmony);
+      return;
+    case BassPattern::PedalTone:
+      addBassNotePreferRoot(track, half_start, TICK_HALF, pedalPitchFor(section),
+                            is_first_half ? vel : static_cast<uint8_t>(vel * 0.9f), harmony,
+                            /*hold_through_chord_changes=*/true);
+      return;
+    default:
+      break;
   }
 
   // Simple half-bar pattern: root + fifth or root, all with safety checks

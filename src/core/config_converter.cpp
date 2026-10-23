@@ -265,8 +265,9 @@ GeneratorParams ConfigConverter::convert(const SongConfig& config) {
   }
 
   // Keep auto tempo unresolved until the Generator has selected a production
-  // blueprint. The fallback is retained only for blueprints without a tempo
-  // identity: explicit BPM > blueprint > explicit mood > style preset.
+  // blueprint (resolveTempo): explicit BPM > a blueprint the caller named >
+  // explicit mood > style preset. A drawn blueprint is drawn from those whose
+  // tempo range holds that implicit tempo.
   params.bpm = config.bpm;
   params.bpm_explicit = (config.bpm != 0);
   params.auto_bpm_fallback =
@@ -353,10 +354,10 @@ GeneratorParams ConfigConverter::convert(const SongConfig& config) {
   params.chord_extension.enable_9th = params.chord_extension.enable_9th || mood_wants_9th;
   params.chord_extension.enable_sus = params.chord_extension.enable_sus || mood_wants_sus;
 
-  // Apply mood-based chord extension probability adjustments.
-  // NOTE: enable_* flags are NOT overridden here - they come from the user/preset config.
-  // Mood only adjusts probabilities when extensions are enabled AND user didn't explicitly set
-  // them.
+  // Mood-based probability adjustments. The enable flags above are the union of
+  // the caller's and the mood's on every path, chord_ext_prob_explicit included,
+  // so a mood family cannot be switched off by its flag; an explicit probability
+  // of 0 is what silences it. That flag only keeps the caller's probabilities.
   if (!config.chord_ext_prob_explicit) {
     if (harmony_mood == Mood::CityPop) {
       params.chord_extension.seventh_probability = 0.40f;
@@ -402,8 +403,9 @@ GeneratorParams ConfigConverter::convert(const SongConfig& config) {
   if (params.vocal_style == VocalStylePreset::Auto) {
     // Use a seed derived from the main seed for consistent selection
     uint32_t vocal_style_seed = resolved_seed ^ 0x56534C53;  // "VSLS"
+    const uint16_t implicit_bpm = params.bpm == 0 ? params.auto_bpm_fallback : 0;
     const ProductionBlueprint& blueprint = getProductionBlueprint(resolveProductionBlueprintId(
-        resolved_seed, config.blueprint_id, static_cast<uint8_t>(params.mood)));
+        resolved_seed, config.blueprint_id, static_cast<uint8_t>(params.mood), implicit_bpm));
     params.vocal_style =
         blueprint.vocal_style_count > 0
             ? selectWeightedVocalStyle(blueprint.vocal_styles, blueprint.vocal_style_count,

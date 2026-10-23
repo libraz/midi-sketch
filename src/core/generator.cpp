@@ -146,9 +146,12 @@ uint32_t Generator::resolveSeed(uint32_t seed) {
 // ============================================================================
 
 void Generator::initializeBlueprint(uint32_t seed) {
-  // Drawn from its own seed-derived stream, so main rng_ state is undisturbed
-  resolved_blueprint_id_ =
-      resolveProductionBlueprintId(seed, params_.blueprint_id, static_cast<uint8_t>(params_.mood));
+  // Drawn from its own seed-derived stream, so main rng_ state is undisturbed.
+  // A drawn blueprint has to be one that plays at the implicit BPM.
+  blueprint_explicit_ = params_.blueprint_id < getProductionBlueprintCount();
+  const uint16_t implicit_bpm = params_.bpm == 0 ? implicitBpm() : 0;
+  resolved_blueprint_id_ = resolveProductionBlueprintId(
+      seed, params_.blueprint_id, static_cast<uint8_t>(params_.mood), implicit_bpm);
   blueprint_ = &getProductionBlueprint(resolved_blueprint_id_);
   params_.blueprint_id = resolved_blueprint_id_;
 
@@ -159,11 +162,6 @@ void Generator::initializeBlueprint(uint32_t seed) {
 
   // Store blueprint reference for constraint access during generation
   params_.blueprint_ref = blueprint_;
-
-  if (!params_.bpm_explicit && params_.bpm == 0) {
-    params_.bpm =
-        blueprint_->tempo_default > 0 ? blueprint_->tempo_default : params_.auto_bpm_fallback;
-  }
 
   // Blueprint motif density override (idol riffs are busier than the default)
   if (blueprint_->constraints.motif_note_count > 0 && !params_.motif_note_count_explicit) {
@@ -186,12 +184,16 @@ void Generator::initializeBlueprint(uint32_t seed) {
 
   if (isRhythmSyncLeadSetting(params_, resolved_blueprint_id_)) {
     params_.vocal_style = VocalStylePreset::Vocaloid;
-    params_.melody_template = MelodyTemplateId::RunUpTarget;
+    if (params_.melody_template == MelodyTemplateId::Auto) {
+      params_.melody_template = MelodyTemplateId::RunUpTarget;
+    }
     params_.hook_intensity = HookIntensity::Maximum;
     params_.vocal_groove = VocalGrooveFeel::Driving16th;
     params_.drive_feel = std::max<uint8_t>(params_.drive_feel, 88);
-    params_.melody_params.max_leap_interval =
-        std::max<uint8_t>(params_.melody_params.max_leap_interval, 12);
+    if (!params_.melody_max_leap_override) {
+      params_.melody_params.max_leap_interval =
+          std::max<uint8_t>(params_.melody_params.max_leap_interval, 12);
+    }
     params_.melody_params.note_density = std::max(params_.melody_params.note_density, 1.25f);
     params_.melody_params.sixteenth_note_ratio =
         std::max(params_.melody_params.sixteenth_note_ratio, 0.45f);
@@ -239,14 +241,20 @@ void Generator::configureRhythmSyncMotif() {
 
 void Generator::configureAddictiveMotif() {
   if (params_.addictive_mode) {
-    // Behavioral Loop: 1-bar dense pattern for maximum repetition
-    params_.motif.rhythm_density = MotifRhythmDensity::Driving;
-    params_.motif.note_count = 8;  // Dense eighth-note pattern
+    // Behavioral Loop: 1-bar dense pattern for maximum repetition, in every
+    // field the caller left to the defaults.
+    if (!params_.motif_rhythm_density_explicit) {
+      params_.motif.rhythm_density = MotifRhythmDensity::Driving;
+    }
+    if (!params_.motif_note_count_explicit) {
+      params_.motif.note_count = 8;  // Dense eighth-note pattern
+    }
     // A tight loop is a request for a short pattern, not a claim about the one
     // already chosen. The half-note template physically states two bars, and
     // recording it as one bar does not shorten it - it only leaves every length
     // read off this field contradicting the notes.
-    if (params_.motif.rhythm_template != MotifRhythmTemplate::HalfNoteSparse) {
+    if (!params_.motif_length_explicit &&
+        params_.motif.rhythm_template != MotifRhythmTemplate::HalfNoteSparse) {
       params_.motif.length = MotifLength::Bars1;
     }
   }
@@ -262,14 +270,14 @@ void Generator::validateVocalRange() {
   }
 }
 
+uint16_t Generator::implicitBpm() const {
+  return params_.auto_bpm_fallback > 0 ? params_.auto_bpm_fallback
+                                       : getMoodDefaultBpm(params_.mood);
+}
+
 uint16_t Generator::resolveAndClampBpm() {
-  uint16_t bpm = params_.bpm;
-  if (bpm == 0) {
-    bpm =
-        params_.auto_bpm_fallback > 0 ? params_.auto_bpm_fallback : getMoodDefaultBpm(params_.mood);
-  }
-  auto [clamped, warn] = clampBlueprintBpm(bpm, *blueprint_, params_.bpm_explicit);
-  bpm = clamped;
+  auto [bpm, warn] = resolveTempo(params_.bpm, params_.bpm_explicit, blueprint_explicit_,
+                                  implicitBpm(), *blueprint_);
   if (warn) warnings_.push_back(*warn);
   song_.setBpm(bpm);
   params_.bpm = bpm;  // Propagate clamped BPM to params for Coordinator
@@ -277,7 +285,11 @@ uint16_t Generator::resolveAndClampBpm() {
 }
 
 void Generator::applyAccompanimentConfig(const AccompanimentConfig& config) {
-  if (config.has(AccompanimentConfig::DrumsEnabled)) params_.drums_enabled = config.drums_enabled;
+  if (config.has(AccompanimentConfig::DrumsEnabled)) {
+    // A caller-supplied value outranks a blueprint's drums_required, as in the SongConfig.
+    params_.drums_enabled = config.drums_enabled;
+    params_.drums_enabled_explicit = true;
+  }
   if (config.has(AccompanimentConfig::ArpeggioEnabled))
     params_.arpeggio_enabled = config.arpeggio_enabled;
   if (config.has(AccompanimentConfig::GuitarEnabled))
@@ -365,66 +377,18 @@ void Generator::clearAccompanimentTracks() {
 
 std::vector<Section> Generator::buildSongStructure(uint16_t bpm) {
   // Priority: target_duration > explicit form > Blueprint section_flow > StructurePattern
-  std::vector<Section> sections;
-  if (params_.target_duration_seconds > 0) {
-    // Say so when the requested length cannot be built at the tempo that was
-    // resolved. Validation passes anything the *whole* permitted tempo range
-    // could reach, and the structure builder then clamps to what this tempo
-    // can, so a request for six minutes at 150 BPM comes back as under four
-    // with the bar count as its only trace. This is the one layer holding both
-    // the request and the resolved tempo, which is why neither of the others
-    // can answer for it.
-    const uint16_t requested_bars = barsForDuration(params_.target_duration_seconds, bpm);
-    const uint16_t buildable_bars =
-        std::clamp(requested_bars, kMinStructureBars, kMaxStructureBars);
-    if (buildable_bars != requested_bars) {
-      const uint32_t buildable_seconds =
-          static_cast<uint32_t>(buildable_bars) * BEATS_PER_BAR * 60u / bpm;
-      warnings_.push_back(
-          "Duration adjusted from " + std::to_string(params_.target_duration_seconds) + "s to " +
-          std::to_string(buildable_seconds) + "s: " + std::to_string(requested_bars) + " bars at " +
-          std::to_string(bpm) + " BPM is outside the buildable range of " +
-          std::to_string(kMinStructureBars) + "-" + std::to_string(kMaxStructureBars) +
-          " bars (a different tempo reaches a different length)");
-    }
-
-    sections =
-        buildStructureForDuration(params_.target_duration_seconds, bpm, params_.call_enabled,
-                                  params_.intro_chant, params_.mix_pattern, params_.structure);
-    // Apply blueprint section properties to duration-generated structure.
-    // buildStructureForDuration uses StructurePattern and ignores blueprint
-    // SectionSlot definitions, so we overlay track_mask, drum_role, energy,
-    // etc. from blueprint slots matched by section type.
-    if (blueprint_ != nullptr) {
-      applyBlueprintOverlay(sections, *blueprint_);
-    }
-  } else if (params_.form_explicit) {
-    // Explicit form setting takes precedence over Blueprint section_flow
-    sections = buildStructure(params_.structure);
-    if (params_.call_enabled) {
-      insertCallSections(sections, params_.intro_chant, params_.mix_pattern, bpm);
-    }
-  } else if (blueprint_->section_flow != nullptr && blueprint_->section_count > 0) {
-    // Use Blueprint's custom section flow
-    sections = buildStructureFromBlueprint(*blueprint_);
-    if (params_.call_enabled) {
-      insertCallSections(sections, params_.intro_chant, params_.mix_pattern, bpm);
-    }
-  } else {
-    // Use traditional StructurePattern
-    sections = buildStructure(params_.structure);
-    if (params_.call_enabled) {
-      insertCallSections(sections, params_.intro_chant, params_.mix_pattern, bpm);
-    }
-  }
-
-  // Apply Behavioral Loop exit patterns (CutOff before Chorus)
-  applyAddictiveModeExitPatterns(sections, params_.addictive_mode);
-
-  // Apply energy curve to adjust section energy levels based on song position
-  applyEnergyCurve(sections, params_.energy_curve);
-
-  return sections;
+  StructureRequest request;
+  request.pattern = params_.structure;
+  request.form_explicit = params_.form_explicit;
+  request.target_duration_seconds = params_.target_duration_seconds;
+  request.bpm = bpm;
+  request.call_enabled = params_.call_enabled;
+  request.intro_chant = params_.intro_chant;
+  request.mix_pattern = params_.mix_pattern;
+  request.addictive_mode = params_.addictive_mode;
+  request.energy_curve = params_.energy_curve;
+  request.blueprint = blueprint_;
+  return planSongStructure(request, warnings_);
 }
 
 void Generator::generateFromConfig(const SongConfig& config) {
@@ -434,20 +398,15 @@ void Generator::generateFromConfig(const SongConfig& config) {
 }
 
 void Generator::acceptParams(const GeneratorParams& params) {
-  // Preserve pre-set modulation timing if incoming params has default values.
-  // setModulationTiming() sets params_ before generate() is called, and we
-  // don't want params_ = params to overwrite those pre-set values.
-  ModulationTiming saved_mod_timing = params_.modulation_timing;
-  int8_t saved_mod_semitones = params_.modulation_semitones;
-
   params_ = params;
 
-  // Restore pre-set modulation if incoming params has defaults
-  if (params.modulation_timing == ModulationTiming::None &&
-      saved_mod_timing != ModulationTiming::None) {
-    params_.modulation_timing = saved_mod_timing;
-    params_.modulation_semitones = saved_mod_semitones;
+  // A pre-set modulation belongs to this generation only; an earlier
+  // generation's modulation left in params_ is not a pre-set.
+  if (pending_modulation_ && params.modulation_timing == ModulationTiming::None) {
+    params_.modulation_timing = pending_modulation_->first;
+    params_.modulation_semitones = pending_modulation_->second;
   }
+  pending_modulation_.reset();
 }
 
 uint16_t Generator::initializeGenerationState() {
@@ -1479,30 +1438,13 @@ void Generator::generateMotif() {
   // Use MotifGenerator for track generation
   MotifGenerator motif_gen;
 
-  // Build vocal context for MelodyLead mode coordination
-  MotifContext motif_ctx;
-
   // Build FullTrackContext
   FullTrackContext ctx = buildBaseContext();
 
-  // Only provide vocal context if:
-  // 1. Vocal track exists and has notes
-  // 2. We're in MelodyLead mode (vocal was generated first)
-  if (!params_.skip_vocal && !song_.vocal().notes().empty()) {
-    const VocalAnalysis* va = getCachedVocalAnalysis();
-    if (va) {
-      motif_ctx.phrase_boundaries = &song_.phraseBoundaries();
-      motif_ctx.rest_positions = &va->rest_positions;
-      motif_ctx.vocal_low = va->lowest_pitch;
-      motif_ctx.vocal_high = va->highest_pitch;
-      motif_ctx.vocal_density = va->density;
-      motif_ctx.direction_at_tick = &va->direction_at_tick;
-      ctx.vocal_ctx = &motif_ctx;
-    }
-  }
-
-  // RhythmSync: use config-based vocal range for register separation
-  // (Motif is generated before Vocal, so no vocal analysis available)
+  // Same precedence as Coordinator::buildFullTrackContext: RhythmSync takes the
+  // config-based register context (the motif comes before the vocal there);
+  // otherwise the motif answers whatever vocal already exists.
+  MotifContext motif_ctx;
   if (params_.paradigm == GenerationParadigm::RhythmSync) {
     if (!params_.rhythm_sync_motif_ctx.has_value()) {
       MotifContext mctx;
@@ -1511,6 +1453,16 @@ void Generator::generateMotif() {
       params_.rhythm_sync_motif_ctx = mctx;
     }
     ctx.vocal_ctx = &params_.rhythm_sync_motif_ctx.value();
+  } else if (!song_.vocal().notes().empty()) {
+    if (const VocalAnalysis* va = getCachedVocalAnalysis()) {
+      motif_ctx.phrase_boundaries = &song_.phraseBoundaries();
+      motif_ctx.rest_positions = &va->rest_positions;
+      motif_ctx.vocal_low = va->lowest_pitch;
+      motif_ctx.vocal_high = va->highest_pitch;
+      motif_ctx.vocal_density = va->density;
+      motif_ctx.direction_at_tick = &va->direction_at_tick;
+      ctx.vocal_ctx = &motif_ctx;
+    }
   }
 
   motif_gen.generateFullTrack(song_.motif(), ctx);

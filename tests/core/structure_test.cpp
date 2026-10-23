@@ -7,9 +7,13 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <string>
+#include <vector>
 
+#include "core/preset_data.h"
 #include "core/production_blueprint.h"
 
 namespace midisketch {
@@ -212,25 +216,301 @@ TEST(StructureTest, BuildForDurationMaximumBars) {
   EXPECT_LE(total_bars, 150) << "Maximum structure should be around 144 bars";
 }
 
+// Bars per second at 120 BPM is exactly one half, so a bar count maps to a
+// duration that barsForDuration() reads back unchanged.
+uint16_t secondsForBarsAt120(uint16_t bars) { return static_cast<uint16_t>(bars * 2); }
+
+// The planner's tolerance for an unmet duration target.
+constexpr int kDurationToleranceBars = 8;
+
+bool isOneShotChorus(const Section& section) {
+  return section.type == SectionType::Chorus && (section.modifier == SectionModifier::Ochisabi ||
+                                                 section.drop_style != ChorusDropStyle::None);
+}
+
+std::vector<const Section*> choruses(const std::vector<Section>& sections) {
+  std::vector<const Section*> result;
+  for (const auto& section : sections) {
+    if (section.type == SectionType::Chorus) result.push_back(&section);
+  }
+  return result;
+}
+
+const SectionSlot* firstSlotOfType(const ProductionBlueprint& blueprint, SectionType type) {
+  for (uint8_t i = 0; i < blueprint.section_count; ++i) {
+    if (blueprint.section_flow[i].type == type) return &blueprint.section_flow[i];
+  }
+  return nullptr;
+}
+
 TEST(StructureTest, DurationOverlayReservesFinalChorusSlotForActualEnding) {
   const auto& blueprint = getProductionBlueprint(1);  // RhythmLock has a terminal FinalHit chorus.
-  auto sections = buildStructureForDuration(180, blueprint.tempo_default);
-  applyBlueprintOverlay(sections, blueprint);
+  StructureRequest request;
+  request.target_duration_seconds = 180;
+  request.bpm = blueprint.tempo_default;
+  request.blueprint = &blueprint;
+  std::vector<std::string> warnings;
+  auto sections = planSongStructure(request, warnings);
 
-  std::vector<const Section*> choruses;
-  for (const auto& section : sections) {
-    if (section.type == SectionType::Chorus) choruses.push_back(&section);
-  }
-
-  ASSERT_GT(choruses.size(), 4u) << "The duration path must extend beyond the blueprint flow";
-  EXPECT_EQ(choruses.back()->peak_level, PeakLevel::Max);
-  EXPECT_EQ(choruses.back()->exit_pattern, ExitPattern::FinalHit);
-  for (size_t i = 0; i + 1 < choruses.size(); ++i) {
-    EXPECT_NE(choruses[i]->peak_level, PeakLevel::Max)
+  const auto chorus_list = choruses(sections);
+  ASSERT_GT(chorus_list.size(), 4u) << "The duration path must extend beyond the blueprint flow";
+  EXPECT_EQ(chorus_list.back()->peak_level, PeakLevel::Max);
+  EXPECT_EQ(chorus_list.back()->exit_pattern, ExitPattern::FinalHit);
+  for (size_t i = 0; i + 1 < chorus_list.size(); ++i) {
+    EXPECT_NE(chorus_list[i]->peak_level, PeakLevel::Max)
         << "Chorus " << i << ": only the final generated chorus may use the terminal peak slot";
-    EXPECT_NE(choruses[i]->exit_pattern, ExitPattern::FinalHit)
+    EXPECT_NE(chorus_list[i]->exit_pattern, ExitPattern::FinalHit)
         << "Chorus " << i << ": only the final generated chorus may use the terminal FinalHit slot";
   }
+}
+
+TEST(StructureTest, OverlayGivesTheFirstChorusTheFirstSlotAndPlaysEachOneShotChorusOnce) {
+  // A blueprint's ochisabi or drop chorus belongs to one place near the end of
+  // the song; the first chorus is the song's first statement of the hook.
+  size_t checked = 0;
+  size_t one_shot_songs = 0;
+  for (uint8_t id = 0; id < getProductionBlueprintCount(); ++id) {
+    const auto& blueprint = getProductionBlueprint(id);
+    if (blueprint.section_flow == nullptr) continue;
+    const SectionSlot* first_chorus_slot = firstSlotOfType(blueprint, SectionType::Chorus);
+    ASSERT_NE(first_chorus_slot, nullptr) << blueprint.name;
+
+    for (StructurePattern pattern : {StructurePattern::FullPop, StructurePattern::ExtendedFull,
+                                     StructurePattern::Ballad, StructurePattern::DriveUpbeat}) {
+      for (uint16_t bars = 24; bars <= kMaxStructureBars; bars += 12) {
+        StructureRequest request;
+        request.pattern = pattern;
+        request.target_duration_seconds = secondsForBarsAt120(bars);
+        request.bpm = 120;
+        request.blueprint = &blueprint;
+        std::vector<std::string> warnings;
+        const auto sections = planSongStructure(request, warnings);
+        const auto chorus_list = choruses(sections);
+        // A lone chorus is the ending as well; the first-slot rule needs two.
+        if (chorus_list.size() < 2) continue;
+        ++checked;
+
+        const Section& first = *chorus_list.front();
+        EXPECT_EQ(first.track_mask, first_chorus_slot->enabled_tracks)
+            << blueprint.name << " " << bars << " bars: first chorus must take the first slot";
+        EXPECT_EQ(first.modifier, first_chorus_slot->modifier) << blueprint.name;
+        EXPECT_FALSE(isOneShotChorus(first)) << blueprint.name << " " << bars << " bars";
+
+        size_t one_shots = 0;
+        for (const Section* chorus : chorus_list) one_shots += isOneShotChorus(*chorus) ? 1 : 0;
+        EXPECT_LE(one_shots, 1u) << blueprint.name << " " << bars
+                                 << " bars: an ochisabi or drop chorus repeated";
+        if (one_shots > 0) ++one_shot_songs;
+      }
+    }
+  }
+  ASSERT_GT(checked, 0u);
+  ASSERT_GT(one_shot_songs, 0u) << "No overlaid song placed an ochisabi or drop chorus at all";
+}
+
+TEST(StructureTest, ExplicitFormTakesTheBlueprintSlotsTheDurationPathGives) {
+  // The same form reaching the planner by an explicit form or by a duration
+  // that leaves it unsized must carry the same slot properties.
+  const auto& blueprint = getProductionBlueprint(3);  // Ballad: chord-only intro, ochisabi chorus
+  const uint16_t bpm = 82;
+  const auto base = buildStructure(StructurePattern::ExtendedFull);
+  const uint16_t base_bars = calculateTotalBars(base);
+
+  StructureRequest by_form;
+  by_form.pattern = StructurePattern::ExtendedFull;
+  by_form.form_explicit = true;
+  by_form.bpm = bpm;
+  by_form.blueprint = &blueprint;
+
+  StructureRequest by_duration = by_form;
+  by_duration.form_explicit = false;
+  by_duration.target_duration_seconds = static_cast<uint16_t>(std::lround(base_bars * 240.0 / bpm));
+  ASSERT_EQ(barsForDuration(by_duration.target_duration_seconds, bpm), base_bars);
+
+  std::vector<std::string> warnings;
+  const auto form_sections = planSongStructure(by_form, warnings);
+  const auto duration_sections = planSongStructure(by_duration, warnings);
+  ASSERT_EQ(form_sections.size(), duration_sections.size());
+  for (size_t i = 0; i < form_sections.size(); ++i) {
+    EXPECT_EQ(form_sections[i].type, duration_sections[i].type) << i;
+    EXPECT_EQ(form_sections[i].track_mask, duration_sections[i].track_mask) << i;
+    EXPECT_EQ(form_sections[i].modifier, duration_sections[i].modifier) << i;
+    EXPECT_EQ(form_sections[i].energy, duration_sections[i].energy) << i;
+    EXPECT_EQ(form_sections[i].exit_pattern, duration_sections[i].exit_pattern) << i;
+  }
+
+  ASSERT_EQ(form_sections.front().type, SectionType::Intro);
+  EXPECT_EQ(form_sections.front().track_mask,
+            firstSlotOfType(blueprint, SectionType::Intro)->enabled_tracks)
+      << "An explicit form must keep the blueprint's chord-only intro";
+  bool has_ochisabi = false;
+  for (const auto& section : form_sections) {
+    has_ochisabi = has_ochisabi || section.modifier == SectionModifier::Ochisabi;
+  }
+  EXPECT_TRUE(has_ochisabi) << "An explicit form must keep the blueprint's ochisabi slot";
+}
+
+TEST(StructureTest, DurationExtensionNeverStacksChorusesOrEndsOnAFragment) {
+  for (uint8_t p = 0; p < STRUCTURE_COUNT; ++p) {
+    const auto pattern = static_cast<StructurePattern>(p);
+    const uint16_t base_bars = calculateTotalBars(buildStructure(pattern));
+    for (uint16_t bars = base_bars + 1; bars <= kMaxStructureBars; ++bars) {
+      StructureRequest request;
+      request.pattern = pattern;
+      request.target_duration_seconds = secondsForBarsAt120(bars);
+      request.bpm = 120;
+      std::vector<std::string> warnings;
+      const auto sections = planSongStructure(request, warnings);
+
+      int run = 0;
+      int longest_run = 0;
+      for (const auto& section : sections) {
+        run = section.type == SectionType::Chorus ? run + 1 : 0;
+        longest_run = std::max(longest_run, run);
+      }
+      EXPECT_LE(longest_run, 2) << "pattern " << int(p) << " at " << bars << " bars";
+
+      const auto chorus_list = choruses(sections);
+      ASSERT_FALSE(chorus_list.empty());
+      EXPECT_GE(chorus_list.back()->bars, 8)
+          << "pattern " << int(p) << " at " << bars << " bars ends on a chorus fragment";
+    }
+  }
+}
+
+TEST(StructureTest, DurationShorteningMeetsTheTargetOrSaysSo) {
+  size_t shortened_within_tolerance = 0;
+  for (uint8_t p = 0; p < STRUCTURE_COUNT; ++p) {
+    const auto pattern = static_cast<StructurePattern>(p);
+    const uint16_t base_bars = calculateTotalBars(buildStructure(pattern));
+    for (uint16_t bars = kMinStructureBars; bars < base_bars; ++bars) {
+      StructureRequest request;
+      request.pattern = pattern;
+      request.target_duration_seconds = secondsForBarsAt120(bars);
+      request.bpm = 120;
+      std::vector<std::string> warnings;
+      const auto sections = planSongStructure(request, warnings);
+      const int built = calculateTotalBars(sections);
+      const bool within = std::abs(built - static_cast<int>(bars)) <= kDurationToleranceBars;
+      EXPECT_TRUE(within || !warnings.empty()) << "pattern " << int(p) << ": asked for " << bars
+                                               << " bars, built " << built << " without a warning";
+      if (within && base_bars - bars > kDurationToleranceBars) ++shortened_within_tolerance;
+    }
+  }
+  ASSERT_GT(shortened_within_tolerance, 0u) << "No form was actually shortened";
+
+  // The ballad form has no removable verse after its first chorus, and still shortens.
+  StructureRequest ballad;
+  ballad.pattern = StructurePattern::Ballad;
+  ballad.target_duration_seconds = secondsForBarsAt120(36);
+  ballad.bpm = 120;
+  std::vector<std::string> warnings;
+  const auto sections = planSongStructure(ballad, warnings);
+  EXPECT_LE(std::abs(static_cast<int>(calculateTotalBars(sections)) - 36), kDurationToleranceBars);
+  EXPECT_TRUE(warnings.empty());
+}
+
+TEST(StructureTest, OnlyTheLastChorusCarriesTheClimax) {
+  size_t songs = 0;
+  for (uint8_t id = 0; id < getProductionBlueprintCount(); ++id) {
+    const auto& blueprint = getProductionBlueprint(id);
+    for (bool calls : {false, true}) {
+      for (uint16_t seconds : {0, 60, 120, 180, 240, 280}) {
+        StructureRequest request;
+        request.pattern = StructurePattern::FullPop;
+        request.target_duration_seconds = seconds;
+        request.bpm = 120;
+        request.call_enabled = calls;
+        request.intro_chant = calls ? IntroChant::Gachikoi : IntroChant::None;
+        request.mix_pattern = calls ? MixPattern::Standard : MixPattern::None;
+        request.blueprint = &blueprint;
+        std::vector<std::string> warnings;
+        const auto sections = planSongStructure(request, warnings);
+        const auto chorus_list = choruses(sections);
+        ASSERT_FALSE(chorus_list.empty());
+        ++songs;
+
+        size_t climaxes = 0;
+        for (const Section* chorus : chorus_list) {
+          if (chorus->exit_pattern == ExitPattern::FinalHit ||
+              chorus->peak_level == PeakLevel::Max) {
+            ++climaxes;
+            EXPECT_EQ(chorus, chorus_list.back())
+                << blueprint.name << " " << seconds << "s: a non-final chorus claims the climax";
+          }
+        }
+        EXPECT_EQ(climaxes, 1u) << blueprint.name << " " << seconds << "s";
+      }
+    }
+  }
+  EXPECT_GT(songs, 0u);
+}
+
+TEST(StructureTest, CallSectionsFitInsideTheTargetDuration) {
+  StructureRequest request;
+  request.pattern = StructurePattern::FullPop;
+  request.target_duration_seconds = 180;
+  request.bpm = 160;
+  request.call_enabled = true;
+  request.intro_chant = IntroChant::Gachikoi;
+  request.mix_pattern = MixPattern::Tiger;
+  std::vector<std::string> warnings;
+  const auto sections = planSongStructure(request, warnings);
+
+  bool has_chant = false;
+  bool has_mix = false;
+  for (const auto& section : sections) {
+    has_chant = has_chant || section.type == SectionType::Chant;
+    has_mix = has_mix || section.type == SectionType::MixBreak;
+  }
+  ASSERT_TRUE(has_chant);
+  ASSERT_TRUE(has_mix);
+
+  const int target = barsForDuration(180, 160);
+  const int built = calculateTotalBars(sections);
+  EXPECT_LE(std::abs(built - target), kDurationToleranceBars)
+      << "target " << target << " bars, built " << built;
+  EXPECT_LE(built, kMaxStructureBars);
+}
+
+TEST(StructureTest, CallMixNeverDoublesAMixBreak) {
+  size_t flows_with_own_mix = 0;
+  for (uint8_t id = 0; id < getProductionBlueprintCount(); ++id) {
+    const auto& blueprint = getProductionBlueprint(id);
+    for (uint16_t seconds : {0, 180}) {
+      for (MixPattern mix : {MixPattern::Standard, MixPattern::Tiger}) {
+        StructureRequest request;
+        request.target_duration_seconds = seconds;
+        request.bpm = blueprint.tempo_default;
+        request.call_enabled = true;
+        request.mix_pattern = mix;
+        request.blueprint = &blueprint;
+        std::vector<std::string> warnings;
+        const auto sections = planSongStructure(request, warnings);
+
+        size_t last_chorus = sections.size();
+        for (size_t i = 0; i < sections.size(); ++i) {
+          if (sections[i].type == SectionType::Chorus) last_chorus = i;
+          if (i > 0) {
+            EXPECT_FALSE(sections[i].type == SectionType::MixBreak &&
+                         sections[i - 1].type == SectionType::MixBreak)
+                << blueprint.name << " " << seconds << "s: adjacent MixBreaks at " << i;
+          }
+        }
+        ASSERT_LT(last_chorus, sections.size());
+        ASSERT_GT(last_chorus, 0u);
+        const Section& before_last = sections[last_chorus - 1];
+        EXPECT_EQ(before_last.type, SectionType::MixBreak) << blueprint.name;
+        EXPECT_TRUE(hasTrack(before_last.track_mask, TrackMask::SE)) << blueprint.name;
+        if (seconds == 0 && blueprint.section_flow != nullptr) {
+          for (uint8_t i = 0; i < blueprint.section_count; ++i) {
+            flows_with_own_mix += blueprint.section_flow[i].type == SectionType::MixBreak ? 1 : 0;
+          }
+        }
+      }
+    }
+  }
+  ASSERT_GT(flows_with_own_mix, 0u) << "No blueprint flow carries its own MixBreak to reuse";
 }
 
 TEST(StructureTest, DurationOverlayBuildsTheSameLayerScheduleAsTheDirectPath) {
@@ -933,6 +1213,43 @@ TEST(EnergyCurveTest, EmptySectionsHandledGracefully) {
   applyEnergyCurve(empty_sections, EnergyCurve::SteadyState);
 
   EXPECT_TRUE(empty_sections.empty());
+}
+
+TEST(EnergyCurveTest, CurvesLeaveTheOchisabiAndTheClimaxTheirOwnDynamics) {
+  const auto& blueprint = getProductionBlueprint(3);  // Ballad: ochisabi, then climactic chorus
+  for (EnergyCurve curve : {EnergyCurve::FrontLoaded, EnergyCurve::WavePattern}) {
+    auto sections = buildStructureFromBlueprint(blueprint);
+    const auto before = sections;
+    applyEnergyCurve(sections, curve);
+
+    size_t ochisabi = 0;
+    for (size_t i = 0; i < sections.size(); ++i) {
+      if (sections[i].modifier != SectionModifier::Ochisabi) continue;
+      ++ochisabi;
+      EXPECT_EQ(sections[i].energy, before[i].energy) << "curve " << int(curve);
+      EXPECT_EQ(sections[i].base_velocity, before[i].base_velocity) << "curve " << int(curve);
+    }
+    ASSERT_GT(ochisabi, 0u);
+
+    const auto chorus_list = choruses(sections);
+    ASSERT_FALSE(chorus_list.empty());
+    ASSERT_EQ(chorus_list.back()->peak_level, PeakLevel::Max);
+    EXPECT_EQ(chorus_list.back()->energy, SectionEnergy::Peak)
+        << "curve " << int(curve) << " lowered the climax chorus";
+  }
+}
+
+TEST(EnergyCurveTest, WavePatternClimbsThroughThePreChorus) {
+  auto sections = buildStructure(StructurePattern::FullPop);
+  applyEnergyCurve(sections, EnergyCurve::WavePattern);
+
+  size_t pairs = 0;
+  for (size_t i = 0; i + 1 < sections.size(); ++i) {
+    if (sections[i].type != SectionType::A || sections[i + 1].type != SectionType::B) continue;
+    ++pairs;
+    EXPECT_GT(sections[i + 1].energy, sections[i].energy) << "B at " << i + 1 << " not above A";
+  }
+  ASSERT_GT(pairs, 0u);
 }
 
 TEST(EnergyCurveTest, EnergyCurveEnumValues) {

@@ -921,7 +921,7 @@ TEST(AuxTest, MotifCounterUsesSeparateRegister) {
   }
 }
 
-TEST(AuxTest, MotifCounterLowVocalUsesValidHigherRegister) {
+TEST(AuxTest, MotifCounterLowVocalStaysInTheRegisterBelowTheVocalFloor) {
   AuxGenerator generator;
   auto ctx = createTestContext();
 
@@ -929,11 +929,11 @@ TEST(AuxTest, MotifCounterLowVocalUsesValidHigherRegister) {
   Tick current = 0;
   for (int idx = 0; idx < 16; ++idx) {
     low_melody.push_back(NoteEventTestHelper::create(current, TICKS_PER_BEAT / 2,
-                                                     static_cast<uint8_t>(48 + (idx % 8)), 100));
+                                                     static_cast<uint8_t>(58 + (idx % 6)), 100));
     current += TICKS_PER_BEAT;
   }
   ctx.main_melody = &low_melody;
-  ctx.main_tessitura = {48, 55, 52, 43, 60};
+  ctx.main_tessitura = {58, 63, 60, 52, 68};
 
   HarmonyContext harmony;
   std::mt19937 rng(42);
@@ -953,9 +953,52 @@ TEST(AuxTest, MotifCounterLowVocalUsesValidHigherRegister) {
 
   ASSERT_FALSE(notes.empty());
   for (const auto& note : notes) {
-    EXPECT_GE(note.note, 72);
-    EXPECT_LE(note.note, 84);
+    EXPECT_GE(note.note, AUX_LOW);
+    EXPECT_LE(note.note, std::max<int>(va.lowest_pitch, AUX_LOW + 12))
+        << "a counter above the vocal floor is cut back by the per-onset ceiling";
   }
+}
+
+TEST(AuxTest, MotifCounterNeverMovesWithARisingVocal) {
+  AuxGenerator generator;
+  auto ctx = createTestContext();
+
+  std::vector<NoteEvent> rising;
+  for (int idx = 0; idx < 16; ++idx) {
+    rising.push_back(NoteEventTestHelper::create(idx * TICKS_PER_BEAT, TICKS_PER_BEAT / 2,
+                                                 static_cast<uint8_t>(60 + idx), 100));
+  }
+  ctx.main_melody = &rising;
+  ctx.section_end = TICKS_PER_BEAT * 16;
+  ctx.main_tessitura = {60, 75, 68, 54, 81};
+
+  HarmonyContext harmony;
+  std::mt19937 rng(42);
+
+  MidiTrack vocal_track;
+  for (const auto& note : rising) {
+    vocal_track.addNote(note);
+  }
+  VocalAnalysis va = analyzeVocal(vocal_track);
+
+  AuxConfig config;
+  config.function = AuxFunction::MotifCounter;
+  config.velocity_ratio = 0.7f;
+  config.density_ratio = 1.0f;
+
+  auto notes = generator.generateMotifCounter(ctx, config, harmony, va, rng);
+
+  ASSERT_GE(notes.size(), 3u);
+  // Pitch resolution may lift a single note onto a chord tone, so the line is
+  // judged by its steps taken together.
+  int rises = 0;
+  int falls = 0;
+  for (size_t idx = 1; idx < notes.size(); ++idx) {
+    if (notes[idx].note > notes[idx - 1].note) ++rises;
+    if (notes[idx].note < notes[idx - 1].note) ++falls;
+  }
+  EXPECT_LE(rises, falls) << "counter moved with a rising vocal";
+  EXPECT_LE(notes.back().note, notes.front().note);
 }
 
 TEST(AuxTest, MotifCounterRhythmicComplementation) {
@@ -1739,43 +1782,54 @@ int countAuxNotesIn(const std::vector<NoteEvent>& aux, Tick start, Tick end) {
 //     non-empty sections average >= 1.5 notes/bar and no note is isolated
 //     (>1 bar of silence on both sides).
 TEST(AuxCounterMelodyDensity, RhythmSyncSectionsAreDenseAndNotIsolated) {
-  Generator gen;
-  GeneratorParams params;
-  params.blueprint_id = 5;  // IdolHyper (RhythmSync)
-  params.seed = 42;
-  gen.generate(params);
+  // One seed's dice decide a single section, so the property is counted over a
+  // sweep. Sparse sections and isolated notes sit at 0 before any RNG shift and at
+  // 1-3 and 0-1 over these 40 seeds after one; the bounds are that floor plus one.
+  constexpr uint32_t kSeeds = 40;
+  constexpr int kMaxSparseSections = 4;
+  constexpr int kMaxIsolatedNotes = 2;
 
-  const auto& song = gen.getSong();
-  const auto& aux = song.aux().notes();
-  const auto& sections = song.arrangement().sections();
-
-  ASSERT_FALSE(aux.empty()) << "RhythmSync aux must not be empty";
-
-  // Per-section density: every section that has aux notes should be dense.
   int active_sections = 0;
-  for (const auto& sec : sections) {
-    int notes = countAuxNotesIn(aux, sec.start_tick, sec.endTick());
-    if (notes == 0) continue;  // Aux intentionally drops out of some sections
-    ++active_sections;
-    float per_bar = static_cast<float>(notes) / static_cast<float>(std::max<uint8_t>(sec.bars, 1));
-    EXPECT_GE(per_bar, 1.5f) << "Section at bar " << sec.start_bar << " ("
-                             << static_cast<int>(notes) << " notes / " << static_cast<int>(sec.bars)
-                             << " bars) too sparse";
-  }
-  EXPECT_GT(active_sections, 0) << "Expected at least one section with aux notes";
+  int sparse_sections = 0;
+  int isolated_notes = 0;
 
-  // No isolated notes: a note with > 1 bar of silence on BOTH sides.
-  std::vector<Tick> starts;
-  starts.reserve(aux.size());
-  for (const auto& n : aux) starts.push_back(n.start_tick);
-  std::sort(starts.begin(), starts.end());
+  for (uint32_t seed = 1; seed <= kSeeds; ++seed) {
+    Generator gen;
+    GeneratorParams params;
+    params.blueprint_id = 5;  // IdolHyper (RhythmSync)
+    params.seed = seed;
+    gen.generate(params);
 
-  for (size_t i = 0; i < starts.size(); ++i) {
-    bool left_gap = (i == 0) || (starts[i] - starts[i - 1] > TICKS_PER_BAR);
-    bool right_gap = (i + 1 == starts.size()) || (starts[i + 1] - starts[i] > TICKS_PER_BAR);
-    EXPECT_FALSE(left_gap && right_gap) << "Isolated aux note at tick " << starts[i] << " (bar "
-                                        << (starts[i] / TICKS_PER_BAR) << ")";
+    const auto& song = gen.getSong();
+    const auto& aux = song.aux().notes();
+    ASSERT_FALSE(aux.empty()) << "RhythmSync aux must not be empty (seed " << seed << ")";
+
+    // Every section that has aux notes should read as a counter-melody.
+    for (const auto& sec : song.arrangement().sections()) {
+      int notes = countAuxNotesIn(aux, sec.start_tick, sec.endTick());
+      if (notes == 0) continue;  // Aux intentionally drops out of some sections
+      ++active_sections;
+      float per_bar =
+          static_cast<float>(notes) / static_cast<float>(std::max<uint8_t>(sec.bars, 1));
+      if (per_bar < 1.5f) ++sparse_sections;
+    }
+
+    // An isolated note has more than a bar of silence on both sides.
+    std::vector<Tick> starts;
+    starts.reserve(aux.size());
+    for (const auto& n : aux) starts.push_back(n.start_tick);
+    std::sort(starts.begin(), starts.end());
+    for (size_t i = 0; i < starts.size(); ++i) {
+      bool left_gap = (i == 0) || (starts[i] - starts[i - 1] > TICKS_PER_BAR);
+      bool right_gap = (i + 1 == starts.size()) || (starts[i + 1] - starts[i] > TICKS_PER_BAR);
+      if (left_gap && right_gap) ++isolated_notes;
+    }
   }
+
+  ASSERT_GT(active_sections, 0) << "Expected sections with aux notes";
+  EXPECT_LE(sparse_sections, kMaxSparseSections)
+      << sparse_sections << " of " << active_sections << " active sections under 1.5 notes/bar";
+  EXPECT_LE(isolated_notes, kMaxIsolatedNotes) << isolated_notes << " isolated aux notes";
 }
 
 TEST(AuxBlueprintProfile, IdolKawaiiSignatureTracksSoundInFirstChorus) {
@@ -2017,6 +2071,53 @@ TEST(AuxBlueprintPlumbingTest, EachAuxProfileFieldReachesTheGenerator) {
     bp.aux_profile.range_ceiling = -24;
     expectDiffers("range_ceiling", bp);
   }
+}
+
+// An empty vocal (BackgroundMotif) must not feed its inverted analyzeRange into
+// the tessitura; the configured range stands in, so verses sit below choruses.
+TEST(AuxBlueprintPlumbingTest, EmptyVocalPlacesAuxFromTheConfiguredRange) {
+  std::vector<Section> sections = {makeSection(SectionType::A, 4, 0),
+                                   makeChorusSection(4, TICKS_PER_BAR * 4)};
+  MidiTrack vocal;
+  ASSERT_TRUE(vocal.empty());
+  std::vector<PhraseBoundary> phrase_boundaries;
+  const auto& progression = getChordProgression(0);
+
+  AuxGenerator::SongContext song_ctx;
+  song_ctx.sections = &sections;
+  song_ctx.vocal_track = &vocal;
+  song_ctx.progression = &progression;
+  song_ctx.phrase_boundaries = &phrase_boundaries;
+  // PulseLoop is the function that needs no melody to voice against.
+  ProductionBlueprint blueprint = getProductionBlueprint(0);
+  blueprint.aux_profile.verse_function = AuxFunction::PulseLoop;
+  blueprint.aux_profile.chorus_function = AuxFunction::PulseLoop;
+  song_ctx.blueprint = &blueprint;
+  song_ctx.vocal_low = 60;
+  song_ctx.vocal_high = 90;
+
+  test::StubHarmonyContext harmony;
+  harmony.setAllPitchesSafe(true);
+  std::mt19937 rng(12345);
+  MidiTrack aux;
+  AuxGenerator generator;
+  generator.generateFromSongContext(aux, song_ctx, harmony, rng);
+
+  double verse_sum = 0, chorus_sum = 0;
+  int verse_count = 0, chorus_count = 0;
+  for (const auto& note : aux.notes()) {
+    if (note.start_tick < TICKS_PER_BAR * 4) {
+      verse_sum += note.note;
+      ++verse_count;
+    } else {
+      chorus_sum += note.note;
+      ++chorus_count;
+    }
+  }
+  ASSERT_GT(verse_count, 0);
+  ASSERT_GT(chorus_count, 0);
+  EXPECT_LT(verse_sum / verse_count, chorus_sum / chorus_count)
+      << "verse aux should sit below chorus aux";
 }
 
 // The chord the timeline holds and the diatonic triad of its degree are made

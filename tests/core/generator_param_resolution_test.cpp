@@ -14,8 +14,11 @@
 
 #include <vector>
 
+#include "core/config_converter.h"
 #include "core/generator.h"
+#include "core/preset_data.h"
 #include "core/production_blueprint.h"
+#include "core/rhythm_sync_lead.h"
 #include "core/section_types.h"
 #include "core/song.h"
 #include "core/types.h"
@@ -125,6 +128,95 @@ TEST(GeneratorAddictiveModeTest, WithoutTheRequestTheBlueprintPolicyStands) {
   gen.generate(params);
   EXPECT_EQ(gen.getParams().riff_policy, blueprint.riff_policy);
   EXPECT_FALSE(gen.getParams().addictive_mode);
+}
+
+// A default may fill only what the caller left unset.
+TEST(GeneratorExplicitChoiceTest, AddictiveModeKeepsTheCallersMotifShape) {
+  GeneratorParams params = baseParams();
+  params.blueprint_id = 9;  // BehavioralLoop: addictive by declaration
+  params.addictive_mode = true;
+  params.motif.note_count = 4;
+  params.motif_note_count_explicit = true;
+  params.motif.rhythm_density = MotifRhythmDensity::Sparse;
+  params.motif_rhythm_density_explicit = true;
+  params.motif.length = MotifLength::Bars2;
+  params.motif_length_explicit = true;
+
+  Generator gen;
+  gen.generate(params);
+  ASSERT_TRUE(gen.getParams().addictive_mode);
+  EXPECT_EQ(gen.getParams().motif.note_count, 4);
+  EXPECT_EQ(gen.getParams().motif.rhythm_density, MotifRhythmDensity::Sparse);
+  EXPECT_EQ(gen.getParams().motif.length, MotifLength::Bars2);
+
+  // Fields left to the defaults still take the loop's.
+  GeneratorParams implicit = baseParams();
+  implicit.blueprint_id = 9;
+  implicit.addictive_mode = true;
+  Generator loop;
+  loop.generate(implicit);
+  EXPECT_EQ(loop.getParams().motif.note_count, 8);
+  EXPECT_EQ(loop.getParams().motif.rhythm_density, MotifRhythmDensity::Driving);
+  const MotifLength expected_length =
+      loop.getParams().motif.rhythm_template == MotifRhythmTemplate::HalfNoteSparse
+          ? MotifLength::Bars2
+          : MotifLength::Bars1;
+  EXPECT_EQ(loop.getParams().motif.length, expected_length);
+}
+
+TEST(GeneratorExplicitChoiceTest, ModulationComesFromThisSongsConfigOnly) {
+  SongConfig modulated = createDefaultSongConfig(0);
+  modulated.seed = 4242;
+  modulated.blueprint_id = 0;
+  modulated.form = StructurePattern::FullPop;
+  modulated.form_explicit = true;
+  modulated.modulation_timing = ModulationTiming::LastChorus;
+  modulated.modulation_semitones = 2;
+  SongConfig plain = modulated;
+  plain.modulation_timing = ModulationTiming::None;
+
+  Generator gen;
+  gen.generateFromConfig(modulated);
+  ASSERT_GT(gen.getSong().modulationAmount(), 0) << "fixture must modulate";
+  gen.generateFromConfig(plain);
+  EXPECT_EQ(gen.getSong().modulationAmount(), 0)
+      << "an earlier song's modulation leaked into an explicit None";
+  EXPECT_EQ(gen.getParams().modulation_timing, ModulationTiming::None);
+
+  // A pre-set made for one generation applies to it, and only to it.
+  Generator preset;
+  preset.setModulationTiming(ModulationTiming::LastChorus, 1);
+  preset.generate(baseParams());
+  EXPECT_EQ(preset.getSong().modulationAmount(), 1);
+  preset.generate(baseParams());
+  EXPECT_EQ(preset.getSong().modulationAmount(), 0);
+}
+
+TEST(GeneratorExplicitChoiceTest, RhythmSyncLeadKeepsAnExplicitLeap) {
+  SongConfig config = createDefaultSongConfig(14);  // Anime Opening
+  config.seed = 777;
+  config.blueprint_id = 1;  // RhythmLock
+  config.mood = static_cast<uint8_t>(Mood::AnimeHighEnergy);
+  config.mood_explicit = true;
+  config.melody_max_leap = 5;
+
+  Generator gen;
+  gen.generateFromConfig(config);
+  ASSERT_TRUE(isRhythmSyncLeadSetting(gen.getParams(), gen.resolvedBlueprintId()))
+      << "fixture must reach the RhythmSync lead setting";
+  EXPECT_EQ(gen.getParams().melody_params.max_leap_interval, 5);
+}
+
+TEST(GeneratorExplicitChoiceTest, AnExplicitZeroProbabilitySilencesAMoodFamilyItsFlagCannot) {
+  // The flags are the union of the caller's and the mood's; the probabilities
+  // are the caller's once chord_ext_prob_explicit is set.
+  SongConfig config = createDefaultSongConfig(16);  // Emotional Ballad: sevenths by mood
+  config.chord_ext_prob_explicit = true;
+  config.chord_extension.enable_7th = false;
+  config.chord_extension.seventh_probability = 0.0f;
+  const GeneratorParams params = ConfigConverter::convert(config);
+  EXPECT_TRUE(params.chord_extension.enable_7th);
+  EXPECT_EQ(params.chord_extension.seventh_probability, 0.0f);
 }
 
 }  // namespace

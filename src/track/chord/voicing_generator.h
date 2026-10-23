@@ -9,6 +9,7 @@
 #ifndef MIDISKETCH_TRACK_CHORD_VOICING_GENERATOR_H
 #define MIDISKETCH_TRACK_CHORD_VOICING_GENERATOR_H
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <vector>
@@ -46,6 +47,17 @@ struct VoicedChord {
 
   OpenVoicingType open_subtype = OpenVoicingType::Drop2;  ///< Open voicing variant
 };
+
+/// Put a voicing's pitches in ascending order without repeats.
+///
+/// Voice-leading scoring reads the lowest and highest voice by index, so every
+/// voicing that leaves a pass which moved or added pitches has to be normalized.
+inline void normalizeVoicing(VoicedChord& v) {
+  auto first = v.pitches.begin();
+  auto last = first + v.count;
+  std::sort(first, last);
+  v.count = static_cast<uint8_t>(std::unique(first, last) - first);
+}
 
 /// Check if two voiced chords have identical pitches (count and pitch values).
 /// Does NOT compare voicing type or open subtype.
@@ -145,7 +157,9 @@ std::vector<VoicedChord> generateRootlessVoicings(uint8_t root, const Chord& cho
 /// @param root Root note (MIDI pitch)
 /// @param chord Chord structure with intervals
 /// @param preferred_type Preferred voicing type
-/// @param bass_pitch_mask Bitmask of bass pitch classes for collision avoidance, or 0 if unknown
+/// @param bass_pitch_mask Bitmask of bass pitch classes, or 0 if unknown. Only the rootless
+///        generator reads it; the other shapes are screened against the bass afterwards by
+///        the cross-track consonance check
 /// @param open_subtype Which open voicing variant to prefer
 /// @return Vector of all possible voicings
 std::vector<VoicedChord> generateVoicings(uint8_t root, const Chord& chord,

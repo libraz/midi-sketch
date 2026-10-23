@@ -926,6 +926,23 @@ TEST_F(KeyboardNoteFactoryTest, OctaveSearchStaysAboveThePartFloor) {
   EXPECT_GE(*std::min_element(bounded.begin(), bounded.end()), 60);
 }
 
+TEST_F(KeyboardNoteFactoryTest, OctaveSearchStaysUnderThePartCeiling) {
+  // Mirror of the floor case: from a high voicing the cheapest octave-equivalent
+  // of a low one sits above the part's ceiling.
+  const std::vector<uint8_t> previous = {72, 76, 79};
+  const std::vector<uint8_t> desired = {36, 40, 43};
+  factory_->ensurePlayableVoicing(previous, 0, 0, 480);
+  const auto unbounded = factory_->ensurePlayableVoicing(desired, 0, 480, 480);
+  ASSERT_GT(unbounded.back(), 60)
+      << "the search did not reach above the ceiling, so nothing is tested";
+
+  factory_->resetState();
+  factory_->ensurePlayableVoicing(previous, 0, 0, 480);
+  const auto bounded = factory_->ensurePlayableVoicing(desired, 0, 480, 480, 0, 60);
+  ASSERT_FALSE(bounded.empty());
+  EXPECT_LE(*std::max_element(bounded.begin(), bounded.end()), 60);
+}
+
 TEST_F(KeyboardNoteFactoryTest, RevoicesAReachableVoicingWhenACloserPositionIsCheaper) {
   const std::vector<uint8_t> previous = {60, 64, 67};
   const std::vector<uint8_t> reachable = {72, 76, 79};

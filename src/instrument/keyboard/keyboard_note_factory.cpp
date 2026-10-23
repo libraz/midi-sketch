@@ -17,7 +17,8 @@ std::vector<uint8_t> findClosestFeasibleTransition(const IKeyboardInstrument& in
                                                    const std::vector<uint8_t>& previous,
                                                    const std::vector<uint8_t>& desired,
                                                    uint32_t available_ticks, uint16_t bpm,
-                                                   uint8_t lowest_allowed) {
+                                                   uint8_t lowest_allowed,
+                                                   uint8_t highest_allowed) {
   std::vector<uint8_t> best;
   float best_cost = std::numeric_limits<float>::infinity();
 
@@ -26,7 +27,7 @@ std::vector<uint8_t> findClosestFeasibleTransition(const IKeyboardInstrument& in
     std::sort(candidate.begin(), candidate.end());
     // The instrument's range is wider than the part's: an octave shift that
     // the keyboard can reach can still drop the voicing into the bass.
-    if (candidate.front() < lowest_allowed) return;
+    if (candidate.front() < lowest_allowed || candidate.back() > highest_allowed) return;
     if (!instrument.isVoicingPlayable(candidate) ||
         !instrument.isTransitionFeasible(previous, candidate, available_ticks, bpm)) {
       return;
@@ -87,22 +88,32 @@ KeyboardNoteFactory::KeyboardNoteFactory(const IHarmonyContext& harmony,
 std::vector<uint8_t> KeyboardNoteFactory::ensurePlayableVoicing(const std::vector<uint8_t>& pitches,
                                                                 uint8_t root_pitch_class,
                                                                 uint32_t start, uint32_t duration,
-                                                                uint8_t lowest_allowed) {
+                                                                uint8_t lowest_allowed,
+                                                                uint8_t highest_allowed) {
   if (pitches.empty()) return pitches;
+
+  // The part's ceiling never sits below a voicing the caller already placed:
+  // this pass re-spaces voices, it does not decide the register.
+  highest_allowed = std::max(highest_allowed, *std::max_element(pitches.begin(), pitches.end()));
 
   // Check if already playable
   auto result = pitches;
   if (!instrument_.isVoicingPlayable(result)) {
-    // Use PianoModel's suggestion cascade
-    result = instrument_.suggestPlayableVoicing(result, root_pitch_class);
+    // Use PianoModel's suggestion cascade; a suggestion that leaves the part's
+    // register is refused and the voicing stays where it was placed.
+    auto suggested = instrument_.suggestPlayableVoicing(result, root_pitch_class);
+    const auto [lowest, highest] = std::minmax_element(suggested.begin(), suggested.end());
+    if (!suggested.empty() && *lowest >= lowest_allowed && *highest <= highest_allowed) {
+      result = std::move(suggested);
+    }
   }
 
   // Check transition feasibility from previous voicing
   if (!prev_voicing_.empty() && !result.empty()) {
     uint32_t available_ticks = duration;  // Use chord duration as available time
 
-    auto alternative = findClosestFeasibleTransition(instrument_, prev_voicing_, result,
-                                                     available_ticks, bpm_, lowest_allowed);
+    auto alternative = findClosestFeasibleTransition(
+        instrument_, prev_voicing_, result, available_ticks, bpm_, lowest_allowed, highest_allowed);
     if (!alternative.empty()) {
       result = std::move(alternative);
     }

@@ -53,6 +53,8 @@ std::vector<Tick> getNoteOnsetOffsets(const std::vector<NoteEvent>& notes, Tick 
     }
   }
   std::sort(result.begin(), result.end());
+  // A pitch struck twice at one tick is one onset.
+  result.erase(std::unique(result.begin(), result.end()), result.end());
   return result;
 }
 

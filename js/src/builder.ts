@@ -13,7 +13,6 @@ import {
 } from './blueprint';
 import { createDefaultConfig } from './config';
 import { CompositionStyle, HookIntensity } from './constants';
-import { isCallOrientedVocalStyle } from './presets';
 import type { SongConfig } from './types';
 
 function clampUnitInterval(value: number): number {
@@ -107,6 +106,32 @@ class ChangeTracker {
 }
 
 // ============================================================================
+// Explicitness
+// ============================================================================
+
+/**
+ * The core flag that tells it a field was the caller's choice, for the fields
+ * the core reads one for. Setting the field sets its flag.
+ */
+const EXPLICIT_FLAGS: Partial<Record<keyof SongConfig, keyof SongConfig>> = {
+  drumsEnabled: 'drumsEnabledExplicit',
+  compositionStyle: 'compositionStyleExplicit',
+  mood: 'moodExplicit',
+  formId: 'formExplicit',
+  chordExtSusProb: 'chordExtProbExplicit',
+  chordExt7thProb: 'chordExtProbExplicit',
+  chordExt9thProb: 'chordExtProbExplicit',
+  chordExtTritoneSubProb: 'chordExtProbExplicit',
+};
+
+/** A value a cascade wrote, with what it replaced, so the cascade can be undone. */
+interface DerivedValue {
+  trigger: keyof SongConfig;
+  category: ParameterCategory;
+  previous: unknown;
+}
+
+// ============================================================================
 // SongConfigBuilder
 // ============================================================================
 
@@ -133,6 +158,7 @@ class ChangeTracker {
 export class SongConfigBuilder {
   private config: SongConfig;
   private explicitFields: Set<string> = new Set();
+  private derivedFields = new Map<keyof SongConfig, DerivedValue>();
   private lastChangeResult: ParameterChangeResult | null = null;
 
   /**
@@ -184,12 +210,14 @@ export class SongConfigBuilder {
     const sid = styleId ?? this.config.stylePresetId;
     this.config = createDefaultConfig(sid);
     this.explicitFields.clear();
+    this.derivedFields.clear();
     this.lastChangeResult = null;
     return this;
   }
 
   /**
-   * Reset to defaults but keep explicitly set values
+   * Reset to defaults but keep explicitly set values, together with the flags
+   * that tell the core they are explicit
    * @param styleId Optional new style ID (defaults to current)
    */
   resetKeepExplicit(styleId?: number): this {
@@ -208,6 +236,8 @@ export class SongConfigBuilder {
     // Restore explicit values
     Object.assign(this.config, preserved);
 
+    // Cascaded values went back to their defaults with everything else.
+    this.derivedFields.clear();
     this.lastChangeResult = null;
     return this;
   }
@@ -249,7 +279,6 @@ export class SongConfigBuilder {
    */
   setForm(id: number): this {
     this.setField('formId', id, 'basic');
-    this.setField('formExplicit', true, 'basic');
     return this;
   }
 
@@ -268,45 +297,16 @@ export class SongConfigBuilder {
   }
 
   /**
-   * Set vocal style preset with cascade detection
+   * Set vocal style preset
    *
-   * Call-oriented vocal styles (Idol, BrightKira, CuteAffected) auto-enable the
-   * call system if callSetting/callEnabled is not explicitly set.
+   * Call-oriented vocal styles (Idol, BrightKira, CuteAffected) turn the call
+   * system on while callSetting stays Auto: the core resolves Auto from the
+   * vocal style, so changing the style again changes the answer with it.
    *
    * @param style Vocal style ID (0=Auto, 1=Standard, 2=Vocaloid, etc.)
    */
   setVocalStyle(style: number): this {
-    const tracker = new ChangeTracker();
-
-    const oldStyle = this.config.vocalStyle;
-    this.config.vocalStyle = style;
-    this.explicitFields.add('vocalStyle');
-    tracker.addChange('vocal', 'vocalStyle', oldStyle, style, 'User set vocal style');
-
-    // Call-oriented vocal styles auto-enable call if not explicitly set
-    // Source of truth is the core's isCallEnabled (se.cpp), queried via
-    // midisketch_vocal_style_call_enabled. A copy of the list here would go on
-    // answering after the core had changed its mind.
-    if (
-      isCallOrientedVocalStyle(style) &&
-      !this.explicitFields.has('callSetting') &&
-      !this.explicitFields.has('callEnabled')
-    ) {
-      if (!this.config.callEnabled) {
-        const oldCall = this.config.callEnabled;
-        this.config.callEnabled = true;
-        this.config.callSetting = 1;
-        tracker.addChange(
-          'call',
-          'callEnabled',
-          oldCall,
-          true,
-          `Call-oriented vocalStyle (${style}) auto-enables call system`,
-        );
-      }
-    }
-
-    this.lastChangeResult = tracker.toResult();
+    this.setField('vocalStyle', style, 'vocal');
     return this;
   }
 
@@ -350,7 +350,7 @@ export class SongConfigBuilder {
 
     const oldTiming = this.config.modulationTiming;
     this.config.modulationTiming = timing;
-    this.explicitFields.add('modulationTiming');
+    this.markExplicit('modulationTiming');
     tracker.addChange(
       'modulation',
       'modulationTiming',
@@ -362,7 +362,7 @@ export class SongConfigBuilder {
     if (semitones !== undefined) {
       const oldSemitones = this.config.modulationSemitones;
       this.config.modulationSemitones = semitones;
-      this.explicitFields.add('modulationSemitones');
+      this.markExplicit('modulationSemitones');
       tracker.addChange(
         'modulation',
         'modulationSemitones',
@@ -423,15 +423,6 @@ export class SongConfigBuilder {
     }
     if (opts.tritoneProb !== undefined) {
       this.setField('chordExtTritoneSubProb', opts.tritoneProb, 'chord');
-    }
-    // Mark explicit if any probability was set (prevents mood override)
-    if (
-      opts.susProb !== undefined ||
-      opts.seventhProb !== undefined ||
-      opts.ninthProb !== undefined ||
-      opts.tritoneProb !== undefined
-    ) {
-      this.config.chordExtProbExplicit = true;
     }
     return this;
   }
@@ -529,12 +520,12 @@ export class SongConfigBuilder {
     if (opts.setting !== undefined) {
       this.setField('callSetting', opts.setting, 'call');
       this.config.callEnabled = opts.setting === 1;
-      this.explicitFields.add('callEnabled');
+      this.markExplicit('callEnabled');
     }
     if (opts.enabled !== undefined) {
       this.setField('callEnabled', opts.enabled, 'call');
       this.config.callSetting = opts.enabled ? 1 : 2;
-      this.explicitFields.add('callSetting');
+      this.markExplicit('callSetting');
     }
     if (opts.notesEnabled !== undefined) {
       this.setField('callNotesEnabled', opts.notesEnabled, 'call');
@@ -714,7 +705,6 @@ export class SongConfigBuilder {
    */
   setMood(mood: number): this {
     this.setField('mood', mood, 'basic');
-    this.setField('moodExplicit', true, 'basic');
     return this;
   }
 
@@ -734,11 +724,15 @@ export class SongConfigBuilder {
   /**
    * Set blueprint with cascade detection
    *
-   * Setting a blueprint may automatically change:
+   * Setting a blueprint may automatically change, unless the field was set
+   * explicitly (then it only warns):
    * - drumsEnabled (if the blueprint has drums_required=true, per the C++
    *   blueprint table via getBlueprintDrumsRequired)
    * - hookIntensity (BehavioralLoop forces Maximum)
-   * - BPM warning or auto-adjustment for RhythmSync paradigm
+   * - BPM auto-adjustment into the blueprint's tempo range
+   *
+   * Values a previous blueprint changed this way are restored first, so the
+   * result does not depend on which blueprint was set before.
    *
    * BehavioralLoop (ID 9): Forces HookIntensity=Maximum, RiffPolicy=LockedPitch
    *
@@ -751,8 +745,9 @@ export class SongConfigBuilder {
 
     // Set the blueprint
     this.config.blueprintId = id;
-    this.explicitFields.add('blueprintId');
+    this.markExplicit('blueprintId');
     tracker.addChange('basic', 'blueprintId', oldBlueprint, id, 'User set blueprint');
+    this.revertDerived('blueprintId', tracker);
 
     // If not random, resolve cascade effects
     if (id !== 255) {
@@ -765,11 +760,12 @@ export class SongConfigBuilder {
       // hardcoded mirror list is needed.
       const isDrumsRequired = getBlueprintDrumsRequired(id);
 
-      // Handle drums_required
+      // Handle drums_required. An explicit setDrums(false) is how drums are
+      // turned off on these blueprints, so it is kept and only warned about.
       if (isDrumsRequired) {
-        if (!this.config.drumsEnabled) {
+        if (!this.config.drumsEnabled && !this.explicitFields.has('drumsEnabled')) {
           const oldDrums = this.config.drumsEnabled;
-          this.config.drumsEnabled = true;
+          this.deriveField('blueprintId', 'drums', 'drumsEnabled', true);
           tracker.addChange(
             'drums',
             'drumsEnabled',
@@ -781,12 +777,16 @@ export class SongConfigBuilder {
           tracker.addWarning(
             `Blueprint ${getBlueprintName(id)} has drums_required=true; drumsEnabled forced to true`,
           );
+        } else if (!this.config.drumsEnabled) {
+          tracker.addWarning(
+            `Blueprint ${getBlueprintName(id)} has drums_required=true; drums stay off as explicitly set`,
+          );
         }
       } else if (paradigm === GenerationParadigm.RhythmSync) {
         // RhythmSync without drums_required - still recommend drums
         if (!this.config.drumsEnabled && !this.explicitFields.has('drumsEnabled')) {
           const oldDrums = this.config.drumsEnabled;
-          this.config.drumsEnabled = true;
+          this.deriveField('blueprintId', 'drums', 'drumsEnabled', true);
           tracker.addChange(
             'drums',
             'drumsEnabled',
@@ -808,7 +808,7 @@ export class SongConfigBuilder {
         ) {
           const oldBpm = this.config.bpm;
           const newBpm = Math.max(tempoRange.min, Math.min(tempoRange.max, this.config.bpm));
-          this.config.bpm = newBpm;
+          this.deriveField('blueprintId', 'bpm', 'bpm', newBpm);
           tracker.addChange(
             'bpm',
             'bpm',
@@ -833,7 +833,7 @@ export class SongConfigBuilder {
           !this.explicitFields.has('hookIntensity')
         ) {
           const oldHook = this.config.hookIntensity;
-          this.config.hookIntensity = HookIntensity.Maximum;
+          this.deriveField('blueprintId', 'hook', 'hookIntensity', HookIntensity.Maximum);
           tracker.addChange(
             'hook',
             'hookIntensity',
@@ -869,7 +869,8 @@ export class SongConfigBuilder {
    * Warns if BPM is outside the selected blueprint's declared tempo range.
    * C++ respects explicit BPM and skips clamping.
    *
-   * @param bpm BPM value (0 = use style default)
+   * @param bpm BPM value (0 = implicit: a named blueprint's tempo, otherwise the
+   *   explicit mood's or the style preset's, with a drawn blueprint chosen to fit it)
    */
   setBpm(bpm: number): this {
     const tracker = new ChangeTracker();
@@ -892,7 +893,7 @@ export class SongConfigBuilder {
     }
 
     this.config.bpm = bpm;
-    this.explicitFields.add('bpm');
+    this.markExplicit('bpm');
     tracker.addChange('bpm', 'bpm', oldBpm, bpm, 'User set BPM');
 
     this.lastChangeResult = tracker.toResult();
@@ -902,9 +903,10 @@ export class SongConfigBuilder {
   /**
    * Set composition style with cascade detection
    *
-   * Setting composition style may automatically change:
-   * - skipVocal (for BackgroundMotif/SynthDriven)
-   * - arpeggioEnabled (for SynthDriven)
+   * Setting composition style may automatically change arpeggioEnabled (for
+   * SynthDriven), restored when the style changes again. BackgroundMotif and
+   * SynthDriven have no vocal; the core leaves it out itself, so skipVocal is
+   * not touched.
    *
    * @param style 0=MelodyLead, 1=BackgroundMotif, 2=SynthDriven
    */
@@ -914,35 +916,15 @@ export class SongConfigBuilder {
     const oldStyle = this.config.compositionStyle;
 
     this.config.compositionStyle = style;
-    this.config.compositionStyleExplicit = true;
-    this.explicitFields.add('compositionStyle');
+    this.markExplicit('compositionStyle');
     tracker.addChange('basic', 'compositionStyle', oldStyle, style, 'User set composition style');
-
-    // BackgroundMotif and SynthDriven typically skip vocal
-    if (
-      (style === CompositionStyle.BackgroundMotif || style === CompositionStyle.SynthDriven) &&
-      !this.explicitFields.has('skipVocal')
-    ) {
-      const oldSkipVocal = this.config.skipVocal;
-      if (!oldSkipVocal) {
-        this.config.skipVocal = true;
-        tracker.addChange(
-          'vocal',
-          'skipVocal',
-          oldSkipVocal,
-          true,
-          style === CompositionStyle.BackgroundMotif
-            ? 'BackgroundMotif style skips vocal'
-            : 'SynthDriven style skips vocal',
-        );
-      }
-    }
+    this.revertDerived('compositionStyle', tracker);
 
     // SynthDriven typically enables arpeggio
     if (style === CompositionStyle.SynthDriven && !this.explicitFields.has('arpeggioEnabled')) {
       const oldArpeggio = this.config.arpeggioEnabled;
       if (!oldArpeggio) {
-        this.config.arpeggioEnabled = true;
+        this.deriveField('compositionStyle', 'arpeggio', 'arpeggioEnabled', true);
         tracker.addChange(
           'arpeggio',
           'arpeggioEnabled',
@@ -960,7 +942,9 @@ export class SongConfigBuilder {
   /**
    * Set style preset with cascade detection
    *
-   * Changing style preset resets mood, chord, form, bpm to style defaults.
+   * Changing style preset resets chord, form, bpm and vocal attitude to the
+   * style's defaults unless they were set explicitly. The bpm default is 0,
+   * which plays the style's own tempo when the blueprint is drawn at random.
    *
    * @param id Style preset ID (0-16)
    */
@@ -972,7 +956,7 @@ export class SongConfigBuilder {
 
     // Update style preset ID
     this.config.stylePresetId = id;
-    this.explicitFields.add('stylePresetId');
+    this.markExplicit('stylePresetId');
     tracker.addChange('basic', 'stylePresetId', oldStyleId, id, 'User set style preset');
 
     // Reset non-explicit fields to new style defaults
@@ -1008,8 +992,7 @@ export class SongConfigBuilder {
     const oldDrums = this.config.drumsEnabled;
 
     this.config.drumsEnabled = enabled;
-    this.config.drumsEnabledExplicit = true;
-    this.explicitFields.add('drumsEnabled');
+    this.markExplicit('drumsEnabled');
     tracker.addChange('drums', 'drumsEnabled', oldDrums, enabled, 'User set drums');
 
     // Check if blueprint requires drums
@@ -1032,6 +1015,55 @@ export class SongConfigBuilder {
     this.config[field] = value;
   }
 
+  /**
+   * Record that the user chose a field; the one place explicitness is written.
+   * Sets the paired core flag too, so it survives resetKeepExplicit with the value.
+   */
+  private markExplicit(field: keyof SongConfig): void {
+    this.explicitFields.add(field);
+    this.derivedFields.delete(field);
+    const flag = EXPLICIT_FLAGS[field];
+    if (flag !== undefined) {
+      this.setConfigValue(flag, true as never);
+      this.explicitFields.add(flag);
+    }
+  }
+
+  /** Write a value a cascade derived from `trigger`, remembering what it replaced. */
+  private deriveField<K extends keyof SongConfig>(
+    trigger: keyof SongConfig,
+    category: ParameterCategory,
+    field: K,
+    value: SongConfig[K],
+  ): void {
+    if (!this.derivedFields.has(field)) {
+      this.derivedFields.set(field, { trigger, category, previous: this.config[field] });
+    }
+    this.setConfigValue(field, value);
+  }
+
+  /** Undo what the previous value of `trigger` cascaded into fields the user has not set since. */
+  private revertDerived(trigger: keyof SongConfig, tracker: ChangeTracker): void {
+    for (const [field, derived] of this.derivedFields) {
+      if (derived.trigger !== trigger) {
+        continue;
+      }
+      this.derivedFields.delete(field);
+      const current = this.config[field];
+      if (current === derived.previous) {
+        continue;
+      }
+      this.setConfigValue(field, derived.previous as never);
+      tracker.addChange(
+        derived.category,
+        field,
+        current,
+        derived.previous,
+        `Restored: ${trigger} no longer sets it`,
+      );
+    }
+  }
+
   private setField(
     field: keyof SongConfig,
     value: SongConfig[keyof SongConfig],
@@ -1039,7 +1071,7 @@ export class SongConfigBuilder {
   ): void {
     const oldValue = this.config[field];
     this.setConfigValue(field, value as SongConfig[typeof field]);
-    this.explicitFields.add(field);
+    this.markExplicit(field);
 
     this.lastChangeResult = {
       changedCount: 1,

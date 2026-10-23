@@ -122,6 +122,9 @@ namespace {
 constexpr uint8_t kGuitarRangeLow = PhysicalModels::kElectricGuitar.pitch_low;    // E2
 constexpr uint8_t kGuitarRangeHigh = PhysicalModels::kElectricGuitar.pitch_high;  // E5
 
+/// A margin other than the guitar's, to show the bound follows the argument.
+constexpr uint8_t kMinorThirdMargin = 3;
+
 test::StubHarmonyContext harmonyWithVocalAt(uint8_t vocal_pitch) {
   test::StubHarmonyContext harmony;
   harmony.setHighestPitchForTrack(vocal_pitch);
@@ -137,8 +140,20 @@ TEST(AccompanimentCeilingTest, StaysTheNamedMarginUnderTheSoundingVocal) {
                                 VocalCeilingMargin::kGuitar),
             72)
       << "a guitar line may reach the lead's pitch";
-  EXPECT_EQ(resolveVocalCeiling(harmony, 0, 480, 48, 84, VocalCeilingMargin::kChord), 69)
-      << "a chord bed sits a minor third under the lead";
+  EXPECT_EQ(resolveVocalCeiling(harmony, 0, 480, 48, 84, kMinorThirdMargin), 69)
+      << "a wider margin sits that far under the lead";
+}
+
+TEST(AccompanimentCeilingTest, OnlyTheVocalsOwnPitchCountsAsASoundingVocalPitch) {
+  test::StubHarmonyContext harmony = harmonyWithVocalAt(72);
+  harmony.setLowestPitchForTrack(72);
+
+  EXPECT_TRUE(vocalSoundsPitch(harmony, 72, 0, 480));
+  EXPECT_FALSE(vocalSoundsPitch(harmony, 71, 0, 480));
+  EXPECT_FALSE(vocalSoundsPitch(harmony, 60, 0, 480)) << "an octave away is not a unison";
+
+  const test::StubHarmonyContext silent = harmonyWithVocalAt(0);
+  EXPECT_FALSE(vocalSoundsPitch(silent, 72, 0, 480));
 }
 
 TEST(AccompanimentCeilingTest, ReturnsTheTrackBoundWhileTheVocalRests) {
@@ -148,7 +163,7 @@ TEST(AccompanimentCeilingTest, ReturnsTheTrackBoundWhileTheVocalRests) {
   EXPECT_EQ(resolveVocalCeiling(silent, 0, 480, kGuitarRangeLow, kGuitarRangeHigh,
                                 VocalCeilingMargin::kGuitar),
             kGuitarRangeHigh);
-  EXPECT_EQ(resolveVocalCeiling(silent, 0, 480, 48, 84, VocalCeilingMargin::kChord), 84);
+  EXPECT_EQ(resolveVocalCeiling(silent, 0, 480, 48, 84, kMinorThirdMargin), 84);
 }
 
 TEST(AccompanimentCeilingTest, NeverLeavesTheTrackRange) {
@@ -167,9 +182,9 @@ TEST(AccompanimentCeilingTest, NeverLeavesTheTrackRange) {
 
   // The margin must not underflow past the low bound either.
   const test::StubHarmonyContext at_low = harmonyWithVocalAt(41);
-  EXPECT_EQ(resolveVocalCeiling(at_low, 0, 480, kGuitarRangeLow, kGuitarRangeHigh,
-                                VocalCeilingMargin::kChord),
-            kGuitarRangeLow);
+  EXPECT_EQ(
+      resolveVocalCeiling(at_low, 0, 480, kGuitarRangeLow, kGuitarRangeHigh, kMinorThirdMargin),
+      kGuitarRangeLow);
 }
 
 // ============================================================================

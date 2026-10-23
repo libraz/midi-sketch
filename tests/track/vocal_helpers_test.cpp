@@ -7,6 +7,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <map>
 
 #include "core/melody_templates.h"
@@ -14,6 +15,7 @@
 #include "core/note_source.h"
 #include "core/note_timeline_utils.h"
 #include "core/pitch_utils.h"
+#include "core/preset_data.h"
 #include "core/rhythm_sync_lead.h"
 #include "core/section_types.h"
 #include "core/timing_constants.h"
@@ -45,6 +47,92 @@ TEST(RegisterShiftTest, LaterChorusReceivesProgressiveLift) {
   EXPECT_EQ(getRegisterShift(SectionType::Chorus, params, 1), 5);
   EXPECT_EQ(getRegisterShift(SectionType::Chorus, params, 2), 7);
   EXPECT_EQ(getRegisterShift(SectionType::Chorus, params, 4), 9);
+}
+
+TEST(ConsecutiveSameNoteTest, HookSectionsKeepTheirOwnRepetitionWhateverTheStyle) {
+  // Choruses open on repeated notes, so the hook sections hold their own value
+  // even under a style that keeps the rest of the song from repeating.
+  StyleMelodyParams params;
+  for (float style_value :
+       {getVocalStylePresetData(VocalStylePreset::UltraVocaloid).consecutive_same_note_prob, 0.6f,
+        1.0f}) {
+    params.consecutive_same_note_prob = style_value;
+    EXPECT_FLOAT_EQ(getConsecutiveSameNoteProb(SectionType::Chorus, params), 0.75f);
+    EXPECT_FLOAT_EQ(getConsecutiveSameNoteProb(SectionType::B, params), 0.65f);
+    EXPECT_FLOAT_EQ(getConsecutiveSameNoteProb(SectionType::A, params), style_value);
+  }
+}
+
+// A legato eighth-note line over two bars, one breath between the bars.
+std::vector<NoteEvent> makeThinnableLine() {
+  std::vector<NoteEvent> notes;
+  for (int bar = 0; bar < 2; ++bar) {
+    for (int eighth = 0; eighth < 7; ++eighth) {
+      const Tick start = bar * TICKS_PER_BAR + eighth * TICK_EIGHTH;
+      notes.push_back(NoteEventTestHelper::create(start, TICK_EIGHTH,
+                                                  static_cast<uint8_t>(60 + eighth % 5), 90));
+    }
+  }
+  return notes;
+}
+
+TEST(ThinToDensityTest, ALowerDensityKeepsTheTuneWithFewerOnsets) {
+  const std::vector<NoteEvent> before = makeThinnableLine();
+  std::vector<NoteEvent> notes = before;
+  thinToDensity(notes, 60, 100, 0);
+
+  ASSERT_LT(notes.size(), before.size()) << "a 40% lower density must drop onsets";
+  EXPECT_GE(notes.size(), before.size() * 6 / 10);
+  std::map<Tick, uint8_t> written;
+  for (const auto& note : before) written[note.start_tick] = note.note;
+  for (const auto& note : notes) {
+    auto it = written.find(note.start_tick);
+    ASSERT_NE(it, written.end()) << "thinning must not move an onset";
+    EXPECT_EQ(note.note, it->second) << "thinning must not change a pitch";
+  }
+  // Downbeats, phrase starts and phrase ends are kept.
+  for (Tick kept : {Tick{0}, Tick{6 * TICK_EIGHTH}, Tick{TICKS_PER_BAR},
+                    Tick{TICKS_PER_BAR + 6 * TICK_EIGHTH}}) {
+    EXPECT_TRUE(std::any_of(notes.begin(), notes.end(),
+                            [kept](const NoteEvent& n) { return n.start_tick == kept; }))
+        << "tick " << kept;
+  }
+  // The line still sounds through every dropped onset.
+  for (size_t i = 0; i + 1 < notes.size(); ++i) {
+    if (notes[i + 1].start_tick % TICKS_PER_BAR == 0) continue;
+    EXPECT_EQ(notes[i].start_tick + notes[i].duration, notes[i + 1].start_tick) << "note " << i;
+  }
+}
+
+TEST(ThinToDensityTest, AnEqualOrHigherDensityLeavesThePhraseAlone) {
+  const std::vector<NoteEvent> before = makeThinnableLine();
+  for (uint8_t density : {uint8_t{100}, uint8_t{90}}) {
+    std::vector<NoteEvent> notes = before;
+    thinToDensity(notes, density, 90, 0);
+    ASSERT_EQ(notes.size(), before.size()) << "density " << static_cast<int>(density);
+  }
+}
+
+TEST(ThinToDensityTest, TheHookAChorusOpensOnIsNeverThinned) {
+  // An ochisabi chorus still opens on its hook; only the bars after it thin.
+  const std::vector<NoteEvent> before = makeThinnableLine();
+  std::vector<NoteEvent> notes = before;
+  thinToDensity(notes, 60, 100, TICKS_PER_BAR);
+
+  ASSERT_LT(notes.size(), before.size()) << "the bars past the hook must still thin";
+  size_t head_before = 0;
+  size_t head_after = 0;
+  for (const auto& note : before) head_before += note.start_tick < TICKS_PER_BAR ? 1 : 0;
+  for (const auto& note : notes) head_after += note.start_tick < TICKS_PER_BAR ? 1 : 0;
+  EXPECT_EQ(head_after, head_before);
+}
+
+TEST(ThinToDensityTest, RunNotesAreNeverDropped) {
+  std::vector<NoteEvent> notes = makeThinnableLine();
+  for (auto& note : notes) note.is_syllabic_subdivision = true;
+  const size_t before = notes.size();
+  thinToDensity(notes, 40, 100, 0);
+  EXPECT_EQ(notes.size(), before);
 }
 
 TEST(NonChordToneLegalityTest, SuspensionMayRemainAccentedAtBoundary) {
@@ -1182,7 +1270,7 @@ TEST(HookIntensityTest, MaximumEmphasisReachesTheNotes) {
   std::vector<NoteEvent> notes = makeHookWindow();
   const std::vector<NoteEvent> before = notes;
 
-  applyHookIntensity(notes, SectionType::Chorus, HookIntensity::Maximum, 0);
+  applyHookIntensity(notes, SectionType::Chorus, HookIntensity::Maximum, 0, 8);
 
   bool changed = false;
   for (size_t i = 0; i < notes.size(); ++i) {
@@ -1199,8 +1287,8 @@ TEST(HookIntensityTest, MaximumIsAtLeastAsStrongAsStrong) {
   std::vector<NoteEvent> strong = makeHookWindow();
   std::vector<NoteEvent> maximum = makeHookWindow();
 
-  applyHookIntensity(strong, SectionType::Chorus, HookIntensity::Strong, 0);
-  applyHookIntensity(maximum, SectionType::Chorus, HookIntensity::Maximum, 0);
+  applyHookIntensity(strong, SectionType::Chorus, HookIntensity::Strong, 0, 8);
+  applyHookIntensity(maximum, SectionType::Chorus, HookIntensity::Maximum, 0, 8);
 
   ASSERT_EQ(strong.size(), maximum.size());
   for (size_t i = 0; i < strong.size(); ++i) {
@@ -1209,20 +1297,68 @@ TEST(HookIntensityTest, MaximumIsAtLeastAsStrongAsStrong) {
   }
 }
 
-TEST(HookIntensityTest, MaximumReachesSectionsThatAreNotHookPoints) {
-  // Strong and above are the levels that emphasise every section rather than
-  // only the Chorus and Pre-chorus hook points.
-  std::vector<NoteEvent> notes = makeHookWindow();
-  const Tick before_duration = notes[0].duration;
+TEST(HookIntensityTest, NoRungEmphasisesAVerseOrBridgeHead) {
+  // Strong means every hook point, and the head of an A melody or a bridge is
+  // not one: emphasising it like the chorus head makes the chorus stand out less.
+  for (SectionType type : {SectionType::A, SectionType::Bridge}) {
+    for (HookIntensity intensity : {HookIntensity::Light, HookIntensity::Normal,
+                                    HookIntensity::Strong, HookIntensity::Maximum}) {
+      std::vector<NoteEvent> notes = makeHookWindow();
+      const std::vector<NoteEvent> before = notes;
+      applyHookIntensity(notes, type, intensity, 0, 8);
+      for (size_t i = 0; i < notes.size(); ++i) {
+        EXPECT_EQ(notes[i].duration, before[i].duration)
+            << "type " << static_cast<int>(type) << " intensity " << static_cast<int>(intensity);
+        EXPECT_EQ(notes[i].velocity, before[i].velocity)
+            << "type " << static_cast<int>(type) << " intensity " << static_cast<int>(intensity);
+      }
+    }
+  }
+}
 
-  applyHookIntensity(notes, SectionType::A, HookIntensity::Maximum, 0);
-  EXPECT_GT(notes[0].duration, before_duration);
+TEST(HookIntensityTest, EachRungAddsTheHookPointsItNames) {
+  // Light: the chorus start. Normal: also the chorus midpoint, where an
+  // eight-bar chorus restates its head. Strong: also the B start.
+  const Tick midpoint = 4 * TICKS_PER_BAR;
+  auto chorusWithMidpoint = [&]() {
+    std::vector<NoteEvent> notes = makeHookWindow();
+    notes.push_back(NoteEventTestHelper::create(midpoint, TICK_EIGHTH, 72, 90));
+    return notes;
+  };
+  auto emphasised = [](const NoteEvent& note) {
+    return note.duration > TICK_EIGHTH && note.velocity > 90;
+  };
+
+  std::vector<NoteEvent> light = chorusWithMidpoint();
+  applyHookIntensity(light, SectionType::Chorus, HookIntensity::Light, 0, 8);
+  EXPECT_TRUE(emphasised(light.front())) << "Light emphasises the chorus start";
+  EXPECT_FALSE(emphasised(light.back())) << "Light stops at the chorus start";
+
+  std::vector<NoteEvent> normal = chorusWithMidpoint();
+  applyHookIntensity(normal, SectionType::Chorus, HookIntensity::Normal, 0, 8);
+  EXPECT_TRUE(emphasised(normal.front()));
+  EXPECT_TRUE(emphasised(normal.back())) << "Normal emphasises the restated head too";
+
+  std::vector<NoteEvent> short_chorus = makeHookWindow();
+  short_chorus.push_back(NoteEventTestHelper::create(2 * TICKS_PER_BAR, TICK_EIGHTH, 72, 90));
+  applyHookIntensity(short_chorus, SectionType::Chorus, HookIntensity::Normal, 0, 4);
+  EXPECT_FALSE(emphasised(short_chorus.back()))
+      << "a four-bar chorus restates no head, so bar 2 is not a hook point";
+
+  for (HookIntensity intensity : {HookIntensity::Light, HookIntensity::Normal}) {
+    std::vector<NoteEvent> prechorus = makeHookWindow();
+    applyHookIntensity(prechorus, SectionType::B, intensity, 0, 8);
+    EXPECT_FALSE(emphasised(prechorus.front())) << "intensity " << static_cast<int>(intensity);
+  }
+  std::vector<NoteEvent> strong = makeHookWindow();
+  applyHookIntensity(strong, SectionType::B, HookIntensity::Strong, 0, 8);
+  EXPECT_TRUE(emphasised(strong.front())) << "Strong reaches the B start";
 }
 
 TEST(HookIntensityTest, OffLeavesTheNotesAlone) {
   std::vector<NoteEvent> notes = makeHookWindow();
   const std::vector<NoteEvent> before = notes;
-  applyHookIntensity(notes, SectionType::Chorus, HookIntensity::Off, 0);
+  applyHookIntensity(notes, SectionType::Chorus, HookIntensity::Off, 0, 8);
   for (size_t i = 0; i < notes.size(); ++i) {
     EXPECT_EQ(notes[i].duration, before[i].duration);
     EXPECT_EQ(notes[i].velocity, before[i].velocity);

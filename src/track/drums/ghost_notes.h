@@ -57,6 +57,9 @@ GhostDensityLevel adjustGhostDensityForBPM(GhostDensityLevel level, uint16_t bpm
 float getGhostDensity(Mood mood, SectionType section, BackingDensity backing_density, uint16_t bpm);
 
 /// @brief Get ghost note velocity multiplier based on section and position.
+///
+/// The multiplier scales the beat's section velocity, so the sounding ghost
+/// follows the section's dynamics and always sits below the backbeat.
 /// @param section Current section type
 /// @param beat_position Position within beat (0-3 for 16th notes)
 /// @param is_after_snare true if this follows a snare hit

@@ -63,6 +63,26 @@ std::vector<NoteEvent> shiftTiming(const std::vector<NoteEvent>& notes, const IC
  */
 void foldPitchesIntoRange(std::vector<NoteEvent>& notes, uint8_t low, uint8_t high);
 
+/// Bars a chorus opens on its hook: restated at the midpoint, never thinned.
+constexpr uint8_t kChorusHookBars = 2;
+
+/**
+ * @brief Thin a restated phrase to a section's lower density.
+ *
+ * A later section asking for fewer notes than the one its melody was written
+ * for (a quiet ochisabi chorus) sings the same tune with fewer onsets: the
+ * metrically weakest notes go first and the note before each one holds through
+ * it, so every pitch that remains is one the phrase already sang. Phrase starts
+ * and ends, bar downbeats and run notes (is_syllabic_subdivision) are kept.
+ *
+ * @param notes Phrase notes, sorted by start tick (modified in place)
+ * @param density Effective density percent of the restating section
+ * @param written_density Effective density percent the phrase was written for
+ * @param keep_before Notes starting before this tick are kept (a chorus's hook)
+ */
+void thinToDensity(std::vector<NoteEvent>& notes, uint8_t density, uint8_t written_density,
+                   Tick keep_before);
+
 /**
  * @brief Convert notes to relative timing (subtract section start).
  * @param notes Source notes with absolute timing
@@ -118,8 +138,8 @@ float getSubdivisionRatio(SectionType type, const StyleMelodyParams& params);
 /**
  * @brief Get consecutive same note probability for section type.
  *
- * Controls how often the same pitch can repeat consecutively.
- * Lower values in Chorus/B sections reduce monotonous "ta-ta-ta" patterns.
+ * Controls how often the same pitch can repeat consecutively. Chorus and B use
+ * 0.75 and 0.65 whatever the style's value; every other section uses the style's.
  *
  * @param type Section type
  * @param params Melody parameters
@@ -142,18 +162,21 @@ bool sectionHasVocals(SectionType type);
 void applyVelocityBalance(std::vector<NoteEvent>& notes, float scale);
 
 /**
- * @brief Apply hook intensity at section start.
+ * @brief Apply hook intensity at the section's hook points.
  *
- * Emphasizes "money notes" at chorus/B-section starts with
- * longer duration and higher velocity.
+ * Emphasizes the "money notes" with longer duration and higher velocity, at the
+ * points the intensity's rung names: Light the chorus start, Normal also the
+ * chorus midpoint where an eight-bar-or-longer chorus restates its head, Strong
+ * and Maximum also the B-section start. A/Bridge heads are never hook points.
  *
  * @param notes Notes to modify (in-place)
  * @param section_type Current section type
  * @param intensity Hook intensity level
  * @param section_start Section start tick
+ * @param section_bars Section length in bars
  */
 void applyHookIntensity(std::vector<NoteEvent>& notes, SectionType section_type,
-                        HookIntensity intensity, Tick section_start);
+                        HookIntensity intensity, Tick section_start, uint8_t section_bars);
 
 /**
  * @brief The pitch a later chorus's head lift raises a note to.

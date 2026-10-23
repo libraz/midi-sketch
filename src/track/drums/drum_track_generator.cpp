@@ -294,7 +294,7 @@ DrumSectionContext computeSectionContext(const Section& section, const DrumGener
       break;
     case SectionType::Chorus:
       ctx.density_mult = 1.00f;
-      ctx.add_crash_accent = true;
+      ctx.add_crash_accent = !isOchisabiSection(section);
       break;
     case SectionType::Bridge:
       ctx.density_mult = 0.6f;
@@ -372,6 +372,11 @@ DrumSectionContext computeSectionContext(const Section& section, const DrumGener
 
 namespace {
 
+/// A chorus that arrives at full weight; a quiet chorus is not led into by a fill.
+bool isFullChorus(const Section& section) {
+  return section.type == SectionType::Chorus && !isOchisabiSection(section);
+}
+
 /// Counts the bar loop writes regardless of the section context, used to
 /// estimate a section's event density.
 constexpr float kSteadyKickPerBar = 3.0f;
@@ -438,7 +443,7 @@ float estimateEventsPerBar(const DrumSectionContext& ctx, const std::vector<Sect
     // handing it to a fill.
     total -= steady / 4.0f * static_cast<float>(kPreChorusBreakBeats);
   } else if (index + 1 < sections.size() &&
-             (sections[index + 1].fill_before || sections[index + 1].type == SectionType::Chorus)) {
+             (sections[index + 1].fill_before || isFullChorus(sections[index + 1]))) {
     const float filled_beats = 4.0f - static_cast<float>(getFillStartBeat(section.energy));
     total += (kFillEventsPerBeat - steady / 4.0f) * filled_beats;
   }
@@ -608,6 +613,7 @@ void generateDrumsTrackImpl(MidiTrack& track, const Song& song, const DrumGenera
         } else if (ctx.style != DrumStyle::Sparse) {
           add_crash = (section.type == SectionType::Chorus);
         }
+        if (isOchisabiSection(section)) add_crash = false;
         if (add_crash) {
           uint8_t crash_vel = calculateVelocity(section.type, 0, params.mood);
           addCrashIfAbsent(track, grid.resolve(bar_start), EIGHTH, crash_vel);
@@ -665,29 +671,27 @@ void generateDrumsTrackImpl(MidiTrack& track, const Song& song, const DrumGenera
         }
       }
 
-      // MelodyDriven owns the kick pattern whenever vocal material is present;
-      // otherwise its phrase-aware kicks and the base pattern both emit the
-      // same strong beats. RhythmSync remains additive because its callback
-      // only contributes supporting syncopations around a stable anchor.
+      // The style's kick pattern is always written. A vocal-driven callback only
+      // adds supporting kicks around it, and a style whose identity is its kick
+      // grid (four on the floor, sparse half-time) takes none under MelodyDriven.
       // An intro that turns the kick off turns it off for every path that can
       // place one, the vocal-driven callbacks included.
       const bool intro_kick_disabled =
           (section.type == SectionType::Intro && !blueprint.intro_kick_enabled);
+      const bool style_owns_kick_grid =
+          params.paradigm == GenerationParadigm::MelodyDriven &&
+          (ctx.style == DrumStyle::FourOnFloor || ctx.style == DrumStyle::Sparse);
 
-      bool melody_driven_kicks_generated = false;
-      if (vocal_sync_callback && !intro_kick_disabled) {
+      if (vocal_sync_callback && !intro_kick_disabled && !style_owns_kick_grid) {
         uint8_t kick_velocity = calculateVelocity(section.type, 0, params.mood);
         const size_t first_callback_note = track.notes().size();
-        const bool callback_generated_kicks =
-            vocal_sync_callback(track, bar_start, bar_end, section, kick_velocity, rng);
+        vocal_sync_callback(track, bar_start, bar_end, section, kick_velocity, rng);
         for (size_t note_idx = first_callback_note; note_idx < track.notes().size(); ++note_idx) {
           NoteEvent& note = track.notes()[note_idx];
           if (note.note == BD) {
             note.start_tick = grid.resolve(note.start_tick);
           }
         }
-        melody_driven_kicks_generated =
-            params.paradigm == GenerationParadigm::MelodyDriven && callback_generated_kicks;
       }
 
       const DrumRole drum_role = section.getEffectiveDrumRole();
@@ -725,8 +729,10 @@ void generateDrumsTrackImpl(MidiTrack& track, const Song& song, const DrumGenera
         bool next_wants_fill = false;
         SectionType next_section = section.type;
         SectionEnergy next_energy = section.energy;
+        bool next_is_full_chorus = false;
         if (sec_idx + 1 < all_sections.size()) {
           next_section = all_sections[sec_idx + 1].type;
+          next_is_full_chorus = isFullChorus(all_sections[sec_idx + 1]);
           next_wants_fill = all_sections[sec_idx + 1].fill_before;
           next_energy = all_sections[sec_idx + 1].energy;
         }
@@ -737,8 +743,7 @@ void generateDrumsTrackImpl(MidiTrack& track, const Song& song, const DrumGenera
         // groove and gives its final beat away instead, so it writes no fill.
         uint8_t fill_start_beat = getFillStartBeat(section.energy);
         bool should_fill = is_section_last_bar && !is_last_section && beat >= fill_start_beat &&
-                           (next_wants_fill || next_section == SectionType::Chorus) &&
-                           !is_break_bar;
+                           (next_wants_fill || next_is_full_chorus) && !is_break_bar;
 
         // Common beat context (shared across all beat processors)
         BeatContext beat_ctx{beat_tick,  beat, velocity,     section.type, params.mood,
@@ -759,7 +764,7 @@ void generateDrumsTrackImpl(MidiTrack& track, const Song& song, const DrumGenera
 
         // Kick drum
         // Check intro_kick_enabled from blueprint
-        if (!intro_kick_disabled && !melody_driven_kicks_generated) {
+        if (!intro_kick_disabled) {
           float kick_prob = getDrumRoleKickProbability(section.getEffectiveDrumRole());
           KickBeatParams kick_params{kick, kick_prob,
                                      params.humanize ? params.humanize_timing : 0.0f};
@@ -968,38 +973,19 @@ VocalSyncCallback createMelodyDrivenCallback(const VocalAnalysis& vocal_analysis
     // 4 notes per bar is considered "normal", more = dense, fewer = sparse
     float density_factor = std::min(1.0f, static_cast<float>(note_count) / 6.0f);
 
-    // MelodyDriven kick pattern: standard positions with density-adjusted probability
-    // Higher vocal density = higher kick density for support
+    // Supporting kicks only: the style's pattern owns the beats, the vocal's
+    // phrase density decides how many off-beat pushes join it.
+    if (density_factor < 0.5f) return note_count > 0;
     const Tick kick_positions[] = {
-        0,                                       // Beat 1 (always)
-        TICKS_PER_BEAT * 2,                      // Beat 3 (always)
-        TICKS_PER_BEAT,                          // Beat 2 (density-dependent)
-        TICKS_PER_BEAT * 3,                      // Beat 4 (density-dependent)
-        TICKS_PER_BEAT / 2,                      // Beat 1.5 (high density only)
-        TICKS_PER_BEAT * 2 + TICKS_PER_BEAT / 2  // Beat 3.5 (high density only)
+        TICKS_PER_BEAT / 2,                      // Beat 1.5
+        TICKS_PER_BEAT * 2 + TICKS_PER_BEAT / 2  // Beat 3.5
     };
 
-    for (size_t i = 0; i < 6; ++i) {
-      Tick kick_tick = bar_start + kick_positions[i];
+    for (Tick position : kick_positions) {
+      Tick kick_tick = bar_start + position;
       if (kick_tick >= bar_end) continue;
-
-      // Determine kick probability based on position and density
-      float pos_prob = 1.0f;
-      if (i < 2) {
-        // Beats 1 and 3: always play (standard backbeat)
-        pos_prob = kick_prob;
-      } else if (i < 4) {
-        // Beats 2 and 4: play when density is moderate or higher
-        pos_prob = kick_prob * density_factor * 0.7f;
-      } else {
-        // Off-beats: only play when density is high
-        pos_prob = kick_prob * density_factor * 0.4f;
-        if (density_factor < 0.5f) continue;  // Skip if sparse
-      }
-
-      if (rng_util::rollProbability(rng, pos_prob)) {
-        uint8_t kick_vel = (i < 2) ? velocity : static_cast<uint8_t>(velocity * 0.85f);
-        addDrumNote(track, kick_tick, EIGHTH, BD, kick_vel);
+      if (rng_util::rollProbability(rng, kick_prob * density_factor * 0.4f)) {
+        addDrumNote(track, kick_tick, EIGHTH, BD, static_cast<uint8_t>(velocity * 0.85f));
       }
     }
 

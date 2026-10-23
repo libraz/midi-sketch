@@ -23,6 +23,7 @@
 #include "core/midi_track.h"
 #include "core/note_creator.h"
 #include "core/preset_data.h"
+#include "core/production_blueprint.h"
 #include "core/timing_constants.h"
 #include "core/track_pitch_editor.h"
 #include "core/types.h"
@@ -151,58 +152,6 @@ TEST(TrackPitchEditorTest, RemovingANoteClearsItFromTheRegistry) {
 // Whole-song scan
 // ============================================================================
 
-struct UntracedMove {
-  std::string track;
-  Tick tick;
-  int original_pitch;
-  int final_pitch;
-};
-
-// Scan every note of the song and collect the ones whose pitch differs from the
-// pitch they were created with while carrying no transform history at all.
-std::vector<UntracedMove> findUntracedMoves(const Song& song, const std::vector<TrackRole>& roles) {
-  std::vector<UntracedMove> out;
-#ifdef MIDISKETCH_NOTE_PROVENANCE
-  const std::pair<const MidiTrack*, const char*> all[] = {
-      {&song.vocal(), "Vocal"},       {&song.motif(), "Motif"}, {&song.aux(), "Aux"},
-      {&song.bass(), "Bass"},         {&song.chord(), "Chord"}, {&song.guitar(), "Guitar"},
-      {&song.arpeggio(), "Arpeggio"},
-  };
-  const TrackRole role_of[] = {TrackRole::Vocal,   TrackRole::Motif, TrackRole::Aux,
-                               TrackRole::Bass,    TrackRole::Chord, TrackRole::Guitar,
-                               TrackRole::Arpeggio};
-
-  for (size_t i = 0; i < std::size(all); ++i) {
-    bool wanted = false;
-    for (TrackRole role : roles) {
-      if (role == role_of[i]) wanted = true;
-    }
-    if (!wanted) continue;
-
-    for (const auto& note : all[i].first->notes()) {
-      if (!note.hasValidProvenance()) continue;
-      if (note.prov_original_pitch == 0) continue;
-      if (note.prov_original_pitch == note.note) continue;
-      if (note.hasTransformHistory()) continue;
-      out.push_back({all[i].second, note.start_tick, note.prov_original_pitch, note.note});
-    }
-  }
-#else
-  (void)song;
-  (void)roles;
-#endif
-  return out;
-}
-
-std::string describeUntracedMoves(const std::vector<UntracedMove>& moves) {
-  std::string out;
-  for (const auto& m : moves) {
-    out += m.track + " tick " + std::to_string(m.tick) + ": " + std::to_string(m.original_pitch) +
-           " -> " + std::to_string(m.final_pitch) + " with no transform history\n";
-  }
-  return out;
-}
-
 class PitchWritebackTest : public ::testing::Test {
  protected:
   void generateSong(uint32_t seed, uint8_t blueprint) {
@@ -227,6 +176,60 @@ class PitchWritebackTest : public ::testing::Test {
   MidiSketch sketch_;
 };
 
+// Not verified in the shipping build: that every pitch move on a finished line
+// leaves a transform record. The created pitch and the record are both
+// provenance fields, absent from that build.
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+
+struct UntracedMove {
+  std::string track;
+  Tick tick;
+  int original_pitch;
+  int final_pitch;
+};
+
+// Scan every note of the song and collect the ones whose pitch differs from the
+// pitch they were created with while carrying no transform history at all.
+std::vector<UntracedMove> findUntracedMoves(const Song& song, const std::vector<TrackRole>& roles,
+                                            size_t& moved_notes) {
+  std::vector<UntracedMove> out;
+  const std::pair<const MidiTrack*, const char*> all[] = {
+      {&song.vocal(), "Vocal"},       {&song.motif(), "Motif"}, {&song.aux(), "Aux"},
+      {&song.bass(), "Bass"},         {&song.chord(), "Chord"}, {&song.guitar(), "Guitar"},
+      {&song.arpeggio(), "Arpeggio"},
+  };
+  const TrackRole role_of[] = {TrackRole::Vocal,   TrackRole::Motif, TrackRole::Aux,
+                               TrackRole::Bass,    TrackRole::Chord, TrackRole::Guitar,
+                               TrackRole::Arpeggio};
+
+  for (size_t i = 0; i < std::size(all); ++i) {
+    bool wanted = false;
+    for (TrackRole role : roles) {
+      if (role == role_of[i]) wanted = true;
+    }
+    if (!wanted) continue;
+
+    for (const auto& note : all[i].first->notes()) {
+      if (!note.hasValidProvenance()) continue;
+      if (note.prov_original_pitch == 0) continue;
+      if (note.prov_original_pitch == note.note) continue;
+      ++moved_notes;
+      if (note.hasTransformHistory()) continue;
+      out.push_back({all[i].second, note.start_tick, note.prov_original_pitch, note.note});
+    }
+  }
+  return out;
+}
+
+std::string describeUntracedMoves(const std::vector<UntracedMove>& moves) {
+  std::string out;
+  for (const auto& m : moves) {
+    out += m.track + " tick " + std::to_string(m.tick) + ": " + std::to_string(m.original_pitch) +
+           " -> " + std::to_string(m.final_pitch) + " with no transform history\n";
+  }
+  return out;
+}
+
 // Bass microvariation, the guitar/bass separation pass, the chord track's fold
 // under the vocal and the phrase-pair cadence all move pitches on finished or
 // nearly finished lines. Every such move has to leave a trace, otherwise the
@@ -238,26 +241,28 @@ class PitchWritebackTest : public ::testing::Test {
 // the check look like a guarantee it is not making.
 TEST_F(PitchWritebackTest, PitchMovesLeaveATrace) {
   constexpr uint32_t kSeeds[] = {12345, 777, 20260903, 424242, 31337};
-  constexpr uint8_t kBlueprints[] = {0, 1, 2, 3, 4, 9};
   const std::vector<TrackRole> kRoles = {TrackRole::Vocal,   TrackRole::Motif, TrackRole::Aux,
                                          TrackRole::Bass,    TrackRole::Chord, TrackRole::Guitar,
                                          TrackRole::Arpeggio};
 
   size_t songs_scanned = 0;
-  for (uint8_t blueprint : kBlueprints) {
+  size_t moved_notes = 0;
+  for (uint8_t blueprint = 0; blueprint < getProductionBlueprintCount(); ++blueprint) {
     for (uint32_t seed : kSeeds) {
       generateSong(seed, blueprint);
       ASSERT_FALSE(sketch_.getSong().bass().empty())
           << "blueprint=" << static_cast<int>(blueprint) << " seed=" << seed;
-      auto moves = findUntracedMoves(sketch_.getSong(), kRoles);
+      auto moves = findUntracedMoves(sketch_.getSong(), kRoles, moved_notes);
       EXPECT_TRUE(moves.empty()) << "blueprint=" << static_cast<int>(blueprint) << " seed=" << seed
                                  << "\n"
                                  << describeUntracedMoves(moves);
       ++songs_scanned;
     }
   }
-  EXPECT_EQ(songs_scanned, std::size(kSeeds) * std::size(kBlueprints));
+  EXPECT_EQ(songs_scanned, std::size(kSeeds) * getProductionBlueprintCount());
+  ASSERT_GT(moved_notes, 0u) << "the scan must have examined moved notes to vouch for them";
 }
+#endif  // MIDISKETCH_NOTE_PROVENANCE
 
 // ============================================================================
 // Where a moved note came from

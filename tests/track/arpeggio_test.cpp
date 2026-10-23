@@ -10,18 +10,24 @@
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
+#include <map>
 #include <random>
 #include <set>
 #include <sstream>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include "core/chord.h"
 #include "core/chord_utils.h"
 #include "core/generator.h"
 #include "core/harmonic_rhythm.h"
 #include "core/song.h"
+#include "core/swing_quantize.h"
 #include "core/types.h"
 #include "test_support/generator_test_fixture.h"
+#include "track/drums.h"
+#include "track/drums/beat_processors.h"
 
 namespace midisketch {
 
@@ -112,6 +118,53 @@ TEST_F(ArpeggioTest, RhythmSyncArpeggioAvoidsOverlappingDuplicatePitches) {
           << notes[i].start_tick << " and " << notes[j].start_tick;
     }
   }
+}
+
+// Arpeggio grid and gate. An onset is read at the nearest straight 16th, so
+// swing and time feel do not move it to another slot; a grid with over a tenth
+// of its onsets on the odd 16ths is a 16th grid.
+std::pair<Tick, double> arpeggioGridAndGate(const MidiTrack& track) {
+  constexpr Tick kSixteenth = TICKS_PER_BEAT / 4;
+  std::set<Tick> onsets;
+  for (const auto& note : track.notes()) onsets.insert(note.start_tick);
+  size_t odd_sixteenths = 0;
+  for (Tick onset : onsets) {
+    const Tick nominal = (onset + kSixteenth / 2) / kSixteenth;
+    odd_sixteenths += nominal % 2 == 1 ? 1 : 0;
+  }
+  const Tick grid = odd_sixteenths * 10 > onsets.size() ? kSixteenth : 2 * kSixteenth;
+  std::vector<Tick> durations;
+  for (const auto& note : track.notes()) durations.push_back(note.duration);
+  std::sort(durations.begin(), durations.end());
+  const double gate =
+      durations.empty() ? 0 : static_cast<double>(durations[durations.size() / 2]) / grid;
+  return {grid, gate};
+}
+
+TEST_F(ArpeggioTest, RhythmSyncKeepsTheUsersSpeedAndGate) {
+  params_.blueprint_id = 1;  // RhythmLock
+  params_.mood = Mood::StraightPop;
+  params_.seed = 99;
+  params_.arpeggio.speed = ArpeggioSpeed::Eighth;
+  params_.arpeggio.gate = 0.5f;
+
+  Generator gen;
+  gen.generate(params_);
+  ASSERT_EQ(gen.getParams().paradigm, GenerationParadigm::RhythmSync);
+  ASSERT_GT(gen.getSong().arpeggio().notes().size(), 8u);
+  const auto [grid, gate] = arpeggioGridAndGate(gen.getSong().arpeggio());
+  EXPECT_EQ(grid, TICKS_PER_BEAT / 2) << "explicit eighths were replaced";
+  EXPECT_LT(gate, 0.7) << "explicit gate 0.5 was replaced";
+
+  // Left on Auto, RhythmSync still takes its 16th grid and held gate.
+  params_.arpeggio.speed = ArpeggioSpeed::Auto;
+  params_.arpeggio.gate = -1.0f;
+  Generator auto_gen;
+  auto_gen.generate(params_);
+  ASSERT_GT(auto_gen.getSong().arpeggio().notes().size(), 8u);
+  const auto [auto_grid, auto_gate] = arpeggioGridAndGate(auto_gen.getSong().arpeggio());
+  EXPECT_EQ(auto_grid, TICKS_PER_BEAT / 4);
+  EXPECT_GT(auto_gate, 0.8);
 }
 
 TEST_F(ArpeggioTest, ArpeggioHasNotes) {
@@ -1053,20 +1106,31 @@ TEST_F(ArpeggioTest, IdolHyperRhythmSyncKeepsBlueprintSwing) {
   }
   ASSERT_NE(swung_chorus, nullptr);
 
+  // Every onset sits where the shared swing grid puts a 16th at the section's
+  // effective swing, and some of them are off the straight grid.
+  const float section_swing =
+      calculateSwingAmount(swung_chorus->type, 0, swung_chorus->bars, swung_chorus->swing_amount);
+  const float swing = drums::getEffectiveDrumSwing(
+      drums::resolveSectionDrumGroove(params_.mood, GenerationParadigm::RhythmSync, section_swing),
+      section_swing);
+  ASSERT_GT(swing, 0.0f);
   constexpr Tick kSixteenth = TICKS_PER_BEAT / 4;
-  constexpr Tick kExpectedSwing = 60;  // 0.5 * 16th-note duration
+  std::set<Tick> grid_offsets;
+  for (Tick k = 0; k < 4; ++k) {
+    grid_offsets.insert(quantizeToSwingGrid(k * kSixteenth, swing, SwingGridResolution::Sixteenth));
+  }
   bool found_swung_sixteenth = false;
+  size_t checked = 0;
   for (const auto& note : track.notes()) {
     if (note.start_tick < swung_chorus->start_tick || note.start_tick >= swung_chorus->endTick()) {
       continue;
     }
-    Tick pos = (note.start_tick - swung_chorus->start_tick) % kSixteenth;
-    if (pos == kExpectedSwing) {
-      found_swung_sixteenth = true;
-      break;
-    }
+    ++checked;
+    const Tick offset = note.start_tick % TICKS_PER_BEAT;
+    EXPECT_EQ(grid_offsets.count(offset), 1u) << "onset off the swing grid at " << note.start_tick;
+    found_swung_sixteenth = found_swung_sixteenth || offset % kSixteenth != 0;
   }
-
+  ASSERT_GT(checked, 0u);
   EXPECT_TRUE(found_swung_sixteenth)
       << "IdolHyper RhythmSync arpeggio should keep section swing_amount";
 }
@@ -1185,6 +1249,7 @@ TEST_F(ArpeggioTest, HighDensitySwitchesTo16thNotes) {
   params_.mood = Mood::StraightPop;                // Default style uses Sixteenth
   params_.arpeggio.speed = ArpeggioSpeed::Eighth;  // Force Eighth, but user_set_speed will be true
   params_.structure = StructurePattern::FullPop;
+  params_.blueprint_id = 0;  // Traditional: form-built choruses take the 100% chorus density
   params_.seed = 42;
 
   // Note: Since we're forcing Eighth via params, user_set_speed becomes true
@@ -1224,11 +1289,7 @@ TEST_F(ArpeggioTest, HighDensitySwitchesTo16thNotes) {
     }
   }
 
-  // Verify we tested at least one high-density section
-  // (If no high-density sections exist, the test is inconclusive but passes)
-  if (!found_high_density) {
-    SUCCEED() << "No high-density sections found in arrangement; test skipped";
-  }
+  ASSERT_TRUE(found_high_density) << "FullPop on Traditional must have a section above 90%";
 }
 
 TEST_F(ArpeggioTest, PeakLevelMaxIncreasesOctaveRange) {

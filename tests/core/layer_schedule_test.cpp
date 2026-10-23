@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "core/generator.h"
+#include "core/production_blueprint.h"
 #include "core/section_types.h"
 #include "core/structure.h"
 #include "core/timing_constants.h"
@@ -276,9 +277,17 @@ TEST(GenerateDefaultLayerEventsTest, IntroScheduleMatchesStaggeredEntryConfig) {
     const auto config = StaggeredEntryConfig::defaultIntro(bars);
 
     ASSERT_EQ(events.size(), config.entry_count);
+    TrackMask named = TrackMask::None;
     for (size_t idx = 0; idx < events.size(); ++idx) {
       EXPECT_EQ(events[idx].bar_offset, config.entries[idx].entry_bar);
-      EXPECT_EQ(events[idx].tracks_add_mask, config.entries[idx].track);
+      named = named | config.entries[idx].track;
+      if (idx + 1 < events.size()) {
+        EXPECT_EQ(events[idx].tracks_add_mask, config.entries[idx].track);
+      } else {
+        // The last entry also brings in every masked track the config never names.
+        EXPECT_EQ(events[idx].tracks_add_mask,
+                  config.entries[idx].track | (section.track_mask & ~named & ~TrackMask::Vocal));
+      }
     }
   }
 }
@@ -506,6 +515,60 @@ TEST(ApplyDefaultLayerScheduleTest, ShortSectionsUnaffected) {
       EXPECT_TRUE(section.layer_events.empty()) << "Chorus should not have layer events";
     }
   }
+}
+
+TEST(ApplyDefaultLayerScheduleTest, DefaultScheduleNeverSilencesAMaskedTrackForAWholeSection) {
+  // Every instrument the section's mask enables plays in some bar of it; the
+  // default only staggers entries and winds an outro down.
+  const TrackMask instruments = TrackMask::Chord | TrackMask::Bass | TrackMask::Motif |
+                                TrackMask::Arpeggio | TrackMask::Aux | TrackMask::Drums |
+                                TrackMask::Guitar;
+  size_t scheduled = 0;
+  for (StructurePattern pattern :
+       {StructurePattern::FullPop, StructurePattern::Ballad, StructurePattern::ExtendedFull}) {
+    auto sections = buildStructure(pattern);
+    applyDefaultLayerSchedule(sections);
+    for (const auto& section : sections) {
+      if (section.layer_events.empty()) continue;
+      ++scheduled;
+      TrackMask heard = TrackMask::None;
+      for (uint8_t bar = 0; bar < section.bars; ++bar)
+        heard = heard | section.activeTracksAtBar(bar);
+      EXPECT_EQ(heard & instruments & section.track_mask, instruments & section.track_mask)
+          << section.name << " silences a masked instrument for the whole section";
+    }
+  }
+  ASSERT_GT(scheduled, 0u);
+
+  auto sections = buildStructure(StructurePattern::FullPop);
+  applyDefaultLayerSchedule(sections);
+  ASSERT_EQ(sections.front().type, SectionType::Intro);
+  ASSERT_FALSE(sections.front().layer_events.empty());
+  EXPECT_TRUE(
+      hasTrack(sections.front().activeTracksAtBar(sections.front().bars - 1), TrackMask::Guitar))
+      << "A Traditional intro must be able to bring in the guitar";
+}
+
+TEST(ApplyDefaultLayerScheduleTest, BlueprintInterludeKeepsItsMask) {
+  // IdolKawaii's cute break asks for Chord, Vocal and Aux; a default interlude
+  // schedule that starts from Drums|Bass|Chord would delete two of them.
+  const auto& blueprint = getProductionBlueprint(6);
+  auto sections = buildStructureFromBlueprint(blueprint);
+  applyDefaultLayerSchedule(sections);
+
+  size_t interludes = 0;
+  for (const auto& section : sections) {
+    if (section.type != SectionType::Interlude) continue;
+    ++interludes;
+    ASSERT_NE(section.track_mask, TrackMask::All);
+    for (uint8_t bar = 0; bar < section.bars; ++bar) {
+      const TrackMask active = section.activeTracksAtBar(bar);
+      EXPECT_EQ(active & section.track_mask, section.track_mask) << "bar " << int(bar);
+    }
+    EXPECT_TRUE(hasTrack(section.track_mask, TrackMask::Aux));
+    EXPECT_TRUE(hasTrack(section.track_mask, TrackMask::Vocal));
+  }
+  ASSERT_GT(interludes, 0u);
 }
 
 // ============================================================================

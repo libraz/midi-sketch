@@ -16,6 +16,7 @@
 #include "core/pitch_utils.h"
 #include "core/timing_constants.h"
 #include "core/velocity.h"
+#include "track/accompaniment_ceiling.h"
 #include "track/chord/chord_voicing_choice.h"
 
 namespace midisketch {
@@ -39,6 +40,25 @@ TimelineChord claimChord(IHarmonyContext& harmony, Tick start, Tick end, ChordEx
 
 namespace {
 
+/// @brief Move a voice off the vocal's pitch to the same tone in another octave.
+///
+/// Dropping a voice that would double the lead loses the chord tone it carried;
+/// the same pitch class an octave under the lead (or over it, inside the ceiling)
+/// keeps the tone and clears the lead. A voice with no such octave is returned
+/// unchanged and refused downstream.
+uint8_t clearOfVocal(const IHarmonyContext& harmony, uint8_t pitch, Tick start, Tick duration,
+                     uint8_t high) {
+  if (!vocalSoundsPitch(harmony, pitch, start, start + duration)) return pitch;
+  for (int shift : {-12, -24, 12}) {
+    const int moved = static_cast<int>(pitch) + shift;
+    if (moved < CHORD_LOW || moved > high) continue;
+    if (!vocalSoundsPitch(harmony, static_cast<uint8_t>(moved), start, start + duration)) {
+      return static_cast<uint8_t>(moved);
+    }
+  }
+  return pitch;
+}
+
 /// @brief Add a chord note and return the created note for dedup tracking.
 ///
 /// Uses PreferChordTones preference to find safe alternatives when collision detected.
@@ -61,7 +81,7 @@ std::optional<NoteEvent> addSafeChordNoteAndReturn(MidiTrack& track, IHarmonyCon
   NoteOptions opts;
   opts.start = start;
   opts.duration = duration;
-  opts.desired_pitch = pitch;
+  opts.desired_pitch = clearOfVocal(harmony, pitch, start, duration, effective_high);
   opts.velocity = velocity;
   opts.role = TrackRole::Chord;
   opts.preference = PitchPreference::PreferChordTones;
@@ -74,6 +94,13 @@ std::optional<NoteEvent> addSafeChordNoteAndReturn(MidiTrack& track, IHarmonyCon
   opts.register_to_harmony = false;
   auto result = createNote(harmony, opts);
   if (!result) return std::nullopt;
+
+  // A unison is consonant, so resolution can settle on the vocal's own pitch;
+  // the chord must clear the lead instead of doubling it.
+  if (vocalSoundsPitch(harmony, result->note, result->start_tick,
+                       result->start_tick + result->duration)) {
+    return std::nullopt;
+  }
 
   // Collision resolution can return a different pitch from the one asked for,
   // so the repeat and cluster checks have to see the pitch that will sound.
@@ -109,6 +136,11 @@ std::optional<NoteEvent> addCheckedChordNote(MidiTrack& track, IHarmonyContext& 
   opts.register_to_harmony = false;
   auto result = createNote(harmony, opts);
   if (!result) return std::nullopt;
+
+  if (vocalSoundsPitch(harmony, result->note, result->start_tick,
+                       result->start_tick + result->duration)) {
+    return std::nullopt;
+  }
 
   if (result->start_tick == state.current_tick &&
       (state.hasPitch(result->note) || state.wouldCluster(result->note) ||
@@ -155,6 +187,7 @@ void addChordNoteWithState(MidiTrack& track, IHarmonyContext& harmony, Tick star
                            uint8_t pitch, uint8_t velocity, ChordVoicingState& state,
                            uint8_t vocal_ceiling) {
   uint8_t effective_high = getEffectiveChordHigh(vocal_ceiling);
+  pitch = clearOfVocal(harmony, pitch, start, duration, effective_high);
 
   // Reset state if we're at a new tick
   if (start != state.current_tick) {
@@ -175,7 +208,8 @@ void addChordNoteWithState(MidiTrack& track, IHarmonyContext& harmony, Tick star
 
   // 1. Try normal safe check first
   if (pitch <= effective_high &&
-      harmony.isConsonantWithOtherTracks(pitch, start, duration, TrackRole::Chord)) {
+      harmony.isConsonantWithOtherTracks(pitch, start, duration, TrackRole::Chord) &&
+      !vocalSoundsPitch(harmony, pitch, start, start + duration)) {
     auto result = addSafeChordNoteAndReturn(track, harmony, start, duration, pitch, velocity,
                                             vocal_ceiling, &state);
     if (result && !state.hasPitch(result->note)) {
@@ -202,6 +236,8 @@ void addChordNoteWithState(MidiTrack& track, IHarmonyContext& harmony, Tick star
     if (sounding < CHORD_LOW || sounding > effective_high) continue;
     // Skip if already added at this tick
     if (state.hasPitch(sounding)) continue;
+    // The tone being doubled must belong to an accompanying track, not the lead.
+    if (vocalSoundsPitch(harmony, sounding, start, start + duration)) continue;
 
     // Prefer pitches closer to the desired pitch
     int dist = std::abs(static_cast<int>(sounding) - static_cast<int>(pitch));
@@ -370,8 +406,8 @@ void ensureMinVoicesAtTick(MidiTrack& track, IHarmonyContext& harmony, Tick tick
     }
   }
 
-  // Final fallback: if still need at least 2 voices, add chord tones without collision check.
-  // Doubling another track's pitch is acceptable to maintain functional harmony.
+  // Final fallback: if still need at least 2 voices, add chord tones that are
+  // consonant with every registered track, doubling an accompanying pitch if need be.
   constexpr uint8_t kMinFallbackVoices = 2;
   if (state.safe_count < kMinFallbackVoices) {
     ChordTones fallback_tones = harmony.getChordTonesAt(tick);
@@ -388,17 +424,22 @@ void ensureMinVoicesAtTick(MidiTrack& track, IHarmonyContext& harmony, Tick tick
         if (state.hasPitch(static_cast<uint8_t>(pitch))) continue;
         if (state.wouldCluster(static_cast<uint8_t>(pitch))) continue;
 
-        // Add note without collision check (doubling is acceptable for chord fill)
+        if (!harmony.isConsonantWithOtherTracks(static_cast<uint8_t>(pitch), tick, duration,
+                                                TrackRole::Chord)) {
+          continue;
+        }
+
         NoteOptions opts;
         opts.start = tick;
         opts.duration = duration;
         opts.desired_pitch = static_cast<uint8_t>(pitch);
         opts.velocity = velocity;
         opts.role = TrackRole::Chord;
-        opts.preference = PitchPreference::NoCollisionCheck;
+        opts.preference = PitchPreference::PreferChordTones;
         opts.range_low = CHORD_LOW;
         opts.range_high = static_cast<int>(effective_high);
         opts.source = NoteSource::ChordVoicing;
+        opts.chord_boundary = ChordGenerator::kChordBoundary;
         auto result = addCheckedChordNote(track, harmony, opts, state);
         if (result) {
           state.added(result->note);

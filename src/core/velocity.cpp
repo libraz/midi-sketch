@@ -64,6 +64,7 @@ int sectionEnergyRank(const Section& section) {
 /// declared energy, and forcing it to enter as loudly would erase the drop the
 /// arrangement wants there.
 bool isArrivalSection(const Section& section) {
+  if (isOchisabiSection(section)) return false;
   return isHighEnergySection(section.type) || section.modifier == SectionModifier::Climactic;
 }
 
@@ -84,6 +85,10 @@ float meanVelocityInRange(const std::vector<MidiTrack*>& tracks, Tick from, Tick
 }
 
 }  // namespace
+
+bool isOchisabiSection(const Section& section) {
+  return section.modifier == SectionModifier::Ochisabi && section.modifier_intensity >= 50;
+}
 
 float getMoodVelocityAdjustment(Mood mood) {
   uint8_t idx = static_cast<uint8_t>(mood);
@@ -438,8 +443,8 @@ void applyBarVelocityCurve(MidiTrack& track, const Section& section, const Secti
   Tick section_end = section.endTick();
   // A section that merely holds the previous energy still must not enter below
   // it, so equal energy is protected alongside a rise.
-  bool is_energy_lift =
-      prev_section != nullptr && sectionEnergyRank(section) >= sectionEnergyRank(*prev_section);
+  bool is_energy_lift = prev_section != nullptr && !isOchisabiSection(section) &&
+                        sectionEnergyRank(section) >= sectionEnergyRank(*prev_section);
 
   for (auto& note : notes) {
     // Only modify notes within this section

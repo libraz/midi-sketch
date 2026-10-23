@@ -512,7 +512,9 @@ float MelodyEvaluator::calcHighRegisterPenalty(const std::vector<NoteEvent>& not
         penalty += 0.1f;
       }
     } else {
-      // Penalize long consecutive high passages
+      // Penalize long consecutive high passages. A run the line ends on is
+      // left alone: that is where a chorus climaxes, and penalising it too
+      // lowered the chorus's lift over the verse across an 80-song sweep.
       if (consecutive_high > 3) {
         penalty += 0.05f * static_cast<float>(consecutive_high - 3);
       }

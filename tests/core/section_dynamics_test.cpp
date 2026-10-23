@@ -173,6 +173,26 @@ TEST(SectionDynamicsTest, EntryLiftRaisesAnEnergyLiftEntryBar) {
             meanVelocity(track, 0, TICKS_PER_BAR));
 }
 
+TEST(SectionDynamicsTest, EntryLiftLeavesAQuietChorusAlone) {
+  Section setup = neutralSection(SectionType::B, 0);
+  setup.energy = SectionEnergy::Medium;
+
+  Section chorus = neutralSection(SectionType::Chorus, TICKS_PER_BAR);
+  chorus.energy = SectionEnergy::High;
+  chorus.modifier = SectionModifier::Ochisabi;
+  chorus.modifier_intensity = 100;
+
+  MidiTrack track;
+  fillBar(track, 0, 100);
+  fillBar(track, TICKS_PER_BAR, 60);
+  std::vector<MidiTrack*> tracks = {&track};
+
+  enforceSectionEntryLift(tracks, {setup, chorus});
+
+  EXPECT_LT(meanVelocity(track, TICKS_PER_BAR, 2 * TICKS_PER_BAR),
+            meanVelocity(track, 0, TICKS_PER_BAR));
+}
+
 TEST(SectionDynamicsTest, EntryLiftLeavesAnEnergyDropAlone) {
   Section chorus = neutralSection(SectionType::Chorus, 0);
   chorus.energy = SectionEnergy::Peak;
@@ -261,6 +281,8 @@ TEST_F(GeneratedSectionDynamicsTest, ArrivalsDoNotEnterBelowTheirSetup) {
           continue;
         }
         if (getEffectiveSectionEnergy(section) < getEffectiveSectionEnergy(prev)) continue;
+        // A quiet chorus is a deliberate step down, not an arrival.
+        if (isOchisabiSection(section)) continue;
 
         Tick entry_end = std::min(section.start_tick + TICKS_PER_BAR, section.endTick());
         Tick tail_start =

@@ -40,7 +40,6 @@ struct Crossing {
 std::vector<Crossing> findCrossings(const Song& song) {
   std::vector<Crossing> crossings;
   const auto& vocal_notes = song.vocal().notes();
-  if (vocal_notes.empty()) return crossings;
 
   const std::pair<const MidiTrack*, const char*> tracks[] = {
       {&song.motif(), "Motif"},       {&song.aux(), "Aux"},       {&song.chord(), "Chord"},
@@ -71,6 +70,15 @@ std::string describeCrossings(const std::vector<Crossing>& crossings) {
   return out;
 }
 
+// With no vocal or no chord notes there is nothing to cross, so the check must
+// be given a song that has both.
+void expectNoCrossings(const Song& song, const std::string& label) {
+  ASSERT_FALSE(song.vocal().notes().empty()) << label << ": the vocal is empty";
+  ASSERT_FALSE(song.chord().notes().empty()) << label << ": the chord track is empty";
+  const auto crossings = findCrossings(song);
+  EXPECT_TRUE(crossings.empty()) << label << "\n" << describeCrossings(crossings);
+}
+
 class PitchCrossingRegressionTest : public ::testing::Test {
  protected:
   void generateSong(uint32_t seed, uint8_t style, uint8_t chord, uint8_t blueprint) {
@@ -88,16 +96,14 @@ class PitchCrossingRegressionTest : public ::testing::Test {
 // no consonant chord tone existed in [MOTIF_LOW, vocal_floor].
 TEST_F(PitchCrossingRegressionTest, RhythmLockMotifStaysAtOrBelowVocal) {
   generateSong(/*seed=*/10, /*style=*/0, /*chord=*/0, /*blueprint=*/1);
-  auto crossings = findCrossings(sketch_.getSong());
-  EXPECT_TRUE(crossings.empty()) << describeCrossings(crossings);
+  expectNoCrossings(sketch_.getSong(), "blueprint=1 seed=10");
 }
 
 // IdolStandard aux regression: monotony tracker raised aux above a locally
 // lower vocal note (section-level ceiling only).
 TEST_F(PitchCrossingRegressionTest, IdolStandardAuxStaysAtOrBelowVocal) {
   generateSong(/*seed=*/8, /*style=*/0, /*chord=*/0, /*blueprint=*/4);
-  auto crossings = findCrossings(sketch_.getSong());
-  EXPECT_TRUE(crossings.empty()) << describeCrossings(crossings);
+  expectNoCrossings(sketch_.getSong(), "blueprint=4 seed=8");
 }
 
 // Broader safety net across the blueprints that dominated the residual
@@ -110,10 +116,8 @@ TEST_F(PitchCrossingRegressionTest, NoCrossingsAcrossProblemBlueprints) {
   for (uint8_t blueprint : kBlueprints) {
     for (uint32_t seed : kSeeds) {
       generateSong(seed, /*style=*/0, /*chord=*/0, blueprint);
-      auto crossings = findCrossings(sketch_.getSong());
-      EXPECT_TRUE(crossings.empty())
-          << "blueprint=" << static_cast<int>(blueprint) << " seed=" << seed << "\n"
-          << describeCrossings(crossings);
+      expectNoCrossings(sketch_.getSong(),
+                        "blueprint=" + std::to_string(blueprint) + " seed=" + std::to_string(seed));
     }
   }
 }

@@ -12,24 +12,19 @@
 
 namespace midisketch {
 
-PhraseVariation selectPhraseVariation(int reuse_count, int occurrence, std::mt19937& rng) {
+PhraseVariation selectPhraseVariation(int reuse_index, int exact_run, bool opens_on_hook,
+                                      std::mt19937& rng) {
   // First time seeing this phrase: establish it exactly
-  if (reuse_count == 0) return PhraseVariation::Exact;
+  if (reuse_index == 0) return PhraseVariation::Exact;
 
-  // Determine exact-repeat probability based on chorus occurrence number.
-  // Later occurrences get progressively more variation to maintain interest:
-  // - occurrence 1: 80% exact (establish the theme)
-  // - occurrence 2: 60% exact (developing interest)
-  // - occurrence >= 3: 30% exact (maximum freshness for final chorus)
-  float exact_probability = 0.8f;
-  if (occurrence >= 3) {
-    exact_probability = 0.3f;
-  } else if (occurrence == 2) {
+  float exact_probability = 0.3f;
+  if (reuse_index == 1) {
+    exact_probability = 0.8f;
+  } else if (reuse_index == 2) {
     exact_probability = 0.6f;
   }
 
-  // Roll for exact vs variation (kMaxExactReuse still applies for reuse_count==0 above)
-  if (reuse_count <= kMaxExactReuse && rng_util::rollProbability(rng, exact_probability)) {
+  if (exact_run < kMaxExactRun && rng_util::rollProbability(rng, exact_probability)) {
     return PhraseVariation::Exact;
   }
 
@@ -46,6 +41,15 @@ PhraseVariation selectPhraseVariation(int reuse_count, int occurrence, std::mt19
       PhraseVariation::EchoRepeat         // Echo effect at ending
   };
   constexpr size_t kSafeCount = sizeof(kSafeVariations) / sizeof(kSafeVariations[0]);
+  // A phrase that opens on its hook keeps its first onset on the downbeat.
+  if (opens_on_hook) {
+    constexpr PhraseVariation kHookSafeVariations[] = {
+        PhraseVariation::LastNoteShift, PhraseVariation::LastNoteLong,
+        PhraseVariation::BreathRestInsert, PhraseVariation::DynamicAccent,
+        PhraseVariation::EchoRepeat};
+    constexpr size_t kHookSafeCount = sizeof(kHookSafeVariations) / sizeof(kHookSafeVariations[0]);
+    return kHookSafeVariations[rng() % kHookSafeCount];
+  }
   return kSafeVariations[rng() % kSafeCount];
 }
 

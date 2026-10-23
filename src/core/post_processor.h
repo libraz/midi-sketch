@@ -115,7 +115,9 @@ class PostProcessor {
   ///
   /// @param tracks Vector of melodic track pointers to process
   /// @param sections Song sections for B->Chorus detection (uses section.drop_style)
-  /// @param drum_track Drum track (not truncated - fill remains, crash added for DrumHit)
+  /// @param drum_track Drum track. Subtle leaves it untouched. Dramatic and DrumHit erase every
+  ///        drum note starting in the pre-chorus's last beat. DrumHit then always adds a crash
+  ///        at the chorus start; the other styles only restore a displaced entry crash.
   /// @param default_style Default drop style if section.drop_style is None (default: Subtle)
   static void applyChorusDrop(std::vector<MidiTrack*>& tracks, const std::vector<Section>& sections,
                               MidiTrack* drum_track,

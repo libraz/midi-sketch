@@ -277,8 +277,9 @@ TEST_F(ProductionBlueprintTest, RhythmLockSectionFlowContainsDropChorus) {
   bool has_vocal_breakdown = false;
   for (uint8_t i = 0; i < bp.section_count; ++i) {
     const auto& slot = bp.section_flow[i];
+    // SE carries calls, not instruments, so it is outside the breakdown's texture.
     TrackMask expected = TrackMask::Vocal | TrackMask::Drums | TrackMask::Bass | TrackMask::Motif;
-    if (slot.type == SectionType::Chorus && slot.enabled_tracks == expected) {
+    if (slot.type == SectionType::Chorus && (slot.enabled_tracks & ~TrackMask::SE) == expected) {
       has_vocal_breakdown = true;
       break;
     }
@@ -327,7 +328,8 @@ TEST_F(ProductionBlueprintTest, IdolEmoHasQuietIntro) {
   ASSERT_GT(bp.section_count, 0);
   const auto& intro = bp.section_flow[0];
   EXPECT_EQ(intro.type, SectionType::Intro);
-  EXPECT_EQ(intro.enabled_tracks, TrackMask::Chord) << "IdolEmo should have chord-only intro";
+  EXPECT_EQ(intro.enabled_tracks & ~TrackMask::SE, TrackMask::Chord)
+      << "IdolEmo should have chord-only intro";
   EXPECT_EQ(intro.energy, SectionEnergy::Low);
 }
 
@@ -337,7 +339,7 @@ TEST_F(ProductionBlueprintTest, BalladIntroIsChordOnly) {
   ASSERT_GT(bp.section_count, 0);
   const auto& intro = bp.section_flow[0];
   EXPECT_EQ(intro.type, SectionType::Intro);
-  EXPECT_EQ(intro.enabled_tracks, TrackMask::Chord);
+  EXPECT_EQ(intro.enabled_tracks & ~TrackMask::SE, TrackMask::Chord);
 }
 
 // ============================================================================
@@ -427,7 +429,7 @@ TEST_F(ProductionBlueprintTest, SelectRandomForMoodSkipsIncompatibleBlueprints) 
   uint8_t ballad_mood = static_cast<uint8_t>(Mood::Ballad);
 
   for (int i = 0; i < 200; ++i) {
-    uint8_t id = selectProductionBlueprintForMood(rng, 255, ballad_mood);
+    uint8_t id = selectProductionBlueprintForMood(rng, 255, ballad_mood, 0);
     EXPECT_TRUE(isMoodCompatible(id, ballad_mood))
         << "Random blueprint selection should respect mood_mask";
   }
@@ -2165,6 +2167,89 @@ TEST_F(ProductionBlueprintTest, TempoDefaultAndRangeResolveTheBpm) {
   EXPECT_EQ(above.first, bp.tempo_max);
 }
 
+TEST_F(ProductionBlueprintTest, EveryCallCarryingSlotIsSeEligible) {
+  // Calls land on intros, choruses, chants, MIX breaks and the B leading into a
+  // chorus; the SE track only plays where the slot mask includes it.
+  size_t call_slots = 0;
+  for (uint8_t id = 0; id < getProductionBlueprintCount(); ++id) {
+    const auto& bp = getProductionBlueprint(id);
+    for (uint8_t i = 0; i < bp.section_count; ++i) {
+      const SectionSlot& slot = bp.section_flow[i];
+      const bool b_into_chorus = slot.type == SectionType::B && i + 1 < bp.section_count &&
+                                 bp.section_flow[i + 1].type == SectionType::Chorus;
+      const bool carries_calls =
+          slot.type == SectionType::Intro || slot.type == SectionType::Chorus ||
+          slot.type == SectionType::Chant || slot.type == SectionType::MixBreak || b_into_chorus;
+      if (!carries_calls) continue;
+      ++call_slots;
+      EXPECT_TRUE(hasTrack(slot.enabled_tracks, TrackMask::SE))
+          << bp.name << " slot " << int(i) << " drops its call figures";
+    }
+  }
+  ASSERT_GT(call_slots, 0u);
+}
+
+TEST_F(ProductionBlueprintTest, ImplicitTempoIsTheStyleTempoWhateverBlueprintIsDrawn) {
+  // bpm = 0 with a drawn blueprint means "the style's tempo": a ballad style is
+  // never handed a 160 BPM idol arrangement.
+  for (uint8_t style = 0; style < STYLE_PRESET_COUNT; ++style) {
+    const StylePreset& preset = getStylePreset(style);
+    std::set<uint8_t> drawn;
+    for (uint32_t seed = 1; seed <= 60; ++seed) {
+      SongConfig config = createDefaultSongConfig(style);
+      ASSERT_EQ(config.blueprint_id, 255);
+      ASSERT_EQ(config.bpm, 0);
+      config.seed = seed;
+      const GeneratorParams params = ConfigConverter::convert(config);
+      const uint8_t id = resolveProductionBlueprintId(
+          params.seed, 255, static_cast<uint8_t>(params.mood), params.auto_bpm_fallback);
+      drawn.insert(id);
+      const auto [bpm, warning] =
+          resolveTempo(0, false, false, params.auto_bpm_fallback, getProductionBlueprint(id));
+      EXPECT_GE(bpm, preset.tempo_min)
+          << preset.name << " seed " << seed << " drew " << getProductionBlueprintName(id);
+      EXPECT_LE(bpm, preset.tempo_max)
+          << preset.name << " seed " << seed << " drew " << getProductionBlueprintName(id);
+      EXPECT_EQ(bpm, preset.tempo_default) << preset.name << ": tempoDefault is what bpm=0 plays";
+      EXPECT_FALSE(warning.has_value());
+    }
+    EXPECT_FALSE(drawn.empty());
+  }
+
+  // The generator resolves through the same chain.
+  SongConfig ballad = createDefaultSongConfig(16);
+  const StylePreset& ballad_preset = getStylePreset(16);
+  for (uint32_t seed : {3u, 17u}) {
+    ballad.seed = seed;
+    Generator gen;
+    gen.generateFromConfig(ballad);
+    EXPECT_GE(gen.getParams().bpm, ballad_preset.tempo_min) << "seed " << seed;
+    EXPECT_LE(gen.getParams().bpm, ballad_preset.tempo_max) << "seed " << seed;
+  }
+}
+
+TEST_F(ProductionBlueprintTest, NamedBlueprintOrExplicitBpmSuppliesTheTempo) {
+  const auto& traditional = getProductionBlueprint(0);
+  // A blueprint the caller named brings its own tempo, inside its own range.
+  const auto named = resolveTempo(0, false, true, 72, traditional);
+  EXPECT_EQ(named.first, traditional.tempo_default);
+  EXPECT_GE(named.first, traditional.tempo_min);
+  EXPECT_LE(named.first, traditional.tempo_max);
+  // An explicit BPM is never moved.
+  EXPECT_EQ(resolveTempo(72, true, true, 120, traditional).first, 72);
+  // A drawn blueprint pulls the implicit tempo into its range rather than replacing it.
+  EXPECT_EQ(resolveTempo(0, false, false, traditional.tempo_min + 1, traditional).first,
+            traditional.tempo_min + 1);
+  EXPECT_EQ(resolveTempo(0, false, false, 20, traditional).first, traditional.tempo_min);
+
+  SongConfig config = createDefaultSongConfig(16);
+  config.seed = 5;
+  config.blueprint_id = 0;
+  Generator gen;
+  gen.generateFromConfig(config);
+  EXPECT_EQ(gen.getParams().bpm, traditional.tempo_default);
+}
+
 TEST_F(ProductionBlueprintTest, AutoVocalStyleResolvesFromTheBlueprintTable) {
   int blueprints_with_a_table = 0;
   for (uint8_t id = 0; id < getProductionBlueprintCount(); ++id) {
@@ -2202,14 +2287,16 @@ TEST_F(ProductionBlueprintTest, AutoVocalStyleFollowsTheRandomlySelectedBlueprin
   // The style is resolved while the parameters are converted, the blueprint
   // later by the generator; both have to name the same blueprint.
   int checked = 0;
+  // Idol Standard: its 140 BPM is inside the range of blueprints that carry a
+  // singer table, so a random draw can land on one.
   for (uint32_t seed = 1; seed <= 200 && checked < 3; ++seed) {
-    SongConfig config = createDefaultSongConfig(0);
+    SongConfig config = createDefaultSongConfig(3);
     config.seed = seed;
     config.blueprint_id = 255;
     config.vocal_style = VocalStylePreset::Auto;
     const GeneratorParams params = ConfigConverter::convert(config);
-    const uint8_t expected =
-        resolveProductionBlueprintId(params.seed, 255, static_cast<uint8_t>(params.mood));
+    const uint8_t expected = resolveProductionBlueprintId(
+        params.seed, 255, static_cast<uint8_t>(params.mood), params.auto_bpm_fallback);
     const auto& bp = getProductionBlueprint(expected);
     if (bp.vocal_style_count == 0) continue;
     ++checked;

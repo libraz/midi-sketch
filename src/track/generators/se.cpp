@@ -8,6 +8,8 @@
 
 #include "track/generators/se.h"
 
+#include <algorithm>
+
 #include "core/note_source.h"
 #include "core/rng_util.h"
 #include "core/song.h"
@@ -83,15 +85,15 @@ constexpr ChantPreset INTRO_MIX_PATTERN = {
     {1, 1, 1, 1, 1, 2, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0},
     {80, 82, 85, 88, 90, 95, 100, 110, 0, 0, 0, 0, 0, 0, 0, 0}};
 
-// Add chant notes from a preset
-void addChantNotes(MidiTrack& track, Tick start_tick, const ChantPreset& preset,
-                   bool notes_enabled) {
+// Add chant notes from a preset; notes never start at or sound past limit_tick
+void addChantNotes(MidiTrack& track, Tick start_tick, const ChantPreset& preset, bool notes_enabled,
+                   Tick limit_tick) {
   Tick current = start_tick;
-  for (size_t i = 0; i < preset.note_count; ++i) {
+  for (size_t i = 0; i < preset.note_count && current < limit_tick; ++i) {
     Tick duration = preset.rhythm[i] * EIGHTH_NOTE;
     uint8_t vel = preset.velocity[i];
     if (notes_enabled) {
-      addSENote(track, current, duration, CALL_PITCH, vel);
+      addSENote(track, current, std::min(duration, limit_tick - current), CALL_PITCH, vel);
     }
     current += duration;
   }
@@ -139,7 +141,7 @@ void generateCallsForSection(MidiTrack& track, const Section& section, IntroChan
           // Generate multiple phrases across the section
           Tick t = section.start_tick;
           while (t < section_end - TICKS_PER_BAR) {
-            addChantNotes(track, t, GACHIKOI_INTRO, true);
+            addChantNotes(track, t, GACHIKOI_INTRO, true, section_end);
             t += 2 * TICKS_PER_BAR;  // Next phrase after 2 bars
           }
         }
@@ -161,7 +163,7 @@ void generateCallsForSection(MidiTrack& track, const Section& section, IntroChan
         if (notes_enabled) {
           Tick t = section.start_tick;
           while (t < section_end) {
-            addChantNotes(track, t, TIGER_FIRE, true);
+            addChantNotes(track, t, TIGER_FIRE, true, section_end);
             t += 2 * TICKS_PER_BAR;  // Tiger pattern is 2 bars
           }
         }
@@ -170,7 +172,7 @@ void generateCallsForSection(MidiTrack& track, const Section& section, IntroChan
         if (notes_enabled) {
           Tick t = section.start_tick;
           while (t < section_end) {
-            addChantNotes(track, t, STANDARD_MIX, true);
+            addChantNotes(track, t, STANDARD_MIX, true, section_end);
             t += TICKS_PER_BAR;  // Standard pattern is 1 bar
           }
         }
@@ -286,7 +288,7 @@ void insertPPPHAtBtoChorus(MidiTrack& track, const std::vector<Section>& section
       track.addText(ppph_start, "PPPH");
 
       // Add the chant notes
-      addChantNotes(track, ppph_start, PPPH_PATTERN, notes_enabled);
+      addChantNotes(track, ppph_start, PPPH_PATTERN, notes_enabled, sections[idx].endTick());
     }
   }
 }
@@ -298,7 +300,7 @@ void insertMIXAtIntro(MidiTrack& track, const std::vector<Section>& sections, bo
       track.addText(section.start_tick, "IntroMix");
 
       // Add the intro MIX pattern
-      addChantNotes(track, section.start_tick, INTRO_MIX_PATTERN, notes_enabled);
+      addChantNotes(track, section.start_tick, INTRO_MIX_PATTERN, notes_enabled, section.endTick());
     }
   }
 }

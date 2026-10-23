@@ -30,13 +30,19 @@ namespace midisketch {
  * length reuses the cached bars it shares and generates only the rest. The
  * starting chord is not part of the key: the progression restarts at every
  * section, and the chords a replay meets are answered by its own collision pass.
+ *
+ * What is cached is the resolved melody -- collision avoidance, ceiling and
+ * recitation applied -- before the approach into the next section and the hook
+ * emphasis, which a restatement takes from its own context.
  */
 struct CachedPhrase {
   std::vector<NoteEvent> notes;  ///< Notes with timing relative to section start
   uint8_t bars;                  ///< Section length when cached
   uint8_t vocal_low;             ///< Vocal range when cached
   uint8_t vocal_high;
-  int reuse_count = 0;  ///< How many times this phrase has been reused
+  uint8_t density = 100;  ///< Effective density percent of the cached section
+  int reuse_count = 0;    ///< How many times this phrase has been reused
+  int exact_run = 1;      ///< Identical statements ending at the latest, the original included
   /// Whether generating this phrase emitted a hook. Replays of a phrase that
   /// contains one are hook occurrences too, and the betrayal threshold counts
   /// what reaches the output rather than what was generated.

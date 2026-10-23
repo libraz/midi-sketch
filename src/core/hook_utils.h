@@ -252,7 +252,8 @@ constexpr SkeletonWeights kDefaultSkeletonWeights = {
 /// @brief Apply HookIntensity multiplier to skeleton weights.
 ///
 /// HookIntensity affects the selection probability of different skeletons:
-/// - Off: Reduces Repeat, favors variety
+/// - Off: Reduces Repeat, favors variety. The vocal writes no hook and no chant
+///   at Off, so it never selects through this row.
 /// - Light: Default weights (no modification)
 /// - Normal: Boosts Repeat and RhythmRepeat (catchy patterns)
 /// - Strong: Greatly boosts Repeat and AscendDrop (most memorable)

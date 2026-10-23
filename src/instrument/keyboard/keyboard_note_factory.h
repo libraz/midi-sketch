@@ -62,10 +62,13 @@ class KeyboardNoteFactory {
   /// @param duration Duration in ticks
   /// @param lowest_allowed Floor of the part's register; an octave-equivalent
   ///        alternative reaching below it is not offered
+  /// @param highest_allowed Ceiling of the part's register; no alternative reaches above
+  ///        it or above the highest pitch of @p pitches, whichever is higher
   /// @return Playable voicing (may be same as input)
   std::vector<uint8_t> ensurePlayableVoicing(const std::vector<uint8_t>& pitches,
                                              uint8_t root_pitch_class, uint32_t start,
-                                             uint32_t duration, uint8_t lowest_allowed = 0);
+                                             uint32_t duration, uint8_t lowest_allowed = 0,
+                                             uint8_t highest_allowed = 127);
 
   /// @brief Check if a voicing is playable without modifying it.
   /// @param pitches Voicing pitches to check

@@ -353,11 +353,12 @@ void VocalGenerator::postProcessVocalNotes(
   // passes (enforceVocalPitchConstraints, breakConsecutiveSamePitch) operate on
   // the global effective range and can lift non-Chorus notes back above their
   // section ceiling, which would let the global melodic peak escape the Chorus.
-  // This pass is the final authority on non-Chorus ceilings: it clamps each note
-  // in place using its owning section's bounds (no reordering, no aliasing).
+  // This pass is the final authority on non-Chorus ceilings, and on a Chorus
+  // that sets its own range span: it clamps each note in place using its owning
+  // section's bounds (no reordering, no aliasing).
   for (auto& note : all_notes) {
     for (const auto& sc : section_ceilings) {
-      if (sc.is_chorus) continue;
+      if (sc.ceiling_exempt) continue;
       if (note.start_tick < sc.start_tick || note.start_tick >= sc.end_tick) continue;
       if (note.note <= sc.high) break;
       // Single-note slice keeps enforceSectionCeiling's octave-drop + scale-snap
@@ -381,6 +382,9 @@ void VocalGenerator::postProcessVocalNotes(
   // shift through range clamping, leaving a later climax at the same or even a
   // lower average pitch. Raise the lowest safe scale tones in the first 12
   // onsets until each later Chorus has an audible (> 0.5 semitone) head lift.
+  // The lift is heard in the sounding key, so a chorus after the key change
+  // counts the modulation toward it, and a chant note is never lifted out of
+  // its run.
   std::vector<const Section*> choruses;
   for (const auto& section : song.arrangement().sections()) {
     if (section.type == SectionType::Chorus) choruses.push_back(&section);
@@ -402,15 +406,25 @@ void VocalGenerator::postProcessVocalNotes(
     for (size_t idx : indices) sum += all_notes[idx].note;
     return static_cast<double>(sum) / static_cast<double>(indices.size());
   };
+  auto modulationOffset = [&song](const Section& section) {
+    return song.modulationAmount() != 0 && section.start_tick >= song.modulationTick()
+               ? static_cast<double>(song.modulationAmount())
+               : 0.0;
+  };
   if (choruses.size() > 1) {
     const auto first_head = headIndices(*choruses.front());
-    const double first_average = pitchAverage(first_head);
+    const double first_average = pitchAverage(first_head) + modulationOffset(*choruses.front());
     for (size_t occurrence = 1; occurrence < choruses.size(); ++occurrence) {
       auto head = headIndices(*choruses[occurrence]);
       if (head.empty()) continue;
+      const double sounding_offset = modulationOffset(*choruses[occurrence]);
+      uint8_t lift_ceiling = effective_vocal_high;
+      for (const auto& sc : section_ceilings) {
+        if (sc.start_tick == choruses[occurrence]->start_tick) lift_ceiling = sc.high;
+      }
       constexpr double kMinimumHeadLift = 0.5;
-      for (size_t attempt = 0;
-           attempt < head.size() * 2 && pitchAverage(head) <= first_average + kMinimumHeadLift;
+      for (size_t attempt = 0; attempt < head.size() * 2 && pitchAverage(head) + sounding_offset <=
+                                                                first_average + kMinimumHeadLift;
            ++attempt) {
         size_t best_idx = all_notes.size();
         uint8_t best_pitch = 127;
@@ -418,7 +432,8 @@ void VocalGenerator::postProcessVocalNotes(
         for (size_t head_pos = 0; head_pos < head.size(); ++head_pos) {
           const size_t note_idx = head[head_pos];
           const auto& note = all_notes[note_idx];
-          const int candidate = headLiftPitch(all_notes, note_idx, effective_vocal_high);
+          if (note.is_syllabic_subdivision) continue;
+          const int candidate = headLiftPitch(all_notes, note_idx, lift_ceiling);
           if (candidate < 0) continue;
           if (head_pos > 0 &&
               std::abs(candidate - static_cast<int>(all_notes[head[head_pos - 1]].note)) >
@@ -703,14 +718,17 @@ void VocalGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContex
     // Record this section's ceiling for the final song-wide ceiling pass.
     section_ceilings.push_back(
         SectionCeiling{section_start, section_end, section_vocal_low, section_vocal_high,
-                       section.type == SectionType::Chorus || section.type == SectionType::Drop});
+                       (section.type == SectionType::Chorus || section.type == SectionType::Drop) &&
+                           section.vocal_range_span == 0});
 
     // Recalculate tessitura for section
     TessituraRange section_tessitura = calculateTessitura(section_vocal_low, section_vocal_high);
 
-    // Fresh melody over `part`: the whole section, or the bars of it that run
-    // past a shorter cached phrase.
-    auto generateFresh = [&](const Section& part, uint8_t part_low, uint8_t part_high) {
+    // The melody written over `part` -- the whole section, or the bars of it
+    // that run past a shorter restated phrase -- before the passes it takes
+    // from its own context.
+    auto writeMelody = [&](const Section& part, uint8_t part_low, uint8_t part_high,
+                           bool& rhythm_locked) {
       const Tick part_start = part.start_tick;
       const Tick part_end = part.endTick();
       std::vector<NoteEvent> notes;
@@ -790,11 +808,14 @@ void VocalGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContex
           // If density is too low, don't lock - let subsequent sections generate fresh
         }
       }
+      rhythm_locked = current_rhythm_lock != nullptr;
 
       // The chant goes in before the head is restated, so the midpoint and every
       // replayed chorus carry it. A locked-rhythm chorus never reaches the hook
-      // writer, so its skeleton is drawn here from a stream of its own.
-      if (part.type == SectionType::Chorus) {
+      // writer, so its skeleton is drawn here from a stream of its own. With
+      // HookIntensity::Off the chorus repeats no hook within itself; restating
+      // the whole chorus later is song form and stays.
+      if (part.type == SectionType::Chorus && params.hook_intensity != HookIntensity::Off) {
         std::optional<HookSkeleton> skeleton = designer.cachedHookSkeleton();
         if (!skeleton) {
           constexpr uint32_t kChantMagic = 0x4348414E;  // "CHAN"
@@ -806,12 +827,14 @@ void VocalGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContex
         placeHookChant(notes, part_start, part_end, hookChantBeats(*skeleton), harmony);
         restateChorusHead(notes, part_start, part.bars, harmony);
       }
+      return notes;
+    };
 
-      // Apply transition approach if transition info was set
-      if (sctx.transition_to_next) {
-        designer.applyTransitionApproach(notes, sctx, harmony);
-      }
-
+    // Collision avoidance and the ceiling in the part's own range. A restatement
+    // runs these again over the resolved notes it restates, for the chords and
+    // range it meets.
+    auto resolvePart = [&](std::vector<NoteEvent>& notes, const Section& part, uint8_t part_low,
+                           uint8_t part_high) {
       // Apply HarmonyContext collision avoidance with interval constraint
       applyCollisionAvoidanceWithIntervalConstraint(notes, harmony, part_low, part_high, part.type,
                                                     melody::resolveContextMaxLeap(params));
@@ -825,10 +848,15 @@ void VocalGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContex
       if (part.type != SectionType::Chorus && part.type != SectionType::Drop) {
         enforceSectionCeiling(notes, harmony, part_low, part_high);
       }
+    };
 
-      // Recitation is decided here, before the phrase is cached, so every
-      // restatement of the section carries the same run. Its own stream keeps
-      // the decision from shifting the main generator's draws.
+    // Recitation is decided once, before the phrase is cached, so every
+    // restatement of the section carries the same run. Its own stream keeps
+    // the decision from shifting the main generator's draws.
+    auto recitePart = [&](std::vector<NoteEvent>& notes, const Section& part, uint8_t part_low,
+                          uint8_t part_high, bool rhythm_locked) {
+      const Tick part_start = part.start_tick;
+      const Tick part_end = part.endTick();
       RecitationSpec recitation;
       recitation.section_type = part.type;
       const auto& sections = song.arrangement().sections();
@@ -841,33 +869,53 @@ void VocalGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContex
       recitation.style_rate = getVocalStylePresetData(params.vocal_style).recitation_rate;
       recitation.step = recitationStepTicks(params.vocal_style, params.bpm);
       recitation.bpm = params.bpm;
-      recitation.keep_onsets = current_rhythm_lock != nullptr;
+      recitation.keep_onsets = rhythm_locked;
       recitation.vocal_low = part_low;
       recitation.vocal_high = part_high;
       constexpr uint32_t kRecitationMagic = 0x52454349;  // "RECI"
       std::mt19937 recitation_rng(params.seed ^ kRecitationMagic ^ part_start);
       placeRecitation(notes, part_start, part_end, recitation, harmony, recitation_rng);
+    };
 
-      return notes;
+    // The approach into the section that actually follows the part. It is the
+    // one pass a restatement cannot inherit, so it runs last and is never
+    // cached. Run notes keep their pitch and velocity: the approach shapes the
+    // line around a chant or recitation, not the run itself.
+    auto approachNext = [&](std::vector<NoteEvent>& notes, const Section& part, uint8_t part_low,
+                            uint8_t part_high) {
+      const MelodyDesigner::SectionContext sctx = buildSectionContext(
+          part, params, song, section_tessitura, part_low, part_high,
+          harmony.getChordDegreeAt(part.start_tick), occurrence, drum_grid, designer);
+      if (!sctx.transition_to_next) return;
+      std::vector<std::pair<size_t, NoteEvent>> runs;
+      for (size_t idx = 0; idx < notes.size(); ++idx) {
+        if (notes[idx].is_syllabic_subdivision) runs.emplace_back(idx, notes[idx]);
+      }
+      designer.applyTransitionApproach(notes, sctx, harmony);
+      for (const auto& [idx, note] : runs) notes[idx] = note;
     };
 
     std::vector<NoteEvent> section_notes;
+    const uint8_t section_density = section.getModifiedDensity(section.density_percent);
 
-    auto cache_it = phrase_cache.find(section.type);
-    if (cache_it != phrase_cache.end()) {
-      // Cache hit: restate the first occurrence. Only the bars both sections
-      // share are replayed; a shorter section ends on the cached head, a longer
-      // one continues with freshly generated bars.
-      CachedPhrase& cached = cache_it->second;
-      const uint8_t head_bars = std::min(section.bars, cached.bars);
+    const auto cache_it = phrase_cache.find(section.type);
+    CachedPhrase* restated = cache_it != phrase_cache.end() ? &cache_it->second : nullptr;
+    if (restated != nullptr) {
+      // Restate the first occurrence. Only the bars both sections share are
+      // restated; a shorter section ends on the cached head, a longer one
+      // continues with freshly written bars.
+      const uint8_t head_bars = std::min(section.bars, restated->bars);
       const Tick head_end = section_start + head_bars * TICKS_PER_BAR;
 
-      // Select variation based on reuse count and occurrence
-      // (later choruses get progressively more variation)
-      PhraseVariation variation = selectPhraseVariation(cached.reuse_count, occurrence, rng);
-      cached.reuse_count++;
+      // Later restatements get progressively more variation
+      const bool opens_on_hook =
+          section.type == SectionType::Chorus || section.type == SectionType::Drop;
+      PhraseVariation variation =
+          selectPhraseVariation(restated->reuse_count + 1, restated->exact_run, opens_on_hook, rng);
+      restated->reuse_count++;
+      restated->exact_run = variation == PhraseVariation::Exact ? restated->exact_run + 1 : 0;
 
-      for (NoteEvent note : shiftTiming(cached.notes, harmony, section_start)) {
+      for (NoteEvent note : shiftTiming(restated->notes, harmony, section_start)) {
         if (note.start_tick >= head_end) continue;
         note.duration = std::min(note.duration, head_end - note.start_tick);
         section_notes.push_back(note);
@@ -876,50 +924,69 @@ void VocalGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContex
       // Apply subtle variation for interest while maintaining recognizability
       applyPhraseVariation(section_notes, variation, rng);
 
-      // The replay keeps the register it was written in. A later chorus's
+      // The restatement keeps the register it was written in. A later chorus's
       // occurrence lift is the head-lift pass's job; moving the whole phrase to
       // a lifted range and snapping each note back to the scale rewrote its
-      // intervals, and the collision pass then re-chose most of its pitches.
+      // intervals, and the collision pass then re-chose most of its pitches. A
+      // section that sets its own span is held to it from the register the
+      // phrase was written in, folding by octaves only what the span cannot hold.
       const uint8_t fresh_vocal_low = section_vocal_low;
       const uint8_t fresh_vocal_high = section_vocal_high;
-      section_vocal_low = std::min(section_vocal_low, cached.vocal_low);
-      section_vocal_high = std::max(section_vocal_high, cached.vocal_high);
+      section_vocal_low = std::min(section_vocal_low, restated->vocal_low);
+      section_vocal_high = std::max(section_vocal_high, restated->vocal_high);
+      if (section.vocal_range_span > 0) {
+        section_vocal_high = static_cast<uint8_t>(
+            std::min<int>(section_vocal_high, section_vocal_low + section.vocal_range_span));
+      }
       foldPitchesIntoRange(section_notes, section_vocal_low, section_vocal_high);
 
       // A replayed hook is still a hook the listener hears, so it counts toward
       // the template's betrayal threshold. Counting only generated hooks left
       // the counter below every threshold in exactly the songs the mechanism
       // exists for -- the ones whose choruses repeat.
-      if (cached.contains_hook) {
+      if (restated->contains_hook) {
         designer.replayHookOccurrence(section_tmpl, section_notes, harmony, rng, section_vocal_low,
                                       section_vocal_high);
       }
 
-      // Re-apply collision avoidance (chord context may differ)
-      applyCollisionAvoidanceWithIntervalConstraint(section_notes, harmony, section_vocal_low,
-                                                    section_vocal_high, section.type,
-                                                    melody::resolveContextMaxLeap(params));
+      // A section asking for fewer notes (an ochisabi chorus) sings the same
+      // tune thinner, past the hook that opens a chorus. Nothing is added for a
+      // denser one, and the guide-tone rate, which shapes how a melody is
+      // written, does not re-pitch a restatement: either would replace the
+      // tune being restated.
+      thinToDensity(
+          section_notes, section_density, restated->density,
+          opens_on_hook ? section_start + kChorusHookBars * TICKS_PER_BAR : section_start);
 
-      // Enforce non-Chorus ceiling so the global peak stays in the Chorus
-      // (see detailed rationale in generateFresh above).
-      if (section.type != SectionType::Chorus && section.type != SectionType::Drop) {
-        enforceSectionCeiling(section_notes, harmony, section_vocal_low, section_vocal_high);
-      }
+      Section head = section;
+      head.bars = head_bars;
+      resolvePart(section_notes, head, section_vocal_low, section_vocal_high);
+      approachNext(section_notes, head, section_vocal_low, section_vocal_high);
 
-      if (section.bars > cached.bars) {
+      if (section.bars > restated->bars) {
         Section tail = section;
         tail.start_tick = head_end;
-        tail.start_bar = section.start_bar + cached.bars;
-        tail.bars = static_cast<uint8_t>(section.bars - cached.bars);
-        std::vector<NoteEvent> tail_notes = generateFresh(tail, fresh_vocal_low, fresh_vocal_high);
+        tail.start_bar = section.start_bar + restated->bars;
+        tail.bars = static_cast<uint8_t>(section.bars - restated->bars);
+        bool tail_locked = false;
+        std::vector<NoteEvent> tail_notes =
+            writeMelody(tail, fresh_vocal_low, fresh_vocal_high, tail_locked);
+        resolvePart(tail_notes, tail, fresh_vocal_low, fresh_vocal_high);
+        recitePart(tail_notes, tail, fresh_vocal_low, fresh_vocal_high, tail_locked);
+        approachNext(tail_notes, tail, fresh_vocal_low, fresh_vocal_high);
         section_notes.insert(section_notes.end(), tail_notes.begin(), tail_notes.end());
       }
       section_ceilings.back().low = section_vocal_low;
       section_ceilings.back().high = section_vocal_high;
     } else {
-      // Cache miss: generate new melody
+      // First occurrence: write the melody
       const uint8_t hook_count_before_section = designer.hookRepetitionCount();
-      section_notes = generateFresh(section, section_vocal_low, section_vocal_high);
+      bool rhythm_locked = false;
+      section_notes = writeMelody(section, section_vocal_low, section_vocal_high, rhythm_locked);
+      resolvePart(section_notes, section, section_vocal_low, section_vocal_high);
+      recitePart(section_notes, section, section_vocal_low, section_vocal_high, rhythm_locked);
+      const std::vector<NoteEvent> resolved = section_notes;
+      approachNext(section_notes, section, section_vocal_low, section_vocal_high);
 
       // Extract GlobalMotif from first Chorus for song-wide melodic unity
       // Subsequent sections will receive bonus for similar contour/intervals
@@ -930,18 +997,20 @@ void VocalGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContex
         }
       }
 
-      // Apply hook intensity effects at hook points (Chorus, B section)
-      applyHookIntensity(section_notes, section.type, params.hook_intensity, section_start);
-
-      // Cache the phrase (with relative timing)
+      // Cache the resolved melody, before its approach (with relative timing)
       CachedPhrase cache_entry;
-      cache_entry.notes = toRelativeTiming(section_notes, section_start);
+      cache_entry.notes = toRelativeTiming(resolved, section_start);
       cache_entry.bars = section.bars;
       cache_entry.vocal_low = section_vocal_low;
       cache_entry.vocal_high = section_vocal_high;
+      cache_entry.density = section_density;
       cache_entry.contains_hook = designer.hookRepetitionCount() > hook_count_before_section;
       phrase_cache[section.type] = std::move(cache_entry);
     }
+
+    // Apply hook intensity effects at the section's hook points
+    applyHookIntensity(section_notes, section.type, params.hook_intensity, section_start,
+                       section.bars);
 
     // V5: Generate phrase boundary at section end
     if (!section_notes.empty()) {

@@ -10,6 +10,7 @@
 #include <optional>
 #include <random>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "core/coordinator.h"
@@ -190,13 +191,17 @@ class Generator {
   const EmotionCurve& getEmotionCurve() const { return emotion_curve_; }
 
   /**
-   * @brief Set modulation timing for key change.
+   * @brief Set modulation timing for the next generation's key change.
+   *
+   * Applies once, to the next generate() whose params leave modulation at None.
+   *
    * @param timing When to modulate (None, LastChorus, AfterBridge)
    * @param semitones Steps to modulate up (1-4, typically 2)
    */
   void setModulationTiming(ModulationTiming timing, int8_t semitones = 2) {
     params_.modulation_timing = timing;
     params_.modulation_semitones = semitones;
+    pending_modulation_ = std::make_pair(timing, semitones);
   }
 
   /** @brief Get warnings generated during last generation.
@@ -266,6 +271,10 @@ class Generator {
   /// Blueprint state
   uint8_t resolved_blueprint_id_ = 0;               ///< Resolved blueprint ID after selection
   const ProductionBlueprint* blueprint_ = nullptr;  ///< Pointer to selected blueprint
+  bool blueprint_explicit_ = false;                 ///< The caller named the blueprint
+
+  /// Modulation set by setModulationTiming() and not yet consumed by a generation
+  std::optional<std::pair<ModulationTiming, int8_t>> pending_modulation_;
 
   /// RhythmSync state
   std::optional<DrumGrid> drum_grid_;  ///< Drum grid for RhythmSync (pre-computed)
@@ -304,8 +313,8 @@ class Generator {
 
   /** @brief Accept incoming params while preserving pre-set state.
    *
-   *  Preserves modulation timing set via setModulationTiming() if the
-   *  incoming params has default modulation values.
+   *  A modulation set via setModulationTiming() since the last generation fills
+   *  incoming params that leave modulation at None, and is then consumed.
    *
    *  @param params Incoming generation parameters */
   void acceptParams(const GeneratorParams& params);
@@ -342,12 +351,14 @@ class Generator {
    *  Swaps low/high if inverted, clamps to valid MIDI range. */
   void validateVocalRange();
 
-  /** @brief Resolve BPM from params and clamp for paradigm constraints.
+  /** @brief Tempo an implicit BPM stands for: the explicit mood's, else the style preset's. */
+  uint16_t implicitBpm() const;
+
+  /** @brief Resolve BPM through resolveTempo() and store it.
    *
-   *  Resolves BPM=0 to mood default, clamps for RhythmSync paradigm,
-   *  stores result in params_.bpm and song_.setBpm().
+   *  Stores the result in params_.bpm and song_.setBpm().
    *
-   *  @return Resolved and clamped BPM value */
+   *  @return Resolved BPM value */
   uint16_t resolveAndClampBpm();
 
   /** @brief Apply AccompanimentConfig to params_ and internal state.

@@ -71,8 +71,11 @@ TimingOffsetCalculator::TimingOffsetCalculator(uint8_t drive_feel, VocalStylePre
 // ============================================================================
 
 int TimingOffsetCalculator::getDrumTimingOffset(uint8_t note_number, Tick tick) const {
-  Tick pos_in_bar = positionInBar(tick);
-  int beat_in_bar = static_cast<int>(beatInBar(tick));
+  // Classify by the nominal 16th a note belongs to, so an earlier time-feel or
+  // swing shift does not move a beat-2 snare into the previous beat's offbeat.
+  const Tick nominal_tick = (tick + TICK_SIXTEENTH / 2) / TICK_SIXTEENTH * TICK_SIXTEENTH;
+  Tick pos_in_bar = positionInBar(nominal_tick);
+  int beat_in_bar = static_cast<int>(beatInBar(nominal_tick));
   bool is_offbeat = (pos_in_bar % TICKS_PER_BEAT) >= (TICKS_PER_BEAT / 2);
 
   int base_offset = 0;

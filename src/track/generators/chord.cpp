@@ -84,14 +84,16 @@ class KeyboardPlayabilityChecker {
   /// @param root_pitch_class Root note pitch class (0-11)
   /// @param start Start tick
   /// @param duration Duration in ticks
+  /// @param highest_allowed Highest pitch the part may use
   /// @return Playable voicing pitches
   std::vector<uint8_t> ensurePlayable(const std::vector<uint8_t>& pitches, uint8_t root_pitch_class,
-                                      uint32_t start, uint32_t duration) {
+                                      uint32_t start, uint32_t duration, uint8_t highest_allowed) {
     if (instrument_mode_ == InstrumentModelMode::Off) {
       return pitches;
     }
     ensureInitialized();
-    return factory_->ensurePlayableVoicing(pitches, root_pitch_class, start, duration, CHORD_LOW);
+    return factory_->ensurePlayableVoicing(pitches, root_pitch_class, start, duration, CHORD_LOW,
+                                           highest_allowed);
   }
 
   /// @brief Reset state (call at section boundaries).
@@ -145,21 +147,42 @@ class KeyboardPlayabilityChecker {
 /// of the name runs before this point.
 VoicedChord ensurePlayableVoicedChord(const VoicedChord& voicing,
                                       KeyboardPlayabilityChecker& keys_playability,
-                                      uint8_t root_pitch_class, Tick start, Tick duration) {
+                                      uint8_t root_pitch_class, Tick start, Tick duration,
+                                      uint8_t highest_allowed) {
   std::vector<uint8_t> pitches;
   pitches.reserve(voicing.count);
   for (size_t idx = 0; idx < voicing.count; ++idx) {
     pitches.push_back(voicing.pitches[idx]);
   }
 
-  auto playable_pitches =
-      keys_playability.ensurePlayable(pitches, root_pitch_class % 12, start, duration);
+  auto playable_pitches = keys_playability.ensurePlayable(pitches, root_pitch_class % 12, start,
+                                                          duration, highest_allowed);
   VoicedChord playable = voicing;
   playable.count = static_cast<uint8_t>(std::min(playable_pitches.size(), playable.pitches.size()));
   for (size_t idx = 0; idx < playable.count; ++idx) {
     playable.pitches[idx] = playable_pitches[idx];
   }
+  chord_voicing::normalizeVoicing(playable);
   return playable;
+}
+
+/// @brief The voicing as it sounded at an entry's first onset.
+///
+/// Collision resolution drops and moves voices after the voicing is chosen, so
+/// what the next entry is led from, and what the bar ornaments double, is read
+/// back from the track rather than taken from the plan.
+VoicedChord soundedVoicing(const MidiTrack& track, Tick entry_start, const VoicedChord& planned) {
+  VoicedChord sounded = planned;
+  sounded.count = 0;
+  const auto& notes = track.notes();
+  for (auto it = notes.rbegin(); it != notes.rend(); ++it) {
+    if (it->start_tick < entry_start) break;
+    if (it->start_tick != entry_start || sounded.count >= sounded.pitches.size()) continue;
+    sounded.pitches[sounded.count++] = it->note;
+  }
+  if (sounded.count == 0) return planned;
+  chord_voicing::normalizeVoicing(sounded);
+  return sounded;
 }
 
 }  // namespace
@@ -460,8 +483,11 @@ void selectBarVoicing(ChordBarContext& ctx) {
 void renderChordEntry(ChordBarContext& ctx) {
   selectBarVoicing(ctx);
 
-  VoicedChord playable = ensurePlayableVoicedChord(ctx.voicing, ctx.keys_playability, ctx.root,
-                                                   ctx.entry_start, ctx.check_duration);
+  const uint8_t part_ceiling = getEffectiveChordHigh(getVocalCeilingForRange(
+      ctx.harmony, ctx.entry_start, ctx.entry_start + ctx.check_duration, ctx.bar_vocal_high));
+  VoicedChord playable =
+      ensurePlayableVoicedChord(ctx.voicing, ctx.keys_playability, ctx.root, ctx.entry_start,
+                                ctx.check_duration, part_ceiling);
 
   EighthPulseShape pulse_shape = EighthPulseShape::Full;
   if (ctx.rhythm == ChordRhythm::Eighth) {
@@ -475,15 +501,15 @@ void renderChordEntry(ChordBarContext& ctx) {
                        ctx.root, ctx.bar_vocal_high, pulse_shape);
 
   // Voice leading is a statement about what the listener hears move, so the
-  // next entry is led from the voicing that sounded rather than the one the
+  // next entry is led from the voices that sounded rather than the ones the
   // selector scored. The playability pass rewrites the pitches of most entries
-  // -- it transposes a voicing the hand cannot reach and inverts one the hand
-  // cannot reach it from -- and leading from the discarded pitches makes the
-  // selector minimise a distance no voice actually travels. The repetition
-  // counter reads the same object for the same reason: two entries that sound
-  // identical are a repetition even when the candidates behind them differed.
-  ctx.updateConsecutiveVoicing(playable);
-  ctx.prev_voicing = playable;
+  // and collision resolution then drops or moves voices again; leading from
+  // the discarded pitches makes the selector minimise a distance no voice
+  // actually travels. The repetition counter and the bar ornaments read the
+  // same object for the same reason.
+  ctx.voicing = soundedVoicing(ctx.track, ctx.entry_start, playable);
+  ctx.updateConsecutiveVoicing(ctx.voicing);
+  ctx.prev_voicing = ctx.voicing;
   ctx.has_prev = true;
 }
 

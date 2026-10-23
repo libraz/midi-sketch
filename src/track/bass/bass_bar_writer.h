@@ -55,7 +55,9 @@ void generateBassBar(MidiTrack& track, Tick bar_start, uint8_t root, uint8_t cho
 ///
 /// A half bar has room for fewer notes than a whole one, and deciding what to
 /// drop by position alone turns every driving figure into quarter notes, so
-/// the pattern is asked whether its pulse is part of its identity.
+/// the pattern is asked whether its pulse is part of its identity. Sustained
+/// figures (WholeNote, SubBass808) hold one note per half and a PedalTone keeps
+/// its pedal pitch across both.
 /// @param root The half bar's bass note: the chord root, or a slash bass
 /// @param chord_root Root of the chord the half bar sounds over
 void generateBassHalfBar(MidiTrack& track, Tick half_start, uint8_t root, uint8_t chord_root,

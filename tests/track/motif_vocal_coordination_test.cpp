@@ -11,8 +11,10 @@
 #include <map>
 #include <vector>
 
+#include "core/coordinator.h"
 #include "core/generator.h"
 #include "core/motif_types.h"
+#include "core/song.h"
 #include "core/timing_constants.h"
 #include "core/types.h"
 #include "test_support/generator_test_fixture.h"
@@ -192,30 +194,51 @@ TEST_F(MotifVocalCoordinationTest, BackwardCompatibilityNoVocal) {
   EXPECT_GT(motif_track.notes().size(), 0u) << "Motif track should have notes";
 }
 
-TEST_F(MotifVocalCoordinationTest, MotifParametersApplied) {
-  // Test that new parameters don't break motif generation
-  params_.motif.response_mode = true;
-  params_.motif.contrary_motion = true;
-  params_.motif.dynamic_register = true;
+namespace {
 
-  Generator gen;
-  gen.generate(params_);
+/// Motif onsets inside a sung vocal note, summed over several seeds. The tracks
+/// come straight from the coordinator, before any post-generation pass reshapes them.
+size_t countMotifOnsetsInsideSungSpans(bool response_mode) {
+  size_t inside_sung = 0;
+  size_t motif_onsets = 0;
+  for (uint32_t seed : {11u, 42u, 77u, 123u, 2024u, 31337u}) {
+    GeneratorParams params;
+    params.seed = seed;
+    params.blueprint_id = 2;  // MelodyDriven: the vocal is generated before the motif
+    params.vocal_low = 60;
+    params.vocal_high = 84;
+    params.motif.response_mode = response_mode;
+    params.motif.contrary_motion = false;
+    params.motif.dynamic_register = false;
 
-  const auto& motif_track = gen.getSong().motif();
-  EXPECT_FALSE(motif_track.empty()) << "Motif should generate with new params enabled";
+    Coordinator coordinator;
+    coordinator.initialize(params);
+    Song song;
+    coordinator.generateAllTracks(song);
+
+    for (const auto& motif_note : song.motif().notes()) {
+      ++motif_onsets;
+      for (const auto& vocal_note : song.vocal().notes()) {
+        if (motif_note.start_tick >= vocal_note.start_tick &&
+            motif_note.start_tick < vocal_note.start_tick + vocal_note.duration) {
+          ++inside_sung;
+          break;
+        }
+      }
+    }
+  }
+  EXPECT_GT(motif_onsets, 0u) << "the song must carry a motif";
+  return inside_sung;
 }
 
-TEST_F(MotifVocalCoordinationTest, MotifParametersCanBeDisabled) {
-  // Test that parameters can be disabled
-  params_.motif.response_mode = false;
-  params_.motif.contrary_motion = false;
-  params_.motif.dynamic_register = false;
+}  // namespace
 
-  Generator gen;
-  gen.generate(params_);
+TEST(MotifVocalContextTest, ResponseModeThinsMotifOverSungSpans) {
+  const size_t off = countMotifOnsetsInsideSungSpans(false);
+  const size_t on = countMotifOnsetsInsideSungSpans(true);
 
-  const auto& motif_track = gen.getSong().motif();
-  EXPECT_FALSE(motif_track.empty()) << "Motif should generate with params disabled";
+  ASSERT_GT(off, 0u) << "the motif must overlap the vocal for the comparison to mean anything";
+  EXPECT_LT(on, off) << "response mode should leave fewer motif onsets over sung notes";
 }
 
 TEST_F(MotifVocalCoordinationTest, MotifNotesInValidRange) {

@@ -20,6 +20,14 @@
 
 namespace midisketch {
 
+namespace {
+
+/// Shortest chorus that states its head twice: restated at the midpoint, and
+/// emphasised there as a hook point.
+constexpr uint8_t kChorusHeadRestateMinBars = 8;
+
+}  // namespace
+
 bool isHighEnergyVocalStyle(VocalStylePreset style) {
   switch (style) {
     case VocalStylePreset::Idol:
@@ -66,6 +74,57 @@ void foldPitchesIntoRange(std::vector<NoteEvent>& notes, uint8_t low, uint8_t hi
 #endif
     note.note = static_cast<uint8_t>(pitch);
   }
+}
+
+void thinToDensity(std::vector<NoteEvent>& notes, uint8_t density, uint8_t written_density,
+                   Tick keep_before) {
+  if (written_density == 0 || density >= written_density || notes.size() < 3) return;
+  const size_t remove = notes.size() * (written_density - density) / written_density;
+  if (remove == 0) return;
+
+  auto gapBefore = [&notes](size_t idx) {
+    const Tick prev_end = notes[idx - 1].start_tick + notes[idx - 1].duration;
+    return notes[idx].start_tick > prev_end ? notes[idx].start_tick - prev_end : 0;
+  };
+  // Lower is weaker: off-8th, off-beat 8th, beats 2/4, beat 3.
+  auto metricWeight = [](Tick tick) {
+    const Tick pos = tick % TICKS_PER_BAR;
+    if (pos % TICKS_PER_BEAT != 0) return pos % TICK_EIGHTH != 0 ? 0 : 1;
+    return pos == 2 * TICKS_PER_BEAT ? 3 : 2;
+  };
+
+  struct Candidate {
+    size_t idx;
+    int weight;
+  };
+  std::vector<Candidate> candidates;
+  for (size_t idx = 1; idx + 1 < notes.size(); ++idx) {
+    if (notes[idx].is_syllabic_subdivision || notes[idx].start_tick < keep_before) continue;
+    if (notes[idx].start_tick % TICKS_PER_BAR == 0) continue;
+    if (gapBefore(idx) >= TICK_EIGHTH || gapBefore(idx + 1) >= TICK_EIGHTH) continue;
+    candidates.push_back({idx, metricWeight(notes[idx].start_tick)});
+  }
+  std::stable_sort(candidates.begin(), candidates.end(),
+                   [&notes](const Candidate& lhs, const Candidate& rhs) {
+                     if (lhs.weight != rhs.weight) return lhs.weight < rhs.weight;
+                     return notes[lhs.idx].duration < notes[rhs.idx].duration;
+                   });
+  std::vector<bool> dropped(notes.size(), false);
+  for (size_t i = 0; i < candidates.size() && i < remove; ++i) dropped[candidates[i].idx] = true;
+
+  std::vector<NoteEvent> kept;
+  kept.reserve(notes.size());
+  for (size_t idx = 0; idx < notes.size(); ++idx) {
+    if (!dropped[idx]) {
+      kept.push_back(notes[idx]);
+      continue;
+    }
+    // The held note ends where the dropped one did; candidates are legato, so
+    // the previous note reaches it.
+    NoteEvent& held = kept.back();
+    held.duration = notes[idx].start_tick + notes[idx].duration - held.start_tick;
+  }
+  notes = std::move(kept);
 }
 
 std::vector<NoteEvent> toRelativeTiming(const std::vector<NoteEvent>& notes, Tick section_start) {
@@ -168,11 +227,14 @@ float getConsecutiveSameNoteProb(SectionType type, const StyleMelodyParams& para
   // Hook sections (Chorus, B) benefit from same-note repetition for catchiness.
   // Higher probability = more pitch repetition = more memorable hooks.
   // Example: AnimeHighEnergy "reference pop track" - repeated notes in chorus create earworm.
+  // The hook sections take their own value whatever the style asks for: the
+  // default melody parameters (0.6) sit below it, so capping the hook value by
+  // the style removed the repeated notes most choruses open on.
   switch (type) {
     case SectionType::Chorus:
-      return 0.75f;  // Hooks need same-note repetition for catchiness
+      return 0.75f;
     case SectionType::B:
-      return 0.65f;  // Pre-chorus builds anticipation with subtle variation
+      return 0.65f;
     default:
       return params.consecutive_same_note_prob;
   }
@@ -199,28 +261,24 @@ void applyVelocityBalance(std::vector<NoteEvent>& notes, float scale) {
 }
 
 void applyHookIntensity(std::vector<NoteEvent>& notes, SectionType section_type,
-                        HookIntensity intensity, Tick section_start) {
+                        HookIntensity intensity, Tick section_start, uint8_t section_bars) {
   if (intensity == HookIntensity::Off || notes.empty()) {
     return;
   }
 
-  // Hook points: Chorus start, B section climax
-  bool is_hook_section = (section_type == SectionType::Chorus || section_type == SectionType::B);
-  if (!is_hook_section && intensity < HookIntensity::Strong) {
-    return;  // Strong and above reach every section, not just the hook points
-  }
-
-  // Find notes at or near section start (first beat)
-  Tick hook_window = TICKS_PER_BEAT * 2;  // First 2 beats
-  std::vector<size_t> hook_note_indices;
-
-  for (size_t i = 0; i < notes.size(); ++i) {
-    if (notes[i].start_tick >= section_start && notes[i].start_tick < section_start + hook_window) {
-      hook_note_indices.push_back(i);
+  // Hook points, by rung: Light the chorus start, Normal also the chorus
+  // midpoint where its head is restated, Strong and above also the B start.
+  const bool is_chorus = section_type == SectionType::Chorus || section_type == SectionType::Drop;
+  std::vector<Tick> hook_points;
+  if (is_chorus) {
+    hook_points.push_back(section_start);
+    if (intensity >= HookIntensity::Normal && section_bars >= kChorusHeadRestateMinBars) {
+      hook_points.push_back(section_start + static_cast<Tick>(section_bars / 2) * TICKS_PER_BAR);
     }
+  } else if (section_type == SectionType::B && intensity >= HookIntensity::Strong) {
+    hook_points.push_back(section_start);
   }
-
-  if (hook_note_indices.empty()) return;
+  if (hook_points.empty()) return;
 
   // Apply effects based on intensity
   float duration_mult = 1.0f;
@@ -249,24 +307,27 @@ void applyHookIntensity(std::vector<NoteEvent>& notes, SectionType section_type,
       break;
   }
 
-  // Apply to first few notes (depending on intensity)
+  // Apply to the first few notes of each hook point's first two beats
   size_t max_notes = (intensity == HookIntensity::Light)    ? 1
                      : (intensity == HookIntensity::Normal) ? 2
                                                             : 3;
-  size_t apply_count = std::min(hook_note_indices.size(), max_notes);
-
-  for (size_t i = 0; i < apply_count; ++i) {
-    size_t idx = hook_note_indices[i];
-    notes[idx].duration = static_cast<Tick>(notes[idx].duration * duration_mult);
-    notes[idx].velocity = vel::withDelta(notes[idx].velocity, velocity_boost);
+  constexpr Tick kHookWindow = TICKS_PER_BEAT * 2;
+  for (Tick point : hook_points) {
+    size_t applied = 0;
+    for (auto& note : notes) {
+      if (applied >= max_notes) break;
+      if (note.start_tick < point || note.start_tick >= point + kHookWindow) continue;
+      note.duration = static_cast<Tick>(note.duration * duration_mult);
+      note.velocity = vel::withDelta(note.velocity, velocity_boost);
+      ++applied;
+    }
   }
 }
 
 void restateChorusHead(std::vector<NoteEvent>& notes, Tick section_start, uint8_t section_bars,
                        const IHarmonyContext& harmony) {
-  constexpr uint8_t kMinBars = 8;
-  constexpr Tick kHeadTicks = 2 * TICKS_PER_BAR;
-  if (section_bars < kMinBars || notes.empty()) return;
+  constexpr Tick kHeadTicks = kChorusHookBars * TICKS_PER_BAR;
+  if (section_bars < kChorusHeadRestateMinBars || notes.empty()) return;
 
   NoteTimeline::sortByStartTick(notes);
   const Tick offset = static_cast<Tick>(section_bars / 2) * TICKS_PER_BAR;

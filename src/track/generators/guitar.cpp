@@ -334,18 +334,30 @@ static uint8_t getEffectiveHighForVocal(const IHarmonyContext& harmony, Tick ons
                                                     kGuitarHigh, VocalCeilingMargin::kGuitar));
 }
 
+/// Create a guitar note, refusing a resolution that lands on the vocal's own pitch.
+static void addGuitarNote(MidiTrack& track, IHarmonyContext& harmony, NoteOptions opts) {
+  opts.register_to_harmony = false;
+  auto result = createNote(harmony, opts);
+  if (!result || vocalSoundsPitch(harmony, result->note, result->start_tick,
+                                  result->start_tick + result->duration)) {
+    return;
+  }
+  track.addNote(*result);
+  harmony.registerNote(result->start_tick, result->duration, result->note, opts.role);
+}
+
 // ============================================================================
 // Pattern generation per style
 // ============================================================================
 
 /// Fingerpick pattern: individual chord tones in arpeggiated pattern.
-/// Pattern: R-5-3-H-3-5-R-5 across 8th notes.
+/// Pattern: R-5-3-5-3-5-R-5 across 8th notes (2-note voicings alternate R and the upper tone).
 static void generateFingerpickBar(MidiTrack& track, IHarmonyContext& harmony, Tick bar_start,
                                   Tick bar_end, SectionType section, uint8_t base_vel,
                                   uint8_t section_high) {
   // 8 eighth notes per bar
   static constexpr int kNotesPerBar = 8;
-  // Fingerpick pattern indices (cycle through available chord tones)
+  // Fingerpick pattern indices into the ascending voicing, wrapped by its size
   // For a 3-note chord (R,3,5): 0,2,1,2,1,2,0,2
   static constexpr int kPattern3[] = {0, 2, 1, 2, 1, 2, 0, 2};
   // For a 2-note chord: 0,1,0,1,0,1,0,1
@@ -387,7 +399,7 @@ static void generateFingerpickBar(MidiTrack& track, IHarmonyContext& harmony, Ti
     opts.source = NoteSource::Guitar;
     opts.chord_boundary = GuitarGenerator::kChordBoundary;
 
-    createNoteAndAdd(track, harmony, opts);
+    addGuitarNote(track, harmony, opts);
   }
 }
 
@@ -482,7 +494,7 @@ static void generateStrumBar(MidiTrack& track, IHarmonyContext& harmony, Tick ba
       opts.source = NoteSource::Guitar;
       opts.chord_boundary = GuitarGenerator::kChordBoundary;
 
-      createNoteAndAdd(track, harmony, opts);
+      addGuitarNote(track, harmony, opts);
     }
   }
 }
@@ -536,7 +548,7 @@ static void generatePowerChordBar(MidiTrack& track, IHarmonyContext& harmony, Ti
       opts.source = NoteSource::Guitar;
       opts.chord_boundary = GuitarGenerator::kChordBoundary;
 
-      createNoteAndAdd(track, harmony, opts);
+      addGuitarNote(track, harmony, opts);
     }
   }
 }
@@ -608,7 +620,7 @@ static void generatePedalToneBar(MidiTrack& track, IHarmonyContext& harmony, Tic
     opts.source = NoteSource::Guitar;
     opts.chord_boundary = GuitarGenerator::kChordBoundary;
 
-    createNoteAndAdd(track, harmony, opts);
+    addGuitarNote(track, harmony, opts);
   }
 }
 
@@ -661,7 +673,7 @@ static void generateRhythmChordBar(MidiTrack& track, IHarmonyContext& harmony, T
       opts.source = NoteSource::Guitar;
       opts.chord_boundary = GuitarGenerator::kChordBoundary;
 
-      createNoteAndAdd(track, harmony, opts);
+      addGuitarNote(track, harmony, opts);
     }
   }
 }
@@ -772,7 +784,7 @@ static void generateTremoloPickBar(MidiTrack& track, IHarmonyContext& harmony, T
     opts.source = NoteSource::Guitar;
     opts.chord_boundary = GuitarGenerator::kChordBoundary;
 
-    createNoteAndAdd(track, harmony, opts);
+    addGuitarNote(track, harmony, opts);
   }
 }
 
@@ -869,7 +881,7 @@ static void generateSweepArpeggioBar(MidiTrack& track, IHarmonyContext& harmony,
     opts.source = NoteSource::Guitar;
     opts.chord_boundary = GuitarGenerator::kChordBoundary;
 
-    createNoteAndAdd(track, harmony, opts);
+    addGuitarNote(track, harmony, opts);
   }
 }
 
@@ -972,7 +984,8 @@ void GuitarGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackConte
             generateHalf(bc.bar_start, silence_start, bc.section.type, bc.section.energy, style);
             return;
           }
-          // Penultimate bar: generate first half normally, second half with sparse feel
+          // Penultimate bar: both halves use the same style; the bar is split so each half
+          // voices its own onsets
           generateHalf(bc.bar_start, half_bar, bc.section.type, bc.section.energy, style);
           generateHalf(half_bar, bc.bar_end, bc.section.type, bc.section.energy, style);
           return;

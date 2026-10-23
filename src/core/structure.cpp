@@ -24,34 +24,13 @@ namespace {
 constexpr float kSecondsPerMinute = 60.0f;
 constexpr float kBeatsPerBar = 4.0f;
 constexpr float kSecondsToBarsDivisor = kSecondsPerMinute * kBeatsPerBar;  // 240.0f
-constexpr int kBarTolerance = 8;         // Bar tolerance for pattern matching
-constexpr int kExtensionBlockSize = 24;  // A(8) + B(8) + Chorus(8) = 24 bars
+constexpr int kBarTolerance = 8;          // Bar tolerance for pattern matching
+constexpr int kExtensionBlockSize = 24;   // A(8) + B(8) + Chorus(8) = 24 bars
+constexpr uint8_t kPhraseBars = 8;        // One A, B or Chorus of an extension
+constexpr uint8_t kShortBookendBars = 4;  // Shortest Intro/Outro a trim leaves
 
-std::string sectionTypeName(SectionType type) {
-  switch (type) {
-    case SectionType::Intro:
-      return "Intro";
-    case SectionType::A:
-      return "A";
-    case SectionType::B:
-      return "B";
-    case SectionType::Chorus:
-      return "Chorus";
-    case SectionType::Bridge:
-      return "Bridge";
-    case SectionType::Interlude:
-      return "Interlude";
-    case SectionType::Outro:
-      return "Outro";
-    case SectionType::Chant:
-      return "Chant";
-    case SectionType::MixBreak:
-      return "MixBreak";
-    case SectionType::Drop:
-      return "Drop";
-  }
-  return "";
-}
+// Climax marker; only the terminal chorus carries it.
+constexpr PeakLevel kClimaxPeak = PeakLevel::Max;
 
 // Get vocal density for a section type
 // Extracted as shared function to avoid duplicate lambda definitions
@@ -99,7 +78,7 @@ void assignDensityGradient(std::vector<Section>& sections) {
 // - Skip sections that already have an explicit exit_pattern set (from blueprint)
 // - Outro sections: Fadeout (velocity decrease)
 // - B sections followed by Chorus: Sustain (holds for lift effect)
-// - Last Chorus in the song: FinalHit (strong ending) + PeakLevel::Max
+// - Last Chorus in the song: FinalHit (strong ending) + the climax peak
 // - Other sections: None
 void assignExitPatterns(std::vector<Section>& sections) {
   if (sections.empty()) return;
@@ -129,10 +108,26 @@ void assignExitPatterns(std::vector<Section>& sections) {
     } else if (idx == last_chorus_idx) {
       section.exit_pattern = ExitPattern::FinalHit;
       // Last chorus gets maximum peak level for emotional climax
-      section.peak_level = PeakLevel::Max;
+      section.peak_level = kClimaxPeak;
     }
     // Otherwise leave as None (already default)
   }
+}
+
+/// @brief A form-built section with its type's default densities; ticks are laid out later.
+Section makePatternSection(SectionType type, uint8_t bars) {
+  Section section;
+  section.type = type;
+  section.name = getSectionTypeName(type);
+  section.bars = bars;
+  section.vocal_density = getVocalDensityForType(type);
+  section.backing_density = getBackingDensityForType(type);
+  section.deviation_allowed = getAllowDeviationForType(type);
+  section.se_allowed = true;
+  if (type == SectionType::Intro) {
+    section.entry_pattern = EntryPattern::Stagger;
+  }
+  return section;
 }
 
 }  // namespace
@@ -151,10 +146,17 @@ void applyEnergyCurve(std::vector<Section>& sections, EnergyCurve curve) {
     return;
   }
 
+  // An ochisabi and a climax declare their own dynamics; a curve shapes the rest around them.
+  auto modifierOwnsEnergy = [](const Section& section) {
+    return section.modifier == SectionModifier::Ochisabi ||
+           section.modifier == SectionModifier::Climactic;
+  };
+
   // FrontLoaded: High energy from start, maintain throughout
   if (curve == EnergyCurve::FrontLoaded) {
     for (size_t idx = 0; idx < sections.size(); ++idx) {
       auto& section = sections[idx];
+      if (modifierOwnsEnergy(section)) continue;
 
       // Bridge sections get a slight dip for contrast
       if (section.type == SectionType::Bridge || section.type == SectionType::Interlude) {
@@ -193,11 +195,17 @@ void applyEnergyCurve(std::vector<Section>& sections, EnergyCurve curve) {
       }
 
       // Apply wave energy
-      if (isBookendSection(section.type)) {
-        // Intro/Outro stay as-is
+      if (isBookendSection(section.type) || modifierOwnsEnergy(section)) {
+        // Intro/Outro and modifier-shaped sections stay as-is
       } else if (is_high_wave || section.type == SectionType::Chorus) {
-        section.energy = SectionEnergy::High;
+        // Raise to the crest, never lower a chorus already above it
+        if (section.energy == SectionEnergy::Unset || section.energy < SectionEnergy::High) {
+          section.energy = SectionEnergy::High;
+        }
         section.base_velocity = std::max(section.base_velocity, static_cast<uint8_t>(85));
+      } else if (section.type == SectionType::B) {
+        // The pre-chorus climbs out of the trough toward the chorus
+        section.energy = SectionEnergy::Medium;
       } else {
         section.energy = SectionEnergy::Low;
         section.base_velocity = std::min(section.base_velocity, static_cast<uint8_t>(68));
@@ -212,28 +220,13 @@ void applyEnergyCurve(std::vector<Section>& sections, EnergyCurve curve) {
   // The blueprint's section_flow already defines gradual energy progression
 }
 
-std::vector<Section> buildStructure(StructurePattern pattern) {
-  std::vector<Section> sections;
-  Tick current_bar = 0;
-  Tick current_tick = 0;
+namespace {
 
+/// @brief Sections a form lays out, with densities but no exit patterns yet.
+std::vector<Section> patternSections(StructurePattern pattern) {
+  std::vector<Section> sections;
   auto addSection = [&](SectionType type, uint8_t bars) {
-    Section section;
-    section.type = type;
-    section.name = sectionTypeName(type);
-    section.bars = bars;
-    section.start_bar = current_bar;
-    section.start_tick = current_tick;
-    section.vocal_density = getVocalDensityForType(type);
-    section.backing_density = getBackingDensityForType(type);
-    section.deviation_allowed = getAllowDeviationForType(type);
-    section.se_allowed = true;
-    if (type == SectionType::Intro) {
-      section.entry_pattern = EntryPattern::Stagger;
-    }
-    sections.push_back(section);
-    current_bar += bars;
-    current_tick += bars * TICKS_PER_BAR;
+    sections.push_back(makePatternSection(type, bars));
   };
 
   switch (pattern) {
@@ -409,12 +402,18 @@ std::vector<Section> buildStructure(StructurePattern pattern) {
       break;
   }
 
+  recalculateSectionTicks(sections);
+
   // Assign density gradient for progressive energy buildup
   assignDensityGradient(sections);
+  return sections;
+}
 
-  // Assign exit patterns based on section context
+}  // namespace
+
+std::vector<Section> buildStructure(StructurePattern pattern) {
+  std::vector<Section> sections = patternSections(pattern);
   assignExitPatterns(sections);
-
   return sections;
 }
 
@@ -460,132 +459,144 @@ bool isTargetDurationAchievable(uint16_t target_seconds, uint16_t bpm) {
   return bars >= kMinStructureBars && bars <= kMaxStructureBars;
 }
 
-std::vector<Section> buildStructureForDuration(uint16_t target_seconds, uint16_t bpm,
-                                               StructurePattern pattern) {
-  uint16_t target_bars = barsForDuration(target_seconds, bpm);
+namespace {
 
-  // Clamp to valid range. Validation upstream only rejects a duration no
-  // permitted tempo could build, so a length this tempo cannot reach does
-  // arrive here and is shortened or lengthened silently. The caller holding the
-  // resolved tempo is the one that reports the adjustment; this stays a
-  // backstop, including for callers that build a structure directly.
-  target_bars = std::max(target_bars, kMinStructureBars);
-  target_bars = std::min(target_bars, kMaxStructureBars);
+/// @brief Lengthen a form toward @p target_bars without stacking choruses.
+///
+/// Whole A-B-Chorus blocks go in before the Outro. A remainder of more than two
+/// phrases becomes one more B leading into a chorus; one of more than a phrase
+/// repeats the last chorus, so the ending is never a fragment shorter than the
+/// form's own chorus. Anything smaller is inside the tolerance and left alone.
+void extendSections(std::vector<Section>& sections, uint16_t target_bars) {
+  const int extra = static_cast<int>(target_bars) - static_cast<int>(calculateTotalBars(sections));
+  if (extra <= 0) return;
 
-  // Get base structure from pattern
-  std::vector<Section> sections = buildStructure(pattern);
-  uint16_t base_bars = calculateTotalBars(sections);
-
-  // If target matches base (within tolerance), use pattern as-is
-  if (std::abs(static_cast<int>(target_bars) - static_cast<int>(base_bars)) <= kBarTolerance) {
-    return sections;
+  std::vector<Section> extra_sections;
+  for (int i = 0; i < extra / kExtensionBlockSize; ++i) {
+    extra_sections.push_back(makePatternSection(SectionType::A, kPhraseBars));
+    extra_sections.push_back(makePatternSection(SectionType::B, kPhraseBars));
+    extra_sections.push_back(makePatternSection(SectionType::Chorus, kPhraseBars));
+  }
+  const int remainder = extra % kExtensionBlockSize;
+  if (remainder > 2 * kPhraseBars) {
+    extra_sections.push_back(makePatternSection(SectionType::B, kPhraseBars));
+    extra_sections.push_back(makePatternSection(SectionType::Chorus, kPhraseBars));
   }
 
-  // Helper to create a section with proper attributes
-  auto createSection = [](SectionType type, uint8_t bars, Tick& current_bar, Tick& current_tick) {
-    Section section;
-    section.type = type;
-    section.name = sectionTypeName(type);
-    section.bars = bars;
-    section.start_bar = current_bar;
-    section.start_tick = current_tick;
-    section.vocal_density = getVocalDensityForType(type);
-    section.backing_density = getBackingDensityForType(type);
-    section.deviation_allowed = getAllowDeviationForType(type);
-    section.se_allowed = true;
-    current_bar += bars;
-    current_tick += bars * TICKS_PER_BAR;
-    return section;
-  };
+  auto outro_it = std::find_if(sections.begin(), sections.end(),
+                               [](const Section& s) { return s.type == SectionType::Outro; });
+  sections.insert(outro_it, extra_sections.begin(), extra_sections.end());
 
-  // Need to scale the structure
-  if (target_bars > base_bars) {
-    // EXTEND: Add A-B-Chorus blocks before Outro
-    int extra_bars = target_bars - base_bars;
-    int blocks_to_add = extra_bars / kExtensionBlockSize;  // A(8)+B(8)+Chorus(8) = 24
-
-    // Find Outro position (or end if no Outro)
-    auto outro_it = std::find_if(sections.begin(), sections.end(),
-                                 [](const Section& s) { return s.type == SectionType::Outro; });
-
-    Tick insert_bar = 0;
-    Tick insert_tick = 0;
-    if (outro_it != sections.end()) {
-      insert_bar = outro_it->start_bar;
-      insert_tick = outro_it->start_tick;
-    } else {
-      insert_bar = sections.back().start_bar + sections.back().bars;
-      insert_tick = sections.back().endTick();
+  if (remainder > kPhraseBars && remainder <= 2 * kPhraseBars) {
+    auto last_chorus = std::find_if(sections.rbegin(), sections.rend(),
+                                    [](const Section& s) { return s.type == SectionType::Chorus; });
+    if (last_chorus != sections.rend()) {
+      last_chorus->bars = static_cast<uint8_t>(last_chorus->bars + kPhraseBars);
     }
-
-    // Insert extra blocks
-    std::vector<Section> extra_sections;
-    for (int i = 0; i < blocks_to_add; ++i) {
-      extra_sections.push_back(createSection(SectionType::A, 8, insert_bar, insert_tick));
-      extra_sections.push_back(createSection(SectionType::B, 8, insert_bar, insert_tick));
-      extra_sections.push_back(createSection(SectionType::Chorus, 8, insert_bar, insert_tick));
-    }
-    int remaining_bars = extra_bars % kExtensionBlockSize;
-    if (remaining_bars >= 16) {
-      extra_sections.push_back(createSection(SectionType::B, 8, insert_bar, insert_tick));
-      remaining_bars -= 8;
-    }
-    if (remaining_bars >= 8) {
-      extra_sections.push_back(createSection(SectionType::Chorus, 8, insert_bar, insert_tick));
-      remaining_bars -= 8;
-    }
-    if (remaining_bars >= 4) {
-      extra_sections.push_back(createSection(SectionType::Chorus, 4, insert_bar, insert_tick));
-    }
-
-    if (!extra_sections.empty()) {
-      if (outro_it != sections.end()) {
-        sections.insert(outro_it, extra_sections.begin(), extra_sections.end());
-      } else {
-        sections.insert(sections.end(), extra_sections.begin(), extra_sections.end());
-      }
-      recalculateSectionTicks(sections);
-    }
-  } else {
-    // SHORTEN: Remove some A/B sections while preserving pattern character
-    int excess_bars = base_bars - target_bars;
-
-    // Find removable A or B sections (not the first occurrence, not right before Chorus)
-    // Priority: remove from the end, preserving first A-B-Chorus block
-    std::vector<size_t> removable_indices;
-    bool found_first_chorus = false;
-    for (size_t i = 0; i < sections.size(); ++i) {
-      const auto& s = sections[i];
-      if (s.type == SectionType::Chorus) {
-        found_first_chorus = true;
-      }
-      // Only consider A/B sections after the first Chorus
-      if (found_first_chorus && (s.type == SectionType::A || s.type == SectionType::B)) {
-        // Don't remove if next section is Chorus (keep B-Chorus pair)
-        if (i + 1 < sections.size() && sections[i + 1].type == SectionType::Chorus) {
-          continue;
-        }
-        removable_indices.push_back(i);
-      }
-    }
-
-    // Remove from end first
-    std::sort(removable_indices.rbegin(), removable_indices.rend());
-    for (size_t idx : removable_indices) {
-      if (excess_bars <= 0) break;
-      excess_bars -= sections[idx].bars;
-      sections.erase(sections.begin() + static_cast<ptrdiff_t>(idx));
-    }
-
-    recalculateSectionTicks(sections);
   }
-
-  // Re-assign density gradient and exit patterns after structure modification
-  assignDensityGradient(sections);
-  assignExitPatterns(sections);
-
-  return sections;
+  recalculateSectionTicks(sections);
 }
+
+/// @brief One way of shortening a form: remove a run of sections or trim one.
+struct SectionCut {
+  size_t first = 0;     ///< First section affected
+  size_t count = 1;     ///< Sections removed (ignored when trimming)
+  uint8_t trim_to = 0;  ///< > 0: shorten sections[first] to this many bars instead
+};
+
+int cutBars(const std::vector<Section>& sections, const SectionCut& cut) {
+  if (cut.trim_to > 0) return sections[cut.first].bars - cut.trim_to;
+  int bars = 0;
+  for (size_t i = cut.first; i < cut.first + cut.count; ++i) bars += sections[i].bars;
+  return bars;
+}
+
+/// @brief Ways to shorten a form, most expendable first, latest in the song first.
+///
+/// Verses and pre-choruses after the first chorus go first, then breaks, then a
+/// whole chorus other than the last (with its lead-in B, unless another chorus
+/// follows it), then long bookends. The last chorus and the B leading into it
+/// are never cut.
+std::vector<SectionCut> shorteningCuts(const std::vector<Section>& sections) {
+  std::vector<SectionCut> cuts;
+  const size_t n = sections.size();
+  auto isChorus = [&](size_t i) { return i < n && sections[i].type == SectionType::Chorus; };
+
+  size_t first_chorus = n;
+  size_t last_chorus = n;
+  for (size_t i = 0; i < n; ++i) {
+    if (isChorus(i)) {
+      if (first_chorus == n) first_chorus = i;
+      last_chorus = i;
+    }
+  }
+
+  for (size_t i = n; i-- > 0;) {
+    const auto type = sections[i].type;
+    if (first_chorus < i && (type == SectionType::A || type == SectionType::B) &&
+        !isChorus(i + 1)) {
+      cuts.push_back({i, 1, 0});
+    }
+  }
+  for (size_t i = n; i-- > 0;) {
+    if (sections[i].type == SectionType::Interlude || sections[i].type == SectionType::Bridge) {
+      cuts.push_back({i, 1, 0});
+    }
+  }
+  for (size_t i = n; i-- > 0;) {
+    if (!isChorus(i) || i == last_chorus) continue;
+    if (!isChorus(i + 1) && i > 0 && sections[i - 1].type == SectionType::B) {
+      cuts.push_back({i - 1, 2, 0});
+    } else {
+      cuts.push_back({i, 1, 0});
+    }
+  }
+  for (size_t i = n; i-- > 0;) {
+    if (isBookendSection(sections[i].type) && sections[i].bars > kShortBookendBars) {
+      cuts.push_back({i, 1, kShortBookendBars});
+    }
+  }
+  return cuts;
+}
+
+/// @brief Shorten a form toward @p target_bars, taking a cut only when it brings the length closer.
+void shortenSections(std::vector<Section>& sections, uint16_t target_bars) {
+  int excess = static_cast<int>(calculateTotalBars(sections)) - static_cast<int>(target_bars);
+  while (excess > 0) {
+    const int total = static_cast<int>(calculateTotalBars(sections));
+    bool cut_made = false;
+    for (const auto& cut : shorteningCuts(sections)) {
+      const int bars = cutBars(sections, cut);
+      if (bars <= 0 || bars >= 2 * excess || total - bars < kMinStructureBars) continue;
+      if (cut.trim_to > 0) {
+        sections[cut.first].bars = cut.trim_to;
+      } else {
+        const auto begin = sections.begin() + static_cast<ptrdiff_t>(cut.first);
+        sections.erase(begin, begin + static_cast<ptrdiff_t>(cut.count));
+      }
+      excess -= bars;
+      cut_made = true;
+      break;
+    }
+    if (!cut_made) break;
+  }
+  recalculateSectionTicks(sections);
+}
+
+/// @brief Bring a form-built list to @p target_bars; leaves it alone inside the tolerance.
+void fitSectionsToBars(std::vector<Section>& sections, uint16_t target_bars) {
+  const int base_bars = calculateTotalBars(sections);
+  if (std::abs(static_cast<int>(target_bars) - base_bars) <= kBarTolerance) return;
+  if (target_bars > base_bars) {
+    extendSections(sections, target_bars);
+  } else {
+    shortenSections(sections, target_bars);
+  }
+  // Sections added by the extension take their type's density.
+  assignDensityGradient(sections);
+}
+
+}  // namespace
 
 uint16_t calculateTotalBars(const std::vector<Section>& sections) {
   uint16_t total = 0;
@@ -650,50 +661,39 @@ void insertCallSections(std::vector<Section>& sections, IntroChant intro_chant,
     }
   }
 
-  // 2. Insert MixBreak before last Chorus
+  // 2. MixBreak before last Chorus; one already leading into it takes the MIX instead
   if (mix_pattern != MixPattern::None) {
-    Section mix;
-    mix.type = SectionType::MixBreak;
-    mix.bars = calcMixPatternBars(mix_pattern, bpm);
-    mix.name = (mix_pattern == MixPattern::Tiger) ? "TigerMix" : "Mix";
-    mix.vocal_density = getVocalDensityForType(SectionType::MixBreak);
-    mix.backing_density = getBackingDensityForType(SectionType::MixBreak);
-    mix.density_percent = getSectionProperties(SectionType::MixBreak).default_density_percent;
-    mix.deviation_allowed = false;
-    mix.se_allowed = true;
-
-    // Find last Chorus (search from end)
     auto it = std::find_if(sections.rbegin(), sections.rend(),
                            [](const Section& s) { return s.type == SectionType::Chorus; });
     if (it != sections.rend()) {
-      // Insert mix section immediately before the last Chorus.
-      // Reverse iterator semantics: it.base() points to the element AFTER *it,
-      // so (it.base() - 1) points to the found Chorus, allowing insert before it.
-      auto fwd_it = it.base();
-      sections.insert(fwd_it - 1, mix);
+      // it.base() - 1 is the last Chorus itself.
+      auto chorus_it = it.base() - 1;
+      const uint8_t mix_bars = calcMixPatternBars(mix_pattern, bpm);
+      const char* mix_name = (mix_pattern == MixPattern::Tiger) ? "TigerMix" : "Mix";
+      if (chorus_it != sections.begin() && (chorus_it - 1)->type == SectionType::MixBreak) {
+        Section& existing = *(chorus_it - 1);
+        existing.bars = std::max(existing.bars, mix_bars);
+        existing.name = mix_name;
+        existing.track_mask = existing.track_mask | TrackMask::SE;
+        existing.se_allowed = true;
+      } else {
+        Section mix;
+        mix.type = SectionType::MixBreak;
+        mix.bars = mix_bars;
+        mix.name = mix_name;
+        mix.vocal_density = getVocalDensityForType(SectionType::MixBreak);
+        mix.backing_density = getBackingDensityForType(SectionType::MixBreak);
+        mix.density_percent = getSectionProperties(SectionType::MixBreak).default_density_percent;
+        mix.deviation_allowed = false;
+        mix.se_allowed = true;
+        sections.insert(chorus_it, mix);
+      }
     }
   }
 
-  // Recalculate ticks
+  // Existing density_percent values may come from blueprint slots and must
+  // survive call toggles.
   recalculateSectionTicks(sections);
-
-  // Re-assign exit patterns after call section insertion. Existing density_percent
-  // values may come from blueprint slots and must survive call toggles.
-  assignExitPatterns(sections);
-}
-
-std::vector<Section> buildStructureForDuration(uint16_t target_seconds, uint16_t bpm,
-                                               bool call_enabled, IntroChant intro_chant,
-                                               MixPattern mix_pattern, StructurePattern pattern) {
-  // First build basic structure using the pattern
-  std::vector<Section> sections = buildStructureForDuration(target_seconds, bpm, pattern);
-
-  // Then insert call sections if enabled
-  if (call_enabled) {
-    insertCallSections(sections, intro_chant, mix_pattern, bpm);
-  }
-
-  return sections;
 }
 
 // ============================================================================
@@ -791,11 +791,18 @@ void applySlotLayerSchedule(Section& section, const SectionSlot& slot) {
 
 }  // namespace
 
-std::vector<Section> buildStructureFromBlueprint(const ProductionBlueprint& blueprint) {
+namespace {
+
+bool hasSectionFlow(const ProductionBlueprint* blueprint) {
+  return blueprint != nullptr && blueprint->section_flow != nullptr && blueprint->section_count > 0;
+}
+
+/// @brief Sections a blueprint flow lays out, with no derived exit patterns yet.
+std::vector<Section> flowSections(const ProductionBlueprint& blueprint) {
   std::vector<Section> sections;
 
   // If no custom section flow, return empty (caller should use buildStructure)
-  if (blueprint.section_flow == nullptr || blueprint.section_count == 0) {
+  if (!hasSectionFlow(&blueprint)) {
     return sections;
   }
 
@@ -807,7 +814,7 @@ std::vector<Section> buildStructureFromBlueprint(const ProductionBlueprint& blue
 
     Section section;
     section.type = slot.type;
-    section.name = sectionTypeName(slot.type);
+    section.name = getSectionTypeName(slot.type);
     section.bars = slot.bars;
     section.start_bar = current_bar;
     section.start_tick = current_tick;
@@ -868,11 +875,49 @@ std::vector<Section> buildStructureFromBlueprint(const ProductionBlueprint& blue
   // NOTE: Do NOT call assignDensityGradient() here.
   // Blueprint-based structures have explicit density_percent values
   // defined in their SectionSlot definitions, which were already
-  // transferred to the Section above (line 685).
+  // transferred to the Section above.
+  return sections;
+}
 
-  // Assign exit patterns based on section context
+/// @brief A slot whose gesture belongs to one place in the song (an ochisabi, a drop chorus).
+bool isPositionDependentSlot(const SectionSlot& slot) {
+  return slot.modifier == SectionModifier::Ochisabi ||
+         (slot.type == SectionType::Chorus && slot.drop_style != ChorusDropStyle::None);
+}
+
+/// @brief Slot for occurrence @p idx of the @p type_count sections of one type.
+///
+/// First occurrence -> first slot, last -> last slot. The middle occurrences
+/// take the slots between, aligned to the end so a slot written to sit before
+/// the terminal one (an ochisabi before the last chorus) still does. Surplus
+/// middle occurrences, the earliest ones, repeat the regular interior slots.
+size_t overlaySlotIndex(const std::vector<const SectionSlot*>& slots, size_t idx,
+                        size_t type_count) {
+  const size_t slot_count = slots.size();
+  const size_t last_slot = slot_count - 1;
+  if (slot_count == 1) return 0;
+  if (type_count == 1) return isPositionDependentSlot(*slots[last_slot]) ? 0 : last_slot;
+  if (idx == 0) return 0;
+  if (idx + 1 == type_count) return last_slot;
+
+  const size_t middle_count = type_count - 2;
+  const size_t interior_count = slot_count - 2;
+  if (middle_count <= interior_count) return slot_count - type_count + idx;
+  const size_t surplus = middle_count - interior_count;
+  if (idx > surplus) return idx - surplus;
+
+  std::vector<size_t> regular;
+  for (size_t i = 1; i < last_slot; ++i) {
+    if (!isPositionDependentSlot(*slots[i])) regular.push_back(i);
+  }
+  return regular.empty() ? 0 : regular[(idx - 1) % regular.size()];
+}
+
+}  // namespace
+
+std::vector<Section> buildStructureFromBlueprint(const ProductionBlueprint& blueprint) {
+  std::vector<Section> sections = flowSections(blueprint);
   assignExitPatterns(sections);
-
   return sections;
 }
 
@@ -881,7 +926,7 @@ std::vector<Section> buildStructureFromBlueprint(const ProductionBlueprint& blue
 // ============================================================================
 
 void applyBlueprintOverlay(std::vector<Section>& sections, const ProductionBlueprint& blueprint) {
-  if (blueprint.section_flow == nullptr || blueprint.section_count == 0) {
+  if (!hasSectionFlow(&blueprint)) {
     return;
   }
   if (sections.empty()) {
@@ -895,11 +940,8 @@ void applyBlueprintOverlay(std::vector<Section>& sections, const ProductionBluep
     slot_map[blueprint.section_flow[i].type].push_back(&blueprint.section_flow[i]);
   }
 
-  // Count occurrences first.  Duration-based structures can add or remove
-  // whole A-B-Chorus blocks, so matching each type only from the front makes
-  // a terminal blueprint slot (FinalHit/Peak::Max) leak into every surplus
-  // chorus.  Align shortened forms to the tail, and reserve a terminal slot
-  // for the last generated occurrence in extended forms.
+  // Count occurrences first: duration-built forms add and remove whole blocks,
+  // so a slot is chosen by position within its type, not by index alone.
   std::map<SectionType, size_t> generated_count;
   for (const auto& section : sections) {
     ++generated_count[section.type];
@@ -916,22 +958,8 @@ void applyBlueprintOverlay(std::vector<Section>& sections, const ProductionBluep
     }
 
     const auto& slots = it->second;
-    size_t idx = occurrence_index[section.type]++;
-    const size_t slot_count = slots.size();
-    const size_t type_count = generated_count[section.type];
-    size_t slot_idx = 0;
-    if (type_count <= slot_count) {
-      // A shortened form must still receive the blueprint's ending settings.
-      slot_idx = slot_count - type_count + idx;
-    } else if (slot_count == 1) {
-      slot_idx = 0;
-    } else if (idx + 1 == type_count) {
-      // Reserve the terminal slot for the actual ending only.
-      slot_idx = slot_count - 1;
-    } else {
-      // Extend the normal penultimate material, not the terminal material.
-      slot_idx = std::min(idx, slot_count - 2);
-    }
+    const size_t idx = occurrence_index[section.type]++;
+    const size_t slot_idx = overlaySlotIndex(slots, idx, generated_count[section.type]);
     const SectionSlot& slot = *slots[slot_idx];
 
     // --- Overlay fields (limited list) ---
@@ -951,9 +979,8 @@ void applyBlueprintOverlay(std::vector<Section>& sections, const ProductionBluep
     section.peak_level = slot.peak_level;
     section.entry_pattern = slot.entry_pattern;
 
-    // Reset inherited duration-builder exits before applying the blueprint.
-    // A previously terminal chorus can become an intermediate one after an
-    // extension; retaining its FinalHit here would create a false ending.
+    // The slot's exit replaces whatever the section carried; derived exits are
+    // marked afterwards, so a chorus that stopped being last keeps no false ending.
     section.exit_pattern = slot.exit_pattern;
 
     // Apply swing amount from blueprint
@@ -972,6 +999,7 @@ void applyBlueprintOverlay(std::vector<Section>& sections, const ProductionBluep
     // Derive vocal_density and backing_density from the overlaid track_mask
     section.vocal_density = trackMaskToVocalDensity(slot.enabled_tracks);
     section.backing_density = trackMaskToBackingDensity(slot.enabled_tracks);
+    section.se_allowed = hasTrack(slot.enabled_tracks, TrackMask::SE);
 
     // Derive fill_before from PeakLevel
     section.fill_before = (slot.peak_level != PeakLevel::None);
@@ -981,10 +1009,96 @@ void applyBlueprintOverlay(std::vector<Section>& sections, const ProductionBluep
     section.layer_events.clear();
     applySlotLayerSchedule(section, slot);
   }
+}
 
-  // Restore contextual defaults (for example B->Chorus sustain) only after
-  // obsolete terminal exits have been cleared above.
+// ============================================================================
+// Song Structure Planning
+// ============================================================================
+
+std::vector<Section> planSongStructure(const StructureRequest& request,
+                                       std::vector<std::string>& warnings) {
+  const bool sized = request.target_duration_seconds > 0;
+  const bool from_flow = !sized && !request.form_explicit && hasSectionFlow(request.blueprint);
+  std::vector<Section> sections =
+      from_flow ? flowSections(*request.blueprint) : patternSections(request.pattern);
+
+  uint16_t buildable_bars = 0;
+  if (sized) {
+    // This is the one layer holding both the requested length and the
+    // resolved tempo, so it is the one that says when the tempo cannot reach it.
+    const uint16_t requested_bars = barsForDuration(request.target_duration_seconds, request.bpm);
+    buildable_bars = std::clamp(requested_bars, kMinStructureBars, kMaxStructureBars);
+    if (buildable_bars != requested_bars && request.bpm > 0) {
+      const uint32_t buildable_seconds =
+          static_cast<uint32_t>(buildable_bars) * BEATS_PER_BAR * 60u / request.bpm;
+      warnings.push_back(
+          "Duration adjusted from " + std::to_string(request.target_duration_seconds) + "s to " +
+          std::to_string(buildable_seconds) + "s: " + std::to_string(requested_bars) + " bars at " +
+          std::to_string(request.bpm) + " BPM is outside the buildable range of " +
+          std::to_string(kMinStructureBars) + "-" + std::to_string(kMaxStructureBars) +
+          " bars (a different tempo reaches a different length)");
+    }
+
+    // The call sections are part of the song's length, so their bars are
+    // reserved before the form is sized rather than added on top of it.
+    int call_bars = 0;
+    if (request.call_enabled) {
+      call_bars = calcIntroChantBars(request.intro_chant, request.bpm) +
+                  calcMixPatternBars(request.mix_pattern, request.bpm);
+    }
+    const int form_bars =
+        std::max(static_cast<int>(buildable_bars) - call_bars, static_cast<int>(kMinStructureBars));
+    fitSectionsToBars(sections, static_cast<uint16_t>(form_bars));
+  }
+
+  if (request.call_enabled) {
+    insertCallSections(sections, request.intro_chant, request.mix_pattern, request.bpm);
+  }
+
+  // A form-built list takes the blueprint's slot properties the way a flow-built one has them.
+  if (!from_flow && hasSectionFlow(request.blueprint)) {
+    applyBlueprintOverlay(sections, *request.blueprint);
+  }
+
+  // Marked once, after the last edit to the list.
   assignExitPatterns(sections);
+
+  if (sized) {
+    const uint16_t built_bars = calculateTotalBars(sections);
+    if (std::abs(static_cast<int>(built_bars) - static_cast<int>(buildable_bars)) > kBarTolerance) {
+      warnings.push_back("Duration target of " + std::to_string(buildable_bars) +
+                         " bars could not be met: the structure built is " +
+                         std::to_string(built_bars) + " bars");
+    }
+  }
+
+  applyAddictiveModeExitPatterns(sections, request.addictive_mode);
+  applyEnergyCurve(sections, request.energy_curve);
+  return sections;
+}
+
+std::vector<Section> buildStructureForDuration(uint16_t target_seconds, uint16_t bpm,
+                                               StructurePattern pattern) {
+  StructureRequest request;
+  request.pattern = pattern;
+  request.target_duration_seconds = target_seconds;
+  request.bpm = bpm;
+  std::vector<std::string> warnings;
+  return planSongStructure(request, warnings);
+}
+
+std::vector<Section> buildStructureForDuration(uint16_t target_seconds, uint16_t bpm,
+                                               bool call_enabled, IntroChant intro_chant,
+                                               MixPattern mix_pattern, StructurePattern pattern) {
+  StructureRequest request;
+  request.pattern = pattern;
+  request.target_duration_seconds = target_seconds;
+  request.bpm = bpm;
+  request.call_enabled = call_enabled;
+  request.intro_chant = intro_chant;
+  request.mix_pattern = mix_pattern;
+  std::vector<std::string> warnings;
+  return planSongStructure(request, warnings);
 }
 
 // ============================================================================
@@ -1067,7 +1181,8 @@ std::vector<LayerEvent> generateDefaultLayerEvents(const Section& section, size_
       break;
 
     case SectionType::Drop: {
-      // EDM Drop section: minimal instruments initially, then re-entry
+      // EDM Drop section: minimal instruments initially, then re-entry. No shipped
+      // form or blueprint flow produces one; this serves a caller-built list.
       // Pattern: Kick + Sub-bass only -> gradual re-entry -> full energy
       if (section.bars >= 4) {
         // Start with minimal: only drums (kick) and bass (sub-bass)
@@ -1083,6 +1198,22 @@ std::vector<LayerEvent> generateDefaultLayerEvents(const Section& section, size_
     }
   }
 
+  // A schedule that lays out the set from bar 0 only refines the section's mask:
+  // a track the mask enables but no entry names joins with the last entry rather
+  // than being silenced for the whole section. The vocal keeps its own section rules.
+  if (!events.empty() && events.front().bar_offset == 0 &&
+      events.front().tracks_add_mask != TrackMask::None) {
+    TrackMask named = TrackMask::None;
+    for (const auto& event : events) named = named | event.tracks_add_mask;
+    const TrackMask missing = section.track_mask & ~named & ~TrackMask::Vocal;
+    for (auto it = events.rbegin(); it != events.rend(); ++it) {
+      if (it->tracks_add_mask != TrackMask::None) {
+        it->tracks_add_mask = it->tracks_add_mask | missing;
+        break;
+      }
+    }
+  }
+
   return events;
 }
 
@@ -1095,10 +1226,11 @@ void applyDefaultLayerSchedule(std::vector<Section>& sections) {
         continue;
       }
       const bool first_a = section.type == SectionType::A && idx <= 1;
-      if (first_a && (section.entry_pattern == EntryPattern::Immediate ||
-                      section.track_mask != TrackMask::All)) {
+      const bool blueprint_mask = section.track_mask != TrackMask::All;
+      if ((first_a && (section.entry_pattern == EntryPattern::Immediate || blueprint_mask)) ||
+          (section.type == SectionType::Interlude && blueprint_mask)) {
         // A blueprint's explicit entry policy and track mask outrank the
-        // legacy "first verse gradual build" heuristic.
+        // legacy "first verse gradual build" and "thin interlude" heuristics.
         continue;
       }
       section.layer_events = generateDefaultLayerEvents(section, idx, sections.size());

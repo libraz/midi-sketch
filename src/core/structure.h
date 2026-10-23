@@ -6,6 +6,7 @@
 #ifndef MIDISKETCH_CORE_STRUCTURE_H
 #define MIDISKETCH_CORE_STRUCTURE_H
 
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -68,6 +69,37 @@ std::pair<uint16_t, uint16_t> achievableDurationRange(uint16_t bpm);
  */
 std::vector<Section> buildStructure(StructurePattern pattern);
 
+/// @brief Everything that decides a song's section list.
+struct StructureRequest {
+  StructurePattern pattern = StructurePattern::FullPop;  ///< Form used when no flow applies
+  bool form_explicit = false;            ///< The caller chose the form; it replaces the flow
+  uint16_t target_duration_seconds = 0;  ///< 0 = the form's or flow's own length
+  uint16_t bpm = 0;                      ///< Resolved tempo
+  bool call_enabled = false;             ///< Insert the chant and MIX sections
+  IntroChant intro_chant = IntroChant::None;
+  MixPattern mix_pattern = MixPattern::None;
+  bool addictive_mode = false;  ///< B sections cut off before the chorus
+  EnergyCurve energy_curve = EnergyCurve::GradualBuild;
+  const ProductionBlueprint* blueprint = nullptr;  ///< Flow and slot properties; may be null
+};
+
+/**
+ * @brief Build a song's section list; every edit to the list is made here, once.
+ *
+ * Order: the base list (the blueprint flow, or the form when a duration or an
+ * explicit form asks for one), sized to the target with the call sections'
+ * bars reserved, the call sections inserted, the blueprint's slots overlaid
+ * onto a form-built list, exit patterns and the climax marked, then the
+ * addictive exits and the energy curve. Marking comes after every edit, so
+ * exactly one chorus - the last - carries the climax.
+ *
+ * @param request What the song asks for
+ * @param warnings Receives a note when the built length misses the target
+ * @return Sections laid out from tick 0
+ */
+std::vector<Section> planSongStructure(const StructureRequest& request,
+                                       std::vector<std::string>& warnings);
+
 /**
  * @brief Build sections to match target duration.
  * @param target_seconds Target duration in seconds
@@ -111,6 +143,11 @@ std::vector<Section> buildStructureForDuration(
 
 /**
  * @brief Insert call sections into existing structure (in-place).
+ *
+ * A MixBreak already leading into the last Chorus is reused rather than
+ * doubled. Exit patterns are left to the caller, which marks them once the
+ * list is final.
+ *
  * @param sections Sections to modify
  * @param intro_chant IntroChant pattern (after Intro)
  * @param mix_pattern MixPattern (before last Chorus)
@@ -143,8 +180,12 @@ void applyAddictiveModeExitPatterns(std::vector<Section>& sections, bool addicti
  * Adjusts section energy levels based on the selected curve:
  * - GradualBuild: Starts low, builds to peak at last chorus (default)
  * - FrontLoaded: High energy throughout, peak chorus, slight dip in bridge
- * - WavePattern: Alternates between low and high energy
+ * - WavePattern: Alternates between low and high energy; a pre-chorus climbs
+ *   between them and a chorus is never lowered
  * - SteadyState: Maintains consistent medium energy
+ *
+ * FrontLoaded and WavePattern leave ochisabi and climactic sections at the
+ * energy their modifier declares.
  *
  * @param sections Sections to modify (energy levels may be adjusted)
  * @param curve Energy curve type to apply
@@ -202,12 +243,16 @@ BackingDensity trackMaskToBackingDensity(TrackMask mask);
  * overlays blueprint properties (track_mask, drum_role, energy, etc.) onto
  * those auto-generated sections by matching section types.
  *
- * Match strategy:
- * 1. Primary match by Section.type → SectionSlot.type
- * 2. Multiple same-type sections use occurrence index (A1→slot[0], A2→slot[1])
- * 3. Slot shortage: repeat last matching slot
- * 4. Slot surplus: ignore unused slots
- * 5. Type not in blueprint: skip overlay (keep defaults)
+ * Match strategy, per section type:
+ * 1. The first occurrence takes the first slot, the last takes the last slot
+ *    (a lone occurrence takes the last unless that slot is position-dependent)
+ * 2. Middle occurrences take the slots between, aligned to the end so the slot
+ *    before the terminal one stays next to it
+ * 3. Surplus middle occurrences repeat a regular slot; a position-dependent
+ *    slot (an ochisabi, a drop chorus) is used at most once
+ * 4. Type not in blueprint: skip overlay (keep defaults)
+ *
+ * Exit patterns are reset to the slots' values and left for the caller to mark.
  *
  * @param sections Sections to modify (in-place)
  * @param blueprint The production blueprint with section flow
@@ -230,6 +275,10 @@ void applyBlueprintOverlay(std::vector<Section>& sections, const ProductionBluep
  * - Chorus (first): All tracks immediately
  * - Outro: Remove tracks in last 2 bars
  *
+ * A track the section's mask enables but no entry names (other than the vocal)
+ * joins with the last entry, so a default schedule never silences it for the
+ * whole section.
+ *
  * @param section The section to generate events for
  * @param section_index Index of this section in the song
  * @param total_sections Total number of sections in the song
@@ -242,7 +291,8 @@ std::vector<LayerEvent> generateDefaultLayerEvents(const Section& section, size_
  * @brief Apply default layer events to all qualifying sections.
  *
  * Iterates over all sections and assigns layer_events based on section type.
- * Only affects sections with 4+ bars and no existing layer_events.
+ * Only affects sections with 4+ bars and no existing layer_events. A first verse
+ * or an interlude whose blueprint set its track mask keeps that mask as is.
  *
  * @param sections Sections to modify (in-place)
  */

@@ -6,7 +6,6 @@
 #include "track/bass/bass_pattern_selection.h"
 
 #include "core/density_transformer.h"
-#include "core/mood_utils.h"
 #include "core/preset_data.h"
 #include "core/production_blueprint.h"
 #include "core/rng_util.h"
@@ -21,7 +20,8 @@ namespace {
 // ============================================================================
 // Consolidates sparser/denser transitions for maintainability.
 // Main chain: WholeNote <-> RootFifth <-> Syncopated <-> Driving <-> Aggressive
-// Genre-specific patterns (Tresillo, SubBass808, RnBNeoSoul) stay unchanged.
+// Genre-specific patterns (Tresillo, SubBass808, RnBNeoSoul) and the pedal stay unchanged:
+// a pedal is no denser than a sustained root, and thinning it discards its held pitch.
 
 const auto kBassTransformer =
     DensityTransformer<BassPattern>::builder()
@@ -37,9 +37,9 @@ const auto kBassTransformer =
         .addTransition(BassPattern::PowerDrive, BassPattern::RootFifth)
         .addTransition(BassPattern::SidechainPulse, BassPattern::RootFifth)
         .addTransition(BassPattern::Groove, BassPattern::Walking)
-        .addTransition(BassPattern::PedalTone, BassPattern::WholeNote)
         // Genre-specific patterns stay at their level
         .addLimit(BassPattern::WholeNote)
+        .addLimit(BassPattern::PedalTone)
         .addLimit(BassPattern::Aggressive)
         .addLimit(BassPattern::RhythmicDrive)
         .addLimit(BassPattern::Groove)
@@ -155,13 +155,58 @@ BassSection toBassSection(SectionType section) {
   return BassSection::A;  // fallback
 }
 
-// Select pattern from genre master table with weighted random
-BassPattern selectFromGenreTable(BassGenre genre, BassSection section, std::mt19937& rng) {
+/// Which way a dense or sparse vocal nudges the bass within the genre row.
+enum class VocalBias { None, Sparser, Denser };
+
+/// Rhythmic weight of a pattern, used only to order the candidates of one genre row.
+int bassPatternWeight(BassPattern pattern) {
+  switch (pattern) {
+    case BassPattern::WholeNote:
+    case BassPattern::PedalTone:
+    case BassPattern::SubBass808:
+      return 0;
+    case BassPattern::RootFifth:
+      return 1;
+    case BassPattern::Walking:
+    case BassPattern::Syncopated:
+    case BassPattern::Groove:
+    case BassPattern::Tresillo:
+    case BassPattern::SidechainPulse:
+    case BassPattern::PowerDrive:
+    case BassPattern::RnBNeoSoul:
+      return 2;
+    case BassPattern::OctaveJump:
+    case BassPattern::Driving:
+    case BassPattern::RhythmicDrive:
+    case BassPattern::SlapPop:
+      return 3;
+    case BassPattern::Aggressive:
+    case BassPattern::FastRun:
+      return 4;
+  }
+  return 2;
+}
+
+// Select pattern from genre master table with weighted random. A bias replaces the
+// roll's result with the sparsest or densest member of the same row.
+BassPattern selectFromGenreTable(BassGenre genre, BassSection section, std::mt19937& rng,
+                                 VocalBias bias = VocalBias::None) {
   const auto& patterns = getBassGenrePatterns(genre);
   const auto& choice = patterns.sections[static_cast<int>(section)];
 
   // 60% primary, 30% secondary, 10% tertiary
   float roll = rng_util::rollFloat(rng, 0.0f, 1.0f);
+
+  if (bias != VocalBias::None) {
+    const BassPatternId row[3] = {choice.primary, choice.secondary, choice.tertiary};
+    BassPattern best = fromPatternId(row[0]);
+    for (int i = 1; i < 3; ++i) {
+      BassPattern cand = fromPatternId(row[i]);
+      int diff = bassPatternWeight(cand) - bassPatternWeight(best);
+      if (bias == VocalBias::Sparser ? diff < 0 : diff > 0) best = cand;
+    }
+    return best;
+  }
 
   if (roll < 0.60f) return fromPatternId(choice.primary);
   if (roll < 0.90f) return fromPatternId(choice.secondary);
@@ -172,13 +217,12 @@ BassPattern selectFromGenreTable(BassGenre genre, BassSection section, std::mt19
 // Main Pattern Selection Function
 // ============================================================================
 BassPattern selectPattern(SectionType section, bool drums_enabled, Mood mood,
-                          BackingDensity backing_density, std::mt19937& rng) {
-  // When drums are off, bass takes rhythmic responsibility
+                          BackingDensity backing_density, std::mt19937& rng,
+                          VocalBias bias = VocalBias::None) {
+  // When drums are off, bass takes rhythmic responsibility: the most rhythmic
+  // candidate of the genre's own row, never a pattern from outside it.
   if (!drums_enabled) {
-    if (isInstrumentalBreak(section) || section == SectionType::Outro) {
-      return BassPattern::RootFifth;
-    }
-    return BassPattern::RhythmicDrive;
+    bias = VocalBias::Denser;
   }
 
   // Chant section: always whole notes
@@ -189,7 +233,7 @@ BassPattern selectPattern(SectionType section, bool drums_enabled, Mood mood,
   // Look up from genre master table (in preset_data.cpp)
   BassGenre genre = getMoodBassGenre(mood);
   BassSection bass_section = toBassSection(section);
-  BassPattern selected = selectFromGenreTable(genre, bass_section, rng);
+  BassPattern selected = selectFromGenreTable(genre, bass_section, rng, bias);
 
   // Adjust pattern based on backing density
   if (backing_density == BackingDensity::Thin) {
@@ -199,6 +243,17 @@ BassPattern selectPattern(SectionType section, bool drums_enabled, Mood mood,
   }
 
   return selected;
+}
+
+/// PedalTone holds the tonic while an arpeggio plays chord tones, which doubles the
+/// bass instead of moving the harmony. A Bridge uses the pedal for tension reduction
+/// even with an arpeggio.
+BassPattern avoidPedalUnderArpeggio(BassPattern pattern, const Section& section) {
+  if (pattern == BassPattern::PedalTone && hasTrack(section.track_mask, TrackMask::Arpeggio) &&
+      section.type != SectionType::Bridge) {
+    return BassPattern::WholeNote;
+  }
+  return pattern;
 }
 
 // ============================================================================
@@ -307,56 +362,32 @@ BassPattern selectPatternWithPolicy(BassRiffCache& cache, const Section& section
     base_pattern = applyRhythmSyncDensityAdjust(base_pattern, params.bpm);
   }
 
-  // Avoid PedalTone when arpeggio is active - they conflict musically.
-  // PedalTone holds tonic while arpeggio plays chord tones, producing an
-  // unhelpful doubled bass instead of the intended harmonic movement.
-  if (base_pattern == BassPattern::PedalTone && hasTrack(section.track_mask, TrackMask::Arpeggio)) {
-    base_pattern = BassPattern::WholeNote;
-  }
+  base_pattern = avoidPedalUnderArpeggio(base_pattern, section);
 
   // Apply PeakLevel promotion for thicker bass in peak sections
   return applyPeakLevelPromotion(base_pattern, section.peak_level);
 }
 
-// Select bass pattern based on vocal density (Rhythmic Complementation)
+// Select bass pattern based on vocal density (Rhythmic Complementation).
+// The genre row, backing density and drums flag decide the candidates exactly as
+// without a vocal; a dense vocal only picks the row's sparsest member (never in a
+// chorus or peak) and a sparse vocal its densest.
 BassPattern selectPatternForVocalDensity(float vocal_density, const Section& section,
                                          const GeneratorParams& params, std::mt19937& rng) {
-  // Special sections use simple patterns from genre table (supports PedalTone)
-  if (section.type == SectionType::Chant) {
-    return BassPattern::WholeNote;
-  }
-  if (section.type == SectionType::Intro || section.type == SectionType::Outro ||
-      section.type == SectionType::Bridge) {
-    // All special sections (Intro/Outro/Bridge) use genre table selection
-    BassGenre genre = getMoodBassGenre(params.mood);
-    BassSection bass_section = toBassSection(section.type);
-    return selectFromGenreTable(genre, bass_section, rng);
-  }
-
-  // High vocal density (>0.6) → simpler bass (whole notes, half notes)
-  // Low vocal density (<0.3) → more active bass (driving, walking)
-  // Medium density → standard patterns
-
-  if (vocal_density > 0.6f) {
-    if (section.type == SectionType::Chorus || section.peak_level != PeakLevel::None) {
-      return BassPattern::RootFifth;
+  VocalBias bias = VocalBias::None;
+  const bool vocal_led = section.type == SectionType::A || section.type == SectionType::B ||
+                         section.type == SectionType::Chorus;
+  if (vocal_led) {
+    if (vocal_density > 0.6f) {
+      if (section.type != SectionType::Chorus && section.peak_level == PeakLevel::None) {
+        bias = VocalBias::Sparser;
+      }
+    } else if (vocal_density < 0.3f) {
+      bias = VocalBias::Denser;
     }
-    // Vocal is dense, bass should be sparse
-    return BassPattern::WholeNote;
   }
-
-  if (vocal_density < 0.3f) {
-    // Vocal is sparse, bass can be more active
-    if (MoodClassification::isJazzInfluenced(params.mood)) {
-      return BassPattern::Walking;
-    }
-    return BassPattern::Driving;
-  }
-
-  // Medium density: use section-based defaults
-  bool drums_enabled = true;  // Assume drums in vocal-first mode
-  return selectPattern(section.type, drums_enabled, params.mood,
-                       section.getEffectiveBackingDensity(), rng);
+  return selectPattern(section.type, params.drums_enabled, params.mood,
+                       section.getEffectiveBackingDensity(), rng, bias);
 }
 
 /// Select pattern with RiffPolicy for vocal-aware generation.
@@ -382,14 +413,7 @@ BassPattern selectPatternWithPolicyForVocal(BassRiffCache& cache, const Section&
     pattern = applyRhythmSyncDensityAdjust(pattern, params.bpm);
   }
 
-  // Avoid PedalTone when arpeggio is active in high-energy sections.
-  // PedalTone holds tonic while arpeggio plays chord tones, producing an
-  // unhelpful doubled bass instead of the intended harmonic movement.
-  // Exception: Bridge sections use PedalTone for tension reduction, even with arpeggio.
-  if (pattern == BassPattern::PedalTone && hasTrack(section.track_mask, TrackMask::Arpeggio) &&
-      section.type != SectionType::Bridge) {
-    pattern = BassPattern::WholeNote;
-  }
+  pattern = avoidPedalUnderArpeggio(pattern, section);
 
   return applyPeakLevelPromotion(pattern, section.peak_level);
 }

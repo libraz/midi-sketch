@@ -117,7 +117,7 @@ std::vector<DrumSectionContext> resolveSectionContexts(const std::vector<Section
 /// This is the core implementation shared by generateDrumsTrack() and
 /// generateDrumsTrackWithVocal(). The vocal_sync_callback is optional:
 /// - nullptr: Normal kick pattern generation
-/// - provided: Tries vocal-synced kicks, falls back to pattern if returns false
+/// - provided: Adds vocal-synced kicks around the style's kick pattern, which is always written
 ///
 /// @param track Target MidiTrack
 /// @param song Song with arrangement

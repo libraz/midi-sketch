@@ -103,6 +103,12 @@ float getSectionEnergyMultiplier(SectionEnergy energy);
  */
 float getSectionVelocityScale(const Section& section);
 
+/// @brief Whether a section is a quiet "fallen" chorus (Ochisabi at half intensity or more).
+///
+/// Such a chorus is a deliberate step down: it is not entered with a crash,
+/// lifted to the level of the section before it, or led into by a fill.
+bool isOchisabiSection(const Section& section);
+
 /// @brief Track-relative velocity multipliers for consistent mix balance.
 struct VelocityBalance {
   static constexpr float VOCAL = 1.0f;      ///< Lead vocal - always on top

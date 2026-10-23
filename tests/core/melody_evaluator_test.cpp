@@ -707,5 +707,16 @@ TEST(MelodyEvaluatorTest, Catchiness_SixSameIntervals) {
   EXPECT_GE(score, 0.6f) << "6+ same intervals should maximize catchiness bonus";
 }
 
+TEST(MelodyEvaluatorTest, AHighRunTheLineEndsOnIsLeftForTheClimax) {
+  // A run of six high notes in the middle of a line is penalised; the same run
+  // ending the line is where a chorus climaxes and is left alone.
+  const auto middle = createTestMelody({60, 60, 76, 76, 76, 76, 76, 76, 60, 60});
+  const auto ending = createTestMelody({60, 60, 60, 60, 76, 76, 76, 76, 76, 76});
+
+  const float middle_penalty = MelodyEvaluator::calcHighRegisterPenalty(middle);
+  const float ending_penalty = MelodyEvaluator::calcHighRegisterPenalty(ending);
+  EXPECT_GT(middle_penalty, ending_penalty) << "a run inside the line must be penalised";
+}
+
 }  // namespace
 }  // namespace midisketch

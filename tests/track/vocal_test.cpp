@@ -7,6 +7,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <map>
 #include <random>
 #include <set>
@@ -212,8 +213,14 @@ TEST_F(VocalTest, RhythmLockRhythmSyncLaterChorusLiftsHook) {
     // on the section, so the section is what carries the claim: an opening
     // phrase is a dozen notes, and a single note landing a fourth away moves its
     // average by as much as the shift being measured. Over the section the
-    // margin is several semitones and the shift is what decides it.
-    EXPECT_GT(averagePitch(later_whole), averagePitch(first_whole) + 0.5)
+    // margin is several semitones and the shift is what decides it. Heard
+    // pitch is what lifts, so a chorus after the key change counts it.
+    const auto& song = gen.getSong();
+    const double later_modulation =
+        song.modulationAmount() != 0 && choruses.back()->start_tick >= song.modulationTick()
+            ? song.modulationAmount()
+            : 0.0;
+    EXPECT_GT(averagePitch(later_whole) + later_modulation, averagePitch(first_whole) + 0.5)
         << "seed " << seed
         << ": later chorus should lift instead of restating the first chorus register.";
     EXPECT_GE(maxPitch(later_chorus), maxPitch(first_chorus))
@@ -2154,8 +2161,244 @@ TEST_F(VocalTest, LaterChorusRestatesTheFirst) {
   }
 }
 
+// Onsets of a section's vocal, by offset from the section start, over the
+// first `span` ticks.
+std::map<Tick, const NoteEvent*> onsetsByOffset(const MidiTrack& vocal, const Section& section,
+                                                Tick span) {
+  std::map<Tick, const NoteEvent*> onsets;
+  for (const auto& note : vocal.notes()) {
+    if (note.start_tick >= section.start_tick && note.start_tick < section.start_tick + span) {
+      onsets.emplace(note.start_tick - section.start_tick, &note);
+    }
+  }
+  return onsets;
+}
+
+TEST_F(VocalTest, OchisabiChorusRestatesTheHookThinnerAndTheLastChorusFull) {
+  // The quiet chorus before the last one sings the first chorus's tune with the
+  // fewer notes its modifier asks for; the climactic last chorus is not thinner.
+  params_.blueprint_id = 3;  // Ballad: an ochisabi chorus, then a climactic one
+  size_t first_onsets = 0;
+  size_t ochisabi_onsets = 0;
+  size_t climactic_first_onsets = 0;
+  size_t climactic_onsets = 0;
+  double requested_ratio = 0.0;
+  int songs = 0;
+
+  for (uint32_t seed : {1u, 2u, 3u, 4u}) {
+    params_.seed = seed;
+    Generator gen;
+    gen.generate(params_);
+    const auto& song = gen.getSong();
+
+    const auto choruses = sectionsOfType(song, SectionType::Chorus);
+    ASSERT_GE(choruses.size(), 2u) << "seed " << seed;
+    const Section* first = choruses.front();
+    const Section* ochisabi = nullptr;
+    const Section* climactic = nullptr;
+    for (const Section* chorus : choruses) {
+      if (chorus == first) continue;
+      if (chorus->modifier == SectionModifier::Ochisabi) ochisabi = chorus;
+      if (chorus->modifier == SectionModifier::Climactic) climactic = chorus;
+    }
+    ASSERT_NE(ochisabi, nullptr) << "seed " << seed;
+    ASSERT_NE(climactic, nullptr) << "seed " << seed;
+
+    const uint8_t first_density = first->getModifiedDensity(first->density_percent);
+    const uint8_t ochisabi_density = ochisabi->getModifiedDensity(ochisabi->density_percent);
+    ASSERT_LT(ochisabi_density, first_density) << "seed " << seed;
+    requested_ratio += static_cast<double>(ochisabi_density) / first_density;
+
+    const Tick ochisabi_span = std::min(first->bars, ochisabi->bars) * TICKS_PER_BAR;
+    first_onsets += onsetsByOffset(song.vocal(), *first, ochisabi_span).size();
+    ochisabi_onsets += onsetsByOffset(song.vocal(), *ochisabi, ochisabi_span).size();
+    const Tick climactic_span = std::min(first->bars, climactic->bars) * TICKS_PER_BAR;
+    climactic_first_onsets += onsetsByOffset(song.vocal(), *first, climactic_span).size();
+    climactic_onsets += onsetsByOffset(song.vocal(), *climactic, climactic_span).size();
+    ++songs;
+  }
+  ASSERT_GT(first_onsets, 0u);
+  requested_ratio /= songs;
+
+  // At least a third of the requested reduction has to reach the notes; phrase
+  // starts, ends, downbeats and the chant are never dropped.
+  const double allowed = 1.0 - (1.0 - requested_ratio) / 3.0;
+  EXPECT_LE(static_cast<double>(ochisabi_onsets), first_onsets * allowed)
+      << "ochisabi " << ochisabi_onsets << " vs first chorus " << first_onsets
+      << " (requested ratio " << requested_ratio << ")";
+  EXPECT_GE(climactic_onsets * 100, climactic_first_onsets * 95)
+      << "climactic " << climactic_onsets << " vs first chorus " << climactic_first_onsets;
+}
+
+TEST_F(VocalTest, RestatedChorusTakesTheApproachIntoItsOwnNextSection) {
+  // The first chorus settles into the verse after it (Chorus->A: a decrescendo
+  // over its last two beats). The second is followed by another chorus, which
+  // has no approach, so its last two beats must not carry the first's.
+  params_.structure = StructurePattern::DriveUpbeat;  // Intro C A B C C Outro
+  const SectionTransition* settle = getTransition(SectionType::Chorus, SectionType::A);
+  ASSERT_NE(settle, nullptr);
+  ASSERT_LT(settle->velocity_growth, 1.0f);
+  ASSERT_EQ(getTransition(SectionType::Chorus, SectionType::Chorus), nullptr);
+  const Tick window = settle->approach_beats * TICKS_PER_BEAT;
+
+  double body[2] = {0.0, 0.0};
+  double tail[2] = {0.0, 0.0};
+  size_t tail_pairs = 0;
+  for (uint32_t seed : {1u, 2u, 3u, 4u, 5u, 6u}) {
+    params_.seed = seed;
+    Generator gen;
+    gen.generate(params_);
+    const auto& song = gen.getSong();
+    const auto& sections = song.arrangement().sections();
+
+    const Section* first = nullptr;
+    const Section* second = nullptr;
+    for (size_t i = 0; i + 1 < sections.size(); ++i) {
+      if (sections[i].type != SectionType::Chorus) continue;
+      if (first == nullptr && sections[i + 1].type == SectionType::A) {
+        first = &sections[i];
+      } else if (first != nullptr && sections[i + 1].type == SectionType::Chorus &&
+                 sections[i].bars == first->bars) {
+        second = &sections[i];
+        break;
+      }
+    }
+    ASSERT_NE(first, nullptr) << "seed " << seed;
+    ASSERT_NE(second, nullptr) << "seed " << seed;
+
+    const Tick span = first->bars * TICKS_PER_BAR;
+    const auto first_onsets = onsetsByOffset(song.vocal(), *first, span);
+    const auto second_onsets = onsetsByOffset(song.vocal(), *second, span);
+    for (const auto& [offset, note] : first_onsets) {
+      auto it = second_onsets.find(offset);
+      if (it == second_onsets.end()) continue;
+      const bool in_tail = offset >= span - window;
+      (in_tail ? tail : body)[0] += note->velocity;
+      (in_tail ? tail : body)[1] += it->second->velocity;
+      if (in_tail) ++tail_pairs;
+    }
+  }
+  ASSERT_GT(tail_pairs, 0u) << "the restated chorus must share onsets with the first's tail";
+  ASSERT_GT(body[0], 0.0);
+  // Velocity relative to each chorus's own body cancels section-wide scaling.
+  const double first_ratio = tail[0] / body[0];
+  const double second_ratio = tail[1] / body[1];
+  EXPECT_GT(second_ratio, first_ratio * 1.02)
+      << "the restated chorus still carries the Chorus->A decrescendo (first " << first_ratio
+      << ", restated " << second_ratio << ")";
+}
+
+TEST_F(VocalTest, RestatedSectionKeepsItsOwnRangeSpan) {
+  // A later section that sets a narrower range than the occurrence it restates
+  // sings inside its own span, not the one the melody was written in.
+  int checked = 0;
+  for (uint8_t blueprint : {uint8_t{3}, uint8_t{8}}) {
+    for (uint32_t seed : {1u, 2u, 3u}) {
+      params_.blueprint_id = blueprint;
+      params_.seed = seed;
+      Generator gen;
+      gen.generate(params_);
+      const auto& song = gen.getSong();
+
+      std::map<SectionType, int> seen;
+      for (const auto& section : song.arrangement().sections()) {
+        const int occurrence = ++seen[section.type];
+        if (occurrence < 2 || section.vocal_range_span == 0) continue;
+        const auto notes = collectNotesInSection(song.vocal(), section, 0);
+        if (notes.empty()) continue;
+        uint8_t low = 127;
+        uint8_t high = 0;
+        for (const auto* note : notes) {
+          low = std::min(low, note->note);
+          high = std::max(high, note->note);
+        }
+        EXPECT_LE(high - low, section.vocal_range_span)
+            << "blueprint " << static_cast<int>(blueprint) << " seed " << seed << " section at "
+            << section.start_tick;
+        ++checked;
+      }
+    }
+  }
+  ASSERT_GT(checked, 0) << "no restated section with a range span was examined";
+}
+
+TEST_F(VocalTest, LaterChorusHeadLiftLeavesTheChantRunAlone) {
+  // The head lift raises a later chorus's opening; a chanted run in that
+  // opening is the hook restated, so its notes keep the first chorus's pitch.
+  // Only the first restatement is compared: a later one can reach the
+  // template's hook betrayal (every third statement at the earliest), which
+  // varies the head on purpose.
+  params_.blueprint_id = 4;  // IdolStandard: chanted chorus heads
+  size_t chant_pairs = 0;
+  for (uint32_t seed : {1u, 2u, 3u, 4u, 5u, 6u, 7u, 8u}) {
+    params_.seed = seed;
+    Generator gen;
+    gen.generate(params_);
+    const auto& song = gen.getSong();
+    const auto choruses = sectionsOfType(song, SectionType::Chorus);
+    if (choruses.size() < 2) continue;
+
+    const auto first_head = collectNotesInSection(song.vocal(), *choruses.front(), 12);
+    std::map<Tick, const NoteEvent*> first_by_offset;
+    for (const auto* note : first_head) {
+      first_by_offset.emplace(note->start_tick - choruses.front()->start_tick, note);
+    }
+    const Section& second = *choruses[1];
+    for (const auto* note : collectNotesInSection(song.vocal(), second, 12)) {
+      auto it = first_by_offset.find(note->start_tick - second.start_tick);
+      if (it == first_by_offset.end()) continue;
+      if (!note->is_syllabic_subdivision || !it->second->is_syllabic_subdivision) continue;
+      ++chant_pairs;
+      EXPECT_EQ(note->note, it->second->note)
+          << "seed " << seed << " offset " << (note->start_tick - second.start_tick);
+    }
+  }
+  ASSERT_GT(chant_pairs, 0u) << "no chanted head was restated in the second chorus";
+}
+
+TEST_F(VocalTest, HookIntensityOffWritesNoHookAndNoChant) {
+  // Off promises no hook repetition: no hook phrase, no chanted chorus head.
+  // The same songs at Normal chant, so the comparison is not empty. A chant
+  // starts on the chorus's first note; a recitation run may sit anywhere, so
+  // only the head is asked about.
+  params_.blueprint_id = 4;  // IdolStandard: chanted chorus heads
+  params_.melody_params.syllabic_sub_ratio = 0.0f;
+  auto chorusRunNotes = [](const Song& song) {
+    size_t count = 0;
+    for (const Section* chorus : sectionsOfType(song, SectionType::Chorus)) {
+      const auto head = collectNotesInSection(song.vocal(), *chorus, 2);
+      if (head.size() == 2 && head[0]->is_syllabic_subdivision &&
+          head[1]->is_syllabic_subdivision && head[0]->note == head[1]->note) {
+        ++count;
+      }
+    }
+    return count;
+  };
+  size_t normal_runs = 0;
+  for (uint32_t seed = 1; seed <= 16; ++seed) {
+    params_.seed = seed;
+    params_.hook_intensity = HookIntensity::Normal;
+    Generator normal;
+    normal.generate(params_);
+    normal_runs += chorusRunNotes(normal.getSong());
+
+    params_.hook_intensity = HookIntensity::Off;
+    Generator off;
+    off.generate(params_);
+    ASSERT_FALSE(off.getSong().vocal().empty()) << "seed " << seed;
+    EXPECT_EQ(chorusRunNotes(off.getSong()), 0u) << "seed " << seed;
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+    for (const auto& note : off.getSong().vocal().notes()) {
+      EXPECT_NE(note.prov_source, static_cast<uint8_t>(NoteSource::Hook))
+          << "seed " << seed << " tick " << note.start_tick;
+    }
+#endif
+  }
+  ASSERT_GT(normal_runs, 0u) << "Normal must chant a chorus head for Off to be compared against";
+}
+
 TEST_F(VocalTest, PhraseVariationAppliedAfterMultipleReuse) {
-  // V4: After kMaxExactReuse (2), variation should be forced
+  // After kMaxExactRun identical statements, variation is forced
   params_.structure = StructurePattern::ExtendedFull;  // Many sections
   params_.seed = 777777;
 
@@ -2769,7 +3012,8 @@ TEST_F(VocalTest, MinimumDurationAcrossMultipleSeeds) {
 // ============================================================================
 
 TEST_F(VocalTest, ExpressiveAttitudeGeneratesPitchBends) {
-  // Expressive and Raw attitudes should generate pitch bend expressions
+  // Expressive bends 50% of phrase starts and 40% of phrase ends, so a song
+  // with many phrases has bends.
   params_.structure = StructurePattern::FullPop;
   params_.seed = 99887;
   params_.vocal_attitude = VocalAttitude::Expressive;
@@ -2778,62 +3022,30 @@ TEST_F(VocalTest, ExpressiveAttitudeGeneratesPitchBends) {
   gen.generate(params_);
 
   const auto& vocal = gen.getSong().vocal();
-  // Expressive attitude should have some pitch bends
-  // (50% chance per phrase start, 40% chance per phrase end)
-  // With enough notes, we should see at least some bends
-  EXPECT_FALSE(vocal.notes().empty());
-
-  // Count phrase boundaries (notes after 1+ beat gap)
-  int phrase_starts = 1;  // First note is always a phrase start
-  const auto& notes = vocal.notes();
-  for (size_t i = 1; i < notes.size(); ++i) {
-    Tick prev_end = notes[i - 1].start_tick + notes[i - 1].duration;
-    if (notes[i].start_tick - prev_end >= TICKS_PER_BEAT) {
-      ++phrase_starts;
-    }
-  }
-
-  // With sufficient phrase starts and probabilistic generation,
-  // we expect at least some pitch bends (though exact count is random)
-  // This test verifies the mechanism exists, not exact counts
-  if (phrase_starts >= 5) {
-    // With 5+ phrase starts at 50% chance each, probability of 0 bends is low
-    // But we're testing mechanism, not statistics, so just verify no crash
-    SUCCEED() << "Generated " << vocal.pitchBendEvents().size() << " pitch bends with "
-              << phrase_starts << " phrase starts";
-  }
+  ASSERT_FALSE(vocal.notes().empty());
+  EXPECT_GT(vocal.pitchBendEvents().size(), 0u) << "Expressive vocal must carry pitch bends";
 }
 
 TEST_F(VocalTest, RawAttitudeGeneratesMorePitchBends) {
-  // Raw attitude has higher probability of pitch bends (80%/70% vs 50%/40%)
+  // Raw bends more often than Expressive (80%/70% vs 50%/40%), so over a set of
+  // seeds it carries more bends in total.
   params_.structure = StructurePattern::FullPop;
-  params_.seed = 55667;
-  params_.vocal_attitude = VocalAttitude::Raw;
-
-  Generator gen;
-  gen.generate(params_);
-
-  const auto& vocal = gen.getSong().vocal();
-  EXPECT_FALSE(vocal.notes().empty());
-
-  // Verify pitch bends are present (Raw has 80% scoop probability)
-  // With enough notes, we should almost certainly have some bends
-  const auto& notes = vocal.notes();
-  int phrase_starts = 1;
-  for (size_t i = 1; i < notes.size(); ++i) {
-    Tick prev_end = notes[i - 1].start_tick + notes[i - 1].duration;
-    if (notes[i].start_tick - prev_end >= TICKS_PER_BEAT) {
-      ++phrase_starts;
+  size_t raw_bends = 0;
+  size_t expressive_bends = 0;
+  for (uint32_t seed : {55667u, 99887u, 12345u, 777u, 31337u}) {
+    params_.seed = seed;
+    for (VocalAttitude attitude : {VocalAttitude::Raw, VocalAttitude::Expressive}) {
+      params_.vocal_attitude = attitude;
+      Generator gen;
+      gen.generate(params_);
+      const auto& vocal = gen.getSong().vocal();
+      ASSERT_FALSE(vocal.notes().empty()) << "seed " << seed;
+      (attitude == VocalAttitude::Raw ? raw_bends : expressive_bends) +=
+          vocal.pitchBendEvents().size();
     }
   }
-
-  // Raw attitude should generate pitch bends with high probability
-  if (phrase_starts >= 3) {
-    // At 80% probability, having 0 bends with 3+ phrase starts is very unlikely
-    // This is a smoke test, not a statistical guarantee
-    SUCCEED() << "Generated " << vocal.pitchBendEvents().size() << " pitch bends with "
-              << phrase_starts << " phrase starts";
-  }
+  ASSERT_GT(expressive_bends, 0u) << "Expressive vocals must carry pitch bends";
+  EXPECT_GT(raw_bends, expressive_bends);
 }
 
 TEST_F(VocalTest, CleanAttitudeDoesNotGeneratePitchBends) {
@@ -2856,15 +3068,13 @@ TEST_F(VocalTest, CleanAttitudeDoesNotGeneratePitchBends) {
 // Occurrence-dependent phrase variation and embellishment density
 // ============================================================================
 
-TEST(PhraseVariationOccurrence, Occurrence1ProducesAbout80PercentExact) {
-  // First chorus occurrence: ~80% exact probability
+TEST(PhraseVariationOccurrence, FirstRestatementIsAbout80PercentExact) {
   int exact_count = 0;
   constexpr int kTrials = 1000;
 
   for (int seed = 0; seed < kTrials; ++seed) {
     std::mt19937 rng(seed);
-    // reuse_count=1 so it's not the first-time establishment (reuse_count==0 always Exact)
-    PhraseVariation var = selectPhraseVariation(1, /*occurrence=*/1, rng);
+    PhraseVariation var = selectPhraseVariation(1, /*exact_run=*/1, false, rng);
     if (var == PhraseVariation::Exact) {
       exact_count++;
     }
@@ -2872,18 +3082,17 @@ TEST(PhraseVariationOccurrence, Occurrence1ProducesAbout80PercentExact) {
 
   float exact_ratio = static_cast<float>(exact_count) / kTrials;
   // 80% exact with tolerance of +/-8% for statistical variance
-  EXPECT_GT(exact_ratio, 0.72f) << "Occurrence 1 should produce ~80% Exact, got " << exact_ratio;
-  EXPECT_LT(exact_ratio, 0.88f) << "Occurrence 1 should produce ~80% Exact, got " << exact_ratio;
+  EXPECT_GT(exact_ratio, 0.72f) << "First restatement should be ~80% Exact, got " << exact_ratio;
+  EXPECT_LT(exact_ratio, 0.88f) << "First restatement should be ~80% Exact, got " << exact_ratio;
 }
 
-TEST(PhraseVariationOccurrence, Occurrence2ProducesAbout60PercentExact) {
-  // Second chorus occurrence: ~60% exact probability
+TEST(PhraseVariationOccurrence, SecondRestatementIsAbout60PercentExact) {
   int exact_count = 0;
   constexpr int kTrials = 1000;
 
   for (int seed = 0; seed < kTrials; ++seed) {
     std::mt19937 rng(seed);
-    PhraseVariation var = selectPhraseVariation(1, /*occurrence=*/2, rng);
+    PhraseVariation var = selectPhraseVariation(2, /*exact_run=*/0, false, rng);
     if (var == PhraseVariation::Exact) {
       exact_count++;
     }
@@ -2891,18 +3100,17 @@ TEST(PhraseVariationOccurrence, Occurrence2ProducesAbout60PercentExact) {
 
   float exact_ratio = static_cast<float>(exact_count) / kTrials;
   // 60% exact with tolerance of +/-8%
-  EXPECT_GT(exact_ratio, 0.52f) << "Occurrence 2 should produce ~60% Exact, got " << exact_ratio;
-  EXPECT_LT(exact_ratio, 0.68f) << "Occurrence 2 should produce ~60% Exact, got " << exact_ratio;
+  EXPECT_GT(exact_ratio, 0.52f) << "Second restatement should be ~60% Exact, got " << exact_ratio;
+  EXPECT_LT(exact_ratio, 0.68f) << "Second restatement should be ~60% Exact, got " << exact_ratio;
 }
 
-TEST(PhraseVariationOccurrence, Occurrence3ProducesAbout30PercentExact) {
-  // Third (or later) chorus occurrence: ~30% exact probability
+TEST(PhraseVariationOccurrence, ThirdRestatementIsAbout30PercentExact) {
   int exact_count = 0;
   constexpr int kTrials = 1000;
 
   for (int seed = 0; seed < kTrials; ++seed) {
     std::mt19937 rng(seed);
-    PhraseVariation var = selectPhraseVariation(1, /*occurrence=*/3, rng);
+    PhraseVariation var = selectPhraseVariation(3, /*exact_run=*/0, false, rng);
     if (var == PhraseVariation::Exact) {
       exact_count++;
     }
@@ -2910,42 +3118,70 @@ TEST(PhraseVariationOccurrence, Occurrence3ProducesAbout30PercentExact) {
 
   float exact_ratio = static_cast<float>(exact_count) / kTrials;
   // 30% exact with tolerance of +/-8%
-  EXPECT_GT(exact_ratio, 0.22f) << "Occurrence 3+ should produce ~30% Exact, got " << exact_ratio;
-  EXPECT_LT(exact_ratio, 0.38f) << "Occurrence 3+ should produce ~30% Exact, got " << exact_ratio;
+  EXPECT_GT(exact_ratio, 0.22f) << "Third restatement should be ~30% Exact, got " << exact_ratio;
+  EXPECT_LT(exact_ratio, 0.38f) << "Third restatement should be ~30% Exact, got " << exact_ratio;
 }
 
-TEST(PhraseVariationOccurrence, ReuseCountZeroAlwaysExact) {
-  // reuse_count==0 should always return Exact regardless of occurrence
-  for (int occurrence = 1; occurrence <= 5; ++occurrence) {
-    for (int seed = 0; seed < 100; ++seed) {
-      std::mt19937 rng(seed);
-      PhraseVariation var = selectPhraseVariation(0, occurrence, rng);
-      EXPECT_EQ(var, PhraseVariation::Exact)
-          << "reuse_count=0 should always be Exact (occurrence=" << occurrence << ", seed=" << seed
-          << ")";
-    }
+TEST(PhraseVariationOccurrence, OriginalStatementAlwaysExact) {
+  for (int seed = 0; seed < 100; ++seed) {
+    std::mt19937 rng(seed);
+    EXPECT_EQ(selectPhraseVariation(0, /*exact_run=*/0, false, rng), PhraseVariation::Exact)
+        << "seed=" << seed;
   }
 }
 
-TEST(PhraseVariationOccurrence, HigherOccurrenceProducesMoreVariation) {
-  // Verify monotonic decrease in exact probability: occ1 > occ2 > occ3
+TEST(PhraseVariationOccurrence, NoThirdIdenticalStatementInARow) {
+  // Two identical statements in a row (the original and one exact restatement)
+  // force the next one to vary, at every reuse index.
+  for (int reuse_index = 1; reuse_index <= 4; ++reuse_index) {
+    for (int seed = 0; seed < 200; ++seed) {
+      std::mt19937 rng(seed);
+      EXPECT_NE(selectPhraseVariation(reuse_index, kMaxExactRun, false, rng),
+                PhraseVariation::Exact)
+          << "reuse_index=" << reuse_index << " seed=" << seed;
+    }
+  }
+  int exact_below_cap = 0;
+  for (int seed = 0; seed < 200; ++seed) {
+    std::mt19937 rng(seed);
+    if (selectPhraseVariation(1, kMaxExactRun - 1, false, rng) == PhraseVariation::Exact) {
+      ++exact_below_cap;
+    }
+  }
+  EXPECT_GT(exact_below_cap, 0) << "below the cap a restatement may still be exact";
+}
+
+TEST(PhraseVariationOccurrence, AChorusRestatementKeepsItsHookOnTheDownbeat) {
+  // LateOnset delays a phrase's first note; a chorus opens on its hook there.
+  int varied = 0;
+  for (int seed = 0; seed < 2000; ++seed) {
+    std::mt19937 rng(seed);
+    const PhraseVariation var = selectPhraseVariation(3, kMaxExactRun, true, rng);
+    ASSERT_NE(var, PhraseVariation::Exact) << "seed=" << seed;
+    EXPECT_NE(var, PhraseVariation::LateOnset) << "seed=" << seed;
+    ++varied;
+  }
+  ASSERT_GT(varied, 0);
+}
+
+TEST(PhraseVariationOccurrence, LaterRestatementsVaryMore) {
   constexpr int kTrials = 2000;
   int exact_counts[3] = {0, 0, 0};
 
   for (int seed = 0; seed < kTrials; ++seed) {
-    for (int occ = 1; occ <= 3; ++occ) {
+    for (int reuse_index = 1; reuse_index <= 3; ++reuse_index) {
       std::mt19937 rng(seed);
-      PhraseVariation var = selectPhraseVariation(1, occ, rng);
+      PhraseVariation var = selectPhraseVariation(reuse_index, /*exact_run=*/0, false, rng);
       if (var == PhraseVariation::Exact) {
-        exact_counts[occ - 1]++;
+        exact_counts[reuse_index - 1]++;
       }
     }
   }
 
   EXPECT_GT(exact_counts[0], exact_counts[1])
-      << "Occurrence 1 should have more Exact than occurrence 2";
+      << "First restatement should be exact more often than the second";
   EXPECT_GT(exact_counts[1], exact_counts[2])
-      << "Occurrence 2 should have more Exact than occurrence 3";
+      << "Second restatement should be exact more often than the third";
 }
 
 TEST(EmbellishmentOccurrenceScaling, NCTRatiosScaleWithOccurrence) {
@@ -3137,7 +3373,7 @@ TEST(PhraseVariationNewTypes, NewVariationsAppearInSelection) {
   std::set<PhraseVariation> selected_types;
   for (int seed = 0; seed < 5000; ++seed) {
     std::mt19937 rng(seed);
-    PhraseVariation var = selectPhraseVariation(3, 3, rng);  // High reuse + occurrence
+    PhraseVariation var = selectPhraseVariation(3, kMaxExactRun, false, rng);  // Forced variation
     selected_types.insert(var);
   }
 
@@ -3745,24 +3981,6 @@ TEST_F(VocalTest, RhythmSyncSectionSpecificDirectionBias) {
   EXPECT_TRUE(found_chorus) << "Should have at least one Chorus section";
 }
 
-TEST_F(VocalTest, RhythmSyncVocalAttitudeAffectsTensions) {
-  // VocalAttitude::Expressive adds the 9th and the 13th to the candidate
-  // pitches the locked rhythm chooses from.
-  params_.blueprint_id = 1;  // RhythmLock supplies RhythmSync + locked riff policy
-  params_.vocal_attitude = VocalAttitude::Expressive;
-  params_.seed = 101;
-
-  Generator gen;
-  gen.generate(params_);
-
-  const auto& vocal = gen.getSong().vocal();
-  EXPECT_FALSE(vocal.empty()) << "Expressive vocal should generate notes";
-
-  // With Expressive attitude, generation should succeed and include colorful harmonies
-  // Actual tension presence depends on harmonic context
-  SUCCEED() << "Expressive attitude generation succeeded";
-}
-
 TEST_F(VocalTest, RhythmSyncBreathOpportunities) {
   // Phrase boundaries have to leave gaps wide enough to breathe in.
   params_.blueprint_id = 1;  // RhythmLock supplies RhythmSync + locked riff policy
@@ -3905,40 +4123,73 @@ TEST_F(VocalTest, MelodyDrivenHasBreathGaps) {
 // Syllabic Subdivision Integration Tests
 // ============================================================================
 
+// Chant and recitation runs carry is_syllabic_subdivision too, so in the
+// shipping build the subdivision is told apart by comparing against the same
+// songs with the ratio forced to zero.
+size_t countFlaggedRearticulations(const MidiTrack& vocal) {
+  return static_cast<size_t>(
+      std::count_if(vocal.notes().begin(), vocal.notes().end(),
+                    [](const NoteEvent& note) { return note.is_syllabic_subdivision; }));
+}
+
 TEST_F(VocalTest, SyllabicSubdivisionProducesSyllabicSubNotes) {
   // Set syllabic subdivision directly (GeneratorTestFixture doesn't use ConfigConverter)
-  params_.melody_params.syllabic_sub_ratio = 0.30f;  // High ratio for reliable activation
   params_.bpm = 120;
-  params_.seed = 42;
-
-  Generator gen;
-  gen.generate(params_);
-
-  const auto& vocal = gen.getSong().vocal();
-  ASSERT_GT(vocal.notes().size(), 0u);
+  size_t flagged_with = 0;
+  size_t flagged_without = 0;
+  for (uint32_t seed : {42u, 7u, 1234u}) {
+    params_.seed = seed;
+    for (float ratio : {0.30f, 0.0f}) {
+      params_.melody_params.syllabic_sub_ratio = ratio;
+      Generator gen;
+      gen.generate(params_);
+      const auto& vocal = gen.getSong().vocal();
+      ASSERT_GT(vocal.notes().size(), 0u) << "seed " << seed;
+      (ratio > 0.0f ? flagged_with : flagged_without) += countFlaggedRearticulations(vocal);
 
 #ifdef MIDISKETCH_NOTE_PROVENANCE
-  int syllabic_count = 0;
-  for (const auto& note : vocal.notes()) {
-    if (note.prov_source == static_cast<uint8_t>(NoteSource::SyllabicSub)) {
-      syllabic_count++;
+      const auto syllabic_count =
+          std::count_if(vocal.notes().begin(), vocal.notes().end(), [](const NoteEvent& note) {
+            return note.prov_source == static_cast<uint8_t>(NoteSource::SyllabicSub);
+          });
+      if (ratio > 0.0f) {
+        EXPECT_GT(syllabic_count, 0) << "syllabic_sub_ratio=0.30 should produce subdivided notes";
+      } else {
+        EXPECT_EQ(syllabic_count, 0) << "syllabic_sub_ratio=0 must not subdivide";
+      }
+#endif
     }
   }
-  EXPECT_GT(syllabic_count, 0) << "syllabic_sub_ratio=0.30 should produce subdivided notes";
-#endif
+  EXPECT_GT(flagged_with, flagged_without)
+      << "syllabic_sub_ratio=0.30 should add subdivided rearticulations";
 }
 
 TEST_F(VocalTest, SyllabicSubdivisionDisabledByDefault) {
-  // Standard style has syllabic_sub_ratio=0.0
+  // Standard style has syllabic_sub_ratio=0.0, so its vocal is the one an
+  // explicit zero ratio writes, note for note. The fixture does not apply the
+  // style table, so the style's own ratio is set here.
   params_.vocal_style = VocalStylePreset::Standard;
   params_.seed = 42;
   params_.bpm = 120;
+  params_.melody_params.syllabic_sub_ratio =
+      getVocalStylePresetData(VocalStylePreset::Standard).syllabic_sub_ratio;
 
-  Generator gen;
-  gen.generate(params_);
+  Generator by_default;
+  by_default.generate(params_);
+  params_.melody_params.syllabic_sub_ratio = 0.0f;
+  Generator zeroed;
+  zeroed.generate(params_);
 
-  const auto& vocal = gen.getSong().vocal();
+  const auto& vocal = by_default.getSong().vocal();
+  const auto& reference = zeroed.getSong().vocal();
   ASSERT_GT(vocal.notes().size(), 0u);
+  ASSERT_EQ(vocal.notes().size(), reference.notes().size());
+  for (size_t i = 0; i < vocal.notes().size(); ++i) {
+    EXPECT_EQ(vocal.notes()[i].start_tick, reference.notes()[i].start_tick) << "note " << i;
+    EXPECT_EQ(vocal.notes()[i].is_syllabic_subdivision,
+              reference.notes()[i].is_syllabic_subdivision)
+        << "note " << i;
+  }
 
 #ifdef MIDISKETCH_NOTE_PROVENANCE
   for (const auto& note : vocal.notes()) {

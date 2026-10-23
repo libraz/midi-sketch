@@ -24,6 +24,7 @@
 #include "core/song.h"
 #include "core/structure.h"
 #include "core/timing_constants.h"
+#include "track/accompaniment_ceiling.h"
 #include "track/chord/voice_leading.h"
 #include "track/drums.h"
 #include "track/generators/arpeggio.h"
@@ -65,12 +66,7 @@ void Coordinator::initialize(const GeneratorParams& params) {
   // Initialize blueprint
   initializeBlueprint();
 
-  // Resolve BPM
-  bpm_ = params.bpm;
-  if (bpm_ == 0) {
-    bpm_ = getMoodDefaultBpm(params.mood);
-  }
-  validateBpm();
+  resolveBpm();
 
   // Store chord progression ID
   chord_id_ = params.chord_id;
@@ -138,12 +134,8 @@ void Coordinator::initialize(const GeneratorParams& params, const Arrangement& a
     initializeBlueprint();
   }
 
-  // Use BPM from params (already resolved by Generator)
-  bpm_ = params.bpm;
-  if (bpm_ == 0) {
-    bpm_ = getMoodDefaultBpm(params.mood);
-  }
-  validateBpm();
+  // BPM from params is already resolved by Generator; resolving it again is a no-op.
+  resolveBpm();
 
   // Store chord progression ID
   chord_id_ = params.chord_id;
@@ -349,6 +341,21 @@ FullTrackContext Coordinator::buildFullTrackContext(TrackRole role, Song& song, 
     ctx.vocal_ctx = &params_.rhythm_sync_motif_ctx.value();
   }
 
+  // Otherwise the motif answers the vocal that already exists: the same context
+  // Generator::generateMotif builds, so every entry point voices it alike.
+  if (role == TrackRole::Motif && !ctx.vocal_ctx && vocal_analysis_ &&
+      !song.vocal().notes().empty()) {
+    MotifContext motif_ctx;
+    motif_ctx.phrase_boundaries = &song.phraseBoundaries();
+    motif_ctx.rest_positions = &vocal_analysis_->rest_positions;
+    motif_ctx.vocal_low = vocal_analysis_->lowest_pitch;
+    motif_ctx.vocal_high = vocal_analysis_->highest_pitch;
+    motif_ctx.vocal_density = vocal_analysis_->density;
+    motif_ctx.direction_at_tick = &vocal_analysis_->direction_at_tick;
+    motif_vocal_ctx_ = motif_ctx;
+    ctx.vocal_ctx = &motif_vocal_ctx_.value();
+  }
+
   return ctx;
 }
 
@@ -528,12 +535,21 @@ void Coordinator::applyHookToSections(const std::vector<NoteEvent>& hook,
 // Private: Initialization Helpers
 // ============================================================================
 
-void Coordinator::initializeBlueprint() {
-  // Use separate RNG for blueprint selection
-  constexpr uint32_t kBlueprintMagic = 0x424C5052;
-  std::mt19937 blueprint_rng(params_.seed ^ kBlueprintMagic);
+namespace {
 
-  blueprint_id_ = selectProductionBlueprint(blueprint_rng, params_.blueprint_id);
+/// Tempo an implicit BPM stands for; the same reference Generator uses.
+uint16_t implicitBpmOf(const GeneratorParams& params) {
+  return params.auto_bpm_fallback > 0 ? params.auto_bpm_fallback : getMoodDefaultBpm(params.mood);
+}
+
+}  // namespace
+
+void Coordinator::initializeBlueprint() {
+  // A drawn blueprint has to be one that plays at the implicit BPM.
+  blueprint_explicit_ = params_.blueprint_id < getProductionBlueprintCount();
+  const uint16_t implicit_bpm = params_.bpm == 0 ? implicitBpmOf(params_) : 0;
+  blueprint_id_ = resolveProductionBlueprintId(params_.seed, params_.blueprint_id,
+                                               static_cast<uint8_t>(params_.mood), implicit_bpm);
   blueprint_ = &getProductionBlueprint(blueprint_id_);
 
   // Copy blueprint settings
@@ -593,30 +609,24 @@ void Coordinator::initializePriorities() {
 }
 
 void Coordinator::buildArrangement() {
-  std::vector<Section> sections;
-
-  // Priority: target_duration > explicit form > Blueprint section_flow > StructurePattern
-  if (params_.target_duration_seconds > 0) {
-    sections =
-        buildStructureForDuration(params_.target_duration_seconds, bpm_, params_.call_enabled,
-                                  params_.intro_chant, params_.mix_pattern, params_.structure);
-  } else if (params_.form_explicit) {
-    sections = buildStructure(params_.structure);
-  } else if (blueprint_ && blueprint_->section_flow && blueprint_->section_count > 0) {
-    sections = buildStructureFromBlueprint(*blueprint_);
-  } else {
-    sections = buildStructure(params_.structure);
-  }
-
-  // Apply energy curve
-  applyEnergyCurve(sections, params_.energy_curve);
-
-  arrangement_ = Arrangement(sections);
+  StructureRequest request;
+  request.pattern = params_.structure;
+  request.form_explicit = params_.form_explicit;
+  request.target_duration_seconds = params_.target_duration_seconds;
+  request.bpm = bpm_;
+  request.call_enabled = params_.call_enabled;
+  request.intro_chant = params_.intro_chant;
+  request.mix_pattern = params_.mix_pattern;
+  request.addictive_mode = params_.addictive_mode || (blueprint_ && blueprint_->addictive_mode);
+  request.energy_curve = params_.energy_curve;
+  request.blueprint = blueprint_;
+  arrangement_ = Arrangement(planSongStructure(request, warnings_));
 }
 
-void Coordinator::validateBpm() {
-  auto [clamped, warn] = clampBlueprintBpm(bpm_, *blueprint_, params_.bpm_explicit);
-  bpm_ = clamped;
+void Coordinator::resolveBpm() {
+  auto [bpm, warn] = resolveTempo(params_.bpm, params_.bpm_explicit, blueprint_explicit_,
+                                  implicitBpmOf(params_), *blueprint_);
+  bpm_ = bpm;
   if (warn) warnings_.push_back(*warn);
 }
 
@@ -869,8 +879,11 @@ bool isTrackMoving(const std::vector<NoteEvent>& notes, Tick prev_bar_start, Tic
       curr_onsets.push_back(note.start_tick - curr_bar_start);
     }
   }
-  std::sort(prev_onsets.begin(), prev_onsets.end());
-  std::sort(curr_onsets.begin(), curr_onsets.end());
+  // A pitch struck twice at one tick is one onset, not a second rhythmic event.
+  for (auto* onsets : {&prev_onsets, &curr_onsets}) {
+    std::sort(onsets->begin(), onsets->end());
+    onsets->erase(std::unique(onsets->begin(), onsets->end()), onsets->end());
+  }
   return prev_onsets != curr_onsets;
 }
 
@@ -1296,9 +1309,25 @@ void Coordinator::applyVoiceLimit(Song& song, const std::vector<Section>& sectio
       // Freeze lowest-priority tracks first (they appear last in moving_tracks
       // since kVoiceLimitPriority is ordered highest-first).
       size_t freeze_count = moving_tracks.size() - max_voices;
-      for (size_t idx = 0; idx < freeze_count; ++idx) {
-        // Freeze from the end (lowest priority)
-        TrackRole role = moving_tracks[moving_tracks.size() - 1 - idx];
+
+      // A chord bar that states an anticipation in its last eighth is not frozen:
+      // the copy of the previous bar has no onset there, and the timeline would
+      // keep announcing a chord nothing sounds. The next track in priority order
+      // is frozen in its place.
+      auto statesAnticipation = [&](TrackRole role) {
+        if (role != TrackRole::Chord) return false;
+        const Tick last_eighth = curr_bar_start + TICKS_PER_BAR - TICK_EIGHTH;
+        const Tick curr_end = curr_bar_start + TICKS_PER_BAR;
+        const auto& chord_notes = song.track(role).notes();
+        return std::any_of(chord_notes.begin(), chord_notes.end(), [&](const NoteEvent& note) {
+          return note.start_tick >= last_eighth && note.start_tick < curr_end;
+        });
+      };
+      std::vector<TrackRole> to_freeze;
+      for (size_t idx = moving_tracks.size(); idx-- > 0 && to_freeze.size() < freeze_count;) {
+        if (!statesAnticipation(moving_tracks[idx])) to_freeze.push_back(moving_tracks[idx]);
+      }
+      for (TrackRole role : to_freeze) {
         auto& notes = song.track(role).notes();
 
         // Save previous bar notes before removing current bar
@@ -1827,6 +1856,108 @@ void Coordinator::applyVoiceLimit(Song& song, const std::vector<Section>& sectio
         harmony.clearNotesForTrack(pending);
         harmony.registerTrack(song.track(pending), pending);
       }
+    }
+
+    // A frozen chord bar is a copy made without asking the destination bar's
+    // vocal or the voices it already holds. A same-tick repeat is dropped; a voice that sounds the
+    // vocal's pitch or sits above it moves by octaves, so the pitch class the freeze copied
+    // survives; failing that, to the nearest clear chord tone. A voice with no place is dropped,
+    // since a chord above the melody is the worse of the two.
+    bool chord_frozen = false;
+    for (const auto& fb : frozen_bars) {
+      if (fb.role != TrackRole::Chord) continue;
+      chord_frozen = true;
+      auto& chord_notes = song.chord().notes();
+      for (size_t idx = 0; idx < chord_notes.size(); ++idx) {
+        NoteEvent& note = chord_notes[idx];
+        if (note.duration == 0 || note.start_tick < fb.bar_start || note.start_tick >= fb.bar_end) {
+          continue;
+        }
+        const Tick note_end = note.start_tick + note.duration;
+        const uint8_t vocal_low =
+            harmony.getLowestPitchForTrackInRange(note.start_tick, note_end, TrackRole::Vocal);
+        auto isTakenAtOnset = [&](uint8_t pitch) {
+          for (size_t other = 0; other < chord_notes.size(); ++other) {
+            if (other != idx && chord_notes[other].duration != 0 &&
+                chord_notes[other].start_tick == note.start_tick &&
+                chord_notes[other].note == pitch) {
+              return true;
+            }
+          }
+          return false;
+        };
+        auto isClear = [&](uint8_t pitch) {
+          return (vocal_low == 0 ||
+                  (pitch <= vocal_low &&
+                   !vocalSoundsPitch(harmony, pitch, note.start_tick, note_end))) &&
+                 !isTakenAtOnset(pitch);
+        };
+        // The copy collapsed two voices onto one pitch: the first stands for both.
+        bool repeats = false;
+        for (size_t other = 0; other < idx && !repeats; ++other) {
+          repeats = chord_notes[other].duration != 0 &&
+                    chord_notes[other].start_tick == note.start_tick &&
+                    chord_notes[other].note == note.note;
+        }
+        if (repeats) {
+          note.duration = 0;
+          continue;
+        }
+        const bool crosses_vocal =
+            vocal_low != 0 && (note.note > vocal_low ||
+                               vocalSoundsPitch(harmony, note.note, note.start_tick, note_end));
+        if (!crosses_vocal) continue;
+        // Nearest octave of the copied pitch that is clear and consonant.
+        int best = -1;
+        for (int octave = 1; octave <= 3 && best < 0; ++octave) {
+          for (int sign : {-1, 1}) {
+            const int moved = static_cast<int>(note.note) + sign * 12 * octave;
+            if (moved < CHORD_LOW || moved > CHORD_HIGH) continue;
+            const uint8_t candidate = static_cast<uint8_t>(moved);
+            if (isClear(candidate) &&
+                harmony.isConsonantWithOtherTracks(candidate, note.start_tick, note.duration,
+                                                   TrackRole::Chord)) {
+              best = moved;
+              break;
+            }
+          }
+        }
+        // Failing that, the nearest tone of the sounding chord that is clear.
+        if (best < 0) {
+          int best_distance = 128;
+          for (int pitch_class : harmony.getChordTonesAt(note.start_tick)) {
+            if (pitch_class < 0) continue;
+            for (int moved = pitch_class; moved <= CHORD_HIGH; moved += 12) {
+              if (moved < CHORD_LOW) continue;
+              const uint8_t candidate = static_cast<uint8_t>(moved);
+              const int distance = std::abs(moved - static_cast<int>(note.note));
+              if (distance < best_distance && isClear(candidate) &&
+                  harmony.isConsonantWithOtherTracks(candidate, note.start_tick, note.duration,
+                                                     TrackRole::Chord)) {
+                best = moved;
+                best_distance = distance;
+              }
+            }
+          }
+        }
+        if (best < 0) {
+          note.duration = 0;
+          continue;
+        }
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+        note.addTransformStep(TransformStepType::VocalAvoid, note.note, static_cast<uint8_t>(best),
+                              vocal_low, 0);
+#endif
+        note.note = static_cast<uint8_t>(best);
+      }
+    }
+    if (chord_frozen) {
+      auto& chord_notes = song.chord().notes();
+      chord_notes.erase(std::remove_if(chord_notes.begin(), chord_notes.end(),
+                                       [](const NoteEvent& note) { return note.duration == 0; }),
+                        chord_notes.end());
+      harmony.clearNotesForTrack(TrackRole::Chord);
+      harmony.registerTrack(song.chord(), TrackRole::Chord);
     }
 
     // Pass 3: Fit the frozen bars to their neighbours.

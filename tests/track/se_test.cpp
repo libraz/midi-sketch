@@ -223,6 +223,47 @@ TEST(SETest, InsertMIXRespectsTrackMask) {
   EXPECT_TRUE(track.textEvents().empty());
 }
 
+TEST(SETest, MixBreakChantStaysInsideSectionForOddBarCounts) {
+  for (uint8_t bars : {7, 9, 11}) {
+    for (MixPattern pattern : {MixPattern::Tiger, MixPattern::Standard}) {
+      Section mix;
+      mix.type = SectionType::MixBreak;
+      mix.name = "MixBreak";
+      mix.bars = bars;
+      mix.start_tick = 0;
+      mix.track_mask = TrackMask::SE;
+      Section chorus;
+      chorus.type = SectionType::Chorus;
+      chorus.name = "Chorus";
+      chorus.bars = 4;
+      chorus.start_bar = bars;
+      chorus.start_tick = mix.endTick();
+      chorus.track_mask = TrackMask::SE;
+
+      Song song;
+      song.setArrangement(Arrangement({mix, chorus}));
+      MidiTrack track;
+      std::mt19937 rng(1);
+      SEGenerator generator;
+      generator.generateWithCalls(track, song, true, true, IntroChant::None, pattern,
+                                  CallDensity::None, rng);
+
+      size_t in_mix = 0;
+      for (const auto& note : track.notes()) {
+        if (note.start_tick < mix.endTick()) {
+          ++in_mix;
+          EXPECT_LE(note.start_tick + note.duration, mix.endTick())
+              << "bars " << static_cast<int>(bars) << " sounds past the MixBreak";
+        } else {
+          ADD_FAILURE() << "bars " << static_cast<int>(bars) << " starts a note at tick "
+                        << note.start_tick << " in the next section";
+        }
+      }
+      ASSERT_GT(in_mix, 0u);
+    }
+  }
+}
+
 // ============================================================================
 // Generator Integration Tests for SE Track
 // ============================================================================

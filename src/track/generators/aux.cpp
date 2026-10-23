@@ -262,8 +262,13 @@ void AuxGenerator::generateFromSongContext(MidiTrack& track, const SongContext& 
     }
   }
 
-  // Get vocal tessitura for aux range calculation
+  // Get vocal tessitura for aux range calculation; an empty vocal (BackgroundMotif)
+  // reports an inverted range, so the configured range stands in.
   auto [vocal_low, vocal_high] = vocal_track.analyzeRange();
+  if (vocal_track.empty() || vocal_low > vocal_high) {
+    vocal_low = song_ctx.vocal_low;
+    vocal_high = song_ctx.vocal_high;
+  }
   TessituraRange main_tessitura = calculateTessitura(vocal_low, vocal_high);
 
   // Determine which aux configurations to use based on vocal style

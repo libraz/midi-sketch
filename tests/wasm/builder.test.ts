@@ -324,21 +324,33 @@ describe('SongConfigBuilder', () => {
       ]);
     });
 
-    it('auto-enables the call system for exactly the call-oriented styles', () => {
+    it('leaves callSetting on Auto for every vocal style, for the core to resolve', () => {
       for (const style of Object.values(VocalStylePreset)) {
-        const builder = new SongConfigBuilder(0);
-        builder.setVocalStyle(style);
-        const config = builder.build();
-
-        // callEnabled stays undefined for a style the builder does not touch,
-        // which leaves callSetting on Auto for the core to resolve.
-        expect(Boolean(config.callEnabled), `vocal style ${style}`).toBe(
-          isCallOrientedVocalStyle(style),
-        );
-        if (isCallOrientedVocalStyle(style)) {
-          expect(config.callSetting, `vocal style ${style}`).toBe(1);
-        }
+        const config = new SongConfigBuilder(0).setVocalStyle(style).build();
+        expect(config.callSetting, `vocal style ${style}`).toBe(0);
+        expect(config.callEnabled, `vocal style ${style}`).toBeUndefined();
       }
+    });
+
+    it('keeps an explicit setDrums(false) through setBlueprint in either order', () => {
+      for (let id = 0; id < getBlueprintCount(); id++) {
+        const drumsFirst = new SongConfigBuilder(0).setDrums(false).setBlueprint(id).build();
+        const blueprintFirst = new SongConfigBuilder(0).setBlueprint(id).setDrums(false).build();
+        expect(drumsFirst.drumsEnabled, `blueprint ${id}`).toBe(false);
+        expect(drumsFirst.drumsEnabledExplicit, `blueprint ${id}`).toBe(true);
+        expect(drumsFirst.drumsEnabled).toBe(blueprintFirst.drumsEnabled);
+      }
+      const result = new SongConfigBuilder(0).setDrums(false).setBlueprint(1).getLastChangeResult();
+      expect(result?.warnings.some((w) => w.includes('drums'))).toBe(true);
+    });
+
+    it('restores what BehavioralLoop forced once the blueprint changes', () => {
+      const original = new SongConfigBuilder(0).build().hookIntensity;
+      expect(original).not.toBe(HookIntensity.Maximum);
+      const builder = new SongConfigBuilder(0).setBlueprint(9);
+      expect(builder.build().hookIntensity).toBe(HookIntensity.Maximum);
+      builder.setBlueprint(255);
+      expect(builder.build().hookIntensity).toBe(original);
     });
 
     it('should warn but preserve explicit BPM for RhythmSync blueprints', () => {
@@ -368,36 +380,41 @@ describe('SongConfigBuilder', () => {
       expect(config.compositionStyleExplicit).toBe(true);
     });
 
-    it('should set skipVocal for BackgroundMotif style', () => {
-      const builder = new SongConfigBuilder(0);
-      builder.setCompositionStyle(CompositionStyle.BackgroundMotif);
-
-      const result = builder.getLastChangeResult();
-      expect(result).not.toBeNull();
-      expect(result?.changes.some((c) => c.field === 'skipVocal' && c.newValue === true)).toBe(
-        true,
-      );
-
-      const config = builder.build();
-      expect(config.skipVocal).toBe(true);
+    it('should leave skipVocal alone for the BGM styles', () => {
+      for (const style of [CompositionStyle.BackgroundMotif, CompositionStyle.SynthDriven]) {
+        const config = new SongConfigBuilder(0).setCompositionStyle(style).build();
+        expect(config.skipVocal, `style ${style}`).toBe(false);
+      }
     });
 
-    it('should set skipVocal and arpeggioEnabled for SynthDriven style', () => {
+    it('should enable arpeggio for SynthDriven style and restore it afterwards', () => {
       const builder = new SongConfigBuilder(0);
       builder.setCompositionStyle(CompositionStyle.SynthDriven);
 
       const result = builder.getLastChangeResult();
-      expect(result).not.toBeNull();
-      expect(result?.changes.some((c) => c.field === 'skipVocal' && c.newValue === true)).toBe(
-        true,
-      );
       expect(
         result?.changes.some((c) => c.field === 'arpeggioEnabled' && c.newValue === true),
       ).toBe(true);
+      expect(builder.build().arpeggioEnabled).toBe(true);
 
-      const config = builder.build();
-      expect(config.skipVocal).toBe(true);
-      expect(config.arpeggioEnabled).toBe(true);
+      builder.setCompositionStyle(CompositionStyle.MelodyLead);
+      expect(builder.build().arpeggioEnabled).toBe(false);
+    });
+
+    it('should give a vocal song again after leaving a BGM style', () => {
+      const sketch = new MidiSketch();
+      try {
+        const builder = new SongConfigBuilder(0)
+          .setSeed(4242)
+          .setBlueprint(0)
+          .setCompositionStyle(CompositionStyle.BackgroundMotif)
+          .setCompositionStyle(CompositionStyle.MelodyLead);
+        sketch.generateFromBuilder(builder);
+        const vocal = sketch.getEvents().tracks.find((track) => track.name === 'Vocal');
+        expect(vocal?.notes.length ?? 0).toBeGreaterThan(0);
+      } finally {
+        sketch.destroy();
+      }
     });
 
     it('should not override explicitly set skipVocal', () => {
@@ -494,37 +511,9 @@ describe('SongConfigBuilder', () => {
   });
 
   describe('cascade detection - setVocalStyle with Idol styles', () => {
-    it('should auto-enable call for vocalStyle=4 (Idol)', () => {
-      const builder = new SongConfigBuilder(0);
-      builder.setVocalStyle(4);
-
-      const result = builder.getLastChangeResult();
-      expect(result).not.toBeNull();
-      expect(result?.changes.some((c) => c.field === 'callEnabled' && c.newValue === true)).toBe(
-        true,
-      );
-
-      const config = builder.build();
-      expect(config.callEnabled).toBe(true);
-      expect(config.callSetting).toBe(1);
-    });
-
-    it('should auto-enable call for vocalStyle=9 (BrightKira)', () => {
-      const builder = new SongConfigBuilder(0);
-      builder.setVocalStyle(9);
-
-      const config = builder.build();
-      expect(config.callEnabled).toBe(true);
-      expect(config.callSetting).toBe(1);
-    });
-
-    it('should auto-enable call for vocalStyle=11 (CuteAffected)', () => {
-      const builder = new SongConfigBuilder(0);
-      builder.setVocalStyle(11);
-
-      const config = builder.build();
-      expect(config.callEnabled).toBe(true);
-      expect(config.callSetting).toBe(1);
+    it('should leave callSetting Auto when switching from a call style to another', () => {
+      const builder = new SongConfigBuilder(0).setVocalStyle(4).setVocalStyle(5);
+      expect(builder.build().callSetting).toBe(0);
     });
 
     it('should not override explicitly set callEnabled=false', () => {
@@ -630,6 +619,20 @@ describe('SongConfigBuilder', () => {
   });
 
   describe('resetKeepExplicit', () => {
+    it('should keep each explicit value together with its core flag', () => {
+      const builder = new SongConfigBuilder(0)
+        .setDrums(false)
+        .setCompositionStyle(CompositionStyle.MelodyLead)
+        .setChordExtensions({ seventhProb: 0.5 });
+      builder.resetKeepExplicit();
+      const config = builder.build();
+      expect(config.drumsEnabled).toBe(false);
+      expect(config.drumsEnabledExplicit).toBe(true);
+      expect(config.compositionStyleExplicit).toBe(true);
+      expect(config.chordExt7thProb).toBe(0.5);
+      expect(config.chordExtProbExplicit).toBe(true);
+    });
+
     it('should keep explicitly set values', () => {
       const builder = new SongConfigBuilder(0).setSeed(12345).setBpm(150);
 
@@ -640,6 +643,25 @@ describe('SongConfigBuilder', () => {
       expect(config.bpm).toBe(150); // Kept
       expect(builder.getExplicitFields()).toContain('seed');
       expect(builder.getExplicitFields()).toContain('bpm');
+    });
+  });
+
+  describe('implicit tempo', () => {
+    it('plays a drawn-blueprint ballad at the ballad style tempo', () => {
+      const sketch = new MidiSketch();
+      try {
+        for (const seed of [11, 29, 47]) {
+          const builder = new SongConfigBuilder(0).setStylePreset(16).setSeed(seed);
+          expect(builder.build().bpm).toBe(0);
+          expect(builder.build().blueprintId).toBe(255);
+          sketch.generateFromBuilder(builder);
+          const bpm = sketch.getEvents().bpm;
+          expect(bpm, `seed ${seed}`).toBeGreaterThanOrEqual(65);
+          expect(bpm, `seed ${seed}`).toBeLessThanOrEqual(85);
+        }
+      } finally {
+        sketch.destroy();
+      }
     });
   });
 

@@ -70,11 +70,8 @@ Tick quantizeToSwingGrid(Tick tick, float swing_amount, SwingGridResolution reso
     // Position 3: around 360 ticks. Window [300, 420)
     if (beat_offset >= TICK_EIGHTH + kHalf16th && beat_offset < 3 * TICK_SIXTEENTH + kHalf16th) {
       Tick beat_base = tick - beat_offset;
-      Tick swing_delta_8th = static_cast<Tick>(kEighthSwingDelta * clamped_swing);
-      Tick swing_delta_16th = static_cast<Tick>(kSixteenthSwingDelta * clamped_swing);
-      Tick result = beat_base + TICK_EIGHTH + swing_delta_8th + TICK_SIXTEENTH + swing_delta_16th;
-      Tick max_pos = beat_base + TICKS_PER_BEAT - 1;
-      return std::min(result, max_pos);
+      Tick swing_delta = static_cast<Tick>(kSixteenthSwingDelta * clamped_swing);
+      return beat_base + 3 * TICK_SIXTEENTH + swing_delta;
     }
 
     return tick;

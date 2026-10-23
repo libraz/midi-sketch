@@ -396,8 +396,10 @@ uint8_t resolveEffectiveRoot(BassTrackContext& ctx, uint8_t root, Tick bar_start
   if (!ctx.has_vocal) {
     return root;
   }
-  int8_t vocal_direction = getVocalDirectionAt(*ctx.vocal_analysis, bar_start);
+  // The direction survives the note that set it; only a sounding note moves the bass.
   uint8_t vocal_pitch = getVocalPitchAt(*ctx.vocal_analysis, bar_start);
+  int8_t vocal_direction =
+      vocal_pitch > 0 ? getVocalDirectionAt(*ctx.vocal_analysis, bar_start) : int8_t{0};
   MotionType motion = selectMotionType(vocal_direction, bar, ctx.rng);
   return adjustPitchForMotion(root, motion, vocal_direction, vocal_pitch, previous_root,
                               ctx.harmony.getChordTonesAt(bar_start));
@@ -556,17 +558,30 @@ void applyKickSyncPostProcess(BassTrackContext& ctx) {
       std::min(static_cast<Tick>(ctx.kick_cache->dominant_interval / 16 * genre_multiplier),
                static_cast<Tick>(TICK_SIXTEENTH / 2));
 
+  // Kicks sit on the 8th grid and most bass onsets on the 16th grid, so only
+  // off-grid onsets (32nd runs) are within reach. A move keeps the note's end and
+  // is dropped when it would stack onto, or inside, another bass note.
   auto& notes = ctx.track.notes();
-  for (auto& note : notes) {
+  for (size_t i = 0; i < notes.size(); ++i) {
+    NoteEvent& note = notes[i];
     // Check if this note is close to a kick but not exactly on it
     Tick nearest = ctx.kick_cache->nearestKick(note.start_tick);
     Tick diff =
         (note.start_tick > nearest) ? (note.start_tick - nearest) : (nearest - note.start_tick);
 
     // If within tolerance but not already aligned, adjust timing
-    if (diff > 0 && diff <= sync_tolerance && diff <= max_adjust) {
-      note.start_tick = nearest;
+    if (diff == 0 || diff > sync_tolerance || diff > max_adjust) continue;
+    Tick end = note.start_tick + note.duration;
+    if (nearest >= end) continue;
+    bool blocked = false;
+    for (size_t j = 0; j < notes.size() && !blocked; ++j) {
+      if (j == i) continue;
+      Tick other_end = notes[j].start_tick + notes[j].duration;
+      blocked = notes[j].start_tick <= nearest && nearest < other_end;
     }
+    if (blocked) continue;
+    note.start_tick = nearest;
+    note.duration = end - nearest;
   }
 }
 

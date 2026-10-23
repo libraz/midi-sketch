@@ -18,6 +18,7 @@
 #include "core/preset_data.h"
 #include "core/song.h"
 #include "core/timing_constants.h"
+#include "core/timing_offset_calculator.h"
 #include "core/types.h"
 #include "test_helpers/note_event_test_helper.h"
 #include "test_support/generator_test_fixture.h"
@@ -372,19 +373,33 @@ TEST_F(DrumsTest, FourOnFloorKickPattern) {
 
   const auto& track = gen.getSong().drums();
 
-  // Count kicks on each quarter note beat
-  int kicks_on_quarters = 0;
-  for (const auto& note : track.notes()) {
-    if (note.note == KICK || note.note == 35) {
-      // Check if on quarter note beat
-      if (note.start_tick % TICKS_PER_BEAT == 0) {
-        kicks_on_quarters++;
+  // A chorus bar that is not the section's last (which may carry a fill) puts a
+  // kick on each of its four beats. A 1-and-3 pattern has none that do.
+  int checked_bars = 0;
+  int four_beat_bars = 0;
+  for (const auto& section : gen.getSong().arrangement().sections()) {
+    if (section.type != SectionType::Chorus) continue;
+    for (uint8_t bar = 0; bar + 1 < section.bars; ++bar) {
+      const Tick bar_start = section.start_tick + bar * TICKS_PER_BAR;
+      int beats_with_kick = 0;
+      for (int beat = 0; beat < 4; ++beat) {
+        const Tick beat_tick = bar_start + beat * TICKS_PER_BEAT;
+        for (const auto& note : track.notes()) {
+          if ((note.note == KICK || note.note == 35) && note.start_tick + 60 >= beat_tick &&
+              note.start_tick < beat_tick + 60) {
+            ++beats_with_kick;
+            break;
+          }
+        }
       }
+      ++checked_bars;
+      if (beats_with_kick == 4) ++four_beat_bars;
     }
   }
 
-  // Four-on-the-floor should have many kicks on quarter beats
-  EXPECT_GT(kicks_on_quarters, 10) << "FourOnFloor style should have kicks on quarter beats";
+  ASSERT_GT(checked_bars, 0);
+  EXPECT_GE(four_beat_bars * 4, checked_bars * 3)
+      << "FourOnFloor style should kick on every beat of its chorus bars";
 }
 
 TEST_F(DrumsTest, IdolCoolPopUsesFourOnFloorForAllMoods) {
@@ -2993,6 +3008,28 @@ TEST_F(DrumsTest, PreChorusBreakOnlyTakesTheLastBeat) {
 // Ghost Note Velocity Contextualization Tests
 // ============================================================================
 
+TEST(GhostVelocityTest, MultiplierStaysBelowTheBackbeatForEverySection) {
+  // A ghost is the section velocity scaled by this multiplier (with up to 15%
+  // variation), so it sits below the backbeat, which is the section velocity
+  // plus an accent.
+  int checked = 0;
+  for (SectionType section :
+       {SectionType::Intro, SectionType::A, SectionType::B, SectionType::Chorus,
+        SectionType::Bridge, SectionType::Interlude, SectionType::Outro, SectionType::Chant,
+        SectionType::MixBreak, SectionType::Drop}) {
+    for (int beat_position = 0; beat_position < 4; ++beat_position) {
+      for (bool after_snare : {false, true}) {
+        const float multiplier = drums::getGhostVelocity(section, beat_position, after_snare);
+        EXPECT_GE(multiplier, 0.25f);
+        EXPECT_LE(multiplier, 0.65f);
+        EXPECT_LT(multiplier * 1.15f, 0.8f);
+        ++checked;
+      }
+    }
+  }
+  EXPECT_EQ(checked, 80);
+}
+
 TEST_F(DrumsTest, GhostNotesHaveContextDependentVelocity) {
   // Ghost notes should have valid velocities in the appropriate range
   // The getGhostVelocity function provides context-dependent velocities
@@ -3149,7 +3186,6 @@ TEST_F(DrumsTest, IntroKickEnabledFlagDifferenceTest) {
 
   // Test multiple seeds to find one where intro has kick when enabled
   std::vector<uint32_t> test_seeds = {100, 200, 300, 400, 500};
-  bool found_difference = false;
 
   for (uint32_t seed : test_seeds) {
     params_.seed = seed;
@@ -3173,17 +3209,40 @@ TEST_F(DrumsTest, IntroKickEnabledFlagDifferenceTest) {
 
     // When enabled blueprint has kick in intro, verify the flag works
     if (kick_enabled > 0) {
-      found_difference = true;
       EXPECT_GT(kick_enabled, kick_disabled)
           << "Seed " << seed << ": intro_kick_enabled=true should have more kick than disabled";
     }
   }
 
-  // If no seed produced kick in intro even with enabled flag, the test is inconclusive
-  // This could happen if the section's drum_role doesn't include kick in intro
-  if (!found_difference) {
-    SUCCEED() << "No test seed produced kick in intro - section may use ambient drums";
+  // A full-kit intro leaves no doubt about whether the flag is what silences it.
+  Section intro;
+  intro.type = SectionType::Intro;
+  intro.name = "Intro";
+  intro.start_tick = 0;
+  intro.bars = 4;
+  intro.drum_role = DrumRole::Full;
+  intro.track_mask = TrackMask::Drums;
+  Song song;
+  song.setArrangement(Arrangement({intro}));
+  int kicks_by_blueprint[2] = {0, 0};
+  const uint8_t blueprint_ids[2] = {0, 3};
+  for (int i = 0; i < 2; ++i) {
+    drums::DrumGenerationParams drum_params{};
+    drum_params.mood = Mood::StraightPop;
+    drum_params.bpm = 120;
+    drum_params.blueprint_id = blueprint_ids[i];
+    drum_params.composition_style = CompositionStyle::MelodyLead;
+    drum_params.paradigm = GenerationParadigm::Traditional;
+    std::mt19937 rng(100);
+    MidiTrack drum_track;
+    drums::generateDrumsTrackImpl(drum_track, song, drum_params, rng);
+    for (const auto& note : drum_track.notes()) {
+      if (note.note == KICK) ++kicks_by_blueprint[i];
+    }
   }
+  EXPECT_GT(kicks_by_blueprint[0], 0)
+      << "intro_kick_enabled=true wrote no kick in a full-kit intro";
+  EXPECT_EQ(kicks_by_blueprint[1], 0);
 }
 
 // ============================================================================
@@ -3487,6 +3546,158 @@ MidiTrack generateSectionDrums(const Section& section, Mood mood, GenerationPara
 }
 
 }  // namespace
+
+TEST(DrumMicroTimingTest, OffsetFollowsTheNominalPositionNotTheShiftedTick) {
+  const TimingOffsetCalculator calculator(100, VocalStylePreset::Auto, DrumStyle::Standard, 1.0f);
+  const int backbeat =
+      calculator.getDrumTimingOffset(TimingOffsetCalculator::kSnareNote, TICKS_PER_BEAT);
+  ASSERT_NE(backbeat, 0);
+  // A time feel that pushed the beat-2 snare 9 ticks early leaves it a backbeat.
+  EXPECT_EQ(calculator.getDrumTimingOffset(TimingOffsetCalculator::kSnareNote, TICKS_PER_BEAT - 9),
+            backbeat);
+  EXPECT_EQ(
+      calculator.getDrumTimingOffset(TimingOffsetCalculator::kSnareNote, 3 * TICKS_PER_BEAT - 9),
+      calculator.getDrumTimingOffset(TimingOffsetCalculator::kSnareNote, 3 * TICKS_PER_BEAT));
+}
+
+TEST(DrumMicroTimingTest, NoteAtTickZeroIsNeverPushedBeforeTheSong) {
+  const TimingOffsetCalculator calculator(100, VocalStylePreset::Auto, DrumStyle::Rock, 1.0f);
+  ASSERT_LT(calculator.getDrumTimingOffset(TimingOffsetCalculator::kBassNote, 0), 0);
+
+  MidiTrack track;
+  track.addNote(
+      NoteEventTestHelper::create(0, TICK_EIGHTH, TimingOffsetCalculator::kBassNote, 100));
+  calculator.applyDrumOffsets(track);
+  EXPECT_EQ(track.notes()[0].start_tick, 0u);
+}
+
+TEST(DrumSectionEntryTest, QuietChorusGetsNeitherCrashNorLeadInFill) {
+  auto buildSong = [](SectionModifier modifier) {
+    Section pre;
+    pre.type = SectionType::B;
+    pre.name = "B";
+    pre.start_tick = 0;
+    pre.bars = 4;
+    pre.energy = SectionEnergy::Medium;
+    pre.track_mask = TrackMask::Drums;
+    Section chorus;
+    chorus.type = SectionType::Chorus;
+    chorus.name = "Chorus";
+    chorus.start_tick = 4 * TICKS_PER_BAR;
+    chorus.bars = 4;
+    chorus.energy = SectionEnergy::High;
+    chorus.modifier = modifier;
+    chorus.track_mask = TrackMask::Drums;
+    // The last chorus is led into by a hold rather than a fill, so the chorus
+    // under test is followed by a second one.
+    Section verse = pre;
+    verse.type = SectionType::A;
+    verse.name = "A";
+    verse.start_tick = 8 * TICKS_PER_BAR;
+    Section pre2 = pre;
+    pre2.start_tick = 12 * TICKS_PER_BAR;
+    Section last_chorus = chorus;
+    last_chorus.modifier = SectionModifier::None;
+    last_chorus.start_tick = 16 * TICKS_PER_BAR;
+    Song song;
+    song.setArrangement(Arrangement({pre, chorus, verse, pre2, last_chorus}));
+    return song;
+  };
+
+  auto leadInAndEntry = [](const Song& song, uint32_t seed, int& fill_strokes, int& entry_crash) {
+    drums::DrumGenerationParams params{};
+    params.mood = Mood::IdolPop;
+    params.bpm = 120;
+    params.blueprint_id = 0;
+    params.composition_style = CompositionStyle::MelodyLead;
+    params.paradigm = GenerationParadigm::Traditional;
+    std::mt19937 rng(seed);
+    MidiTrack track;
+    drums::generateDrumsTrackImpl(track, song, params, rng);
+    for (const auto& note : track.notes()) {
+      const bool in_lead_in_bar =
+          note.start_tick >= 3 * TICKS_PER_BAR && note.start_tick < 4 * TICKS_PER_BAR;
+      if (in_lead_in_bar && (note.note == drums::TOM_H || note.note == drums::TOM_M ||
+                             note.note == drums::TOM_L || note.note == drums::CRASH)) {
+        ++fill_strokes;
+      }
+      if (note.note == drums::CRASH && note.start_tick >= 4 * TICKS_PER_BAR - 30 &&
+          note.start_tick < 4 * TICKS_PER_BAR + 30) {
+        ++entry_crash;
+      }
+    }
+  };
+
+  int quiet_fill = 0;
+  int quiet_crash = 0;
+  int full_fill = 0;
+  int full_crash = 0;
+  const Song quiet_song = buildSong(SectionModifier::Ochisabi);
+  const Song full_song = buildSong(SectionModifier::None);
+  for (uint32_t seed = 1; seed <= 16; ++seed) {
+    leadInAndEntry(quiet_song, seed, quiet_fill, quiet_crash);
+    leadInAndEntry(full_song, seed, full_fill, full_crash);
+  }
+
+  ASSERT_GT(full_fill, 0) << "control chorus never filled into";
+  ASSERT_GT(full_crash, 0) << "control chorus never opened with a crash";
+  EXPECT_EQ(quiet_fill, 0);
+  EXPECT_EQ(quiet_crash, 0);
+}
+
+TEST(DrumGrooveGridTest, MelodyDrivenKeepsTheStyleKickGrid) {
+  // A style defined by its kick grid is untouched by the vocal-aware layer, so
+  // the kicks are those of the same section written without a vocal.
+  Section chorus;
+  chorus.type = SectionType::Chorus;
+  chorus.name = "Chorus";
+  chorus.start_tick = 0;
+  chorus.bars = 4;
+  chorus.track_mask = TrackMask::Drums;
+
+  VocalAnalysis vocal_analysis{};
+  for (Tick tick = 0; tick < 4 * TICKS_PER_BAR; tick += TICK_SIXTEENTH) {
+    vocal_analysis.pitch_at_tick.emplace(tick, 60);
+  }
+
+  for (DrumStyle style : {DrumStyle::FourOnFloor, DrumStyle::Sparse}) {
+    const uint8_t hint = static_cast<uint8_t>(style) + 1;
+    for (uint32_t seed = 1; seed <= 6; ++seed) {
+      Song song;
+      song.setArrangement(Arrangement({chorus}));
+      drums::DrumGenerationParams params{};
+      params.mood = Mood::IdolPop;
+      params.bpm = 120;
+      params.blueprint_id = 2;
+      params.composition_style = CompositionStyle::MelodyLead;
+      params.paradigm = GenerationParadigm::MelodyDriven;
+      params.drum_style_hint = hint;
+
+      std::mt19937 rng_with(seed);
+      MidiTrack with_vocal;
+      drums::generateDrumsTrackImpl(with_vocal, song, params, rng_with,
+                                    drums::createMelodyDrivenCallback(vocal_analysis));
+      std::mt19937 rng_without(seed);
+      MidiTrack without_vocal;
+      drums::generateDrumsTrackImpl(without_vocal, song, params, rng_without);
+
+      std::vector<Tick> kicks_with;
+      std::vector<Tick> kicks_without;
+      for (const auto& note : with_vocal.notes()) {
+        if (note.note == drums::BD) kicks_with.push_back(note.start_tick);
+      }
+      for (const auto& note : without_vocal.notes()) {
+        if (note.note == drums::BD) kicks_without.push_back(note.start_tick);
+      }
+      ASSERT_FALSE(kicks_without.empty());
+      if (style == DrumStyle::FourOnFloor) {
+        EXPECT_GE(kicks_without.size(), 4u * chorus.bars) << "seed " << seed;
+      }
+      EXPECT_EQ(kicks_with, kicks_without)
+          << "Style " << static_cast<int>(style) << " seed " << seed;
+    }
+  }
+}
 
 TEST(DrumGrooveGridTest, EveryVoicePlacesOnsetsOnTheSectionGrid) {
   // A swung section resolves each subdivision to one tick. Whichever kit piece
@@ -4167,10 +4378,21 @@ const std::vector<FillType>& allFillTypes() {
   return kFillTypes;
 }
 
+namespace {
+
+/// Fill types that write only in the last two beats of a fill window.
+bool isSubtleFill(FillType fill) {
+  return fill == FillType::SimpleCrash || fill == FillType::BreakdownFill ||
+         fill == FillType::HalfTimeFill;
+}
+
+}  // namespace
+
 TEST(FillGeneratorContentTest, FullBarFillHasContentOnFirstTwoBeats) {
   const GrooveGrid grid;
 
   for (FillType fill : allFillTypes()) {
+    if (isSubtleFill(fill)) continue;
     MidiTrack track;
     generateFill(track, grid, 0, 0, fill, 100);
     generateFill(track, grid, TICKS_PER_BEAT, 1, fill, 100);
@@ -4190,6 +4412,22 @@ TEST(FillGeneratorContentTest, FullBarFillHasContentOnFirstTwoBeats) {
     EXPECT_GT(beat1_notes, 0) << "Full-bar fill beat 2 is empty for fill type "
                               << static_cast<int>(fill);
   }
+}
+
+TEST(FillGeneratorContentTest, SubtleFillsWriteNothingOnTheFirstTwoBeats) {
+  const GrooveGrid grid;
+  int subtle_types = 0;
+
+  for (FillType fill : allFillTypes()) {
+    if (!isSubtleFill(fill)) continue;
+    ++subtle_types;
+    MidiTrack track;
+    EXPECT_FALSE(generateFill(track, grid, 0, 0, fill, 100)) << static_cast<int>(fill);
+    EXPECT_FALSE(generateFill(track, grid, TICKS_PER_BEAT, 1, fill, 100)) << static_cast<int>(fill);
+    EXPECT_TRUE(track.notes().empty())
+        << "Subtle fill " << static_cast<int>(fill) << " wrote strokes it did not choose";
+  }
+  ASSERT_EQ(subtle_types, 3);
 }
 
 TEST(FillGeneratorContentTest, ReportedFillMaterialMatchesWhatWasWritten) {

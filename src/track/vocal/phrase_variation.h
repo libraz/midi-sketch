@@ -49,31 +49,37 @@ enum class PhraseVariation : uint8_t {
 /// now uses a fixed safe subset (3 types) instead of all 8.
 constexpr int kVariationTypeCount = 11;
 
-/// Maximum reuse count before variation is forced.
-/// After this many exact repetitions, variation is mandatory to prevent monotony.
+/// Most consecutive identical statements of a phrase, the original included.
+/// The statement after such a run is always varied.
 ///
 /// Music psychology rationale (listener fatigue):
 /// - Research suggests exact repetition becomes "expected" after 2-3 times
 /// - The "rule of three" in composition: repeat twice, vary the third time
 /// - Pop music: verse 1 similar to verse 2, but verse 3 often has variation
 /// - Value of 2 provides balance between familiarity and interest
-constexpr int kMaxExactReuse = 2;
+constexpr int kMaxExactRun = 2;
 
 /**
- * @brief Select phrase variation based on reuse count and chorus occurrence.
+ * @brief Select the variation for one statement of a cached phrase.
  *
- * First occurrence returns Exact (establish the phrase).
- * Variation probability increases with occurrence number:
- * - occurrence 1: 80% exact, 20% variation (establish theme)
- * - occurrence 2: 60% exact, 40% variation (developing interest)
- * - occurrence >= 3: 30% exact, 70% variation (maximum freshness)
+ * The original statement returns Exact (establish the phrase). A restatement
+ * is exact with a probability that falls each time the phrase returns:
+ * - first restatement: 80% exact (establish theme)
+ * - second restatement: 60% exact (developing interest)
+ * - third and later: 30% exact (maximum freshness)
+ * A restatement following kMaxExactRun identical statements always varies.
+ * A phrase that opens on its hook (a chorus) is never varied by LateOnset,
+ * which would move the hook off the downbeat it opens on.
  *
- * @param reuse_count How many times this phrase has been used before
- * @param occurrence Which occurrence of this section type (1-based)
+ * @param reuse_index 0 for the original statement, 1 for its first restatement
+ * @param exact_run Identical statements immediately before this one, the
+ *        original included
+ * @param opens_on_hook Whether the phrase's first note is its hook's
  * @param rng Random number generator
  * @return Selected variation type
  */
-PhraseVariation selectPhraseVariation(int reuse_count, int occurrence, std::mt19937& rng);
+PhraseVariation selectPhraseVariation(int reuse_index, int exact_run, bool opens_on_hook,
+                                      std::mt19937& rng);
 
 /**
  * @brief Apply phrase variation to notes (ending changes, timing shifts, slurs).

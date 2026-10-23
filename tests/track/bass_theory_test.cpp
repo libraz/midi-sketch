@@ -32,6 +32,7 @@
 #include "core/types.h"
 #include "test_support/collision_test_helper.h"
 #include "test_support/generator_test_fixture.h"
+#include "test_support/stub_harmony_context.h"
 #include "track/bass/bass_bar_writer.h"
 #include "track/bass/bass_density.h"
 #include "track/bass/bass_motion.h"
@@ -282,40 +283,30 @@ TEST_F(BassDiatonicTest, AllBassNotesAreDiatonic) {
   }
 }
 
-// Test: vii chord (B) generates F (dim5), not F# (perfect 5th)
+// Test: vii chord (B) generates F (dim5), not F# (perfect 5th).
+// No stock progression contains a vii, so the writer is asked directly.
 TEST_F(BassDiatonicTest, ViiChordUsesDiminishedFifth) {
-  for (uint8_t chord_id = 0; chord_id < 20; ++chord_id) {
-    const auto& prog = getChordProgression(chord_id);
+  constexpr int8_t kViiDegree = 6;
+  constexpr int kFSharp = 6;
+  const uint8_t vii_root = getBassRoot(kViiDegree);
 
-    bool has_vii = false;
-    for (int idx = 0; idx < prog.length; ++idx) {
-      if (prog.degrees[idx] == 6) {
-        has_vii = true;
-        break;
-      }
+  for (BassPattern pattern : {BassPattern::RootFifth, BassPattern::Driving, BassPattern::WholeNote,
+                              BassPattern::Syncopated}) {
+    test::StubHarmonyContext harmony;
+    harmony.setChordDegree(kViiDegree);
+    harmony.setAllPitchesSafe(true);
+
+    MidiTrack track;
+    generateBassBar(track, 0, vii_root, vii_root, vii_root, kViiDegree, pattern,
+                    SectionType::Chorus, Mood::StraightPop, false, harmony);
+
+    ASSERT_FALSE(track.notes().empty())
+        << "No bass over the vii chord for pattern " << static_cast<int>(pattern);
+    for (const auto& note : track.notes()) {
+      EXPECT_NE(note.note % 12, kFSharp)
+          << "Pattern " << static_cast<int>(pattern)
+          << " put a perfect 5th (F#) over vii; it should use the diminished 5th (F)";
     }
-
-    if (!has_vii) continue;
-
-    params_.chord_id = chord_id;
-    params_.seed = 42;
-
-    Generator gen;
-    gen.generate(params_);
-
-    const auto& track = gen.getSong().bass();
-    auto non_diatonic = findUnexplainedNonDiatonicNotes(track, gen.getHarmonyContext());
-
-    int fsharp_count = 0;
-    for (const auto& [tick, pitch] : non_diatonic) {
-      if (pitch % 12 == 6) {
-        fsharp_count++;
-      }
-    }
-
-    EXPECT_EQ(fsharp_count, 0) << "Chord progression " << static_cast<int>(chord_id)
-                               << " (contains vii) produced F# in bass. "
-                               << "vii chord should use diminished 5th (F), not perfect 5th (F#)";
   }
 }
 
@@ -707,8 +698,9 @@ TEST_F(ChordFunctionApproachTest, HighVocalDensityStillSimplifiesNonPeakVerse) {
   verse.peak_level = PeakLevel::None;
   verse.backing_density = BackingDensity::Normal;
 
+  // The Dance verse row is RootFifth / Syncopated / OctaveJump; a dense vocal takes its sparsest.
   std::mt19937 rng(7);
-  EXPECT_EQ(selectPatternForVocalDensity(0.9f, verse, params, rng), BassPattern::WholeNote);
+  EXPECT_EQ(selectPatternForVocalDensity(0.9f, verse, params, rng), BassPattern::RootFifth);
 }
 
 TEST_F(ChordFunctionApproachTest, HighVocalDensityDoesNotCollapsePeakChorusToWholeNote) {

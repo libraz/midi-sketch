@@ -12,6 +12,7 @@
 #include "core/midi_track.h"
 #include "core/pitch_utils.h"
 #include "core/timing_constants.h"
+#include "track/accompaniment_ceiling.h"
 #include "track/chord/voice_leading.h"
 
 namespace midisketch {
@@ -154,6 +155,7 @@ VoicedChord filterVoicingByCollision(const IHarmonyContext& harmony, const Voice
     }
     safe.pitches[safe.count++] = pitch;
   }
+  chord_voicing::normalizeVoicing(safe);
   return safe;
 }
 
@@ -204,6 +206,7 @@ VoicedChord buildFallbackVoicing(const Chord& chord, uint8_t root, uint8_t vocal
     }
     fallback.pitches[fallback.count++] = static_cast<uint8_t>(chosen);
   }
+  chord_voicing::normalizeVoicing(fallback);
   return fallback;
 }
 
@@ -214,6 +217,10 @@ void augmentVoicingToMinimum(VoicedChord& voicing, const Chord& chord, uint8_t r
 
   uint8_t effective_high = getEffectiveChordHigh(vocal_ceiling);
   const ChordTones tones = chordToneSet(chord, root);
+  struct NormalizeOnExit {
+    VoicedChord& voicing;
+    ~NormalizeOnExit() { chord_voicing::normalizeVoicing(voicing); }
+  } normalize_on_exit{voicing};
 
   auto distinctTones = [&voicing]() {
     uint16_t seen = 0;
@@ -333,66 +340,89 @@ bool enforceChordBelowVocal(MidiTrack& track, const MidiTrack& vocal, IHarmonyCo
   if (track.empty() || vocal.empty()) return false;
 
   bool changed = false;
-  for (auto& note : track.notes()) {
+  auto& chord_notes = track.notes();
+  for (size_t index = 0; index < chord_notes.size(); ++index) {
+    NoteEvent& note = chord_notes[index];
     Tick note_end = note.start_tick + note.duration;
     uint8_t ceiling = 0;
+    // The vocal notes this chord note sounds against, by exact pitch.
+    bool vocal_pitches[128] = {};
+    auto soundsVocal = [&vocal_pitches](int pitch) {
+      return pitch >= 0 && pitch < 128 && vocal_pitches[pitch];
+    };
     for (const auto& vocal_note : vocal.notes()) {
       Tick vocal_end = vocal_note.start_tick + vocal_note.duration;
       if (note.start_tick < vocal_end && note_end > vocal_note.start_tick) {
         ceiling = (ceiling == 0) ? vocal_note.note : std::min(ceiling, vocal_note.note);
+        vocal_pitches[vocal_note.note] = true;
       }
     }
 
-    if (ceiling == 0 || note.note <= ceiling) continue;
+    if (ceiling == 0) continue;
+    if (note.note <= ceiling && !soundsVocal(note.note)) continue;
 
     int folded = note.note;
     while (folded > ceiling && folded - 12 >= CHORD_LOW) {
       folded -= 12;
     }
-    if (folded > ceiling && ceiling >= CHORD_LOW) {
-      // Landing on the ceiling itself lands on the vocal's pitch, and a unison
-      // is always consonant, so the cross-track check waves it through. That
-      // turned a V chord's third into a doubled root and left the chord with no
-      // quality; fold to the highest chord tone the ceiling allows instead.
+    if ((folded > ceiling || soundsVocal(folded)) && ceiling >= CHORD_LOW) {
+      // Landing on the vocal's own pitch is a unison, and a unison is always
+      // consonant, so the cross-track check waves it through. That turned a V
+      // chord's third into a doubled root and left the chord with no quality;
+      // fold to the highest chord tone under the ceiling that is not the
+      // vocal's pitch instead.
       auto chord_tones = harmony.getChordTonesAt(note.start_tick);
       int best = -1;
       for (int pc : chord_tones) {
         if (pc < 0) continue;
         for (int candidate = pc; candidate <= ceiling; candidate += 12) {
-          if (candidate >= CHORD_LOW && candidate > best) best = candidate;
+          if (candidate >= CHORD_LOW && candidate > best && !soundsVocal(candidate)) {
+            best = candidate;
+          }
         }
       }
-      folded = (best >= 0) ? best : ceiling;
+      folded = best;
     }
-    if (folded != note.note && folded >= 0 && folded <= 127) {
+
+    // A note that cannot be placed clear of the vocal is dropped rather than
+    // left to double it.
+    bool usable = folded >= 0 && folded <= 127 && !soundsVocal(folded);
+    if (usable && folded != note.note) {
       uint8_t candidate = static_cast<uint8_t>(folded);
       // This is a post-generation transform, so re-check the replacement
-      // against every other registered track before committing it.
-      if (harmony.isConsonantWithOtherTracks(candidate, note.start_tick, note.duration,
-                                             TrackRole::Chord)) {
+      // against every other registered track and this track's own onset.
+      usable = harmony.isConsonantWithOtherTracks(candidate, note.start_tick, note.duration,
+                                                  TrackRole::Chord);
+      for (size_t other = 0; usable && other < chord_notes.size(); ++other) {
+        usable = other == index || chord_notes[other].duration == 0 ||
+                 chord_notes[other].start_tick != note.start_tick ||
+                 chord_notes[other].note != candidate;
+      }
 #ifdef MIDISKETCH_NOTE_PROVENANCE
-        // The fold happens after the voicing has been emitted, so the note's
-        // own history ends at the register the voicing chose. Recording the
-        // step is what keeps the sounding pitch attributable: without it the
-        // forensics read an octave drop as a decision the chord generator made.
+      // The fold happens after the voicing has been emitted, so the note's
+      // own history ends at the register the voicing chose. Recording the
+      // step is what keeps the sounding pitch attributable: without it the
+      // forensics read an octave drop as a decision the chord generator made.
+      if (usable) {
         note.addTransformStep(TransformStepType::VocalAvoid, note.note, candidate,
                               static_cast<int8_t>(ceiling > 127 ? 127 : ceiling), 0);
-#endif
-        note.note = candidate;
-      } else {
-        // Neither the original high note nor its safe register-folded
-        // replacement can coexist with the vocal/other tracks.
-        note.duration = 0;
       }
+#endif
+      if (usable) {
+        note.note = candidate;
+        changed = true;
+      }
+    }
+    if (!usable) {
+      note.duration = 0;
       changed = true;
     }
   }
 
   if (changed) {
-    auto& notes = track.notes();
-    notes.erase(std::remove_if(notes.begin(), notes.end(),
-                               [](const NoteEvent& note) { return note.duration == 0; }),
-                notes.end());
+    chord_notes.erase(std::remove_if(chord_notes.begin(), chord_notes.end(),
+                                     [](const NoteEvent& note) { return note.duration == 0; }),
+                      chord_notes.end());
     harmony.clearNotesForTrack(TrackRole::Chord);
     harmony.registerTrack(track, TrackRole::Chord);
   }

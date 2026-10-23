@@ -174,13 +174,21 @@ TEST(MotifSectionBoundaryTest, ClipsFinalCycleNotesToShortSection) {
   }
 }
 
-TEST(MotifSectionBoundaryTest, FreePolicyRerollsFullSongPatternForEachSection) {
+using MotifSignature = std::set<std::pair<Tick, uint8_t>>;
+
+/// Generate a Free-policy motif over two 2-bar sections and return the onsets each plays,
+/// relative to its own start. Voice-limited sections skip per-cycle variation and the
+/// stub harmony is the same everywhere, so the notes reflect the pattern alone.
+std::pair<MotifSignature, MotifSignature> generateFreeMotifInTwoSections(MotifRepeatScope scope,
+                                                                         SectionType second_type,
+                                                                         uint32_t seed) {
   GeneratorParams params;
   params.mood = Mood::IdolPop;
-  params.seed = 42;
+  params.seed = seed;
   params.composition_style = CompositionStyle::BackgroundMotif;
   params.riff_policy = RiffPolicy::Free;
-  params.motif.repeat_scope = MotifRepeatScope::FullSong;
+  params.motif.repeat_scope = scope;
+  params.motif.octave_layering_chorus = false;
 
   Section first;
   first.type = SectionType::A;
@@ -188,8 +196,10 @@ TEST(MotifSectionBoundaryTest, FreePolicyRerollsFullSongPatternForEachSection) {
   first.bars = 2;
   first.start_tick = 0;
   first.track_mask = TrackMask::Motif;
+  first.max_moving_voices = 4;
   Section second = first;
-  second.name = "A2";
+  second.type = second_type;
+  second.name = "S2";
   second.start_bar = first.bars;
   second.start_tick = first.endTick();
 
@@ -210,21 +220,88 @@ TEST(MotifSectionBoundaryTest, FreePolicyRerollsFullSongPatternForEachSection) {
   generator.generateFullTrack(song.motif(), ctx);
 
   const auto signature = [&song](const Section& section) {
-    std::vector<std::pair<Tick, uint8_t>> notes;
+    MotifSignature notes;
     for (const auto& note : song.motif().notes()) {
       if (note.start_tick >= section.start_tick && note.start_tick < section.endTick()) {
-        notes.emplace_back(note.start_tick - section.start_tick, note.note);
+        notes.emplace(note.start_tick - section.start_tick, note.note);
       }
     }
     return notes;
   };
+  return {signature(first), signature(second)};
+}
 
-  const auto first_signature = signature(first);
-  const auto second_signature = signature(second);
-  ASSERT_FALSE(first_signature.empty());
-  ASSERT_FALSE(second_signature.empty());
-  EXPECT_NE(first_signature, second_signature)
-      << "Free policy must not reuse a FullSong motif pattern in the next section";
+TEST(MotifSectionBoundaryTest, FreePolicyWithFullSongScopeSharesOnePatternAcrossSections) {
+  for (SectionType second_type : {SectionType::A, SectionType::Chorus}) {
+    auto [first, second] =
+        generateFreeMotifInTwoSections(MotifRepeatScope::FullSong, second_type, 42);
+    ASSERT_FALSE(first.empty());
+    ASSERT_FALSE(second.empty());
+    std::set<Tick> first_onsets;
+    std::set<Tick> second_onsets;
+    for (const auto& [tick, pitch] : first) first_onsets.insert(tick);
+    for (const auto& [tick, pitch] : second) second_onsets.insert(tick);
+    EXPECT_EQ(first_onsets, second_onsets) << "FullSong must replay one motif in every section";
+  }
+}
+
+TEST(MotifSectionBoundaryTest, FreePolicyWithSectionScopeGeneratesPerSectionType) {
+  bool some_seed_differs = false;
+  for (uint32_t seed = 1; seed <= 40; ++seed) {
+    auto [first, chorus] =
+        generateFreeMotifInTwoSections(MotifRepeatScope::Section, SectionType::Chorus, seed);
+    ASSERT_FALSE(first.empty());
+    ASSERT_FALSE(chorus.empty());
+    some_seed_differs = some_seed_differs || first != chorus;
+  }
+  EXPECT_TRUE(some_seed_differs) << "Section scope never produced a distinct pattern per type";
+}
+
+TEST(MotifSectionBoundaryTest, LockedReplayThinsASectionBySectionDensity) {
+  size_t full_onsets = 0;
+  size_t thin_onsets = 0;
+  for (uint32_t seed : {1u, 42u, 77u, 2024u, 31337u}) {
+    GeneratorParams params;
+    params.mood = Mood::IdolPop;
+    params.seed = seed;
+    params.composition_style = CompositionStyle::BackgroundMotif;
+    params.riff_policy = RiffPolicy::LockedContour;
+
+    Section full;
+    full.type = SectionType::Chorus;
+    full.name = "Chorus1";
+    full.bars = 8;
+    full.start_tick = 0;
+    full.track_mask = TrackMask::Motif;
+    Section thin = full;
+    thin.name = "Chorus2";
+    thin.start_bar = full.bars;
+    thin.start_tick = full.endTick();
+    thin.density_percent = 30;
+
+    Song song;
+    song.setArrangement(Arrangement({full, thin}));
+    test::StubHarmonyContext harmony;
+    harmony.setAllPitchesSafe(true);
+    const auto& progression = getChordProgression(params.chord_id);
+    std::mt19937 rng(params.seed);
+    FullTrackContext ctx;
+    ctx.song = &song;
+    ctx.params = &params;
+    ctx.rng = &rng;
+    ctx.harmony = &harmony;
+    ctx.chord_progression = &progression;
+
+    MotifGenerator generator;
+    generator.generateFullTrack(song.motif(), ctx);
+
+    for (const auto& note : song.motif().notes()) {
+      (note.start_tick < full.endTick() ? full_onsets : thin_onsets)++;
+    }
+  }
+  ASSERT_GT(full_onsets, 0u);
+  ASSERT_GT(thin_onsets, 0u) << "a thinned replay still keeps a note in every bar";
+  EXPECT_LT(thin_onsets, full_onsets);
 }
 
 double averageMotifPitch(const std::vector<const NoteEvent*>& notes) {
@@ -237,6 +314,48 @@ double averageMotifPitch(const std::vector<const NoteEvent*>& notes) {
     sum += note->note;
   }
   return static_cast<double>(sum) / notes.size();
+}
+
+TEST(MotifSectionBoundaryTest, LowConfiguredVocalDoesNotPullTheMotifBelowItsFloor) {
+  for (uint32_t seed : {12345u, 7u, 99u}) {
+    GeneratorParams params;
+    params.mood = Mood::IdolPop;
+    params.seed = seed;
+    params.composition_style = CompositionStyle::BackgroundMotif;
+
+    Section section;
+    section.type = SectionType::A;
+    section.bars = 8;
+    section.start_tick = 0;
+    section.track_mask = TrackMask::Motif;
+
+    Song song;
+    song.setArrangement(Arrangement({section}));
+    // No vocal is sounding, so the range comes from the configured one.
+    test::StubHarmonyContext harmony;
+    harmony.setAllPitchesSafe(true);
+    MotifContext vocal_ctx;
+    vocal_ctx.vocal_low = 40;
+    vocal_ctx.vocal_high = 60;
+    const auto& progression = getChordProgression(params.chord_id);
+    std::mt19937 rng(params.seed);
+    FullTrackContext ctx;
+    ctx.song = &song;
+    ctx.params = &params;
+    ctx.rng = &rng;
+    ctx.harmony = &harmony;
+    ctx.chord_progression = &progression;
+    ctx.vocal_ctx = &vocal_ctx;
+
+    MotifGenerator generator;
+    generator.generateFullTrack(song.motif(), ctx);
+
+    ASSERT_FALSE(song.motif().notes().empty()) << "seed " << seed;
+    for (const auto& note : song.motif().notes()) {
+      EXPECT_GE(note.note, MOTIF_LOW) << "seed " << seed << " tick " << note.start_tick;
+      EXPECT_LE(note.note, MOTIF_HIGH) << "seed " << seed << " tick " << note.start_tick;
+    }
+  }
 }
 
 // =============================================================================
@@ -1562,6 +1681,8 @@ TEST_F(MotifLockedCacheTest, SameSectionTypeHasConsistentNotes) {
   };
 
   std::map<SectionType, std::vector<std::vector<RelativeNote>>> sections_by_type;
+  // Density each instance plays at; a replay is thinned by its own section's density.
+  std::map<SectionType, std::vector<uint8_t>> density_by_type;
 
   for (const auto& section : sections) {
     // Only consider sections where motif is enabled
@@ -1576,6 +1697,7 @@ TEST_F(MotifLockedCacheTest, SameSectionTypeHasConsistentNotes) {
     }
     if (!section_notes.empty()) {
       sections_by_type[section.type].push_back(std::move(section_notes));
+      density_by_type[section.type].push_back(section.getModifiedDensity(section.density_percent));
     }
   }
 
@@ -1603,10 +1725,14 @@ TEST_F(MotifLockedCacheTest, SameSectionTypeHasConsistentNotes) {
       // SD frequency changes also alter the harmony context, widening the gap.
       int count_diff = std::abs(static_cast<int>(first.size()) - static_cast<int>(other.size()));
       int max_count = static_cast<int>(std::max(first.size(), other.size()));
-      EXPECT_LE(count_diff, std::max(3, max_count / 2))
-          << "Section type " << static_cast<int>(sec_type) << " instance " << idx
-          << " note count diverges too much from first instance"
-          << " (first=" << first.size() << ", other=" << other.size() << ")";
+      const bool same_density =
+          density_by_type[sec_type][idx] == density_by_type[sec_type][reference_index];
+      if (same_density) {
+        EXPECT_LE(count_diff, std::max(3, max_count / 2))
+            << "Section type " << static_cast<int>(sec_type) << " instance " << idx
+            << " note count diverges too much from first instance"
+            << " (first=" << first.size() << ", other=" << other.size() << ")";
+      }
 
       // Check relative timing and pitch similarity for matching notes.
       // With phrase_tail_rest and motif_motion_hint, repeat sections may have

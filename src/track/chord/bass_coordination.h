@@ -3,8 +3,9 @@
  * @brief Bass pitch mask utilities for chord voicing construction.
  *
  * Bass pitch mask tells generateVoicings() which bass pitch classes exist,
- * so voicing shapes can avoid doubling bass notes. This is a voicing
- * *construction* concern (not collision avoidance).
+ * so the rootless voicing shapes and the selectVoicing fallback can avoid
+ * doubling bass notes. This is a voicing *construction* concern (not collision
+ * avoidance); other candidates are not filtered by the mask.
  *
  * Collision avoidance (checking for dissonant intervals with ALL tracks)
  * is handled by IHarmonyContext::isConsonantWithOtherTracks(). See chord.cpp.

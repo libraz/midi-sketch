@@ -8,10 +8,12 @@
 #include <gtest/gtest.h>
 
 #include <string>
+#include <vector>
 
 #include "core/chord_extension_planner.h"
 #include "core/chord_utils.h"
 #include "core/preset_data.h"
+#include "core/production_blueprint.h"
 #include "core/structure.h"
 #include "core/track_collision_detector.h"
 #include "midisketch.h"
@@ -894,6 +896,118 @@ TEST(GeneratorTest, Blueprint8MotifChordNoClash) {
   // Expect no close-interval clashes between Motif and Chord
   EXPECT_EQ(clash_count, 0) << "Found " << clash_count
                             << " minor/major 2nd clashes between Motif and Chord" << detail;
+}
+
+// ============================================================================
+// Song structure
+// ============================================================================
+
+TEST(GeneratorTest, ExplicitFormKeepsTheBlueprintSlots) {
+  // The ballad blueprint's chord-only intro must survive the caller naming a form.
+  const auto& blueprint = getProductionBlueprint(3);
+  const TrackMask intro_mask = blueprint.section_flow[0].enabled_tracks;
+  ASSERT_EQ(blueprint.section_flow[0].type, SectionType::Intro);
+  ASSERT_NE(intro_mask, TrackMask::All);
+
+  GeneratorParams params{};
+  params.blueprint_id = 3;
+  params.structure = StructurePattern::FullPop;
+  params.form_explicit = true;
+  params.mood = Mood::Ballad;
+  params.seed = 31337;
+
+  Generator gen;
+  gen.generate(params);
+  const auto& sections = gen.getSong().arrangement().sections();
+  ASSERT_FALSE(sections.empty());
+  ASSERT_EQ(sections.front().type, SectionType::Intro);
+  EXPECT_EQ(sections.front().track_mask, intro_mask);
+  EXPECT_EQ(sections.size(), buildStructure(StructurePattern::FullPop).size())
+      << "the explicit form, not the blueprint flow, decides the section list";
+}
+
+TEST(GeneratorTest, IdolBlueprintsCarryTheirCallsWhenCallsAreOn) {
+  // An idol song with calls on gets its intro MIX and, where a B leads into a
+  // chorus, the PPPH there; a slot mask that left SE out used to drop both.
+  for (uint8_t id : {4, 5, 6, 8}) {
+    const auto& blueprint = getProductionBlueprint(id);
+    bool has_b_into_chorus = false;
+    for (uint8_t i = 0; i + 1 < blueprint.section_count; ++i) {
+      has_b_into_chorus =
+          has_b_into_chorus || (blueprint.section_flow[i].type == SectionType::B &&
+                                blueprint.section_flow[i + 1].type == SectionType::Chorus);
+    }
+
+    SongConfig config = createDefaultSongConfig(3);  // Idol Standard
+    config.seed = 2024;
+    config.blueprint_id = id;
+    config.call_setting = CallSetting::Enabled;
+    Generator gen;
+    gen.generateFromConfig(config);
+
+    bool intro_mix = false;
+    bool ppph = false;
+    for (const auto& event : gen.getSong().se().textEvents()) {
+      intro_mix = intro_mix || event.text == "IntroMix";
+      ppph = ppph || event.text == "PPPH";
+    }
+    EXPECT_TRUE(intro_mix) << blueprint.name;
+    if (has_b_into_chorus) EXPECT_TRUE(ppph) << blueprint.name;
+  }
+}
+
+// First Set Tempo meta event in a written MIDI file, as BPM; 0 when absent.
+uint16_t writtenTempoBpm(const std::vector<uint8_t>& midi) {
+  for (size_t i = 0; i + 5 < midi.size(); ++i) {
+    if (midi[i] == 0xFF && midi[i + 1] == 0x51 && midi[i + 2] == 0x03) {
+      const uint32_t us_per_beat = (static_cast<uint32_t>(midi[i + 3]) << 16) |
+                                   (static_cast<uint32_t>(midi[i + 4]) << 8) | midi[i + 5];
+      return us_per_beat == 0 ? 0
+                              : static_cast<uint16_t>((60000000u + us_per_beat / 2) / us_per_beat);
+    }
+  }
+  return 0;
+}
+
+TEST(GeneratorTest, ImplicitBpmIsResolvedOnEveryEntryPoint) {
+  // bpm = 0 is a request, not a tempo: every entry point has to end with the
+  // resolved tempo in the params, the song and the written file.
+  for (uint8_t blueprint : {0, 3, 255}) {
+    SongConfig config = createDefaultSongConfig(16);  // Emotional Ballad: 72 BPM by style
+    config.seed = 1234;
+    config.blueprint_id = blueprint;
+    ASSERT_EQ(config.bpm, 0);
+
+    auto check = [&](MidiSketch& sketch, const char* path) {
+      const uint16_t resolved = sketch.getParams().bpm;
+      EXPECT_GT(resolved, 0) << path << " blueprint " << int(blueprint);
+      EXPECT_EQ(sketch.getSong().bpm(), resolved) << path << " blueprint " << int(blueprint);
+      EXPECT_EQ(writtenTempoBpm(sketch.getMidi()), resolved)
+          << path << " blueprint " << int(blueprint);
+    };
+
+    MidiSketch full;
+    full.generateFromConfig(config);
+    check(full, "generateFromConfig");
+
+    MidiSketch vocal_first;
+    vocal_first.generateVocal(config);
+    check(vocal_first, "generateVocal");
+    vocal_first.generateAccompanimentForVocal();
+    check(vocal_first, "generateAccompanimentForVocal");
+    vocal_first.regenerateAccompaniment(99);
+    check(vocal_first, "regenerateAccompaniment");
+    vocal_first.regenerateVocal(77);
+    check(vocal_first, "regenerateVocal");
+
+    MidiSketch with_vocal;
+    with_vocal.generateWithVocal(config);
+    check(with_vocal, "generateWithVocal");
+
+    MidiSketch custom;
+    custom.setVocalNotes(config, {});
+    check(custom, "setVocalNotes");
+  }
 }
 
 }  // namespace

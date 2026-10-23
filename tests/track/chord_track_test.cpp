@@ -31,6 +31,7 @@
 #include "test_support/stub_harmony_context.h"
 #include "test_support/test_constants.h"
 #include "track/chord/bass_coordination.h"
+#include "track/chord/chord_note_writer.h"
 #include "track/chord/chord_rhythm.h"
 #include "track/chord/chord_voicing_choice.h"
 #include "track/chord/voice_leading.h"
@@ -2635,6 +2636,137 @@ TEST_F(ChordTrackTest, RhythmSyncKeepsVerseAndBridgeSparserThanChorus) {
                                           GenerationParadigm::RhythmSync, rng),
               chord_voicing::ChordRhythm::Quarter);
   }
+}
+
+// ============================================================================
+// Clearing the vocal, and voicings that stay ordered
+// ============================================================================
+
+TEST_F(ChordTrackTest, NoChordNoteDoublesTheVocalOrRepeatsAnOnsetPitch) {
+  struct Config {
+    uint8_t style;
+    uint8_t blueprint;
+    uint32_t seed;
+  };
+  constexpr Config kConfigs[] = {{14, 5, 9}, {2, 5, 20}, {6, 4, 1}, {5, 0, 8}, {1, 3, 77}};
+
+  for (const Config& c : kConfigs) {
+    SongConfig config = createDefaultSongConfig(c.style);
+    config.seed = c.seed;
+    config.blueprint_id = c.blueprint;
+
+    MidiSketch sketch;
+    sketch.generateFromConfig(config);
+    const Song& song = sketch.getSong();
+    const auto& chord_notes = song.chord().notes();
+    const auto& vocal_notes = song.vocal().notes();
+    ASSERT_FALSE(chord_notes.empty()) << "seed " << c.seed;
+    ASSERT_FALSE(vocal_notes.empty()) << "seed " << c.seed;
+
+    for (const auto& chord_note : chord_notes) {
+      const Tick chord_end = chord_note.start_tick + chord_note.duration;
+      for (const auto& vocal_note : vocal_notes) {
+        if (vocal_note.start_tick >= chord_end) continue;
+        if (vocal_note.start_tick + vocal_note.duration <= chord_note.start_tick) continue;
+        EXPECT_NE(chord_note.note, vocal_note.note)
+            << "seed " << c.seed << ": chord doubles the vocal at tick " << chord_note.start_tick;
+      }
+    }
+
+    std::set<std::pair<Tick, uint8_t>> seen;
+    for (const auto& chord_note : chord_notes) {
+      EXPECT_TRUE(seen.insert({chord_note.start_tick, chord_note.note}).second)
+          << "seed " << c.seed << ": pitch " << static_cast<int>(chord_note.note)
+          << " is struck twice at tick " << chord_note.start_tick;
+    }
+  }
+}
+
+TEST_F(ChordTrackTest, TheMinimumVoiceFillDoesNotDoubleTheVocal) {
+  Section section{};
+  section.type = SectionType::Chorus;
+  section.name = "Chorus";
+  section.bars = 2;
+  section.start_bar = 0;
+  section.start_tick = 0;
+  section.track_mask = TrackMask::Chord;
+
+  Song song;
+  song.setArrangement(Arrangement({section}));
+  HarmonyContext harmony;
+  harmony.initialize(song.arrangement(), getChordProgression(params_.chord_id), params_.mood);
+  constexpr uint8_t kVocalPitch = 60;
+  harmony.registerNote(0, TICKS_PER_BAR, kVocalPitch, TrackRole::Vocal);
+
+  MidiTrack track;
+  ChordVoicingState state;
+  state.reset(0);
+  ensureMinVoicesAtTick(track, harmony, 0, TICKS_PER_BAR, 80, state, 0, kVocalPitch);
+
+  ASSERT_FALSE(track.empty()) << "the fill has to place something for the check to mean anything";
+  for (const auto& note : track.notes()) {
+    EXPECT_NE(note.note, kVocalPitch);
+  }
+}
+
+TEST_F(ChordTrackTest, FoldingUnderTheVocalNeverLandsOnItOrOnAnotherVoice) {
+  test::StubHarmonyContext harmony;
+  harmony.setAllPitchesSafe(true);
+  harmony.setChordDegree(0);
+  harmony.setChordTones({0, 4, 7});
+
+  MidiTrack vocal;
+  vocal.addNote(NoteEventBuilder::create(0, TICKS_PER_BEAT * 4, 60, 100));
+
+  // C5 folds onto the vocal's C4; the chord tone under it takes the voice, and
+  // the voice already sounding there is not doubled.
+  MidiTrack chord;
+  chord.addNote(NoteEventBuilder::create(0, TICKS_PER_BEAT * 4, 55, 80));
+  chord.addNote(NoteEventBuilder::create(0, TICKS_PER_BEAT * 4, 72, 80));
+  chord.addNote(NoteEventBuilder::create(0, TICKS_PER_BEAT * 4, 60, 80));
+  ASSERT_TRUE(enforceChordBelowVocal(chord, vocal, harmony));
+
+  std::set<uint8_t> pitches;
+  for (const auto& note : chord.notes()) {
+    EXPECT_NE(note.note, 60) << "a chord voice doubles the vocal";
+    EXPECT_TRUE(pitches.insert(note.note).second) << "pitch " << static_cast<int>(note.note);
+    EXPECT_LE(note.note, 60);
+  }
+  EXPECT_TRUE(pitches.count(55) > 0);
+}
+
+TEST_F(ChordTrackTest, EveryVoicingPassLeavesPitchesAscending) {
+  auto expectAscending = [](const chord_voicing::VoicedChord& v, const char* what) {
+    ASSERT_GT(v.count, 0u) << what;
+    for (uint8_t i = 1; i < v.count; ++i) {
+      EXPECT_LT(v.pitches[i - 1], v.pitches[i]) << what;
+    }
+  };
+
+  // A voice folded an octave down lands under voices placed before it.
+  test::StubHarmonyContext harmony;
+  harmony.setAllPitchesSafe(true);
+  harmony.setChordDegree(0);
+  harmony.setChordTones({0, 4, 7, 11});
+  harmony.setLowestPitchForTrack(74);
+  harmony.setHighestPitchForTrack(74);
+  chord_voicing::VoicedChord voicing;
+  voicing.pitches = {64, 67, 84, 0, 0};
+  voicing.count = 3;
+  const chord_voicing::VoicedChord filtered =
+      filterVoicingByCollision(harmony, voicing, 0, TICK_QUARTER, 0);
+  expectAscending(filtered, "filterVoicingByCollision");
+
+  // The fill appends the missing tone after the voices already there.
+  chord_voicing::VoicedChord thin;
+  thin.pitches = {64, 67, 0, 0, 0};
+  thin.count = 2;
+  augmentVoicingToMinimum(thin, getChordNotes(0), 60, harmony, 0, TICK_QUARTER, 0);
+  ASSERT_EQ(thin.count, 3u);
+  expectAscending(thin, "augmentVoicingToMinimum");
+
+  chord_voicing::VoicedChord fallback = buildFallbackVoicing(getChordNotes(0), 60, 0);
+  expectAscending(fallback, "buildFallbackVoicing");
 }
 
 }  // namespace

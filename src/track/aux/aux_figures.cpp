@@ -25,6 +25,9 @@ namespace {
 /// Notes starting this close to chord change are treated as "anticipations" (1/16 beat = 120)
 constexpr Tick kAnticipationThreshold = 120;
 
+/// Semitones the counter line steps against the vocal direction per note.
+constexpr int kCounterStep = 3;
+
 /// @brief Place a chord tone inside an aux voice's own range.
 ///
 /// Folding a pitch class into an octave below the range and then clamping puts
@@ -594,9 +597,11 @@ std::vector<NoteEvent> AuxGenerator::generateMotifCounter(const AuxContext& ctx,
     aux_low = 48;                   // C3
     aux_high = 67;                  // G4
   } else if (vocal_center <= 60) {  // Vocal is low (C4-)
-    // Place counter in a separate higher register.
-    aux_low = 72;   // C5
-    aux_high = 84;  // C6
+    // Emission caps each onset at the lowest sounding vocal pitch, so the
+    // register that survives is the one below the vocal floor.
+    aux_high = static_cast<uint8_t>(
+        std::max(AUX_LOW + 12, std::min(static_cast<int>(vocal_analysis.lowest_pitch), 67)));
+    aux_low = static_cast<uint8_t>(std::max(static_cast<int>(AUX_LOW), aux_high - 12));
   } else {
     // Vocal is in middle, use config offset
     calculateAuxRange(config, ctx.main_tessitura, aux_low, aux_high);
@@ -647,8 +652,9 @@ std::vector<NoteEvent> AuxGenerator::generateMotifCounter(const AuxContext& ctx,
     phrase_start = std::max(phrase_start, ctx.section_start);
     phrase_end = std::min(phrase_end, ctx.section_end);
 
-    // Generate counter notes for this phrase
+    // Generate counter notes for this phrase; each phrase starts mid-range
     Tick current_tick = phrase_start;
+    int previous_counter = (aux_low + aux_high) / 2;
 
     while (current_tick < phrase_end) {
       // Apply density ratio
@@ -669,20 +675,13 @@ std::vector<NoteEvent> AuxGenerator::generateMotifCounter(const AuxContext& ctx,
       int counter_pitch;
 
       if (vocal_pitch > 0 && ct.count > 0) {
-        // Calculate target based on contrary motion
-        int target_pitch = (aux_low + aux_high) / 2;
+        // Step from the previous counter pitch against the vocal; static vocal holds
+        int target_pitch = previous_counter - vocal_direction * kCounterStep;
 
-        if (vocal_direction > 0) {
-          // Vocal going up → counter goes down
-          target_pitch = aux_low + (aux_high - aux_low) / 3;
-        } else if (vocal_direction < 0) {
-          // Vocal going down → counter goes up
-          target_pitch = aux_high - (aux_high - aux_low) / 3;
-        }
-        // vocal_direction == 0: static → use middle register
-
-        // Snap to nearest chord tone at current tick
+        // Snap to nearest chord tone at current tick, never moving with the vocal
         counter_pitch = harmony.snapToNearestChordTone(target_pitch, current_tick);
+        if (vocal_direction > 0) counter_pitch = std::min(counter_pitch, previous_counter);
+        if (vocal_direction < 0) counter_pitch = std::max(counter_pitch, previous_counter);
         counter_pitch =
             std::clamp(counter_pitch, static_cast<int>(aux_low), static_cast<int>(aux_high));
       } else {
@@ -710,8 +709,27 @@ std::vector<NoteEvent> AuxGenerator::generateMotifCounter(const AuxContext& ctx,
           resolveAuxPitch(static_cast<uint8_t>(counter_pitch), current_tick, note_duration,
                           ctx.main_melody, harmony, aux_low, aux_high, meta.dissonance_tolerance);
 
+      // A counter that can only land a semitone from a sounding vocal note
+      // stays silent instead.
+      bool clashes_with_vocal = false;
+      for (const auto& vocal_note : *ctx.main_melody) {
+        if (vocal_note.start_tick < current_tick + note_duration &&
+            vocal_note.start_tick + vocal_note.duration > current_tick) {
+          const int interval = std::abs(static_cast<int>(safe_pitch) - vocal_note.note) % 12;
+          if (interval == 1 || interval == 11) {
+            clashes_with_vocal = true;
+            break;
+          }
+        }
+      }
+      if (clashes_with_vocal) {
+        current_tick += base_note_duration;
+        continue;
+      }
+
       // Add note
       result.push_back({current_tick, note_duration, safe_pitch, velocity});
+      previous_counter = safe_pitch;
 
       current_tick += base_note_duration;
     }

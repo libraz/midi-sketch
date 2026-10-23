@@ -12,6 +12,7 @@
 #include "core/post_processor.h"
 #include "core/section_types.h"
 #include "core/structure.h"
+#include "test_support/stub_harmony_context.h"
 
 namespace midisketch {
 namespace {
@@ -261,6 +262,29 @@ TEST(ExitPatternTest, SustainExtendsNotesInLastBar) {
   EXPECT_EQ(track.notes()[0].duration, second_note_start - last_bar_start);
   // Second (last) note should extend to section end
   EXPECT_EQ(track.notes()[1].duration, section_end - second_note_start);
+}
+
+TEST(ExitPatternTest, SustainStopsShortOfTheVocalsOwnPitch) {
+  MidiTrack track;
+  constexpr uint8_t kBars = 4;
+  Section section = makeSection(SectionType::B, kBars, 0, ExitPattern::Sustain);
+  const Tick last_bar_start = kBars * TICKS_PER_BAR - TICKS_PER_BAR;
+
+  // One chord voice on the vocal's pitch, one clear of it.
+  track.addNote(NoteEventBuilder::create(last_bar_start, TICKS_PER_BEAT / 2, 72, 80));
+  track.addNote(NoteEventBuilder::create(last_bar_start, TICKS_PER_BEAT / 2, 64, 80));
+
+  test::StubHarmonyContext harmony;
+  harmony.setAllPitchesSafe(true);
+  harmony.setHighestPitchForTrack(72);
+  harmony.setLowestPitchForTrack(72);
+
+  PostProcessor::applyExitPattern(track, section, &harmony, TrackRole::Chord);
+
+  ASSERT_EQ(track.notes().size(), 2u);
+  EXPECT_EQ(track.notes()[0].duration, TICKS_PER_BEAT / 2)
+      << "an extension must not reach the vocal's own pitch";
+  EXPECT_GT(track.notes()[1].duration, TICKS_PER_BEAT / 2);
 }
 
 TEST(ExitPatternTest, SustainDoesNotAffectNotesBeforeLastBar) {
