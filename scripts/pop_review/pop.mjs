@@ -8,8 +8,8 @@
  */
 
 import { analyzeRhythm, melodicSimilarity } from '@libraz/libcantus';
-import { BEATS_PER_BAR } from './analysis.mjs';
-import { secondsAt } from './song.mjs';
+import { BEATS_PER_BAR, majorTonicPc } from './analysis.mjs';
+import { declaredDegree, secondsAt } from './song.mjs';
 
 /**
  * Named four-chord pop progressions as roman numerals, written the way
@@ -71,8 +71,12 @@ function lift(reading) {
     return beats || 1;
   };
   const chorusBeats = beatsIn((b) => inRuns(b, runs));
-  const verseBeats = beatsIn((b) => b < firstChorus || (!inRuns(b, runs) && firstChorus === 0));
-  const verseNotes = all.filter((n) => n.startBeat < firstChorus);
+  // The verse starts where the singing does; an instrumental intro is neither sung nor verse.
+  const verseStart = song.melody[0].startBeat < firstChorus ? song.melody[0].startBeat : 0;
+  const verseBeats = beatsIn(
+    (b) => (b >= verseStart && b < firstChorus) || (!inRuns(b, runs) && firstChorus === 0),
+  );
+  const verseNotes = all.filter((n) => n.startBeat >= verseStart && n.startBeat < firstChorus);
   const chorusNotes = all.filter((n) => inRuns(n.startBeat, runs));
   const peak = Math.max(...song.melody.map((n) => n.pitch));
   const pitches = (ns) => ns.map((n) => n.pitch);
@@ -163,12 +167,20 @@ function verseSpan(song, firstChorus) {
     : null;
 }
 
-/** Chord degrees in order with immediate repeats collapsed. */
-function degreeLoop(chords) {
+/**
+ * Chord degrees in order with immediate repeats collapsed. A generated song
+ * reports its declared chords; a reference is read against one prevailing key,
+ * because the per-segment key estimate drifts and would turn one loop into two.
+ */
+function degreeLoop(reading, chords) {
+  const { song, harmony } = reading;
+  const declared = song.declared?.chords.length ? song.declared : null;
+  const tonicPc = majorTonicPc(harmony.analysis.prevailingKey);
   const degrees = [];
   for (const c of chords) {
-    if (degrees[degrees.length - 1] !== c.degree) {
-      degrees.push(c.degree);
+    const degree = declared ? declaredDegree(declared, c) : (c.rootPc - tonicPc + 12) % 12;
+    if (degrees[degrees.length - 1] !== degree) {
+      degrees.push(degree);
     }
   }
   return degrees;
@@ -213,8 +225,11 @@ function harmonyIdioms(reading) {
   }
   const firstChorus = runs[0];
   const verse = verseSpan(song, firstChorus);
-  const verseChords = verse ? chordsWithin(harmony.chords, verse) : [];
-  const chorusChords = firstChorus ? chordsWithin(harmony.chords, firstChorus) : [];
+  const chordsOf = reading.song.declared?.chords.length
+    ? reading.song.declared.chords
+    : harmony.chords;
+  const verseChords = verse ? chordsWithin(chordsOf, verse) : [];
+  const chorusChords = firstChorus ? chordsWithin(chordsOf, firstChorus) : [];
   const distinctRomans = new Set(harmony.chords.map((c) => c.roman)).size;
   const nonDiatonic = harmony.chords.filter((c) => ![0, 2, 4, 5, 7, 9, 11].includes(c.degree));
   const bars = song.totalBeats / BEATS_PER_BAR;
@@ -227,7 +242,7 @@ function harmonyIdioms(reading) {
       : null,
     verseChorusHarmonyDiffers:
       verseChords.length && chorusChords.length
-        ? Number(!sameLoop(degreeLoop(verseChords), degreeLoop(chorusChords)))
+        ? Number(!sameLoop(degreeLoop(reading, verseChords), degreeLoop(reading, chorusChords)))
         : null,
   };
 }

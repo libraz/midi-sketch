@@ -15,6 +15,7 @@ from ..constants import (
     TICKS_PER_BEAT, TICKS_PER_BAR, TRACK_NAMES, GUITAR_CHANNEL,
     Severity, Category,
 )
+from ..dissonance_rules import classify_interval_dissonance
 from ..helpers import tick_to_bar, note_name, _pattern_similarity, _ioi_entropy
 from ..models import Issue
 from .base import BaseAnalyzer
@@ -336,8 +337,8 @@ class ArrangementAnalyzer(BaseAnalyzer):
             for vocal_note in vocal:
                 if motif_note.start < vocal_note.end and motif_note.end > vocal_note.start:
                     overlap_count += 1
-                    interval = abs(motif_note.pitch - vocal_note.pitch) % 12
-                    if self._is_motif_vocal_clash(motif_note, vocal_note, interval):
+                    semitones = abs(motif_note.pitch - vocal_note.pitch)
+                    if self._is_motif_vocal_clash(motif_note, vocal_note, semitones):
                         clash_count += 1
                     break
         if overlap_count > 4:
@@ -352,13 +353,15 @@ class ArrangementAnalyzer(BaseAnalyzer):
                     details={"clash_ratio": clash_ratio, "clash_count": clash_count},
                 )
 
-    def _is_motif_vocal_clash(self, motif_note, vocal_note, interval: int) -> bool:
-        """Return whether a motif/vocal interval is an actual clash."""
-        if interval not in (1, 2, 6, 11):
+    def _is_motif_vocal_clash(self, motif_note, vocal_note, semitones: int) -> bool:
+        """Return whether a motif/vocal distance (in semitones) is an actual clash."""
+        # Reach is the shared actual-interval rule; degree 1 owns no tritone or
+        # major 7th, so only the distances the report can ever refuse remain.
+        if classify_interval_dissonance(semitones, 1) is None:
             return False
 
         # Seconds remain a vocal-arrangement clash even if used as chord color.
-        if interval in (1, 2):
+        if semitones % 12 in (1, 2):
             return True
 
         # Tritones and major sevenths can be valid chord tones (V7, maj7).

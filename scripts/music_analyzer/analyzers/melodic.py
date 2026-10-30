@@ -309,7 +309,8 @@ class MelodicAnalyzer(BaseAnalyzer):
         not a fixed window: a caller who asked for a lower voice must not be
         told every note is too low. The range is the singer's, so it bounds
         the sounding pitch: the notes here carry the key and the modulation,
-        and neither widens it.
+        and neither widens it. The instrument ranges mirror the generator's
+        internal register constants, so those tracks are judged in that space.
         """
         vocal_low, vocal_high = self.vocal_range()
         for channel, (low, high) in TRACK_RANGES.items():
@@ -319,7 +320,8 @@ class MelodicAnalyzer(BaseAnalyzer):
             track_name = TRACK_NAMES.get(channel, f"Ch{channel}")
 
             for note in notes:
-                if note.pitch < low:
+                pitch = note.pitch if channel == 0 else self.register_pitch(note)
+                if pitch < low:
                     self.add_issue(
                         severity=Severity.WARNING,
                         category=Category.MELODIC,
@@ -329,7 +331,7 @@ class MelodicAnalyzer(BaseAnalyzer):
                         track=track_name,
                         details={"pitch": note.pitch, "expected_low": low},
                     )
-                elif note.pitch > high:
+                elif pitch > high:
                     self.add_issue(
                         severity=Severity.WARNING,
                         category=Category.MELODIC,

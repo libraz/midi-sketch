@@ -375,6 +375,11 @@ class BaseAnalyzer:
         Returns None for output that does not carry the key, which is what
         sends the reader to the reconstruction below.
         """
+        shift = self._declared_shift_at(tick)
+        return None if shift is None else shift % 12
+
+    def _declared_shift_at(self, tick: int) -> Optional[int]:
+        """Declared key plus modulation at ``tick`` in semitones, octave kept."""
         key = self.metadata.get('key')
         if not isinstance(key, int) or isinstance(key, bool):
             return None
@@ -383,7 +388,7 @@ class BaseAnalyzer:
         modulation_semitones = self.metadata.get('modulation_semitones') or 0
         if modulation_tick > 0 and tick >= modulation_tick:
             shift += modulation_semitones
-        return shift % 12
+        return shift
 
     def _build_transposition_map(self):
         """Histogram the sounding-versus-internal pitch offset for every bar."""
@@ -430,6 +435,23 @@ class BaseAnalyzer:
         if not counts:
             return self._transposition_overall
         return self._dominant_offset(counts)
+
+    def register_shift_at(self, tick: int) -> int:
+        """Whole semitone shift the writers added at ``tick``, octave included.
+
+        transposition_at answers in pitch classes, which is enough for chord
+        roles but not for a register bound: key 11 plus a modulation of 2 is 13
+        semitones, not 1. Output that does not declare its key falls back to
+        the reconstructed pitch-class offset.
+        """
+        shift = self._declared_shift_at(tick)
+        return self.transposition_at(tick) if shift is None else shift
+
+    def register_pitch(self, note) -> int:
+        """Pitch of a sounding note in the generator's internal register."""
+        if not self.is_transposed_channel(note.channel):
+            return note.pitch
+        return note.pitch - self.register_shift_at(note.start)
 
     def internal_pitch_class(self, note) -> int:
         """Pitch class of a sounding note, mapped back to the internal C major space.

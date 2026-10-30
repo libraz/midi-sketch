@@ -565,3 +565,76 @@ describe('reference bands', () => {
     expect(bands.y).toEqual({ n: 1, min: 5, median: 5, max: 5 });
   });
 });
+
+/** The loop song with its chords declared as `chords` (root pitch class per bar) in C. */
+function withDeclaredChords(song: ReturnType<typeof buildLoopSong>, roots: number[]) {
+  return {
+    ...song,
+    declared: {
+      keyPc: 0,
+      modulationBeat: null,
+      modulationSemitones: 0,
+      chords: roots.map((rootPc, bar) => ({ startBeat: bar * 4, endBeat: bar * 4 + 4, rootPc })),
+      vocalLow: 0,
+      vocalHigh: 127,
+    },
+  };
+}
+
+describe('chorus closure', () => {
+  const I = { root: 0 };
+  const IV = { root: 5 };
+  const closureOf = (song: ReturnType<typeof buildLoopSong>) =>
+    correctnessOf(readSong(song)).chorusTonicClosureRatio;
+
+  it('counts a chorus that ends on the tonic', () => {
+    expect(closureOf(buildLoopSong([I, IV], 8, [IV, I], 8))).toBe(1);
+  });
+
+  it('does not count a chorus that ends on another chord', () => {
+    expect(closureOf(buildLoopSong([I, IV], 8, [I, IV], 8))).toBe(0);
+  });
+
+  it('judges a generated song by its declared last chord, not the reading', () => {
+    const song = buildLoopSong([I, IV], 8, [IV, I], 8);
+    const declaredRoots = Array.from({ length: 16 }, (_, bar) => (bar === 15 ? 9 : 0));
+    expect(closureOf(withDeclaredChords(song, declaredRoots))).toBe(0);
+  });
+});
+
+describe('verse and chorus comparison on a generated song', () => {
+  const axis = [{ root: 0 }, { root: 7 }, { root: 9, minor: true }, { root: 5 }];
+  const royalRoad = [{ root: 5 }, { root: 7 }, { root: 4, minor: true }, { root: 9, minor: true }];
+  const AXIS_ROOTS = [0, 7, 9, 5];
+
+  it('reads the declared loops rather than the key-dependent reading', () => {
+    const song = buildLoopSong(axis, 8, royalRoad, 8);
+    const roots = Array.from({ length: 16 }, (_, bar) => AXIS_ROOTS[bar % 4]);
+    const pop = popOf(readSong(withDeclaredChords(song, roots)));
+    expect(pop.verseChorusHarmonyDiffers).toBe(0);
+  });
+
+  it('still reports declared loops that differ', () => {
+    const song = buildLoopSong(axis, 8, axis, 8);
+    const roots = Array.from(
+      { length: 16 },
+      (_, bar) => (bar < 8 ? AXIS_ROOTS : [5, 7, 4, 9])[bar % 4],
+    );
+    expect(popOf(readSong(withDeclaredChords(song, roots))).verseChorusHarmonyDiffers).toBe(1);
+  });
+});
+
+describe('chorus vocal density', () => {
+  it('measures the verse from the first sung note, not from the instrumental intro', () => {
+    const axis = [{ root: 0 }, { root: 7 }, { root: 9, minor: true }, { root: 5 }];
+    const song = buildLoopSong(axis, 8, axis, 8);
+    const sungFrom = 16;
+    song.melody = song.melody.filter((n: Note) => n.startBeat >= sungFrom);
+    song.parts[0].notes = song.melody;
+    const sungChorus = song.melody.filter((n: Note) => n.startBeat >= 32).length;
+    const verseSung = song.melody.length - sungChorus;
+    // Verse: sung notes over the 16 beats it is sung across; chorus: over its 32.
+    const expected = sungChorus / 32 / (verseSung / 16);
+    expect(popOf(readSong(song)).chorusVocalDensityRatio).toBeCloseTo(expected, 5);
+  });
+});

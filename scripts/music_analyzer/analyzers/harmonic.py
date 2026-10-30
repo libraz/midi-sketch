@@ -25,6 +25,9 @@ from ..dissonance_rules import (
 from ..helpers import note_name, tick_to_bar
 from .base import BaseAnalyzer
 
+# A 32nd note around the bar line still reads as the downbeat.
+BASS_DOWNBEAT_TOLERANCE = TICKS_PER_BEAT // 8
+
 
 class HarmonicAnalyzer(BaseAnalyzer):
     """Analyzer for harmonic qualities across all pitched tracks.
@@ -220,6 +223,7 @@ class HarmonicAnalyzer(BaseAnalyzer):
         sorted_ticks = sorted(chords_by_time.keys())
 
         # --- Per-onset voicing analysis (thin/dense/register/ceiling) ---
+        arpeggiated_single_voice_ticks = []
         for tick in sorted_ticks:
             chord = chords_by_time[tick]
             pitches = tuple(sorted([note.pitch for note in chord]))
@@ -236,11 +240,13 @@ class HarmonicAnalyzer(BaseAnalyzer):
                 (local_pc_count >= 3 or voicing_count == 1)
             )
 
-            # Check for thin voicing (1-2 voices)
-            if voicing_count == 1:
+            # Check for thin voicing (1-2 voices). One-voice onsets of an
+            # arpeggiated texture are expected, so they are summarised once.
+            if voicing_count == 1 and arpeggiated_context:
+                arpeggiated_single_voice_ticks.append(tick)
+            elif voicing_count == 1:
                 self.add_issue(
-                    severity=(Severity.INFO if arpeggiated_context
-                              else Severity.WARNING),
+                    severity=Severity.WARNING,
                     category=Category.HARMONIC,
                     subcategory="thin_voicing",
                     message=f"Only 1 voice ({note_name(pitches[0])})",
@@ -308,6 +314,19 @@ class HarmonicAnalyzer(BaseAnalyzer):
                         details={"chord_highest": highest,
                                  "vocal_ceiling": vocal_ceiling},
                     )
+
+        if arpeggiated_single_voice_ticks:
+            self.add_issue(
+                severity=Severity.INFO,
+                category=Category.HARMONIC,
+                subcategory="thin_voicing",
+                message=(f"Single-voice onsets in an arpeggiated chord texture "
+                         f"({len(arpeggiated_single_voice_ticks)} onsets)"),
+                tick=arpeggiated_single_voice_ticks[0],
+                track="Chord",
+                details={"voice_count": 1,
+                         "onset_count": len(arpeggiated_single_voice_ticks)},
+            )
 
         # --- Bar-level voicing repetition detection ---
         chords_by_bar = defaultdict(set)
@@ -769,7 +788,7 @@ class HarmonicAnalyzer(BaseAnalyzer):
             )
 
     def _analyze_bass_downbeat_root(self):
-        """Check if bass notes on beat 1 play the chord root.
+        """Check if bass notes on the downbeat play the chord root.
 
         Bass notes on the downbeat should typically play the root of the
         active chord for harmonic stability. Compares actual bass pitch
@@ -785,8 +804,10 @@ class HarmonicAnalyzer(BaseAnalyzer):
         fifth_count = 0
 
         for note in bass_notes:
-            beat, offset = self.get_beat_position(note.start)
-            if beat != 1:
+            pos_in_bar = note.start % TICKS_PER_BAR
+            # Onsets pushed slightly ahead of the bar line count as the downbeat.
+            if (BASS_DOWNBEAT_TOLERANCE < pos_in_bar
+                    < TICKS_PER_BAR - BASS_DOWNBEAT_TOLERANCE):
                 continue
 
             if not note.provenance or 'chord_degree' not in note.provenance:

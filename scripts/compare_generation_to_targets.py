@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Compare generated output against reference target profiles.
 
-For each blueprint category in a target-profile file, generates songs with a
-representative blueprint across multiple seeds, profiles each named track, and
-reports per-role metrics that fall outside the reference min-max range.
+For each blueprint category in a target-profile file, generates songs with every
+blueprint of the category across multiple seeds, pools them into one median per
+metric, profiles each named track, and reports per-role metrics that fall
+outside the reference min-max range.
 
 The profiles are derived from a commercial reference corpus that cannot be
 redistributed, so the file is supplied by the caller and is not part of the

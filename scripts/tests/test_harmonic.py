@@ -659,3 +659,61 @@ class TestSubcategoryPenaltyCap(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestBassDownbeatTolerance(unittest.TestCase):
+    """Only onsets at the bar start are downbeats, not the rest of beat 1."""
+
+    @staticmethod
+    def _bass(tick, pitch):
+        return Note(start=tick, duration=TICKS_PER_BEAT // 2, pitch=pitch,
+                    velocity=80, channel=2,
+                    provenance={'chord_degree': 0, 'source': 'bass_pattern'})
+
+    def _issues(self, notes):
+        result = MusicAnalyzer(notes).analyze_all()
+        return [i for i in result.issues if i.subcategory == "bass_downbeat_root"]
+
+    def test_later_beat1_onsets_are_not_judged(self):
+        """Root on the downbeat plus a 3rd later in beat 1 reports nothing."""
+        notes = []
+        for bar in range(4):
+            notes.append(self._bass(bar * TICKS_PER_BAR, 36))
+            notes.append(self._bass(bar * TICKS_PER_BAR + TICKS_PER_BEAT // 2, 40))
+        self.assertEqual(self._issues(notes), [])
+
+    def test_onset_pushed_before_the_bar_line_is_the_downbeat(self):
+        """A root pushed 13 ticks ahead of the bar line is still judged."""
+        notes = [self._bass(bar * TICKS_PER_BAR - 13, 40) for bar in range(1, 6)]
+        issues = self._issues(notes)
+        self.assertEqual(len(issues), 1)
+        self.assertEqual(issues[0].details['total_beat1'], 5)
+
+
+class TestArpeggiatedThinVoicingIsBounded(unittest.TestCase):
+    """One-voice onsets of a RhythmSync arpeggiated texture cost a fixed amount."""
+
+    def _result(self, bars, blueprint):
+        notes = []
+        for i in range(bars * 8):
+            notes.extend(make_chord_notes(i * TICKS_PER_BEAT // 2, [60 + (i % 3) * 4],
+                                          TICKS_PER_BEAT // 2))
+        return MusicAnalyzer(notes, blueprint=blueprint).analyze_all()
+
+    def test_rhythmsync_deduction_independent_of_onset_count(self):
+        short = self._result(4, 1)
+        long = self._result(40, 1)
+        for result in (short, long):
+            thin = [i for i in result.issues if i.subcategory == "thin_voicing"]
+            self.assertEqual(len(thin), 1)
+            self.assertEqual(thin[0].severity, Severity.INFO)
+        self.assertEqual(
+            [i for i in short.issues if i.subcategory == "thin_voicing"][0].details["onset_count"], 32)
+        self.assertEqual(
+            [i for i in long.issues if i.subcategory == "thin_voicing"][0].details["onset_count"], 320)
+
+    def test_traditional_keeps_per_onset_warnings(self):
+        result = self._result(4, 0)
+        thin = [i for i in result.issues
+                if i.subcategory == "thin_voicing" and i.severity == Severity.WARNING]
+        self.assertEqual(len(thin), 32)

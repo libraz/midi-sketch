@@ -5,7 +5,7 @@ import unittest
 from conftest import (
     MusicAnalyzer, Note, Severity,
     TICKS_PER_BAR, TICKS_PER_BEAT,
-    make_vocal_note,
+    make_bass_note, make_vocal_note,
 )
 from music_analyzer.analyzers.melodic import MelodicAnalyzer
 from music_analyzer.blueprints import BLUEPRINT_PROFILES
@@ -126,3 +126,36 @@ class TestRhythmSyncMelodicTolerance(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestInstrumentRegisterSpace(unittest.TestCase):
+    """Instrument ranges are internal-register constants, judged in that space."""
+
+    @staticmethod
+    def _bass_range_issues(key, modulation=0):
+        modulation_tick = 4 * TICKS_PER_BAR if modulation else 0
+        notes = []
+        for i, internal in enumerate(range(40, 56)):
+            tick = i * TICKS_PER_BEAT
+            shift = key + (modulation if modulation_tick and tick >= modulation_tick else 0)
+            notes.append(make_bass_note(tick, internal + shift))
+        metadata = {"key": key, "modulation_tick": modulation_tick,
+                    "modulation_semitones": modulation}
+        result = MusicAnalyzer(notes, metadata=metadata).analyze_all()
+        return sorted((i.subcategory, i.tick) for i in result.issues
+                      if i.track == "Bass" and i.subcategory.startswith("range"))
+
+    def test_bass_in_its_internal_register_passes_in_every_key(self):
+        self.assertEqual(self._bass_range_issues(0), [])
+        self.assertEqual(self._bass_range_issues(11), [])
+        # Key 11 plus a modulation of 2 is 13 semitones, not one.
+        self.assertEqual(self._bass_range_issues(11, modulation=2), [])
+
+    def test_out_of_register_bass_is_flagged_the_same_in_every_key(self):
+        def issues(key):
+            notes = [make_bass_note(0, 50 + key), make_bass_note(TICKS_PER_BEAT, 64 + key)]
+            result = MusicAnalyzer(notes, metadata={"key": key}).analyze_all()
+            return [(i.subcategory, i.tick) for i in result.issues
+                    if i.track == "Bass" and i.subcategory.startswith("range")]
+        self.assertEqual(issues(0), [("range_high", TICKS_PER_BEAT)])
+        self.assertEqual(issues(11), issues(0))

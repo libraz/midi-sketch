@@ -105,6 +105,19 @@ export function secondsAt(song, beat) {
   return seconds + ((beat - from) * 60) / bpm;
 }
 
+/**
+ * Semitones of a declared chord's root above the declared key sounding at its
+ * start, so the same degree reads the same before and after a modulation.
+ *
+ * @param {{keyPc: number, modulationBeat: number|null, modulationSemitones: number}} declared
+ * @param {{startBeat: number, rootPc: number}} chord
+ */
+export function declaredDegree(declared, chord) {
+  const shifted = declared.modulationBeat !== null && chord.startBeat >= declared.modulationBeat;
+  const tonicPc = declared.keyPc + (shifted ? declared.modulationSemitones : 0);
+  return (((chord.rootPc - tonicPc) % 12) + 12) % 12;
+}
+
 /** Keep the highest note at each onset. */
 export function skyline(notes) {
   const best = new Map();

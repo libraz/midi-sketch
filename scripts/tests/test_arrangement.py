@@ -264,5 +264,17 @@ class TestMotifVocalInterference(unittest.TestCase):
         self.assertGreaterEqual(len(self._get_clash_issues(notes)), 1)
 
 
+    def test_clash_is_judged_on_the_actual_distance_not_the_octave_class(self):
+        for semitones, clashes in ((1, True), (2, True), (13, True),
+                                   (14, False), (25, False), (26, False)):
+            notes = []
+            for beat in range(6):
+                tick = beat * TICKS_PER_BEAT
+                notes.append(_make_note(0, tick, TICKS_PER_BEAT, 40))
+                notes.append(_make_note(3, tick, TICKS_PER_BEAT, 40 + semitones))
+            found = len(self._get_clash_issues(notes)) >= 1
+            self.assertEqual(found, clashes, f"{semitones} semitones")
+
+
 if __name__ == "__main__":
     unittest.main()

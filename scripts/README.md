@@ -115,9 +115,9 @@ blueprint IDs to rhythmsync/idol/ballad/pop and are defined under `_blueprint_ca
 in `track_roles.json`. Re-run it after adding or relabeling references.
 
 `compare_generation_to_targets.py --targets <file>.json [--seeds N] [--category C] [--json]`
-generates songs per category (a representative blueprint across several seeds) and reports the per-role
-metrics that fall outside the reference range. It prints the median across seeds, so
-check per-seed values before declaring a gap closed.
+generates songs per category (every blueprint of the category across several seeds, pooled into one
+median) and reports the per-role metrics that fall outside the reference range. It prints the median
+across all pooled songs, so check per-seed values before declaring a gap closed.
 
 Known measurement artifact: `eighth_grid_ratio` HIGH verdicts are not real findings. The
 references are humanized performances while generation is quantized, so this metric is

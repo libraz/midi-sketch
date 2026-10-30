@@ -16,6 +16,7 @@
 
 import { chordTimelineFromNotes, NoteSafety } from '@libraz/libcantus';
 import { BEATS_PER_BAR, chordAt } from './analysis.mjs';
+import { declaredDegree } from './song.mjs';
 
 /** libcantus `SafetyReason.VerticalDissonance`. */
 const VERTICAL_DISSONANCE = 1 << 10;
@@ -122,22 +123,37 @@ function bassOnRoot(reading) {
   return { bassRootOnDownbeatRatio: ratio(onRoot, bars) };
 }
 
-/** Share of choruses that close on the tonic or on a cadence into it. */
+/**
+ * Share of choruses that end on the tonic: the chord sounding at the last beat
+ * is the tonic, or a cadence into the tonic reaches the run's end. A generated
+ * song is judged by its declared chords, which libcantus's reading may disagree
+ * with; a cadence into any other chord never counts.
+ */
 function chorusClosure(reading) {
-  const { runs, harmony } = reading;
+  const { runs, harmony, song } = reading;
   if (!runs.length) {
     return { chorusTonicClosureRatio: null };
   }
+  const declared = song.declared;
   let closed = 0;
   for (const run of runs) {
-    const last = chordAt(harmony, run.endBeat - 1);
-    const cadence = harmony.analysis.cadences.some(
-      (c) =>
+    const lastBeat = run.endBeat - 1;
+    if (declared) {
+      const last = declared.chords.find((c) => lastBeat >= c.startBeat && lastBeat < c.endBeat);
+      closed += last && declaredDegree(declared, last) === 0 ? 1 : 0;
+      continue;
+    }
+    const arrivesOnTonic = harmony.analysis.cadences.some((c) => {
+      const arrival = chordAt(harmony, c.atBeat);
+      return (
         c.atBeat >= run.endBeat - 2 * BEATS_PER_BAR &&
         c.atBeat < run.endBeat &&
-        (c.cadence.type === 'authentic' || c.cadence.type === 'plagal'),
-    );
-    if (last?.degree === 0 || cadence) {
+        (c.cadence.type === 'authentic' || c.cadence.type === 'plagal') &&
+        arrival?.degree === 0 &&
+        arrival.endBeat >= run.endBeat
+      );
+    });
+    if (chordAt(harmony, lastBeat)?.degree === 0 || arrivesOnTonic) {
       closed += 1;
     }
   }
