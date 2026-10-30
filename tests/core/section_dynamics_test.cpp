@@ -497,5 +497,144 @@ TEST_F(DriveTimingTest, TheGroovePocketIsAppliedExactlyOnce) {
   }
 }
 
+// ============================================================================
+// Floors and ceilings fold instead of clipping
+// ============================================================================
+
+TEST(VelocityBoundsTest, BoostFoldKeepsLoudNotesDistinctBelowTheCeiling) {
+  // Stacked boosts of ever-larger size must stay ordered and below 127.
+  int previous = 0;
+  for (int target = 100; target <= 400; target += 10) {
+    const int folded = foldBoostIntoHeadroom(100, target);
+    EXPECT_GE(folded, previous) << "target=" << target;
+    EXPECT_LT(folded, 127) << "target=" << target;
+    previous = folded;
+  }
+  // A modest boost is applied as asked, and a cut is returned unchanged.
+  EXPECT_EQ(foldBoostIntoHeadroom(80, 100), 100);
+  EXPECT_EQ(foldBoostIntoHeadroom(100, 60), 60);
+}
+
+TEST(VelocityBoundsTest, FloorFoldKeepsQuietNotesOrderedAndAboveTheFloor) {
+  const int floor = velocity::kPitchedVelocityFloor;
+  std::set<int> distinct;
+  int previous = 0;
+  for (int v = 1; v <= 2 * floor; ++v) {
+    const int folded = foldVelocityIntoFloor(v, floor);
+    EXPECT_GE(folded, floor) << "v=" << v;
+    EXPECT_GE(folded, previous) << "v=" << v;
+    previous = folded;
+    distinct.insert(folded);
+  }
+  // A clamp would leave one value; the fold leaves the whole span from floor to knee.
+  EXPECT_GT(distinct.size(), static_cast<size_t>(floor / 2));
+  EXPECT_EQ(foldVelocityIntoFloor(80, floor), 80);
+}
+
+TEST(VelocityBoundsTest, CeilingFoldMatchesPercussionCeiling) {
+  MidiTrack track;
+  for (int v = 1; v <= 127; ++v) {
+    track.addNote(NoteEventBuilder::create(0, TICKS_PER_BEAT, 36, static_cast<uint8_t>(v)));
+  }
+  applyPercussionVelocityCeiling(track, 90);
+  for (size_t i = 0; i < track.notes().size(); ++i) {
+    EXPECT_EQ(track.notes()[i].velocity, foldVelocityIntoCeiling(static_cast<int>(i) + 1, 90));
+  }
+}
+
+TEST(VelocityBoundsTest, FloorsComeFromOneTable) {
+  EXPECT_EQ(getVelocityFloor(TrackRole::Drums), velocity::kTimekeepingVelocityFloor);
+  EXPECT_EQ(getVelocityFloor(TrackRole::SE), velocity::kTimekeepingVelocityFloor);
+  EXPECT_EQ(getVelocityFloor(TrackRole::Guitar), velocity::kGuitarVelocityFloor);
+  EXPECT_EQ(getVelocityFloor(TrackRole::Chord), velocity::kPitchedVelocityFloor);
+}
+
+TEST(SectionDynamicsTest, LoudestSectionKeepsDistinctVelocitiesBelowTheCeiling) {
+  Section loud = neutralSection(SectionType::Chorus, 0);
+  loud.base_velocity = 95;
+  loud.peak_level = PeakLevel::Max;
+  loud.modifier = SectionModifier::Climactic;
+
+  MidiTrack track;
+  for (uint8_t v = 90; v <= 110; v += 2) {
+    track.addNote(NoteEventBuilder::create(0, TICKS_PER_BEAT, 60, v));
+  }
+  const size_t count = track.notes().size();
+  ASSERT_GT(count, 0u);
+  std::vector<MidiTrack*> tracks = {&track};
+  applySectionDynamics(tracks, {loud});
+
+  std::set<int> distinct;
+  for (const auto& note : track.notes()) {
+    EXPECT_LT(note.velocity, 127);
+    distinct.insert(note.velocity);
+  }
+  // Clipping at 127 would leave one value for the loud half.
+  EXPECT_GT(distinct.size(), 3u);
+}
+
+TEST(SectionDynamicsTest, QuietSectionNeverTakesStrokesBelowTheGivenFloor) {
+  Section quiet = neutralSection(SectionType::Intro, 0);
+  quiet.energy = SectionEnergy::Low;
+
+  MidiTrack track;
+  for (uint8_t v = 20; v <= 40; ++v) {
+    track.addNote(NoteEventBuilder::create(0, TICKS_PER_BEAT, 42, v));
+  }
+  std::vector<MidiTrack*> tracks = {&track};
+  applySectionDynamics(tracks, {quiet}, velocity::kTimekeepingVelocityFloor);
+
+  std::set<int> distinct;
+  for (const auto& note : track.notes()) {
+    EXPECT_GE(note.velocity, velocity::kTimekeepingVelocityFloor);
+    distinct.insert(note.velocity);
+  }
+  EXPECT_GT(distinct.size(), 5u);
+}
+
+class VelocityFloorGenerationTest : public test::GeneratorTestFixture {};
+
+TEST_F(VelocityFloorGenerationTest, TimekeepingStrokesStayAtOrAboveTheWritersFloor) {
+  constexpr uint8_t kClosedHat = 42;
+  constexpr uint8_t kSidestick = 37;
+  constexpr uint8_t kRide = 51;
+  params_.drums_enabled = true;
+  size_t strokes = 0;
+  for (uint32_t seed : {1u, 7u, 42u, 1200u, 1400u}) {
+    params_.seed = seed;
+    generate();
+    for (const auto& note : song().drums().notes()) {
+      if (note.note != kClosedHat && note.note != kSidestick && note.note != kRide) continue;
+      ++strokes;
+      EXPECT_GE(note.velocity, velocity::kTimekeepingVelocityFloor)
+          << "seed=" << seed << " tick=" << note.start_tick << " note=" << int(note.note);
+    }
+  }
+  ASSERT_GT(strokes, 0u);
+}
+
+TEST_F(VelocityFloorGenerationTest, GuitarKeepsDistinctValuesAndStaysOffTheFloor) {
+  params_.guitar_enabled = true;
+  params_.mood = Mood::LightRock;
+  size_t notes = 0;
+  for (uint32_t seed : {1u, 7u, 42u, 1200u}) {
+    params_.seed = seed;
+    generate();
+    std::set<int> distinct;
+    size_t at_floor = 0;
+    size_t total = 0;
+    for (const auto& note : song().guitar().notes()) {
+      distinct.insert(note.velocity);
+      ++total;
+      if (note.velocity <= velocity::kGuitarVelocityFloor) ++at_floor;
+    }
+    if (total == 0) continue;
+    notes += total;
+    EXPECT_GT(distinct.size(), 5u) << "seed=" << seed;
+    EXPECT_LT(at_floor * 4, total) << "seed=" << seed;
+  }
+  ASSERT_GT(notes, 0u);
+}
+
 }  // namespace
 }  // namespace midisketch

@@ -151,13 +151,13 @@ const char* songConfigErrorName(midisketch::SongConfigError error) {
     case midisketch::SongConfigError::InvalidForm:
       return "Invalid form";
     case midisketch::SongConfigError::InvalidVocalAttitude:
-      return "Invalid vocal attitude";
+      return "Invalid vocal attitude for this style (the allowed attitudes depend on the style)";
     case midisketch::SongConfigError::InvalidVocalRange:
       return "Invalid vocal range";
     case midisketch::SongConfigError::InvalidBpm:
       return "Invalid BPM";
     case midisketch::SongConfigError::DurationTooShortForCall:
-      return "Duration is below the minimum required length";
+      return "Duration is below the minimum length a song with calls (intro chant or MIX) needs";
     case midisketch::SongConfigError::InvalidModulationAmount:
       return "Invalid modulation amount";
     case midisketch::SongConfigError::InvalidKey:

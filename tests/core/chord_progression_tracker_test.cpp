@@ -16,8 +16,10 @@
 
 #include "core/arrangement.h"
 #include "core/chord.h"
+#include "core/generator.h"
 #include "core/timing_constants.h"
 #include "core/track_collision_detector.h"
+#include "test_support/chord_timeline_helper.h"
 
 using namespace midisketch;
 
@@ -771,4 +773,57 @@ TEST_F(ChordProgressionTrackerTest, SnapToNearestChordToneInRange_NoCandidateKee
   // Very narrow range with no chord tones
   int result = tracker_.snapToNearestChordToneInRange(61, 0, 61, 61);
   EXPECT_EQ(result, 61);  // No chord tone in [61,61], returns original
+}
+
+// ============================================================================
+// Timeline colour after generation
+// ============================================================================
+
+TEST(ChordTimelineColourTest, ExportedSeventhOrNinthIsSoundedBySomeTrack) {
+  // chords[] is read as the harmony that plays; a planned colour that no voice
+  // carries has to be withdrawn from the timeline rather than exported.
+  size_t coloured_entries = 0;
+  for (uint32_t seed = 1; seed <= 4; ++seed) {
+    GeneratorParams params;
+    params.seed = seed;
+    params.mood = Mood::StraightPop;
+    params.structure = StructurePattern::FullPop;
+    params.chord_extension.enable_7th = true;
+    params.chord_extension.enable_9th = true;
+    params.chord_extension.seventh_probability = 1.0f;
+    params.chord_extension.ninth_probability = 1.0f;
+    Generator gen;
+    gen.generate(params);
+    const auto& harmony = gen.getHarmonyContext();
+    const auto& song = gen.getSong();
+    const Tick song_end = song.arrangement().sections().back().endTick();
+
+    for (const auto& run : test::chordRuns(harmony, song_end)) {
+      const Tick start = run.start;
+      const Tick end = run.end;
+      const ChordExtension extension = run.extension;
+      const Chord chord = getExtendedChord(harmony.getChordDegreeAt(start), extension);
+      if (chord.note_count >= 4 && !harmony.isSecondaryDominantAt(start)) {
+        const int root = degreeToRoot(harmony.getChordDegreeAt(start), Key::C) % 12;
+        uint16_t colour = 0;
+        for (uint8_t i = 3; i < chord.note_count; ++i) {
+          if (chord.intervals[i] < 0) continue;
+          colour = static_cast<uint16_t>(colour | (1U << ((root + chord.intervals[i]) % 12)));
+        }
+        bool sounded = false;
+        for (const auto& track : song.tracks()) {
+          for (const auto& note : track.notes()) {
+            if (note.start_tick < end && note.start_tick + note.duration > start &&
+                (colour & (1U << (note.note % 12))) != 0) {
+              sounded = true;
+            }
+          }
+        }
+        ++coloured_entries;
+        EXPECT_TRUE(sounded) << "seed " << seed << " tick " << start << ": extension "
+                             << static_cast<int>(extension) << " exported but never sounded";
+      }
+    }
+  }
+  ASSERT_GT(coloured_entries, 0u);
 }

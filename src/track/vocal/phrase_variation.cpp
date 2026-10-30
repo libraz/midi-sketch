@@ -9,6 +9,7 @@
 
 #include "core/pitch_utils.h"
 #include "core/rng_util.h"
+#include "track/vocal/phrase_cache.h"
 
 namespace midisketch {
 
@@ -54,7 +55,7 @@ PhraseVariation selectPhraseVariation(int reuse_index, int exact_run, bool opens
 }
 
 void applyPhraseVariation(std::vector<NoteEvent>& notes, PhraseVariation variation,
-                          std::mt19937& rng) {
+                          std::mt19937& rng, Tick phrase_end) {
   if (notes.empty() || variation == PhraseVariation::Exact) {
     return;
   }
@@ -94,16 +95,20 @@ void applyPhraseVariation(std::vector<NoteEvent>& notes, PhraseVariation variati
       // Record original pitch before variation modification
       if (old_pitch != last.note) {
         last.prov_original_pitch = old_pitch;
-        last.addTransformStep(TransformStepType::ScaleSnap, old_pitch, last.note, 0, 0);
+        last.addTransformStep(TransformStepType::LastNoteShift, old_pitch, last.note,
+                              static_cast<int8_t>(shift), 0);
       }
 #endif
       break;
     }
 
     case PhraseVariation::LastNoteLong: {
-      // Extend last note by 50%
+      // Extend last note by 50%, never into the breath before the phrase end
       auto& last = notes.back();
-      last.duration = static_cast<Tick>(last.duration * 1.5f);
+      Tick extended = static_cast<Tick>(last.duration * 1.5f);
+      if (enforceMinimumBreath(last.start_tick, extended, phrase_end, kMinBreathTicks, 0)) {
+        last.duration = std::max(last.duration, extended);
+      }
       break;
     }
 
@@ -111,9 +116,10 @@ void applyPhraseVariation(std::vector<NoteEvent>& notes, PhraseVariation variati
       // Insert short rest before phrase end by shortening last note
       if (notes.size() >= 2) {
         auto& last = notes.back();
-        // Reduce duration by 60-120 ticks (1/8 to 1/4 beat of rest)
-        Tick rest_amount = static_cast<Tick>(rng_util::rollRange(rng, 60, 120));
-        if (last.duration > rest_amount + 60) {  // Keep at least 60 ticks
+        // Reduce duration by a 32nd to a 16th (1/8 to 1/4 beat of rest)
+        Tick rest_amount = static_cast<Tick>(rng_util::rollRange(rng, static_cast<int>(TICK_32ND),
+                                                                 static_cast<int>(TICK_SIXTEENTH)));
+        if (last.duration > rest_amount + TICK_32ND) {  // Keep at least a 32nd
           last.duration -= rest_amount;
         }
       }
@@ -132,7 +138,7 @@ void applyPhraseVariation(std::vector<NoteEvent>& notes, PhraseVariation variati
       // Insert 16th note rest at phrase start by shifting first note later.
       // This creates the Japanese "tame" anticipation effect.
       if (!notes.empty()) {
-        constexpr Tick kOnsetDelay = 120;  // 16th note = 120 ticks
+        constexpr Tick kOnsetDelay = TICK_SIXTEENTH;
         auto& first = notes.front();
         first.start_tick += kOnsetDelay;
         // Reduce duration to maintain the same end point
@@ -144,12 +150,17 @@ void applyPhraseVariation(std::vector<NoteEvent>& notes, PhraseVariation variati
     }
 
     case PhraseVariation::EchoRepeat: {
-      // Echo the last note at half duration and -20 velocity
+      // Echo the last note at half duration and -20 velocity, inside the phrase
+      // and in front of its breath
       if (!notes.empty()) {
         const auto& last = notes.back();
         Tick echo_start = last.start_tick + last.duration;
         Tick echo_duration = last.duration / 2;
-        if (echo_duration < 60) echo_duration = 60;  // Minimum 60 ticks
+        if (echo_duration < TICK_32ND) echo_duration = TICK_32ND;
+        if (!enforceMinimumBreath(echo_start, echo_duration, phrase_end, kMinBreathTicks,
+                                  TICK_32ND)) {
+          break;
+        }
         int echo_vel = static_cast<int>(last.velocity) - 20;
         if (echo_vel < 30) echo_vel = 30;
 

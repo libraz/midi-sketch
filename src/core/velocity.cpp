@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 #include "core/emotion_curve.h"
 #include "core/melody_types.h"
@@ -479,7 +480,8 @@ void applyAllBarVelocityCurves(std::vector<MidiTrack*>& tracks,
   }
 }
 
-void applySectionDynamics(std::vector<MidiTrack*>& tracks, const std::vector<Section>& sections) {
+void applySectionDynamics(std::vector<MidiTrack*>& tracks, const std::vector<Section>& sections,
+                          int floor) {
   for (const auto& section : sections) {
     const float multiplier = getSectionVelocityScale(section);
     const Tick section_end = section.endTick();
@@ -487,10 +489,67 @@ void applySectionDynamics(std::vector<MidiTrack*>& tracks, const std::vector<Sec
       if (track == nullptr) continue;
       for (auto& note : track->notes()) {
         if (note.start_tick < section.start_tick || note.start_tick >= section_end) continue;
-        note.velocity =
-            vel::clamp(static_cast<int>(std::lround(note.velocity * multiplier)), 1, 127);
+        const int original = note.velocity;
+        int scaled = static_cast<int>(std::lround(original * multiplier));
+        if (scaled > original) {
+          scaled = foldBoostIntoHeadroom(original, scaled);
+        } else if (scaled < original) {
+          scaled = std::min(original, foldVelocityIntoFloor(scaled, floor));
+        }
+        note.velocity = vel::clamp(scaled, 1, 127);
       }
     }
+  }
+}
+
+int foldBoostIntoHeadroom(int velocity, int target) {
+  if (target <= velocity) return target;
+  // The fold starts where the boost enters the top of the range, or at the
+  // original velocity if that is already inside it.
+  const int knee = static_cast<int>(velocity::kMaxVelocity * velocity::kBoostKneeRatio);
+  const int start = std::max(velocity, knee);
+  if (target <= start) return target;
+  const int over = target - start;
+  const int headroom = velocity::kMaxVelocity - start;
+  if (headroom <= 0) return velocity::kMaxVelocity;
+  // over * headroom / (over + headroom): equal to the request when it is small,
+  // approaching the headroom as the request grows.
+  return start + (over * headroom + (over + headroom) / 2) / (over + headroom);
+}
+
+int foldVelocityIntoFloor(int velocity, int floor) {
+  if (floor <= 1) return velocity;
+  const int knee = static_cast<int>(floor * velocity::kFloorKneeRatio);
+  if (velocity >= knee) return velocity;
+  const int below = std::max(velocity, 1) - 1;
+  const int span = knee - 1;
+  return floor + (below * (knee - floor) + span / 2) / span;
+}
+
+int foldVelocityIntoCeiling(int velocity, int ceiling) {
+  if (ceiling >= velocity::kMaxVelocity) return velocity;
+  const int knee = static_cast<int>(ceiling * velocity::kCeilingKneeRatio);
+  const int above_knee = velocity::kMaxVelocity - knee;
+  const int headroom = ceiling - knee;
+  if (above_knee <= 0 || headroom <= 0) {
+    // A ceiling this low leaves no range to fold into; fall back to the clip.
+    return std::min(velocity, ceiling);
+  }
+  if (velocity <= knee) return velocity;
+  const int over = velocity - knee;
+  const int folded = knee + (over * headroom + above_knee / 2) / above_knee;
+  return std::clamp(folded, 1, ceiling);
+}
+
+int getVelocityFloor(TrackRole role) {
+  switch (role) {
+    case TrackRole::Drums:
+    case TrackRole::SE:
+      return velocity::kTimekeepingVelocityFloor;
+    case TrackRole::Guitar:
+      return velocity::kGuitarVelocityFloor;
+    default:
+      return velocity::kPitchedVelocityFloor;
   }
 }
 
@@ -718,7 +777,7 @@ uint8_t calculateVelocityCeiling(uint8_t base_velocity, float level) {
       1.0f + velocity::kTensionHighCeilingMaxBonus);  // 1.2 at level=1
 
   int ceiling = static_cast<int>(base_velocity * ceiling_multiplier);
-  return static_cast<uint8_t>(std::clamp(ceiling, 40, 127));
+  return static_cast<uint8_t>(std::clamp(ceiling, velocity::kMinSectionCeiling, 127));
 }
 
 float getChordTonePreferenceBoost(float resolution_need) {
@@ -817,8 +876,18 @@ void applyPhraseEndDecay(MidiTrack& track, const std::vector<Section>& sections,
           float effective_stretch = 1.0f + (duration_stretch - 1.0f) * stretch_progress;
           // The exhale stays inside its phrase: a note that already reaches the
           // phrase end would otherwise be carried into the next bar's chord.
+          // It never eats into a rest that follows the note (a reserved breath).
           Tick stretched_duration = static_cast<Tick>(note.duration * effective_stretch);
-          const Tick room = std::max(note.duration, phrase_end - note.start_tick);
+          const Tick note_end = note.start_tick + note.duration;
+          Tick next_start = std::numeric_limits<Tick>::max();
+          for (const auto& other : notes) {
+            if (other.start_tick > note.start_tick)
+              next_start = std::min(next_start, other.start_tick);
+          }
+          const bool rest_follows =
+              next_start != std::numeric_limits<Tick>::max() && next_start >= note_end;
+          const Tick limit = rest_follows ? note_end : phrase_end;
+          const Tick room = std::max(note.duration, limit - note.start_tick);
           note.duration = std::min(stretched_duration, room);
         }
       }
@@ -990,25 +1059,8 @@ void clampTrackVelocity(MidiTrack& track, uint8_t max_velocity) {
 }
 
 void applyPercussionVelocityCeiling(MidiTrack& track, uint8_t max_velocity) {
-  if (max_velocity >= velocity::kMaxVelocity) {
-    return;  // Nothing is above the ceiling.
-  }
-
-  const int ceiling = max_velocity;
-  const int knee = static_cast<int>(ceiling * velocity::kCeilingKneeRatio);
-  const int above_knee = velocity::kMaxVelocity - knee;
-  const int headroom = ceiling - knee;
-  if (above_knee <= 0 || headroom <= 0) {
-    // A ceiling this low leaves no range to fold into; fall back to the clip.
-    clampTrackVelocity(track, max_velocity);
-    return;
-  }
-
   for (auto& note : track.notes()) {
-    if (note.velocity <= knee) continue;
-    const int over = note.velocity - knee;
-    const int folded = knee + (over * headroom + above_knee / 2) / above_knee;
-    note.velocity = vel::clamp(folded, 1, ceiling);
+    note.velocity = vel::clamp(foldVelocityIntoCeiling(note.velocity, max_velocity), 1, 127);
   }
 }
 

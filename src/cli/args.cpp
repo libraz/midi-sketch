@@ -407,7 +407,9 @@ void printUsage(const char* program) {
   std::cout << "                    3=UltraVocaloid, 4=Idol, 5=Ballad, 6=Rock,\n";
   std::cout << "                    7=CityPop, 8=Anime, 9=BrightKira, 10=CoolSynth,\n";
   std::cout << "                    11=CuteAffected, 12=PowerfulShout, 13=KPop)\n";
-  std::cout << "  --bpm N           Set BPM (40-240, 0/default: style preset)\n";
+  std::cout << "  --bpm N           Set BPM (40-240). 0/default resolves in order: a named\n";
+  std::cout << "                    blueprint's tempo, an explicit --mood's tempo, then the\n";
+  std::cout << "                    style preset's\n";
   std::cout << "  --duration N      Set target duration in seconds (0 = use pattern).\n";
   std::cout << "                    A song is 12-144 bars, so the length a duration reaches\n";
   std::cout << "                    depends on the tempo. A value no tempo could build is\n";
@@ -415,14 +417,19 @@ void printUsage(const char* program) {
   std::cout << "                    nearest it can, and the adjustment is reported.\n";
   std::cout << "  --form N          Set form/structure pattern (0-17 or name like StandardPop)\n";
   std::cout << "  --key N           Set key (0-11: C, C#, D, Eb, E, F, F#, G, Ab, A, Bb, B)\n";
-  std::cout << "  --input FILE      Analyze existing MIDI file for dissonance\n";
+  std::cout << "  --input FILE      Analyze existing SMF1 MIDI file for dissonance\n";
   std::cout << "  --config FILE     Generate from a complete SongConfig JSON file\n";
   std::cout << "  -o, --output FILE Write the primary output to FILE\n";
   std::cout << "  --analyze         Analyze generated MIDI for dissonance issues\n";
   std::cout << "  --skip-vocal      Skip vocal in initial generation (for BGM-first workflow)\n";
-  std::cout << "  --vocal-attitude N  Vocal attitude (0-2)\n";
-  std::cout << "  --vocal-low N     Vocal range low (MIDI note, default 60)\n";
-  std::cout << "  --vocal-high N    Vocal range high (MIDI note, default 79)\n";
+  std::cout << "  --vocal-attitude N  Vocal attitude (0-2); the allowed set depends on the\n";
+  std::cout << "                    style. 0=Clean prefers chord tones, 1=Expressive adds\n";
+  std::cout << "                    tensions and pitch bends, 2=Raw uses every scale tone;\n";
+  std::cout << "                    skeleton-path phrases give 0 and 1 the same notes\n";
+  std::cout << "  --vocal-low N     Vocal range low (internal C-major pitch, sounding = pitch\n";
+  std::cout << "                    + key; default 60)\n";
+  std::cout << "  --vocal-high N    Vocal range high (internal C-major pitch, sounding =\n";
+  std::cout << "                    pitch + key; default 79)\n";
   std::cout << "  --format FMT      Set MIDI format (smf1 or smf2, default: smf1)\n";
   std::cout << "  --validate FILE   Validate MIDI file structure\n";
   std::cout << "  --regenerate FILE Regenerate MIDI from embedded metadata\n";
@@ -438,7 +445,9 @@ void printUsage(const char* program) {
   std::cout << "                    1=BackgroundMotif, 2=SynthDriven)\n";
   std::cout << "  --enable-sus      Enable sus2/sus4 chord substitutions\n";
   std::cout << "  --enable-9th      Enable 9th chord extensions\n";
-  std::cout << "  --syncopation     Enable syncopation effects in melody rhythm\n";
+  std::cout << "  --syncopation     Enable syncopation effects in melody rhythm; a mora-timed\n";
+  std::cout << "                    vocal takes only barline crossing from it, a rhythm-locked\n";
+  std::cout << "                    RhythmSync vocal none of it\n";
   std::cout << "  --dump-collisions-at N  Dump collision state at tick N for debugging\n";
   std::cout << "\n";
   std::cout << "Generation parameters:\n";
@@ -450,7 +459,8 @@ void printUsage(const char* program) {
   std::cout << "  --melodic-complexity N Melodic complexity (0=Simple, 1=Standard, 2=Complex)\n";
   std::cout << "  --hook-intensity N     Hook intensity (0=Off, 1=Light, 2=Normal, "
                "3=Strong, 4=Maximum)\n";
-  std::cout << "  --melody-template N    Melody template (0=Auto, 1-7)\n";
+  std::cout << "  --melody-template N    Melody template (0=Auto, 1-7); on rhythm-locked\n";
+  std::cout << "                         RhythmSync blueprints it only paces hook variation\n";
   std::cout << "\n";
   std::cout << "Humanization:\n";
   std::cout << "  --humanize             Enable humanization\n";
@@ -484,7 +494,8 @@ void printUsage(const char* program) {
   std::cout << "Melody overrides:\n";
   std::cout << "  --melody-max-leap N    Max leap interval (0=preset, 1-12)\n";
   std::cout << "  --melody-phrase-length N  Phrase length in bars (0=preset, 1-8)\n";
-  std::cout << "  --melody-long-note-ratio N  Long note ratio (0-100, default=preset)\n";
+  std::cout << "  --melody-long-note-ratio N  Long note ratio (0-100, default=preset); no effect\n";
+  std::cout << "                         on a mora-timed or rhythm-locked vocal (warned)\n";
   std::cout << "  --melody-chorus-register-shift N  Chorus register shift (-12 to +12)\n";
   std::cout << "  --melody-hook-repetition N  Hook repetition (0=preset, 1=off, 2=on)\n";
   std::cout << "  --melody-use-leading-tone N  Leading tone (0=preset, 1=off, 2=on)\n";

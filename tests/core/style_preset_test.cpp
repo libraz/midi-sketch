@@ -17,6 +17,7 @@
 #include "core/types.h"
 #include "midi/midi_writer.h"
 #include "midisketch.h"
+#include "track/generators/se.h"
 
 namespace midisketch {
 namespace {
@@ -1617,6 +1618,31 @@ TEST(NameLookupTest, AllStructurePatternsHaveNames) {
     ASSERT_TRUE(found.has_value()) << "Pattern name '" << name << "' not found by lookup";
     EXPECT_EQ(*found, static_cast<StructurePattern>(i));
   }
+}
+
+TEST(StylePresetValidationTest, CallLengthMinimumAppliesOnlyWhereCallsResolveEnabled) {
+  // Auto calls follow the vocal style, so a short song in a style that never
+  // calls is not held to the length a chant and a MIX need.
+  SongConfig config = createDefaultSongConfig(0);
+  config.call_setting = CallSetting::Auto;
+  config.intro_chant = IntroChant::Gachikoi;
+  config.mix_pattern = MixPattern::Standard;
+  config.target_duration_seconds = 25;
+
+  config.vocal_style = VocalStylePreset::Ballad;
+  ASSERT_FALSE(isCallEnabled(config.vocal_style));
+  EXPECT_EQ(validateSongConfig(config), SongConfigError::OK);
+
+  config.vocal_style = VocalStylePreset::Auto;
+  EXPECT_EQ(validateSongConfig(config), SongConfigError::OK);
+
+  config.vocal_style = VocalStylePreset::Idol;
+  ASSERT_TRUE(isCallEnabled(config.vocal_style));
+  EXPECT_EQ(validateSongConfig(config), SongConfigError::DurationTooShortForCall);
+
+  config.vocal_style = VocalStylePreset::Ballad;
+  config.call_setting = CallSetting::Enabled;
+  EXPECT_EQ(validateSongConfig(config), SongConfigError::DurationTooShortForCall);
 }
 
 }  // namespace

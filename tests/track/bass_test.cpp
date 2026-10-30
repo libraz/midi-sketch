@@ -13,6 +13,7 @@
 #include <set>
 #include <vector>
 
+#include "core/chord.h"
 #include "core/generator.h"
 #include "core/preset_data.h"
 #include "core/production_blueprint.h"
@@ -780,9 +781,11 @@ TEST_F(BassTest, WholeNotePatternNoGhostNotes) {
 // Pedal Tone Bass Pattern Tests
 // ============================================================================
 
-// Test disabled: generation order and section-level density/track-mask adjustments
-// can replace the genre table's PedalTone choice before rendering.
-TEST_F(BassTest, DISABLED_PedalToneConsistentPitchAcrossChordChanges) {
+// No arpeggio is generated here, so the arpeggio veto leaves the genre table's
+// PedalTone choice for the intro in place. The intro states I and vi, which both
+// hold the tonic: a tonic pedal under V meets the chord's leading tone a major
+// seventh above it, which collision avoidance refuses in the bass register.
+TEST_F(BassTest, PedalToneConsistentPitchAcrossChordChanges) {
   // Verify pedal tone holds the same note even when chords change.
   // Use multiple seeds to check for pedal tone behavior.
   // Note: Generation order affects RNG sequence, so we check for either:
@@ -791,6 +794,7 @@ TEST_F(BassTest, DISABLED_PedalToneConsistentPitchAcrossChordChanges) {
   params_.mood = Mood::Ballad;
   params_.structure = StructurePattern::BuildUp;
   params_.drums_enabled = true;
+  params_.chord_id = 1;  // I - vi - IV - V
 
   bool found_pedal_behavior = false;
 
@@ -841,6 +845,44 @@ TEST_F(BassTest, DISABLED_PedalToneConsistentPitchAcrossChordChanges) {
       << "Ballad intro should show pedal-like behavior (>=75% same pitch) across 100 seeds";
 }
 
+TEST(BassPatternSelectionTest, PedalVetoCountsOnlyAGeneratedArpeggio) {
+  // A section mask names Arpeggio by default; the veto that replaces a tonic
+  // pedal under an arpeggio must not fire for an arpeggio the song never writes.
+  Section intro;
+  intro.type = SectionType::Intro;
+  intro.bars = 4;
+  intro.start_tick = 0;
+  intro.track_mask = TrackMask::All;
+  intro.backing_density = BackingDensity::Normal;
+
+  GeneratorParams params;
+  params.mood = Mood::Ballad;
+  params.paradigm = GenerationParadigm::Traditional;
+  params.riff_policy = RiffPolicy::Free;
+  params.drums_enabled = true;
+
+  const TrackMask without_arpeggio = TrackMask::All & ~TrackMask::Arpeggio;
+  int pedal_without = 0;
+  int pedal_with = 0;
+  constexpr uint32_t kTrials = 200;
+  for (uint32_t trial = 1; trial <= kTrials; ++trial) {
+    std::mt19937 rng_without(trial);
+    BassRiffCache cache_without;
+    if (selectPatternWithPolicy(cache_without, intro, 0, params, rng_without, without_arpeggio) ==
+        BassPattern::PedalTone) {
+      ++pedal_without;
+    }
+    std::mt19937 rng_with(trial);
+    BassRiffCache cache_with;
+    if (selectPatternWithPolicy(cache_with, intro, 0, params, rng_with, TrackMask::All) ==
+        BassPattern::PedalTone) {
+      ++pedal_with;
+    }
+  }
+  EXPECT_GT(pedal_without, 0) << "No intro pedal reached the bass without an arpeggio";
+  EXPECT_EQ(pedal_with, 0) << "A generated arpeggio no longer vetoes the pedal";
+}
+
 TEST_F(BassTest, PedalToneRhythmIsSparse) {
   // PedalTone pattern should produce sparse rhythm (at most 2 notes per bar).
   // The intro may have layer scheduling that delays bass entry, so check any
@@ -868,15 +910,17 @@ TEST_F(BassTest, PedalToneRhythmIsSparse) {
         Tick bar_end = bar_start + TICKS_PER_BAR;
 
         int note_count = 0;
+        int tonic_count = 0;
         for (const auto& note : track.notes()) {
           if (note.start_tick >= bar_start && note.start_tick < bar_end) {
             note_count++;
+            if (note.note % 12 == 0) tonic_count++;
           }
         }
 
-        // PedalTone should be sparse: at most 2 notes per bar (half notes)
-        // If we find a bar with exactly 2 notes, that matches pedal tone rhythm
-        if (note_count == 2) {
+        // PedalTone is sparse (two half notes per bar) and sits on the tonic; a WholeNote
+        // replacement or a chord-root line would not satisfy both.
+        if (note_count == 2 && tonic_count == 2) {
           found_sparse_pattern = true;
           break;
         }
@@ -887,7 +931,7 @@ TEST_F(BassTest, PedalToneRhythmIsSparse) {
   }
 
   EXPECT_TRUE(found_sparse_pattern)
-      << "PedalTone should produce sparse rhythm (2 notes per bar) across 10 seeds";
+      << "PedalTone should produce two tonic half notes in an intro bar across 10 seeds";
 }
 
 TEST_F(BassTest, PedalToneVelocityRange) {
@@ -1938,6 +1982,69 @@ TEST_F(BassTest, AllBlueprintsWithNewHintsProduceValidBass) {
     EXPECT_FALSE(bass.notes().empty())
         << "Blueprint " << static_cast<int>(bp) << " should produce bass notes";
   }
+}
+
+TEST(BassSlashChordTest, SlashBassWalksTowardTheChordHeardNextInTheBar) {
+  // With a chord change inside the bar, the inversion is chosen for that chord,
+  // not for the one the next bar starts on.
+  auto explains = [](int8_t degree, int8_t next, SectionType type, int pc) {
+    for (float roll = 0.0f; roll < 1.0f; roll += 0.05f) {
+      const SlashChordInfo info = checkSlashChord(degree, next, type, roll);
+      if (info.has_override && info.bass_note_semitone % 12 == pc) return true;
+    }
+    return false;
+  };
+  constexpr Tick kOnsetWindow = 30;  // groove grid offsets stay well inside this
+
+  size_t mid_bar_changes = 0;
+  size_t stale_targets = 0;
+  for (uint32_t seed = 1; seed <= 8; ++seed) {
+    GeneratorParams params;
+    params.seed = seed;
+    params.mood = Mood::StraightPop;
+    params.structure = StructurePattern::FullPop;
+    Generator gen;
+    gen.generate(params);
+    const auto& harmony = gen.getHarmonyContext();
+    const auto& bass = gen.getSong().bass().notes();
+    for (const auto& section : gen.getSong().arrangement().sections()) {
+      for (uint8_t bar = 0; bar < section.bars; ++bar) {
+        const Tick bar_start = section.start_tick + bar * TICKS_PER_BAR;
+        const int8_t degree = harmony.getChordDegreeAt(bar_start);
+        Tick change = 0;
+        for (Tick entry = harmony.getNextChordEntryTick(bar_start);
+             entry > bar_start && entry < bar_start + TICKS_PER_BAR;
+             entry = harmony.getNextChordEntryTick(entry)) {
+          if (harmony.getChordDegreeAt(entry) != degree ||
+              harmony.isSecondaryDominantAt(entry) != harmony.isSecondaryDominantAt(bar_start)) {
+            change = entry;
+            break;
+          }
+        }
+        if (change == 0) continue;
+        ++mid_bar_changes;
+        const int8_t heard = harmony.getChordDegreeAt(change);
+        const int8_t next_bar = harmony.getChordDegreeAt(bar_start + TICKS_PER_BAR);
+        if (heard == next_bar) continue;
+        for (const auto& note : bass) {
+          const Tick distance = note.start_tick > bar_start ? note.start_tick - bar_start
+                                                            : bar_start - note.start_tick;
+          if (distance > kOnsetWindow) continue;
+          const int pc = note.note % 12;
+          if (pc == degreeToSemitone(degree) % 12) break;
+          if (explains(degree, next_bar, section.type, pc) &&
+              !explains(degree, heard, section.type, pc)) {
+            ++stale_targets;
+            ADD_FAILURE() << "seed " << seed << " tick " << bar_start << ": slash bass " << pc
+                          << " walks to the next bar's chord past the one heard at " << change;
+          }
+          break;
+        }
+      }
+    }
+  }
+  ASSERT_GT(mid_bar_changes, 0u);
+  EXPECT_EQ(stale_targets, 0u);
 }
 
 }  // namespace

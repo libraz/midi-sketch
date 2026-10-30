@@ -6,6 +6,7 @@
 #include "core/section_utils.h"
 
 #include <algorithm>
+#include <cstddef>
 
 namespace midisketch {
 
@@ -92,6 +93,22 @@ std::optional<Section> findLastSectionAfter(const std::vector<Section>& sections
     }
   }
   return std::nullopt;
+}
+
+ChorusOccurrence classifyChorusOccurrence(const std::vector<Section>& sections, size_t section_idx,
+                                          TrackMask track) {
+  if (section_idx >= sections.size()) return ChorusOccurrence::None;
+  auto carries = [track](const Section& section) {
+    return section.type == SectionType::Chorus && hasTrack(section.track_mask, track);
+  };
+  if (!carries(sections[section_idx])) return ChorusOccurrence::None;
+  const auto here = sections.begin() + static_cast<std::ptrdiff_t>(section_idx);
+  const bool has_earlier = std::any_of(sections.begin(), here, carries);
+  const bool has_later = std::any_of(here + 1, sections.end(), carries);
+  if (has_earlier && has_later) return ChorusOccurrence::Middle;
+  if (has_earlier) return ChorusOccurrence::Final;
+  if (has_later) return ChorusOccurrence::First;
+  return ChorusOccurrence::Only;
 }
 
 }  // namespace midisketch

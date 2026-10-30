@@ -32,23 +32,6 @@ struct ProductionBlueprint;
 // Aux Enums and Types
 // ============================================================================
 
-/// Aux timing: Rhythmic=beat grid, Reactive=responds to melody, Sustained=long notes.
-enum class AuxTimingRole : uint8_t {
-  Rhythmic,  ///< Beat grid (PulseLoop, GrooveAccent)
-  Reactive,  ///< Responds to melody (TargetHint, PhraseTail)
-  Sustained  ///< Long notes (EmotionalPad)
-};
-
-/// Aux pitch strategy: ChordTone=safe, Target=anticipate, Following=echo, Accent=R/5,
-/// Unison=double.
-enum class AuxHarmonicRole : uint8_t {
-  ChordTone,  ///< Chord tones only
-  Target,     ///< Anticipate melody destination
-  Following,  ///< Follow melody with delay
-  Accent,     ///< Root/5th emphasis
-  Unison      ///< Same pitch as melody
-};
-
 /// Harmony mode: UnisonOnly, ThirdAbove (classic pop style), ThirdBelow (R&B), Alternating.
 enum class HarmonyMode : uint8_t {
   UnisonOnly,  ///< Same pitch as melody
@@ -57,20 +40,10 @@ enum class HarmonyMode : uint8_t {
   Alternating  ///< Alternate unison/harmony
 };
 
-/// How density_ratio works: EventProbability, SkipRatio, VoiceCount.
-enum class AuxDensityBehavior : uint8_t {
-  EventProbability,  ///< Probability of event
-  SkipRatio,         ///< Skip rate
-  VoiceCount         ///< Voice count multiplier
-};
-
 /// Meta information for AuxFunction.
 struct AuxFunctionMeta {
-  AuxTimingRole timing_role;            ///< When notes occur
-  AuxHarmonicRole harmonic_role;        ///< How pitches are selected
-  AuxDensityBehavior density_behavior;  ///< How density is interpreted
-  float base_density;                   ///< Default density when ratio = 1.0
-  float dissonance_tolerance;           ///< Higher = allow more dissonance (0.0-1.0)
+  float base_density;          ///< Default density when ratio = 1.0
+  float dissonance_tolerance;  ///< Higher = allow more dissonance (0.0-1.0)
 };
 
 /// Get meta information for AuxFunction.

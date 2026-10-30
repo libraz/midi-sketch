@@ -11,14 +11,18 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <set>
 #include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "cli/input_mode.h"
 #include "cli/regenerate_mode.h"
+#include "core/config_converter.h"
 #include "core/json_helpers.h"
+#include "core/preset_data.h"
 #include "midi/midi_reader.h"
 #include "midisketch.h"
 
@@ -536,16 +540,18 @@ TEST(CliGenerateModeTest, AccompanimentConfigChangesReachTheMetadata) {
 
   MetadataRestoreStatus status = MetadataRestoreStatus::InvalidJson;
   const auto restored = configFromMetadata(metadataOf(sketch.getMidi()), &status);
-  ASSERT_EQ(status, MetadataRestoreStatus::OK);
+  // A seeded accompaniment pass is not what replaying the config produces, so the
+  // file says so; the config it carries still describes the song.
+  EXPECT_EQ(status, MetadataRestoreStatus::NotReplayable);
   EXPECT_FALSE(restored.drums_enabled);
   EXPECT_TRUE(restored.drums_enabled_explicit);
   EXPECT_FALSE(restored.guitar_enabled);
   EXPECT_TRUE(restored.arpeggio_enabled);
   EXPECT_FALSE(restored.se_enabled);
-  EXPECT_EQ(restored.seed, 777u);
+  EXPECT_EQ(restored.seed, 12345u) << "The accompaniment seed replaced the song seed";
 }
 
-TEST(CliGenerateModeTest, VocalRegenerationSeedReachesTheMetadata) {
+TEST(CliGenerateModeTest, VocalRegenerationKeepsTheSongSeedInTheMetadata) {
   auto config = midisketch::createDefaultSongConfig(0);
   config.seed = 12345;
 
@@ -554,11 +560,180 @@ TEST(CliGenerateModeTest, VocalRegenerationSeedReachesTheMetadata) {
   sketch.generateWithVocal(config);
   sketch.regenerateVocal(99);
 
-  const midisketch::json::Parser metadata(metadataOf(sketch.getMidi()));
+  const std::string metadata_text = metadataOf(sketch.getMidi());
+  const midisketch::json::Parser metadata(metadata_text);
   ASSERT_TRUE(metadata.isValid());
-  const midisketch::json::Parser stored = metadata.getObject("config");
-  EXPECT_EQ(stored.getUint("seed"), 99u)
-      << "The metadata has to name the seed the current vocal was generated from";
+  EXPECT_EQ(metadata.getObject("config").getUint("seed"), 12345u)
+      << "The re-roll seed replaced the seed the structure and chords came from";
+  EXPECT_EQ(metadata.getUint("seed"), 12345u) << "params block";
+  MetadataRestoreStatus status = MetadataRestoreStatus::OK;
+  configFromMetadata(metadata_text, &status);
+  EXPECT_EQ(status, MetadataRestoreStatus::NotReplayable);
+}
+
+/// Runs --regenerate on @p midi and reports the exit code and whether a file was written.
+std::pair<int, bool> regenerateFile(const std::filesystem::path& dir, const std::string& name,
+                                    const std::vector<uint8_t>& midi,
+                                    std::vector<uint8_t>* regenerated) {
+  const auto source_path = dir / (name + ".mid");
+  const auto output_path = dir / (name + ".out.mid");
+  writeBinaryFile(source_path, midi);
+  ParsedArgs args;
+  args.regenerate_file = source_path.string();
+  args.output_file = output_path.string();
+  int result = 0;
+  {
+    ScopedStreamCapture stdout_capture(std::cout);
+    ScopedStreamCapture stderr_capture(std::cerr);
+    result = runRegenerateMode(args);
+    if (result != 0) {
+      EXPECT_NE(stderr_capture.str().find("replay"), std::string::npos)
+          << name << ": refused without saying why";
+    }
+  }
+  const bool written = std::filesystem::exists(output_path);
+  if (written && regenerated != nullptr) *regenerated = readBinaryFile(output_path);
+  return {result, written};
+}
+
+TEST(CliGenerateModeTest, RegenerationReproducesTheSongOrRefusesIt) {
+  ScopedTempDirectory temp_dir;
+  using Workflow = std::function<void(midisketch::MidiSketch&, const midisketch::SongConfig&)>;
+  struct Case {
+    const char* name;
+    Workflow run;
+    bool replayable;
+  };
+  const std::vector<Case> cases = {
+      {"generate-from-config",
+       [](midisketch::MidiSketch& s, const midisketch::SongConfig& c) { s.generateFromConfig(c); },
+       true},
+      {"vocal-then-accompaniment",
+       [](midisketch::MidiSketch& s, const midisketch::SongConfig& c) {
+         s.generateVocal(c);
+         s.generateAccompanimentForVocal();
+       },
+       true},
+      {"generate-with-vocal",
+       [](midisketch::MidiSketch& s, const midisketch::SongConfig& c) { s.generateWithVocal(c); },
+       true},
+      {"regenerate-vocal",
+       [](midisketch::MidiSketch& s, const midisketch::SongConfig& c) {
+         s.generateFromConfig(c);
+         s.regenerateVocal(777);
+       },
+       false},
+      {"regenerate-accompaniment",
+       [](midisketch::MidiSketch& s, const midisketch::SongConfig& c) {
+         s.generateFromConfig(c);
+         s.regenerateAccompaniment(888);
+       },
+       false},
+      {"vocal-config-reroll",
+       [](midisketch::MidiSketch& s, const midisketch::SongConfig& c) {
+         s.generateFromConfig(c);
+         midisketch::VocalConfig vocal;
+         vocal.present_fields = 0;
+         vocal.seed = 555;
+         s.regenerateVocal(vocal);
+       },
+       false},
+      {"configured-accompaniment",
+       [](midisketch::MidiSketch& s, const midisketch::SongConfig& c) {
+         s.generateVocal(c);
+         midisketch::AccompanimentConfig acc;
+         acc.present_fields = midisketch::AccompanimentConfig::DrumsEnabled;
+         acc.drums_enabled = false;
+         s.generateAccompanimentForVocal(acc);
+       },
+       false},
+      {"set-vocal-notes",
+       [](midisketch::MidiSketch& s, const midisketch::SongConfig& c) {
+         midisketch::MidiSketch donor;
+         donor.generateFromConfig(c);
+         s.setVocalNotes(c, donor.getSong().vocal().notes());
+         s.generateAccompanimentForVocal();
+       },
+       false},
+      {"set-melody",
+       [](midisketch::MidiSketch& s, const midisketch::SongConfig& c) {
+         s.generateFromConfig(c);
+         midisketch::MidiSketch donor;
+         midisketch::SongConfig other = c;
+         other.seed = c.seed + 1;
+         donor.generateFromConfig(other);
+         s.setMelody(donor.getMelody());
+       },
+       false},
+  };
+
+  for (uint8_t blueprint = 0; blueprint < 5; ++blueprint) {
+    for (const auto& item : cases) {
+      SCOPED_TRACE(std::string(item.name) + " blueprint " + std::to_string(blueprint));
+      auto config = midisketch::createDefaultSongConfig(0);
+      config.seed = 12345;
+      config.blueprint_id = blueprint;
+      midisketch::MidiSketch sketch;
+      sketch.setMidiFormat(midisketch::MidiFormat::SMF1);
+      item.run(sketch, config);
+      const auto source_midi = sketch.getMidi();
+      ASSERT_FALSE(sketch.getSong().vocal().empty());
+
+      const midisketch::json::Parser metadata(metadataOf(source_midi));
+      ASSERT_TRUE(metadata.isValid());
+      EXPECT_EQ(metadata.getObject("config").getUint("seed"), 12345u);
+
+      std::vector<uint8_t> regenerated;
+      const auto [result, written] =
+          regenerateFile(temp_dir.path(), std::string(item.name) + "-" + std::to_string(blueprint),
+                         source_midi, &regenerated);
+      if (item.replayable) {
+        ASSERT_EQ(result, 0);
+        EXPECT_EQ(regenerated, source_midi) << "--regenerate rebuilt a different song";
+      } else {
+        EXPECT_EQ(result, 1);
+        EXPECT_FALSE(written) << "Wrote a different song where a reproduction was requested";
+      }
+    }
+  }
+}
+
+TEST(CliGenerateModeTest, LegacyMetadataWithoutDrumsReplaysWithoutDrums) {
+  // RhythmLock requires drums unless the caller turned them off, and a format-3
+  // file records only the value the take resolved to.
+  const auto config = configFromMetadata(
+      R"({"format_version":3,"style_preset_id":0,"seed":77,"blueprint_id":1,"drums_enabled":false})");
+  EXPECT_FALSE(config.drums_enabled);
+  EXPECT_TRUE(config.drums_enabled_explicit);
+  midisketch::MidiSketch sketch;
+  sketch.generateFromConfig(config);
+  ASSERT_FALSE(sketch.getSong().vocal().empty());
+  EXPECT_TRUE(sketch.getSong().drums().empty());
+}
+
+TEST(CliGenerateModeTest, FoldedChordExtensionProbabilitiesSurviveReplay) {
+  auto config = midisketch::createDefaultSongConfig(0);
+  config.seed = 12345;
+  config.mood = static_cast<uint8_t>(midisketch::Mood::CityPop);
+  config.mood_explicit = true;
+  midisketch::MidiSketch sketch;
+  sketch.setMidiFormat(midisketch::MidiFormat::SMF1);
+  sketch.generateFromConfig(config);
+  const float mood_ninth = sketch.getParams().chord_extension.ninth_probability;
+  ASSERT_GT(sketch.getParams().chord_extension.seventh_probability, 0.0f)
+      << "fixture must start from a mood that plays sevenths";
+
+  midisketch::AccompanimentConfig acc;
+  acc.present_fields = midisketch::AccompanimentConfig::ChordExt7thProb;
+  acc.chord_ext_7th_prob = 0.0f;
+  sketch.regenerateAccompaniment(acc);
+
+  const auto restored = configFromMetadata(metadataOf(sketch.getMidi()));
+  EXPECT_TRUE(restored.chord_ext_prob_explicit);
+  const auto replayed = midisketch::ConfigConverter::convert(restored);
+  EXPECT_FLOAT_EQ(replayed.chord_extension.seventh_probability, 0.0f);
+  EXPECT_FLOAT_EQ(replayed.chord_extension.ninth_probability, mood_ninth)
+      << "a probability the caller left alone must keep the value the take used";
 }
 
 TEST(CliGenerateModeTest, RegenerationRefusesDamagedMetadataInsteadOfInventingASong) {
@@ -879,6 +1054,30 @@ TEST(CliGenerateModeTest, BannerDoesNotAnnounceATempoTheSongDoesNotUse) {
         << "Status output names a tempo the generated song does not use";
   }
   EXPECT_GT(announced_count, 0u) << "The generated tempo is never reported";
+}
+
+TEST(CliGenerateModeTest, FormLineNamesWhatTheSectionsWereBuiltFrom) {
+  // A blueprint flow replaces the drawn form; naming that form as "selected"
+  // reports a structure the song does not have. An explicit form still names it.
+  ScopedTempDirectory temp_dir;
+  auto formLine = [&](int form_id) {
+    ParsedArgs args;
+    args.seed = 1400;
+    args.blueprint_id = 4;
+    args.form_id = form_id;
+    args.output_file = (temp_dir.path() / "form.mid").string();
+    ScopedStreamCapture stdout_capture(std::cout);
+    EXPECT_EQ(runGenerateMode(args), 0);
+    const std::string out = stdout_capture.str();
+    const size_t pos = out.find("Form: ");
+    EXPECT_NE(pos, std::string::npos);
+    return pos == std::string::npos ? std::string() : out.substr(pos, out.find('\n', pos) - pos);
+  };
+
+  EXPECT_EQ(formLine(-1), "Form: IdolStandard flow");
+  const auto full_pop = midisketch::StructurePattern::FullPop;
+  EXPECT_EQ(formLine(static_cast<int>(full_pop)),
+            std::string("Form: ") + midisketch::getStructureName(full_pop) + " (selected)");
 }
 
 TEST(CliGenerateModeTest, EventsJsonStatesTheKeyNeededToRecoverInternalPitches) {

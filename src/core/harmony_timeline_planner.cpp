@@ -244,6 +244,23 @@ ChordExtension sectionColour(ChordExtension preferred, const ChordExtensionParam
   return rng_util::rollProbability(rng, probability) ? colour : ChordExtension::None;
 }
 
+/// @brief The colour @p section gives a chord at @p bar, under the caller's settings.
+ChordExtension sectionChordColour(const Section& section, uint8_t bar, int8_t degree,
+                                  int8_t next_degree, int8_t prev_degree,
+                                  const GeneratorParams& params, std::mt19937& rng) {
+  bool is_minor_chord = (getChordQuality(degree) == ChordQuality::Minor);
+  bool is_dominant_chord = (degree == 4);
+  ReharmonizationResult reharm =
+      reharmonizeForSection(degree, section.type, is_minor_chord, is_dominant_chord,
+                            params.chord_extension.enable_7th, next_degree, prev_degree);
+  ChordExtension extension = selectChordExtension(reharm.degree, section.type, bar, section.bars,
+                                                  params.chord_extension, rng);
+  if (reharm.extension_overridden) {
+    extension = sectionColour(reharm.extension, params.chord_extension, rng);
+  }
+  return extension;
+}
+
 void planAndRegisterChordExtensions(const Arrangement& arrangement, const GeneratorParams& params,
                                     IHarmonyCoordinator& harmony) {
   if (!params.chord_extension.enable_sus && !params.chord_extension.enable_7th &&
@@ -282,19 +299,8 @@ void planAndRegisterChordExtensions(const Arrangement& arrangement, const Genera
         int8_t next_degree = harmony.getChordDegreeAt(entry_end);
         int8_t prev_degree =
             (entry_start >= TICKS_PER_BAR) ? harmony.getChordDegreeAt(entry_start - 1) : -1;
-
-        bool is_minor_chord = (getChordQuality(degree) == ChordQuality::Minor);
-        bool is_dominant_chord = (degree == 4);
-        ReharmonizationResult reharm =
-            reharmonizeForSection(degree, section.type, is_minor_chord, is_dominant_chord,
-                                  params.chord_extension.enable_7th, next_degree, prev_degree);
-
-        ChordExtension extension = selectChordExtension(
-            reharm.degree, section.type, bar, section.bars, params.chord_extension, extension_rng);
-
-        if (reharm.extension_overridden) {
-          extension = sectionColour(reharm.extension, params.chord_extension, extension_rng);
-        }
+        ChordExtension extension = sectionChordColour(section, bar, degree, next_degree,
+                                                      prev_degree, params, extension_rng);
 
         if (isSusExtension(prev_extension) && isSusExtension(extension)) {
           extension = ChordExtension::None;
@@ -318,13 +324,62 @@ void planAndRegisterChordExtensions(const Arrangement& arrangement, const Genera
   }
 }
 
+/// @brief Close the song on the tonic, approached from IV or V.
+///
+/// The last section otherwise stops wherever its loop happens to be, so most
+/// songs ended on V or vi. The final bar becomes I, and a penultimate bar that
+/// does not already end on IV or V becomes V; each takes the colour its section
+/// gives that chord, with no suspension left unresolved at the end.
+void planAndRegisterFinalCadence(const Arrangement& arrangement, const GeneratorParams& params,
+                                 IHarmonyCoordinator& harmony) {
+  const auto& sections = arrangement.sections();
+  if (sections.empty() || sections.back().bars == 0) return;
+  constexpr int8_t kTonic = 0;
+  constexpr int8_t kSubdominant = 3;
+  constexpr int8_t kDominant = 4;
+  constexpr uint32_t kFinalCadenceSalt = 0xF17A1CADU;
+  uint32_t cadence_seed = params.seed ^ kFinalCadenceSalt;
+  if (cadence_seed == 0) cadence_seed = kFinalCadenceSalt;
+  std::mt19937 rng(cadence_seed);
+  const bool coloured = params.chord_extension.enable_sus || params.chord_extension.enable_7th ||
+                        params.chord_extension.enable_9th;
+
+  const Section& last = sections.back();
+  auto colourFor = [&](uint8_t bar, int8_t degree, int8_t next, int8_t prev) {
+    if (!coloured) return ChordExtension::None;
+    ChordExtension extension = sectionChordColour(last, bar, degree, next, prev, params, rng);
+    return isSusExtension(extension) ? ChordExtension::None : extension;
+  };
+
+  const Tick song_end = last.endTick();
+  const Tick final_start = song_end - TICKS_PER_BAR;
+  const uint8_t final_bar = static_cast<uint8_t>(last.bars - 1);
+  int8_t before_final = harmony.getChordDegreeAt(final_start - 1);
+  if (last.bars >= 2) {
+    const int8_t approach = harmony.getChordDegreeAt(final_start - TICK_HALF);
+    if (approach != kSubdominant && approach != kDominant) {
+      const Tick approach_start = final_start - TICKS_PER_BAR;
+      const int8_t prev = approach_start > 0 ? harmony.getChordDegreeAt(approach_start - 1) : -1;
+      registerReplacementOutsideSecondaryDominants(
+          harmony, approach_start, final_start, kDominant,
+          colourFor(static_cast<uint8_t>(final_bar - 1), kDominant, kTonic, prev));
+      before_final = kDominant;
+    }
+  }
+  // The final bar is written whole: nothing after it is left for a dominant to resolve to.
+  harmony.registerChordReplacement(final_start, song_end, kTonic,
+                                   colourFor(final_bar, kTonic, kTonic, before_final),
+                                   /*secondary_dominant=*/false);
+}
+
 /// @brief Make every later statement of a chorus loop state the first one's harmony.
 ///
 /// The planners above decide per entry and some decide by chance, so the
 /// second pass through the same loop came out with a secondary dominant, a
 /// colour or a substitute the first pass did not have, and the hook sung over
-/// it a second time met different chords. The last two bars stay as planned:
-/// that is where the cadence the section closes on is written.
+/// it a second time met different chords. The last two bars are not restated,
+/// so a cadence fix or the song's final cadence written there survives; in a
+/// chorus that receives neither they are simply the loop's last slots.
 void restateChorusLoops(const Arrangement& arrangement, const GeneratorParams& params,
                         const ChordProgression& progression, IHarmonyCoordinator& harmony) {
   for (const auto& section : arrangement.sections()) {
@@ -354,6 +409,7 @@ void registerPlannedHarmonyTimeline(const Arrangement& arrangement, const Genera
   planAndRegisterSecondaryDominants(arrangement, progression, params.mood, sec_dom_rng, harmony,
                                     ModulationCalculator::plan(params, arrangement.sections()));
   planAndRegisterCadenceFixes(arrangement, params, progression, harmony);
+  planAndRegisterFinalCadence(arrangement, params, harmony);
   planAndRegisterDominantPreparation(arrangement, params, harmony);
   planAndRegisterPassingDiminished(arrangement, harmony);
   planAndRegisterTritoneSubstitutions(arrangement, params, harmony);

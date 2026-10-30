@@ -116,11 +116,14 @@ struct DissonanceSummary {
   uint32_t high_severity;                ///< High severity count
   uint32_t medium_severity;              ///< Medium severity count
   uint32_t low_severity;                 ///< Low severity count
-  Key key;                               ///< Key the song sounds in (see DissonanceIssue)
-  Tick modulation_tick;                  ///< Modulation position
-  int8_t modulation_amount;              ///< Modulation semitones
-  uint32_t pre_modulation_issues;        ///< Issues before modulation
-  uint32_t post_modulation_issues;       ///< Issues after modulation
+  /// Key the song sounds in (see DissonanceIssue). A report of a parsed external file leaves
+  /// it at C (a zero offset: its pitches already sound as written) and detects no key, so
+  /// `key_name` there names no key.
+  Key key;
+  Tick modulation_tick;             ///< Modulation position
+  int8_t modulation_amount;         ///< Modulation semitones
+  uint32_t pre_modulation_issues;   ///< Issues before modulation
+  uint32_t post_modulation_issues;  ///< Issues after modulation
 };
 
 /// @brief Complete dissonance analysis report.
@@ -131,8 +134,11 @@ struct DissonanceReport {
 
 /**
  * @brief Analyze generated song for dissonance.
+ *
+ * Rebuilds the planned harmony timeline from @p params the way generation does,
+ * so the song is judged against the same chords as the overload below.
  * @param song Song to analyze
- * @param params Generation params (for chord info)
+ * @param params Generation params (progression, mood and seed the plan derives from)
  * @return DissonanceReport with all issues
  */
 DissonanceReport analyzeDissonance(const Song& song, const GeneratorParams& params);

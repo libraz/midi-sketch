@@ -99,6 +99,9 @@ enum class TransformStepType : uint8_t {
   PostProcessVelocity,  ///< PostProcessor velocity modification (input=old, output=new)
   PostProcessDuration,  ///< PostProcessor duration modification (param1=reason)
   PostProcessTiming,    ///< PostProcessor timing modification (param1=offset, param2=reason)
+  RegisterLift,         ///< A restated hook head lifted to a higher scale tone
+  LastNoteShift,        ///< A phrase ending moved by scale degrees (param1=degrees)
+  SequenceTranspose,    ///< A B-section phrase transposed as a sequence (param1=semitones)
 };
 
 /// @brief Strategy used to resolve a pitch collision.
@@ -172,6 +175,12 @@ inline const char* transformStepTypeToString(TransformStepType type) {
       return "post_process_duration";
     case TransformStepType::PostProcessTiming:
       return "post_process_timing";
+    case TransformStepType::RegisterLift:
+      return "register_lift";
+    case TransformStepType::LastNoteShift:
+      return "last_note_shift";
+    case TransformStepType::SequenceTranspose:
+      return "sequence_transpose";
   }
   return "unknown";
 }

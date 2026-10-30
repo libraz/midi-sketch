@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 #include "core/chord_utils.h"
 #include "core/i_harmony_context.h"
@@ -22,6 +23,7 @@
 #include "core/timing_constants.h"
 #include "core/velocity.h"
 #include "track/melody/melody_utils.h"
+#include "track/vocal/vocal_recitation.h"
 
 namespace midisketch {
 
@@ -54,7 +56,11 @@ void enforceVocalPitchConstraints(std::vector<NoteEvent>& all_notes, const Gener
     int curr_pitch = all_notes[i].note;
     int interval = std::abs(curr_pitch - prev_pitch);
     int max_interval = effectiveMaxIntervalAt(all_notes[i].start_tick, sections, ctx_max_leap);
-    if (interval > max_interval) {
+    // A chant or recitation run moves as one or not at all.
+    if (interval > max_interval && all_notes[i].is_syllabic_subdivision) {
+      moveHeldRun(all_notes, heldRunStart(all_notes, i), prev_pitch, max_interval, params.vocal_low,
+                  params.vocal_high, harmony, TransformStepType::IntervalFix);
+    } else if (interval > max_interval) {
 #ifdef MIDISKETCH_NOTE_PROVENANCE
       uint8_t old_pitch = all_notes[i].note;
 #endif
@@ -86,9 +92,18 @@ void enforceVocalPitchConstraints(std::vector<NoteEvent>& all_notes, const Gener
   }
 
   // FINAL SCALE ENFORCEMENT: Ensure all notes are diatonic
-  for (auto& note : all_notes) {
+  constexpr int kScaleSnapReach = 2;  // a whole step: past the nearest scale tone either side
+  for (size_t i = 0; i < all_notes.size(); ++i) {
+    NoteEvent& note = all_notes[i];
     int snapped = snapToNearestScaleTone(note.note, 0);  // Always C major internally
-    if (snapped != note.note) {
+    if (snapped != note.note && note.is_syllabic_subdivision) {
+      const size_t first = heldRunStart(all_notes, i);
+      moveHeldRun(all_notes, first, first > 0 ? all_notes[first - 1].note : -1,
+                  effectiveMaxIntervalAt(note.start_tick, sections, ctx_max_leap),
+                  std::max<int>(params.vocal_low, note.note - kScaleSnapReach),
+                  std::min<int>(params.vocal_high, note.note + kScaleSnapReach), harmony,
+                  TransformStepType::ScaleSnap);
+    } else if (snapped != note.note) {
 #ifdef MIDISKETCH_NOTE_PROVENANCE
       uint8_t old_pitch = note.note;
 #endif
@@ -261,6 +276,8 @@ void breakSameDirectionLeapChains(std::vector<NoteEvent>& all_notes, const IHarm
     }
 
     if (chain_count < 3) continue;
+    // A chant or recitation run note is not moved alone.
+    if (all_notes[i].is_syllabic_subdivision) continue;
 
     melody::MelodicNeighborhood neighborhood;
     neighborhood.start = all_notes[i].start_tick;
@@ -337,6 +354,24 @@ void resolveNotesTheChordRefuses(std::vector<NoteEvent>& all_notes, const IHarmo
     // replacement is a different gesture rather than a correction.
     constexpr int kReach = 7;
     const int max_interval = effectiveMaxIntervalAt(note.start_tick, sections, ctx_max_leap);
+    // A chant or recitation run moves as one; one no pitch can hold whole
+    // stops being a run.
+    if (note.is_syllabic_subdivision) {
+      const size_t first = heldRunStart(all_notes, i);
+      if (moveHeldRun(all_notes, first, first > 0 ? all_notes[first - 1].note : -1, max_interval,
+                      std::max(static_cast<int>(vocal_low), static_cast<int>(note.note) - kReach),
+                      note.note, harmony, TransformStepType::ChordToneSnap)) {
+        continue;
+      }
+      // No pitch holds across the whole run: it stops being a run, and the
+      // refused note is resolved on its own.
+      const uint8_t held = note.note;
+      for (size_t k = first; k < all_notes.size() && all_notes[k].is_syllabic_subdivision &&
+                             all_notes[k].note == held;
+           ++k) {
+        all_notes[k].is_syllabic_subdivision = false;
+      }
+    }
     const int floor_pitch =
         std::max(static_cast<int>(vocal_low), static_cast<int>(note.note) - kReach);
     for (int alt = static_cast<int>(note.note) - 1; alt >= floor_pitch; --alt) {
@@ -433,7 +468,9 @@ void applyVocalPitchBendExpressions(MidiTrack& track, const std::vector<NoteEven
       }
     }
 
-    // Apply vibrato to sustained notes
+    // Apply vibrato to sustained notes. Its bends are written after the
+    // portamento decision below, so a glide owns its own window.
+    std::vector<PitchBendEvent> vibrato_bends;
     constexpr Tick kVibratoMinDuration = TICKS_PER_BEAT / 2;
     constexpr Tick kVibratoDelay = TICKS_PER_BEAT / 4;
     if (note.duration >= kVibratoMinDuration && !is_phrase_end) {
@@ -465,17 +502,15 @@ void applyVocalPitchBendExpressions(MidiTrack& track, const std::vector<NoteEven
           Tick vibrato_duration = note.duration - kVibratoDelay;
 
           if (vibrato_duration >= TICKS_PER_BEAT / 4) {
-            auto vibrato_bends = PitchBendCurves::generateVibrato(
+            vibrato_bends = PitchBendCurves::generateVibrato(
                 vibrato_start, vibrato_duration, vibrato_depth, vibrato_rate, params.bpm);
-            for (const auto& bend : vibrato_bends) {
-              track.addPitchBend(bend.tick, bend.value);
-            }
           }
         }
       }
     }
 
     // Portamento: pitch glide between consecutive close notes in same phrase
+    Tick glide_start = std::numeric_limits<Tick>::max();
     if (note_idx + 1 < all_notes.size()) {
       const auto& next_note = all_notes[note_idx + 1];
       Tick this_end = note.start_tick + note.duration;
@@ -489,28 +524,36 @@ void applyVocalPitchBendExpressions(MidiTrack& track, const std::vector<NoteEven
         float portamento_prob = (params.vocal_attitude == VocalAttitude::Raw) ? 0.5f : 0.3f;
         portamento_prob *= physics.pitch_bend_scale;
 
-        if (rng_util::rollProbability(rng, portamento_prob)) {
+        // The glide is written only inside the +/-2 semitone bend range
+        // kSemitone assumes (no RPN 0 widens it); a wider one would clamp
+        // short of the next note and jump. The draw stays for every candidate
+        // so the bends after it are unchanged.
+        constexpr int kBendRangeSemitones = 2;
+        if (rng_util::rollProbability(rng, portamento_prob) && abs_diff <= kBendRangeSemitones &&
+            note.duration > TICK_SIXTEENTH) {
           // Glide from current pitch toward next pitch over last 16th of current note
-          Tick glide_start = note.start_tick + note.duration - TICK_SIXTEENTH;
-          if (glide_start > note.start_tick) {
-            // Target bend value: pitch_diff semitones worth of pitch bend
-            int16_t target_bend = static_cast<int16_t>(pitch_diff * PitchBend::kSemitone);
-            // Clamp to valid pitch bend range
-            target_bend = std::clamp(target_bend, PitchBend::kMin, PitchBend::kMax);
+          glide_start = note.start_tick + note.duration - TICK_SIXTEENTH;
+          // Target bend value: pitch_diff semitones worth of pitch bend
+          int16_t target_bend = static_cast<int16_t>(pitch_diff * PitchBend::kSemitone);
+          // Clamp to valid pitch bend range
+          target_bend = std::clamp(target_bend, PitchBend::kMin, PitchBend::kMax);
 
-            // Generate smooth glide (4 steps over TICK_SIXTEENTH)
-            constexpr int kGlideSteps = 4;
-            Tick step_size = TICK_SIXTEENTH / kGlideSteps;
-            for (int step = 0; step <= kGlideSteps; ++step) {
-              float ratio = static_cast<float>(step) / static_cast<float>(kGlideSteps);
-              int16_t bend_val = static_cast<int16_t>(target_bend * ratio);
-              track.addPitchBend(glide_start + step * step_size, bend_val);
-            }
-            // Reset pitch bend at next note start
-            track.addPitchBend(next_note.start_tick, PitchBend::kCenter);
+          // Generate smooth glide (4 steps over TICK_SIXTEENTH)
+          constexpr int kGlideSteps = 4;
+          Tick step_size = TICK_SIXTEENTH / kGlideSteps;
+          for (int step = 0; step <= kGlideSteps; ++step) {
+            float ratio = static_cast<float>(step) / static_cast<float>(kGlideSteps);
+            int16_t bend_val = static_cast<int16_t>(target_bend * ratio);
+            track.addPitchBend(glide_start + step * step_size, bend_val);
           }
+          // Reset pitch bend at next note start
+          track.addPitchBend(next_note.start_tick, PitchBend::kCenter);
         }
       }
+    }
+
+    for (const auto& bend : vibrato_bends) {
+      if (bend.tick < glide_start) track.addPitchBend(bend.tick, bend.value);
     }
   }
 }

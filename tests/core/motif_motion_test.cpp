@@ -5,7 +5,10 @@
 
 #include <gtest/gtest.h>
 
+#include <vector>
+
 #include "core/generator.h"
+#include "core/preset_data.h"
 #include "core/preset_types.h"
 #include "test_support/generator_test_fixture.h"
 
@@ -166,6 +169,47 @@ TEST_F(MotifMotionGenerationTest, NotesInValidRange) {
           << "Motion " << static_cast<int>(motion) << " produced invalid high pitch";
     }
   }
+}
+
+// ============================================================================
+// Explicit motion against blueprint section hints
+// ============================================================================
+
+/// Motif pitches sounding inside the sections a blueprint slot gives a motion hint.
+std::vector<uint8_t> hintedSectionMotifPitches(const Song& song) {
+  std::vector<uint8_t> pitches;
+  for (const auto& section : song.arrangement().sections()) {
+    if (section.motif_motion_hint == 0) continue;
+    for (const auto& note : song.motif().notes()) {
+      if (note.start_tick >= section.start_tick && note.start_tick < section.endTick()) {
+        pitches.push_back(note.note);
+      }
+    }
+  }
+  return pitches;
+}
+
+TEST(MotifExplicitMotionTest, ExplicitMotionGovernsSectionsTheBlueprintHints) {
+  auto make = [](uint8_t motion) {
+    SongConfig config = createDefaultSongConfig(0);
+    config.blueprint_id = 1;  // RhythmLock A slots carry an Ostinato hint
+    config.seed = 7;
+    config.motif_motion = motion;
+    return config;
+  };
+  Generator stepwise;
+  stepwise.generateFromConfig(make(0));
+  Generator wide;
+  wide.generateFromConfig(make(2));
+  ASSERT_TRUE(stepwise.getParams().motif_motion_explicit);
+  const auto stepwise_pitches = hintedSectionMotifPitches(stepwise.getSong());
+  ASSERT_FALSE(stepwise_pitches.empty()) << "the blueprint must hint at least one section";
+  EXPECT_NE(stepwise_pitches, hintedSectionMotifPitches(wide.getSong()))
+      << "a caller-set motion was replaced by the section hint";
+
+  Generator preset;
+  preset.generateFromConfig(make(0xFF));
+  EXPECT_FALSE(preset.getParams().motif_motion_explicit);
 }
 
 }  // namespace

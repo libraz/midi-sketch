@@ -32,30 +32,24 @@ namespace {
 constexpr int kMetadataFormatVersionLegacy = 3;
 constexpr int kMetadataFormatVersionWithConfig = 4;
 
-// Generate metadata JSON from generator params (v3 legacy)
-std::string generateMetadata(const GeneratorParams& params) {
+// Generate metadata JSON: v4 with the SongConfig when there is one, v3 legacy
+// params-only otherwise. "replayable": false marks a song that replaying the
+// recorded inputs would not reproduce; it is omitted otherwise.
+std::string generateMetadata(const GeneratorParams& params, const SongConfig* config,
+                             bool replayable) {
   std::ostringstream oss;
   json::Writer w(oss);
   w.beginObject()
       .write("generator", "midi-sketch")
-      .write("format_version", kMetadataFormatVersionLegacy)
+      .write("format_version",
+             config != nullptr ? kMetadataFormatVersionWithConfig : kMetadataFormatVersionLegacy)
       .write("library_version", MidiSketch::version());
-  params.writeTo(w);
-  w.endObject();
-  return oss.str();
-}
-
-// Generate metadata JSON with SongConfig (v4: deterministic regeneration)
-std::string generateMetadata(const GeneratorParams& params, const SongConfig& config) {
-  std::ostringstream oss;
-  json::Writer w(oss);
-  w.beginObject()
-      .write("generator", "midi-sketch")
-      .write("format_version", kMetadataFormatVersionWithConfig)
-      .write("library_version", MidiSketch::version());
-  w.beginObject("config");
-  config.writeTo(w);
-  w.endObject();
+  if (!replayable) w.write("replayable", false);
+  if (config != nullptr) {
+    w.beginObject("config");
+    config->writeTo(w);
+    w.endObject();
+  }
   params.writeTo(w);
   w.endObject();
   return oss.str();
@@ -93,8 +87,10 @@ void applyVocalConfigTo(SongConfig& config, const VocalConfig& vocal) {
 }
 
 // Counterpart of applyVocalConfigTo for accompaniment updates, mirroring
-// Generator::applyAccompanimentConfig() field for field.
-void applyAccompanimentConfigTo(SongConfig& config, const AccompanimentConfig& acc) {
+// Generator::applyAccompanimentConfig() field for field. @p applied are the
+// parameters after that update, which hold the probabilities the take used.
+void applyAccompanimentConfigTo(SongConfig& config, const AccompanimentConfig& acc,
+                                const GeneratorParams& applied) {
   if (acc.has(AccompanimentConfig::DrumsEnabled)) {
     config.drums_enabled = acc.drums_enabled;
     // A caller-supplied value has to survive regeneration even when the
@@ -130,17 +126,18 @@ void applyAccompanimentConfigTo(SongConfig& config, const AccompanimentConfig& a
   if (acc.has(AccompanimentConfig::ChordExtTritoneSub)) {
     config.chord_extension.tritone_sub = acc.chord_ext_tritone_sub;
   }
-  if (acc.has(AccompanimentConfig::ChordExtSusProb)) {
-    config.chord_extension.sus_probability = acc.chord_ext_sus_prob;
-  }
-  if (acc.has(AccompanimentConfig::ChordExt7thProb)) {
-    config.chord_extension.seventh_probability = acc.chord_ext_7th_prob;
-  }
-  if (acc.has(AccompanimentConfig::ChordExt9thProb)) {
-    config.chord_extension.ninth_probability = acc.chord_ext_9th_prob;
-  }
-  if (acc.has(AccompanimentConfig::ChordExtTritoneSubProb)) {
-    config.chord_extension.tritone_sub_probability = acc.chord_ext_tritone_sub_prob;
+  if (acc.has(AccompanimentConfig::ChordExtSusProb) ||
+      acc.has(AccompanimentConfig::ChordExt7thProb) ||
+      acc.has(AccompanimentConfig::ChordExt9thProb) ||
+      acc.has(AccompanimentConfig::ChordExtTritoneSubProb)) {
+    // The explicit flag keeps all four probabilities from the mood table, so the
+    // ones the caller left alone are stored at the values the take resolved them to.
+    config.chord_extension.sus_probability = applied.chord_extension.sus_probability;
+    config.chord_extension.seventh_probability = applied.chord_extension.seventh_probability;
+    config.chord_extension.ninth_probability = applied.chord_extension.ninth_probability;
+    config.chord_extension.tritone_sub_probability =
+        applied.chord_extension.tritone_sub_probability;
+    config.chord_ext_prob_explicit = true;
   }
   if (acc.has(AccompanimentConfig::Humanize)) config.humanize = acc.humanize;
   if (acc.has(AccompanimentConfig::HumanizeTiming)) config.humanize_timing = acc.humanize_timing;
@@ -173,28 +170,22 @@ MidiSketch::MidiSketch() {}
 
 MidiSketch::~MidiSketch() {}
 
-void MidiSketch::rebuildMidiLegacy() {
-  const auto& params = generator_.getParams();
-  midi_writer_.build(generator_.getSong(), params.key, params.mood, generateMetadata(params),
-                     midi_format_, params.blueprint_id);
-}
-
-void MidiSketch::rebuildMidiWithConfig(const SongConfig& config) {
-  const auto& params = generator_.getParams();
-  // SongConfig is serialized into v4 metadata and is later used verbatim by
-  // --regenerate. Preserve an auto-seed only until generation starts; the
-  // metadata must contain the concrete seed that was actually used.
-  SongConfig resolved_config = config;
-  resolved_config.seed = params.seed;
-  midi_writer_.build(generator_.getSong(), config.key, params.mood,
-                     generateMetadata(params, resolved_config), midi_format_, params.blueprint_id);
-}
-
 void MidiSketch::rebuildMidi() {
+  // The recorded inputs are what --regenerate replays, so both blocks name the
+  // resolved seed the song was generated with, never a partial re-roll's seed.
+  GeneratorParams params = generator_.getParams();
+  params.seed = generator_.generationSeed();
+  const bool replayable = generator_.isReplayable();
   if (has_config_) {
-    rebuildMidiWithConfig(config_);
+    SongConfig resolved_config = config_;
+    resolved_config.seed = params.seed;
+    midi_writer_.build(generator_.getSong(), config_.key, params.mood,
+                       generateMetadata(params, &resolved_config, replayable), midi_format_,
+                       params.blueprint_id);
   } else {
-    rebuildMidiLegacy();
+    midi_writer_.build(generator_.getSong(), params.key, params.mood,
+                       generateMetadata(params, nullptr, replayable), midi_format_,
+                       params.blueprint_id);
   }
 }
 
@@ -248,13 +239,13 @@ void MidiSketch::regenerateAccompaniment(uint32_t new_seed) {
 
 void MidiSketch::regenerateAccompaniment(const AccompanimentConfig& config) {
   generator_.regenerateAccompaniment(config);
-  applyAccompanimentConfigTo(config_, config);
+  applyAccompanimentConfigTo(config_, config, generator_.getParams());
   rebuildMidi();
 }
 
 void MidiSketch::generateAccompanimentForVocal(const AccompanimentConfig& config) {
   generator_.generateAccompanimentForVocal(config);
-  applyAccompanimentConfigTo(config_, config);
+  applyAccompanimentConfigTo(config_, config, generator_.getParams());
   rebuildMidi();
 }
 
@@ -442,7 +433,7 @@ std::string MidiSketch::getEventsJson() const {
       .write("blueprint", static_cast<int>(generator_.resolvedBlueprintId()))
       .write("style", static_cast<int>(params.style_preset_id))
       .write("mood", static_cast<int>(params.mood))
-      .write("seed", params.seed)
+      .write("seed", generator_.generationSeed())
       .write("key", static_cast<int>(key))
       .write("modulation_tick", mod_tick)
       .write("modulation_semitones", static_cast<int>(mod_amount))

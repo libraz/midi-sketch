@@ -28,6 +28,7 @@
 #include "core/production_blueprint.h"
 #include "core/song.h"
 #include "core/timing_constants.h"
+#include "core/track_collision_detector.h"
 #include "midisketch.h"
 #include "test_helpers/note_event_test_helper.h"
 #include "test_support/stub_harmony_context.h"
@@ -239,10 +240,6 @@ TEST(AuxTest, RhythmicPatternsFollowHarmonyAtEachOnset) {
   for (const auto& note : groove_notes) {
     EXPECT_TRUE(isChordToneAt(note, harmony)) << "GrooveAccent tick=" << note.start_tick;
   }
-}
-
-TEST(AuxTest, AuxHarmonicRoleUnisonValue) {
-  EXPECT_EQ(static_cast<uint8_t>(AuxHarmonicRole::Unison), 4);
 }
 
 TEST(AuxTest, HarmonyModeEnumValues) {
@@ -944,6 +941,51 @@ TEST(AuxTest, MotifCounterLowVocalStaysInTheRegisterBelowTheVocalFloor) {
     EXPECT_GE(note.note, AUX_LOW);
     EXPECT_LE(note.note, std::max<int>(va.lowest_pitch, AUX_LOW + 12))
         << "a counter above the vocal floor is cut back by the per-onset ceiling";
+  }
+}
+
+TEST(AuxTest, MotifCounterNeverSoundsAPairTheDetectorRefuses) {
+  AuxGenerator generator;
+  auto ctx = createTestContext();
+
+  std::vector<NoteEvent> melody;
+  Tick current = 0;
+  for (int idx = 0; idx < 16; ++idx) {
+    melody.push_back(NoteEventTestHelper::create(current, TICKS_PER_BEAT / 2,
+                                                 static_cast<uint8_t>(58 + (idx % 6)), 100));
+    current += TICKS_PER_BEAT;
+  }
+  ctx.main_melody = &melody;
+  ctx.main_tessitura = {58, 63, 60, 52, 68};
+
+  HarmonyContext harmony;
+  std::mt19937 rng(42);
+
+  MidiTrack vocal_track;
+  for (const auto& note : melody) {
+    vocal_track.addNote(note);
+  }
+  VocalAnalysis va = analyzeVocal(vocal_track);
+
+  AuxConfig config;
+  config.function = AuxFunction::MotifCounter;
+  config.velocity_ratio = 0.7f;
+  config.density_ratio = 1.0f;
+
+  auto notes = generator.generateMotifCounter(ctx, config, harmony, va, rng);
+
+  ASSERT_FALSE(notes.empty());
+  for (const auto& note : notes) {
+    for (const auto& vocal : melody) {
+      if (vocal.start_tick >= note.start_tick + note.duration ||
+          note.start_tick >= vocal.start_tick + vocal.duration) {
+        continue;
+      }
+      const Tick at = std::max(note.start_tick, vocal.start_tick);
+      EXPECT_FALSE(
+          isClashingPair(note.note, TrackRole::Aux, vocal.note, TrackRole::Vocal, &harmony, at, at))
+          << "aux " << int(note.note) << " against vocal " << int(vocal.note);
+    }
   }
 }
 

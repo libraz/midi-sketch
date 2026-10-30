@@ -155,7 +155,9 @@ export class MidiSketch {
 
   /**
    * Regenerate vocal track with new configuration or seed.
-   * Keeps the same chord progression and structure.
+   * Keeps the same chord progression and structure. Under RhythmSync blueprints the
+   * motif is regenerated too and the accompaniment tracks are cleared, so call
+   * generateAccompaniment() afterwards; other paradigms keep the accompaniment.
    * @param configOrSeed VocalConfig object or seed number (default: 0 = new random)
    * @throws {MidiSketchConfigError} If the vocal config fails validation
    * @throws {MidiSketchGenerationError} If regeneration fails
@@ -297,6 +299,9 @@ export class MidiSketch {
    * then replaces the vocal track with the provided notes.
    * Call generateAccompaniment() after this to generate
    * accompaniment tracks that fit the custom vocal melody.
+   *
+   * Note pitches are internal C-major pitches: the sounding pitch is pitch + key
+   * (plus the modulation amount after the key change).
    *
    * @param config Song configuration (for structure/chord setup)
    * @param notes Array of note inputs representing the custom vocal

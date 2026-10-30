@@ -15,6 +15,8 @@
 #include "core/chord.h"
 #include "core/chord_progression_tracker.h"
 #include "core/chord_utils.h"
+#include "core/harmony_coordinator.h"
+#include "core/harmony_timeline_planner.h"
 #include "core/json_helpers.h"
 #include "core/note_source.h"
 #include "core/pitch_utils.h"
@@ -536,8 +538,12 @@ bool enteringChordExcusesEarlyArrival(uint8_t actual_interval, uint8_t pitch_a, 
                                       const IChordLookup& chord_lookup) {
   const Tick entry = earlyArrivalEntry(overlap_start, overlap_end, chord_lookup);
   if (entry == 0) return false;
+  // The pair mostly sounds over the entering chord, so its degree gets the same
+  // verdict the generation rule gives there (a tritone on a dominant, a maj7 on
+  // I or IV) as well as the chord-tone excuse.
   return chordExcusesFlaggedPair(actual_interval, pitch_a, pitch_b,
-                                 chord_lookup.getChordTonesAt(entry));
+                                 chord_lookup.getChordTonesAt(entry)) ||
+         !checkIntervalDissonance(actual_interval, chord_lookup.getChordDegreeAt(entry)).first;
 }
 
 // Detect simultaneous clashes between any two sounding notes, one track or two
@@ -851,6 +857,8 @@ void detectSustainedInTrack(const MidiTrack& track, TrackRole role,
     for (const auto& change : chord_timeline) {
       if (change.tick <= note_start) continue;
       if (change.tick >= note_end) break;
+      // An overhang shorter than the passing-tone threshold is not acted on by generation.
+      if (note_end - change.tick < kPassingToneOverlap) break;
 
       int8_t new_degree = change.degree;
       if (!chordOrTensionContains(pitch_class, change.tick, ctx.chord_lookup)) {
@@ -1016,13 +1024,14 @@ std::string midiNoteToName(uint8_t midi_note) {
 std::string intervalToName(uint8_t semitones) { return intervalToNameInternal(semitones); }
 
 DissonanceReport analyzeDissonance(const Song& song, const GeneratorParams& params) {
-  const auto& progression = getChordProgression(params.chord_id);
-  // Compatibility fallback for callers that only retained Song + params.
-  // Generation and CLI analysis must use the overload below so substitutions
-  // and planned extensions are not discarded.
-  ChordProgressionTracker chord_tracker;
-  chord_tracker.initialize(song.arrangement(), progression, params.mood);
-  return analyzeDissonance(song, params, chord_tracker);
+  // For callers that only retained Song + params: replay the same planned
+  // harmony timeline generation registers, so both overloads judge a song
+  // against the same chords.
+  const auto& progression = getChordProgression(params);
+  HarmonyCoordinator harmony;
+  harmony.initialize(song.arrangement(), progression, params.mood);
+  registerPlannedHarmonyTimeline(song.arrangement(), params, progression, harmony);
+  return analyzeDissonance(song, params, harmony);
 }
 
 DissonanceReport analyzeDissonance(const Song& song, const GeneratorParams& params,
@@ -1130,8 +1139,7 @@ DissonanceReport analyzeDissonanceFromParsedMidi(const ParsedMidi& midi) {
       const auto& note_b = all_notes[j];
 
       // Check if they overlap in time
-      if (note_b.start >= note_a.end) break;                 // No more overlaps possible
-      if (note_a.track_name == note_b.track_name) continue;  // Same track, skip
+      if (note_b.start >= note_a.end) break;  // No more overlaps possible
 
       // Calculate interval
       uint8_t actual_interval = static_cast<uint8_t>(

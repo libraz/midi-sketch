@@ -27,13 +27,24 @@ bool isSafeBoundary(CrossBoundarySafety safety) {
 /// vocal rather than supporting it, and the low end goes hollow.
 constexpr int kMinVocalOctaveSeparation = 24;
 
+// The chord's own fifth: the tone at root + 7 or root + 6 that belongs to the chord
+// (a diminished chord keeps its flattened fifth), perfect when neither is present.
+int chordFifthPitchClass(const ChordTones& chord_tones) {
+  const int root = chord_tones[0];
+  const int diminished_fifth = (root + 6) % 12;
+  const int perfect_fifth = (root + 7) % 12;
+  const bool has_perfect =
+      std::find(chord_tones.begin(), chord_tones.end(), perfect_fifth) != chord_tones.end();
+  const bool has_diminished =
+      std::find(chord_tones.begin(), chord_tones.end(), diminished_fifth) != chord_tones.end();
+  return (!has_perfect && has_diminished) ? diminished_fifth : perfect_fifth;
+}
+
 // Helper to check if a pitch class is root or 5th of the chord
 bool isRootOrFifth(int pitch_class, const ChordTones& chord_tones) {
   if (chord_tones.empty()) return false;
-  // Root is typically first chord tone, 5th is often third
-  int root = chord_tones[0];
-  int fifth = (root + 7) % 12;  // Perfect 5th
-  return pitch_class == root || pitch_class == fifth;
+  // Root is typically first chord tone
+  return pitch_class == chord_tones[0] || pitch_class == chordFifthPitchClass(chord_tones);
 }
 
 // Create NoteEvent with provenance
@@ -869,7 +880,7 @@ std::vector<PitchCandidate> getSafePitchCandidates(const ICollisionDetector& har
       // Try root and 5th in nearby octaves
       if (!chord_tones.empty()) {
         int root = chord_tones[0];
-        int fifth = (root + 7) % 12;
+        int fifth = chordFifthPitchClass(chord_tones);
         for (int oct_offset = -1; oct_offset <= 1; ++oct_offset) {
           int oct = octave + oct_offset;
           if (oct >= 0 && oct <= 10) {

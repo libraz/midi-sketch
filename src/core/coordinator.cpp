@@ -21,6 +21,7 @@
 #include "core/preset_data.h"
 #include "core/rng_util.h"
 #include "core/secondary_dominant_planner.h"
+#include "core/section_utils.h"
 #include "core/song.h"
 #include "core/structure.h"
 #include "core/timing_constants.h"
@@ -68,9 +69,6 @@ void Coordinator::initialize(const GeneratorParams& params) {
 
   resolveBpm();
 
-  // Store chord progression ID
-  chord_id_ = params.chord_id;
-
   // Initialize priorities based on paradigm
   initializePriorities();
 
@@ -78,7 +76,7 @@ void Coordinator::initialize(const GeneratorParams& params) {
   buildArrangement();
 
   // Initialize harmony coordinator
-  const auto& progression = midisketch::getChordProgression(chord_id_);
+  const auto& progression = midisketch::getChordProgression(params_);
   harmony_->initialize(arrangement_, progression, params.mood);
 
   registerPlannedHarmonyTimeline(arrangement_, params_, progression, *harmony_);
@@ -137,9 +135,6 @@ void Coordinator::initialize(const GeneratorParams& params, const Arrangement& a
   // BPM from params is already resolved by Generator; resolving it again is a no-op.
   resolveBpm();
 
-  // Store chord progression ID
-  chord_id_ = params.chord_id;
-
   // Initialize priorities based on paradigm
   initializePriorities();
 
@@ -160,7 +155,7 @@ void Coordinator::initialize(const GeneratorParams& params, const Arrangement& a
   // generateVocal path) must reset the chord tracker before this overload runs.
   // The standard full-generation path re-initializes the tracker in
   // initializeGenerationState(), so it is registered exactly once.
-  const auto& progression = midisketch::getChordProgression(chord_id_);
+  const auto& progression = midisketch::getChordProgression(params_);
   registerPlannedHarmonyTimeline(arrangement_, params_, progression, *harmony);
 
   // Set track priorities in external harmony coordinator
@@ -222,7 +217,7 @@ ValidationResult Coordinator::validateParams() const {
 // ============================================================================
 
 const ChordProgression& Coordinator::getChordProgression() const {
-  return midisketch::getChordProgression(chord_id_);
+  return midisketch::getChordProgression(params_);
 }
 
 // ============================================================================
@@ -272,9 +267,39 @@ bool Coordinator::isRhythmLockActive() const {
     return false;
   }
 
-  // Check if riff policy is Locked variant
-  uint8_t policy = static_cast<uint8_t>(riff_policy_);
-  return policy >= 1 && policy <= 3;  // LockedContour, LockedPitch, LockedAll
+  return isRiffLocked();
+}
+
+bool Coordinator::isRiffLocked() const { return isLockedRiffPolicy(riff_policy_); }
+
+TrackMask Coordinator::generatedTracks(const Song& song) const {
+  TrackMask generated = TrackMask::None;
+  for (uint8_t index = 0; index < kTrackCount; ++index) {
+    const auto role = static_cast<TrackRole>(index);
+    if (!shouldSkipTrack(role, song) || !song.track(role).notes().empty()) {
+      generated = generated | trackRoleToMask(role);
+    }
+  }
+  return generated;
+}
+
+void Coordinator::deriveSectionDensities(const Song& song) {
+  if (blueprint_ == nullptr || blueprint_->section_flow == nullptr) return;
+  // Only sections of a type the flow has slots for took their densities from a slot mask.
+  auto from_slot = [this](SectionType type) {
+    for (uint8_t i = 0; i < blueprint_->section_count; ++i) {
+      if (blueprint_->section_flow[i].type == type) return true;
+    }
+    return false;
+  };
+  const TrackMask generated = generatedTracks(song);
+  std::vector<Section> sections = arrangement_.sections();
+  for (auto& section : sections) {
+    if (!from_slot(section.type)) continue;
+    section.vocal_density = trackMaskToVocalDensity(section.track_mask & generated);
+    section.backing_density = trackMaskToBackingDensity(section.track_mask & generated);
+  }
+  arrangement_ = Arrangement(sections);
 }
 
 FullTrackContext Coordinator::buildFullTrackContext(TrackRole role, Song& song, std::mt19937& rng,
@@ -284,7 +309,7 @@ FullTrackContext Coordinator::buildFullTrackContext(TrackRole role, Song& song, 
   ctx.params = &params_;
   ctx.rng = &rng;
   ctx.harmony = &harmony;
-  ctx.chord_progression = &midisketch::getChordProgression(chord_id_);
+  ctx.chord_progression = &midisketch::getChordProgression(params_);
 
   // Drum grid (RhythmSync quantization axis; Vocal/Bass align to it).
   if (drum_grid_.grid_resolution > 0) {
@@ -306,13 +331,7 @@ FullTrackContext Coordinator::buildFullTrackContext(TrackRole role, Song& song, 
   // Kick pattern cache for Bass-Kick groove sync. Computed lazily on first
   // Bass request (matches Generator::generateBass() behavior).
   if (role == TrackRole::Bass) {
-    ctx.generated_tracks = TrackMask::None;
-    for (uint8_t index = 0; index < kTrackCount; ++index) {
-      const auto track_role = static_cast<TrackRole>(index);
-      if (!shouldSkipTrack(track_role, song)) {
-        ctx.generated_tracks = ctx.generated_tracks | trackRoleToMask(track_role);
-      }
-    }
+    ctx.generated_tracks = generatedTracks(song);
     if (!kick_cache_) {
       kick_cache_ = computeKickPattern(arrangement_.sections(), params_.mood);
     }
@@ -354,6 +373,7 @@ FullTrackContext Coordinator::buildFullTrackContext(TrackRole role, Song& song, 
 
 void Coordinator::generateAllTracks(Song& song) {
   // Set up song arrangement and metadata
+  deriveSectionDensities(song);
   song.setArrangement(arrangement_);
   song.setBpm(bpm_);
 
@@ -729,11 +749,8 @@ bool Coordinator::shouldSkipTrack(TrackRole role, const Song& song) const {
     if (params_.composition_style == CompositionStyle::MelodyLead) {
       // A locked riff is a riff that repeats, not a riff that is absent, so a
       // locking policy is itself a request for one.
-      const bool riff_is_locked = riff_policy_ == RiffPolicy::LockedContour ||
-                                  riff_policy_ == RiffPolicy::LockedPitch ||
-                                  riff_policy_ == RiffPolicy::LockedAll;
       bool motif_needed =
-          paradigm_ == GenerationParadigm::RhythmSync || params_.addictive_mode || riff_is_locked;
+          paradigm_ == GenerationParadigm::RhythmSync || params_.addictive_mode || isRiffLocked();
       // A section mask only declares a track when the blueprint authored it;
       // arrangements built from a StructurePattern leave every mask at
       // TrackMask::All, where Motif is a default rather than a request.
@@ -1282,15 +1299,28 @@ void Coordinator::applyVoiceLimit(Song& song, const std::vector<Section>& sectio
   };
   std::vector<FrozenBar> frozen_bars;
 
+  // A Motif bar that a later section replays, or that replays an earlier one, is
+  // left out of the limit the way the drums are: it repeats by design, and a copy
+  // written over it here would make what is heard differ from what is replayed.
+  const bool motif_riff_locked = isRiffLocked();
+
   // Pass 1: Determine freeze decisions and copy notes from previous bars.
   // Re-quantization is deferred so that isTrackMoving() comparisons in
   // subsequent bars see the original (un-quantized) copied pitches.
-  for (const auto& section : sections) {
+  for (size_t section_idx = 0; section_idx < sections.size(); ++section_idx) {
+    const Section& section = sections[section_idx];
     if (section.max_moving_voices == 0) continue;
     if (section.bars <= 1) continue;
 
     Tick section_start = section.start_tick;
     uint8_t max_voices = section.max_moving_voices;
+    // An Evolving final chorus replays the first chorus, so neither end may differ from it.
+    const ChorusOccurrence motif_chorus =
+        classifyChorusOccurrence(sections, section_idx, TrackMask::Motif);
+    const bool motif_is_replayed =
+        motif_riff_locked ||
+        (riff_policy_ == RiffPolicy::Evolving &&
+         (motif_chorus == ChorusOccurrence::First || motif_chorus == ChorusOccurrence::Final));
 
     // Process each bar after the first
     for (uint8_t bar_idx = 1; bar_idx < section.bars; ++bar_idx) {
@@ -1301,6 +1331,7 @@ void Coordinator::applyVoiceLimit(Song& song, const std::vector<Section>& sectio
       std::vector<TrackRole> moving_tracks;
       for (size_t pri = 0; pri < kVoiceLimitTrackCount; ++pri) {
         TrackRole role = kVoiceLimitPriority[pri];
+        if (role == TrackRole::Motif && motif_is_replayed) continue;
         const auto& notes = song.track(role).notes();
         if (isTrackMoving(notes, prev_bar_start, curr_bar_start)) {
           moving_tracks.push_back(role);

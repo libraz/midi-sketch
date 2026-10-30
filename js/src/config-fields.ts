@@ -35,6 +35,7 @@ export const CONFIG_FIELDS: readonly ConfigField[] = [
   { js: 'vocalAttitude', cpp: 'vocal_attitude', default: 0, type: 'number' },
   { js: 'vocalStyle', cpp: 'vocal_style', default: 0, type: 'number' },
   { js: 'driveFeel', cpp: 'drive_feel', default: 50, type: 'number' },
+  { js: 'driveFeelExplicit', cpp: 'drive_feel_explicit', default: false, type: 'boolean' },
   { js: 'drumsEnabled', cpp: 'drums_enabled', default: true, type: 'boolean' },
   { js: 'drumsEnabledExplicit', cpp: 'drums_enabled_explicit', default: false, type: 'boolean' },
   { js: 'arpeggioEnabled', cpp: 'arpeggio_enabled', default: false, type: 'boolean' },

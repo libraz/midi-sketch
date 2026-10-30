@@ -94,11 +94,30 @@ struct StructureRequest {
  * exactly one chorus - the last - carries the climax.
  *
  * @param request What the song asks for
- * @param warnings Receives a note when the built length misses the target
+ * @param warnings Receives a note, stating the length built, when the duration is adjusted
+ *        or the built length misses the target
  * @return Sections laid out from tick 0
  */
 std::vector<Section> planSongStructure(const StructureRequest& request,
                                        std::vector<std::string>& warnings);
+
+/// @brief The form a song's sections are actually laid out from.
+struct BuiltForm {
+  StructurePattern pattern = StructurePattern::FullPop;  ///< Form the parameters name
+  const ProductionBlueprint* flow = nullptr;  ///< Blueprint whose flow replaced it, or null
+};
+
+/**
+ * @brief Where planSongStructure() takes the sections of a song with @p params from.
+ *
+ * A blueprint's flow replaces the form unless a duration or an explicit form asks
+ * for one, and the form the parameters name is then only a label. Every consumer
+ * that cares which form plays asks here rather than reading params.structure.
+ *
+ * @param params Resolved generation parameters (blueprint_id already drawn)
+ * @return The form, and the blueprint whose flow replaced it when one did
+ */
+BuiltForm resolveBuiltForm(const GeneratorParams& params);
 
 /**
  * @brief Build sections to match target duration.
@@ -273,7 +292,8 @@ void applyBlueprintOverlay(std::vector<Section>& sections, const ProductionBluep
  * - Verse (A, first): Vocal+minimal -> add layers at bar 2
  * - Pre-chorus (B): Full tracks immediately
  * - Chorus (first): All tracks immediately
- * - Outro: Remove tracks in last 2 bars
+ * - Outro: Remove tracks in last 2 bars; the final bar keeps the chord, or the
+ *   bass when the section's mask has no chord
  *
  * A track the section's mask enables but no entry names (other than the vocal)
  * joins with the last entry, so a default schedule never silences it for the

@@ -300,8 +300,8 @@ TEST(CApiTest, ConfigErrorStringReturnsMessage) {
 
   const char* duration_msg = midisketch_config_error_string(MIDISKETCH_CONFIG_DURATION_TOO_SHORT);
   EXPECT_NE(duration_msg, nullptr);
-  EXPECT_NE(std::string(duration_msg).find("minimum required length"), std::string::npos);
-  EXPECT_EQ(std::string(duration_msg).find("call"), std::string::npos);
+  // The only length validation refuses is the one a song with calls needs.
+  EXPECT_NE(std::string(duration_msg).find("with calls"), std::string::npos);
 
   const char* json_msg = midisketch_config_error_string(MIDISKETCH_CONFIG_INVALID_JSON);
   EXPECT_NE(json_msg, nullptr);
@@ -1112,6 +1112,29 @@ TEST(CApiTest, IndependentHandlesGenerateConcurrently) {
   }
   for (auto& worker : workers) {
     worker.join();
+  }
+}
+
+TEST(CApiTest, VocalEntryPointsRefuseAHandleWithNoSong) {
+  const char* empty = "{}";
+  const char* melody =
+      R"({"seed":9876,"notes":[{"start_tick":0,"duration":480,"pitch":60,"velocity":100}]})";
+  const std::vector<std::function<MidiSketchError(MidiSketchHandle)>> needs_song = {
+      [&](MidiSketchHandle h) { return midisketch_regenerate_vocal_from_json(h, empty, 2); },
+      [](MidiSketchHandle h) { return midisketch_regenerate_vocal_from_json(h, nullptr, 0); },
+      [&](MidiSketchHandle h) {
+        return midisketch_set_melody_from_json(h, melody, std::strlen(melody));
+      },
+      [&](MidiSketchHandle h) { return midisketch_generate_accompaniment_from_json(h, empty, 2); },
+  };
+
+  for (size_t i = 0; i < needs_song.size(); ++i) {
+    MidiSketchHandle handle = midisketch_create();
+    ASSERT_NE(handle, nullptr);
+    EXPECT_EQ(needs_song[i](handle), MIDISKETCH_ERROR_INVALID_PARAM) << "entry " << i;
+    EXPECT_EQ(midisketch_get_melody_json(handle), std::string(R"({"seed":0,"notes":[]})"))
+        << "entry " << i << " must leave the handle without a song";
+    midisketch_destroy(handle);
   }
 }
 

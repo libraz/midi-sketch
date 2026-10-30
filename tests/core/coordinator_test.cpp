@@ -15,6 +15,7 @@
 #include "core/pitch_utils.h"
 #include "core/preset_data.h"
 #include "core/song.h"
+#include "core/structure.h"
 
 namespace midisketch {
 namespace {
@@ -453,13 +454,6 @@ TEST(PhysicalModelTest, ClampPitch) {
   EXPECT_EQ(model.clampPitch(100), model.pitch_high);  // Above range
 }
 
-TEST(PhysicalModelTest, ClampVelocity) {
-  PhysicalModel model = PhysicalModels::kElectricBass;
-
-  EXPECT_EQ(model.clampVelocity(10), model.velocity_min);  // Below range
-  EXPECT_EQ(model.clampVelocity(80), 80);                  // Within range
-}
-
 TEST(PhysicalModelTest, IsPitchInRange) {
   PhysicalModel model = PhysicalModels::kElectricBass;
 
@@ -823,6 +817,33 @@ TEST(CoordinatorTest, AgreesWithGeneratorOnANamedBlueprintWithCalls) {
   params.call_enabled = true;
   params.mix_pattern = MixPattern::Tiger;
   expectCoordinatorMatchesGenerator(params, "named blueprint, calls");
+}
+
+TEST(CoordinatorTest, SlotDensitiesCountOnlyTracksTheSongGenerates) {
+  // IdolCoolPop's interlude slot names Drums, Bass and Arpeggio; without an
+  // arpeggio only the bass backs it.
+  for (const bool arpeggio : {false, true}) {
+    GeneratorParams params;
+    params.blueprint_id = 7;
+    params.seed = 3;
+    params.arpeggio_enabled = arpeggio;
+    Generator gen;
+    gen.generate(params);
+    const auto& sections = gen.getSong().arrangement().sections();
+    size_t interludes = 0;
+    for (const auto& section : sections) {
+      if (section.type != SectionType::Interlude) continue;
+      ++interludes;
+      ASSERT_TRUE(hasTrack(section.track_mask, TrackMask::Arpeggio));
+      const TrackMask sounding =
+          arpeggio ? section.track_mask : section.track_mask & ~TrackMask::Arpeggio;
+      EXPECT_EQ(section.backing_density, trackMaskToBackingDensity(sounding))
+          << "arpeggio " << arpeggio;
+      EXPECT_EQ(section.vocal_density, trackMaskToVocalDensity(sounding))
+          << "arpeggio " << arpeggio;
+    }
+    ASSERT_GT(interludes, 0u) << "the flow must lay out its interlude";
+  }
 }
 
 }  // namespace

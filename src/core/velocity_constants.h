@@ -59,6 +59,33 @@ constexpr float kCeilingKneeRatio = 0.75f;
 constexpr int kMaxVelocity = 127;
 
 // ============================================================================
+// Velocity Bounds (one table, applied once per pass)
+// ============================================================================
+
+/// Quietest velocity a pitched track is brought down to by a post-processing pass.
+constexpr int kPitchedVelocityFloor = 30;
+
+/// Quietest velocity the guitar generator writes; later passes keep to it.
+constexpr int kGuitarVelocityFloor = 40;
+
+/// Quietest velocity the drum writer gives a timekeeping or ghost stroke.
+constexpr int kTimekeepingVelocityFloor = 20;
+
+/// Lowest ceiling a section level can impose on a track.
+constexpr int kMinSectionCeiling = 40;
+
+/// Fraction of the MIDI range above which a velocity boost is folded into the
+/// remaining headroom instead of being clipped at 127.
+constexpr float kBoostKneeRatio = 0.85f;
+
+/// Multiple of a floor below which velocities are folded up into the floor.
+///
+/// Everything at or above the knee keeps its exact value; the range under it is
+/// compressed into [floor, knee], so quiet notes keep their order instead of all
+/// landing on the floor.
+constexpr float kFloorKneeRatio = 1.5f;
+
+// ============================================================================
 // Phrase Dynamics (4-bar phrase build→hit pattern)
 // ============================================================================
 

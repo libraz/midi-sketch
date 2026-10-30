@@ -97,35 +97,36 @@ bool MidiReader::read(const std::vector<uint8_t>& data) {
   // Parse tracks
   const size_t header_size = readUint32BE(data.data() + 4);
   size_t offset = 8 + header_size;
-  for (uint16_t track_index = 0; track_index < midi_.num_tracks; ++track_index) {
+  // Chunks other than MTrk (e.g. XF karaoke chunks) are skipped wherever they appear;
+  // only the first num_tracks MTrk chunks are parsed.
+  uint16_t parsed_tracks = 0;
+  while (offset < data.size()) {
     if (offset + 8 > data.size()) {
-      error_ = "Truncated MTrk chunk header";
+      error_ = "Truncated chunk header";
       return false;
     }
 
-    // Check for MTrk chunk
-    if (std::memcmp(data.data() + offset, "MTrk", 4) != 0) {
-      error_ = "Expected MTrk chunk at offset " + std::to_string(offset);
-      return false;
-    }
-
-    uint32_t track_size = readUint32BE(data.data() + offset + 4);
+    const bool is_track = std::memcmp(data.data() + offset, "MTrk", 4) == 0;
+    const uint32_t chunk_size = readUint32BE(data.data() + offset + 4);
     offset += 8;
 
-    if (offset + track_size > data.size()) {
-      error_ = "Track data exceeds file size";
+    if (offset + chunk_size > data.size()) {
+      error_ = is_track ? "Track data exceeds file size" : "Chunk data exceeds file size";
       return false;
     }
 
-    if (!parseTrack(data.data() + offset, track_size)) {
-      return false;
+    if (is_track && parsed_tracks < midi_.num_tracks) {
+      if (!parseTrack(data.data() + offset, chunk_size)) {
+        return false;
+      }
+      ++parsed_tracks;
     }
 
-    offset += track_size;
+    offset += chunk_size;
   }
 
-  if (offset != data.size()) {
-    error_ = "Unexpected trailing data after MIDI tracks";
+  if (parsed_tracks < midi_.num_tracks) {
+    error_ = "Truncated MTrk chunk header";
     return false;
   }
 

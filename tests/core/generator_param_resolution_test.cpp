@@ -12,6 +12,7 @@
 
 #include <gtest/gtest.h>
 
+#include <string>
 #include <vector>
 
 #include "core/config_converter.h"
@@ -24,6 +25,7 @@
 #include "core/song.h"
 #include "core/types.h"
 #include "midisketch.h"
+#include "track/generators/vocal.h"
 
 namespace midisketch {
 namespace {
@@ -280,6 +282,84 @@ TEST(GeneratorExplicitChoiceTest, RhythmSyncLeadStyleSwapKeepsRegisterAndSyllabi
   ASSERT_EQ(gen.getParams().vocal_style, VocalStylePreset::Vocaloid);
   EXPECT_EQ(gen.getParams().melody_params.chorus_register_shift, 3);
   EXPECT_FLOAT_EQ(gen.getParams().melody_params.syllabic_sub_ratio, 0.20f);
+}
+
+TEST(GeneratorExplicitChoiceTest, RhythmSyncLeadKeepsAnExplicitHookRepetition) {
+  for (uint8_t setting : {uint8_t(1), uint8_t(2)}) {
+    SongConfig config = rhythmSyncLeadConfig();
+    config.melody_hook_repetition = setting;  // 1 = off, 2 = on
+    const bool wanted = setting == 2;
+
+    Generator gen;
+    gen.generateFromConfig(config);
+    ASSERT_TRUE(isRhythmSyncLeadSetting(gen.getParams(), gen.resolvedBlueprintId()))
+        << "fixture must reach the RhythmSync lead setting";
+    EXPECT_EQ(gen.getParams().melody_params.hook_repetition, wanted) << "setting " << int(setting);
+
+    VocalConfig update;
+    update.present_fields = VocalConfig::MelodicComplexityField;
+    update.melodic_complexity = MelodicComplexity::Complex;
+    update.seed = 5;
+    SongConfig updated = config;
+    updated.melodic_complexity = MelodicComplexity::Complex;
+    gen.regenerateVocal(update, updated);
+    EXPECT_EQ(gen.getParams().melody_params.hook_repetition, wanted)
+        << "setting " << int(setting) << " after a vocal regeneration";
+  }
+
+  Generator preset;
+  preset.generateFromConfig(rhythmSyncLeadConfig());
+  EXPECT_TRUE(preset.getParams().melody_params.hook_repetition)
+      << "an unset hook repetition still takes the lead default";
+}
+
+TEST(GeneratorExplicitChoiceTest, RhythmSyncLeadKeepsAnExplicitDriveFeel) {
+  for (uint8_t drive : {uint8_t(0), uint8_t(50), uint8_t(100)}) {
+    SongConfig config = rhythmSyncLeadConfig();
+    config.drive_feel = drive;
+    config.drive_feel_explicit = true;
+    Generator gen;
+    gen.generateFromConfig(config);
+    ASSERT_TRUE(isRhythmSyncLeadSetting(gen.getParams(), gen.resolvedBlueprintId()))
+        << "fixture must reach the RhythmSync lead setting";
+    EXPECT_EQ(gen.getParams().drive_feel, drive);
+  }
+  Generator preset;
+  preset.generateFromConfig(rhythmSyncLeadConfig());
+  EXPECT_GE(preset.getParams().drive_feel, 88) << "an unset drive still takes the lead default";
+}
+
+bool hasWarningContaining(const Generator& gen, const std::string& needle) {
+  for (const auto& warning : gen.getWarnings()) {
+    if (warning.find(needle) != std::string::npos) return true;
+  }
+  return false;
+}
+
+TEST(GeneratorExplicitChoiceTest, MelodyControlsTheVocalRhythmPathIgnoresAreWarnedAbout) {
+  SongConfig locked = createDefaultSongConfig(0);
+  locked.seed = 3;
+  locked.blueprint_id = 1;  // RhythmLock: rhythm-locked RhythmSync vocal
+  locked.melody_template = MelodyTemplateId::PlateauTalk;
+  Generator locked_gen;
+  locked_gen.generateFromConfig(locked);
+  ASSERT_TRUE(shouldLockVocalRhythm(locked_gen.getParams()));
+  EXPECT_TRUE(hasWarningContaining(locked_gen, "melodyTemplate"));
+
+  SongConfig mora = createDefaultSongConfig(0);
+  mora.seed = 3;
+  mora.blueprint_id = 0;
+  mora.mora_rhythm_mode = 1;  // MoraTimed
+  mora.melody_long_note_ratio = 80;
+  Generator mora_gen;
+  mora_gen.generateFromConfig(mora);
+  EXPECT_TRUE(hasWarningContaining(mora_gen, "melodyLongNoteRatio"));
+
+  mora.mora_rhythm_mode = 0;  // Standard: the ratio is read, so nothing is said
+  Generator standard_gen;
+  standard_gen.generateFromConfig(mora);
+  EXPECT_FALSE(hasWarningContaining(standard_gen, "melodyLongNoteRatio"));
+  EXPECT_FALSE(hasWarningContaining(standard_gen, "melodyTemplate"));
 }
 
 TEST(GeneratorExplicitChoiceTest, AddictiveModeKeepsAnExplicitHookIntensity) {

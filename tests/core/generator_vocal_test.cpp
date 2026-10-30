@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <vector>
 
 #include "core/generator.h"
 #include "core/pitch_utils.h"
@@ -1838,6 +1839,57 @@ TEST(CustomVocalTest, SetVocalNotesRhythmSyncDensityProgression) {
   }
   EXPECT_TRUE(found_progression) << "RhythmSync density progression should be applied";
 }
+
+TEST(GeneratorVocalRhythmSyncTest, LockedVocalHasNoStubSplitOffItsOwnOnset) {
+  for (uint32_t seed : {1108u, 21u, 7u}) {
+    GeneratorParams params;
+    params.seed = seed;
+    params.blueprint_id = 1;
+    Generator gen;
+    gen.generate(params);
+    ASSERT_EQ(gen.getParams().paradigm, GenerationParadigm::RhythmSync);
+    const auto& notes = gen.getSong().vocal().notes();
+    ASSERT_FALSE(notes.empty());
+    size_t stubs = 0;
+    for (size_t i = 0; i + 1 < notes.size(); ++i) {
+      // A zero-length duplicate repaired to the minimum length, with the real note pushed after it.
+      if (notes[i].duration == TICK_32ND &&
+          notes[i + 1].start_tick == notes[i].start_tick + TICK_32ND &&
+          notes[i].start_tick % TICK_SIXTEENTH == 0) {
+        ++stubs;
+      }
+    }
+    // The defect left more than a quarter of the line as such pairs; a written
+    // 32nd figure is rare enough to stay far under this.
+    EXPECT_LT(stubs * 20, notes.size()) << "seed " << seed << ": " << stubs << " stubs";
+  }
+}
+
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+TEST(GeneratorVocalProvenanceTest, HeadLiftIsRecordedAsALiftNotAScaleSnap) {
+  size_t lifts = 0;
+  for (uint32_t seed = 1; seed <= 4; ++seed) {
+    SongConfig config = createDefaultSongConfig(0);
+    config.seed = seed;
+    config.blueprint_id = 2;  // StoryPop restates its choruses
+    Generator gen;
+    gen.generateFromConfig(config);
+    for (const auto& note : gen.getSong().vocal().notes()) {
+      for (uint8_t i = 0; i < note.transform_count; ++i) {
+        const auto& step = note.transform_steps[i];
+        if (step.type == TransformStepType::RegisterLift) {
+          ++lifts;
+          EXPECT_GT(step.output_pitch, step.input_pitch) << "seed " << seed;
+          EXPECT_TRUE(isScaleTone(step.input_pitch % 12)) << "a lift starts from a scale tone";
+        }
+      }
+    }
+  }
+  ASSERT_GT(lifts, 0u) << "no restated chorus head was lifted in the sweep";
+  EXPECT_STREQ(transformStepTypeToString(TransformStepType::RegisterLift), "register_lift");
+  EXPECT_STREQ(transformStepTypeToString(TransformStepType::LastNoteShift), "last_note_shift");
+}
+#endif  // MIDISKETCH_NOTE_PROVENANCE
 
 }  // namespace
 }  // namespace midisketch

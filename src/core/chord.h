@@ -116,6 +116,20 @@ struct ChordProgressionMeta {
  */
 const ChordProgression& getChordProgression(uint8_t chord_id);
 
+struct GeneratorParams;
+
+/**
+ * @brief The progression a song plays.
+ *
+ * Under BackgroundMotif, motif_chord.max_chord_count (when shorter) cuts the
+ * cycle to its first chords; otherwise this is getChordProgression(chord_id).
+ * Every reader of the song's progression asks here, so the cap holds on all of them.
+ *
+ * @param params Generation parameters (chord_id, composition style, motif_chord)
+ * @return Reference to a ChordProgression with static storage
+ */
+const ChordProgression& getChordProgression(const GeneratorParams& params);
+
 /**
  * @brief Convert scale degree to MIDI root note.
  * @param degree Scale degree (0=I, 3=IV, 4=V, 5=vi, etc.)

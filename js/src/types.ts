@@ -27,7 +27,12 @@ export interface SongConfig {
   chordProgressionId: number;
   /** Form/structure pattern ID */
   formId: number;
-  /** Vocal attitude: 0=Clean, 1=Expressive, 2=Raw */
+  /**
+   * Vocal attitude: 0=Clean (chord tones preferred, no pitch bends), 1=Expressive (adds
+   * fallback tensions and pitch bends), 2=Raw (all scale tones, stronger bends). It only
+   * changes notes where a pitch is chosen from a candidate set (locked-rhythm and fallback
+   * paths); skeleton-path phrases give Clean and Expressive the same notes.
+   */
   vocalAttitude: number;
   /** Enable drums */
   drumsEnabled: boolean;
@@ -56,9 +61,9 @@ export interface SongConfig {
   arpeggioGate: number;
 
   // Vocal settings
-  /** Vocal range lower bound (MIDI note) */
+  /** Vocal range lower bound: internal C-major pitch (sounding = pitch + key) */
   vocalLow: number;
-  /** Vocal range upper bound (MIDI note) */
+  /** Vocal range upper bound: internal C-major pitch (sounding = pitch + key) */
   vocalHigh: number;
   /** Skip vocal generation (for BGM-first workflow) */
   skipVocal: boolean;
@@ -130,7 +135,10 @@ export interface SongConfig {
   // Vocal style settings
   /** Vocal style preset: 0=Auto, 1=Standard, 2=Vocaloid, etc. */
   vocalStyle: number;
-  /** Melody template: 0=Auto, 1=PlateauTalk, 2=RunUpTarget, etc. */
+  /**
+   * Melody template: 0=Auto, 1=PlateauTalk, 2=RunUpTarget, etc. On rhythm-locked RhythmSync
+   * blueprints (1, 5, 7, 9) it only sets how often a restated hook is varied; generation warns.
+   */
   melodyTemplate: number;
 
   // Arrangement settings
@@ -174,6 +182,8 @@ export interface SongConfig {
   // Drive and addictive
   /** Drive feel: 0=laid-back, 50=neutral, 100=aggressive */
   driveFeel: number;
+  /** True if driveFeel was explicitly set by user (the RhythmSync lead default keeps it) */
+  driveFeelExplicit: boolean;
   /** Enable Behavioral Loop mode (fixed riff, maximum hook) */
   addictiveMode: boolean;
 
@@ -184,7 +194,10 @@ export interface SongConfig {
   syllabicSubRate?: number;
 
   // Syncopation
-  /** Enable syncopation effects (default=false) */
+  /**
+   * Enable syncopation effects (default=false). A mora-timed vocal takes only its barline
+   * crossing from it, and a rhythm-locked RhythmSync vocal none of it.
+   */
   enableSyncopation: boolean;
   /** True if enableSyncopation was explicitly set by user (an explicit false keeps it off) */
   enableSyncopationExplicit: boolean;
@@ -199,11 +212,19 @@ export interface SongConfig {
    * Style preset and complexity leap values are defaults and never narrow it.
    */
   melodyMaxLeap: number;
-  /** Syncopation probability: 0xFF=preset, 0-100=override */
+  /**
+   * Syncopation probability: 0xFF=preset, 0-100=override. No effect on a mora-timed vocal
+   * (moraRhythmMode 1, or 2=Auto on most vocal styles) or a rhythm-locked RhythmSync one;
+   * generation warns.
+   */
   melodySyncopationProb: number;
   /** Phrase length in bars: 0=preset, 1-8 */
   melodyPhraseLength: number;
-  /** Long note ratio: 0xFF=preset, 0-100=override */
+  /**
+   * Long note ratio: 0xFF=preset, 0-100=override. No effect on a mora-timed vocal
+   * (moraRhythmMode 1, or 2=Auto on most vocal styles) or a rhythm-locked RhythmSync one;
+   * generation warns.
+   */
   melodyLongNoteRatio: number;
   /** Chorus register shift: -128=preset, -12 to +12 */
   melodyChorusRegisterShift: number;
@@ -241,7 +262,10 @@ export interface NoteInput {
   startTick: number;
   /** Note duration in ticks */
   duration: number;
-  /** MIDI note number (0-127) */
+  /**
+   * Internal C-major pitch (0-127), as getMelody() returns it; sounding = pitch + key,
+   * plus the modulation after the key change
+   */
   pitch: number;
   /** Note velocity (0-127) */
   velocity: number;
@@ -267,15 +291,15 @@ export interface MelodyData {
 export interface VocalConfig {
   /** Random seed (0 = new random) */
   seed?: number;
-  /** Vocal range lower bound (MIDI note, 36-96) */
+  /** Vocal range lower bound, 36-96: internal C-major pitch (sounding = pitch + key) */
   vocalLow?: number;
-  /** Vocal range upper bound (MIDI note, 36-96) */
+  /** Vocal range upper bound, 36-96: internal C-major pitch (sounding = pitch + key) */
   vocalHigh?: number;
-  /** Vocal attitude: 0=Clean, 1=Expressive, 2=Raw */
+  /** Vocal attitude: 0=Clean, 1=Expressive, 2=Raw (see SongConfig.vocalAttitude) */
   vocalAttitude?: number;
   /** Vocal style preset: 0=Auto, 1=Standard, 2=Vocaloid, etc. */
   vocalStyle?: number;
-  /** Melody template: 0=Auto, 1=PlateauTalk, 2=RunUpTarget, etc. */
+  /** Melody template: 0=Auto, 1=PlateauTalk, 2=RunUpTarget, etc. (see SongConfig.melodyTemplate) */
   melodyTemplate?: number;
   /** Melodic complexity: 0=Simple, 1=Standard, 2=Complex */
   melodicComplexity?: number;

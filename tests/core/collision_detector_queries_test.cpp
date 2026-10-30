@@ -138,5 +138,41 @@ TEST(CollisionDetectorQueriesTest, TheThreeQueriesAgreeOnALowBassMajorSeventh) {
   }
 }
 
+// A note that starts under one chord and rings into the next is judged against
+// the chord sounding where it meets the other note, by every query alike.
+TEST(CollisionDetectorQueriesTest, TheThreeQueriesJudgeACrossingNoteAgainstTheChordAtTheOverlap) {
+  Section section;
+  section.type = SectionType::Chorus;
+  section.start_tick = 0;
+  section.bars = 2;
+  section.name = "Chorus";
+  ChordProgressionTracker tracker;
+  tracker.initialize(Arrangement({section}), getChordProgression(0), Mood::StraightPop);
+  ASSERT_EQ(tracker.getChordDegreeAt(0), 0);
+  ASSERT_EQ(tracker.getChordDegreeAt(TICKS_PER_BAR), 4);
+  tracker.registerChordExtension(TICKS_PER_BAR, TICKS_PER_BAR * 2, ChordExtension::Maj7);
+  ASSERT_EQ(tracker.getChordExtensionAt(TICKS_PER_BAR), ChordExtension::Maj7);
+  ASSERT_TRUE(registeredMajorSeventhOwnsPair(66, 55, tracker, TICKS_PER_BAR));
+
+  TrackCollisionDetector detector;
+  detector.registerNote(TICKS_PER_BAR, TICKS_PER_BAR, 55, TrackRole::Aux);  // G3, root of Gmaj7
+
+  // F#4 starts on the last beat of the I bar and rings into the Gmaj7 bar.
+  const Tick start = TICKS_PER_BAR - TICKS_PER_BEAT;
+  const Tick duration = TICKS_PER_BEAT * 3;
+  const uint8_t pitch = 66;
+
+  const bool consonant =
+      detector.isConsonantWithOtherTracks(pitch, start, duration, TrackRole::Motif, &tracker);
+  const CollisionInfo info =
+      detector.getCollisionInfo(pitch, start, duration, TrackRole::Motif, &tracker);
+  const Tick safe_end =
+      detector.getMaxSafeEnd(start, pitch, TrackRole::Motif, start + duration, &tracker);
+
+  EXPECT_TRUE(consonant) << "the registered maj7 owns its seventh where the notes meet";
+  EXPECT_FALSE(info.has_collision);
+  EXPECT_EQ(safe_end, start + duration);
+}
+
 }  // namespace
 }  // namespace midisketch

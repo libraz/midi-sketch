@@ -10,6 +10,9 @@
 
 #include "core/basic_types.h"
 #include "core/generator.h"
+#include "core/harmony_coordinator.h"
+#include "core/harmony_timeline_planner.h"
+#include "core/preset_data.h"
 #include "core/production_blueprint.h"
 #include "core/song.h"
 #include "core/timing_constants.h"
@@ -237,5 +240,64 @@ TEST_F(TempoMapTest, HighBpmScaling) {
     float high_ratio = static_cast<float>(high_map.back().bpm) / 180.0f;
     float low_ratio = static_cast<float>(low_map.back().bpm) / 100.0f;
     EXPECT_GT(high_ratio, low_ratio) << "High BPM should have proportionally less slowdown";
+  }
+}
+
+// ============================================================================
+// Song ending (the bars the ritardando slows)
+// ============================================================================
+
+namespace {
+
+bool anyNoteSoundsIn(const Song& song, Tick start, Tick end) {
+  for (const auto& track : song.tracks()) {
+    for (const auto& note : track.notes()) {
+      if (note.start_tick < end && note.start_tick + note.duration > start) return true;
+    }
+  }
+  return false;
+}
+
+}  // namespace
+
+TEST(SongEndingTest, EveryBlueprintEndsOnASoundingTonic) {
+  for (uint8_t blueprint = 0; blueprint < getProductionBlueprintCount(); ++blueprint) {
+    for (uint32_t seed : {1u, 2u}) {
+      SongConfig config;
+      config.seed = seed;
+      config.blueprint_id = blueprint;
+      Generator gen;
+      gen.generateFromConfig(config);
+      const auto& song = gen.getSong();
+      const auto& sections = song.arrangement().sections();
+      ASSERT_FALSE(sections.empty()) << "bp" << int(blueprint) << " seed " << seed;
+
+      // The plan every track is voiced against, before any later pass edits the timeline.
+      const auto& params = gen.getParams();
+      const auto& progression = getChordProgression(params.chord_id);
+      HarmonyCoordinator planned;
+      planned.initialize(song.arrangement(), progression, params.mood);
+      registerPlannedHarmonyTimeline(song.arrangement(), params, progression, planned);
+
+      const Section& last = sections.back();
+      const Tick final_start = last.endTick() - TICKS_PER_BAR;
+      EXPECT_EQ(planned.getChordDegreeAt(final_start), 0)
+          << "bp" << int(blueprint) << " seed " << seed << ": final bar is not I";
+      EXPECT_EQ(planned.getChordDegreeAt(last.endTick() - 1), 0)
+          << "bp" << int(blueprint) << " seed " << seed << ": final bar leaves I";
+      if (last.bars >= 2) {
+        const int8_t approach = planned.getChordDegreeAt(final_start - TICK_HALF);
+        EXPECT_TRUE(approach == 3 || approach == 4)
+            << "bp" << int(blueprint) << " seed " << seed << ": final I approached from degree "
+            << int(approach);
+      }
+
+      for (uint8_t bar = 0; bar < last.bars; ++bar) {
+        const Tick bar_start = last.start_tick + bar * TICKS_PER_BAR;
+        EXPECT_TRUE(anyNoteSoundsIn(song, bar_start, bar_start + TICKS_PER_BAR))
+            << "bp" << int(blueprint) << " seed " << seed << ": bar " << int(bar) << " of the "
+            << last.name << " is silent";
+      }
+    }
   }
 }

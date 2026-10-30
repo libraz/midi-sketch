@@ -39,7 +39,7 @@ class SEGenerator : public TrackBase {
 
   PhysicalModel getPhysicalModel() const override {
     // SE has no pitch constraints (text events only in many cases)
-    return PhysicalModel{0, 127, 1, 127, 30, false};
+    return PhysicalModel{0, 127};
   }
 
   /// Chants and effects are placed against the arrangement, not the harmony.

@@ -119,6 +119,7 @@ const EXPLICIT_FLAGS: Partial<Record<keyof SongConfig, keyof SongConfig>> = {
   mood: 'moodExplicit',
   formId: 'formExplicit',
   hookIntensity: 'hookIntensityExplicit',
+  driveFeel: 'driveFeelExplicit',
   vocalGroove: 'vocalGrooveExplicit',
   enableSyncopation: 'enableSyncopationExplicit',
   chordExtSusProb: 'chordExtProbExplicit',
@@ -315,6 +316,12 @@ export class SongConfigBuilder {
 
   /**
    * Set vocal attitude
+   *
+   * Clean prefers chord tones where a pitch is chosen from candidates, Expressive adds
+   * fallback tensions and pitch-bend expression, Raw allows all scale tones. Melodies built
+   * on the skeleton path pick pitches without the attitude, so Clean and Expressive can
+   * yield the same notes there.
+   *
    * @param attitude 0=Clean, 1=Expressive, 2=Raw
    */
   setVocalAttitude(attitude: number): this {
@@ -596,10 +603,10 @@ export class SongConfigBuilder {
   /**
    * Set target duration.
    *
-   * The duration has to reach between 12 and 144 bars at the resolved tempo, so the
-   * accepted range in seconds depends on the BPM. A value outside it is rejected when
-   * the config is validated rather than being shortened to fit, which is the same
-   * answer the native CLI gives for the same config.
+   * Validation rejects only a duration no permitted tempo could build. Otherwise the
+   * structure builder clamps the length to what the resolved tempo can reach (12 to 144
+   * bars) and reports the adjustment as a warning, so the built length can differ from
+   * the request.
    *
    * @param seconds Target duration in seconds (0 = use formId)
    */

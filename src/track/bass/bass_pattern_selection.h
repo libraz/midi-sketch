@@ -46,14 +46,18 @@ struct BassRiffCache {
 /// @param sec_idx Current section index
 /// @param params Generator parameters (contains riff_policy)
 /// @param rng Random number generator
+/// @param generated_tracks Tracks the song generates at all; the PedalTone veto
+///        counts an arpeggio only where one is generated and sounding
 /// @return Selected bass pattern
 BassPattern selectPatternWithPolicy(BassRiffCache& cache, const Section& section, size_t sec_idx,
-                                    const GeneratorParams& params, std::mt19937& rng);
+                                    const GeneratorParams& params, std::mt19937& rng,
+                                    TrackMask generated_tracks = TrackMask::All);
 
 /// @brief The same chain, with the vocal's density deciding the proposal.
 BassPattern selectPatternWithPolicyForVocal(BassRiffCache& cache, const Section& section,
                                             size_t sec_idx, const GeneratorParams& params,
-                                            float vocal_density, std::mt19937& rng);
+                                            float vocal_density, std::mt19937& rng,
+                                            TrackMask generated_tracks = TrackMask::All);
 
 /// @brief Select a vocal-aware bass pattern before riff-policy and peak-level adjustments.
 BassPattern selectPatternForVocalDensity(float vocal_density, const Section& section,

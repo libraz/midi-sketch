@@ -468,3 +468,88 @@ TEST(ExitPatternTest, SingleBarSectionFadeout) {
 
 }  // namespace
 }  // namespace midisketch
+
+// ============================================================================
+// Vocal breath, FinalHit bass root and drum hands
+// ============================================================================
+
+#include "track/drums/drum_constants.h"
+
+namespace midisketch {
+namespace {
+
+TEST(ExitPatternVocalTest, SustainLeavesTheVocalAndItsBreathAlone) {
+  // The vocal owns its section-end sustain, which keeps the breath before the
+  // next section; the exit Sustain extends the backing tracks only.
+  MidiTrack vocal, chord;
+  std::vector<MidiTrack*> tracks = {&vocal, &chord};
+  const std::vector<TrackRole> roles = {TrackRole::Vocal, TrackRole::Chord};
+  std::vector<Section> sections = {makeSection(SectionType::B, 4, 0, ExitPattern::Sustain)};
+  const Tick last_bar = 3 * TICKS_PER_BAR;
+  vocal.addNote(NoteEventBuilder::create(last_bar, TICKS_PER_BEAT, 67, 90));
+  chord.addNote(NoteEventBuilder::create(last_bar, TICKS_PER_BEAT, 60, 90));
+
+  PostProcessor::applyAllExitPatterns(tracks, roles, sections, nullptr);
+
+  ASSERT_EQ(vocal.notes().size(), 1u);
+  EXPECT_EQ(vocal.notes()[0].duration, TICKS_PER_BEAT);
+  ASSERT_EQ(chord.notes().size(), 1u);
+  EXPECT_GT(chord.notes()[0].duration, TICKS_PER_BEAT);
+}
+
+TEST(ExitPatternFinalHitTest, AddedBassIsTheRootOfTheFinalChord) {
+  // A song ending on V gets its final-hit bass on G, not on the tonic.
+  test::StubHarmonyContext harmony;
+  harmony.setAllPitchesSafe(true);
+  harmony.setChordDegree(4);
+  harmony.setChordTones({7, 11, 2});
+  const Section section = makeSection(SectionType::Chorus, 4, 0, ExitPattern::FinalHit);
+
+  MidiTrack bass;
+  PostProcessor::applyEnhancedFinalHit(&bass, nullptr, nullptr, section, harmony);
+
+  const Tick final_beat = 4 * TICKS_PER_BAR - TICKS_PER_BEAT;
+  size_t on_final_beat = 0;
+  for (const auto& note : bass.notes()) {
+    if (note.start_tick != final_beat) continue;
+    ++on_final_beat;
+    EXPECT_EQ(note.note % 12, 7) << "final-hit bass " << int(note.note) << " is not the root G";
+  }
+  ASSERT_EQ(on_final_beat, 1u);
+}
+
+TEST(ExitPatternFinalHitTest, FinalCrashTakesTheTimekeepingHand) {
+  // Snare, hi-hat and crash on one tick ask for three hands; the crash replaces
+  // the timekeeping stroke, as the kit's own section-entry accent does.
+  test::StubHarmonyContext harmony;
+  const Section section = makeSection(SectionType::Chorus, 4, 0, ExitPattern::FinalHit);
+  const Tick final_beat = 4 * TICKS_PER_BAR - TICKS_PER_BEAT;
+
+  MidiTrack drums_track;
+  drums_track.addNote(NoteEventBuilder::create(final_beat, TICK_EIGHTH, drums::SD, 90));
+  drums_track.addNote(NoteEventBuilder::create(final_beat, TICK_EIGHTH, drums::OHH, 80));
+  drums_track.addNote(NoteEventBuilder::create(final_beat, TICK_EIGHTH, drums::RIDE, 80));
+  drums_track.addNote(
+      NoteEventBuilder::create(final_beat - TICK_EIGHTH, TICK_EIGHTH, drums::CHH, 70));
+
+  PostProcessor::applyEnhancedFinalHit(nullptr, &drums_track, nullptr, section, harmony);
+
+  bool crash = false;
+  int hands = 0;
+  bool earlier_hat = false;
+  for (const auto& note : drums_track.notes()) {
+    if (note.start_tick == final_beat - TICK_EIGHTH && note.note == drums::CHH) earlier_hat = true;
+    if (note.start_tick != final_beat) continue;
+    if (note.note == drums::CRASH) crash = true;
+    if (note.note == drums::SD || note.note == drums::CRASH || note.note == drums::CHH ||
+        note.note == drums::OHH || note.note == drums::RIDE) {
+      ++hands;
+    }
+  }
+  ASSERT_TRUE(crash);
+  EXPECT_LE(hands, 2);
+  EXPECT_TRUE(earlier_hat) << "only the stroke on the crash's own tick yields";
+}
+
+}  // namespace
+}  // namespace midisketch

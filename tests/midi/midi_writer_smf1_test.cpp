@@ -1023,5 +1023,28 @@ TEST(MidiWriterSmf1Test, VocalPreviewModulatesWithTheFullSong) {
   }
 }
 
+TEST(MidiWriterSmf1Test, VocalPreviewCarriesTheFullSongTempoMap) {
+  HarmonyContext harmony;
+  Song song = makeAeolianPopVerse(harmony);
+  song.setTempoMap({{0, 120}, {3 * TICKS_PER_BAR, 96}});
+
+  MidiWriter full_writer;
+  full_writer.build(song, Key::C, Mood::StraightPop, "", MidiFormat::SMF1);
+  MidiWriter preview_writer;
+  preview_writer.buildVocalPreview(song, harmony, Key::C);
+
+  // Set Tempo meta-event: FF 51 03 tt tt tt
+  const auto count_tempo_events = [](const std::vector<uint8_t>& bytes) {
+    size_t count = 0;
+    for (size_t i = 0; i + 2 < bytes.size(); ++i) {
+      if (bytes[i] == 0xFF && bytes[i + 1] == 0x51 && bytes[i + 2] == 0x03) ++count;
+    }
+    return count;
+  };
+  const size_t full_count = count_tempo_events(full_writer.toBytes());
+  ASSERT_GE(full_count, 2u) << "The full song must carry a tempo change for this comparison";
+  EXPECT_EQ(count_tempo_events(preview_writer.toBytes()), full_count);
+}
+
 }  // namespace
 }  // namespace midisketch

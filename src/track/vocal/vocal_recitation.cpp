@@ -16,6 +16,7 @@
 #include "core/rng_util.h"
 #include "core/timing_constants.h"
 #include "track/melody/melody_utils.h"
+#include "track/vocal/phrase_cache.h"
 
 namespace midisketch {
 
@@ -237,6 +238,10 @@ int placeRecitation(std::vector<NoteEvent>& notes, Tick part_start, Tick part_en
         }
         if (off_lattice) break;
         const bool onset_here = scan < notes.size() && notes[scan].start_tick == tick;
+        const Tick line_next = scan < notes.size() ? notes[scan].start_tick : part_end;
+        // A breath the line takes is not patter to fill.
+        const bool breath_ahead = line_next >= sounding_end + kMinBreathTicks;
+        if (!onset_here && breath_ahead && tick >= sounding_end) break;
         if (!onset_here && tick >= sounding_end + TICKS_PER_BEAT) break;
         if (onset_here && notes[scan].is_syllabic_subdivision) break;
 
@@ -250,8 +255,8 @@ int placeRecitation(std::vector<NoteEvent>& notes, Tick part_start, Tick part_en
             current = notes[scan].note;
             if (scan + 1 < notes.size()) after = &notes[scan + 1];
           } else {
-            const Tick next_onset = scan < notes.size() ? notes[scan].start_tick : part_end;
-            duration = std::min<Tick>(next_onset - tick, TICKS_PER_BEAT);
+            duration = std::min<Tick>(line_next - tick, TICKS_PER_BEAT);
+            if (breath_ahead) duration = std::min(duration, sounding_end - tick);
             if (scan < notes.size()) after = &notes[scan];
           }
           const int pitch = stepContinuation(tick, duration, current, after, held, spec, harmony);
@@ -380,6 +385,50 @@ int placeHookChant(std::vector<NoteEvent>& notes, Tick section_start, Tick secti
     return held;
   }
   return 0;
+}
+
+size_t heldRunStart(const std::vector<NoteEvent>& notes, size_t idx) {
+  while (idx > 0 && notes[idx - 1].is_syllabic_subdivision &&
+         notes[idx - 1].note == notes[idx].note) {
+    --idx;
+  }
+  return idx;
+}
+
+bool moveHeldRun(std::vector<NoteEvent>& notes, size_t first, int prev_pitch, int max_leap, int low,
+                 int high, const IHarmonyContext& harmony, TransformStepType reason) {
+  if (first >= notes.size() || !notes[first].is_syllabic_subdivision) return false;
+  const uint8_t held = notes[first].note;
+  size_t end = first;
+  while (end < notes.size() && notes[end].is_syllabic_subdivision && notes[end].note == held) {
+    ++end;
+  }
+  const int next_pitch = end < notes.size() ? notes[end].note : -1;
+
+  int best = -1;
+  for (int candidate = std::max(low, 0); candidate <= std::min(high, 127); ++candidate) {
+    if (!isScaleTone(candidate % 12)) continue;
+    if (prev_pitch >= 0 && std::abs(candidate - prev_pitch) > max_leap) continue;
+    if (next_pitch >= 0 && std::abs(candidate - next_pitch) > max_leap) continue;
+    bool holds = true;
+    for (size_t k = first; k < end && holds; ++k) {
+      holds =
+          holdsAt(harmony, static_cast<uint8_t>(candidate), notes[k].start_tick, notes[k].duration);
+    }
+    if (!holds) continue;
+    if (best < 0 || std::abs(candidate - held) < std::abs(best - held)) best = candidate;
+  }
+  if (best < 0 || best == held) return false;
+
+  for (size_t k = first; k < end; ++k) {
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+    notes[k].recordPitchMove(reason, held, static_cast<uint8_t>(best));
+#else
+    (void)reason;
+#endif
+    notes[k].note = static_cast<uint8_t>(best);
+  }
+  return true;
 }
 
 }  // namespace midisketch

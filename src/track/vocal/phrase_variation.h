@@ -10,6 +10,7 @@
 #define MIDISKETCH_TRACK_VOCAL_PHRASE_VARIATION_H
 
 #include <cstdint>
+#include <limits>
 #include <random>
 #include <vector>
 
@@ -83,18 +84,25 @@ PhraseVariation selectPhraseVariation(int reuse_index, int exact_run, bool opens
 
 /**
  * @brief Apply phrase variation to notes (ending changes, timing shifts, slurs).
+ *
+ * The variations that lengthen or add a note at the ending (LastNoteLong,
+ * EchoRepeat) stay kMinBreathTicks clear of @p phrase_end; neither shortens a
+ * note that already reaches into that breath.
+ *
  * @param notes Notes to modify (in-place)
  * @param variation Type of variation to apply
  * @param rng Random number generator for variation parameters
+ * @param phrase_end Tick the phrase must end by (the restated head's end)
  */
 void applyPhraseVariation(std::vector<NoteEvent>& notes, PhraseVariation variation,
-                          std::mt19937& rng);
+                          std::mt19937& rng, Tick phrase_end = std::numeric_limits<Tick>::max());
 
 /**
  * @brief Determine cadence type for phrase ending.
  *
  * Detects: Strong (tonic tone+strong beat), Weak, Floating (tension),
- * or Deceptive (vi instead of I). Helps accompaniment support phrase endings.
+ * or Deceptive (vi instead of I). The result is stored in
+ * PhraseBoundary::cadence for information only; no generation pass reads it.
  *
  * Current implementation: 4 categories (Strong, Weak, Floating, Deceptive)
  *

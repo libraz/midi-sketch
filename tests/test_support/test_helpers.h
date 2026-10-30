@@ -8,6 +8,8 @@
 #ifndef MIDISKETCH_TEST_TEST_HELPERS_H
 #define MIDISKETCH_TEST_TEST_HELPERS_H
 
+#include <gtest/gtest.h>
+
 #include <algorithm>
 #include <cstdint>
 #include <vector>
@@ -94,6 +96,19 @@ inline PitchRun longestSamePitchRun(const std::vector<NoteEvent>& notes) {
 
 inline PitchRun longestSamePitchRun(const MidiTrack& track) {
   return longestSamePitchRun(track.notes());
+}
+
+/**
+ * @brief Non-empty-population guard: succeeds only if the track holds notes.
+ *
+ * Use as ASSERT_TRUE(test::hasNotes(track, "guitar")) before judging a population, so an
+ * empty track fails the test instead of passing an upper bound over nothing.
+ */
+inline ::testing::AssertionResult hasNotes(const MidiTrack& track, const char* name) {
+  if (track.notes().empty()) {
+    return ::testing::AssertionFailure() << name << " track is empty; nothing to judge";
+  }
+  return ::testing::AssertionSuccess();
 }
 
 }  // namespace test

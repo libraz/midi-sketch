@@ -13,6 +13,7 @@
 #include "core/pitch_utils.h"
 #include "core/rng_util.h"
 #include "core/timing_constants.h"
+#include "core/track_collision_detector.h"
 #include "core/velocity.h"
 #include "core/velocity_helper.h"
 #include "track/aux/aux_pitch.h"
@@ -51,7 +52,7 @@ constexpr int kMinPadVoices = 2;
 
 /// @brief Voice count for a sustained pad at a given density.
 ///
-/// AuxDensityBehavior::VoiceCount makes density_ratio the voicing width knob.
+/// Density is the voicing width knob for a sustained pad.
 /// Truncating the product collapses every sparse aux profile onto the floor, so
 /// the extra voices are rounded rather than cut and counted upward from
 /// kMinPadVoices.
@@ -709,14 +710,16 @@ std::vector<NoteEvent> AuxGenerator::generateMotifCounter(const AuxContext& ctx,
           resolveAuxPitch(static_cast<uint8_t>(counter_pitch), current_tick, note_duration,
                           ctx.main_melody, harmony, aux_low, aux_high, meta.dissonance_tolerance);
 
-      // A counter that can only land a semitone from a sounding vocal note
-      // stays silent instead.
+      // A counter that can only land on a clash with a sounding vocal note stays
+      // silent instead; the pair verdict is the detector's, on the actual interval.
       bool clashes_with_vocal = false;
-      for (const auto& vocal_note : *ctx.main_melody) {
-        if (vocal_note.start_tick < current_tick + note_duration &&
-            vocal_note.start_tick + vocal_note.duration > current_tick) {
-          const int interval = std::abs(static_cast<int>(safe_pitch) - vocal_note.note) % 12;
-          if (interval == 1 || interval == 11) {
+      if (meta.dissonance_tolerance < 0.5f) {
+        for (const auto& vocal_note : *ctx.main_melody) {
+          if (vocal_note.start_tick < current_tick + note_duration &&
+              vocal_note.start_tick + vocal_note.duration > current_tick &&
+              isClashingPair(safe_pitch, TrackRole::Aux, vocal_note.note, TrackRole::Vocal,
+                             &harmony, std::max(current_tick, vocal_note.start_tick),
+                             std::max(current_tick, vocal_note.start_tick))) {
             clashes_with_vocal = true;
             break;
           }

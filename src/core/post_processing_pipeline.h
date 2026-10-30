@@ -102,9 +102,9 @@ class PostProcessingPipeline {
   void applyEmotionBasedDynamics(const Context& ctx, std::vector<MidiTrack*>& tracks,
                                  const std::vector<Section>& sections);
 
-  /** @brief Apply emotion-based velocity adjustment to a single note. */
+  /** @brief Apply emotion-based velocity adjustment to a single note, bounded below by @p floor. */
   uint8_t applyEmotionToVelocity(const Context& ctx, uint8_t base_velocity,
-                                 const SectionEmotion& emotion);
+                                 const SectionEmotion& emotion, int floor);
 
   /** @brief Apply random velocity humanization to all melodic tracks. */
   void applyVelocityHumanization(const Context& ctx);

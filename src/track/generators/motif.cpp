@@ -24,6 +24,7 @@
 #include "core/pitch_utils.h"
 #include "core/production_blueprint.h"
 #include "core/rng_util.h"
+#include "core/section_utils.h"
 #include "core/song.h"
 #include "core/sustain_trimmer.h"
 #include "core/timing_constants.h"
@@ -998,11 +999,12 @@ struct MotifGenerationState {
   /// Evolving policy, so a final-chorus reprise needs the untouched copy to quote
   /// from, the same way `riff_cache` keeps `original_pattern` beside `pattern`.
   std::map<SectionType, std::vector<NoteEvent>> hint_patterns_original;
-  /// The riff as the first chorus stated it. An Evolving riff is already several
+  /// The notes the first chorus played. An Evolving riff is already several
   /// mutations old by the time the first chorus arrives, because the intro and verse
   /// evolve it too. What a listener carries into the last chorus is the hook from the
-  /// first one, not the shape the song opened with, so that is what the reprise quotes.
-  std::vector<NoteEvent> first_chorus_pattern;
+  /// first one as it sounded, after its per-cycle variation and thinning, so the
+  /// reprise replays these notes rather than regenerating from the pattern.
+  LockedNoteCache first_chorus_notes;
   MotifRiffCache riff_cache;
   size_t sec_idx = 0;
 };
@@ -1154,19 +1156,30 @@ uint8_t reseatCachedPitch(uint8_t pitch, const IHarmonyCoordinator& harmony, Tic
   return helper.nearestInRange(pitch, range_low, range_high);
 }
 
-/// @brief Replay cached notes for Locked mode (non-coordinate-axis).
-/// @return true if notes were replayed (section should be skipped), false otherwise
-bool replayCachedNotesLocked(MidiTrack& track, const Section& section, IHarmonyCoordinator* harmony,
-                             MotifGenerationState& state, uint8_t motif_range_high,
-                             uint8_t motif_range_low, const MotifParams& motif_params,
-                             bool enforce_vocal_ceiling, std::mt19937& rng) {
-  (void)motif_params;  // Reserved for future use
-  auto cache_it = state.locked_note_cache.find(section.type);
-  if (cache_it == state.locked_note_cache.end()) {
-    return false;
+/// @brief Record the notes a section played, for a later section to replay.
+LockedNoteCache recordSectionNotes(const MidiTrack& track, const Section& section,
+                                   uint8_t density) {
+  LockedNoteCache cache;
+  cache.source_length = section.endTick() - section.start_tick;
+  cache.density = density;
+  for (const auto& evt : track.notes()) {
+    if (evt.start_tick >= section.start_tick && evt.start_tick < section.endTick()) {
+      cache.entries.push_back(
+          {evt.start_tick - section.start_tick, evt.duration, evt.note, evt.velocity});
+    }
   }
+  return cache;
+}
 
-  const LockedNoteCache& cache = cache_it->second;
+/// @brief Replay recorded notes over a section (non-coordinate-axis).
+///
+/// Serves the Locked replay of a repeated section type and the Evolving
+/// final-chorus reprise of the first chorus: both play back what an earlier
+/// section sounded, re-asked against the harmony at the replay position.
+void replayCachedNotesLocked(MidiTrack& track, const Section& section, const LockedNoteCache& cache,
+                             IHarmonyCoordinator* harmony, MotifGenerationState& state,
+                             uint8_t motif_range_high, uint8_t motif_range_low,
+                             bool enforce_vocal_ceiling, std::mt19937& rng) {
   Tick tile_length =
       cache.source_length > 0 ? cache.source_length : section.endTick() - section.start_tick;
   std::vector<uint8_t> onset_pitches;
@@ -1232,6 +1245,7 @@ bool replayCachedNotesLocked(MidiTrack& track, const Section& section, IHarmonyC
       opts.start = absolute_tick;
       opts.duration = entry.duration;
       opts.desired_pitch = desired;
+      opts.original_pitch = entry.pitch;  // A replay move is a move off the cached pitch
       opts.velocity = entry.velocity;
       opts.role = TrackRole::Motif;
       if (cached_pitch_safe && is_chord_tone_at_replay) {
@@ -1258,7 +1272,6 @@ bool replayCachedNotesLocked(MidiTrack& track, const Section& section, IHarmonyC
       }
     }
   }
-  return true;
 }
 
 /// @brief Replay cached notes for RhythmSync coordinate axis mode.
@@ -1298,6 +1311,7 @@ bool replayCachedNotesCoordinateAxis(MidiTrack& track, const Section& section,
       opts.start = absolute_tick;
       opts.duration = entry.duration;
       opts.desired_pitch = static_cast<uint8_t>(replay_pitch);
+      opts.original_pitch = entry.pitch;
       opts.velocity = entry.velocity;
       opts.role = TrackRole::Motif;
       opts.preference = PitchPreference::NoCollisionCheck;
@@ -1313,21 +1327,6 @@ bool replayCachedNotesCoordinateAxis(MidiTrack& track, const Section& section,
   return true;
 }
 
-bool isFinalMotifChorus(const std::vector<Section>& sections, size_t section_idx) {
-  if (section_idx >= sections.size()) return false;
-  const Section& section = sections[section_idx];
-  if (section.type != SectionType::Chorus || !hasTrack(section.track_mask, TrackMask::Motif)) {
-    return false;
-  }
-  for (size_t idx = section_idx + 1; idx < sections.size(); ++idx) {
-    if (sections[idx].type == SectionType::Chorus &&
-        hasTrack(sections[idx].track_mask, TrackMask::Motif)) {
-      return false;
-    }
-  }
-  return true;
-}
-
 /// @brief Resolve which pattern to use based on RiffPolicy and section state.
 /// @param[out] section_pattern Storage for newly generated section pattern (must outlive return)
 /// @param[out] hint_pattern Storage for hint-generated pattern (must outlive return)
@@ -1337,9 +1336,10 @@ std::vector<NoteEvent>* resolveCurrentPattern(
     const MotifParams& motif_params, MotifGenerationState& state, bool is_locked, RiffPolicy policy,
     bool reprise_original_evolving_riff, const MotifRoleMeta& role_meta, std::mt19937& rng,
     std::vector<NoteEvent>& section_pattern, std::vector<NoteEvent>& hint_pattern) {
-  // motif_motion_hint override: generate section-specific pattern with hinted motion
+  // motif_motion_hint override: generate section-specific pattern with hinted motion.
+  // The hint stands in for the automatic motion only, never for the caller's.
   std::vector<NoteEvent>* hint_pattern_ptr = nullptr;
-  if (section.motif_motion_hint > 0) {
+  if (section.motif_motion_hint > 0 && !params.motif_motion_explicit) {
     GeneratorParams hint_params = params;
     hint_params.motif.motion = static_cast<MotifMotion>(section.motif_motion_hint - 1);
     if (policy == RiffPolicy::Evolving) {
@@ -1372,10 +1372,7 @@ std::vector<NoteEvent>* resolveCurrentPattern(
   std::vector<NoteEvent>* current_pattern = &pattern;
 
   if (policy == RiffPolicy::Evolving && reprise_original_evolving_riff &&
-      !state.first_chorus_pattern.empty()) {
-    current_pattern = &state.first_chorus_pattern;
-  } else if (policy == RiffPolicy::Evolving && reprise_original_evolving_riff &&
-             !state.riff_cache.original_pattern.empty()) {
+      !state.riff_cache.original_pattern.empty()) {
     current_pattern = &state.riff_cache.original_pattern;
   } else if (is_locked && state.riff_cache.cached) {
     current_pattern = &state.riff_cache.pattern;
@@ -1416,12 +1413,6 @@ std::vector<NoteEvent>* resolveCurrentPattern(
   // Override pattern with motif_motion_hint if set
   if (hint_pattern_ptr != nullptr && !hint_pattern_ptr->empty()) {
     current_pattern = hint_pattern_ptr;
-  }
-
-  if (policy == RiffPolicy::Evolving && section.type == SectionType::Chorus &&
-      state.first_chorus_pattern.empty() && current_pattern != nullptr &&
-      !current_pattern->empty()) {
-    state.first_chorus_pattern = *current_pattern;
   }
 
   return current_pattern;
@@ -1734,39 +1725,31 @@ bool emitMotifNoteStandard(MidiTrack& track, IHarmonyCoordinator& harmony, const
   return true;
 }
 
-/// @brief Cache section notes for Locked mode replay (both standard and coordinate axis).
+/// @brief Cache section notes for replay: Locked mode (standard and coordinate axis)
+/// and the first chorus an Evolving final chorus reprises.
 void cacheMotifNotes(const MidiTrack& track, const Section& section, bool is_locked,
-                     bool is_rhythm_lock_global, MotifGenerationState& state) {
+                     bool is_rhythm_lock_global, bool is_evolving_first_chorus,
+                     MotifGenerationState& state) {
   // Locked mode: cache output notes for this section type
   if (is_locked && !is_rhythm_lock_global &&
       state.locked_note_cache.find(section.type) == state.locked_note_cache.end()) {
-    std::vector<LockedNoteEntry> entries;
-    for (const auto& evt : track.notes()) {
-      if (evt.start_tick >= section.start_tick && evt.start_tick < section.endTick()) {
-        entries.push_back(
-            {evt.start_tick - section.start_tick, evt.duration, evt.note, evt.velocity});
-      }
-    }
-    if (!entries.empty()) {
-      state.locked_note_cache[section.type] = {section.endTick() - section.start_tick,
-                                               std::move(entries), effectiveMotifDensity(section)};
+    LockedNoteCache cache = recordSectionNotes(track, section, effectiveMotifDensity(section));
+    if (!cache.entries.empty()) {
+      state.locked_note_cache[section.type] = std::move(cache);
     }
   }
 
   // RhythmSync coordinate axis + Locked: cache output notes for replay
   if (is_rhythm_lock_global &&
       state.coord_axis_note_cache.find(section.type) == state.coord_axis_note_cache.end()) {
-    std::vector<LockedNoteEntry> entries;
-    for (const auto& evt : track.notes()) {
-      if (evt.start_tick >= section.start_tick && evt.start_tick < section.endTick()) {
-        entries.push_back(
-            {evt.start_tick - section.start_tick, evt.duration, evt.note, evt.velocity});
-      }
+    LockedNoteCache cache = recordSectionNotes(track, section, 100);
+    if (!cache.entries.empty()) {
+      state.coord_axis_note_cache[section.type] = std::move(cache);
     }
-    if (!entries.empty()) {
-      state.coord_axis_note_cache[section.type] = {section.endTick() - section.start_tick,
-                                                   std::move(entries)};
-    }
+  }
+
+  if (is_evolving_first_chorus && state.first_chorus_notes.entries.empty()) {
+    state.first_chorus_notes = recordSectionNotes(track, section, effectiveMotifDensity(section));
   }
 }
 
@@ -1775,8 +1758,9 @@ void generateMotifForSection(MidiTrack& track, const Section& section, const Ful
                              const GeneratorParams& params, MotifGenerationState& state,
                              std::vector<NoteEvent>& pattern, bool is_locked,
                              bool is_rhythm_lock_global, RiffPolicy policy,
-                             bool reprise_original_evolving_riff, uint8_t base_note_override,
-                             uint8_t motif_range_high, uint8_t motif_range_low, MotifRole role,
+                             bool reprise_original_evolving_riff, bool is_evolving_first_chorus,
+                             uint8_t base_note_override, uint8_t motif_range_high,
+                             uint8_t motif_range_low, MotifRole role,
                              const MotifRoleMeta& role_meta, bool enforce_vocal_ceiling) {
   std::mt19937& rng = *ctx.rng;
   IHarmonyCoordinator* harmony = ctx.harmony;
@@ -1917,7 +1901,8 @@ void generateMotifForSection(MidiTrack& track, const Section& section, const Ful
   }
 
   // Cache notes for locked/coordinate axis replay
-  cacheMotifNotes(track, section, is_locked, is_rhythm_lock_global, state);
+  cacheMotifNotes(track, section, is_locked, is_rhythm_lock_global, is_evolving_first_chorus,
+                  state);
 }
 
 }  // namespace
@@ -1987,8 +1972,7 @@ void MotifGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContex
 
   // Check if this is RhythmLock mode (coordinate axis)
   RiffPolicy policy = params.riff_policy;
-  bool is_locked = (policy == RiffPolicy::LockedContour || policy == RiffPolicy::LockedPitch ||
-                    policy == RiffPolicy::LockedAll);
+  bool is_locked = isLockedRiffPolicy(policy);
   bool is_rhythm_lock_global = (params.paradigm == GenerationParadigm::RhythmSync) && is_locked;
 
   // Vocal ceiling enforcement: only when the vocal is generated BEFORE the
@@ -2005,8 +1989,10 @@ void MotifGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContex
 
     // Locked mode: replay cached notes for repeat section types
     if (is_locked && !is_rhythm_lock_global) {
-      if (replayCachedNotesLocked(track, section, harmony, state, motif_range_high, motif_range_low,
-                                  motif_params, enforce_vocal_ceiling, rng)) {
+      auto cache_it = state.locked_note_cache.find(section.type);
+      if (cache_it != state.locked_note_cache.end()) {
+        replayCachedNotesLocked(track, section, cache_it->second, harmony, state, motif_range_high,
+                                motif_range_low, enforce_vocal_ceiling, rng);
         state.sec_idx++;
         continue;
       }
@@ -2021,12 +2007,29 @@ void MotifGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContex
       }
     }
 
-    bool reprise_original_evolving_riff =
-        policy == RiffPolicy::Evolving && isFinalMotifChorus(sections, section_idx);
+    const ChorusOccurrence chorus_occurrence =
+        classifyChorusOccurrence(sections, section_idx, TrackMask::Motif);
+    const bool is_evolving = policy == RiffPolicy::Evolving;
+
+    // Evolving final chorus: reprise the first chorus as it was heard.
+    if (is_evolving && chorus_occurrence == ChorusOccurrence::Final &&
+        !state.first_chorus_notes.entries.empty()) {
+      replayCachedNotesLocked(track, section, state.first_chorus_notes, harmony, state,
+                              motif_range_high, motif_range_low, enforce_vocal_ceiling, rng);
+      state.sec_idx++;
+      continue;
+    }
+
+    // A chorus with no earlier one to quote reaches back to the riff the song opened with.
+    const bool reprise_original_evolving_riff =
+        is_evolving && (chorus_occurrence == ChorusOccurrence::Final ||
+                        chorus_occurrence == ChorusOccurrence::Only);
+    const bool is_evolving_first_chorus =
+        is_evolving && chorus_occurrence == ChorusOccurrence::First;
     generateMotifForSection(track, section, ctx, params, state, pattern, is_locked,
                             is_rhythm_lock_global, policy, reprise_original_evolving_riff,
-                            base_note_override, motif_range_high, motif_range_low, role, role_meta,
-                            enforce_vocal_ceiling);
+                            is_evolving_first_chorus, base_note_override, motif_range_high,
+                            motif_range_low, role, role_meta, enforce_vocal_ceiling);
 
     state.sec_idx++;
   }

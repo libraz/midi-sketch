@@ -305,7 +305,7 @@ struct BassTrackContext {
         vocal_analysis(vocal_analysis),
         generated_tracks(generated_tracks),
         has_vocal(vocal_analysis != nullptr),
-        progression(getChordProgression(params.chord_id)),
+        progression(getChordProgression(params)),
         sections(song.arrangement().sections()) {}
 };
 
@@ -328,9 +328,10 @@ BassPattern selectSectionPattern(BassTrackContext& ctx, const Section& section, 
   if (ctx.has_vocal) {
     float vocal_density = getVocalDensityForSection(*ctx.vocal_analysis, section);
     return selectPatternWithPolicyForVocal(ctx.riff_cache, section, sec_idx, ctx.params,
-                                           vocal_density, ctx.rng);
+                                           vocal_density, ctx.rng, ctx.generated_tracks);
   }
-  return selectPatternWithPolicy(ctx.riff_cache, section, sec_idx, ctx.params, ctx.rng);
+  return selectPatternWithPolicy(ctx.riff_cache, section, sec_idx, ctx.params, ctx.rng,
+                                 ctx.generated_tracks);
 }
 
 // Apply slash chord bass override for smoother voice leading.
@@ -348,9 +349,7 @@ void applySlashChordOverride(BassTrackContext& ctx, uint8_t& root, int8_t degree
   // A track sounds where the song generates it, the section's mask admits it
   // and the layer schedule has it playing.
   constexpr TrackMask kChordalTracks = TrackMask::Chord | TrackMask::Guitar | TrackMask::Arpeggio;
-  const TrackMask sounding =
-      section.activeTracksAtBar(bar) & section.track_mask & ctx.generated_tracks;
-  if (!hasTrack(sounding, kChordalTracks)) {
+  if (!hasTrack(section.soundingTracksAtBar(bar, ctx.generated_tracks), kChordalTracks)) {
     return;
   }
   // Convert pitch class to bass octave range
@@ -607,8 +606,21 @@ void generateBassTrack(MidiTrack& track, const Song& song, const GeneratorParams
       uint8_t next_root = getBassRoot(next_degree);
       const uint8_t chord_root = root;
 
-      // Slash chord override for smoother voice leading
-      applySlashChordOverride(ctx, root, degree, next_degree, section, bar);
+      // Slash chord override for smoother voice leading, toward the chord heard
+      // next: a change inside the bar (a new degree, or the same root turned into
+      // a secondary dominant) comes before the next bar's chord.
+      int8_t heard_next = next_degree;
+      const bool starts_secondary = harmony.isSecondaryDominantAt(bar_start);
+      for (Tick entry = harmony.getNextChordEntryTick(bar_start);
+           entry > bar_start && entry < bar_start + TICKS_PER_BAR;
+           entry = harmony.getNextChordEntryTick(entry)) {
+        if (harmony.getChordDegreeAt(entry) != degree ||
+            harmony.isSecondaryDominantAt(entry) != starts_secondary) {
+          heard_next = harmony.getChordDegreeAt(entry);
+          break;
+        }
+      }
+      applySlashChordOverride(ctx, root, degree, heard_next, section, bar);
 
       // Vocal motion adjustment
       uint8_t effective_root = resolveEffectiveRoot(ctx, root, bar_start, bar, previous_root);

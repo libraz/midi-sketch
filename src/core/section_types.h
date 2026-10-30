@@ -218,6 +218,12 @@ enum class RiffPolicy : uint8_t {
   Locked = LockedContour,  ///< Alias for LockedContour
 };
 
+/// @brief True for the policies that hold one riff across sections (contour, pitch or all).
+constexpr bool isLockedRiffPolicy(RiffPolicy policy) {
+  return policy == RiffPolicy::LockedContour || policy == RiffPolicy::LockedPitch ||
+         policy == RiffPolicy::LockedAll;
+}
+
 // ============================================================================
 // DrumGrid - Rhythm grid for RhythmSync paradigm
 // ============================================================================
@@ -623,6 +629,14 @@ struct Section {
                : computeActiveTracksAtBar(layer_events, bar_offset, track_mask);
   }
 
+  /// @brief Tracks heard at a bar: the layer schedule and mask, limited to the
+  /// tracks the song generates. A mask bit alone does not make a track sound.
+  /// @param bar_offset Bar within the section (0-based)
+  /// @param generated_tracks Tracks the song generates at all
+  TrackMask soundingTracksAtBar(uint8_t bar_offset, TrackMask generated_tracks) const {
+    return activeTracksAtBar(bar_offset) & track_mask & generated_tracks;
+  }
+
   /// @brief Velocity multiplier contributed by this section's modifier.
   ///
   /// This is the modifier term of the section velocity scale, isolated from any
@@ -718,7 +732,7 @@ enum class StructurePattern : uint8_t {
                 // Outro(4)
   // Extended full-length (~3 min @120BPM)
   ExtendedFull,  // Intro(4) -> A(8) -> B(8) -> Chorus(8) -> Interlude(4) -> A(8) -> B(8) ->
-                 // Chorus(8) -> Bridge(8) -> Chorus(8) -> Chorus(8) -> Outro(8) [90 bars]
+                 // Chorus(8) -> Bridge(8) -> Chorus(8) -> Chorus(8) -> Outro(8) [88 bars]
   // Chorus-first patterns (15-second rule for hooks)
   ChorusFirst,       // Chorus(8) -> A(8) -> B(8) -> Chorus(8) [32 bars]
   ChorusFirstShort,  // Chorus(8) -> A(8) -> Chorus(8) [24 bars]

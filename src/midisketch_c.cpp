@@ -40,10 +40,10 @@ midisketch::MidiSketch* asSketch(MidiSketchHandle handle) { return &asState(hand
 
 /// @brief Whether anything has been generated on this handle yet.
 ///
-/// Accompaniment is voiced against an existing song. Running the pipeline on a handle
-/// that has none still emits a structurally valid file with every track empty, which a
-/// caller cannot tell apart from a deliberately quiet arrangement, so the accompaniment
-/// entry points refuse that state instead of reporting success.
+/// Accompaniment, a vocal re-roll and a restored melody are all placed into an existing
+/// song. Running them on a handle that has none still emits a structurally valid file
+/// with every track empty, which a caller cannot tell apart from a deliberately quiet
+/// arrangement, so those entry points refuse that state instead of reporting success.
 ///
 /// The test is "some track carries notes" rather than "the vocal carries notes" so that
 /// a vocal-less arrangement (skip_vocal) can still have its accompaniment rerolled.
@@ -136,13 +136,14 @@ const char* midisketch_config_error_string(MidiSketchConfigError error) {
     case MIDISKETCH_CONFIG_INVALID_FORM:
       return "Invalid form/structure ID for this style";
     case MIDISKETCH_CONFIG_INVALID_ATTITUDE:
-      return "Invalid vocal attitude for this style";
+      return "Invalid vocal attitude for this style (the allowed attitudes depend on the style)";
     case MIDISKETCH_CONFIG_INVALID_VOCAL_RANGE:
       return "Invalid vocal range (low must be <= high, range 36-96)";
     case MIDISKETCH_CONFIG_INVALID_BPM:
       return "Invalid BPM (must be 40-240, or 0 for default)";
     case MIDISKETCH_CONFIG_DURATION_TOO_SHORT:
-      return "Target duration is below the minimum required length";
+      return "Target duration is below the minimum length a song with calls (intro chant or MIX) "
+             "needs";
     case MIDISKETCH_CONFIG_INVALID_MODULATION:
       return "Invalid modulation semitones (must be 1-4)";
     case MIDISKETCH_CONFIG_INVALID_KEY:
@@ -871,6 +872,9 @@ MidiSketchError midisketch_regenerate_vocal_from_json(MidiSketchHandle handle,
   }
 
   asState(handle)->last_config_error = MIDISKETCH_CONFIG_OK;
+  if (!hasGeneratedSong(handle)) {
+    return MIDISKETCH_ERROR_INVALID_PARAM;
+  }
   auto* sketch = asSketch(handle);
 
   if (!config_json || json_length == 0) {
@@ -997,7 +1001,7 @@ MidiSketchError midisketch_set_melody_from_json(MidiSketchHandle handle, const c
     return MIDISKETCH_ERROR_INVALID_PARAM;
   }
   asState(handle)->last_config_error = MIDISKETCH_CONFIG_OK;
-  if (!json) {
+  if (!json || !hasGeneratedSong(handle)) {
     return MIDISKETCH_ERROR_INVALID_PARAM;
   }
 

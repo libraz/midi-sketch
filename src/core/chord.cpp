@@ -5,7 +5,10 @@
 
 #include "core/chord.h"
 
+#include <iterator>
+
 #include "core/pitch_utils.h"
+#include "core/preset_types.h"
 #include "core/section_properties.h"
 
 namespace midisketch {
@@ -319,6 +322,28 @@ std::vector<ChromaticAlteration> getChromaticAlterations(int8_t degree, ChordExt
 
 const ChordProgression& getChordProgression(uint8_t chord_id) {
   return PROGRESSIONS[safeProgressionIndex(chord_id, PROGRESSIONS)];
+}
+
+const ChordProgression& getChordProgression(const GeneratorParams& params) {
+  const ChordProgression& full = getChordProgression(params.chord_id);
+  const uint8_t cap = params.motif_chord.max_chord_count;
+  if (params.composition_style != CompositionStyle::BackgroundMotif || cap == 0 ||
+      cap >= full.length) {
+    return full;
+  }
+  // Every (progression, cap) pair, built once and read-only afterwards.
+  static const auto kCapped = [] {
+    std::array<std::array<ChordProgression, MAX_PROGRESSION_LENGTH + 1>, std::size(PROGRESSIONS)>
+        table{};
+    for (size_t id = 0; id < std::size(PROGRESSIONS); ++id) {
+      for (uint8_t length = 0; length <= MAX_PROGRESSION_LENGTH; ++length) {
+        table[id][length] = PROGRESSIONS[id];
+        if (length > 0 && length < PROGRESSIONS[id].length) table[id][length].length = length;
+      }
+    }
+    return table;
+  }();
+  return kCapped[safeProgressionIndex(params.chord_id, PROGRESSIONS)][cap];
 }
 
 uint8_t degreeToRoot(int8_t degree, Key key) {

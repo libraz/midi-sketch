@@ -48,7 +48,7 @@ struct SerializedNote {
  *
  * @param notes Notes to resolve; pitches must already be in output space
  * @param percussive Whether the destination channel carries discrete strikes
- * @return Resolved notes ordered by pitch, then by start tick
+ * @return Resolved notes ordered by start tick, then by pitch
  */
 std::vector<SerializedNote> resolveSamePitchOverlaps(std::vector<SerializedNote> notes,
                                                      bool percussive);

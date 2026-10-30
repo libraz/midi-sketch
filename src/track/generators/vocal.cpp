@@ -77,6 +77,28 @@ static bool shouldUsePerSectionTypeRhythmLock(const GeneratorParams& params) {
   return params.vocal_style == VocalStylePreset::UltraVocaloid;
 }
 
+// End `line` with a breath before next_onset. A last note too close to carry the
+// breath after it is the pickup into next_onset and the breath goes in front of
+// it; a note that fits neither way is dropped rather than left as a stub.
+static void breatheBefore(std::vector<NoteEvent>& line, Tick next_onset, Tick breath) {
+  while (!line.empty()) {
+    NoteEvent& last = line.back();
+    if (enforceMinimumBreath(last.start_tick, last.duration, next_onset, breath,
+                             kMinPhraseEndTicks)) {
+      return;
+    }
+    if (line.size() >= 2 && last.start_tick < next_onset) {
+      NoteEvent& prev = line[line.size() - 2];
+      if (enforceMinimumBreath(prev.start_tick, prev.duration, last.start_tick, breath,
+                               kMinPhraseEndTicks)) {
+        last.duration = std::min(last.duration, next_onset - last.start_tick);
+        return;
+      }
+    }
+    line.pop_back();
+  }
+}
+
 // =============================================================================
 // Extracted sub-methods for doGenerateFullTrack decomposition
 // =============================================================================
@@ -385,7 +407,8 @@ void VocalGenerator::postProcessVocalNotes(
   // onsets until each later Chorus has an audible (> 0.5 semitone) head lift.
   // The lift is heard in the sounding key, so a chorus after the key change
   // counts the modulation toward it, and a chant note is never lifted out of
-  // its run.
+  // its run. The hook head (kSabiHeadNotes) is what repeats verbatim, so only
+  // the onsets after it are lifted.
   std::vector<const Section*> choruses;
   for (const auto& section : song.arrangement().sections()) {
     if (section.type == SectionType::Chorus) choruses.push_back(&section);
@@ -428,7 +451,7 @@ void VocalGenerator::postProcessVocalNotes(
         size_t best_idx = all_notes.size();
         uint8_t best_pitch = 127;
         uint8_t best_candidate = 0;
-        for (size_t head_pos = 0; head_pos < head.size(); ++head_pos) {
+        for (size_t head_pos = kSabiHeadNotes; head_pos < head.size(); ++head_pos) {
           const size_t note_idx = head[head_pos];
           const auto& note = all_notes[note_idx];
           if (note.is_syllabic_subdivision) continue;
@@ -468,8 +491,8 @@ void VocalGenerator::postProcessVocalNotes(
 #ifdef MIDISKETCH_NOTE_PROVENANCE
         const uint8_t original = all_notes[best_idx].note;
         all_notes[best_idx].prov_original_pitch = original;
-        all_notes[best_idx].addTransformStep(TransformStepType::ScaleSnap, original, best_candidate,
-                                             0, 0);
+        all_notes[best_idx].addTransformStep(TransformStepType::RegisterLift, original,
+                                             best_candidate, 0, 0);
 #endif
         all_notes[best_idx].note = best_candidate;
       }
@@ -521,7 +544,8 @@ void VocalGenerator::postProcessVocalNotes(
   // every diatonic pitch the bound allows and admits it on the same terms as
   // every other vocal pass. Searching only the chord tones left the sweep with
   // as few as two candidates under a secondary dominant, and a bound it could
-  // not close stayed open.
+  // not close stayed open. A leap into a chant or recitation run moves the whole
+  // run, or nothing.
   {
     const uint8_t final_ctx_max_leap = melody::resolveContextMaxLeap(params);
     for (size_t i = 1; i < all_notes.size(); ++i) {
@@ -547,6 +571,12 @@ void VocalGenerator::postProcessVocalNotes(
 
       const uint8_t bound_low = owner != nullptr ? owner->low : effective_vocal_low;
       const uint8_t bound_high = owner != nullptr ? owner->high : effective_vocal_high;
+
+      if (all_notes[i].is_syllabic_subdivision) {
+        moveHeldRun(all_notes, heldRunStart(all_notes, i), prev_pitch, max_interval, bound_low,
+                    bound_high, harmony, TransformStepType::IntervalFix);
+        continue;
+      }
 
       melody::MelodicNeighborhood neighborhood;
       neighborhood.start = all_notes[i].start_tick;
@@ -921,7 +951,7 @@ void VocalGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContex
       }
 
       // Apply subtle variation for interest while maintaining recognizability
-      applyPhraseVariation(section_notes, variation, rng);
+      applyPhraseVariation(section_notes, variation, rng, head_end);
 
       // The restatement keeps the register it was written in. A later chorus's
       // occurrence lift is the head-lift pass's job; moving the whole phrase to
@@ -973,6 +1003,12 @@ void VocalGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContex
         resolvePart(tail_notes, tail, fresh_vocal_low, fresh_vocal_high);
         recitePart(tail_notes, tail, fresh_vocal_low, fresh_vocal_high, tail_locked);
         approachNext(tail_notes, tail, fresh_vocal_low, fresh_vocal_high);
+        // The restated head and the fresh tail are two phrases.
+        if (!tail_notes.empty()) {
+          breatheBefore(section_notes, tail_notes.front().start_tick,
+                        melody::getPlannedBreathDuration(section.type, params.mood,
+                                                         params.vocal_style, params.bpm));
+        }
         section_notes.insert(section_notes.end(), tail_notes.begin(), tail_notes.end());
       }
       section_ceilings.back().low = section_vocal_low;
@@ -1028,9 +1064,7 @@ void VocalGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContex
 
     // Ensure inter-section breath gap by shortening previous section's last note
     if (has_prev_vocal_section && !all_notes.empty() && !section_notes.empty()) {
-      Tick prev_end = all_notes.back().start_tick + all_notes.back().duration;
       Tick next_start = section_notes.front().start_tick;
-      Tick current_gap = (next_start > prev_end) ? (next_start - prev_end) : 0;
 
       // Calculate desired breath using existing BreathContext
       BreathContext breath_ctx;
@@ -1047,20 +1081,9 @@ void VocalGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContex
       Tick desired_breath =
           melody::getBreathDuration(prev_vocal_section_type, params.mood, 0.5f, prev_high,
                                     &breath_ctx, params.vocal_style, params.bpm);
-      desired_breath = std::max(desired_breath, TICK_EIGHTH);  // floor: 240 ticks
-
-      if (current_gap < desired_breath) {
-        Tick shorten_by = desired_breath - current_gap;
-        NoteEvent& last = all_notes.back();
-        // Duration floor: never shorten below TICK_SIXTEENTH (120 ticks)
-        Tick min_remaining = TICK_SIXTEENTH;
-        if (last.duration > shorten_by + min_remaining) {
-          last.duration -= shorten_by;
-        } else if (last.duration > min_remaining) {
-          last.duration = min_remaining;
-        }
-        // else: note is already very short, don't touch it
-      }
+      // Measured from the onset, so a last note that overshoots it is pulled back
+      // by the overshoot too and leaves fixOverlaps nothing to flatten.
+      breatheBefore(all_notes, next_start, desired_breath);
     }
 
     // Add to collected notes
@@ -1075,7 +1098,11 @@ void VocalGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContex
       int prev_note = all_notes.back().note;
       int first_note = section_notes.front().note;
       int interval = std::abs(first_note - prev_note);
-      if (interval > boundary_max_interval) {
+      // A chant or recitation run moves as one or not at all.
+      if (interval > boundary_max_interval && section_notes.front().is_syllabic_subdivision) {
+        moveHeldRun(section_notes, 0, prev_note, boundary_max_interval, section_vocal_low,
+                    section_vocal_high, harmony, TransformStepType::IntervalFix);
+      } else if (interval > boundary_max_interval) {
 #ifdef MIDISKETCH_NOTE_PROVENANCE
         uint8_t old_pitch = section_notes.front().note;
 #endif
@@ -1131,7 +1158,10 @@ void VocalGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContex
         }
       }
 
-      if (!preserve_chromatic) {
+      if (note.is_syllabic_subdivision) {
+        // A run note is not snapped alone; enforceVocalPitchConstraints moves
+        // its run as one.
+      } else if (!preserve_chromatic) {
         // ABSOLUTE CONSTRAINT: Ensure pitch is on scale (prevents chromatic notes)
 #ifdef MIDISKETCH_NOTE_PROVENANCE
         uint8_t old_pitch = note.note;

@@ -90,12 +90,19 @@ class Generator {
 
   /**
    * @brief Regenerate vocal track with a new seed.
+   *
+   * Under RhythmSync the motif is regenerated with the vocal, so the accompaniment
+   * voiced against the old motif is cleared; call generateAccompanimentForVocal()
+   * to voice a new one. Other paradigms keep the accompaniment.
    * @param new_seed New random seed (0 = auto-generate from clock)
    */
   void regenerateVocal(uint32_t new_seed = 0);
 
   /**
    * @brief Regenerate vocal track with new configuration.
+   *
+   * Clears the accompaniment when the RhythmSync motif is regenerated, as the
+   * seed overload does; keep_motif keeps both.
    * @param config Vocal configuration with all parameters
    */
   void regenerateVocal(const VocalConfig& config);
@@ -234,6 +241,18 @@ class Generator {
    *  @return Blueprint ID (0-9), or 0 if not generated */
   uint8_t resolvedBlueprintId() const { return resolved_blueprint_id_; }
 
+  /** @brief Seed the song's structure and harmony were generated with.
+   *
+   *  Partial regenerations re-roll their own tracks without changing it. */
+  uint32_t generationSeed() const { return generation_seed_; }
+
+  /** @brief Whether generate() of the accepted parameters at generationSeed()
+   *  reproduces the song as it stands.
+   *
+   *  False after any partial regeneration, a caller-supplied vocal, a seeded or
+   *  configured accompaniment pass, or a vocal-only song. */
+  bool isReplayable() const { return replayable_; }
+
   /** @brief Get pre-computed drum grid for RhythmSync paradigm.
    *  @return Pointer to DrumGrid, or nullptr if not RhythmSync */
   const DrumGrid* getDrumGrid() const {
@@ -289,6 +308,10 @@ class Generator {
   uint32_t generation_seed_ = 0;  ///< Seed the song was generated with; regenerations keep it
   GeneratorParams base_params_;   ///< Parameters the song was accepted with, before any derivation
   VocalConfig vocal_updates_;     ///< Vocal updates folded together since those parameters
+  bool replayable_ = false;       ///< See isReplayable()
+  /// Only generateVocal() has run since the parameters were accepted, so adding the
+  /// accompaniment completes the song generate() would have produced.
+  bool vocal_first_pending_ = false;
 
   /// Modulation set by setModulationTiming() and not yet consumed by a generation
   std::optional<std::pair<ModulationTiming, int8_t>> pending_modulation_;
@@ -348,6 +371,11 @@ class Generator {
    *  @param updated Updated SongConfig, or nullptr to re-derive over the current parameters */
   void regenerateVocalImpl(const VocalConfig& config, const SongConfig* updated);
 
+  /** @brief Replace the vocal take with one generated from @p seed.
+   *  @param regenerate_motif Regenerate the RhythmSync motif axis too, which clears
+   *  the accompaniment voiced against the old one */
+  void regenerateVocalTake(uint32_t seed, bool regenerate_motif);
+
   /** @brief Apply all post-processing effects.
    *  Staggered entry, layer schedule, dynamics, expression, humanization. */
   void applyPostProcessingEffects();
@@ -367,6 +395,9 @@ class Generator {
   /** @brief Configure motif parameters for Behavioral Loop mode.
    *  Sets rhythm_density=Driving, note_count=8, length=1bar for tight loops. */
   void configureAddictiveMotif();
+
+  /** @brief Warn about explicit melody controls the selected vocal rhythm path does not read. */
+  void warnInactiveMelodyControls();
 
   /** @brief Validate and normalize vocal range parameters.
    *  Swaps low/high if inverted, clamps to valid MIDI range. */

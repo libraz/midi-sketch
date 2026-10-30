@@ -311,5 +311,23 @@ TEST(SectionUtilsTest, FindLastSectionAfterSingleSection) {
   EXPECT_FALSE(result.has_value());  // Single section, no preceding
 }
 
+TEST(SectionUtilsTest, ClassifyChorusOccurrenceCountsOnlyChorusesCarryingTheTrack) {
+  std::vector<Section> sections = {
+      makeSection(SectionType::A, 8, 0),      makeSection(SectionType::Chorus, 8, 0),
+      makeSection(SectionType::Chorus, 8, 0), makeSection(SectionType::Chorus, 8, 0),
+      makeSection(SectionType::Chorus, 8, 0),
+  };
+  sections[4].track_mask = TrackMask::Vocal;  // no Motif in the last chorus
+
+  EXPECT_EQ(classifyChorusOccurrence(sections, 0, TrackMask::Motif), ChorusOccurrence::None);
+  EXPECT_EQ(classifyChorusOccurrence(sections, 1, TrackMask::Motif), ChorusOccurrence::First);
+  EXPECT_EQ(classifyChorusOccurrence(sections, 2, TrackMask::Motif), ChorusOccurrence::Middle);
+  EXPECT_EQ(classifyChorusOccurrence(sections, 3, TrackMask::Motif), ChorusOccurrence::Final);
+  EXPECT_EQ(classifyChorusOccurrence(sections, 4, TrackMask::Motif), ChorusOccurrence::None);
+  EXPECT_EQ(classifyChorusOccurrence(sections, 4, TrackMask::Vocal), ChorusOccurrence::Final);
+  EXPECT_EQ(classifyChorusOccurrence({sections[1]}, 0, TrackMask::Motif), ChorusOccurrence::Only);
+  EXPECT_EQ(classifyChorusOccurrence(sections, 9, TrackMask::Motif), ChorusOccurrence::None);
+}
+
 }  // namespace
 }  // namespace midisketch

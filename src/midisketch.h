@@ -43,7 +43,10 @@ class MidiSketch {
   /**
    * @brief Regenerate vocal track with a new seed.
    *
-   * Keeps the same chord progression and structure.
+   * Keeps the same chord progression and structure. Under RhythmSync the motif
+   * is regenerated with the vocal and the accompaniment is cleared (call
+   * generateAccompanimentForVocal() to voice a new one); other paradigms keep it.
+   * The saved metadata keeps the song seed and is marked non-replayable.
    * @param new_seed New random seed (0 = auto-generate)
    */
   void regenerateVocal(uint32_t new_seed = 0);
@@ -51,7 +54,8 @@ class MidiSketch {
   /**
    * @brief Regenerate vocal track with new configuration.
    *
-   * Updates vocal parameters and generates a new melody.
+   * Updates vocal parameters and generates a new melody. The accompaniment is
+   * cleared under RhythmSync unless keep_motif is set, as in the seed overload.
    * @param config Vocal configuration with all parameters
    */
   void regenerateVocal(const VocalConfig& config);
@@ -110,6 +114,10 @@ class MidiSketch {
 
   /**
    * @brief Set melody from saved MelodyData.
+   *
+   * Pitches are internal C-major pitches, as getMelody() returns them
+   * (sounding = pitch + key, plus the modulation after the key change).
+   * The saved metadata is marked non-replayable.
    * @param melody MelodyData to apply to vocal track
    */
   void setMelody(const MelodyData& melody);
@@ -121,6 +129,10 @@ class MidiSketch {
    * then replaces the vocal track with the provided notes.
    * Call generateAccompanimentForVocal() after this to generate
    * accompaniment tracks that fit the custom vocal melody.
+   *
+   * Pitches are internal C-major pitches, the space the chords are planned in;
+   * the writers add config.key, and the modulation after the key change, on
+   * output. The saved metadata is marked non-replayable.
    *
    * @param config Song configuration (for structure/chord setup)
    * @param notes Vector of NoteEvent representing the custom vocal
@@ -196,16 +208,13 @@ class MidiSketch {
   uint8_t resolvedBlueprintId() const { return generator_.resolvedBlueprintId(); }
 
  private:
-  /// @brief Rebuild MIDI from current generator state (legacy params only).
-  void rebuildMidiLegacy();
-  /// @brief Rebuild MIDI from current generator state with SongConfig metadata.
-  void rebuildMidiWithConfig(const SongConfig& config);
   /**
-   * @brief Rebuild MIDI, preferring the accumulated SongConfig.
+   * @brief Rebuild MIDI and record its metadata, preferring the accumulated SongConfig.
    *
-   * Once a handle has been given a SongConfig, every later state change keeps
-   * emitting config-carrying metadata; only handles driven purely through
-   * GeneratorParams fall back to the params-only form.
+   * The only metadata recorder. Once a handle has been given a SongConfig, every
+   * later state change keeps emitting config-carrying metadata; only handles
+   * driven purely through GeneratorParams fall back to the params-only form.
+   * A song the recorded inputs cannot reproduce is marked non-replayable.
    */
   void rebuildMidi();
 

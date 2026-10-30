@@ -10,6 +10,8 @@
 #include "core/arrangement.h"
 #include "core/chord.h"
 #include "core/chord_progression_tracker.h"
+#include "core/generator.h"
+#include "core/timing_constants.h"
 
 namespace midisketch {
 namespace {
@@ -234,6 +236,49 @@ TEST(SecondaryDominantToneLookupTest, MinorDegreeForcedToDominantQuality) {
   EXPECT_EQ(std::find(tones.begin(), tones.end(), 5), tones.end());
   // Dominant 7th D+10 = C(0) present.
   EXPECT_NE(std::find(tones.begin(), tones.end(), 0), tones.end());
+}
+
+TEST(SecondaryDominantTest, ChordTrackVoicesTheAlteredToneOfEverySecondaryDominant) {
+  // A secondary dominant is its raised third (G# in E7 for V/vi); a voicing
+  // that drops it states the diatonic chord the timeline replaced. With no
+  // vocal nothing above the chord can make the altered tone unsafe.
+  size_t entries = 0;
+  for (uint32_t seed = 1; seed <= 6; ++seed) {
+    GeneratorParams params;
+    params.seed = seed;
+    params.mood = Mood::StraightPop;
+    params.structure = StructurePattern::FullPop;
+    params.skip_vocal = true;
+    Generator gen;
+    gen.generate(params);
+    const auto& harmony = gen.getHarmonyContext();
+    const auto& notes = gen.getSong().chord().notes();
+    const Tick song_end = gen.getSong().arrangement().sections().back().endTick();
+
+    for (Tick tick = 0; tick < song_end; tick += TICK_EIGHTH) {
+      if (!harmony.isSecondaryDominantAt(tick)) continue;
+      if (tick > 0 && harmony.isSecondaryDominantAt(tick - TICK_EIGHTH)) continue;
+      Tick end = tick;
+      while (end < song_end && harmony.isSecondaryDominantAt(end)) end += TICK_EIGHTH;
+
+      const int8_t degree = harmony.getChordDegreeAt(tick);
+      const auto alterations = getChromaticAlterations(degree, harmony.getChordExtensionAt(tick));
+      const bool voiced = std::any_of(notes.begin(), notes.end(), [&](const NoteEvent& note) {
+        return note.start_tick >= tick && note.start_tick < end;
+      });
+      if (!voiced) continue;  // a bar the layer schedule mutes
+      for (const auto& alteration : alterations) {
+        ++entries;
+        const bool sounded = std::any_of(notes.begin(), notes.end(), [&](const NoteEvent& note) {
+          return note.start_tick < end && note.start_tick + note.duration > tick &&
+                 note.note % 12 == alteration.altered_pc;
+        });
+        EXPECT_TRUE(sounded) << "seed " << seed << " tick " << tick << " degree " << int(degree)
+                             << ": altered tone " << int(alteration.altered_pc) << " not voiced";
+      }
+    }
+  }
+  ASSERT_GT(entries, 0u);
 }
 
 }  // namespace

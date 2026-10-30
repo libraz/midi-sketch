@@ -30,7 +30,7 @@ class DrumsGenerator : public TrackBase {
 
   PhysicalModel getPhysicalModel() const override {
     // Drums have no pitch constraints (GM drum map)
-    return PhysicalModel{0, 127, 1, 127, 30, false};
+    return PhysicalModel{0, 127};
   }
 
   /// Drum hits carry no harmony, so a chord change is nothing for them to cross.

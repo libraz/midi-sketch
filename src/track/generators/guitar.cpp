@@ -17,6 +17,7 @@
 #include "core/song.h"
 #include "core/timing_constants.h"
 #include "core/velocity.h"
+#include "core/velocity_constants.h"
 #include "instrument/fretted/guitar_model.h"
 #include "track/accompaniment_ceiling.h"
 
@@ -310,7 +311,7 @@ static uint8_t calculateGuitarVelocity(uint8_t base, SectionType section, Guitar
   float accent = (beat_pos == 0) ? 1.1f : 1.0f;
 
   int velocity = static_cast<int>(base * section_mult * style_mult * accent);
-  return static_cast<uint8_t>(std::clamp(velocity, 40, 120));
+  return static_cast<uint8_t>(std::clamp(velocity, velocity::kGuitarVelocityFloor, 120));
 }
 
 // ============================================================================
@@ -905,7 +906,7 @@ void GuitarGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackConte
 
   GuitarStyle base_style = guitarStyleFromProgram(progs.guitar);
 
-  const auto& progression = getChordProgression(params.chord_id);
+  const auto& progression = getChordProgression(params);
   auto& rng = *ctx.rng;
 
   uint8_t base_vel = 80;

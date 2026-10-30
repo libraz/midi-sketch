@@ -42,7 +42,9 @@ enum class Mood : uint8_t {
   Synthwave,        ///< Retro synth (118 BPM, medium density)
   FutureBass,       ///< Future bass (145 BPM, high density)
   CityPop,          ///< City pop (110 BPM, medium density)
-  /// Genre expansion moods
+  /// Genre expansion moods. Their tempos sit below every blueprint they may draw,
+  /// so with bpm = 0 and a drawn blueprint they play at the nearest range edge
+  /// (Traditional, 96 BPM); an explicit bpm or blueprint keeps its own tempo.
   RnBNeoSoul,  ///< R&B/Neo-Soul (85-100 BPM, heavy swing, extended chords)
   LatinPop,    ///< Latin Pop (95 BPM, dembow rhythm, tresillo bass)
   Trap,        ///< Trap (70 BPM half-time, 808 sub-bass, hi-hat rolls)
@@ -233,6 +235,7 @@ struct SongConfig {
   /// Drive feel (0-100): affects timing, velocity, syncopation
   /// 0=laid-back (relaxed), 50=neutral (default), 100=aggressive (driving)
   uint8_t drive_feel = 50;
+  bool drive_feel_explicit = false;  ///< True if drive_feel was explicitly set by user
 
   /// Options
   bool drums_enabled = true;
@@ -240,8 +243,9 @@ struct SongConfig {
   bool arpeggio_enabled = false;
   bool guitar_enabled = true;  ///< Enable guitar track
   bool skip_vocal = false;     ///< Skip vocal generation (for BGM-first workflow)
-  uint8_t vocal_low = 60;      ///< C4
-  uint8_t vocal_high = 79;     ///< G5
+  /// Vocal range bounds: internal C-major pitch (sounding = pitch + key)
+  uint8_t vocal_low = 60;   ///< C4
+  uint8_t vocal_high = 79;  ///< G5
 
   /// Arpeggio settings
   ArpeggioParams arpeggio;  ///< Pattern, speed, octave range, gate
@@ -341,6 +345,7 @@ struct SongConfig {
     v("vocal_attitude", self.vocal_attitude);
     v("vocal_style", self.vocal_style);
     v("drive_feel", self.drive_feel);
+    v("drive_feel_explicit", self.drive_feel_explicit);
     v("drums_enabled", self.drums_enabled);
     v("drums_enabled_explicit", self.drums_enabled_explicit);
     v("arpeggio_enabled", self.arpeggio_enabled);
@@ -436,8 +441,9 @@ struct GeneratorParams {
   bool drums_enabled_explicit = false;  ///< True if user explicitly set drums_enabled
   bool skip_vocal = false;              ///< Skip vocal track generation (for BGM-first workflow)
   /// Note: Modulation is controlled via params_.modulation_timing (set from SongConfig)
-  uint8_t vocal_low = 60;                ///< Vocal range lower bound (MIDI note)
-  uint8_t vocal_high = 79;               ///< Vocal range upper bound (MIDI note)
+  /// Vocal range bounds: internal C-major pitch (sounding = pitch + key)
+  uint8_t vocal_low = 60;                ///< Vocal range lower bound
+  uint8_t vocal_high = 79;               ///< Vocal range upper bound
   uint16_t bpm = 0;                      ///< Tempo (0 = implicit, see resolveTempo)
   uint32_t seed = 0;                     ///< Random seed (0 = auto)
   uint16_t target_duration_seconds = 0;  ///< 0 = use structure pattern, >0 = auto-generate
@@ -505,14 +511,18 @@ struct GeneratorParams {
   uint16_t auto_bpm_fallback = 120;
   bool motif_length_explicit = false;          ///< True if motif length was explicitly set
   bool motif_note_count_explicit = false;      ///< True if motif note_count was explicitly set
+  bool motif_motion_explicit = false;          ///< True if motif motion was explicitly set
   bool motif_rhythm_density_explicit = false;  ///< True if motif rhythm_density was explicitly set
   bool melody_max_leap_override = false;  ///< True if melody_max_leap was set; only then it caps
   bool melody_long_note_ratio_override = false;
   bool melody_syncopation_override = false;  ///< True if melody_syncopation_prob was set by user
   bool vocal_style_explicit = false;         ///< True if vocal_style was not Auto in the config
   bool hook_intensity_explicit = false;      ///< True if hook_intensity was explicitly set
+  bool drive_feel_explicit = false;          ///< True if drive_feel was explicitly set
   bool vocal_groove_explicit = false;        ///< True if vocal_groove was explicitly set
   bool enable_syncopation_explicit = false;  ///< True if enable_syncopation was explicitly set
+  /// True if melody_hook_repetition was set (1 or 2)
+  bool melody_hook_repetition_override = false;
   bool melody_chorus_register_shift_override = false;  ///< True if the user set the shift
   bool syllabic_sub_rate_override = false;             ///< True if the user set the rate
 
@@ -708,8 +718,9 @@ struct VocalConfig {
 
   uint32_t present_fields = kAllFields;  ///< Bit N is the Nth field in visitFields.
   uint32_t seed = 0;                     ///< Random seed (0 = new random)
-  uint8_t vocal_low = 60;                ///< Vocal range lower bound (MIDI note)
-  uint8_t vocal_high = 79;               ///< Vocal range upper bound (MIDI note)
+  /// Vocal range bounds: internal C-major pitch (sounding = pitch + key)
+  uint8_t vocal_low = 60;   ///< Vocal range lower bound
+  uint8_t vocal_high = 79;  ///< Vocal range upper bound
   VocalAttitude vocal_attitude = VocalAttitude::Clean;
   VocalStylePreset vocal_style = VocalStylePreset::Auto;
   MelodyTemplateId melody_template = MelodyTemplateId::Auto;

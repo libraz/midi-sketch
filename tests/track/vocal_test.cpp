@@ -11,6 +11,7 @@
 #include <map>
 #include <random>
 #include <set>
+#include <sstream>
 #include <unordered_map>
 
 #include "core/generator.h"
@@ -30,6 +31,7 @@
 #include "test_support/generator_test_fixture.h"
 #include "test_support/stub_harmony_context.h"
 #include "test_support/test_constants.h"
+#include "test_support/test_helpers.h"
 #include "track/melody/melody_utils.h"
 #include "track/vocal/phrase_variation.h"
 
@@ -253,7 +255,7 @@ TEST_F(VocalTest, ClimaxNeverSingsAboveConfiguredCeiling) {
   // headroom ABOVE the configured ceiling rather than inside it.
   for (uint8_t ceiling : {static_cast<uint8_t>(74), static_cast<uint8_t>(79)}) {
     uint8_t highest_peak = 0;
-    for (uint32_t seed : {12345u, 777u, 20260903u}) {
+    for (uint32_t seed : {12345u, 777u, 20260903u, 1u, 2u, 3u, 4u, 5u}) {
       params_.vocal_low = 60;
       params_.vocal_high = ceiling;
       params_.seed = seed;
@@ -582,6 +584,7 @@ TEST_F(VocalTest, VocaloidStylesGenerateValidNoOverlapOutput) {
 // ============================================================================
 
 TEST_F(VocalTest, SectionFinalNoteIsChordTone) {
+  constexpr double kMinChordToneFinalRate = 0.7;
   // Test that the final note of each section resolves to a chord tone
   params_.seed = 98765;
   params_.structure = StructurePattern::StandardPop;
@@ -596,12 +599,11 @@ TEST_F(VocalTest, SectionFinalNoteIsChordTone) {
   ASSERT_FALSE(vocal.empty()) << "Vocal track should have notes";
   ASSERT_FALSE(sections.empty()) << "Should have sections";
 
-  // C major scale chord tones (pitch classes)
-  // For C major: C=0, E=4, G=7 (I chord tones)
-  // For other chords in the progression, we accept any diatonic pitch
-  std::set<int> c_major_pcs = {0, 2, 4, 5, 7, 9, 11};
+  const auto& harmony = gen.getHarmonyContext();
+  int examined = 0;
+  int chord_tone_finals = 0;
+  std::ostringstream misses;
 
-  // Find the last note of each vocal section
   for (const auto& section : sections) {
     // Skip sections without vocals (Intro, Interlude, Outro, Chant, MixBreak)
     if (section.type == SectionType::Intro || section.type == SectionType::Interlude ||
@@ -613,7 +615,6 @@ TEST_F(VocalTest, SectionFinalNoteIsChordTone) {
     Tick section_start = section.start_tick;
     Tick section_end = section.endTick();
 
-    // Find notes in this section
     const NoteEvent* last_note = nullptr;
     for (const auto& note : vocal.notes()) {
       if (note.start_tick >= section_start && note.start_tick < section_end) {
@@ -622,14 +623,25 @@ TEST_F(VocalTest, SectionFinalNoteIsChordTone) {
         }
       }
     }
+    if (last_note == nullptr) continue;
 
-    if (last_note != nullptr) {
-      int pc = last_note->note % 12;
-      EXPECT_TRUE(c_major_pcs.count(pc) > 0)
-          << "Section final note should be a scale tone. Got pitch class: " << pc << " in section "
-          << section.name;
+    ++examined;
+    const int pc = last_note->note % 12;
+    bool is_chord_tone = false;
+    for (int tone : harmony.getChordTonesAt(last_note->start_tick)) {
+      if (tone == pc) is_chord_tone = true;
+    }
+    if (is_chord_tone) {
+      ++chord_tone_finals;
+    } else {
+      misses << " " << section.name << "(pc=" << pc << ")";
     }
   }
+
+  ASSERT_GT(examined, 0) << "No vocal section had notes";
+  EXPECT_GE(static_cast<double>(chord_tone_finals) / examined, kMinChordToneFinalRate)
+      << chord_tone_finals << "/" << examined
+      << " section-final notes are chord tones; misses:" << misses.str();
 }
 
 TEST_F(VocalTest, CadenceAppliedToMultipleSections) {
@@ -1998,8 +2010,49 @@ TEST_F(VocalTest, PhraseBoundaryHasSectionEndFlag) {
   EXPECT_TRUE(found_section_end) << "Should have at least one section-end phrase boundary";
 }
 
-TEST_F(VocalTest, PhraseBoundaryHasCadenceType) {
-  // Verify that phrase boundaries have valid cadence types
+namespace {
+
+CadenceType cadenceOf(Tick start, Tick duration, uint8_t pitch, int8_t chord_degree) {
+  std::vector<NoteEvent> notes = {NoteEventTestHelper::create(start, duration, pitch, 80)};
+  return detectCadenceType(notes, chord_degree);
+}
+
+}  // namespace
+
+TEST_F(VocalTest, DetectCadenceTypeClassifiesEachCategory) {
+  constexpr Tick kBeat = TICKS_PER_BEAT;
+
+  EXPECT_EQ(detectCadenceType({}, 0), CadenceType::None);
+
+  // Tonic tone + strong beat (1 or 3) + quarter or longer = Strong.
+  EXPECT_EQ(cadenceOf(0, kBeat, 60, 0), CadenceType::Strong);
+  EXPECT_EQ(cadenceOf(kBeat * 2, kBeat * 2, 64, 0), CadenceType::Strong);
+  EXPECT_EQ(cadenceOf(0, kBeat, 67, 0), CadenceType::Strong);
+
+  // Tonic tone that is short or off the strong beat is only Weak.
+  EXPECT_EQ(cadenceOf(0, kBeat / 2, 60, 0), CadenceType::Weak);
+  EXPECT_EQ(cadenceOf(kBeat, kBeat, 60, 0), CadenceType::Weak);
+  EXPECT_EQ(cadenceOf(kBeat / 2, kBeat / 4, 64, 0), CadenceType::Weak);
+
+  // Tension tones (D, F, B) end Floating however strong the placement.
+  EXPECT_EQ(cadenceOf(0, kBeat, 62, 1), CadenceType::Floating);
+  EXPECT_EQ(cadenceOf(0, kBeat, 65, 3), CadenceType::Floating);
+  EXPECT_EQ(cadenceOf(kBeat * 2, kBeat, 71, 4), CadenceType::Floating);
+
+  // A over the vi chord is Deceptive, wherever it falls.
+  EXPECT_EQ(cadenceOf(0, kBeat, 69, 5), CadenceType::Deceptive);
+  EXPECT_EQ(cadenceOf(kBeat / 2, kBeat / 4, 57, 5), CadenceType::Deceptive);
+}
+
+TEST_F(VocalTest, DetectCadenceTypeUsesLastNoteOnly) {
+  // The classification reads the final note, not earlier ones.
+  std::vector<NoteEvent> notes = {
+      NoteEventTestHelper::create(0, TICKS_PER_BEAT, 62, 80),
+      NoteEventTestHelper::create(TICKS_PER_BEAT * 2, TICKS_PER_BEAT, 60, 80)};
+  EXPECT_EQ(detectCadenceType(notes, 0), CadenceType::Strong);
+}
+
+TEST_F(VocalTest, PhraseBoundariesCarryAClassifiedCadence) {
   params_.structure = StructurePattern::StandardPop;
   params_.seed = 333333;
 
@@ -2009,18 +2062,9 @@ TEST_F(VocalTest, PhraseBoundaryHasCadenceType) {
   const auto& boundaries = gen.getSong().phraseBoundaries();
   ASSERT_FALSE(boundaries.empty()) << "Should have phrase boundaries";
 
-  int valid_cadence_count = 0;
-  for (const auto& boundary : boundaries) {
-    // CadenceType should be one of the valid enum values
-    if (boundary.cadence == CadenceType::Strong || boundary.cadence == CadenceType::Weak ||
-        boundary.cadence == CadenceType::Floating || boundary.cadence == CadenceType::Deceptive ||
-        boundary.cadence == CadenceType::None) {
-      valid_cadence_count++;
-    }
-  }
-
-  EXPECT_EQ(valid_cadence_count, static_cast<int>(boundaries.size()))
-      << "All phrase boundaries should have valid cadence types";
+  std::set<CadenceType> seen;
+  for (const auto& boundary : boundaries) seen.insert(boundary.cadence);
+  EXPECT_GT(seen.size(), 1u) << "Every boundary carries the same cadence type";
 }
 
 TEST_F(VocalTest, PhraseBoundaryTicksIncreasing) {
@@ -2412,51 +2456,6 @@ TEST_F(VocalTest, PhraseVariationAppliedAfterMultipleReuse) {
     EXPECT_GT(note.duration, 0u) << "Note duration should be positive after variation";
     EXPECT_LE(note.note, 127) << "Note pitch should be valid after variation";
   }
-}
-
-TEST_F(VocalTest, CadenceTypeStrongOnStableEndings) {
-  // Verify that Strong cadence is assigned to stable endings
-  params_.structure = StructurePattern::StandardPop;
-  params_.seed = 888888;
-
-  Generator gen;
-  gen.generate(params_);
-
-  const auto& boundaries = gen.getSong().phraseBoundaries();
-
-  // Verify cadence detection is running (boundaries exist with valid types)
-  EXPECT_FALSE(boundaries.empty()) << "Should have phrase boundaries with cadence types";
-
-  // Verify at least some boundaries have valid cadence types assigned
-  bool has_cadence = false;
-  for (const auto& boundary : boundaries) {
-    if (boundary.cadence != CadenceType::None) {
-      has_cadence = true;
-      break;
-    }
-  }
-  EXPECT_TRUE(has_cadence) << "Some boundaries should have non-None cadence types";
-}
-
-TEST_F(VocalTest, CadenceTypeFloatingOnTensionEndings) {
-  // Verify that Floating cadence is assigned when ending on tension notes
-  params_.structure = StructurePattern::StandardPop;
-  params_.seed = 999999;
-
-  Generator gen;
-  gen.generate(params_);
-
-  const auto& boundaries = gen.getSong().phraseBoundaries();
-
-  // Check that we have variety in cadence types (not all the same)
-  std::set<CadenceType> cadence_types;
-  for (const auto& boundary : boundaries) {
-    cadence_types.insert(boundary.cadence);
-  }
-
-  // Should have at least 1 different cadence type
-  EXPECT_GE(cadence_types.size(), 1u)
-      << "Should have variety in cadence types based on phrase endings";
 }
 
 // ============================================================================
@@ -3455,7 +3454,7 @@ TEST_F(VocalTest, RawAttitudePortamentoGeneratesPitchBends) {
     gen.generate(params_);
 
     const auto& vocal = gen.getSong().vocal();
-    if (vocal.notes().empty()) continue;
+    ASSERT_TRUE(test::hasNotes(vocal, "vocal")) << "seed " << seed;
 
     const auto& notes = vocal.notes();
     for (size_t idx = 0; idx + 1 < notes.size(); ++idx) {
@@ -4011,30 +4010,49 @@ TEST_F(VocalTest, RhythmSyncSectionSpecificDirectionBias) {
 }
 
 TEST_F(VocalTest, RhythmSyncBreathOpportunities) {
-  // Phrase boundaries have to leave gaps wide enough to breathe in.
-  params_.blueprint_id = 1;  // RhythmLock supplies RhythmSync + locked riff policy
-  params_.seed = 202;
+  // Every planned phrase boundary the vocal sings across leaves a breath: after the
+  // last note before it, or in front of that note when it is the pickup into the next
+  // phrase.
+  size_t examined = 0;
+  for (uint8_t bp : {1, 5, 7, 9}) {
+    for (uint32_t seed : {202u, 1101u, 1507u}) {
+      params_.blueprint_id = bp;
+      params_.seed = seed;
 
-  Generator gen;
-  gen.generate(params_);
+      Generator gen;
+      gen.generate(params_);
 
-  const auto& vocal = gen.getSong().vocal();
-  ASSERT_GT(vocal.notes().size(), 10u) << "Need multiple notes for breath analysis";
+      const auto& song = gen.getSong();
+      std::vector<NoteEvent> vocal = song.vocal().notes();
+      std::sort(vocal.begin(), vocal.end(),
+                [](const NoteEvent& a, const NoteEvent& b) { return a.start_tick < b.start_tick; });
+      ASSERT_GT(vocal.size(), 10u) << "bp " << int(bp) << " seed " << seed;
+      ASSERT_FALSE(song.phraseBoundaries().empty()) << "bp " << int(bp) << " seed " << seed;
 
-  // Check for gaps between notes (potential breath points)
-  int breath_gaps = 0;
-  constexpr Tick kBreathGapThreshold = TICKS_PER_BEAT / 2;  // Half beat
-
-  for (size_t i = 1; i < vocal.notes().size(); ++i) {
-    Tick prev_end = vocal.notes()[i - 1].start_tick + vocal.notes()[i - 1].duration;
-    Tick gap = vocal.notes()[i].start_tick - prev_end;
-    if (gap >= kBreathGapThreshold) {
-      breath_gaps++;
+      for (const auto& boundary : song.phraseBoundaries()) {
+        if (!boundary.is_breath) continue;
+        auto next = std::find_if(vocal.begin(), vocal.end(), [&boundary](const NoteEvent& n) {
+          return n.start_tick >= boundary.tick;
+        });
+        if (next == vocal.end() || next == vocal.begin()) continue;
+        if (next->start_tick >= boundary.tick + TICKS_PER_BAR) continue;
+        const NoteEvent& last = *(next - 1);
+        if (last.start_tick + TICKS_PER_BAR < boundary.tick) continue;
+        ++examined;
+        const Tick last_end = last.start_tick + last.duration;
+        const Tick rest_after = next->start_tick > last_end ? next->start_tick - last_end : 0;
+        if (rest_after >= kMinBreathTicks) continue;
+        ASSERT_NE(next - 1, vocal.begin());
+        const NoteEvent& before = *(next - 2);
+        const Tick before_end = before.start_tick + before.duration;
+        const Tick rest_before = last.start_tick > before_end ? last.start_tick - before_end : 0;
+        EXPECT_GE(rest_before, kMinBreathTicks)
+            << "bp " << int(bp) << " seed " << seed << " boundary at " << boundary.tick << ": rest "
+            << rest_after << " after the last note, " << rest_before << " in front of it";
+      }
     }
   }
-  // Should have some natural breath opportunities
-  // The exact count depends on density, but shouldn't be zero for singability
-  EXPECT_GT(breath_gaps, 0) << "Should have breath opportunities in melody";
+  ASSERT_GT(examined, 0u) << "No phrase boundary with a following onset was examined";
 }
 
 TEST_F(VocalTest, RhythmSyncVerseTravelsLessFarThanChorus) {
@@ -4421,6 +4439,242 @@ TEST(VocalRegisterCorpusTest, AnAccentedDissonanceSurvivesARearticulatedResoluti
   adjacent.next_start = line[1].start_tick;
   ASSERT_EQ(melody::classifyVocalTone(harmony, 74, adjacent), melody::ToneLegality::Illegal)
       << "the input does not distinguish the two readings";
+}
+
+}  // namespace
+}  // namespace midisketch
+
+// ============================================================================
+// Breath before a phrase, held runs and pitch-bend glides
+// ============================================================================
+
+#include "core/note_source.h"
+#include "track/vocal/phrase_cache.h"
+#include "track/vocal/vocal_pitch_hints.h"
+#include "track/vocal/vocal_recitation.h"
+
+namespace midisketch {
+namespace {
+
+TEST(VocalBreathTest, EnforceMinimumBreathLeavesTheBreathOrRefuses) {
+  // Room for the note and the breath: the note is pulled back to leave it.
+  Tick duration = 960;
+  EXPECT_TRUE(enforceMinimumBreath(0, duration, 960, 300, TICK_EIGHTH));
+  EXPECT_EQ(duration, 660u);
+
+  // A breath under kMinBreathTicks is raised to it.
+  duration = 960;
+  EXPECT_TRUE(enforceMinimumBreath(0, duration, 960, 60, TICK_EIGHTH));
+  EXPECT_EQ(duration, 960u - kMinBreathTicks);
+
+  // A note that overshoots the onset is pulled back by the overshoot too.
+  duration = 1440;
+  EXPECT_TRUE(enforceMinimumBreath(0, duration, 960, 240, TICK_EIGHTH));
+  EXPECT_EQ(duration, 720u);
+
+  // A note that already has its breath is left alone, however short.
+  duration = TICK_SIXTEENTH;
+  EXPECT_TRUE(enforceMinimumBreath(0, duration, 960, 240, TICK_EIGHTH));
+  EXPECT_EQ(duration, TICK_SIXTEENTH);
+
+  // Exactly room for a singable note and the breath.
+  duration = 480;
+  EXPECT_TRUE(enforceMinimumBreath(0, duration, 480, 240, TICK_EIGHTH));
+  EXPECT_EQ(duration, 240u);
+
+  // No room for a singable note in front of the breath: nothing changes.
+  duration = 400;
+  EXPECT_FALSE(enforceMinimumBreath(0, duration, 400, 240, TICK_EIGHTH));
+  EXPECT_EQ(duration, 400u);
+}
+
+TEST(VocalBreathTest, PhraseEndMergeKeepsTheRestItWasFoundIn) {
+  // Three short notes, then a 480-tick rest before the next phrase. The merge
+  // that gives the phrase a sustained ending must not eat into that rest.
+  std::vector<NoteEvent> notes = {
+      NoteEventTestHelper::create(0, 200, 64, 90),
+      NoteEventTestHelper::create(240, 200, 65, 90),
+      NoteEventTestHelper::create(480, 200, 67, 90),
+      NoteEventTestHelper::create(1160, 480, 69, 90),
+  };
+  const Tick rest_before = notes[3].start_tick - (notes[2].start_tick + notes[2].duration);
+  ASSERT_GE(rest_before, kMinBreathTicks);
+
+  postProcessPhraseEndResolution(notes, 0.96f);
+
+  ASSERT_GE(notes.size(), 2u);
+  const NoteEvent& ending = notes[notes.size() - 2];
+  ASSERT_GE(ending.duration, TICKS_PER_BEAT) << "the tail was not merged into a sustained ending";
+  const Tick rest_after = notes.back().start_tick - (ending.start_tick + ending.duration);
+  EXPECT_GE(rest_after, rest_before);
+}
+
+TEST(VocalBreathTest, LastNoteLongStopsABreathBeforeThePhraseEnd) {
+  constexpr Tick kPhraseEnd = 4 * TICKS_PER_BEAT;
+  std::mt19937 rng(1);
+
+  // A long ending is extended, but never into the breath before the phrase end.
+  std::vector<NoteEvent> notes = {NoteEventTestHelper::create(0, 480, 60, 80),
+                                  NoteEventTestHelper::create(480, 960, 64, 80)};
+  applyPhraseVariation(notes, PhraseVariation::LastNoteLong, rng, kPhraseEnd);
+  EXPECT_GT(notes.back().duration, 960u);
+  EXPECT_LE(notes.back().start_tick + notes.back().duration, kPhraseEnd - kMinBreathTicks);
+
+  // An ending already held to the phrase end is not extended past it.
+  notes = {NoteEventTestHelper::create(0, 480, 60, 80),
+           NoteEventTestHelper::create(480, kPhraseEnd - 480, 64, 80)};
+  applyPhraseVariation(notes, PhraseVariation::LastNoteLong, rng, kPhraseEnd);
+  EXPECT_LE(notes.back().start_tick + notes.back().duration, kPhraseEnd);
+
+  // An echo that would land in the breath is not written.
+  notes = {NoteEventTestHelper::create(0, 480, 60, 80),
+           NoteEventTestHelper::create(480, kPhraseEnd - 480, 64, 80)};
+  applyPhraseVariation(notes, PhraseVariation::EchoRepeat, rng, kPhraseEnd);
+  EXPECT_EQ(notes.size(), 2u);
+}
+
+class VocalBreathGenerationTest : public test::GeneratorTestFixture {};
+
+TEST_F(VocalBreathGenerationTest, SectionBoundariesKeepABreath) {
+  // Every section boundary that the vocal sings across has a breath: after the
+  // last note, or in front of it when that note is the pickup into the next
+  // section. Measured on the locked-rhythm blueprints, whose generator and post
+  // passes used to leave 0- and 120-tick gaps there.
+  size_t boundaries = 0;
+  for (uint8_t bp : {1, 5, 7}) {
+    for (uint32_t seed : {1101u, 1507u, 1705u}) {
+      params_.blueprint_id = bp;
+      params_.seed = seed;
+      Generator gen;
+      gen.generate(params_);
+      const auto& song = gen.getSong();
+      std::vector<NoteEvent> vocal = song.vocal().notes();
+      std::sort(vocal.begin(), vocal.end(),
+                [](const NoteEvent& a, const NoteEvent& b) { return a.start_tick < b.start_tick; });
+      ASSERT_FALSE(vocal.empty()) << "bp " << int(bp) << " seed " << seed;
+      for (const auto& section : song.arrangement().sections()) {
+        if (section.start_tick == 0) continue;
+        auto next = std::find_if(vocal.begin(), vocal.end(), [&section](const NoteEvent& n) {
+          return n.start_tick >= section.start_tick;
+        });
+        if (next == vocal.end() || next == vocal.begin()) continue;
+        if (next->start_tick >= section.start_tick + TICKS_PER_BAR) continue;
+        const NoteEvent& last = *(next - 1);
+        if (last.start_tick + TICKS_PER_BAR < section.start_tick) continue;
+        ++boundaries;
+        const Tick last_end = last.start_tick + last.duration;
+        const Tick rest_after = next->start_tick > last_end ? next->start_tick - last_end : 0;
+        if (rest_after >= kMinBreathTicks) continue;
+        // The pickup case: the breath sits in front of the last note.
+        ASSERT_NE(next - 1, vocal.begin());
+        const NoteEvent& before = *(next - 2);
+        const Tick before_end = before.start_tick + before.duration;
+        const Tick rest_before = last.start_tick > before_end ? last.start_tick - before_end : 0;
+        EXPECT_GE(rest_before, kMinBreathTicks)
+            << "bp " << int(bp) << " seed " << seed << " boundary at " << section.start_tick
+            << ": rest " << rest_after << " after the last note, " << rest_before
+            << " in front of it";
+      }
+    }
+  }
+  ASSERT_GT(boundaries, 0u);
+}
+
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+TEST_F(VocalBreathGenerationTest, PlacedChorusChantSurvivesEveryLaterPass) {
+  // A chant placed on a chorus downbeat is still a run of at least
+  // kMinHookChantNotes notes on one pitch in the emitted track: a pass that has
+  // to move one of its notes moves the run, or leaves it. Provenance tells a
+  // chant from a syllabic split, which carries the same flag.
+  size_t chants = 0;
+  for (uint8_t bp : {5, 6, 7}) {
+    for (uint32_t seed : {1507u, 1508u, 1705u, 1709u}) {
+      params_.blueprint_id = bp;
+      params_.seed = seed;
+      Generator gen;
+      gen.generate(params_);
+      const auto& song = gen.getSong();
+      std::vector<NoteEvent> vocal = song.vocal().notes();
+      std::sort(vocal.begin(), vocal.end(),
+                [](const NoteEvent& a, const NoteEvent& b) { return a.start_tick < b.start_tick; });
+      for (const Section* chorus : sectionsOfType(song, SectionType::Chorus)) {
+        auto head = std::find_if(vocal.begin(), vocal.end(), [chorus](const NoteEvent& n) {
+          return n.start_tick >= chorus->start_tick;
+        });
+        if (head == vocal.end() || head->start_tick >= chorus->start_tick + TICK_EIGHTH) continue;
+        if (!head->is_syllabic_subdivision) continue;
+        // A syllabic split pair carries the same flag and is not a chant.
+        if (head->prov_source == static_cast<uint8_t>(NoteSource::SyllabicSub)) continue;
+        ++chants;
+        int run = 0;
+        for (auto it = head;
+             it != vocal.end() && it->is_syllabic_subdivision && it->note == head->note; ++it) {
+          ++run;
+        }
+        EXPECT_GE(run, kMinHookChantNotes)
+            << "bp " << int(bp) << " seed " << seed << " chorus at " << chorus->start_tick;
+      }
+    }
+  }
+  ASSERT_GT(chants, 0u) << "no chorus in the sample opened on a chant";
+}
+#endif  // MIDISKETCH_NOTE_PROVENANCE
+
+TEST(HeldRunTest, MovesTheWholeRunOrNothing) {
+  test::StubHarmonyContext harmony;
+  harmony.setAllPitchesSafe(true);
+  harmony.setChordDegree(0);
+  harmony.setChordTones({0, 4, 7});
+
+  std::vector<NoteEvent> notes = {NoteEventTestHelper::create(0, 240, 60, 90)};
+  for (int k = 0; k < 4; ++k) {
+    NoteEvent run = NoteEventTestHelper::create(240 + 240 * k, 240, 76, 90);
+    run.is_syllabic_subdivision = true;
+    notes.push_back(run);
+  }
+  notes.push_back(NoteEventTestHelper::create(1200, 480, 67, 90));
+
+  ASSERT_EQ(heldRunStart(notes, 3), 1u);
+  ASSERT_TRUE(
+      moveHeldRun(notes, 1, notes[0].note, 7, 55, 84, harmony, TransformStepType::IntervalFix));
+  for (size_t k = 1; k <= 4; ++k) {
+    EXPECT_EQ(notes[k].note, notes[1].note) << "run note " << k << " left the run";
+  }
+  EXPECT_LE(std::abs(static_cast<int>(notes[1].note) - 60), 7);
+  EXPECT_LE(std::abs(static_cast<int>(notes[1].note) - 67), 7);
+
+  // Nothing within the bound holds at every onset: the run keeps its pitch.
+  const uint8_t held = notes[1].note;
+  EXPECT_FALSE(moveHeldRun(notes, 1, 30, 1, 55, 84, harmony, TransformStepType::IntervalFix));
+  for (size_t k = 1; k <= 4; ++k) EXPECT_EQ(notes[k].note, held);
+}
+
+TEST_F(VocalBreathGenerationTest, PortamentoNeverSaturatesTheBendRange) {
+  // A glide is written only for a step the +/-2 semitone bend range can reach,
+  // so a saturated bend value only ever appears on a whole-step glide.
+  params_.vocal_attitude = VocalAttitude::Raw;
+  size_t bends = 0;
+  for (uint32_t seed : {11u, 12u, 13u, 14u}) {
+    params_.seed = seed;
+    Generator gen;
+    gen.generate(params_);
+    const auto& vocal = gen.getSong().vocal();
+    bends += vocal.pitchBendEvents().size();
+    for (const auto& bend : vocal.pitchBendEvents()) {
+      if (bend.value != PitchBend::kMax && bend.value != PitchBend::kMin) continue;
+      bool whole_step_glide = false;
+      const auto& notes = vocal.notes();
+      for (size_t i = 0; i + 1 < notes.size(); ++i) {
+        const Tick end = notes[i].start_tick + notes[i].duration;
+        if (bend.tick + TICK_SIXTEENTH < end || bend.tick > end) continue;
+        if (std::abs(static_cast<int>(notes[i + 1].note) - static_cast<int>(notes[i].note)) == 2) {
+          whole_step_glide = true;
+        }
+      }
+      EXPECT_TRUE(whole_step_glide) << "seed " << seed << ": saturated bend at " << bend.tick;
+    }
+  }
+  ASSERT_GT(bends, 0u);
 }
 
 }  // namespace

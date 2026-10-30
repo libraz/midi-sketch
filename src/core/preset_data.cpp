@@ -13,6 +13,7 @@
 #include "core/production_blueprint.h"
 #include "core/rng_util.h"
 #include "core/structure.h"
+#include "track/generators/se.h"
 
 namespace midisketch {
 
@@ -253,7 +254,7 @@ const StylePreset STYLE_PRESETS[17] = {
     {12,
      "background_motif",
      "Background Motif",
-     "Motif-driven with subdued vocals, ambient feel",
+     "Straight pop with a sparse vocal line; a motif plays where the blueprint writes one",
      StructurePattern::StandardPop,
      110,
      130,
@@ -1266,7 +1267,7 @@ SongConfig createDefaultSongConfig(uint8_t style_id) {
 
 // Every SongConfig field reaches the generator through this check, so a field
 // added to visitFields needs its range decided below before the count moves.
-static_assert(json::fieldCount<SongConfig>() == 64,
+static_assert(json::fieldCount<SongConfig>() == 65,
               "a new SongConfig field needs its range check in validateSongConfig");
 
 SongConfigError validateSongConfig(const SongConfig& config) {
@@ -1472,10 +1473,14 @@ SongConfigError validateSongConfig(const SongConfig& config) {
     }
   }
 
-  // Validate call/duration compatibility
-  // Check if calls might be enabled (Enabled or Auto with potential call style)
-  bool calls_may_be_enabled = (config.call_setting != CallSetting::Disabled);
-  if (calls_may_be_enabled && config.target_duration_seconds > 0) {
+  // Validate call/duration compatibility, only where calls resolve enabled: Auto
+  // follows the vocal style, and one still to be drawn is not known here (the
+  // structure builder then reports a length it could not meet).
+  const bool calls_enabled =
+      config.call_setting == CallSetting::Enabled ||
+      (config.call_setting == CallSetting::Auto && config.vocal_style != VocalStylePreset::Auto &&
+       isCallEnabled(config.vocal_style));
+  if (calls_enabled && config.target_duration_seconds > 0) {
     // The tempo generation resolves (resolveTempo): explicit bpm, else a named
     // blueprint's own, else the implicit reference a drawn blueprint is drawn to hold.
     const uint16_t implicit_bpm = config.mood_explicit

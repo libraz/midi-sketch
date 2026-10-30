@@ -22,6 +22,8 @@
 #include "core/chord.h"
 #include "core/chord_utils.h"
 #include "core/generator.h"
+#include "core/harmony_coordinator.h"
+#include "core/harmony_timeline_planner.h"
 #include "core/i_harmony_context.h"
 #include "core/preset_data.h"
 #include "core/song.h"
@@ -152,6 +154,14 @@ GeneratorParams colourfulParams(uint32_t seed) {
   return params;
 }
 
+/// @brief The harmony timeline as planned, before voicing withdraws any colour no track sounds.
+void replayPlannedTimeline(const Generator& gen, HarmonyCoordinator& planned) {
+  const auto& progression = getChordProgression(gen.getParams().chord_id);
+  planned.initialize(gen.getSong().arrangement(), progression, gen.getParams().mood);
+  registerPlannedHarmonyTimeline(gen.getSong().arrangement(), gen.getParams(), progression,
+                                 planned);
+}
+
 /// @brief Identity of a note, for comparing two generated tracks.
 using NoteSignature = std::tuple<Tick, Tick, uint8_t, uint8_t>;
 
@@ -213,7 +223,8 @@ TEST(SectionColourTest, ChorusChordsCarryColourBeyondTheTriad) {
   for (uint32_t seed : kSeeds) {
     Generator gen;
     gen.generate(colourfulParams(seed));
-    const IHarmonyContext& harmony = gen.getHarmonyContext();
+    HarmonyCoordinator harmony;
+    replayPlannedTimeline(gen, harmony);
 
     for (const auto& section : gen.getSong().arrangement().sections()) {
       if (section.type != SectionType::Chorus) continue;
@@ -245,7 +256,8 @@ TEST(SectionColourTest, SubdominantColourDiffersBetweenChorusAndPreChorus) {
     Generator gen;
     gen.generate(colourfulParams(seed));
     const Song& song = gen.getSong();
-    const IHarmonyContext& harmony = gen.getHarmonyContext();
+    HarmonyCoordinator harmony;
+    replayPlannedTimeline(gen, harmony);
 
     for (const auto& section : song.arrangement().sections()) {
       const bool is_chorus = section.type == SectionType::Chorus;

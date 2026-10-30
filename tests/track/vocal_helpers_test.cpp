@@ -1815,3 +1815,92 @@ TEST(RestateChorusHeadTest, LeadDnaStampsTheMidpointLikeTheHead) {
 
 }  // namespace
 }  // namespace midisketch
+
+// ============================================================================
+// Replayed hook chant and the transition pickup
+// ============================================================================
+
+#include "track/vocal/phrase_cache.h"
+
+namespace midisketch {
+namespace {
+
+TEST(HookRepetitionTest, BetrayalOnAReplayLeavesTheChantRunAlone) {
+  // The cached chorus head can open on a chant; a betrayal reached on a replay
+  // varies the notes around it and keeps every run note as it was.
+  MelodyDesigner designer;
+  test::StubHarmonyContext harmony;
+  harmony.setAllPitchesSafe(true);
+  harmony.setChordDegree(0);
+  harmony.setChordTones({0, 4, 7});
+  std::mt19937 rng(20260903);
+  const MelodyTemplate& tmpl = getTemplate(MelodyTemplateId::RunUpTarget);
+  ASSERT_EQ(tmpl.betrayal_threshold, 3);
+
+  std::vector<NoteEvent> original = makeHookHead(67);
+  for (size_t i = 0; i < 4; ++i) {
+    original[i].note = 67;
+    original[i].is_syllabic_subdivision = true;
+  }
+
+  bool betrayed = false;
+  for (int occurrence = 0; occurrence < 3; ++occurrence) {
+    std::vector<NoteEvent> replayed = original;
+    betrayed = designer.replayHookOccurrence(tmpl, replayed, harmony, rng, 55, 79) || betrayed;
+    for (size_t i = 0; i < 4; ++i) {
+      EXPECT_EQ(replayed[i].note, original[i].note) << "occurrence " << occurrence << " note " << i;
+      EXPECT_EQ(replayed[i].duration, original[i].duration);
+    }
+  }
+  EXPECT_TRUE(betrayed) << "the threshold was never reached, so nothing was exercised";
+  EXPECT_EQ(designer.hookRepetitionCount(), 3);
+}
+
+MelodyDesigner::SectionContext pickupContext(const SectionTransition& transition) {
+  MelodyDesigner::SectionContext ctx;
+  ctx.section_type = SectionType::B;
+  ctx.section_start = 0;
+  ctx.section_end = 2 * TICKS_PER_BAR;
+  ctx.section_bars = 2;
+  ctx.vocal_low = 55;
+  ctx.vocal_high = 84;
+  ctx.max_leap_semitones = 12;
+  ctx.tessitura = calculateTessitura(ctx.vocal_low, ctx.vocal_high);
+  ctx.tessitura.center = 67;
+  ctx.transition_to_next = &transition;
+  return ctx;
+}
+
+TEST(TransitionLeadingToneTest, PickupSitsAtTheEndOfAnyBreath) {
+  // The table pickup is written whatever breath the phrase ends on: after a
+  // long rest, and after a line sung up to the section end, which gives a
+  // breath back in front of it. Switched off, none is written.
+  MelodyDesigner designer;
+  test::StubHarmonyContext harmony;
+  harmony.setAllPitchesSafe(true);
+  harmony.setChordDegree(0);
+  harmony.setChordTones({0, 4, 7});
+  SectionTransition transition{SectionType::B, SectionType::Chorus, 0, 1.0f, 1, true};
+  const auto ctx = pickupContext(transition);
+  const Tick pickup = ctx.section_end - TICKS_PER_BEAT / 4;
+
+  for (Tick last_end : {ctx.section_end - TICK_HALF, ctx.section_end}) {
+    std::vector<NoteEvent> notes = {
+        NoteEventTestHelper::create(0, TICKS_PER_BAR, 64, 90),
+        NoteEventTestHelper::create(TICKS_PER_BAR, last_end - TICKS_PER_BAR, 67, 90)};
+    designer.applyTransitionApproach(notes, ctx, harmony);
+    ASSERT_EQ(notes.size(), 3u) << "no pickup after a line ending at " << last_end;
+    EXPECT_EQ(notes.back().start_tick, pickup);
+    const NoteEvent& before = notes[1];
+    EXPECT_GE(pickup - (before.start_tick + before.duration), kMinBreathTicks);
+  }
+
+  auto off = pickupContext(transition);
+  off.use_leading_tone = false;
+  std::vector<NoteEvent> notes = {NoteEventTestHelper::create(0, TICKS_PER_BAR, 64, 90)};
+  designer.applyTransitionApproach(notes, off, harmony);
+  EXPECT_EQ(notes.size(), 1u);
+}
+
+}  // namespace
+}  // namespace midisketch

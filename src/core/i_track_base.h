@@ -24,33 +24,16 @@ class MidiTrack;
 struct Section;
 class IHarmonyCoordinator;
 
-/// @brief Physical model constraints for an instrument.
-///
-/// Enforces realistic instrument capabilities:
-/// - Pitch range (e.g., bass guitar: E1-G4)
-/// - Velocity range (e.g., pad: 40-100)
-/// - Minimum note duration (e.g., staccato limit)
-/// - Legato capability
+/// @brief Physical model constraints for an instrument: its playable pitch range.
 struct PhysicalModel {
-  uint8_t pitch_low = 0;        ///< Lowest playable pitch
-  uint8_t pitch_high = 127;     ///< Highest playable pitch
-  uint8_t velocity_min = 1;     ///< Minimum velocity
-  uint8_t velocity_max = 127;   ///< Maximum velocity
-  Tick min_note_duration = 60;  ///< Minimum note duration (ticks)
-  bool supports_legato = true;  ///< Can play legato passages
+  uint8_t pitch_low = 0;     ///< Lowest playable pitch
+  uint8_t pitch_high = 127;  ///< Highest playable pitch
 
   /// @brief Clamp a pitch to the valid range.
   uint8_t clampPitch(uint8_t pitch) const {
     if (pitch < pitch_low) return pitch_low;
     if (pitch > pitch_high) return pitch_high;
     return pitch;
-  }
-
-  /// @brief Clamp a velocity to the valid range.
-  uint8_t clampVelocity(uint8_t velocity) const {
-    if (velocity < velocity_min) return velocity_min;
-    if (velocity > velocity_max) return velocity_max;
-    return velocity;
   }
 
   /// @brief Check if a pitch is within range.
@@ -61,51 +44,50 @@ struct PhysicalModel {
 namespace PhysicalModels {
 
 /// Electric Bass: E1 (28) to G3 (55), matching the production bass register.
-inline constexpr PhysicalModel kElectricBass = {28, 55, 40, 127, 120, true};
+inline constexpr PhysicalModel kElectricBass = {28, 55};
 
 /// Synth Bass: C1 (24) to C4 (60)
-inline constexpr PhysicalModel kSynthBass = {24, 60, 50, 127, 60, true};
+inline constexpr PhysicalModel kSynthBass = {24, 60};
 
 /// Electric Piano: C3 (48) to C6 (84)
-inline constexpr PhysicalModel kElectricPiano = {48, 84, 40, 110, 60, true};
+inline constexpr PhysicalModel kElectricPiano = {48, 84};
 
 /// Acoustic Guitar: E2 (40) to B5 (83)
-inline constexpr PhysicalModel kAcousticGuitar = {40, 83, 30, 100, 120, true};
+inline constexpr PhysicalModel kAcousticGuitar = {40, 83};
 
 /// Electric Guitar: E2 (40) to E5 (76), the practical strumming range the
 /// guitar generator writes within. The instrument reaches higher, but a range
 /// wider than the generator's own lets a later pass -- bar freezing re-quantizes
 /// against this model -- place a note the generator would never have written,
 /// in the register the vocal occupies.
-inline constexpr PhysicalModel kElectricGuitar = {40, 76, 40, 110, 60, true};
+inline constexpr PhysicalModel kElectricGuitar = {40, 76};
 
 /// Synth Pad: C2 (36) to C7 (96)
-inline constexpr PhysicalModel kSynthPad = {36, 96, 40, 100, 480, true};
+inline constexpr PhysicalModel kSynthPad = {36, 96};
 
 /// Synth Lead: C3 (48) to C7 (96)
-inline constexpr PhysicalModel kSynthLead = {48, 96, 60, 127, 60, true};
+inline constexpr PhysicalModel kSynthLead = {48, 96};
 
 /// Vocal: C4 (60) to G5 (79) default, configurable
-inline constexpr PhysicalModel kVocal = {60, 79, 50, 127, 120, true};
+inline constexpr PhysicalModel kVocal = {60, 79};
 
 /// Aux Vocal: Similar to main vocal
-inline constexpr PhysicalModel kAuxVocal = {55, 84, 40, 110, 120, true};
+inline constexpr PhysicalModel kAuxVocal = {55, 84};
 
 /// Motif Synth: C4 (60) to C8 (108), matching the production motif register.
-inline constexpr PhysicalModel kMotifSynth = {60, 108, 60, 100, 60, false};
+inline constexpr PhysicalModel kMotifSynth = {60, 108};
 
 /// Arpeggio Synth: C3 (48) to C8 (108)
-inline constexpr PhysicalModel kArpeggioSynth = {48, 108, 60, 100, 30, false};
+inline constexpr PhysicalModel kArpeggioSynth = {48, 108};
 
 }  // namespace PhysicalModels
 
 /// @brief Track configuration for generation.
 struct TrackConfig {
-  uint8_t vocal_low = 60;           ///< Vocal range low
-  uint8_t vocal_high = 79;          ///< Vocal range high
-  uint8_t base_velocity = 80;       ///< Base velocity
-  float density = 1.0f;             ///< Note density multiplier
-  bool is_coordinate_axis = false;  ///< True if this track is the axis (no adjustment)
+  uint8_t vocal_low = 60;      ///< Vocal range low
+  uint8_t vocal_high = 79;     ///< Vocal range high
+  uint8_t base_velocity = 80;  ///< Base velocity
+  float density = 1.0f;        ///< Note density multiplier
 };
 
 /// @brief Track generation context.

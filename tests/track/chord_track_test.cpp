@@ -12,6 +12,8 @@
 #include <set>
 #include <sstream>
 #include <string>
+#include <tuple>
+#include <utility>
 #include <vector>
 
 #include "core/chord.h"
@@ -27,6 +29,7 @@
 #include "core/types.h"
 #include "instrument/keyboard/piano_model.h"
 #include "midisketch.h"
+#include "test_support/chord_timeline_helper.h"
 #include "test_support/generator_test_fixture.h"
 #include "test_support/stub_harmony_context.h"
 #include "test_support/test_constants.h"
@@ -626,24 +629,119 @@ TEST_F(ChordTrackTest, TranspositionWorksCorrectly) {
 // Sus4 Resolution Guarantee Tests
 // ============================================================================
 
-TEST_F(ChordTrackTest, SusChordResolutionGuarantee) {
-  // Test that sus chords are followed by non-sus chords (resolution)
-  // Enable sus chord extensions
+namespace {
+
+struct SusEntryCount {
+  int sus_entries = 0;
+  int adjacent_sus_pairs = 0;
+  Tick first_adjacent_tick = 0;
+};
+
+// Counts suspended chords and back-to-back pairs of them, one chord per run of
+// timeline entries that name the same chord.
+SusEntryCount countSusEntries(const Generator& gen) {
+  const Tick total = gen.getSong().arrangement().totalTicks();
+  SusEntryCount count;
+  bool prev_sus = false;
+  for (const auto& run : test::chordRuns(gen.getHarmonyContext(), total)) {
+    const bool is_sus = isSusExtension(run.extension);
+    if (is_sus) ++count.sus_entries;
+    if (is_sus && prev_sus) {
+      if (count.adjacent_sus_pairs == 0) count.first_adjacent_tick = run.start;
+      ++count.adjacent_sus_pairs;
+    }
+    prev_sus = is_sus;
+  }
+  return count;
+}
+
+}  // namespace
+
+TEST_F(ChordTrackTest, SusChordsAreNeverAdjacentOnTheTimeline) {
+  // With sus forced on, no suspended entry may directly follow another: each
+  // one resolves before the next can start.
   params_.chord_extension.enable_sus = true;
-  params_.chord_extension.sus_probability = 1.0f;  // Force sus chords when possible
+  params_.chord_extension.sus_probability = 1.0f;
   params_.chord_extension.enable_7th = false;
   params_.chord_extension.enable_9th = false;
-  params_.seed = 88888;
 
-  Generator gen;
-  gen.generate(params_);
+  int total_sus = 0;
+  for (auto [structure, seed] : {std::pair{StructurePattern::StandardPop, 11111u},
+                                 std::pair{StructurePattern::FullPop, 88888u}}) {
+    params_.structure = structure;
+    params_.seed = seed;
 
-  const auto& chord_track = gen.getSong().chord();
-  EXPECT_FALSE(chord_track.empty()) << "Chord track should be generated";
+    Generator gen;
+    gen.generate(params_);
 
-  // The implementation guarantees that two consecutive sus chords won't occur
-  // We can verify that chords are generated with the extension enabled
-  EXPECT_GT(chord_track.notes().size(), 10u) << "Should have multiple chord notes";
+    ASSERT_FALSE(gen.getSong().chord().empty());
+    const SusEntryCount count = countSusEntries(gen);
+    EXPECT_EQ(count.adjacent_sus_pairs, 0)
+        << "seed " << seed << " first adjacent sus at tick " << count.first_adjacent_tick;
+    total_sus += count.sus_entries;
+  }
+  EXPECT_GT(total_sus, 0) << "sus_probability 1.0 produced no suspended entries to check";
+}
+
+TEST_F(ChordTrackTest, RegisterAddDoublesChorusVoicingsAndLeavesLayerAddAlone) {
+  // RegisterAdd thickens the chorus by doubling its voicing an octave up; every
+  // note LayerAdd writes is still there, and nothing is added outside a chorus.
+  size_t added = 0;
+  for (uint8_t blueprint : {2, 4, 6}) {
+    for (uint32_t seed : {1u, 2u}) {
+      params_.blueprint_id = blueprint;
+      params_.seed = seed;
+      params_.arrangement_growth = ArrangementGrowth::LayerAdd;
+      Generator layer;
+      layer.generate(params_);
+      params_.arrangement_growth = ArrangementGrowth::RegisterAdd;
+      Generator reg;
+      reg.generate(params_);
+
+      // A voice-limit frozen bar is re-voiced from the bar it copies, so it follows
+      // that bar's (doubled) voicing; only the notes the chord track wrote are compared.
+      auto voiced = [](const NoteEvent& n) {
+        return n.prov_source != static_cast<uint8_t>(NoteSource::PostProcess);
+      };
+      using Key3 = std::tuple<Tick, Tick, uint8_t>;
+      std::multiset<Key3> base;
+      for (const auto& n : layer.getSong().chord().notes()) {
+        if (voiced(n)) base.insert({n.start_tick, n.duration, n.note});
+      }
+      ASSERT_FALSE(base.empty());
+      for (const auto& n : reg.getSong().chord().notes()) {
+        if (!voiced(n)) continue;
+        auto it = base.find({n.start_tick, n.duration, n.note});
+        if (it != base.end()) {
+          base.erase(it);
+          continue;
+        }
+        ++added;
+        const Section* section = nullptr;
+        for (const auto& s : reg.getSong().arrangement().sections()) {
+          if (n.start_tick >= s.start_tick && n.start_tick < s.endTick()) section = &s;
+        }
+        ASSERT_NE(section, nullptr);
+        EXPECT_EQ(section->type, SectionType::Chorus)
+            << "bp " << int(blueprint) << " seed " << seed << ": note added at " << n.start_tick;
+        // Collision avoidance may move the doubling to another octave of a voiced
+        // tone; it still doubles the chord at that onset.
+        bool doubles = false;
+        for (const auto& m : reg.getSong().chord().notes()) {
+          doubles =
+              doubles || (&m != &n && m.start_tick == n.start_tick && m.note % 12 == n.note % 12);
+        }
+        EXPECT_TRUE(doubles) << "bp " << int(blueprint) << " seed " << seed << ": note "
+                             << int(n.note) << " at " << n.start_tick << " doubles no voice";
+      }
+      for (const auto& [start, duration, note] : base) {
+        ADD_FAILURE() << "bp " << int(blueprint) << " seed " << seed << ": LayerAdd note "
+                      << int(note) << " at " << start << " (" << duration
+                      << " ticks) missing under RegisterAdd";
+      }
+    }
+  }
+  EXPECT_GT(added, 0u) << "RegisterAdd added no notes";
 }
 
 TEST_F(ChordTrackTest, SusChordExtensionGeneratesValidNotes) {
@@ -662,27 +760,6 @@ TEST_F(ChordTrackTest, SusChordExtensionGeneratesValidNotes) {
     EXPECT_LE(note.note, 127);
     EXPECT_GT(note.velocity, 0);
   }
-}
-
-TEST_F(ChordTrackTest, SusChordNoConsecutiveSusExtensions) {
-  // Test that the sus resolution guarantee prevents consecutive sus chords
-  // This is an indirect test - we verify the generation works without issues
-  params_.chord_extension.enable_sus = true;
-  params_.chord_extension.sus_probability = 1.0f;  // Maximum sus probability
-  params_.structure = StructurePattern::StandardPop;
-  params_.seed = 11111;
-
-  Generator gen;
-  gen.generate(params_);
-
-  const auto& chord_track = gen.getSong().chord();
-  EXPECT_FALSE(chord_track.empty());
-
-  // The implementation now guarantees that if previous chord was sus,
-  // the current chord will NOT be sus (forced to None)
-  // We can't easily detect sus vs non-sus from the output,
-  // but we verify the generation completes successfully
-  EXPECT_GT(chord_track.notes().size(), 0u);
 }
 
 // ============================================================================

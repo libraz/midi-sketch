@@ -267,10 +267,66 @@ void applyAllBarVelocityCurves(std::vector<MidiTrack*>& tracks,
  * and SE tracks alongside the melodic ones is what makes the section controls
  * audible across the whole arrangement rather than in the pitched tracks only.
  *
+ * A boost is folded into the headroom the note has left (foldBoostIntoHeadroom())
+ * instead of clipped at 127, and a cut never takes a note under @p floor
+ * (foldVelocityIntoFloor()), so neither end of the range flattens distinct hits.
+ *
  * @param tracks Tracks to modify (in-place)
  * @param sections Arrangement sections carrying the dynamics controls
+ * @param floor Quietest velocity a cut may produce for a note that started above it
  */
-void applySectionDynamics(std::vector<MidiTrack*>& tracks, const std::vector<Section>& sections);
+void applySectionDynamics(std::vector<MidiTrack*>& tracks, const std::vector<Section>& sections,
+                          int floor = 1);
+
+/**
+ * @brief Raise a velocity toward a louder target without ever reaching the MIDI ceiling.
+ *
+ * Stacked multipliers can ask for more than 127; clipping there puts every loud
+ * note on one value. A boost is applied as asked until it reaches
+ * velocity::kBoostKneeRatio of the range; beyond that the request is compressed
+ * into the headroom that is left, so it keeps growing with the request but stays
+ * strictly below 127 and the order of boosted notes is kept.
+ *
+ * @param velocity Velocity before the boost
+ * @param target Velocity the multipliers asked for (may exceed 127)
+ * @return @p target when it does not exceed @p velocity or the knee, otherwise a
+ *         value in (velocity, 127)
+ */
+int foldBoostIntoHeadroom(int velocity, int target);
+
+/**
+ * @brief Bring a velocity up to a floor without collapsing the quiet range onto it.
+ *
+ * Values at or above velocity::kFloorKneeRatio times the floor are returned
+ * unchanged; the range under the knee is compressed into [floor, knee], which
+ * keeps the order of quiet notes where a clamp would map them all to the floor.
+ *
+ * @param velocity Velocity to bound (may be below 1)
+ * @param floor Quietest velocity the pass may produce; 1 or below leaves it untouched
+ * @return Velocity in [floor, 127] for any @p velocity up to 127
+ */
+int foldVelocityIntoFloor(int velocity, int floor);
+
+/**
+ * @brief Fold a velocity into a ceiling below 127, keeping the order of loud notes.
+ *
+ * Notes at or under velocity::kCeilingKneeRatio of the ceiling keep their value;
+ * the range above is folded into the remaining headroom. Shared by the
+ * percussion ceiling and the emotion pass so one rule decides how a ceiling bites.
+ *
+ * @param velocity Velocity in [1, 127]
+ * @param ceiling Declared ceiling; 127 or above leaves the velocity untouched
+ */
+int foldVelocityIntoCeiling(int velocity, int ceiling);
+
+/**
+ * @brief Quietest velocity a post-processing pass may leave on a track of this role.
+ *
+ * The one place the per-role floors live: pitched tracks share one, the guitar
+ * keeps the floor its generator writes, and the kit keeps the drum writer's
+ * timekeeping floor.
+ */
+int getVelocityFloor(TrackRole role);
 
 /**
  * @brief Keep an arrival section from entering weaker than its setup.

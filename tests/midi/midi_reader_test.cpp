@@ -534,5 +534,37 @@ TEST(MidiReaderTest, ChannelAssignment) {
   EXPECT_EQ(drums->channel, 9);
 }
 
+std::vector<uint8_t> oneTrackFile(const std::vector<uint8_t>& before_track,
+                                  const std::vector<uint8_t>& after_track) {
+  std::vector<uint8_t> data = {'M', 'T', 'h', 'd', 0, 0, 0, 6, 0, 1, 0, 1, 1, 224};
+  data.insert(data.end(), before_track.begin(), before_track.end());
+  const std::vector<uint8_t> track = {'M', 'T', 'r',  'k',  0,  0, 0, 12,   0,    0x90,
+                                      60,  100, 0x60, 0x80, 60, 0, 0, 0xFF, 0x2F, 0};
+  data.insert(data.end(), track.begin(), track.end());
+  data.insert(data.end(), after_track.begin(), after_track.end());
+  return data;
+}
+
+const std::vector<uint8_t> kForeignChunk = {'X', 'F', 'I', 'H', 0, 0, 0, 2, 0xAA, 0xBB};
+
+TEST(MidiReaderTest, SkipsUnknownChunksBetweenAndAfterTracks) {
+  MidiReader reader;
+  ASSERT_TRUE(reader.read(oneTrackFile(kForeignChunk, kForeignChunk))) << reader.getError();
+  ASSERT_EQ(reader.getParsedMidi().tracks.size(), 1u);
+  EXPECT_EQ(reader.getParsedMidi().tracks[0].notes.size(), 1u);
+}
+
+TEST(MidiReaderTest, RejectsTruncatedForeignChunk) {
+  std::vector<uint8_t> truncated_body = kForeignChunk;
+  truncated_body.pop_back();
+  MidiReader reader;
+  EXPECT_FALSE(reader.read(oneTrackFile({}, truncated_body)));
+  EXPECT_NE(reader.getError().find("exceeds"), std::string::npos);
+
+  MidiReader header_reader;
+  EXPECT_FALSE(header_reader.read(oneTrackFile({}, {'X', 'F', 'K'})));
+  EXPECT_NE(header_reader.getError().find("Truncated"), std::string::npos);
+}
+
 }  // namespace
 }  // namespace midisketch

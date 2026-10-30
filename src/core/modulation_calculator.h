@@ -26,7 +26,8 @@ class ModulationCalculator {
   // The modulation a song with these parameters and sections makes.
   // A pure function of its inputs, so the harmony planner and the song agree on
   // it without passing it along; Random timing draws from a stream of params.seed.
-  // @param params Modulation timing, semitones (1-4, 0 = 2), structure and seed
+  // @param params Modulation timing, semitones (1-4, 0 = 2), seed, and the form fields
+  //        resolveBuiltForm() reads to tell which form the sections follow
   // @param sections Song sections
   static ModulationResult plan(const GeneratorParams& params, const std::vector<Section>& sections);
 

@@ -247,11 +247,14 @@ BassPattern selectPattern(SectionType section, bool drums_enabled, Mood mood,
 
 /// PedalTone holds the tonic while an arpeggio plays chord tones, which doubles the
 /// bass instead of moving the harmony. A Bridge uses the pedal for tension reduction
-/// even with an arpeggio.
-BassPattern avoidPedalUnderArpeggio(BassPattern pattern, const Section& section) {
-  if (pattern == BassPattern::PedalTone && hasTrack(section.track_mask, TrackMask::Arpeggio) &&
-      section.type != SectionType::Bridge) {
-    return BassPattern::WholeNote;
+/// even with an arpeggio. Only an arpeggio the song generates and the section plays counts.
+BassPattern avoidPedalUnderArpeggio(BassPattern pattern, const Section& section,
+                                    TrackMask generated_tracks) {
+  if (pattern != BassPattern::PedalTone || section.type == SectionType::Bridge) return pattern;
+  for (uint8_t bar = 0; bar < section.bars; ++bar) {
+    if (hasTrack(section.soundingTracksAtBar(bar, generated_tracks), TrackMask::Arpeggio)) {
+      return BassPattern::WholeNote;
+    }
   }
   return pattern;
 }
@@ -278,8 +281,7 @@ BassPattern selectPatternWithPolicyCore(BassRiffCache& cache, size_t sec_idx,
   RiffPolicy policy = params.riff_policy;
 
   // Handle Locked variants (LockedContour, LockedPitch, LockedAll) as same behavior
-  bool is_locked = (policy == RiffPolicy::LockedContour || policy == RiffPolicy::LockedPitch ||
-                    policy == RiffPolicy::LockedAll);
+  bool is_locked = isLockedRiffPolicy(policy);
 
   if (is_locked && cache.cached) {
     // Locked: always use cached pattern
@@ -337,9 +339,11 @@ BassPattern applyPeakLevelPromotion(BassPattern pattern, PeakLevel peak_level) {
 /// @param sec_idx Current section index
 /// @param params Generator parameters (contains riff_policy)
 /// @param rng Random number generator
+/// @param generated_tracks Tracks the song generates at all
 /// @return Selected bass pattern
 BassPattern selectPatternWithPolicy(BassRiffCache& cache, const Section& section, size_t sec_idx,
-                                    const GeneratorParams& params, std::mt19937& rng) {
+                                    const GeneratorParams& params, std::mt19937& rng,
+                                    TrackMask generated_tracks) {
   // bass_style_hint names the pattern; it does not name the section's dynamics.
   // A peak still has to sound like a peak, so the promotion below runs either way.
   if (section.bass_style_hint > 0) {
@@ -362,7 +366,7 @@ BassPattern selectPatternWithPolicy(BassRiffCache& cache, const Section& section
     base_pattern = applyRhythmSyncDensityAdjust(base_pattern, params.bpm);
   }
 
-  base_pattern = avoidPedalUnderArpeggio(base_pattern, section);
+  base_pattern = avoidPedalUnderArpeggio(base_pattern, section, generated_tracks);
 
   // Apply PeakLevel promotion for thicker bass in peak sections
   return applyPeakLevelPromotion(base_pattern, section.peak_level);
@@ -394,7 +398,8 @@ BassPattern selectPatternForVocalDensity(float vocal_density, const Section& sec
 /// Combines vocal density consideration with RiffPolicy caching.
 BassPattern selectPatternWithPolicyForVocal(BassRiffCache& cache, const Section& section,
                                             size_t sec_idx, const GeneratorParams& params,
-                                            float vocal_density, std::mt19937& rng) {
+                                            float vocal_density, std::mt19937& rng,
+                                            TrackMask generated_tracks) {
   // Same reading of the hint as above: it replaces the choice, not the peak.
   if (section.bass_style_hint > 0) {
     uint8_t idx = section.bass_style_hint - 1;
@@ -413,7 +418,7 @@ BassPattern selectPatternWithPolicyForVocal(BassRiffCache& cache, const Section&
     pattern = applyRhythmSyncDensityAdjust(pattern, params.bpm);
   }
 
-  pattern = avoidPedalUnderArpeggio(pattern, section);
+  pattern = avoidPedalUnderArpeggio(pattern, section, generated_tracks);
 
   return applyPeakLevelPromotion(pattern, section.peak_level);
 }

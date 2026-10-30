@@ -60,6 +60,9 @@ const char* metadataRestoreStatusName(MetadataRestoreStatus status) {
       return "metadata declares a config block but does not contain one";
     case MetadataRestoreStatus::InvalidConfig:
       return "metadata holds a value that does not fit its field";
+    case MetadataRestoreStatus::NotReplayable:
+      return "the song was edited after generation (a partial regeneration or a supplied "
+             "melody), so its metadata cannot replay it";
   }
   return "unknown";
 }
@@ -83,6 +86,8 @@ midisketch::SongConfig configFromMetadata(const std::string& metadata,
     report(MetadataRestoreStatus::InvalidConfig);
     return midisketch::createDefaultSongConfig(0);
   }
+  // Written only when false: the song was changed after generation.
+  const bool replayable = p.getBool("replayable", true);
   if (version >= 4) {
     if (!p.has("config")) {
       report(MetadataRestoreStatus::MissingConfig);
@@ -95,6 +100,8 @@ midisketch::SongConfig configFromMetadata(const std::string& metadata,
     config.readFrom(config_parser);
     if (!config_parser.isValid()) {
       report(MetadataRestoreStatus::InvalidConfig);
+    } else if (!replayable) {
+      report(MetadataRestoreStatus::NotReplayable);
     }
     return config;
   }
@@ -150,7 +157,12 @@ midisketch::SongConfig configFromMetadata(const std::string& metadata,
   if (p.has("target_duration")) {
     config.target_duration_seconds = static_cast<uint16_t>(p.getInt("target_duration"));
   }
-  if (p.has("drums_enabled")) config.drums_enabled = p.getBool("drums_enabled");
+  if (p.has("drums_enabled")) {
+    // The stored value is the one the take resolved to, so a drums-required
+    // blueprint must not force back drums the take did not have.
+    config.drums_enabled = p.getBool("drums_enabled");
+    config.drums_enabled_explicit = true;
+  }
   if (p.has("modulation_timing")) {
     config.modulation_timing =
         static_cast<midisketch::ModulationTiming>(p.getInt("modulation_timing"));
@@ -184,7 +196,9 @@ midisketch::SongConfig configFromMetadata(const std::string& metadata,
     config.blueprint_id = static_cast<uint8_t>(p.getInt("blueprint_id"));
   }
   if (p.has("drive_feel")) {
+    // The value the take resolved to, lead treatment included.
     config.drive_feel = static_cast<uint8_t>(p.getInt("drive_feel"));
+    config.drive_feel_explicit = true;
   }
   if (p.has("skip_vocal")) {
     config.skip_vocal = p.getBool("skip_vocal");
@@ -277,6 +291,12 @@ midisketch::SongConfig configFromMetadata(const std::string& metadata,
       config.chord_extension.ninth_probability = ce.getFloat("ninth_probability");
     if (ce.has("tritone_sub_probability"))
       config.chord_extension.tritone_sub_probability = ce.getFloat("tritone_sub_probability");
+    // These are the probabilities the take resolved to, mood table included, so
+    // the table must not be applied over them a second time.
+    if (ce.has("sus_probability") && ce.has("seventh_probability") && ce.has("ninth_probability") &&
+        ce.has("tritone_sub_probability")) {
+      config.chord_ext_prob_explicit = true;
+    }
     if (!ce.isValid()) p.markConversionInvalid();
   }
 
@@ -309,6 +329,8 @@ midisketch::SongConfig configFromMetadata(const std::string& metadata,
 
   if (!p.isValid()) {
     report(MetadataRestoreStatus::InvalidConfig);
+  } else if (!replayable) {
+    report(MetadataRestoreStatus::NotReplayable);
   }
   return config;
 }
@@ -413,6 +435,7 @@ int runGenerateMode(const ParsedArgs& args) {
     // Generation parameters
     if (args.drive_feel >= 0) {
       config.drive_feel = static_cast<uint8_t>(args.drive_feel);
+      config.drive_feel_explicit = true;
     }
     if (args.no_drums) {
       config.drums_enabled = false;
@@ -599,8 +622,12 @@ int runGenerateMode(const ParsedArgs& args) {
   sketch.generateFromConfig(config);
 
   std::cout << "  Seed: " << sketch.getParams().seed << "\n";
-  std::cout << "  Form: " << midisketch::getStructureName(sketch.getParams().structure)
-            << " (selected)\n\n";
+  const midisketch::BuiltForm form = midisketch::resolveBuiltForm(sketch.getParams());
+  if (form.flow != nullptr) {
+    std::cout << "  Form: " << form.flow->name << " flow\n\n";
+  } else {
+    std::cout << "  Form: " << midisketch::getStructureName(form.pattern) << " (selected)\n\n";
+  }
   for (const auto& warning : sketch.getWarnings()) {
     std::cerr << "Warning: " << warning << "\n";
   }

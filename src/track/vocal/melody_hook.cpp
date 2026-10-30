@@ -36,11 +36,6 @@ namespace {
 // Default velocity for melody notes (must match melody_designer.cpp)
 constexpr uint8_t DEFAULT_VELOCITY = 100;
 
-// Length of the cached chorus head, in notes. This is the stretch that repeats
-// verbatim across choruses, so it is also where a betrayal has to land to be
-// heard as a change to the hook rather than to the phrase around it.
-constexpr size_t kSabiHeadNotes = 8;
-
 }  // namespace
 
 bool MelodyDesigner::replayHookOccurrence(const MelodyTemplate& tmpl, std::vector<NoteEvent>& notes,
@@ -92,6 +87,9 @@ bool MelodyDesigner::replayHookOccurrence(const MelodyTemplate& tmpl, std::vecto
   applyBetrayal(pitches, durations, betrayal, rng);
 
   for (size_t i = 0; i < head; ++i) {
+    // A chant run the cached head carries is the hook itself; the betrayal
+    // varies only the notes around it.
+    if (notes[i].is_syllabic_subdivision) continue;
     [[maybe_unused]] const uint8_t old_pitch = notes[i].note;
     int new_pitch = std::clamp(static_cast<int>(pitches[i]), static_cast<int>(vocal_low),
                                static_cast<int>(vocal_high));

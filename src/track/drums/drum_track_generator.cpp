@@ -156,11 +156,11 @@ DrumStyle resolveDrumStyle(Mood mood, uint8_t drum_style_hint) {
 
 /// @brief Wrapper for drum playability checking.
 ///
-/// Uses DrumPerformer to validate and adjust drum patterns for physical
-/// playability. Key checks:
-/// - Simultaneous hit limits (max 4 limbs)
-/// - Stroke interval constraints per limb
-/// - Fatigue accumulation over fast passages
+/// Uses DrumPerformer to keep simultaneous hits within what the kit's limbs can
+/// play. Where a tick group is infeasible it drops the costliest note that is
+/// neither kick nor snare, and repeats until the group is feasible or only the
+/// backbeat is left. Stroke intervals and fatigue are not enforced here; cost
+/// only chooses which note to drop.
 ///
 /// NOTE: Auxiliary percussion (tambourine, shaker, hand clap) is excluded
 /// from validation as these are typically performed by a separate player.
@@ -170,11 +170,7 @@ class DrumPlayabilityChecker {
 
   /// @brief Apply playability check to all notes in a track.
   ///
-  /// Validates and adjusts notes for physical playability:
-  /// 1. Checks simultaneous hits at each tick
-  /// 2. Validates stroke intervals for each limb
-  /// 3. Adjusts timing or removes notes if necessary
-  ///
+  /// Removes notes until every tick group passes the simultaneous-hit check.
   /// Auxiliary percussion is excluded from validation.
   ///
   /// @param track Track to validate (modified in place)
@@ -196,43 +192,40 @@ class DrumPlayabilityChecker {
 
     // Process each tick group
     for (auto& [tick, indices] : notes_by_tick) {
-      if (indices.size() > 1) {
-        // Check simultaneous hit feasibility
+      // Drop the costliest non-backbeat note until the group is feasible
+      std::vector<size_t> kept = indices;
+      while (kept.size() > 1) {
         std::vector<uint8_t> pitches;
-        pitches.reserve(indices.size());
-        for (size_t idx : indices) {
+        pitches.reserve(kept.size());
+        for (size_t idx : kept) {
           pitches.push_back(notes[idx].note);
         }
+        if (performer_.canSimultaneousHit(pitches)) break;
 
-        if (!performer_.canSimultaneousHit(pitches)) {
-          // Remove the note with highest cost (least essential)
-          // Priority: keep kick and snare, remove other instruments
-          float worst_cost = -1.0f;
-          size_t worst_idx = 0;
-          for (size_t idx : indices) {
-            // Skip kick and snare (essential backbeat)
-            if (notes[idx].note == BD || notes[idx].note == SD) continue;
+        // Priority: keep kick and snare, remove other instruments
+        float worst_cost = -1.0f;
+        size_t worst_pos = 0;
+        for (size_t pos = 0; pos < kept.size(); ++pos) {
+          const size_t idx = kept[pos];
+          if (notes[idx].note == BD || notes[idx].note == SD) continue;
 
-            float cost = performer_.calculateCost(notes[idx].note, notes[idx].start_tick,
-                                                  notes[idx].duration, *state_);
-            if (cost > worst_cost) {
-              worst_cost = cost;
-              worst_idx = idx;
-            }
-          }
-
-          if (worst_cost >= 0.0f) {
-            to_remove.push_back(worst_idx);
+          float cost = performer_.calculateCost(notes[idx].note, notes[idx].start_tick,
+                                                notes[idx].duration, *state_);
+          if (cost > worst_cost) {
+            worst_cost = cost;
+            worst_pos = pos;
           }
         }
+        if (worst_cost < 0.0f) break;  // Only kick and snare remain
+
+        to_remove.push_back(kept[worst_pos]);
+        kept.erase(kept.begin() + static_cast<std::ptrdiff_t>(worst_pos));
       }
 
-      // Update state for all notes at this tick (after removal check)
-      for (size_t idx : indices) {
-        if (std::find(to_remove.begin(), to_remove.end(), idx) == to_remove.end()) {
-          performer_.updateState(*state_, notes[idx].note, notes[idx].start_tick,
-                                 notes[idx].duration);
-        }
+      // Update state for the notes that stay at this tick
+      for (size_t idx : kept) {
+        performer_.updateState(*state_, notes[idx].note, notes[idx].start_tick,
+                               notes[idx].duration);
       }
     }
 

@@ -13,6 +13,7 @@
 
 #include "core/preset_data.h"
 #include "core/section_properties.h"
+#include "core/section_utils.h"
 
 namespace midisketch {
 
@@ -68,6 +69,12 @@ void assignDensityGradient(std::vector<Section>& sections) {
   }
 }
 
+/// @brief The song's last chorus, whichever tracks it carries.
+bool isLastChorus(const std::vector<Section>& sections, size_t idx) {
+  const ChorusOccurrence occurrence = classifyChorusOccurrence(sections, idx, TrackMask::All);
+  return occurrence == ChorusOccurrence::Final || occurrence == ChorusOccurrence::Only;
+}
+
 // Assign exit patterns based on section type and context within the song.
 // Rules:
 // - Skip sections that already have an explicit exit_pattern set (from blueprint)
@@ -77,15 +84,6 @@ void assignDensityGradient(std::vector<Section>& sections) {
 // - Other sections: None
 void assignExitPatterns(std::vector<Section>& sections) {
   if (sections.empty()) return;
-
-  // Find the last Chorus index
-  size_t last_chorus_idx = sections.size();
-  for (size_t idx = sections.size(); idx > 0; --idx) {
-    if (sections[idx - 1].type == SectionType::Chorus) {
-      last_chorus_idx = idx - 1;
-      break;
-    }
-  }
 
   for (size_t idx = 0; idx < sections.size(); ++idx) {
     auto& section = sections[idx];
@@ -100,7 +98,7 @@ void assignExitPatterns(std::vector<Section>& sections) {
     } else if (section.type == SectionType::B && idx + 1 < sections.size() &&
                sections[idx + 1].type == SectionType::Chorus) {
       section.exit_pattern = ExitPattern::Sustain;
-    } else if (idx == last_chorus_idx) {
+    } else if (isLastChorus(sections, idx)) {
       section.exit_pattern = ExitPattern::FinalHit;
       // Last chorus gets maximum peak level for emotional climax
       section.peak_level = kClimaxPeak;
@@ -293,7 +291,7 @@ std::vector<Section> patternSections(StructurePattern pattern) {
       break;
 
     case StructurePattern::Ballad:
-      // 60 bars - slow ballad form with interlude (~144 sec @75BPM)
+      // 60 bars - slow ballad form with interlude (~192 sec @75BPM)
       addSection(SectionType::Intro, 8);
       addSection(SectionType::A, 8);
       addSection(SectionType::B, 8);
@@ -492,9 +490,10 @@ void extendSections(std::vector<Section>& sections, uint16_t target_bars) {
 
 /// @brief One way of shortening a form: remove a run of sections or trim one.
 struct SectionCut {
-  size_t first = 0;     ///< First section affected
-  size_t count = 1;     ///< Sections removed (ignored when trimming)
-  uint8_t trim_to = 0;  ///< > 0: shorten sections[first] to this many bars instead
+  size_t first = 0;          ///< First section affected
+  size_t count = 1;          ///< Sections removed (ignored when trimming)
+  uint8_t trim_to = 0;       ///< > 0: shorten sections[first] to this many bars instead
+  bool last_resort = false;  ///< Removes the first verse or a chorus-first form's opening chorus
 };
 
 int cutBars(const std::vector<Section>& sections, const SectionCut& cut) {
@@ -504,12 +503,27 @@ int cutBars(const std::vector<Section>& sections, const SectionCut& cut) {
   return bars;
 }
 
+/// @brief Whether taking @p cut leaves more than two choruses in a row.
+bool cutStacksChoruses(const std::vector<Section>& sections, const SectionCut& cut) {
+  if (cut.trim_to > 0) return false;
+  int run = 0;
+  for (size_t i = 0; i < sections.size(); ++i) {
+    if (i >= cut.first && i < cut.first + cut.count) continue;
+    run = sections[i].type == SectionType::Chorus ? run + 1 : 0;
+    if (run > 2) return true;
+  }
+  return false;
+}
+
 /// @brief Ways to shorten a form, most expendable first, latest in the song first.
 ///
-/// Verses and pre-choruses after the first chorus go first, then breaks, then a
-/// whole chorus other than the last (with its lead-in B, unless another chorus
-/// follows it), then long bookends. The last chorus and the B leading into it
-/// are never cut.
+/// Verses and pre-choruses after the first chorus go first, then breaks (with
+/// the chorus after them when cutting the break alone would stack choruses),
+/// then a whole chorus other than the last (with its lead-in B, unless another
+/// chorus follows it), then long bookends. The last chorus and the B leading
+/// into it are never cut. Last come the last-resort cuts, in the order that
+/// keeps a verse longest: the first verse's B, the opening chorus of a
+/// chorus-first form, then the first verse itself.
 std::vector<SectionCut> shorteningCuts(const std::vector<Section>& sections) {
   std::vector<SectionCut> cuts;
   const size_t n = sections.size();
@@ -517,61 +531,86 @@ std::vector<SectionCut> shorteningCuts(const std::vector<Section>& sections) {
 
   size_t first_chorus = n;
   size_t last_chorus = n;
+  size_t first_verse = n;
   for (size_t i = 0; i < n; ++i) {
     if (isChorus(i)) {
       if (first_chorus == n) first_chorus = i;
       last_chorus = i;
     }
+    if (first_verse == n && sections[i].type == SectionType::A) first_verse = i;
   }
+  const bool has_verse_b = first_verse + 1 < n && sections[first_verse + 1].type == SectionType::B;
+  const size_t verse_b = has_verse_b ? first_verse + 1 : n;
+  const bool opens_on_chorus =
+      first_chorus < last_chorus &&
+      (first_chorus == 0 || (first_chorus == 1 && sections[0].type == SectionType::Intro));
 
   for (size_t i = n; i-- > 0;) {
     const auto type = sections[i].type;
     if (first_chorus < i && (type == SectionType::A || type == SectionType::B) &&
-        !isChorus(i + 1)) {
-      cuts.push_back({i, 1, 0});
+        !isChorus(i + 1) && i != first_verse && i != verse_b) {
+      cuts.push_back({i, 1, 0, false});
     }
   }
   for (size_t i = n; i-- > 0;) {
     if (sections[i].type == SectionType::Interlude || sections[i].type == SectionType::Bridge) {
-      cuts.push_back({i, 1, 0});
+      cuts.push_back({i, 1, 0, false});
+      if (isChorus(i + 1) && i + 1 != last_chorus) cuts.push_back({i, 2, 0, false});
     }
   }
   for (size_t i = n; i-- > 0;) {
-    if (!isChorus(i) || i == last_chorus) continue;
+    if (!isChorus(i) || i == last_chorus || (opens_on_chorus && i == first_chorus)) continue;
     if (!isChorus(i + 1) && i > 0 && sections[i - 1].type == SectionType::B) {
-      cuts.push_back({i - 1, 2, 0});
+      cuts.push_back({i - 1, 2, 0, false});
     } else {
-      cuts.push_back({i, 1, 0});
+      cuts.push_back({i, 1, 0, false});
     }
   }
   for (size_t i = n; i-- > 0;) {
     if (isBookendSection(sections[i].type) && sections[i].bars > kShortBookendBars) {
-      cuts.push_back({i, 1, kShortBookendBars});
+      cuts.push_back({i, 1, kShortBookendBars, false});
     }
   }
+
+  if (verse_b < n && first_chorus < verse_b) cuts.push_back({verse_b, 1, 0, true});
+  if (opens_on_chorus) cuts.push_back({first_chorus, 1, 0, true});
+  if (first_verse < n && first_chorus < first_verse) cuts.push_back({first_verse, 1, 0, true});
   return cuts;
 }
 
 /// @brief Shorten a form toward @p target_bars, taking a cut only when it brings the length closer.
+///
+/// The one place a form is shortened. A cut never leaves three choruses in a
+/// row, and a last-resort cut is taken only while the form is still outside
+/// the tolerance and no other cut helps.
 void shortenSections(std::vector<Section>& sections, uint16_t target_bars) {
   int excess = static_cast<int>(calculateTotalBars(sections)) - static_cast<int>(target_bars);
   while (excess > 0) {
     const int total = static_cast<int>(calculateTotalBars(sections));
-    bool cut_made = false;
-    for (const auto& cut : shorteningCuts(sections)) {
-      const int bars = cutBars(sections, cut);
-      if (bars <= 0 || bars >= 2 * excess || total - bars < kMinStructureBars) continue;
-      if (cut.trim_to > 0) {
-        sections[cut.first].bars = cut.trim_to;
-      } else {
-        const auto begin = sections.begin() + static_cast<ptrdiff_t>(cut.first);
-        sections.erase(begin, begin + static_cast<ptrdiff_t>(cut.count));
+    const auto cuts = shorteningCuts(sections);
+    const SectionCut* chosen = nullptr;
+    for (bool last_resort : {false, true}) {
+      if (last_resort && excess <= kBarTolerance) break;
+      for (const auto& cut : cuts) {
+        if (cut.last_resort != last_resort) continue;
+        const int bars = cutBars(sections, cut);
+        if (bars <= 0 || bars >= 2 * excess || total - bars < kMinStructureBars) continue;
+        if (cutStacksChoruses(sections, cut)) continue;
+        chosen = &cut;
+        break;
       }
-      excess -= bars;
-      cut_made = true;
-      break;
+      if (chosen != nullptr) break;
     }
-    if (!cut_made) break;
+    if (chosen == nullptr) break;
+
+    const int bars = cutBars(sections, *chosen);
+    if (chosen->trim_to > 0) {
+      sections[chosen->first].bars = chosen->trim_to;
+    } else {
+      const auto begin = sections.begin() + static_cast<ptrdiff_t>(chosen->first);
+      sections.erase(begin, begin + static_cast<ptrdiff_t>(chosen->count));
+    }
+    excess -= bars;
   }
   recalculateSectionTicks(sections);
 }
@@ -783,6 +822,12 @@ namespace {
 
 bool hasSectionFlow(const ProductionBlueprint* blueprint) {
   return blueprint != nullptr && blueprint->section_flow != nullptr && blueprint->section_count > 0;
+}
+
+/// @brief Whether @p request lays out the blueprint's flow rather than its form.
+bool followsBlueprintFlow(const StructureRequest& request) {
+  return request.target_duration_seconds == 0 && !request.form_explicit &&
+         hasSectionFlow(request.blueprint);
 }
 
 /// @brief Sections a blueprint flow lays out, with no derived exit patterns yet.
@@ -1001,26 +1046,15 @@ void applyBlueprintOverlay(std::vector<Section>& sections, const ProductionBluep
 std::vector<Section> planSongStructure(const StructureRequest& request,
                                        std::vector<std::string>& warnings) {
   const bool sized = request.target_duration_seconds > 0;
-  const bool from_flow = !sized && !request.form_explicit && hasSectionFlow(request.blueprint);
+  const bool from_flow = followsBlueprintFlow(request);
   std::vector<Section> sections =
       from_flow ? flowSections(*request.blueprint) : patternSections(request.pattern);
 
+  uint16_t requested_bars = 0;
   uint16_t buildable_bars = 0;
   if (sized) {
-    // This is the one layer holding both the requested length and the
-    // resolved tempo, so it is the one that says when the tempo cannot reach it.
-    const uint16_t requested_bars = barsForDuration(request.target_duration_seconds, request.bpm);
+    requested_bars = barsForDuration(request.target_duration_seconds, request.bpm);
     buildable_bars = std::clamp(requested_bars, kMinStructureBars, kMaxStructureBars);
-    if (buildable_bars != requested_bars && request.bpm > 0) {
-      const uint32_t buildable_seconds =
-          static_cast<uint32_t>(buildable_bars) * BEATS_PER_BAR * 60u / request.bpm;
-      warnings.push_back(
-          "Duration adjusted from " + std::to_string(request.target_duration_seconds) + "s to " +
-          std::to_string(buildable_seconds) + "s: " + std::to_string(requested_bars) + " bars at " +
-          std::to_string(request.bpm) + " BPM is outside the buildable range of " +
-          std::to_string(kMinStructureBars) + "-" + std::to_string(kMaxStructureBars) +
-          " bars (a different tempo reaches a different length)");
-    }
 
     // The call sections are part of the song's length, so their bars are
     // reserved before the form is sized rather than added on top of it.
@@ -1047,8 +1081,21 @@ std::vector<Section> planSongStructure(const StructureRequest& request,
   assignExitPatterns(sections);
 
   if (sized) {
+    // This is the one layer holding the requested length, the resolved tempo and
+    // the list actually built, so it reports the length that was built.
     const uint16_t built_bars = calculateTotalBars(sections);
-    if (std::abs(static_cast<int>(built_bars) - static_cast<int>(buildable_bars)) > kBarTolerance) {
+    if (buildable_bars != requested_bars && request.bpm > 0) {
+      const uint32_t built_seconds =
+          static_cast<uint32_t>(built_bars) * BEATS_PER_BAR * 60u / request.bpm;
+      warnings.push_back(
+          "Duration adjusted from " + std::to_string(request.target_duration_seconds) + "s to " +
+          std::to_string(built_seconds) + "s (" + std::to_string(built_bars) +
+          " bars): " + std::to_string(requested_bars) + " bars at " + std::to_string(request.bpm) +
+          " BPM is outside the buildable range of " + std::to_string(kMinStructureBars) + "-" +
+          std::to_string(kMaxStructureBars) +
+          " bars (a different tempo reaches a different length)");
+    } else if (std::abs(static_cast<int>(built_bars) - static_cast<int>(buildable_bars)) >
+               kBarTolerance) {
       warnings.push_back("Duration target of " + std::to_string(buildable_bars) +
                          " bars could not be met: the structure built is " +
                          std::to_string(built_bars) + " bars");
@@ -1058,6 +1105,20 @@ std::vector<Section> planSongStructure(const StructureRequest& request,
   applyAddictiveModeExitPatterns(sections, request.addictive_mode);
   applyEnergyCurve(sections, request.energy_curve);
   return sections;
+}
+
+BuiltForm resolveBuiltForm(const GeneratorParams& params) {
+  StructureRequest request;
+  request.pattern = params.structure;
+  request.form_explicit = params.form_explicit;
+  request.target_duration_seconds = params.target_duration_seconds;
+  if (params.blueprint_id < getProductionBlueprintCount()) {
+    request.blueprint = &getProductionBlueprint(params.blueprint_id);
+  }
+  BuiltForm form;
+  form.pattern = request.pattern;
+  form.flow = followsBlueprintFlow(request) ? request.blueprint : nullptr;
+  return form;
 }
 
 std::vector<Section> buildStructureForDuration(uint16_t target_seconds, uint16_t bpm,
@@ -1140,9 +1201,13 @@ std::vector<LayerEvent> generateDefaultLayerEvents(const Section& section, size_
         events.emplace_back(wind_down_bar, TrackMask::None,
                             TrackMask::Arpeggio | TrackMask::Motif | TrackMask::Aux);
         uint8_t final_bar = static_cast<uint8_t>(section.bars - 1);
-        events.emplace_back(final_bar, TrackMask::None,
-                            TrackMask::Drums | TrackMask::Bass | TrackMask::Vocal | TrackMask::SE |
-                                TrackMask::Guitar);
+        TrackMask final_removal = TrackMask::Drums | TrackMask::Bass | TrackMask::Vocal |
+                                  TrackMask::SE | TrackMask::Guitar;
+        // The final bar belongs to the sustained chord; a mask without one keeps its bass.
+        if (!hasTrack(section.track_mask, TrackMask::Chord)) {
+          final_removal = final_removal & ~TrackMask::Bass;
+        }
+        events.emplace_back(final_bar, TrackMask::None, final_removal);
       }
       break;
     }

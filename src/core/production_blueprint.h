@@ -59,8 +59,10 @@ enum class PercussionPolicy : uint8_t {
 /// @brief Blueprint-level constraints for generation.
 /// These override default limits for specific musical characteristics.
 struct BlueprintConstraints {
-  uint8_t max_velocity = 127;       ///< Maximum note velocity (0-127)
-  uint8_t max_pitch = 108;          ///< Maximum MIDI pitch (G8)
+  uint8_t max_velocity = 127;  ///< Maximum note velocity (0-127)
+  /// Maximum vocal pitch (C8 by default): internal C-major pitch, enforced before the
+  /// writers add the key, so sounding = max_pitch + key (+ modulation after the key change).
+  uint8_t max_pitch = 108;
   uint8_t max_leap_semitones = 12;  ///< Maximum melodic leap (octave)
   bool prefer_stepwise = false;     ///< Prefer stepwise motion over leaps
 

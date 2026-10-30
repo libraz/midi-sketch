@@ -28,6 +28,11 @@ namespace midisketch {
 class IHarmonyContext;
 struct PhrasePlan;
 
+/// Length of the cached chorus head, in notes. This is the stretch that repeats
+/// verbatim across choruses, so it is also where a betrayal has to land to be
+/// heard as a change to the hook rather than to the phrase around it.
+constexpr size_t kSabiHeadNotes = 8;
+
 /// @brief Context information for breath calculation.
 ///
 /// Provides additional context for calculating breath duration between phrases.
@@ -379,7 +384,9 @@ class MelodyDesigner {
                                              int same_pitch_streak = 0);
 
  private:
-  // Insert a leading tone at section boundary for smooth transition.
+  // Insert a leading tone at section boundary for smooth transition: a 16th
+  // pickup at the end of the phrase's breath, whatever the breath's length.
+  // A last note sung into the pickup slot is shortened to leave a breath.
   // @param notes Notes to modify (in place)
   // @param ctx Section context
   // @param harmony Harmony context

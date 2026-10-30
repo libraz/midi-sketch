@@ -101,6 +101,10 @@ void resolveNotesTheChordRefuses(std::vector<NoteEvent>& all_notes, const IHarmo
                                  uint8_t ctx_max_leap = 9);
 
 /// @brief Apply pitch bend expressions to vocal track.
+///
+/// A portamento glide reaches the next note's pitch exactly: it is written only
+/// for steps inside the +/-2 semitone bend range, and no vibrato bend of the
+/// same note falls inside its window.
 /// @param track Track to add pitch bends to
 /// @param all_notes All notes for pitch bend application
 /// @param params Generation parameters

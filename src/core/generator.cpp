@@ -54,6 +54,7 @@
 #include "track/generators/aux.h"
 #include "track/generators/motif.h"
 #include "track/generators/vocal.h"
+#include "track/melody/rhythm_generator.h"
 #include "track/motif/motif_rhythm.h"
 #include "track/vocal/vocal_analysis.h"
 #include "track/vocal/vocal_helpers.h"
@@ -96,6 +97,9 @@ void applyRhythmSyncLeadParams(GeneratorParams& params) {
     if (params.melody_syncopation_override) {
       params.melody_params.syncopation_prob = chosen.syncopation_prob;
     }
+    if (params.melody_hook_repetition_override) {
+      params.melody_params.hook_repetition = chosen.hook_repetition;
+    }
     if (params.melody_chorus_register_shift_override) {
       params.melody_params.chorus_register_shift = chosen.chorus_register_shift;
     }
@@ -113,7 +117,7 @@ void applyRhythmSyncLeadParams(GeneratorParams& params) {
   }
   if (!params.hook_intensity_explicit) params.hook_intensity = HookIntensity::Maximum;
   if (!params.vocal_groove_explicit) params.vocal_groove = VocalGrooveFeel::Driving16th;
-  params.drive_feel = std::max<uint8_t>(params.drive_feel, 88);
+  if (!params.drive_feel_explicit) params.drive_feel = std::max<uint8_t>(params.drive_feel, 88);
   if (!params.melody_max_leap_override) {
     params.melody_params.max_leap_interval =
         std::max<uint8_t>(params.melody_params.max_leap_interval, 12);
@@ -123,7 +127,7 @@ void applyRhythmSyncLeadParams(GeneratorParams& params) {
   if (!params.melody_syncopation_override && !syncopation_off) {
     params.melody_params.syncopation_prob = std::max(params.melody_params.syncopation_prob, 0.30f);
   }
-  params.melody_params.hook_repetition = true;
+  if (!params.melody_hook_repetition_override) params.melody_params.hook_repetition = true;
   params.melody_params.disable_vowel_constraints = true;
 }
 
@@ -327,6 +331,26 @@ void Generator::configureAddictiveMotif() {
   }
 }
 
+void Generator::warnInactiveMelodyControls() {
+  // A locked vocal takes its onsets from the riff and a mora-timed one from the
+  // mora generator, so neither reads the template's rhythm or these two ratios.
+  const bool locked = shouldLockVocalRhythm(params_);
+  const bool mora_timed = melody::resolveMoraMode(params_.melody_params.mora_rhythm_mode,
+                                                  params_.vocal_style) == MoraRhythmMode::MoraTimed;
+  const bool template_explicit = base_params_.melody_template != MelodyTemplateId::Auto;
+  if (locked && template_explicit) {
+    warnings_.push_back(
+        "melodyTemplate does not shape the rhythm-locked RhythmSync vocal; it only sets how "
+        "often a restated hook is varied");
+  }
+  if ((locked || mora_timed) &&
+      (params_.melody_long_note_ratio_override || params_.melody_syncopation_override)) {
+    warnings_.push_back(std::string("melodyLongNoteRatio and melodySyncopationProb have no effect "
+                                    "on a ") +
+                        (locked ? "rhythm-locked RhythmSync" : "mora-timed") + " vocal rhythm");
+  }
+}
+
 void Generator::validateVocalRange() {
   // Clamp to valid MIDI range first
   params_.vocal_low = std::clamp(params_.vocal_low, VOCAL_LOW_MIN, VOCAL_HIGH_MAX);
@@ -429,7 +453,7 @@ void Generator::clearAccompanimentTracks() {
   // (resetting all sec-dom splits) and clears notes, satisfying the contract in
   // Coordinator::initialize() that the tracker must NOT already contain
   // secondary-dominant splits when that overload runs.
-  const auto& progression = getChordProgression(params_.chord_id);
+  const auto& progression = getChordProgression(params_);
   harmony_context_->initialize(song_.arrangement(), progression, params_.mood);
   harmony_context_->registerTrack(song_.vocal(), TrackRole::Vocal);
   if (params_.paradigm == GenerationParadigm::RhythmSync && !song_.motif().empty()) {
@@ -502,6 +526,7 @@ uint16_t Generator::initializeGenerationState() {
   // mood-default BPM (<130) used to force the slow-band weights (MixedGroove/
   // HalfNoteSparse heavy, ChordPulseStabs ~1%) for every RhythmSync song.
   initializeBlueprint(seed);
+  warnInactiveMelodyControls();
   uint16_t bpm = resolveAndClampBpm();
   configureRhythmSyncMotif();
   configureAddictiveMotif();
@@ -536,7 +561,7 @@ uint16_t Generator::initializeGenerationState() {
   planTempoMap();
 
   // Initialize harmony context
-  const auto& progression = getChordProgression(params_.chord_id);
+  const auto& progression = getChordProgression(params_);
   harmony_context_->initialize(song_.arrangement(), progression, params_.mood);
 
   // Calculate modulation for all composition styles
@@ -971,6 +996,9 @@ void Generator::generate(const GeneratorParams& params) {
 
   // Apply post-processing.
   applyPostProcessingEffects();
+
+  replayable_ = true;
+  vocal_first_pending_ = false;
 }
 
 // ============================================================================
@@ -989,7 +1017,7 @@ void Generator::generateVocal(const GeneratorParams& params) {
 
   // Match full generation's exact planned harmonic timeline before designing
   // the vocal, so its preview remains valid when accompaniment is added.
-  const auto& progression = getChordProgression(params_.chord_id);
+  const auto& progression = getChordProgression(params_);
   registerPlannedHarmonyTimeline(song_.arrangement(), params_, progression, *harmony_context_);
 
   // RhythmSync: generate Motif first as coordinate axis
@@ -1013,18 +1041,23 @@ void Generator::generateVocal(const GeneratorParams& params) {
   }
 
   vocal_gen.generateFullTrack(song_.vocal(), ctx);
+
+  replayable_ = false;
+  vocal_first_pending_ = true;
 }
 
 void Generator::regenerateVocal(uint32_t new_seed) {
-  // Resolve the auto seed once and propagate it to the shared generation
-  // parameters, the same contract regenerateAccompaniment() follows. The
-  // parameters are what gets serialized into the exported metadata, so leaving
-  // the requested value here makes a take that was regenerated with seed 0
-  // resolve to a different melody when that file is regenerated.
-  uint32_t seed = resolveSeed(new_seed);
+  regenerateVocalTake(resolveSeed(new_seed), params_.paradigm == GenerationParadigm::RhythmSync);
+}
+
+void Generator::regenerateVocalTake(uint32_t seed, bool regenerate_motif) {
+  // The take seed drives the tracks generated from here on; the song keeps
+  // generation_seed_, which is what its metadata names.
   params_.seed = seed;
   rng_.seed(seed);
   song_.setMelodySeed(seed);
+  replayable_ = false;
+  vocal_first_pending_ = false;
 
   // Replace the vocal atomically in both the song and collision registry.
   // registerTrack() is additive, so clearing only the MIDI track would leave
@@ -1033,11 +1066,15 @@ void Generator::regenerateVocal(uint32_t new_seed) {
   song_.clearTrack(TrackRole::Vocal);
   invalidateVocalAnalysisCache();
 
-  // RhythmSync: regenerate Motif as new coordinate axis for the new Vocal
-  if (params_.paradigm == GenerationParadigm::RhythmSync) {
+  if (regenerate_motif) {
+    // Every accompaniment track was voiced against the motif axis being replaced,
+    // so it goes with it, and the harmony returns to the vocal-first state
+    // generateVocal() leaves for generateAccompanimentForVocal().
     song_.setMotifSeed(seed);
     song_.clearTrack(TrackRole::Motif);
-    harmony_context_->clearNotesForTrack(TrackRole::Motif);
+    clearAccompanimentTracks();
+    registerPlannedHarmonyTimeline(song_.arrangement(), params_, getChordProgression(params_),
+                                   *harmony_context_);
     generateMotif();
   }
 
@@ -1116,6 +1153,7 @@ void Generator::regenerateVocalImpl(const VocalConfig& config, const SongConfig*
     params_.melody_max_leap_override = rebuilt->melody_max_leap_override;
     params_.melody_long_note_ratio_override = rebuilt->melody_long_note_ratio_override;
     params_.melody_syncopation_override = rebuilt->melody_syncopation_override;
+    params_.melody_hook_repetition_override = rebuilt->melody_hook_repetition_override;
     params_.melody_chorus_register_shift_override = rebuilt->melody_chorus_register_shift_override;
     params_.syllabic_sub_rate_override = rebuilt->syllabic_sub_rate_override;
     if (isRhythmSyncLeadSetting(params_, resolved_blueprint_id_)) {
@@ -1123,42 +1161,10 @@ void Generator::regenerateVocalImpl(const VocalConfig& config, const SongConfig*
     }
   }
 
-  // Resolve and apply seed. params_.seed is what the exported metadata carries,
-  // so the resolved value has to land there for the take to be reproducible
-  // from its own file.
-  uint32_t seed = resolveSeed(config.seed);
-  params_.seed = seed;
-  rng_.seed(seed);
-  song_.setMelodySeed(seed);
-
-  // Replace the vocal atomically in both the song and collision registry.
-  harmony_context_->clearNotesForTrack(TrackRole::Vocal);
-  song_.clearTrack(TrackRole::Vocal);
-  invalidateVocalAnalysisCache();
-
   // RhythmSync: regenerate Motif unless keep_motif is set
-  if (params_.paradigm == GenerationParadigm::RhythmSync &&
-      !(config.has(VocalConfig::KeepMotif) && config.keep_motif)) {
-    song_.setMotifSeed(seed);
-    song_.clearTrack(TrackRole::Motif);
-    harmony_context_->clearNotesForTrack(TrackRole::Motif);
-    generateMotif();
-  }
-
-  // Regenerate vocal using VocalGenerator
-  VocalGenerator vocal_gen;
-
-  // Build FullTrackContext
-  FullTrackContext ctx = buildBaseContext();
-  ctx.drum_grid = getDrumGrid();
-
-  // RhythmSync: pass Motif as coordinate axis for Vocal generation
-  if (params_.paradigm == GenerationParadigm::RhythmSync && !song_.motif().empty()) {
-    ctx.motif_track = &song_.motif();
-  }
-
-  vocal_gen.generateFullTrack(song_.vocal(), ctx);
-  harmony_context_->registerTrack(song_.vocal(), TrackRole::Vocal);
+  regenerateVocalTake(resolveSeed(config.seed),
+                      params_.paradigm == GenerationParadigm::RhythmSync &&
+                          !(config.has(VocalConfig::KeepMotif) && config.keep_motif));
 }
 
 /**
@@ -1189,6 +1195,10 @@ void Generator::generateAccompanimentForVocal() {
     harmony_context_->clearNotesForTrack(TrackRole::Vocal);
     harmony_context_->registerTrack(song_.vocal(), TrackRole::Vocal);
   }
+
+  // Completing an untouched vocal-first song gives what generate() gives.
+  replayable_ = vocal_first_pending_;
+  vocal_first_pending_ = false;
 }
 
 /**
@@ -1407,6 +1417,7 @@ void Generator::regenerateAccompaniment(const AccompanimentConfig& config) {
   uint32_t seed = resolveSeed(config.seed);
   params_.seed = seed;
   rng_.seed(seed);
+  vocal_first_pending_ = false;
 
   clearAccompanimentTracks();
   generateAccompanimentForVocal();
@@ -1421,11 +1432,14 @@ void Generator::generateAccompanimentForVocal(const AccompanimentConfig& config)
   uint32_t seed = resolveSeed(config.seed);
   params_.seed = seed;
   rng_.seed(seed);
+  vocal_first_pending_ = false;
 
   generateAccompanimentForVocal();
 }
 
 void Generator::setMelody(const MelodyData& melody) {
+  replayable_ = false;
+  vocal_first_pending_ = false;
   song_.setMelodySeed(melody.seed);
   harmony_context_->clearNotesForTrack(TrackRole::Vocal);
   harmony_context_->clearNotesForTrack(TrackRole::Aux);
@@ -1456,6 +1470,9 @@ void Generator::setVocalNotes(const GeneratorParams& params, const std::vector<N
 
   // Register vocal notes with harmony context for accompaniment coordination
   harmony_context_->registerTrack(song_.vocal(), TrackRole::Vocal);
+
+  replayable_ = false;
+  vocal_first_pending_ = false;
 }
 
 FullTrackContext Generator::buildBaseContext() {
@@ -1464,7 +1481,7 @@ FullTrackContext Generator::buildBaseContext() {
   ctx.params = &params_;
   ctx.rng = &rng_;
   ctx.harmony = harmony_context_.get();
-  ctx.chord_progression = &getChordProgression(params_.chord_id);
+  ctx.chord_progression = &getChordProgression(params_);
   return ctx;
 }
 
@@ -1579,6 +1596,8 @@ void Generator::regenerateMotif(uint32_t new_seed) {
   rng_.seed(seed);
   song_.setMotifSeed(seed);
   song_.clearTrack(TrackRole::Motif);
+  replayable_ = false;
+  vocal_first_pending_ = false;
   generateMotif();
   // Note: BackgroundMotif no longer generates Vocal (BGM-only mode)
 }
@@ -1586,6 +1605,8 @@ void Generator::regenerateMotif(uint32_t new_seed) {
 MotifData Generator::getMotif() const { return {song_.motifSeed(), song_.motifPattern()}; }
 
 void Generator::setMotif(const MotifData& motif) {
+  replayable_ = false;
+  vocal_first_pending_ = false;
   song_.setMotifSeed(motif.seed);
   song_.setMotifPattern(motif.pattern);
   rebuildMotifFromPattern();

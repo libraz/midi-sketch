@@ -1521,7 +1521,9 @@ TEST(DissonanceIntegrationTest, MediumSeverityMetrics) {
     gen.generate(params);
     const auto& song = gen.getSong();
 
-    auto report = analyzeDissonance(song, params);
+    // Judged against the timeline generation voiced every track on; the 2-arg
+    // overload rebuilds the raw progression and misses every planned replacement.
+    auto report = analyzeDissonance(song, params, gen.getHarmonyContext());
     total_tests++;
     total_medium += report.summary.medium_severity;
   }
@@ -1959,6 +1961,54 @@ TEST(DissonanceTest, SustainedOverChordChangeTreatsEveryPitchedTrackAlike) {
   }
 
   EXPECT_TRUE(any_reported) << "No pitch produced a sustained-note issue, so nothing was checked";
+}
+
+TEST(DissonanceTest, SustainedOverChordChangeIgnoresOverhangsUnderThePassingToneThreshold) {
+  Section verse;
+  verse.type = SectionType::A;
+  verse.start_tick = 0;
+  verse.bars = 2;
+  verse.name = "Verse";
+  Arrangement arrangement({verse});
+
+  ChordProgression progression{};
+  progression.degrees = {0, 4, -1, -1, -1, -1, -1, -1};  // I then V
+  progression.length = 2;
+
+  GeneratorParams params{};
+  params.chord_id = 0;
+  params.mood = Mood::StraightPop;
+
+  ChordProgressionTracker timeline;
+  timeline.initialize(arrangement, progression, Mood::StraightPop);
+
+  auto sustainedCount = [&](Tick overhang, uint8_t pitch) {
+    Song song;
+    song.setArrangement(arrangement);
+    song.aux().addNote(NoteEventTestHelper::create(TICKS_PER_BAR - TICKS_PER_BEAT,
+                                                   TICKS_PER_BEAT + overhang, pitch, 90));
+    return analyzeDissonance(song, params, timeline).summary.sustained_over_chord_change;
+  };
+
+  bool reached_threshold = false;
+  for (uint8_t pitch = 60; pitch < 72; ++pitch) {
+    EXPECT_EQ(sustainedCount(kPassingToneOverlap - 1, pitch), 0u) << "pitch " << int(pitch);
+    if (sustainedCount(kPassingToneOverlap, pitch) > 0) reached_threshold = true;
+  }
+  EXPECT_TRUE(reached_threshold) << "No pitch clashed at the threshold, so nothing was checked";
+}
+
+TEST(DissonanceTest, ExternalMidiJudgesAPairInsideOneTrackLikeAcrossTwo) {
+  ParsedMidi midi = makeTwoTrackMidi(
+      {NoteEventTestHelper::create(0, 480, 60, 100), NoteEventTestHelper::create(0, 480, 61, 100)},
+      {});
+  midi.tracks.pop_back();
+  midi.num_tracks = 1;
+  EXPECT_EQ(analyzeDissonanceFromParsedMidi(midi).summary.simultaneous_clashes, 1u);
+
+  const auto across = makeTwoTrackMidi({NoteEventTestHelper::create(0, 480, 60, 100)},
+                                       {NoteEventTestHelper::create(0, 480, 61, 100)});
+  EXPECT_EQ(analyzeDissonanceFromParsedMidi(across).summary.simultaneous_clashes, 1u);
 }
 
 }  // namespace

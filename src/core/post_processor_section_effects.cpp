@@ -10,6 +10,7 @@
 
 #include <algorithm>
 
+#include "core/chord.h"
 #include "core/chord_utils.h"
 #include "core/i_chord_lookup.h"
 #include "core/i_collision_detector.h"
@@ -19,8 +20,10 @@
 #include "core/pitch_utils.h"
 #include "core/post_processor.h"
 #include "core/timing_constants.h"
+#include "core/velocity_constants.h"
 #include "core/velocity_helper.h"
 #include "track/accompaniment_ceiling.h"
+#include "track/drums/drum_constants.h"
 
 namespace midisketch {
 
@@ -268,6 +271,12 @@ void PostProcessor::applyAllExitPatterns(std::vector<MidiTrack*>& tracks,
     for (size_t i = 0; i < tracks.size(); ++i) {
       if (tracks[i] != nullptr) {
         if (i < roles.size()) {
+          // The vocal owns its section-end sustain (applySectionEndSustain), which
+          // keeps the breath before the next section; stretching its last bar here
+          // runs it into the next downbeat. Entry patterns skip it the same way.
+          if (roles[i] == TrackRole::Vocal && section.exit_pattern == ExitPattern::Sustain) {
+            continue;
+          }
           applyExitPattern(*tracks[i], section, harmony, roles[i]);
         } else {
           // No real role available for this track. Do NOT pretend TrackRole::Vocal:
@@ -444,7 +453,9 @@ void PostProcessor::applyRitDecrescendo(std::vector<MidiTrack*>& tracks,
           // Velocity decrescendo: 1.0 -> 0.75 (25% softer at the end)
           float velocity_mult = 1.0f - progress * 0.25f;
           int new_vel = static_cast<int>(note.velocity * velocity_mult);
-          uint8_t clamped_vel = vel::clamp(new_vel, 30, 127);
+          // The shared pitched floor, never lifting a note that was already below it.
+          uint8_t clamped_vel = vel::clamp(
+              new_vel, std::min<int>(velocity::kPitchedVelocityFloor, note.velocity), 127);
 #ifdef MIDISKETCH_NOTE_PROVENANCE
           if (clamped_vel != note.velocity) {
             note.addTransformStep(TransformStepType::PostProcessVelocity, note.velocity,
@@ -495,24 +506,28 @@ void PostProcessor::applyEnhancedFinalHit(MidiTrack* bass_track, MidiTrack* drum
       }
     }
 
-    // If no bass note exists on final beat, add one (root note at bass range).
-    // The note is pitched, so it goes through the note creation API: that is
-    // what resolves collisions and registers the result with the harmony
-    // context, keeping later queries aware of the note this pass added.
+    // If no bass note exists on final beat, add one: the root of the chord
+    // sounding there, in the bass range. The note is pitched, so it goes
+    // through the note creation API: that is what resolves collisions and
+    // registers the result with the harmony context, keeping later queries
+    // aware of the note this pass added.
     if (!has_final_bass) {
-      constexpr uint8_t DEFAULT_BASS_ROOT = 36;  // C2
+      constexpr uint8_t kFinalHitBassOctave = 36;  // C2
+      const uint8_t final_root = static_cast<uint8_t>(
+          kFinalHitBassOctave +
+          getPitchClass(degreeToRoot(harmony.getChordDegreeAt(final_beat_start), Key::C)));
 
       NoteOptions opts;
       opts.start = final_beat_start;
       opts.duration = TICKS_PER_BEAT;
-      opts.desired_pitch = DEFAULT_BASS_ROOT;
+      opts.desired_pitch = final_root;
       opts.velocity = FINAL_HIT_VEL;
       opts.role = TrackRole::Bass;
       opts.preference = PitchPreference::PreferRootFifth;
       opts.range_low = BASS_LOW;
       opts.range_high = BASS_HIGH;
       opts.source = NoteSource::PostProcess;
-      opts.original_pitch = DEFAULT_BASS_ROOT;
+      opts.original_pitch = final_root;
       const bool added = createNoteAndAdd(*bass_track, harmony, opts).has_value();
 
       // An ending without its bass is worse than an ending whose bass is not
@@ -521,16 +536,16 @@ void PostProcessor::applyEnhancedFinalHit(MidiTrack* bass_track, MidiTrack* drum
       // is invisible to the harmony context is what later passes reason wrongly
       // from.
       if (!added) {
-        NoteEvent final_bass = createNoteWithoutHarmony(final_beat_start, TICKS_PER_BEAT,
-                                                        DEFAULT_BASS_ROOT, FINAL_HIT_VEL);
+        NoteEvent final_bass =
+            createNoteWithoutHarmony(final_beat_start, TICKS_PER_BEAT, final_root, FINAL_HIT_VEL);
 #ifdef MIDISKETCH_NOTE_PROVENANCE
-        final_bass.prov_chord_degree = -1;
+        final_bass.prov_chord_degree = harmony.getChordDegreeAt(final_beat_start);
         final_bass.prov_lookup_tick = final_beat_start;
         final_bass.prov_source = static_cast<uint8_t>(NoteSource::PostProcess);
-        final_bass.prov_original_pitch = DEFAULT_BASS_ROOT;
+        final_bass.prov_original_pitch = final_root;
 #endif
         bass_track->addNote(final_bass);
-        harmony.registerNote(final_beat_start, TICKS_PER_BEAT, DEFAULT_BASS_ROOT, TrackRole::Bass);
+        harmony.registerNote(final_beat_start, TICKS_PER_BEAT, final_root, TrackRole::Bass);
       }
     }
   }
@@ -592,6 +607,27 @@ void PostProcessor::applyEnhancedFinalHit(MidiTrack* bass_track, MidiTrack* drum
 #endif
       drum_notes.push_back(crash);
     }
+
+    // A crash takes the hand that keeps time, as the kit's own section-entry
+    // accent does: the timekeeping stroke on the crash's tick yields, or the
+    // tick asks for three hands.
+    std::vector<Tick> crash_ticks;
+    for (const auto& note : drum_notes) {
+      if (note.note == CRASH_NOTE && note.start_tick >= final_beat_start &&
+          note.start_tick < section_end) {
+        crash_ticks.push_back(note.start_tick);
+      }
+    }
+    drum_notes.erase(std::remove_if(drum_notes.begin(), drum_notes.end(),
+                                    [&crash_ticks](const NoteEvent& note) {
+                                      if (note.note != drums::CHH && note.note != drums::OHH &&
+                                          note.note != drums::RIDE) {
+                                        return false;
+                                      }
+                                      return std::find(crash_ticks.begin(), crash_ticks.end(),
+                                                       note.start_tick) != crash_ticks.end();
+                                    }),
+                     drum_notes.end());
   }
 
   // Chord track: sustain final chord as whole note with strong velocity,

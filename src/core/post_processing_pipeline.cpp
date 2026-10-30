@@ -108,10 +108,15 @@ void PostProcessingPipeline::applyVelocityShaping(const Context& ctx,
   // beat dynamics. A fixed-velocity motif intentionally opts out; the drum kit
   // and SE receive the same section-level ratio as the pitched tracks, so a
   // quiet section is quiet across the whole arrangement.
-  std::vector<MidiTrack*> section_dynamics_tracks = tracks;
-  section_dynamics_tracks.push_back(&ctx.song.drums());
-  section_dynamics_tracks.push_back(&ctx.song.se());
-  midisketch::applySectionDynamics(section_dynamics_tracks, sections);
+  // Each group is bounded below by its own role's floor.
+  midisketch::applySectionDynamics(tracks, sections,
+                                   midisketch::getVelocityFloor(TrackRole::Chord));
+  std::vector<MidiTrack*> kit_tracks = {&ctx.song.drums()};
+  midisketch::applySectionDynamics(kit_tracks, sections,
+                                   midisketch::getVelocityFloor(TrackRole::Drums));
+  std::vector<MidiTrack*> se_tracks = {&ctx.song.se()};
+  midisketch::applySectionDynamics(se_tracks, sections,
+                                   midisketch::getVelocityFloor(TrackRole::SE));
 
   // Apply melody contour-following velocity to vocal track
   midisketch::applyMelodyContourVelocity(ctx.song.vocal(), sections);
@@ -196,7 +201,7 @@ void PostProcessingPipeline::applyTransitionEffects(const Context& ctx,
     applyEmotionBasedDynamics(ctx, tracks, sections);
   }
 
-  // Apply blueprint constraints (e.g., IdolKawaii max_velocity=80, max_pitch=79)
+  // Apply blueprint constraints (e.g., IdolKawaii max_velocity=80, max_pitch=86)
   if (ctx.blueprint != nullptr) {
     std::vector<MidiTrack*> all_tracks = {&ctx.song.vocal(),    &ctx.song.chord(), &ctx.song.bass(),
                                           &ctx.song.arpeggio(), &ctx.song.motif(), &ctx.song.aux(),
@@ -218,7 +223,8 @@ void PostProcessingPipeline::applyTransitionEffects(const Context& ctx,
                                                  ctx.blueprint->constraints.max_velocity);
     }
 
-    // Clamp vocal pitch (other tracks have different range requirements)
+    // Clamp vocal pitch (other tracks have different range requirements). Both sides
+    // are internal C-major pitches; the writers add the key afterwards.
     if (ctx.blueprint->constraints.max_pitch < 127) {
       midisketch::clampTrackPitch(ctx.song.vocal(), ctx.blueprint->constraints.max_pitch);
 
@@ -287,7 +293,7 @@ size_t PostProcessingPipeline::findSectionIndex(const std::vector<Section>& sect
 }
 
 uint8_t PostProcessingPipeline::applyEmotionToVelocity(const Context& ctx, uint8_t base_velocity,
-                                                       const SectionEmotion& emotion) {
+                                                       const SectionEmotion& emotion, int floor) {
   (void)ctx;  // Context not currently needed but kept for API consistency
 
   // 1. Energy adjustment: low energy = softer, high energy = louder
@@ -303,18 +309,36 @@ uint8_t PostProcessingPipeline::applyEmotionToVelocity(const Context& ctx, uint8
   //    the ceiling asks; a genuinely quiet section is still capped by it.
   uint8_t ceiling = calculateVelocityCeiling(127, emotion.energy);
 
-  // 3. Apply energy factor and cap at the ceiling
-  int adjusted = static_cast<int>(base_velocity * energy_factor);
-  adjusted = std::min(adjusted, static_cast<int>(ceiling));
+  // 3. Apply the energy factor, then bound the result: a boost is folded into
+  //    the remaining headroom, the ceiling and the floor fold rather than clip.
+  int adjusted =
+      foldBoostIntoHeadroom(base_velocity, static_cast<int>(base_velocity * energy_factor));
+  adjusted = foldVelocityIntoCeiling(adjusted, ceiling);
+  // The floor limits how far this pass lowers a note; a note authored under it
+  // (a ghost, a soft grace) keeps its own level.
+  if (adjusted < base_velocity) {
+    adjusted = std::min<int>(base_velocity, foldVelocityIntoFloor(adjusted, floor));
+  }
 
-  return static_cast<uint8_t>(std::clamp(adjusted, 30, 127));
+  return vel::clamp(adjusted, 1, 127);
 }
 
 void PostProcessingPipeline::applyEmotionBasedDynamics(const Context& ctx,
                                                        std::vector<MidiTrack*>& tracks,
                                                        const std::vector<Section>& sections) {
+  // Each track is bounded below by the floor of its own role.
+  auto floorFor = [&ctx](const MidiTrack* track) {
+    for (size_t role = 0; role < kTrackCount; ++role) {
+      if (&ctx.song.track(static_cast<TrackRole>(role)) == track) {
+        return getVelocityFloor(static_cast<TrackRole>(role));
+      }
+    }
+    return getVelocityFloor(TrackRole::Chord);
+  };
+
   // Section-wide velocity adjustment based on emotion.
   for (auto* track : tracks) {
+    const int floor = floorFor(track);
     for (auto& note : track->notes()) {
       // 1. Find which section this note belongs to
       size_t section_idx = findSectionIndex(sections, note.start_tick);
@@ -324,7 +348,7 @@ void PostProcessingPipeline::applyEmotionBasedDynamics(const Context& ctx,
       const auto& emotion = ctx.emotion_curve.getEmotion(section_idx);
 
       // 3. Apply energy/tension-based velocity adjustment
-      note.velocity = applyEmotionToVelocity(ctx, note.velocity, emotion);
+      note.velocity = applyEmotionToVelocity(ctx, note.velocity, emotion, floor);
     }
   }
 
@@ -344,16 +368,22 @@ void PostProcessingPipeline::applyEmotionBasedDynamics(const Context& ctx,
 
     // Apply velocity ramp to notes in the transition zone
     for (auto* track : tracks) {
+      const int floor = floorFor(track);
       for (auto& note : track->notes()) {
         if (note.start_tick >= transition_start && note.start_tick < section_end) {
           // Calculate position within transition zone (0.0 to 1.0)
           float progress = static_cast<float>(note.start_tick - transition_start) /
                            static_cast<float>(section_end - transition_start);
 
-          // Apply velocity ramp progressively
+          // Apply velocity ramp progressively. A ramp down stops at the floor
+          // (or where the note already was, if that is quieter); a ramp up folds
+          // into the headroom.
           float velocity_factor = 1.0f + (hint.velocity_ramp - 1.0f) * progress;
           int new_velocity = static_cast<int>(note.velocity * velocity_factor);
-          note.velocity = vel::clamp(new_velocity, 30, 127);
+          if (new_velocity > note.velocity) {
+            new_velocity = foldBoostIntoHeadroom(note.velocity, new_velocity);
+          }
+          note.velocity = vel::clamp(new_velocity, std::min<int>(floor, note.velocity), 127);
         }
       }
     }

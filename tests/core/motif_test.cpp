@@ -33,13 +33,11 @@ TEST_F(MotifTest, MotifStructureIsValid) {
   Motif motif;
   motif.rhythm = {{0.0f, 2, true}, {1.0f, 2, false}};
   motif.contour_degrees = {0, 2};
-  motif.climax_index = 0;
   motif.length_beats = 4;
 
   EXPECT_EQ(motif.rhythm.size(), 2u);
   EXPECT_EQ(motif.contour_degrees.size(), 2u);
   EXPECT_EQ(motif.length_beats, 4);
-  EXPECT_TRUE(motif.ends_on_chord_tone);
 }
 
 TEST_F(MotifTest, DesignChorusHookProducesValidMotif) {
@@ -50,9 +48,7 @@ TEST_F(MotifTest, DesignChorusHookProducesValidMotif) {
 
   EXPECT_GT(hook.rhythm.size(), 0u);
   EXPECT_EQ(hook.rhythm.size(), hook.contour_degrees.size());
-  EXPECT_LT(hook.climax_index, hook.rhythm.size());
   EXPECT_EQ(hook.length_beats, 8);
-  EXPECT_TRUE(hook.ends_on_chord_tone);
 }
 
 TEST_F(MotifTest, DesignChorusHookStandardStyle) {
@@ -385,7 +381,7 @@ TEST_F(MotifTest, ExtractMotifFromChorusMaxNotes) {
   EXPECT_EQ(motif.contour_degrees.size(), 4u);
 }
 
-TEST_F(MotifTest, ExtractMotifFromChorusFindsClimax) {
+TEST_F(MotifTest, ExtractMotifFromChorusKeepsTheContourPeak) {
   std::vector<NoteEvent> chorus_notes;
   // Create melody where highest note is in the middle
   chorus_notes.push_back(NoteEventTestHelper::create(0, TICKS_PER_BEAT, 60, 100));  // C4
@@ -396,8 +392,10 @@ TEST_F(MotifTest, ExtractMotifFromChorusFindsClimax) {
 
   Motif motif = extractMotifFromChorus(chorus_notes);
 
-  // Climax should be at index 1 (C5 is highest)
-  EXPECT_EQ(motif.climax_index, 1u);
+  // The highest contour degree sits at index 1 (C5 is highest)
+  ASSERT_EQ(motif.contour_degrees.size(), 3u);
+  EXPECT_GT(motif.contour_degrees[1], motif.contour_degrees[0]);
+  EXPECT_GT(motif.contour_degrees[1], motif.contour_degrees[2]);
 }
 
 // ============================================================================

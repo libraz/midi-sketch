@@ -605,17 +605,15 @@ TEST_F(BassDiatonicTest, BassOnBeatOneMustBeChordTone) {
         }
 
         if (!is_chord_tone) {
-          // Also accept chord tones from the generator's actual harmony context,
-          // which may differ from the tracker at chord boundaries
+          // Also accept the chord the generator's harmony context actually holds,
+          // which may differ from the tracker at chord boundaries and spells a
+          // secondary dominant with its raised third (F# in D7)
           const auto& harmony = gen.getHarmonyContext();
           int8_t gen_degree = harmony.getChordDegreeAt(note.start_tick);
-          if (gen_degree != degree) {
-            auto gen_chord_tones = getChordTonePitchClasses(gen_degree);
-            for (int ct_pitch : gen_chord_tones) {
-              if (ct_pitch == pitch_class) {
-                is_chord_tone = true;
-                break;
-              }
+          for (int ct_pitch : harmony.getChordTonesAt(note.start_tick)) {
+            if (ct_pitch == pitch_class) {
+              is_chord_tone = true;
+              break;
             }
           }
 
@@ -652,28 +650,6 @@ class ChordFunctionApproachTest : public ::testing::Test {
     return pc == 0 || pc == 2 || pc == 4 || pc == 5 || pc == 7 || pc == 9 || pc == 11;
   }
 };
-
-TEST_F(ChordFunctionApproachTest, TonicChordFunctionClassification) {
-  std::vector<int8_t> tonic_degrees = {0, 2, 5};
-  for (int8_t deg : tonic_degrees) {
-    EXPECT_TRUE(deg == 0 || deg == 2 || deg == 5)
-        << "Degree " << (int)deg << " should be tonic function";
-  }
-}
-
-TEST_F(ChordFunctionApproachTest, DominantChordFunctionClassification) {
-  std::vector<int8_t> dominant_degrees = {4, 6};
-  for (int8_t deg : dominant_degrees) {
-    EXPECT_TRUE(deg == 4 || deg == 6) << "Degree " << (int)deg << " should be dominant function";
-  }
-}
-
-TEST_F(ChordFunctionApproachTest, SubdominantChordFunctionClassification) {
-  std::vector<int8_t> subdominant_degrees = {1, 3};
-  for (int8_t deg : subdominant_degrees) {
-    EXPECT_TRUE(deg == 1 || deg == 3) << "Degree " << (int)deg << " should be subdominant function";
-  }
-}
 
 TEST_F(ChordFunctionApproachTest, ApproachCandidateSurvivesAllRootsAndDegrees) {
   for (int root_pc = 0; root_pc < 12; ++root_pc) {
@@ -1373,11 +1349,10 @@ TEST_F(BassChordToneTest, CollisionAvoidanceShouldPreferChordTones) {
   std::cout << "Chord tone preferred: " << chord_tone_preferred_count << "\n";
   std::cout << "Non-chord-tone preferred: " << non_chord_tone_preferred_count << "\n";
 
-  if (candidate_analysis_count > 0) {
-    double ct_ratio = static_cast<double>(chord_tone_preferred_count) / candidate_analysis_count;
-    EXPECT_GT(ct_ratio, 0.8)
-        << "Bass collision avoidance should prefer chord tones in >80% of cases.";
-  }
+  ASSERT_GT(candidate_analysis_count, 0) << "No position produced candidates to rank";
+  double ct_ratio = static_cast<double>(chord_tone_preferred_count) / candidate_analysis_count;
+  EXPECT_GT(ct_ratio, 0.8)
+      << "Bass collision avoidance should prefer chord tones in >80% of cases.";
 }
 
 TEST_F(BassChordToneTest, GOnFChordBars) {

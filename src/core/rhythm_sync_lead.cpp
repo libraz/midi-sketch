@@ -9,6 +9,7 @@
 #include "core/note_source.h"
 #include "core/pitch_utils.h"
 #include "core/rewrite_pitch_guard.h"
+#include "core/section_utils.h"
 #include "core/velocity_helper.h"
 
 namespace midisketch {
@@ -21,9 +22,7 @@ bool isRhythmSyncLeadSetting(const GeneratorParams& params, uint8_t resolved_blu
 }
 
 bool shouldRestoreLockedMotifRiff(const GeneratorParams& params) {
-  return params.riff_policy == RiffPolicy::LockedContour ||
-         params.riff_policy == RiffPolicy::LockedPitch ||
-         params.riff_policy == RiffPolicy::LockedAll;
+  return isLockedRiffPolicy(params.riff_policy);
 }
 
 namespace {
@@ -90,11 +89,19 @@ void shapeSectionRegister(std::vector<NoteEvent*>& notes, int low, int high, uin
         std::clamp(low + lift, static_cast<int>(absolute_low), static_cast<int>(absolute_high));
     int register_high = std::clamp(high + lift, register_low, static_cast<int>(absolute_high));
     int target = static_cast<int>(note.note) + lift;
-    note.note = harmony != nullptr
-                    ? pickShapedPitch(target, note, *harmony, static_cast<uint8_t>(register_low),
-                                      static_cast<uint8_t>(register_high), role)
-                    : clampScalePitch(target, static_cast<uint8_t>(register_low),
-                                      static_cast<uint8_t>(register_high));
+    const uint8_t shaped =
+        harmony != nullptr
+            ? pickShapedPitch(target, note, *harmony, static_cast<uint8_t>(register_low),
+                              static_cast<uint8_t>(register_high), role)
+            : clampScalePitch(target, static_cast<uint8_t>(register_low),
+                              static_cast<uint8_t>(register_high));
+    if (shaped != note.note) {
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+      note.recordPitchMove(TransformStepType::PatternOffset, note.note, shaped,
+                           static_cast<int8_t>(lift));
+#endif
+      note.note = shaped;
+    }
     // Section energy differentiation: boost velocity for shaped notes.
     note.velocity = vel::withDelta(note.velocity, static_cast<int>(velocity_boost));
   }
@@ -157,7 +164,13 @@ void shiftMotifRegisterBarUniform(std::vector<NoteEvent*>& notes, const Section&
                                        static_cast<uint8_t>(register_high), TrackRole::Motif);
       it = resolved.emplace(key, target).first;
     }
-    note.note = it->second;
+    if (it->second != note.note) {
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+      note.recordPitchMove(TransformStepType::PatternOffset, note.note, it->second,
+                           static_cast<int8_t>(lift));
+#endif
+      note.note = it->second;
+    }
     note.velocity = vel::withDelta(note.velocity, static_cast<int>(velocity_boost));
   }
 }
@@ -193,10 +206,18 @@ void applyDnaPattern(std::vector<NoteEvent*>& notes, int base_pitch,
         previous_pitch <= high &&
         !isAvoidNoteOverSpan(previous_pitch, note.start_tick, note.duration, *harmony) &&
         harmony->isConsonantWithOtherTracks(previous_pitch, note.start_tick, note.duration, role);
-    note.note = may_repeat_previous
-                    ? previous_pitch
-                    : (harmony != nullptr ? pickShapedPitch(pitch, note, *harmony, low, high, role)
-                                          : clampScalePitch(pitch, low, high));
+    const uint8_t stamped =
+        may_repeat_previous
+            ? previous_pitch
+            : (harmony != nullptr ? pickShapedPitch(pitch, note, *harmony, low, high, role)
+                                  : clampScalePitch(pitch, low, high));
+    if (stamped != note.note) {
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+      note.recordPitchMove(TransformStepType::PatternOffset, note.note, stamped,
+                           static_cast<int8_t>(interval));
+#endif
+      note.note = stamped;
+    }
     previous_interval = interval;
     previous_pitch = note.note;
     // Section energy differentiation: boost velocity for DNA-rewritten notes.
@@ -221,9 +242,16 @@ void applyRhythmSyncLeadDna(MidiTrack& vocal, MidiTrack& motif,
   static const std::vector<int> kFinalChorusVocal = {0, 0, 2, 5, 9, 9, 12, 9, 7, 9, 12, 12};
   static const std::vector<int> kDefaultVocal = {0, 2, 4, 2, 0, 2};
 
-  std::map<SectionType, int> occurrence_count;
-  for (const auto& section : sections) {
-    int occurrence = ++occurrence_count[section.type];
+  for (size_t section_idx = 0; section_idx < sections.size(); ++section_idx) {
+    const Section& section = sections[section_idx];
+    // Only the last chorus or a declared peak escalates; every other chorus
+    // restates the first one's pattern and register, so the hook returns as heard.
+    const auto escalates = [&](TrackMask track) {
+      return section.peak_level == PeakLevel::Max ||
+             classifyChorusOccurrence(sections, section_idx, track) == ChorusOccurrence::Final;
+    };
+    const bool vocal_escalates = escalates(TrackMask::Vocal);
+    const bool motif_escalates = escalates(TrackMask::Motif);
     int vocal_shift = -4;
     uint8_t vocal_boost = 4;
     const std::vector<int>* vocal_pattern = &kDefaultVocal;
@@ -242,7 +270,7 @@ void applyRhythmSyncLeadDna(MidiTrack& vocal, MidiTrack& motif,
         vocal_shift = 3;
         vocal_boost = 10;
         vocal_pattern = &kChorusVocal;
-        if (occurrence >= 2 || section.peak_level == PeakLevel::Max) {
+        if (vocal_escalates) {
           vocal_shift += 2;
           vocal_boost = 12;
           vocal_pattern = &kFinalChorusVocal;
@@ -268,7 +296,7 @@ void applyRhythmSyncLeadDna(MidiTrack& vocal, MidiTrack& motif,
         break;
       case SectionType::Chorus:
         shapeSectionRegister(all_vocal_notes, vocal_center, vocal_center + 10, params.vocal_low,
-                             params.vocal_high, occurrence >= 2 ? 1 : 0, occurrence >= 2 ? 3 : 1, 3,
+                             params.vocal_high, vocal_escalates ? 1 : 0, vocal_escalates ? 3 : 1, 3,
                              &harmony);
         break;
       default:
@@ -315,7 +343,7 @@ void applyRhythmSyncLeadDna(MidiTrack& vocal, MidiTrack& motif,
         // the chorus vocal forces a whole-bar octave drop, the riff still
         // lands above the verse register.
         shiftMotifRegisterBarUniform(all_motif_notes, section, 70, 84, 55, 88,
-                                     occurrence >= 2 ? 1 : 0, occurrence >= 2 ? 3 : 1, 3, harmony);
+                                     motif_escalates ? 1 : 0, motif_escalates ? 3 : 1, 3, harmony);
         break;
       default:
         break;

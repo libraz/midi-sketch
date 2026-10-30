@@ -60,8 +60,9 @@ bool isPhraseEndOnset(size_t onset_idx, size_t next_active, const std::vector<fl
                       bool is_last_note);
 
 /// @brief Post-process notes to ensure phrase-end resolution by merging short tail notes.
-/// Scans for phrase boundaries (gap >= TICK_EIGHTH). If the tail (last 2 beats) lacks
-/// a sustained note (>= 1 beat), merges 2-3 adjacent notes into one longer note.
+/// Scans for phrase boundaries (gap >= kMinBreathTicks). If the tail (last 2 beats) lacks
+/// a sustained note (>= 1 beat), merges 2-3 adjacent notes into one longer note. A merge
+/// that ends the phrase keeps the whole rest found before it.
 void postProcessPhraseEndResolution(std::vector<NoteEvent>& notes, float gate_ratio);
 
 }  // namespace midisketch

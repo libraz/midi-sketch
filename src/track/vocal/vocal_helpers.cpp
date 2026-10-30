@@ -17,6 +17,8 @@
 #include "core/timing_constants.h"
 #include "core/velocity_helper.h"
 #include "track/melody/melody_utils.h"
+#include "track/vocal/phrase_cache.h"
+#include "track/vocal/vocal_recitation.h"
 
 namespace midisketch {
 
@@ -568,6 +570,37 @@ void applyCollisionAvoidanceWithIntervalConstraint(std::vector<NoteEvent>& notes
   for (size_t i = 0; i < notes.size(); ++i) {
     auto& note = notes[i];
 
+    // A chant or recitation run is resolved as one: moved together when one of
+    // its notes collides or sounds over a chord that refuses it, or the leap
+    // into it is too wide, otherwise kept.
+    if (note.is_syllabic_subdivision && heldRunStart(notes, i) == i) {
+      const int prev_pitch = i > 0 ? static_cast<int>(notes[i - 1].note) : -1;
+      bool needs_move = prev_pitch >= 0 && std::abs(note.note - prev_pitch) > max_vocal_interval;
+      for (size_t k = i; k < notes.size() && !needs_move && notes[k].is_syllabic_subdivision &&
+                         notes[k].note == note.note;
+           ++k) {
+        needs_move =
+            !harmony.isConsonantWithOtherTracks(notes[k].note, notes[k].start_tick,
+                                                notes[k].duration, TrackRole::Vocal) ||
+            melody::classifyVocalTone(harmony, notes[k].note, melody::neighborhoodAt(notes, k)) ==
+                melody::ToneLegality::Illegal;
+      }
+      if (needs_move && !moveHeldRun(notes, i, prev_pitch, max_vocal_interval, vocal_low,
+                                     vocal_high, harmony, TransformStepType::CollisionAvoid)) {
+        // No pitch holds across the whole run: it stops being a run, and each
+        // of its notes is resolved on its own below.
+        const uint8_t held = note.note;
+        for (size_t k = i;
+             k < notes.size() && notes[k].is_syllabic_subdivision && notes[k].note == held; ++k) {
+          notes[k].is_syllabic_subdivision = false;
+        }
+      }
+    }
+    if (note.is_syllabic_subdivision) {
+      prev_pre_snap_pitch = note.note;
+      continue;
+    }
+
 #ifdef MIDISKETCH_NOTE_PROVENANCE
     uint8_t old_pitch = note.note;
 #endif
@@ -1109,27 +1142,20 @@ void applySectionEndSustain(std::vector<NoteEvent>& notes, const std::vector<Sec
     // Constraint 1: Do not cross section boundary
     desired_end = std::min(desired_end, section_end);
 
-    // Constraint 2: Maintain breath gap before next note
-    // Use wider gap at section boundaries to preserve inter-section breath
-    if (static_cast<size_t>(last_idx) + 1 < notes.size()) {
-      Tick next_start = notes[last_idx + 1].start_tick;
-      Tick min_gap = TICK_EIGHTH;  // 240 ticks within section
-      if (notes[last_idx + 1].start_tick >= section_end) {
-        min_gap = TICK_QUARTER;  // 480 ticks at section boundary
-      }
-      if (desired_end > next_start - min_gap) {
-        desired_end = (next_start > min_gap) ? (next_start - min_gap) : next_start;
-      }
-    }
-
-    // Guard against unsigned underflow: desired_end could be before note start
-    // when next note is very close (within kMinBreathGap)
     if (desired_end <= last_note.start_tick) {
+      continue;
+    }
+    Tick desired_duration = desired_end - last_note.start_tick;
+
+    // Constraint 2: Maintain the inter-section breath (a quarter note) before
+    // the next section's first note
+    if (static_cast<size_t>(last_idx) + 1 < notes.size() &&
+        !enforceMinimumBreath(last_note.start_tick, desired_duration,
+                              notes[last_idx + 1].start_tick, TICK_QUARTER, 0)) {
       continue;
     }
 
     // Constraint 3: Check chord boundary safety
-    Tick desired_duration = desired_end - last_note.start_tick;
     if (desired_duration > last_note.duration) {
       auto boundary_info =
           harmony.analyzeChordBoundary(last_note.note, last_note.start_tick, desired_duration);

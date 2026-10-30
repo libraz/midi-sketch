@@ -270,6 +270,7 @@ SongConfig makeFullyNonDefaultConfig() {
   config.vocal_attitude = VocalAttitude::Expressive;
   config.vocal_style = VocalStylePreset::Vocaloid;
   config.drive_feel = 80;
+  config.drive_feel_explicit = true;
   config.drums_enabled = false;
   config.drums_enabled_explicit = true;
   config.arpeggio_enabled = true;
@@ -495,6 +496,7 @@ TEST(SongConfigJsonTest, RoundtripNonDefaultValues) {
   EXPECT_EQ(restored.vocal_attitude, VocalAttitude::Expressive);
   EXPECT_EQ(restored.vocal_style, VocalStylePreset::Vocaloid);
   EXPECT_EQ(restored.drive_feel, 80);
+  EXPECT_TRUE(restored.drive_feel_explicit);
   EXPECT_FALSE(restored.drums_enabled);
   EXPECT_TRUE(restored.drums_enabled_explicit);
   EXPECT_TRUE(restored.arpeggio_enabled);

@@ -26,6 +26,7 @@
 #include "core/types.h"
 #include "midisketch.h"
 #include "test_support/clash_analysis_helper.h"
+#include "test_support/test_helpers.h"
 
 namespace midisketch {
 namespace {
@@ -53,6 +54,13 @@ class TrackClashIntegrationTest : public ::testing::Test {
 
 void expectNoSimultaneousClashes(const Generator& gen, const GeneratorParams& params,
                                  const std::string& context) {
+  // The instrumental styles have no vocal line by design.
+  if (params.composition_style != CompositionStyle::BackgroundMotif &&
+      params.composition_style != CompositionStyle::SynthDriven) {
+    EXPECT_TRUE(test::hasNotes(gen.getSong().vocal(), "vocal")) << context;
+  }
+  EXPECT_TRUE(test::hasNotes(gen.getSong().chord(), "chord")) << context;
+  EXPECT_TRUE(test::hasNotes(gen.getSong().bass(), "bass")) << context;
   const auto report = analyzeDissonance(gen.getSong(), params, gen.getHarmonyContext());
   std::ostringstream details;
   for (const auto& issue : report.issues) {
@@ -207,7 +215,8 @@ TEST_F(TrackClashIntegrationTest, MotifBassClashes_BGMMode) {
     const auto& motif = gen.getSong().motif();
     const auto& bass = gen.getSong().bass();
 
-    if (motif.empty() || bass.empty()) continue;
+    ASSERT_TRUE(test::hasNotes(motif, "motif")) << "seed " << seed;
+    ASSERT_TRUE(test::hasNotes(bass, "bass")) << "seed " << seed;
 
     auto clashes = findClashes(gen.getSong(), params_, gen.getHarmonyContext(), TrackRole::Motif,
                                TrackRole::Bass);
@@ -233,7 +242,8 @@ TEST_F(TrackClashIntegrationTest, VocalBassClashes_MelodyLeadMode) {
     const auto& vocal = gen.getSong().vocal();
     const auto& bass = gen.getSong().bass();
 
-    if (vocal.empty() || bass.empty()) continue;
+    ASSERT_TRUE(test::hasNotes(vocal, "vocal")) << "seed " << seed;
+    ASSERT_TRUE(test::hasNotes(bass, "bass")) << "seed " << seed;
 
     auto clashes = findClashes(gen.getSong(), params_, gen.getHarmonyContext(), TrackRole::Vocal,
                                TrackRole::Bass);
@@ -304,15 +314,17 @@ TEST_F(TrackClashIntegrationTest, SustainPatternOverlapRegression) {
     const auto& chord_track = gen.getSong().chord();
     const auto& sections = gen.getSong().arrangement().sections();
 
-    if (chord_track.empty()) continue;
+    ASSERT_TRUE(test::hasNotes(chord_track, "chord")) << "seed " << seed;
 
     // Count overlaps specifically in last bars of B sections with Sustain pattern
     // (where the original bug manifested)
     size_t sustain_overlaps = 0;
+    size_t examined_sections = 0;
 
     for (const auto& section : sections) {
       if (section.type != SectionType::B) continue;
       if (section.exit_pattern != ExitPattern::Sustain) continue;
+      ++examined_sections;
 
       Tick section_start = section.start_tick;
       Tick section_end = section_start + section.bars * TICKS_PER_BAR;
@@ -347,6 +359,8 @@ TEST_F(TrackClashIntegrationTest, SustainPatternOverlapRegression) {
     // B section last bars with Sustain should have minimal overlaps
     // The fix prevents the subdivision=2 overlap issue
     constexpr size_t kMaxSustainOverlaps = 3;
+
+    ASSERT_GT(examined_sections, 0u) << "seed " << seed << ": no B section with Sustain exit";
 
     EXPECT_LE(sustain_overlaps, kMaxSustainOverlaps)
         << "Seed " << seed << " has " << sustain_overlaps

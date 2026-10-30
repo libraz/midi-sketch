@@ -498,9 +498,9 @@ void MidiWriter::buildVocalPreview(const Song& song, const IHarmonyContext& harm
 
   writeHeader(num_tracks, TICKS_PER_BEAT);
 
-  // SE track (tempo only, no markers)
+  // SE track (tempo only, no markers); the tempo map is shared so notes land at getMidi() times
   MidiTrack empty_se;
-  writeMarkerTrack(empty_se, song.bpm(), {}, "");
+  writeMarkerTrack(empty_se, song.bpm(), song.tempoMap(), "");
 
   // Both tracks modulate with the full song, so the preview sings in the key getMidi() plays.
   // Vocal track

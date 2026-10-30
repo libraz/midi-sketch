@@ -1100,7 +1100,7 @@ TEST_F(DrumsTest, CrashCymbalsDoNotDuplicateAtSameTick) {
 // values from two different axes appears in some song below. Pinning the mood
 // left the kits whose fills end on an anticipated crash untested.
 TEST_F(DrumsTest, EveryChorusEntryIsMarkedByACrash) {
-  const std::vector<uint8_t> blueprint_ids = {0, 1, 2, 4, 5, 7, 8};
+  const std::vector<uint8_t> blueprint_ids = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
   const std::vector<uint32_t> seeds = {7, 4242, 20260908};
   constexpr int kMoodCount = 24;
 

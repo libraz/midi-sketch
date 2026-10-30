@@ -22,6 +22,7 @@ enum class MetadataRestoreStatus {
   InvalidJson,    ///< The metadata document is not a complete JSON object
   MissingConfig,  ///< The declared format promises a config block that is absent
   InvalidConfig,  ///< A field holds a value the target type cannot represent
+  NotReplayable,  ///< The song was edited after generation; the config cannot rebuild it
 };
 
 /// @brief Human-readable name of a metadata restore status.

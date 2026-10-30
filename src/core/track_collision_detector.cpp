@@ -237,7 +237,7 @@ bool TrackCollisionDetector::isConsonantWithOtherTracks(
         continue;
       }
 
-      if (isClashingPair(pitch, exclude, note.pitch, note.track, chord_tracker, start,
+      if (isClashingPair(pitch, exclude, note.pitch, note.track, chord_tracker, overlap_start,
                          overlap_start)) {
         return false;
       }
@@ -271,7 +271,7 @@ CollisionInfo TrackCollisionDetector::getCollisionInfo(
         continue;
       }
 
-      if (isClashingPair(pitch, exclude, note.pitch, note.track, chord_tracker, start,
+      if (isClashingPair(pitch, exclude, note.pitch, note.track, chord_tracker, overlap_start,
                          overlap_start)) {
         info.has_collision = true;
         info.colliding_pitch = note.pitch;

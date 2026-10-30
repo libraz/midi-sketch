@@ -346,7 +346,22 @@ TEST(VoiceLimitTest, FrozenNotesAreReQuantizedToChordTones) {
 
 namespace {
 
-/// @brief Build a single 2-bar section at tick 0 with max_moving_voices=1.
+/// @brief An unlimited 2-bar section after the bars under test.
+///
+/// The song's final bars are rewritten to close on the tonic, so a bar under
+/// test that is the song's last would not keep the progression's chord.
+Section makeClosingSection(Tick start_bar) {
+  Section sec;
+  sec.type = SectionType::B;
+  sec.name = "B";
+  sec.bars = 2;
+  sec.start_bar = start_bar;
+  sec.start_tick = start_bar * TICKS_PER_BAR;
+  sec.max_moving_voices = 0;
+  return sec;
+}
+
+/// @brief Build a 2-bar section at tick 0 with max_moving_voices=1.
 std::vector<Section> makeFrozenBarSections() {
   Section sec;
   sec.type = SectionType::A;
@@ -355,7 +370,7 @@ std::vector<Section> makeFrozenBarSections() {
   sec.start_bar = 0;
   sec.start_tick = 0;
   sec.max_moving_voices = 1;
-  return {sec};
+  return {sec, makeClosingSection(2)};
 }
 
 /// @brief Craft a song that forces the limiter to freeze Motif's bar 1.
@@ -677,7 +692,7 @@ std::vector<NoteEvent> applyVoiceLimitToChordBarWithMidBarChange(Song& song, uin
   sec.start_bar = 0;
   sec.start_tick = 0;
   sec.max_moving_voices = 1;
-  std::vector<Section> sections{sec};
+  std::vector<Section> sections{sec, makeClosingSection(2)};
   Arrangement arrangement(sections);
 
   HarmonyCoordinator harmony;
@@ -750,6 +765,55 @@ TEST(VoiceLimitRequantizeTest, AFrozenBarKeepsTheLengthWhenTheHarmonyHolds) {
   EXPECT_EQ(bar1_notes.front().duration, TICKS_PER_BEAT)
       << "the copy ends well before the change in the bar it lands in, so the "
          "fit has nothing to take from it";
+}
+
+TEST(VoiceLimitRequantizeTest, ALockedRiffIsNeverFrozenAndTheLimitBindsElsewhere) {
+  // A locked riff is replayed from what its first statement played, so a copy
+  // written over one of its bars makes the riff heard differ from the riff
+  // replayed. It is left out of the count the way the drums are, and the limit
+  // still binds on the parts that are counted.
+  auto params = makeVoiceLimitParams();
+  params.blueprint_id = 6;  // IdolKawaii: Locked riff policy
+  auto sections = makeFrozenBarSections();
+  Arrangement arrangement(sections);
+
+  HarmonyCoordinator harmony;
+  harmony.initialize(arrangement, getChordProgression(params.chord_id), params.mood);
+
+  Coordinator coord;
+  std::mt19937 rng(params.seed);
+  coord.initialize(params, arrangement, rng, &harmony);
+  ASSERT_TRUE(coord.getRiffPolicy() == RiffPolicy::LockedContour ||
+              coord.getRiffPolicy() == RiffPolicy::LockedPitch ||
+              coord.getRiffPolicy() == RiffPolicy::LockedAll);
+
+  Song song;
+  buildFrozenMotifSong(song);
+  // A chord part moving C4 -> C#4 under the same limit of one moving voice. C#
+  // is outside the key, so a copy re-quantized to the chord cannot land on it.
+  for (int beat = 0; beat < 4; ++beat) {
+    song.chord().addNote(
+        NoteEventTestHelper::create(beat * TICKS_PER_BEAT, TICKS_PER_BEAT, 60, 80));
+    song.chord().addNote(
+        NoteEventTestHelper::create(TICKS_PER_BAR + beat * TICKS_PER_BEAT, TICKS_PER_BEAT, 61, 80));
+  }
+  coord.applyVoiceLimit(song, sections);
+
+  std::vector<uint8_t> motif_bar1;
+  for (const auto& note : song.motif().notes()) {
+    if (note.start_tick >= TICKS_PER_BAR && note.start_tick < 2 * TICKS_PER_BAR) {
+      motif_bar1.push_back(note.note);
+    }
+  }
+  EXPECT_EQ(motif_bar1, std::vector<uint8_t>(4, 69)) << "the locked riff's bar was rewritten";
+
+  size_t chord_bar1 = 0;
+  for (const auto& note : song.chord().notes()) {
+    if (note.start_tick < TICKS_PER_BAR || note.start_tick >= 2 * TICKS_PER_BAR) continue;
+    ++chord_bar1;
+    EXPECT_NE(note.note, 61) << "the chord moved although the limit allows one moving voice";
+  }
+  EXPECT_GT(chord_bar1, 0u);
 }
 
 }  // namespace test

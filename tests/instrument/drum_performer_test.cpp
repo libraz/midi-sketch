@@ -384,6 +384,21 @@ TEST_F(DrumPerformerTest, GenerateStickingDouble) {
   EXPECT_EQ(sticking[7], Limb::LeftHand);
 }
 
+TEST_F(DrumPerformerTest, GenerateStickingParadiddle) {
+  std::vector<Tick> timings;
+  for (Tick i = 0; i < 16; ++i) timings.push_back(i * 120);
+
+  auto sticking = performer_->generateSticking(timings, DrumTechnique::Paradiddle);
+
+  ASSERT_EQ(sticking.size(), timings.size());
+  // RLRR LRLL, repeating
+  const char* kPattern = "RLRRLRLL";
+  for (size_t i = 0; i < sticking.size(); ++i) {
+    const Limb expected = (kPattern[i % 8] == 'R') ? Limb::RightHand : Limb::LeftHand;
+    EXPECT_EQ(sticking[i], expected) << "position " << i;
+  }
+}
+
 TEST_F(DrumPerformerTest, SetHandPhysics) {
   auto advanced = LimbPhysics::handAdvanced();
   performer_->setHandPhysics(advanced);

@@ -17,6 +17,7 @@
 #include "core/velocity_helper.h"
 #include "track/melody/melody_utils.h"
 #include "track/vocal/melody_designer.h"
+#include "track/vocal/phrase_cache.h"
 
 namespace midisketch {
 
@@ -81,7 +82,7 @@ void MelodyDesigner::applyTransitionApproach(std::vector<NoteEvent>& notes,
 #ifdef MIDISKETCH_NOTE_PROVENANCE
     if (old_pitch != note.note) {
       note.prov_original_pitch = old_pitch;
-      note.addTransformStep(TransformStepType::ScaleSnap, old_pitch, note.note, 0, 0);
+      note.addTransformStep(TransformStepType::PatternOffset, old_pitch, note.note, 0, 0);
     }
 #endif
     prev_pitch = new_pitch;
@@ -130,34 +131,33 @@ void MelodyDesigner::insertLeadingTone(std::vector<NoteEvent>& notes, const Sect
     return;
   }
 
-  // Skip if gap is too large - leading tone needs melodic context
-  // An isolated note after a long gap sounds unnatural
-  constexpr Tick MAX_GAP = TICKS_PER_BEAT / 2;  // Half beat (8th note gap max)
-  if (leading_tone_start > last_note_end && leading_tone_start - last_note_end > MAX_GAP) {
+  // The pickup sits at the end of the phrase's breath, however long the breath
+  // is. A line sung into the pickup slot gives a breath back from its last
+  // note, unless that note is a run note or would be left unsingably short.
+  Tick leading_duration = TICKS_PER_BEAT / 4;
+  if (!harmony.isConsonantWithOtherTracks(static_cast<uint8_t>(leading_pitch), leading_tone_start,
+                                          leading_duration, TrackRole::Vocal)) {
+    return;  // Skip leading tone if it would cause dissonance
+  }
+  if (last_note_end > leading_tone_start &&
+      (last_note.is_syllabic_subdivision ||
+       !enforceMinimumBreath(last_note.start_tick, last_note.duration, leading_tone_start,
+                             kMinBreathTicks, kMinPhraseEndTicks))) {
     return;
   }
 
-  if (last_note_end <= leading_tone_start) {
-    // Check pitch safety before adding leading tone
-    Tick leading_duration = TICKS_PER_BEAT / 4;
-    if (!harmony.isConsonantWithOtherTracks(static_cast<uint8_t>(leading_pitch), leading_tone_start,
-                                            leading_duration, TrackRole::Vocal)) {
-      return;  // Skip leading tone if it would cause dissonance
-    }
+  uint8_t velocity = static_cast<uint8_t>(
+      std::min(127, static_cast<int>(last_note.velocity) + 10));  // Slightly louder
 
-    uint8_t velocity = static_cast<uint8_t>(
-        std::min(127, static_cast<int>(last_note.velocity) + 10));  // Slightly louder
-
-    NoteEvent leading_note = createNoteWithoutHarmony(
-        leading_tone_start, leading_duration, static_cast<uint8_t>(leading_pitch), velocity);
+  NoteEvent leading_note = createNoteWithoutHarmony(leading_tone_start, leading_duration,
+                                                    static_cast<uint8_t>(leading_pitch), velocity);
 #ifdef MIDISKETCH_NOTE_PROVENANCE
-    leading_note.prov_source = static_cast<uint8_t>(NoteSource::MelodyPhrase);
-    leading_note.prov_chord_degree = harmony.getChordDegreeAt(leading_tone_start);
-    leading_note.prov_lookup_tick = leading_tone_start;
-    leading_note.prov_original_pitch = static_cast<uint8_t>(leading_pitch);
+  leading_note.prov_source = static_cast<uint8_t>(NoteSource::MelodyPhrase);
+  leading_note.prov_chord_degree = harmony.getChordDegreeAt(leading_tone_start);
+  leading_note.prov_lookup_tick = leading_tone_start;
+  leading_note.prov_original_pitch = static_cast<uint8_t>(leading_pitch);
 #endif
-    notes.push_back(leading_note);
-  }
+  notes.push_back(leading_note);
 }
 
 }  // namespace midisketch

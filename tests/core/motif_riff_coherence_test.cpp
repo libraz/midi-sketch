@@ -23,6 +23,11 @@
 #include <vector>
 
 #include "core/generator.h"
+#include "core/midi_track.h"
+#include "core/rhythm_sync_lead.h"
+#include "core/timing_constants.h"
+#include "test_helpers/note_event_test_helper.h"
+#include "test_support/stub_harmony_context.h"
 
 namespace midisketch {
 namespace {
@@ -213,6 +218,63 @@ TEST(MotifRiffCoherenceTest, ALockedRiffStatementEndsBeforeTheNextOneStarts) {
       }
     }
   }
+}
+
+// The lead DNA escalates only the last chorus. A middle chorus that took the
+// final-chorus pattern would sing a different line exactly where the
+// arrangement brings the hook back, so it has to restate the first chorus.
+TEST(MotifRiffCoherenceTest, LeadDnaRestatesTheFirstChorusInEveryChorusButTheLast) {
+  test::StubHarmonyContext harmony;
+  harmony.setAllPitchesSafe(true);
+  harmony.setChordDegree(0);
+  harmony.setChordTones({0, 4, 7});
+
+  std::vector<Section> sections;
+  for (int idx = 0; idx < 3; ++idx) {
+    Section chorus;
+    chorus.type = SectionType::Chorus;
+    chorus.bars = 4;
+    chorus.start_bar = static_cast<Tick>(idx) * 4;
+    chorus.start_tick = chorus.start_bar * TICKS_PER_BAR;
+    chorus.track_mask = TrackMask::All;
+    sections.push_back(chorus);
+  }
+
+  // Every chorus enters the pass with the same lead and riff, so whatever
+  // differs afterwards is the pass's choice of pattern and register.
+  MidiTrack vocal;
+  MidiTrack motif;
+  for (const auto& chorus : sections) {
+    for (int idx = 0; idx < 12; ++idx) {
+      const Tick tick = chorus.start_tick + static_cast<Tick>(idx) * TICK_QUARTER;
+      vocal.addNote(NoteEventTestHelper::create(tick, TICK_QUARTER, 67, 90));
+      motif.addNote(NoteEventTestHelper::create(tick, TICK_EIGHTH, 72, 80));
+    }
+  }
+
+  GeneratorParams params;
+  params.vocal_low = 60;
+  params.vocal_high = 79;
+  applyRhythmSyncLeadDna(vocal, motif, sections, params, harmony);
+
+  auto statement = [](const MidiTrack& track, const Section& section) {
+    std::map<Tick, std::pair<uint8_t, uint8_t>> notes;
+    for (const auto& note : track.notes()) {
+      if (note.start_tick < section.start_tick || note.start_tick >= section.endTick()) continue;
+      notes[note.start_tick - section.start_tick] = {note.note, note.velocity};
+    }
+    return notes;
+  };
+
+  const auto first_vocal = statement(vocal, sections[0]);
+  ASSERT_EQ(first_vocal.size(), 12u);
+  ASSERT_EQ(statement(motif, sections[0]).size(), 12u);
+  EXPECT_EQ(statement(vocal, sections[1]), first_vocal)
+      << "the middle chorus does not sing the first chorus's line";
+  EXPECT_EQ(statement(motif, sections[1]), statement(motif, sections[0]))
+      << "the middle chorus does not put the riff where the first chorus had it";
+  EXPECT_NE(statement(vocal, sections[2]), first_vocal)
+      << "the last chorus lost its final-chorus pattern";
 }
 
 }  // namespace

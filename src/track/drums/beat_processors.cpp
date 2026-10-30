@@ -10,12 +10,18 @@
 #include "core/rng_util.h"
 #include "core/swing_quantize.h"
 #include "core/timing_constants.h"
+#include "core/velocity_constants.h"
 #include "track/drums.h"
 #include "track/drums/drum_constants.h"
 #include "track/drums/ghost_notes.h"
 
 namespace midisketch {
 namespace drums {
+
+namespace {
+constexpr int kHatFloor = velocity::kTimekeepingVelocityFloor;
+constexpr float kHatFloorF = static_cast<float>(kHatFloor);
+}  // namespace
 
 float getEffectiveDrumSwing(DrumGrooveFeel groove, float swing_amount) {
   if (groove == DrumGrooveFeel::Straight) {
@@ -162,12 +168,12 @@ void generateGhostNotesForBeat(MidiTrack& track, const BeatContext& beat_ctx,
       float variation = rng_util::rollFloat(beat_ctx.rng, 0.85f, 1.15f);
       float ghost_base = getGhostVelocity(beat_ctx.section_type, beat_ctx.beat % 2, is_after_snare);
       float base_ghost = beat_ctx.velocity * ghost_base * variation;
-      uint8_t ghost_vel = static_cast<uint8_t>(std::clamp(base_ghost, 20.0f, 100.0f));
+      uint8_t ghost_vel = static_cast<uint8_t>(std::clamp(base_ghost, kHatFloorF, 100.0f));
 
       Tick ghost_offset = (pos == GhostPosition::E) ? SIXTEENTH : (SIXTEENTH * 3);
 
       if (pos == GhostPosition::A) {
-        ghost_vel = static_cast<uint8_t>(std::max(20, static_cast<int>(ghost_vel * 0.9f)));
+        ghost_vel = static_cast<uint8_t>(std::max(kHatFloor, static_cast<int>(ghost_vel * 0.9f)));
       }
 
       addDrumNote(track, beat_ctx.grid.resolve(beat_ctx.beat_tick + ghost_offset), SIXTEENTH, SD,
@@ -202,11 +208,11 @@ void generateHiHatForBeat(MidiTrack& track, const BeatContext& beat_ctx,
           uint8_t ohh_vel = static_cast<uint8_t>(std::clamp(
               static_cast<int>(beat_ctx.velocity * params.density_mult * 0.75f * hh_type_vel_mult) +
                   OHH_VEL_BOOST,
-              20, 127));
+              kHatFloor, 127));
           addDrumNote(track, hh_tick, EIGHTH, OHH, ohh_vel);
         } else {
-          uint8_t hh_vel = static_cast<uint8_t>(
-              std::max(20.0f, beat_ctx.velocity * params.density_mult * 0.75f * hh_type_vel_mult));
+          uint8_t hh_vel = static_cast<uint8_t>(std::max(
+              kHatFloorF, beat_ctx.velocity * params.density_mult * 0.75f * hh_type_vel_mult));
           addDrumNote(track, hh_tick, EIGHTH, hh_instrument, hh_vel);
         }
       } else if (ctx.use_foot_hh) {
@@ -227,12 +233,12 @@ void generateHiHatForBeat(MidiTrack& track, const BeatContext& beat_ctx,
         }
 
         uint8_t hh_vel = static_cast<uint8_t>(
-            std::max(20.0f, beat_ctx.velocity * params.density_mult * hh_type_vel_mult *
-                                (eighth == 0 ? 0.9f : 0.65f)));
+            std::max(kHatFloorF, beat_ctx.velocity * params.density_mult * hh_type_vel_mult *
+                                     (eighth == 0 ? 0.9f : 0.65f)));
 
         if (is_dynamic_open_hh_beat && eighth == 0) {
-          uint8_t ohh_vel =
-              static_cast<uint8_t>(std::clamp(static_cast<int>(hh_vel) + OHH_VEL_BOOST, 20, 127));
+          uint8_t ohh_vel = static_cast<uint8_t>(
+              std::clamp(static_cast<int>(hh_vel) + OHH_VEL_BOOST, kHatFloor, 127));
           addDrumNote(track, hh_tick, EIGHTH, OHH, ohh_vel);
           continue;
         }
@@ -256,7 +262,7 @@ void generateHiHatForBeat(MidiTrack& track, const BeatContext& beat_ctx,
         if (use_open) {
           uint8_t open_hh_note = getHiHatNote(HiHatType::Open);
           addDrumNote(track, hh_tick, EIGHTH, open_hh_note,
-                      static_cast<uint8_t>(std::max(20.0f, hh_vel * 1.1f)));
+                      static_cast<uint8_t>(std::max(kHatFloorF, hh_vel * 1.1f)));
         } else {
           addDrumNote(track, hh_tick, EIGHTH / 2, hh_instrument, hh_vel);
         }
@@ -269,11 +275,11 @@ void generateHiHatForBeat(MidiTrack& track, const BeatContext& beat_ctx,
 
         float metric_vel = getHiHatVelocityMultiplier(sixteenth, beat_ctx.rng);
         uint8_t hh_vel = static_cast<uint8_t>(std::max(
-            20.0f, beat_ctx.velocity * params.density_mult * hh_type_vel_mult * metric_vel));
+            kHatFloorF, beat_ctx.velocity * params.density_mult * hh_type_vel_mult * metric_vel));
 
         if (is_dynamic_open_hh_beat && sixteenth == 0) {
-          uint8_t ohh_vel =
-              static_cast<uint8_t>(std::clamp(static_cast<int>(hh_vel) + OHH_VEL_BOOST, 20, 127));
+          uint8_t ohh_vel = static_cast<uint8_t>(
+              std::clamp(static_cast<int>(hh_vel) + OHH_VEL_BOOST, kHatFloor, 127));
           addDrumNote(track, hh_tick, SIXTEENTH, OHH, ohh_vel);
           continue;
         }
@@ -282,7 +288,7 @@ void generateHiHatForBeat(MidiTrack& track, const BeatContext& beat_ctx,
           float open_prob = std::clamp(30.0f / beat_ctx.bpm, 0.1f, 0.4f);
           if (rng_util::rollProbability(beat_ctx.rng, open_prob)) {
             addDrumNote(track, hh_tick, SIXTEENTH, OHH,
-                        static_cast<uint8_t>(std::max(20.0f, hh_vel * 1.2f)));
+                        static_cast<uint8_t>(std::max(kHatFloorF, hh_vel * 1.2f)));
             continue;
           }
         }

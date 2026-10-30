@@ -274,6 +274,47 @@ TEST(ModulationCalculatorTest, DirectChorusNoModulation) {
   EXPECT_EQ(result.tick, 0u);  // Direct chorus doesn't support modulation
 }
 
+TEST(ModulationCalculatorTest, FlowThatReplacedAShortFormLabelStillModulates) {
+  // A blueprint flow replaces the drawn form, so a DirectChorus label does not
+  // describe the sections that play; the short-form exception must not apply.
+  constexpr uint8_t kBalladBlueprint = 3;
+  const auto& blueprint = getProductionBlueprint(kBalladBlueprint);
+  ASSERT_NE(blueprint.section_flow, nullptr);
+  const auto sections = buildStructureFromBlueprint(blueprint);
+  Tick last_chorus = 0;
+  for (const auto& section : sections) {
+    if (section.type == SectionType::Chorus) last_chorus = section.start_tick;
+  }
+  ASSERT_GT(last_chorus, 0u);
+
+  for (StructurePattern label : {StructurePattern::DirectChorus, StructurePattern::ShortForm}) {
+    GeneratorParams params;
+    params.modulation_timing = ModulationTiming::LastChorus;
+    params.structure = label;
+    params.blueprint_id = kBalladBlueprint;
+    ASSERT_NE(resolveBuiltForm(params).flow, nullptr);
+    EXPECT_EQ(ModulationCalculator::plan(params, sections).tick, last_chorus)
+        << "label " << static_cast<int>(label);
+  }
+}
+
+TEST(ModulationCalculatorTest, ShortFormTheSectionsFollowStillDoesNotModulate) {
+  // The same blueprint with the form chosen explicitly or sized to a duration
+  // lays out the short form itself, so the exception holds there.
+  const auto sections = buildStructure(StructurePattern::DirectChorus);
+  for (bool explicit_form : {true, false}) {
+    GeneratorParams params;
+    params.modulation_timing = ModulationTiming::LastChorus;
+    params.structure = StructurePattern::DirectChorus;
+    params.blueprint_id = 3;
+    params.form_explicit = explicit_form;
+    params.target_duration_seconds = explicit_form ? 0 : 40;
+    ASSERT_EQ(resolveBuiltForm(params).flow, nullptr);
+    EXPECT_EQ(ModulationCalculator::plan(params, sections).tick, 0u)
+        << (explicit_form ? "explicit form" : "duration");
+  }
+}
+
 // ============================================================================
 // Semitones Parameter Tests
 // ============================================================================

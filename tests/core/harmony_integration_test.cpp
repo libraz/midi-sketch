@@ -1336,7 +1336,12 @@ TEST_F(HarmonyIntegrationTest, BassChordPhraseEndSynchronization) {
       if (chord_note.start_tick < bass_end && chord_end > bass_note.start_tick) {
         const int actual_semitones =
             std::abs(static_cast<int>(chord_note.note) - static_cast<int>(bass_note.note));
-        if (isDissonantActualInterval(actual_semitones, 0)) {
+        // A tritone inside a registered secondary dominant (Bb over the E of C7/E)
+        // is that chord's own third and seventh, which the generator allows.
+        const bool dominant_tritone =
+            actual_semitones % 12 == 6 &&
+            gen.getHarmonyContext().isSecondaryDominantAt(chord_note.start_tick);
+        if (isDissonantActualInterval(actual_semitones, 0) && !dominant_tritone) {
           critical_clashes++;
         }
       }

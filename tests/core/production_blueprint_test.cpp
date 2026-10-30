@@ -8,7 +8,9 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <cstdlib>
 #include <cstring>
+#include <limits>
 #include <map>
 #include <random>
 #include <set>
@@ -2244,6 +2246,38 @@ TEST_F(ProductionBlueprintTest, ImplicitTempoIsTheStyleTempoWhateverBlueprintIsD
     EXPECT_GE(gen.getParams().bpm, ballad_preset.tempo_min) << "seed " << seed;
     EXPECT_LE(gen.getParams().bpm, ballad_preset.tempo_max) << "seed " << seed;
   }
+}
+
+TEST_F(ProductionBlueprintTest, ImplicitMoodTempoDrawsTheNearestCompatibleBlueprint) {
+  // When no compatible blueprint holds a mood's tempo, the drawn one is among
+  // those whose range comes nearest it, so bpm = 0 lands as close as the table allows.
+  auto distance = [](uint16_t bpm, const ProductionBlueprint& bp) {
+    if (bp.tempo_min == 0 || bp.tempo_max == 0) return 0;
+    return std::max({0, bp.tempo_min - bpm, bpm - bp.tempo_max});
+  };
+  size_t moods_outside_every_range = 0;
+  for (uint8_t mood = 0; mood < MOOD_COUNT; ++mood) {
+    const uint16_t implicit = getMoodDefaultBpm(static_cast<Mood>(mood));
+    int nearest = std::numeric_limits<int>::max();
+    for (uint8_t id = 0; id < getProductionBlueprintCount(); ++id) {
+      if (isMoodCompatible(id, mood)) {
+        nearest = std::min(nearest, distance(implicit, getProductionBlueprint(id)));
+      }
+    }
+    ASSERT_NE(nearest, std::numeric_limits<int>::max()) << "mood " << int(mood);
+    if (nearest > 0) ++moods_outside_every_range;
+    for (uint32_t seed = 1; seed <= 40; ++seed) {
+      const uint8_t id = resolveProductionBlueprintId(seed, 255, mood, implicit);
+      ASSERT_TRUE(isMoodCompatible(id, mood)) << "mood " << int(mood) << " seed " << seed;
+      const uint16_t bpm =
+          resolveTempo(0, false, false, implicit, getProductionBlueprint(id)).first;
+      EXPECT_EQ(std::abs(static_cast<int>(bpm) - static_cast<int>(implicit)), nearest)
+          << "mood " << int(mood) << " (" << implicit << " BPM) seed " << seed << " drew "
+          << getProductionBlueprintName(id) << " at " << bpm;
+    }
+  }
+  // The genre-expansion moods sit below every range they may draw.
+  EXPECT_GT(moods_outside_every_range, 0u);
 }
 
 TEST_F(ProductionBlueprintTest, NamedBlueprintOrExplicitBpmSuppliesTheTempo) {

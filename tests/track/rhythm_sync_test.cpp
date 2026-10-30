@@ -446,7 +446,7 @@ TEST_F(RhythmSyncTest, ConsistentPhraseQualityAcrossSeeds) {
     gen.generate(params_);
 
     const auto& notes = gen.getSong().vocal().notes();
-    if (notes.empty()) continue;
+    ASSERT_TRUE(test::hasNotes(gen.getSong().vocal(), "vocal")) << "seed " << params_.seed;
 
     // Sort by time
     std::vector<NoteEvent> sorted_notes = notes;
@@ -496,8 +496,7 @@ TEST_F(RhythmSyncTest, MotifRhythmTemplateVariety) {
     Generator gen;
     gen.generate(params_);
 
-    const auto& motif_notes = gen.getSong().motif().notes();
-    if (motif_notes.empty()) continue;
+    ASSERT_TRUE(test::hasNotes(gen.getSong().motif(), "motif")) << "seed " << params_.seed;
 
     // Use the motif pattern stored in the Song (one cycle, before section repetition)
     const auto& pattern = gen.getSong().motifPattern();
@@ -1451,7 +1450,7 @@ TEST_F(RhythmLockVocalQuality, RhythmSyncVocalDensityControl) {
       const auto& vocal_notes = song.vocal().notes();
       const auto& sections = song.arrangement().sections();
 
-      if (vocal_notes.empty()) continue;
+      ASSERT_TRUE(test::hasNotes(song.vocal(), "vocal")) << "bp " << bp << " seed " << params_.seed;
 
       // Sort vocal notes by time
       std::vector<NoteEvent> sorted = vocal_notes;

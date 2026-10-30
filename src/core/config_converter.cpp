@@ -429,6 +429,7 @@ GeneratorParams ConfigConverter::convert(const SongConfig& config) {
   params.enable_syncopation = config.enable_syncopation;
   params.enable_syncopation_explicit = config.enable_syncopation_explicit;
   params.drive_feel = config.drive_feel;
+  params.drive_feel_explicit = config.drive_feel_explicit;
   params.melody_params.mora_rhythm_mode = static_cast<MoraRhythmMode>(config.mora_rhythm_mode);
 
   // Apply MelodicComplexity-specific parameter adjustments
@@ -499,6 +500,7 @@ GeneratorParams ConfigConverter::convert(const SongConfig& config) {
   }
   if (config.motif_motion != 0xFF) {
     params.motif.motion = static_cast<MotifMotion>(std::min(config.motif_motion, uint8_t(5)));
+    params.motif_motion_explicit = true;
   }
   if (config.motif_register_high != 0) {
     params.motif.register_high = (config.motif_register_high == 2);
@@ -532,8 +534,10 @@ GeneratorParams ConfigConverter::convert(const SongConfig& config) {
   }
   if (config.melody_hook_repetition == 1) {
     params.melody_params.hook_repetition = false;
+    params.melody_hook_repetition_override = true;
   } else if (config.melody_hook_repetition == 2) {
     params.melody_params.hook_repetition = true;
+    params.melody_hook_repetition_override = true;
   }
   if (config.melody_use_leading_tone == 1) {
     params.melody_params.use_leading_tone = false;

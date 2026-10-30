@@ -85,7 +85,11 @@ TEST_F(GeneratorVocalFirstTest, GenerateVocalPreRegistersFullHarmonyTimeline) {
   for (const auto& section : vocal_first.getSong().arrangement().sections()) {
     for (Tick tick = section.start_tick; tick < section.endTick(); tick += TICKS_PER_BEAT) {
       EXPECT_EQ(vocal_harmony.getChordDegreeAt(tick), full_harmony.getChordDegreeAt(tick));
-      EXPECT_EQ(vocal_harmony.getChordExtensionAt(tick), full_harmony.getChordExtensionAt(tick));
+      // Voicing may only withdraw a planned colour that no track ended up sounding.
+      const ChordExtension full_extension = full_harmony.getChordExtensionAt(tick);
+      if (full_extension != ChordExtension::None) {
+        EXPECT_EQ(vocal_harmony.getChordExtensionAt(tick), full_extension) << "tick " << tick;
+      }
     }
   }
 }
@@ -980,6 +984,101 @@ TEST(GeneratorBlueprintTempoTest, ExplicitBpmOverridesBlueprintTempoDefault) {
   gen.generate(params);
 
   EXPECT_EQ(gen.getSong().bpm(), 140u);
+}
+
+// === Partial regeneration against the coordinate axis ===
+
+bool anyAccompaniment(const Song& song) {
+  for (TrackRole role : {TrackRole::Chord, TrackRole::Bass, TrackRole::Drums, TrackRole::Aux,
+                         TrackRole::Arpeggio, TrackRole::Guitar, TrackRole::SE}) {
+    if (!song.track(role).empty()) return true;
+  }
+  return false;
+}
+
+TEST(GeneratorRegenerateVocalAxisTest, RhythmSyncRerollClearsAccompanimentOfTheOldMotif) {
+  GeneratorParams params;
+  params.blueprint_id = 1;  // RhythmLock: RhythmSync, the motif is the axis
+  params.seed = 21;
+  Generator gen;
+  gen.generate(params);
+  ASSERT_EQ(gen.getParams().paradigm, GenerationParadigm::RhythmSync);
+  ASSERT_TRUE(anyAccompaniment(gen.getSong()));
+  const auto old_motif = gen.getSong().motif().notes();
+  ASSERT_FALSE(old_motif.empty());
+
+  gen.regenerateVocal(777);
+  const Song& song = gen.getSong();
+  ASSERT_FALSE(song.vocal().empty());
+  ASSERT_FALSE(song.motif().empty());
+  EXPECT_FALSE(anyAccompaniment(song))
+      << "Accompaniment voiced against the replaced motif must not survive the re-roll";
+
+  gen.generateAccompanimentForVocal();
+  EXPECT_FALSE(gen.getSong().chord().empty());
+  EXPECT_FALSE(gen.getSong().bass().empty());
+}
+
+TEST(GeneratorRegenerateVocalAxisTest, KeptMotifAndNonRhythmSyncKeepTheAccompaniment) {
+  {
+    GeneratorParams params;
+    params.blueprint_id = 1;
+    params.seed = 21;
+    Generator gen;
+    gen.generate(params);
+    const auto chord_before = gen.getSong().chord().notes().size();
+    ASSERT_GT(chord_before, 0u);
+    VocalConfig keep;
+    keep.present_fields = VocalConfig::KeepMotif;
+    keep.keep_motif = true;
+    keep.seed = 777;
+    gen.regenerateVocal(keep);
+    EXPECT_EQ(gen.getSong().chord().notes().size(), chord_before)
+        << "keep_motif leaves the axis unchanged, so the accompaniment stays";
+  }
+  {
+    GeneratorParams params;
+    params.blueprint_id = 0;  // Traditional: the vocal is written against the accompaniment
+    params.seed = 21;
+    Generator gen;
+    gen.generate(params);
+    ASSERT_NE(gen.getParams().paradigm, GenerationParadigm::RhythmSync);
+    const auto chord_before = gen.getSong().chord().notes().size();
+    ASSERT_GT(chord_before, 0u);
+    gen.regenerateVocal(777);
+    EXPECT_EQ(gen.getSong().chord().notes().size(), chord_before);
+  }
+}
+
+TEST(GeneratorReplayabilityTest, OnlyAnUntouchedGenerationIsReplayable) {
+  GeneratorParams params;
+  params.seed = 4242;
+
+  Generator full;
+  full.generate(params);
+  EXPECT_TRUE(full.isReplayable());
+  EXPECT_EQ(full.generationSeed(), 4242u);
+  full.regenerateVocal(99);
+  EXPECT_FALSE(full.isReplayable());
+  EXPECT_EQ(full.generationSeed(), 4242u) << "A vocal re-roll must not replace the song seed";
+
+  Generator vocal_first;
+  vocal_first.generateVocal(params);
+  EXPECT_FALSE(vocal_first.isReplayable()) << "A vocal-only song is not what generate() writes";
+  vocal_first.generateAccompanimentForVocal();
+  EXPECT_TRUE(vocal_first.isReplayable());
+
+  Generator rerolled;
+  rerolled.generateVocal(params);
+  rerolled.regenerateVocal(5);
+  rerolled.generateAccompanimentForVocal();
+  EXPECT_FALSE(rerolled.isReplayable());
+
+  Generator reaccompanied;
+  reaccompanied.generate(params);
+  reaccompanied.regenerateAccompaniment(888);
+  EXPECT_FALSE(reaccompanied.isReplayable());
+  EXPECT_EQ(reaccompanied.generationSeed(), 4242u);
 }
 
 }  // namespace

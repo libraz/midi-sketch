@@ -214,7 +214,6 @@ struct ChordBarContext {
   IHarmonyContext& harmony;
   const MidiTrack* bass_track;
   const ChordProgression& progression;
-  uint8_t effective_prog_length;
   bool is_basic;
   KeyboardPlayabilityChecker& keys_playability;
 
@@ -277,16 +276,39 @@ std::vector<VoicedChord> restrictToRequestedType(const std::vector<VoicedChord>&
   return matching.empty() ? candidates : matching;
 }
 
-/// @brief Check whether a voicing sounds any tone above the triad.
-bool carriesExtensionColour(const VoicedChord& voicing, const Chord& chord, uint8_t root) {
-  if (chord.note_count < 4) return false;
+/// @brief Whether a voicing sounds every pitch class in @p mask.
+bool voicingHasAll(const VoicedChord& voicing, uint16_t mask) {
+  for (uint8_t i = 0; i < voicing.count; ++i) {
+    mask = static_cast<uint16_t>(mask & ~(1U << (voicing.pitches[i] % 12)));
+  }
+  return mask == 0;
+}
+
+/// @brief The chord's members that leave the key (G# in E7), as a pitch-class mask.
+uint16_t alteredPitchClasses(int8_t degree, ChordExtension extension) {
+  uint16_t mask = 0;
+  for (const auto& alteration : getChromaticAlterations(degree, extension)) {
+    mask = static_cast<uint16_t>(mask | (1U << alteration.altered_pc));
+  }
+  return mask;
+}
+
+/// @brief The tones that make the chord more than its diatonic triad: those above
+///        the triad and any member that leaves the key.
+uint16_t colourPitchClasses(const Chord& chord, uint8_t root, uint16_t altered) {
+  uint16_t mask = altered;
   for (uint8_t interval_idx = 3; interval_idx < chord.note_count; ++interval_idx) {
     const int8_t interval = chord.intervals[interval_idx];
     if (interval < 0) continue;
-    const int pitch_class = (static_cast<int>(root) + interval) % 12;
-    for (uint8_t i = 0; i < voicing.count; ++i) {
-      if (voicing.pitches[i] % 12 == pitch_class) return true;
-    }
+    mask = static_cast<uint16_t>(mask | (1U << ((static_cast<int>(root) + interval) % 12)));
+  }
+  return mask;
+}
+
+/// @brief Check whether a voicing sounds any colour tone.
+bool carriesExtensionColour(const VoicedChord& voicing, uint16_t colour) {
+  for (uint8_t i = 0; i < voicing.count; ++i) {
+    if (colour & (1U << (voicing.pitches[i] % 12))) return true;
   }
   return false;
 }
@@ -297,45 +319,43 @@ bool carriesExtensionColour(const VoicedChord& voicing, const Chord& chord, uint
 /// Texture and identity are two different requests and only one of them can be
 /// answered by discarding candidates. A close voicing where an open one was
 /// asked for is the same chord in a different spacing; a voicing that dropped
-/// the seventh is a different chord, and nothing downstream can recover the
-/// plan from it. So the type restriction applies within the voicings that keep
-/// the colour, and only widens past the requested type when keeping the colour
-/// leaves no other choice.
+/// the seventh, or the raised third of a secondary dominant, is a different
+/// chord, and nothing downstream can recover the plan from it. So the type
+/// restriction applies within the voicings that keep the altered tones and the
+/// colour, and only widens past them when keeping them leaves no other choice.
 std::vector<VoicedChord> restrictPreservingExtension(const std::vector<VoicedChord>& candidates,
-                                                     VoicingType requested, const Chord& chord,
-                                                     uint8_t root) {
-  std::vector<VoicedChord> coloured;
+                                                     VoicingType requested, uint16_t colour,
+                                                     uint16_t altered, uint8_t root) {
+  std::vector<VoicedChord> identified;
   for (const auto& candidate : candidates) {
-    if (carriesExtensionColour(candidate, chord, root)) {
-      coloured.push_back(candidate);
-    }
+    if (voicingHasAll(candidate, altered)) identified.push_back(candidate);
   }
-  return restrictToRequestedType(coloured.empty() ? candidates : coloured, requested, root);
+  const auto& pool = identified.empty() ? candidates : identified;
+  std::vector<VoicedChord> coloured;
+  for (const auto& candidate : pool) {
+    if (carriesExtensionColour(candidate, colour)) coloured.push_back(candidate);
+  }
+  return restrictToRequestedType(coloured.empty() ? pool : coloured, requested, root);
 }
 
-/// @brief Reward a voicing for keeping the tones that make the chord extended.
+/// @brief Reward a voicing for keeping the tones that make the chord what it is.
 ///
-/// A seventh or ninth is what separates the chord from the triad underneath it;
-/// a voicing that drops it does not sound like a plainer version of the plan,
-/// it sounds like a different chord, and nothing downstream can tell that the
-/// harmony ever asked for the colour. Voice leading may still prefer a smoother
-/// move -- a common tone is worth more than one colour tone here -- but with no
-/// term at all the two are indistinguishable and the smoother move always wins.
+/// A seventh, a ninth or a raised third is what separates the chord from the
+/// diatonic triad underneath it; a voicing that drops it sounds like a different
+/// chord. Voice leading may still prefer a smoother move -- a common tone is
+/// worth more than one colour tone here -- but with no term at all the two are
+/// indistinguishable and the smoother move always wins.
 ///
 /// Suspensions are excluded: sus2 and sus4 replace the third rather than adding
 /// above it, so their characteristic tone is already part of the triad the
 /// generator voices.
-int extensionColourBonus(const VoicedChord& voicing, const Chord& chord, uint8_t root) {
+int extensionColourBonus(const VoicedChord& voicing, uint16_t colour) {
   constexpr int kPerColourTone = 60;
-  if (chord.note_count < 4) return 0;
-
   int bonus = 0;
-  for (uint8_t interval_idx = 3; interval_idx < chord.note_count; ++interval_idx) {
-    const int8_t interval = chord.intervals[interval_idx];
-    if (interval < 0) continue;
-    const int pitch_class = (static_cast<int>(root) + interval) % 12;
+  for (int pc = 0; pc < 12; ++pc) {
+    if ((colour & (1U << pc)) == 0) continue;
     for (uint8_t i = 0; i < voicing.count; ++i) {
-      if (voicing.pitches[i] % 12 == pitch_class) {
+      if (voicing.pitches[i] % 12 == pc) {
         bonus += kPerColourTone;
         break;
       }
@@ -351,6 +371,8 @@ void selectBarVoicing(ChordBarContext& ctx) {
   // WithContext: 2+ only (single vector)
   std::vector<VoicedChord> candidates = chord_voicing::generateVoicings(
       ctx.root, ctx.chord, ctx.voicing_type, ctx.bass_pitch_mask, ctx.open_subtype);
+  const uint16_t altered = alteredPitchClasses(ctx.degree, ctx.extension);
+  const uint16_t colour = colourPitchClasses(ctx.chord, ctx.root, altered);
 
   if (ctx.is_basic) {
     // Basic: two-tier filtering (3+ preferred, 2+ fallback)
@@ -367,7 +389,7 @@ void selectBarVoicing(ChordBarContext& ctx) {
     }
     std::vector<VoicedChord>& tier = filtered_3plus.empty() ? filtered_2 : filtered_3plus;
     std::vector<VoicedChord> filtered =
-        restrictPreservingExtension(tier, ctx.voicing_type, ctx.chord, ctx.root);
+        restrictPreservingExtension(tier, ctx.voicing_type, colour, altered, ctx.root);
 
     // === Diff #15: Fallback voicing ===
     if (filtered.empty()) {
@@ -391,7 +413,7 @@ void selectBarVoicing(ChordBarContext& ctx) {
         int type_bonus =
             chord_voicing::voicingHasTexture(filtered[i], ctx.root, ctx.voicing_type) ? 30 : 0;
         int fullness_bonus = (filtered[i].count >= 3) ? 50 : 0;
-        int colour_bonus = extensionColourBonus(filtered[i], ctx.chord, ctx.root);
+        int colour_bonus = extensionColourBonus(filtered[i], colour);
         int score = type_bonus + fullness_bonus + colour_bonus + common * 100 - distance;
         score += chord_voicing::voicingRepetitionPenalty(
             filtered[i], ctx.prev_voicing, ctx.has_prev, ctx.consecutive_same_voicing);
@@ -417,7 +439,7 @@ void selectBarVoicing(ChordBarContext& ctx) {
       }
     }
     std::vector<VoicedChord> filtered =
-        restrictPreservingExtension(safe_candidates, ctx.voicing_type, ctx.chord, ctx.root);
+        restrictPreservingExtension(safe_candidates, ctx.voicing_type, colour, altered, ctx.root);
 
     // === Diff #15: Fallback voicing ===
     if (filtered.empty()) {
@@ -432,7 +454,7 @@ void selectBarVoicing(ChordBarContext& ctx) {
         int dist = std::abs(filtered[i].pitches[0] - MIDI_C4);
         int type_bonus =
             chord_voicing::voicingHasTexture(filtered[i], ctx.root, ctx.voicing_type) ? 50 : 0;
-        int score = type_bonus + extensionColourBonus(filtered[i], ctx.chord, ctx.root) - dist;
+        int score = type_bonus + extensionColourBonus(filtered[i], colour) - dist;
         if (score > best_score) {
           tied_indices.clear();
           tied_indices.push_back(i);
@@ -456,7 +478,7 @@ void selectBarVoicing(ChordBarContext& ctx) {
             chord_voicing::hasParallelFifthsOrOctaves(ctx.prev_voicing, filtered[i])
                 ? chord_voicing::getParallelPenalty(ctx.params.mood)
                 : 0;
-        int colour_bonus = extensionColourBonus(filtered[i], ctx.chord, ctx.root);
+        int colour_bonus = extensionColourBonus(filtered[i], colour);
         int score = type_bonus + colour_bonus + common * 100 + parallel_penalty - distance;
         score += chord_voicing::voicingRepetitionPenalty(
             filtered[i], ctx.prev_voicing, ctx.has_prev, ctx.consecutive_same_voicing);
@@ -476,6 +498,42 @@ void selectBarVoicing(ChordBarContext& ctx) {
     // an interval, not a chord.
     augmentVoicingToMinimum(ctx.voicing, ctx.chord, ctx.root, ctx.harmony, ctx.entry_start,
                             ctx.check_duration, ctx.bar_vocal_high);
+  }
+}
+
+/// @brief RegisterAdd: double a chorus entry's voicing an octave up, over that entry only.
+///
+/// Doubled per entry rather than per bar, since a chorus changes chord inside
+/// almost every bar and a whole-bar doubling would sound under the next chord.
+void addRegisterDoubling(ChordBarContext& ctx, const VoicedChord& voicing) {
+  if (ctx.params.arrangement_growth != ArrangementGrowth::RegisterAdd ||
+      ctx.section->type != SectionType::Chorus) {
+    return;
+  }
+  // Doubling at the octave thickens a chord; it does not complete one.
+  uint16_t pitch_classes = 0;
+  for (size_t idx = 0; idx < voicing.count; ++idx) {
+    pitch_classes = static_cast<uint16_t>(pitch_classes | (1U << (voicing.pitches[idx] % 12)));
+  }
+  int distinct_tones = 0;
+  for (int pc = 0; pc < 12; ++pc) {
+    if (pitch_classes & (1U << pc)) ++distinct_tones;
+  }
+  if (distinct_tones < 3) return;
+
+  const Tick duration = ctx.entry_end - ctx.entry_start;
+  const uint8_t vel = calculateVelocity(ctx.section->type, 0, ctx.params.mood);
+  const uint8_t octave_vel = static_cast<uint8_t>(vel * 0.8f);
+  for (size_t idx = 0; idx < voicing.count; ++idx) {
+    const int upper_pitch = static_cast<int>(voicing.pitches[idx]) + 12;
+    if (upper_pitch < CHORD_LOW || upper_pitch > CHORD_HIGH) continue;
+    if (!ctx.is_basic &&
+        !ctx.harmony.isConsonantWithOtherTracks(static_cast<uint8_t>(upper_pitch), ctx.entry_start,
+                                                duration, TrackRole::Chord)) {
+      continue;
+    }
+    addSafeChordNote(ctx.track, ctx.harmony, ctx.entry_start, duration,
+                     static_cast<uint8_t>(upper_pitch), octave_vel, ctx.bar_vocal_high);
   }
 }
 
@@ -516,6 +574,38 @@ void renderChordEntry(ChordBarContext& ctx) {
   // actually travels. The repetition counter and the bar ornaments read the
   // same object for the same reason.
   ctx.voicing = soundedVoicing(ctx.track, ctx.entry_start, playable);
+  addRegisterDoubling(ctx, ctx.voicing);
+
+  // The timeline names the chord that sounds, so a planned colour no voice
+  // carries, here or in another track, is withdrawn rather than exported. An
+  // anticipation that moved this chord an eighth early is the same chord, so
+  // its slice is judged and withdrawn with the entry.
+  const uint16_t planned_colour = colourPitchClasses(ctx.chord, ctx.root, 0);
+  if (planned_colour != 0 && !ctx.harmony.isSecondaryDominantAt(ctx.entry_start)) {
+    Tick chord_start = ctx.entry_start;
+    const Tick slice = ctx.entry_start - TICK_EIGHTH;
+    if (ctx.entry_start == ctx.bar_start && ctx.entry_start > TICK_EIGHTH &&
+        ctx.harmony.getChordDegreeAt(slice) == ctx.degree &&
+        ctx.harmony.getChordExtensionAt(slice) == ctx.extension &&
+        ctx.harmony.getChordDegreeAt(slice - 1) != ctx.degree) {
+      chord_start = slice;
+    }
+    bool sounded = carriesExtensionColour(ctx.voicing, planned_colour);
+    for (const auto& note : ctx.track.notes()) {
+      sounded = sounded ||
+                (note.start_tick < ctx.entry_end && note.start_tick + note.duration > chord_start &&
+                 (planned_colour & (1U << (note.note % 12))) != 0);
+    }
+    for (int pc :
+         ctx.harmony.getSoundingPitchClasses(chord_start, ctx.entry_end, TrackRole::Chord)) {
+      sounded = sounded || (planned_colour & (1U << pc)) != 0;
+    }
+    if (!sounded) {
+      ctx.harmony.registerChordExtension(chord_start, ctx.entry_end, ChordExtension::None);
+      ctx.extension = ChordExtension::None;
+    }
+  }
+
   ctx.updateConsecutiveVoicing(ctx.voicing);
   ctx.prev_voicing = ctx.voicing;
   ctx.has_prev = true;
@@ -523,9 +613,9 @@ void renderChordEntry(ChordBarContext& ctx) {
 
 /// @brief Bar-level texture on top of the voiced entries.
 ///
-/// RegisterAdd doubling, the peak-section low root and the RhythmSync off-beat
-/// bed all sustain across the range they decorate, so they follow the bar's
-/// primary chord rather than the bar: on a bar whose harmony changes partway
+/// The peak-section low root and the RhythmSync off-beat bed both sustain
+/// across the range they decorate, so they follow the bar's primary chord
+/// rather than the bar: on a bar whose harmony changes partway
 /// through, a whole-bar doubling of the first chord would still be sounding
 /// under the second.
 void applyBarOrnaments(ChordBarContext& ctx, const VoicedChord& primary_voicing,
@@ -564,32 +654,6 @@ void applyBarOrnaments(ChordBarContext& ctx, const VoicedChord& primary_voicing,
       if (root_low >= CHORD_LOW && root_low <= getEffectiveChordHigh(ctx.bar_vocal_high)) {
         addSafeChordNote(ctx.track, ctx.harmony, tick, TICK_EIGHTH, static_cast<uint8_t>(root_low),
                          bed_vel, ctx.bar_vocal_high);
-      }
-    }
-  }
-
-  // === Diff #9: RegisterAdd safety ===
-  if (voicing_is_a_chord && ctx.params.arrangement_growth == ArrangementGrowth::RegisterAdd &&
-      ctx.section->type == SectionType::Chorus) {
-    uint8_t vel = calculateVelocity(ctx.section->type, 0, ctx.params.mood);
-    uint8_t octave_vel = static_cast<uint8_t>(vel * 0.8f);
-
-    for (size_t idx = 0; idx < primary_voicing.count; ++idx) {
-      int upper_pitch = static_cast<int>(primary_voicing.pitches[idx]) + 12;
-      if (upper_pitch >= CHORD_LOW && upper_pitch <= CHORD_HIGH) {
-        if (ctx.is_basic) {
-          // Basic: implicit (always add)
-          addSafeChordNote(ctx.track, ctx.harmony, ctx.bar_start, primary_duration,
-                           static_cast<uint8_t>(upper_pitch), octave_vel, ctx.bar_vocal_high);
-        } else {
-          // WithContext: explicit safety check
-          if (ctx.harmony.isConsonantWithOtherTracks(static_cast<uint8_t>(upper_pitch),
-                                                     ctx.bar_start, primary_duration,
-                                                     TrackRole::Chord)) {
-            addSafeChordNote(ctx.track, ctx.harmony, ctx.bar_start, primary_duration,
-                             static_cast<uint8_t>(upper_pitch), octave_vel, ctx.bar_vocal_high);
-          }
-        }
       }
     }
   }
@@ -807,16 +871,8 @@ void generateChordTrackUnified(ChordGenerationMode mode, MidiTrack& track, const
   const bool is_basic = (mode == ChordGenerationMode::Basic);
   // bass_track is used for BassAnalysis (voicing selection)
   // Collision avoidance is handled via HarmonyContext.isConsonantWithOtherTracks()
-  const auto& progression = getChordProgression(params.chord_id);
+  const auto& progression = getChordProgression(params);
   const auto& sections = song.arrangement().sections();
-
-  // Apply max_chord_count limit for BackgroundMotif style
-  uint8_t effective_prog_length = progression.length;
-  if (params.composition_style == CompositionStyle::BackgroundMotif &&
-      params.motif_chord.max_chord_count > 0 &&
-      params.motif_chord.max_chord_count < progression.length) {
-    effective_prog_length = params.motif_chord.max_chord_count;
-  }
 
   VoicedChord prev_voicing{};
   bool has_prev = false;
@@ -845,7 +901,6 @@ void generateChordTrackUnified(ChordGenerationMode mode, MidiTrack& track, const
       harmony,
       bass_track,
       progression,
-      effective_prog_length,
       is_basic,
       keys_playability,
       prev_voicing,

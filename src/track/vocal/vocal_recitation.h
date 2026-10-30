@@ -22,6 +22,7 @@
 #ifndef MIDISKETCH_TRACK_VOCAL_VOCAL_RECITATION_H
 #define MIDISKETCH_TRACK_VOCAL_VOCAL_RECITATION_H
 
+#include <cstddef>
 #include <cstdint>
 #include <random>
 #include <vector>
@@ -132,6 +133,32 @@ int hookChantBeats(HookSkeleton skeleton);
  */
 int placeHookChant(std::vector<NoteEvent>& notes, Tick section_start, Tick section_end, int beats,
                    const IHarmonyContext& harmony);
+
+/// @brief First index of the held run (consecutive flagged notes on one pitch)
+/// that contains the flagged note at @p idx.
+size_t heldRunStart(const std::vector<NoteEvent>& notes, size_t idx);
+
+/**
+ * @brief Move a held run as one, for a pass that would otherwise move one note of it.
+ *
+ * The run is the notes flagged is_syllabic_subdivision from @p first on that share
+ * its pitch. It takes the diatonic pitch nearest its own inside [low, high] that
+ * is within @p max_leap of the notes on both sides of the run and holds at every
+ * run onset on the placement's terms (a chord tone clear of the other tracks).
+ * With none, the run is left unchanged.
+ *
+ * @param notes Notes sorted by start tick (modified in place)
+ * @param first Index of the run's first note
+ * @param prev_pitch Pitch of the note before the run, -1 for none
+ * @param max_leap Largest leap into and out of the run
+ * @param low Lowest allowed pitch
+ * @param high Highest allowed pitch
+ * @param harmony Chord timeline and the tracks already registered
+ * @param reason Transform step recorded on every moved note
+ * @return true when the run moved
+ */
+bool moveHeldRun(std::vector<NoteEvent>& notes, size_t first, int prev_pitch, int max_leap, int low,
+                 int high, const IHarmonyContext& harmony, TransformStepType reason);
 
 }  // namespace midisketch
 

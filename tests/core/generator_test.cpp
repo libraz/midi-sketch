@@ -7,11 +7,15 @@
 
 #include <gtest/gtest.h>
 
+#include <set>
 #include <string>
 #include <vector>
 
+#include "core/chord.h"
 #include "core/chord_extension_planner.h"
 #include "core/chord_utils.h"
+#include "core/harmony_coordinator.h"
+#include "core/harmony_timeline_planner.h"
 #include "core/preset_data.h"
 #include "core/production_blueprint.h"
 #include "core/structure.h"
@@ -306,7 +310,12 @@ TEST(GeneratorTest, TritoneSubstitutionIsPreRegisteredInHarmonyTimeline) {
   Generator gen;
   gen.generate(params);
 
-  const auto& harmony = gen.getHarmonyContext();
+  // The pre-registered plan: once voiced, a colour no track sounds is withdrawn.
+  const auto& progression = getChordProgression(gen.getParams().chord_id);
+  HarmonyCoordinator harmony;
+  harmony.initialize(gen.getSong().arrangement(), progression, gen.getParams().mood);
+  registerPlannedHarmonyTimeline(gen.getSong().arrangement(), gen.getParams(), progression,
+                                 harmony);
   bool found_substitution = false;
   for (const auto& section : gen.getSong().arrangement().sections()) {
     for (uint8_t bar = 0; bar < section.bars; ++bar) {
@@ -1008,6 +1017,31 @@ TEST(GeneratorTest, ImplicitBpmIsResolvedOnEveryEntryPoint) {
     custom.setVocalNotes(config, {});
     check(custom, "setVocalNotes");
   }
+}
+
+TEST(GeneratorTest, MaxChordCountCapsTheProgressionABackgroundMotifSongPlays) {
+  auto distinct_bar_degrees = [](uint8_t cap) {
+    GeneratorParams params;
+    params.seed = 11;
+    params.chord_id = 20;  // Extended5: I - V - vi - iii - IV
+    params.composition_style = CompositionStyle::BackgroundMotif;
+    params.motif_chord.max_chord_count = cap;
+    EXPECT_EQ(getChordProgression(params).length, cap == 0 ? 5 : cap);
+    Generator gen;
+    gen.generate(params);
+    const auto& harmony = gen.getHarmonyContext();
+    std::set<int> degrees;
+    const Tick total = gen.getSong().arrangement().totalTicks();
+    for (Tick tick = 0; tick < total; tick += TICKS_PER_BAR) {
+      if (!harmony.isSecondaryDominantAt(tick)) degrees.insert(harmony.getChordDegreeAt(tick));
+    }
+    EXPECT_FALSE(gen.getSong().chord().empty());
+    return degrees.size();
+  };
+  const size_t full = distinct_bar_degrees(0);
+  const size_t capped = distinct_bar_degrees(2);
+  EXPECT_GE(full, 5u);
+  EXPECT_LT(capped, full) << "max_chord_count did not reach the chords the song plays";
 }
 
 }  // namespace

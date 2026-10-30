@@ -159,7 +159,6 @@ constexpr size_t kMemorableHookContourCount =
 Motif designChorusHook(const StyleMelodyParams& params, std::mt19937& rng) {
   Motif hook;
   hook.length_beats = 8;  // 2-bar hook
-  hook.ends_on_chord_tone = true;
 
   // Select contour pattern:
   // - hook_repetition=true: use fixed pattern (Type 0) for maximum memorability
@@ -183,7 +182,6 @@ Motif designChorusHook(const StyleMelodyParams& params, std::mt19937& rng) {
         {6.0f, 2, true},   // Beat 3: quarter note
         {7.0f, 2, false},  // Beat 4: quarter note
     };
-    hook.climax_index = 3;  // Fourth note is the climax
   } else {
     // Standard style: syncopated feel
     hook.rhythm = {
@@ -194,7 +192,6 @@ Motif designChorusHook(const StyleMelodyParams& params, std::mt19937& rng) {
         {4.0f, 3, true},   // Beat 1 (bar 2): dotted quarter - climax
         {5.5f, 3, true},   // Beat 2.5: dotted quarter
     };
-    hook.climax_index = 4;  // Fifth note is the climax
   }
 
   // Use complete contour pattern (no zero-padding!)
@@ -273,12 +270,6 @@ Motif extractMotifFromChorus(const std::vector<NoteEvent>& chorus_notes, size_t 
 
     // Store absolute pitch for faithful melodic reproduction
     motif.absolute_pitches.push_back(note.note);
-  }
-
-  // Find climax (highest pitch)
-  if (!motif.contour_degrees.empty()) {
-    auto max_it = std::max_element(motif.contour_degrees.begin(), motif.contour_degrees.end());
-    motif.climax_index = static_cast<uint8_t>(std::distance(motif.contour_degrees.begin(), max_it));
   }
 
   // Calculate total length in beats

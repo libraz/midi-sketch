@@ -459,6 +459,37 @@ TEST_F(NoteCreatorTest, GetSafePitchCandidates) {
   }
 }
 
+TEST(NoteCreatorCandidateTest, PreferRootFifthOffersTheChordsOwnFifth) {
+  struct Case {
+    int8_t degree;
+    int root_pc;
+    int fifth_pc;
+  };
+  // vii (B-D-F) and the borrowed #IVdim (F#-A-C) carry a diminished fifth;
+  // I (C-E-G) keeps the perfect one.
+  const Case cases[] = {{6, 11, 5}, {14, 6, 0}, {0, 0, 7}};
+  for (const auto& c : cases) {
+    test::StubHarmonyContext harmony;
+    harmony.setChordDegree(c.degree);
+
+    const auto candidates =
+        getSafePitchCandidates(harmony, static_cast<uint8_t>(36 + c.root_pc), 0, TICKS_PER_BEAT,
+                               TrackRole::Bass, 28, 60, PitchPreference::PreferRootFifth, 12);
+
+    bool fifth_offered = false;
+    for (const auto& candidate : candidates) {
+      if (candidate.pitch % 12 == c.fifth_pc) {
+        fifth_offered = true;
+        EXPECT_TRUE(candidate.is_root_or_fifth) << "degree " << int(c.degree);
+      }
+      if (candidate.pitch % 12 == (c.root_pc + 7) % 12 && c.fifth_pc != (c.root_pc + 7) % 12) {
+        EXPECT_FALSE(candidate.is_root_or_fifth) << "degree " << int(c.degree);
+      }
+    }
+    EXPECT_TRUE(fifth_offered) << "degree " << int(c.degree);
+  }
+}
+
 TEST(NoteCreatorCandidateTest, VocalDiversityFallbackKeepsOnlyVerifiedConsonantPitches) {
   SelectivePitchHarmony harmony(60);
   harmony.setChordDegree(0);

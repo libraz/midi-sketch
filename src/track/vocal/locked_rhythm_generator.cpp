@@ -126,30 +126,19 @@ Tick computeNoteDuration(bool is_last_note, bool is_phrase_end, Tick tick, Tick 
       duration = static_cast<Tick>(available_span * gate_ratio);
     }
     duration = std::max(duration, phrase_end_min);
-    // Clip to the next onset, but reserve a breath gap when there is room.
-    // Reserving the gap here (rather than clipping flush to next_onset) is what
-    // actually inserts the inter-phrase rest the breathability analyzer expects.
-    // The reservation is only applied when it leaves the phrase-end note at a
-    // singable length (>= min_singable): clipping the note shorter than that
-    // would turn the phrase-ending into an isolated short note in front of the
-    // rest, which is musically worse than a slightly shorter breath. When there
-    // is not enough room for both a singable note and a full breath, shrink the
-    // breath instead of the note (still leaving a perceptible 8th-note rest).
-    Tick max_end = next_onset;
-    if (available_span > breath_gap + TICK_SIXTEENTH) {
-      Tick reserved_end = next_onset - breath_gap;
-      if (reserved_end - tick >= min_singable) {
-        // Enough room for both a singable note and a full breath.
-        max_end = reserved_end;
-      } else if (next_onset - tick > min_singable) {
-        // Not enough room for both: keep the note singable and take whatever
-        // breath remains. This guarantees a rest while never producing an
-        // isolated short note in front of it.
-        max_end = tick + min_singable;
-      }
+    if (tick + duration > next_onset) {
+      duration = next_onset - tick;
     }
-    if (tick + duration > max_end) {
-      duration = (max_end > tick) ? (max_end - tick) : (next_onset - tick);
+    // Reserve the breath (rather than clipping flush to next_onset): that is what
+    // inserts the inter-phrase rest the breathability analyzer expects. The
+    // reservation only applies when it leaves the note at a singable length;
+    // otherwise the note keeps min_singable and the breath takes what remains,
+    // since an isolated short note in front of the rest is worse than a shorter
+    // breath.
+    if (available_span > breath_gap + TICK_SIXTEENTH &&
+        !enforceMinimumBreath(tick, duration, next_onset, breath_gap, min_singable) &&
+        next_onset - tick > min_singable) {
+      duration = std::min(duration, min_singable);
     }
   } else {
     // Same pitch as previous: legato (no gap) to avoid unnatural micro-splits.
@@ -187,6 +176,12 @@ std::vector<NoteEvent> generateLockedRhythmCandidate(
     durations.push_back(0.5f);  // Default half-beat duration
   }
 
+  // A doubled source (a motif in octaves) lists each onset twice. A note is
+  // written per onset, so the first copy would end where the second starts, at
+  // zero length, and the overlap repair would turn it into a stub that pushes
+  // the real note late, into the breath after it.
+  onsets.erase(std::unique(onsets.begin(), onsets.end()), onsets.end());
+
   // Pre-compute section-level parameters
   std::set<float> boundary_set = buildPhraseBoundarySet(phrase_plan, rhythm, section);
   std::set<float> phrase_start_beats = buildPhraseStartBeats(phrase_plan, section);
@@ -212,18 +207,17 @@ std::vector<NoteEvent> generateLockedRhythmCandidate(
   while (i < onsets.size()) {
     float beat = onsets[i];
 
+    Tick tick = section.start_tick + static_cast<Tick>(beat * TICKS_PER_BEAT);
+
     // Insert breath at phrase boundaries by shortening previous note.
     // When run-based onset map is active, breath gaps are already handled by
     // buildRunBasedOnsetMap(), so skip retroactive breath insertion.
     bool breath_handled_by_plan = run_based_active;
     if (i > 0 && boundary_set.count(beat) > 0 && !notes.empty() && !breath_handled_by_plan) {
-      Tick min_duration = TICK_SIXTEENTH;
-      if (notes.back().duration > breath_duration + min_duration) {
-        notes.back().duration -= breath_duration;
-      }
+      enforceMinimumBreath(notes.back().start_tick, notes.back().duration, tick, breath_duration,
+                           kMinPhraseEndTicks);
     }
 
-    Tick tick = section.start_tick + static_cast<Tick>(beat * TICKS_PER_BEAT);
     Tick section_end = section.endTick();
 
     // Compute base available_span (to next onset)
@@ -336,7 +330,7 @@ std::vector<NoteEvent> generateLockedRhythmCandidate(
     // breath gap never turns it into an isolated short note. An 8th note also
     // matches the minimum perceptible breath, letting note and breath share a
     // one-beat span evenly at fast tempos.
-    Tick min_singable = TICK_EIGHTH;
+    Tick min_singable = kMinPhraseEndTicks;
     Tick duration = computeNoteDuration(is_last_note, is_phrase_end, tick, section_end, next_onset,
                                         available_span, breath_duration, phrase_end_min, gate_ratio,
                                         safe_pitch, state.prev_pitch, min_singable);

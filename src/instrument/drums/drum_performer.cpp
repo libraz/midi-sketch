@@ -282,15 +282,13 @@ std::vector<Limb> DrumPerformer::generateSticking(const std::vector<Tick>& timin
           case 0:
           case 2:
           case 3:
+          case 5:
             sticking.push_back(Limb::RightHand);
             break;
           case 1:
           case 4:
           case 6:
           case 7:
-            sticking.push_back(Limb::LeftHand);
-            break;
-          case 5:
             sticking.push_back(Limb::LeftHand);
             break;
         }

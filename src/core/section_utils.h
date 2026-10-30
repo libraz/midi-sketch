@@ -64,6 +64,19 @@ std::optional<Section> findSectionAfter(const std::vector<Section>& sections, Se
 std::optional<Section> findLastSectionAfter(const std::vector<Section>& sections, SectionType type,
                                             const std::vector<SectionType>& preceding_types);
 
+/// Where a chorus stands among the choruses that carry a given track.
+enum class ChorusOccurrence : uint8_t {
+  None,    ///< Not a chorus, or the track is not in it
+  First,   ///< The first of several
+  Middle,  ///< Neither the first nor the last
+  Final,   ///< The last of several
+  Only,    ///< The one chorus the track plays
+};
+
+// Classifies the chorus at section_idx among the choruses whose mask carries track.
+ChorusOccurrence classifyChorusOccurrence(const std::vector<Section>& sections, size_t section_idx,
+                                          TrackMask track);
+
 }  // namespace midisketch
 
 #endif  // MIDISKETCH_CORE_SECTION_UTILS_H_

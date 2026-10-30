@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstring>
+#include <limits>
 
 #include "core/preset_data.h"
 #include "core/rng_util.h"
@@ -2198,7 +2199,19 @@ uint8_t selectProductionBlueprintForMood(std::mt19937& rng, uint8_t explicit_id,
   if (auto id = draw([&](uint8_t i) { return mood_compatible(i) && plays_at_implicit_tempo(i); })) {
     return *id;
   }
-  if (auto id = draw(mood_compatible)) {
+  // No compatible blueprint holds the implicit tempo, so draw among those whose
+  // range comes nearest it: resolveTempo clamps to that range's edge.
+  auto tempo_distance = [implicit_bpm](uint8_t id) {
+    const auto& bp = BLUEPRINTS[id];
+    if (implicit_bpm == 0 || bp.tempo_min == 0 || bp.tempo_max == 0) return 0;
+    return std::max({0, bp.tempo_min - implicit_bpm, implicit_bpm - bp.tempo_max});
+  };
+  int nearest = std::numeric_limits<int>::max();
+  for (uint8_t i = 0; i < BLUEPRINT_COUNT; ++i) {
+    if (mood_compatible(i)) nearest = std::min(nearest, tempo_distance(i));
+  }
+  if (auto id =
+          draw([&](uint8_t i) { return mood_compatible(i) && tempo_distance(i) == nearest; })) {
     return *id;
   }
   return selectProductionBlueprint(rng, explicit_id);

@@ -30,6 +30,7 @@
 #include "core/track_collision_detector.h"
 #include "test_support/collision_test_helper.h"
 #include "test_support/generator_test_fixture.h"
+#include "test_support/test_helpers.h"
 
 namespace midisketch {
 namespace {
@@ -189,7 +190,7 @@ TEST_F(GuitarCollisionGenTest, IdolStandardGuitarSustainedClashesLow) {
     gen.generate(params_);
 
     const auto& song = gen.getSong();
-    if (song.guitar().notes().empty()) continue;
+    ASSERT_TRUE(test::hasNotes(song.guitar(), "guitar")) << "seed=" << seed;
 
     int total = 0;
     total += countSustainedSecondClashes(song.guitar(), song.motif());
@@ -240,7 +241,7 @@ TEST_F(GuitarCollisionGenTest, IdolStandardSnapshotGuitarClashesLow) {
     Generator gen;
     gen.generate(params_);
 
-    if (gen.getSong().guitar().notes().empty()) continue;
+    ASSERT_TRUE(test::hasNotes(gen.getSong().guitar(), "guitar")) << "seed=" << seed;
 
     CollisionTestHelper helper(gen.getHarmonyContext());
     Tick total = totalTicks(gen.getSong());

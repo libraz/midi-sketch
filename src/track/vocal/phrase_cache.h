@@ -326,6 +326,39 @@ inline Tick getBreathDuration(SectionType section_type, bool is_ballad,
   return base;
 }
 
+/// Shortest rest heard as a breath: a gap under half a beat reads as continuous singing.
+constexpr Tick kMinBreathTicks = TICK_EIGHTH;
+
+/// Shortest note a phrase may end on in front of its breath; anything shorter is
+/// an isolated stub before the rest.
+constexpr Tick kMinPhraseEndTicks = TICK_EIGHTH;
+
+/**
+ * @brief Leave a breath between a vocal note and the phrase starting at @p next_onset.
+ *
+ * The one rule every pass that writes, lengthens or merges a vocal note in front of a
+ * phrase boundary goes through, so no pass keeps breath arithmetic of its own. The note
+ * is only ever shortened: it ends at least max(@p breath, kMinBreathTicks) before
+ * @p next_onset. When that would leave it shorter than @p min_singable nothing changes
+ * and false is returned; the caller decides whether the note is dropped, becomes a
+ * pickup or keeps the rest it has.
+ *
+ * @param start Start tick of the note
+ * @param duration Duration of the note (shortened in place)
+ * @param next_onset Start tick of the next phrase's first note
+ * @param breath Rest the caller plans before @p next_onset
+ * @param min_singable Shortest length the note may be left at
+ * @return true when the rest before @p next_onset is at least the breath
+ */
+inline bool enforceMinimumBreath(Tick start, Tick& duration, Tick next_onset, Tick breath,
+                                 Tick min_singable) {
+  const Tick rest = std::max(breath, kMinBreathTicks);
+  if (start + duration + rest <= next_onset) return true;
+  if (start + min_singable + rest > next_onset) return false;
+  duration = next_onset - rest - start;
+  return true;
+}
+
 // ============================================================================
 // Run-Based Onset Selection for RhythmSync Vocal
 // ============================================================================
@@ -401,9 +434,15 @@ inline CachedRhythmPattern buildRunBasedOnsetMap(
     // Convert phrase boundaries to beat-relative (from section start)
     float phrase_start_beat =
         static_cast<float>(phrase.start_tick - section_start) / TICKS_PER_BEAT;
-    // Use singable_end (pre-computed: end_tick - breath_after)
-    float phrase_end_beat =
-        static_cast<float>(phrase.singable_end - section_start) / TICKS_PER_BEAT;
+    // Use singable_end (pre-computed: end_tick - breath_after). In front of a
+    // breath the last onset also needs room for a phrase-end note, or that note
+    // runs over the breath to the next onset.
+    Tick onset_limit = phrase.singable_end;
+    const Tick reserved = std::max(phrase.breath_after, kMinBreathTicks) + kMinPhraseEndTicks;
+    if (phrase.breath_after > 0 && phrase.end_tick >= phrase.start_tick + reserved) {
+      onset_limit = phrase.end_tick - reserved + 1;  // an onset exactly at the limit fits
+    }
+    float phrase_end_beat = static_cast<float>(onset_limit - section_start) / TICKS_PER_BEAT;
 
     // Collect onsets within this phrase's singable region
     std::vector<size_t> phrase_onset_indices;

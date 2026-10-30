@@ -37,33 +37,15 @@ namespace {
 // Meta information table for each AuxFunction.
 // Index matches AuxFunction enum value.
 constexpr std::array<AuxFunctionMeta, 9> kAuxFunctionMetaTable = {{
-    // PulseLoop: Rhythmic, ChordTone, EventProbability
-    {AuxTimingRole::Rhythmic, AuxHarmonicRole::ChordTone, AuxDensityBehavior::EventProbability,
-     0.7f, 0.1f},
-    // TargetHint: Reactive, Target, EventProbability
-    {AuxTimingRole::Reactive, AuxHarmonicRole::Target, AuxDensityBehavior::EventProbability, 0.5f,
-     0.2f},
-    // GrooveAccent: Rhythmic, Accent, EventProbability
-    {AuxTimingRole::Rhythmic, AuxHarmonicRole::Accent, AuxDensityBehavior::EventProbability, 0.6f,
-     0.0f},
-    // PhraseTail: Reactive, Following, SkipRatio
-    {AuxTimingRole::Reactive, AuxHarmonicRole::Following, AuxDensityBehavior::SkipRatio, 0.5f,
-     0.3f},
-    // EmotionalPad: Sustained, ChordTone, VoiceCount
-    {AuxTimingRole::Sustained, AuxHarmonicRole::ChordTone, AuxDensityBehavior::VoiceCount, 1.0f,
-     0.4f},
-    // Unison: Reactive, Unison, EventProbability (full density)
-    {AuxTimingRole::Reactive, AuxHarmonicRole::Unison, AuxDensityBehavior::EventProbability, 1.0f,
-     0.0f},
-    // MelodicHook: Rhythmic, ChordTone, EventProbability
-    {AuxTimingRole::Rhythmic, AuxHarmonicRole::ChordTone, AuxDensityBehavior::EventProbability,
-     1.0f, 0.1f},
-    // MotifCounter: Reactive, Following, EventProbability
-    {AuxTimingRole::Reactive, AuxHarmonicRole::Following, AuxDensityBehavior::EventProbability,
-     0.8f, 0.2f},
-    // SustainPad: Sustained, ChordTone, VoiceCount (for Ballad/Sentimental)
-    {AuxTimingRole::Sustained, AuxHarmonicRole::ChordTone, AuxDensityBehavior::VoiceCount, 0.8f,
-     0.3f},
+    {0.7f, 0.1f},  // PulseLoop
+    {0.5f, 0.2f},  // TargetHint
+    {0.6f, 0.0f},  // GrooveAccent
+    {0.5f, 0.3f},  // PhraseTail
+    {1.0f, 0.4f},  // EmotionalPad
+    {1.0f, 0.0f},  // Unison
+    {1.0f, 0.1f},  // MelodicHook
+    {0.8f, 0.2f},  // MotifCounter
+    {0.8f, 0.3f},  // SustainPad
 }};
 
 // ============================================================================
@@ -129,7 +111,7 @@ const AuxFunctionMeta& getAuxFunctionMeta(AuxFunction func) {
 
 void AuxGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContext& ctx) {
   // Build SongContext from FullTrackContext
-  const auto& progression = getChordProgression(ctx.params->chord_id);
+  const auto& progression = getChordProgression(*ctx.params);
   const auto& sections = ctx.song->arrangement().sections();
 
   SongContext song_ctx;

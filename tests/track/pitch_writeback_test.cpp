@@ -295,6 +295,9 @@ bool isPitchMove(TransformStepType type) {
     case TransformStepType::ScaleSnap:
     case TransformStepType::IntervalFix:
     case TransformStepType::ChordToneSnap:
+    case TransformStepType::RegisterLift:
+    case TransformStepType::LastNoteShift:
+    case TransformStepType::SequenceTranspose:
       return true;
     default:
       return false;

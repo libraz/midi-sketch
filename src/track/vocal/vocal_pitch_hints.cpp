@@ -13,6 +13,7 @@
 #include "core/timing_constants.h"
 #include "track/generators/motif.h"
 #include "track/motif/motif_rhythm.h"
+#include "track/vocal/phrase_cache.h"
 #include "track/vocal/phrase_plan.h"
 
 namespace midisketch {
@@ -130,10 +131,10 @@ bool isPhraseEndOnset(size_t onset_idx, size_t next_active, const std::vector<fl
 void postProcessPhraseEndResolution(std::vector<NoteEvent>& notes, float gate_ratio) {
   std::set<size_t> indices_to_remove;
   for (size_t ni = 1; ni < notes.size(); ++ni) {
-    Tick gap = notes[ni].start_tick - (notes[ni - 1].start_tick + notes[ni - 1].duration);
-    if (gap < TICK_EIGHTH) continue;
-
     Tick phrase_end_tick = notes[ni - 1].start_tick + notes[ni - 1].duration;
+    if (notes[ni].start_tick < phrase_end_tick + kMinBreathTicks) continue;
+    const Tick gap = notes[ni].start_tick - phrase_end_tick;
+
     Tick tail_start =
         (phrase_end_tick > TICKS_PER_BEAT * 2) ? (phrase_end_tick - TICKS_PER_BEAT * 2) : 0;
 
@@ -156,16 +157,21 @@ void postProcessPhraseEndResolution(std::vector<NoteEvent>& notes, float gate_ra
     for (size_t start = tail_begin; start + 1 < ni && !merged; ++start) {
       for (size_t count = 2; count <= 3 && start + count <= ni; ++count) {
         size_t end_idx = start + count - 1;
-        Tick extend_to;
+        Tick new_dur;
         if (end_idx < ni - 1) {
-          extend_to = notes[end_idx + 1].start_tick;
+          Tick extend_to = notes[end_idx + 1].start_tick;
           Tick ext_span = extend_to - notes[start].start_tick;
           extend_to = notes[start].start_tick + static_cast<Tick>(ext_span * gate_ratio);
+          new_dur = (extend_to > notes[start].start_tick) ? (extend_to - notes[start].start_tick)
+                                                          : notes[start].duration;
         } else {
-          extend_to = notes[ni].start_tick - TICK_SIXTEENTH;
+          // The merged note ends the phrase, so the rest it was found in stays whole.
+          new_dur = notes[ni].start_tick - notes[start].start_tick;
+          if (!enforceMinimumBreath(notes[start].start_tick, new_dur, notes[ni].start_tick, gap,
+                                    TICKS_PER_BEAT)) {
+            continue;
+          }
         }
-        Tick new_dur = (extend_to > notes[start].start_tick) ? (extend_to - notes[start].start_tick)
-                                                             : notes[start].duration;
         if (new_dur >= TICKS_PER_BEAT) {
           notes[start].duration = new_dur;
           for (size_t rm = start + 1; rm <= end_idx; ++rm) {

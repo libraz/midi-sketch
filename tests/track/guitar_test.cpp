@@ -110,7 +110,6 @@ TEST(GuitarTrackTest, ElectricGuitarPhysicalModelMatchesTheGeneratorRange) {
   const auto& model = PhysicalModels::kElectricGuitar;
   EXPECT_EQ(model.pitch_low, 40);   // E2
   EXPECT_EQ(model.pitch_high, 76);  // E5
-  EXPECT_TRUE(model.supports_legato);
 }
 
 // ============================================================================
@@ -695,9 +694,7 @@ TEST_F(GuitarGenerationTest, ChordVoicingsStayInPracticalStrumRange) {
 }
 
 TEST_F(GuitarGenerationTest, VelocitiesWithinPhysicalModelBounds) {
-  // PhysicalModel kElectricGuitar has velocity_min=40, velocity_max=110
-  // but calculateGuitarVelocity clamps to [40, 120].
-  // Verify all velocities are within valid bounds.
+  // calculateGuitarVelocity clamps to [40, 120]; verify all velocities are within valid bounds.
   std::vector<Mood> moods = {Mood::Ballad, Mood::LightRock, Mood::Anthem};
 
   for (Mood mood : moods) {

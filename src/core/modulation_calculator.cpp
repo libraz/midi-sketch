@@ -9,6 +9,7 @@
 
 #include "core/preset_types.h"
 #include "core/rng_util.h"
+#include "core/structure.h"
 
 namespace midisketch {
 
@@ -34,11 +35,14 @@ Tick ModulationCalculator::findChorusAfterBridge(const std::vector<Section>& sec
 ModulationCalculator::ModulationResult ModulationCalculator::plan(
     const GeneratorParams& params, const std::vector<Section>& sections) {
   const ModulationTiming timing = params.modulation_timing;
-  const StructurePattern structure = params.structure;
   ModulationResult result;
 
-  // Short structures don't support modulation (no meaningful modulation point)
-  if (structure == StructurePattern::DirectChorus || structure == StructurePattern::ShortForm) {
+  // Short forms have no meaningful modulation point. The exception follows the
+  // form the sections are built from: a blueprint flow that replaced the form
+  // label is not that short form.
+  const BuiltForm form = resolveBuiltForm(params);
+  if (form.flow == nullptr && (form.pattern == StructurePattern::DirectChorus ||
+                               form.pattern == StructurePattern::ShortForm)) {
     return result;
   }
 

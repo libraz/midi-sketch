@@ -626,7 +626,8 @@ void applySequentialTransposition(std::vector<NoteEvent>& notes, uint8_t phrase_
 #ifdef MIDISKETCH_NOTE_PROVENANCE
     if (old_pitch != note.note) {
       note.prov_original_pitch = old_pitch;
-      note.addTransformStep(TransformStepType::ScaleSnap, old_pitch, note.note, 0, 0);
+      note.addTransformStep(TransformStepType::SequenceTranspose, old_pitch, note.note,
+                            static_cast<int8_t>(transpose), 0);
     }
 #endif
   }

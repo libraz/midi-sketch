@@ -5,8 +5,13 @@
 
 #include <gtest/gtest.h>
 
+#include <vector>
+
 #include "core/chord_utils.h"
 #include "core/pitch_utils.h"
+#include "core/timing_constants.h"
+#include "test_helpers/note_event_test_helper.h"
+#include "track/vocal/phrase_variation.h"
 
 namespace midisketch {
 
@@ -17,21 +22,21 @@ namespace midisketch {
 class TensionNoteTest : public ::testing::Test {};
 
 TEST_F(TensionNoteTest, SixthIsNotTension) {
-  // In C major, A (pitch_class 9) is the root of vi chord, not a tension
-  // Tensions are: 2nd (D, pc=2), 4th (F, pc=5), 7th (B, pc=11)
+  // A (pc 9) is the root of vi, not a tension: it must not end Floating the way D/F/B do.
+  constexpr Tick kBeat = TICKS_PER_BEAT;
+  auto cadenceEndingOn = [](uint8_t pitch, int8_t degree) {
+    std::vector<NoteEvent> notes = {NoteEventTestHelper::create(0, kBeat, pitch, 80)};
+    return detectCadenceType(notes, degree);
+  };
 
-  // This is a conceptual test - the actual tension check is in detectCadenceType
-  // which is internal to vocal.cpp. We test the principle here.
+  EXPECT_NE(cadenceEndingOn(69, 0), CadenceType::Floating);
+  EXPECT_NE(cadenceEndingOn(69, 3), CadenceType::Floating);
+  EXPECT_EQ(cadenceEndingOn(69, 5), CadenceType::Deceptive);
 
-  // Stable tones in C major: C(0), E(4), G(7), A(9) - tonic + relative minor root
-  std::vector<int> stable_tones = {0, 4, 7, 9};
-
-  // Tension tones: D(2), F(5), B(11)
-  std::vector<int> tension_tones = {2, 5, 11};
-
-  // 6th (A, pc=9) should be in stable, not tension
-  EXPECT_TRUE(std::find(stable_tones.begin(), stable_tones.end(), 9) != stable_tones.end());
-  EXPECT_TRUE(std::find(tension_tones.begin(), tension_tones.end(), 9) == tension_tones.end());
+  // The actual tensions do end Floating, so the check above is not trivially satisfied.
+  EXPECT_EQ(cadenceEndingOn(62, 0), CadenceType::Floating);
+  EXPECT_EQ(cadenceEndingOn(65, 0), CadenceType::Floating);
+  EXPECT_EQ(cadenceEndingOn(71, 0), CadenceType::Floating);
 }
 
 // =============================================================================

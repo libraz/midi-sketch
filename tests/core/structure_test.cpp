@@ -410,6 +410,96 @@ TEST(StructureTest, DurationShorteningMeetsTheTargetOrSaysSo) {
   EXPECT_TRUE(warnings.empty());
 }
 
+bool opensOnChorus(const std::vector<Section>& sections) {
+  for (const auto& section : sections) {
+    if (section.type == SectionType::Intro) continue;
+    return section.type == SectionType::Chorus;
+  }
+  return false;
+}
+
+bool hasVerse(const std::vector<Section>& sections) {
+  return std::any_of(sections.begin(), sections.end(),
+                     [](const Section& s) { return s.type == SectionType::A; });
+}
+
+TEST(StructureTest, DurationShorteningNeverStacksChoruses) {
+  size_t shortened = 0;
+  for (uint8_t p = 0; p < STRUCTURE_COUNT; ++p) {
+    const auto pattern = static_cast<StructurePattern>(p);
+    const uint16_t base_bars = calculateTotalBars(buildStructure(pattern));
+    for (uint16_t bars = kMinStructureBars; bars < base_bars; ++bars) {
+      StructureRequest request;
+      request.pattern = pattern;
+      request.target_duration_seconds = secondsForBarsAt120(bars);
+      request.bpm = 120;
+      std::vector<std::string> warnings;
+      const auto sections = planSongStructure(request, warnings);
+      if (calculateTotalBars(sections) < base_bars) ++shortened;
+
+      int run = 0;
+      int longest_run = 0;
+      for (const auto& section : sections) {
+        run = section.type == SectionType::Chorus ? run + 1 : 0;
+        longest_run = std::max(longest_run, run);
+      }
+      EXPECT_LE(longest_run, 2) << "pattern " << int(p) << " at " << bars << " bars";
+    }
+  }
+  ASSERT_GT(shortened, 0u);
+}
+
+TEST(StructureTest, ShortenedChorusFirstFormKeepsAVerseAndItsOpeningChorusWhenItFits) {
+  size_t chorus_first_cases = 0;
+  for (uint8_t p = 0; p < STRUCTURE_COUNT; ++p) {
+    const auto pattern = static_cast<StructurePattern>(p);
+    const auto base = buildStructure(pattern);
+    const uint16_t base_bars = calculateTotalBars(base);
+    for (uint16_t bars = kMinStructureBars; bars < base_bars; ++bars) {
+      StructureRequest request;
+      request.pattern = pattern;
+      request.target_duration_seconds = secondsForBarsAt120(bars);
+      request.bpm = 120;
+      std::vector<std::string> warnings;
+      const auto sections = planSongStructure(request, warnings);
+      const int built = calculateTotalBars(sections);
+
+      if (hasVerse(base)) {
+        EXPECT_TRUE(hasVerse(sections)) << "pattern " << int(p) << " at " << bars << " bars";
+      }
+      if (!opensOnChorus(base)) continue;
+      ++chorus_first_cases;
+      if (!opensOnChorus(sections)) {
+        // Dropped only when putting the eight-bar chorus back would leave the tolerance.
+        EXPECT_GT(built + 8 - static_cast<int>(bars), kDurationToleranceBars)
+            << "pattern " << int(p) << " at " << bars << " bars dropped an opening chorus that fit";
+      }
+    }
+  }
+  ASSERT_GT(chorus_first_cases, 0u);
+}
+
+TEST(StructureTest, DurationAdjustmentStatesTheLengthBuilt) {
+  for (uint16_t seconds : {10, 600}) {
+    StructureRequest request;
+    request.pattern = StructurePattern::ExtendedFull;
+    request.target_duration_seconds = seconds;
+    request.bpm = 120;
+    std::vector<std::string> warnings;
+    const auto sections = planSongStructure(request, warnings);
+    const uint16_t built = calculateTotalBars(sections);
+
+    const auto adjusted = std::find_if(warnings.begin(), warnings.end(), [](const std::string& w) {
+      return w.find("Duration adjusted") != std::string::npos;
+    });
+    ASSERT_NE(adjusted, warnings.end()) << seconds << "s";
+    EXPECT_NE(adjusted->find("to " + std::to_string(built * 2) + "s (" + std::to_string(built) +
+                             " bars)"),
+              std::string::npos)
+        << seconds << "s: " << *adjusted;
+  }
+}
+
 TEST(StructureTest, OnlyTheLastChorusCarriesTheClimax) {
   size_t songs = 0;
   for (uint8_t id = 0; id < getProductionBlueprintCount(); ++id) {

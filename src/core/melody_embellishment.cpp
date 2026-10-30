@@ -65,6 +65,8 @@ inline Tick getQuantizationGrid(std::mt19937& rng) {
 // Configuration
 // ============================================================================
 
+// The ratios are input weights for the embellishment writer. The vocal legality snap runs
+// afterwards, so the chord-tone share of the final melody is not these values.
 EmbellishmentConfig MelodicEmbellisher::getConfigForMood(Mood mood) {
   EmbellishmentConfig config;
 

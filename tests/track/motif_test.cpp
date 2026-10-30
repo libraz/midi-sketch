@@ -2122,6 +2122,9 @@ TEST_F(MotifLockedCacheTest, EvolvingRiffMutatesPitchAsWellAsRhythm) {
 }
 
 TEST_F(MotifLockedCacheTest, EvolvingFinalChorusReprisesOriginalRiff) {
+  // The reprise quotes the first chorus as it sounded: its onsets and, over the
+  // same chord, its pitch classes, after the variation and thinning that chorus
+  // went through.
   struct Case {
     uint8_t blueprint_id;
     Mood mood;
@@ -2130,86 +2133,242 @@ TEST_F(MotifLockedCacheTest, EvolvingFinalChorusReprisesOriginalRiff) {
       {2, Mood::IdolPop},
       {4, Mood::IdolPop},
   };
+  const std::vector<uint32_t> seeds = {42, 1200, 1400, 2024, 31337};
 
-  bool checked_case = false;
+  int checked = 0;
+  int pitch_checked = 0;
   bool observed_evolved_prior_chorus = false;
   for (const auto& test_case : cases) {
-    params_.blueprint_id = test_case.blueprint_id;
-    params_.mood = test_case.mood;
-    params_.seed = 42;
+    for (uint32_t seed : seeds) {
+      params_.blueprint_id = test_case.blueprint_id;
+      params_.mood = test_case.mood;
+      params_.seed = seed;
 
-    Generator gen;
-    gen.generate(params_);
+      Generator gen;
+      gen.generate(params_);
 
-    const auto& motif_notes = gen.getSong().motif().notes();
-    const auto& sections = gen.getSong().arrangement().sections();
-    std::vector<const Section*> choruses;
-    for (const auto& section : sections) {
-      if (section.type == SectionType::Chorus && hasTrack(section.track_mask, TrackMask::Motif)) {
-        choruses.push_back(&section);
+      const auto& motif_notes = gen.getSong().motif().notes();
+      const auto& sections = gen.getSong().arrangement().sections();
+      std::vector<const Section*> choruses;
+      for (const auto& section : sections) {
+        if (section.type == SectionType::Chorus && hasTrack(section.track_mask, TrackMask::Motif)) {
+          choruses.push_back(&section);
+        }
       }
-    }
-    if (choruses.size() < 3 || motif_notes.empty()) {
-      continue;
-    }
+      if (choruses.size() < 2 || motif_notes.empty()) {
+        continue;
+      }
 
-    auto collectFirstCyclePitchClasses = [&motif_notes](const Section& section) {
-      std::map<Tick, std::vector<uint8_t>> stacks;
-      Tick cycle_end = section.start_tick +
-                       std::min<Tick>(TICKS_PER_BAR * 2, section.endTick() - section.start_tick);
+      auto collectFirstCyclePitchClasses = [&motif_notes](const Section& section) {
+        std::map<Tick, std::vector<uint8_t>> stacks;
+        const Tick span = std::min<Tick>(TICKS_PER_BAR * 2, section.endTick() - section.start_tick);
+        const Tick cycle_end = section.start_tick + span;
+        for (const auto& note : motif_notes) {
+          if (note.start_tick < section.start_tick || note.start_tick >= cycle_end) {
+            continue;
+          }
+          stacks[note.start_tick - section.start_tick].push_back(note.note % 12);
+        }
+        for (auto& [tick, stack] : stacks) {
+          (void)tick;
+          std::sort(stack.begin(), stack.end());
+          stack.erase(std::unique(stack.begin(), stack.end()), stack.end());
+        }
+        return stacks;
+      };
+
+      auto matchRatio = [](const std::map<Tick, std::vector<uint8_t>>& lhs,
+                           const std::map<Tick, std::vector<uint8_t>>& rhs) {
+        int common = 0;
+        int matching = 0;
+        for (const auto& [tick, stack] : lhs) {
+          auto it = rhs.find(tick);
+          if (it == rhs.end()) {
+            continue;
+          }
+          ++common;
+          if (it->second == stack) {
+            ++matching;
+          }
+        }
+        return common == 0 ? 0.0 : static_cast<double>(matching) / common;
+      };
+      auto onsetRatio = [](const std::map<Tick, std::vector<uint8_t>>& lhs,
+                           const std::map<Tick, std::vector<uint8_t>>& rhs) {
+        int kept = 0;
+        for (const auto& [tick, stack] : lhs) {
+          (void)stack;
+          if (rhs.count(tick) > 0) ++kept;
+        }
+        return lhs.empty() ? 0.0 : static_cast<double>(kept) / static_cast<double>(lhs.size());
+      };
+
+      // A replayed note may move where the chord under it changed, or by a move
+      // it records, so the pitch classes are compared where neither happened.
+      const IHarmonyContext& harmony = gen.getHarmonyContext();
+      std::set<Tick> recorded_moves;
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+      const Section& final_chorus = *choruses.back();
       for (const auto& note : motif_notes) {
-        if (note.start_tick < section.start_tick || note.start_tick >= cycle_end) {
+        // A replayed note names the cached pitch as its original.
+        const bool moved = note.note != note.prov_original_pitch;
+        if (!moved || note.start_tick < final_chorus.start_tick ||
+            note.start_tick >= final_chorus.endTick()) {
           continue;
         }
-        stacks[note.start_tick - section.start_tick].push_back(note.note % 12);
+        recorded_moves.insert(note.start_tick - final_chorus.start_tick);
       }
-      for (auto& [tick, stack] : stacks) {
-        (void)tick;
-        std::sort(stack.begin(), stack.end());
-      }
-      return stacks;
-    };
-
-    auto first = collectFirstCyclePitchClasses(*choruses.front());
-    auto pre_final = collectFirstCyclePitchClasses(*choruses[choruses.size() - 2]);
-    auto final = collectFirstCyclePitchClasses(*choruses.back());
-    if (first.empty() || pre_final.empty() || final.empty()) {
-      continue;
-    }
-
-    auto matchRatio = [](const std::map<Tick, std::vector<uint8_t>>& lhs,
-                         const std::map<Tick, std::vector<uint8_t>>& rhs) {
-      int common = 0;
-      int matching = 0;
-      for (const auto& [tick, stack] : lhs) {
-        auto it = rhs.find(tick);
-        if (it == rhs.end()) {
-          continue;
+#endif
+      auto chordTones = [&harmony](Tick tick) {
+        const ChordTones tones = harmony.getChordTonesAt(tick);
+        return std::set<int>(tones.begin(), tones.end());
+      };
+      auto sameChordMatchRatio = [&](const std::map<Tick, std::vector<uint8_t>>& lhs,
+                                     const std::map<Tick, std::vector<uint8_t>>& rhs,
+                                     const Section& lhs_section, const Section& rhs_section,
+                                     int& common) {
+        int matching = 0;
+        common = 0;
+        for (const auto& [tick, stack] : lhs) {
+          auto it = rhs.find(tick);
+          if (it == rhs.end() || recorded_moves.count(tick) > 0) continue;
+          if (chordTones(lhs_section.start_tick + tick) !=
+              chordTones(rhs_section.start_tick + tick)) {
+            continue;
+          }
+          ++common;
+          if (it->second == stack) ++matching;
         }
-        ++common;
-        if (it->second == stack) {
-          ++matching;
+        return common == 0 ? 0.0 : static_cast<double>(matching) / common;
+      };
+
+      auto first = collectFirstCyclePitchClasses(*choruses.front());
+      auto final = collectFirstCyclePitchClasses(*choruses.back());
+      ASSERT_FALSE(first.empty()) << "Blueprint " << static_cast<int>(test_case.blueprint_id)
+                                  << " seed " << seed << ": the first motif chorus is silent";
+      ++checked;
+
+      if (choruses.size() >= 3) {
+        auto pre_final = collectFirstCyclePitchClasses(*choruses[choruses.size() - 2]);
+        if (matchRatio(first, pre_final) < 0.95) {
+          observed_evolved_prior_chorus = true;
         }
       }
-      return common == 0 ? 0.0 : static_cast<double>(matching) / common;
-    };
 
-    double pre_final_ratio = matchRatio(first, pre_final);
-    double final_ratio = matchRatio(first, final);
-    checked_case = true;
-    if (pre_final_ratio < 0.95) {
-      observed_evolved_prior_chorus = true;
+      EXPECT_GE(onsetRatio(first, final), 0.75)
+          << "Blueprint " << static_cast<int>(test_case.blueprint_id) << " seed " << seed
+          << ": the final chorus does not keep the first chorus's rhythm";
+      int same_chord_onsets = 0;
+      const double pitch_match =
+          sameChordMatchRatio(first, final, *choruses.front(), *choruses.back(), same_chord_onsets);
+      // The exclusions must leave a real sample: measured over these songs the
+      // fewest left is 3 of 7 onsets.
+      const int min_compared = std::max(3, static_cast<int>(first.size()) / 3);
+      ASSERT_GE(same_chord_onsets, min_compared)
+          << "Blueprint " << static_cast<int>(test_case.blueprint_id) << " seed " << seed
+          << ": only " << same_chord_onsets << " of " << first.size()
+          << " onsets were left to compare";
+      ++pitch_checked;
+      EXPECT_GE(pitch_match, 0.65)
+          << "Blueprint " << static_cast<int>(test_case.blueprint_id) << " seed " << seed
+          << ": where nothing moved it, the final chorus does not keep the first chorus's "
+             "pitch classes ("
+          << same_chord_onsets << " onsets)";
     }
-
-    EXPECT_GE(final_ratio, 0.65)
-        << "Blueprint " << static_cast<int>(test_case.blueprint_id)
-        << " final chorus should retain a recognizable original riff footprint";
   }
 
-  EXPECT_TRUE(checked_case) << "Expected at least one Evolving blueprint with 3 motif choruses";
+  ASSERT_GT(checked, 0) << "Expected Evolving songs with a first and a final motif chorus";
+  ASSERT_GT(pitch_checked, 0) << "No reprise onset sounded over the first chorus's chord";
   EXPECT_TRUE(observed_evolved_prior_chorus)
-      << "At least one Evolving blueprint should visibly evolve before the final chorus";
+      << "At least one Evolving song should visibly evolve before the final chorus";
 }
+
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+TEST_F(MotifLockedCacheTest, LockedReplayRecordsEveryMoveOffTheCachedPitch) {
+  // A replayed note names the cached pitch as its original, so a chord re-seat
+  // or a collision move off the riff is told apart from a pitch never held.
+  struct Case {
+    uint8_t blueprint_id;
+    Mood mood;
+  };
+  const std::vector<Case> cases = {
+      {1, Mood::AnimeHighEnergy}, {5, Mood::AnimeHighEnergy}, {6, Mood::IdolPop},
+      {7, Mood::IdolPop},         {9, Mood::IdolPop},
+  };
+
+  int compared = 0;
+  int moved = 0;
+  for (const auto& test_case : cases) {
+    for (uint32_t seed : {42u, 777u}) {
+      params_.blueprint_id = test_case.blueprint_id;
+      params_.mood = test_case.mood;
+      params_.seed = seed;
+
+      Generator gen;
+      gen.generate(params_);
+      const auto& motif_notes = gen.getSong().motif().notes();
+      ASSERT_FALSE(motif_notes.empty())
+          << "Blueprint " << static_cast<int>(test_case.blueprint_id) << " seed " << seed;
+
+      // Every pitch a source note held from creation on; the cached pitch is one.
+      struct Source {
+        const Section* section = nullptr;
+        std::map<Tick, std::set<uint8_t>> held;
+      };
+      std::map<SectionType, Source> sources;
+      for (const auto& section : gen.getSong().arrangement().sections()) {
+        if (!hasTrack(section.track_mask, TrackMask::Motif)) continue;
+        Source& source = sources[section.type];
+        const bool is_source = source.section == nullptr;
+        for (const auto& note : motif_notes) {
+          if (note.start_tick < section.start_tick || note.start_tick >= section.endTick()) {
+            continue;
+          }
+          if (note.prov_source != static_cast<uint8_t>(NoteSource::Motif)) continue;
+          if (is_source) {
+            auto& held = source.held[note.start_tick - section.start_tick];
+            held.insert(note.note);
+            held.insert(note.prov_original_pitch);
+            for (uint8_t step = 0; step < note.transform_count; ++step) {
+              const TransformStep& record = note.transform_steps[step];
+              if (record.type == TransformStepType::ChordBoundaryClip ||
+                  record.type == TransformStepType::ArticulationGate ||
+                  record.type == TransformStepType::PostProcessVelocity ||
+                  record.type == TransformStepType::PostProcessDuration ||
+                  record.type == TransformStepType::PostProcessTiming) {
+                continue;  // These record lengths, velocities and offsets, not pitches
+              }
+              held.insert(record.input_pitch);
+              held.insert(record.output_pitch);
+            }
+            continue;
+          }
+          const Tick source_length = source.section->endTick() - source.section->start_tick;
+          const Tick rel = (note.start_tick - section.start_tick) % source_length;
+          auto found = source.held.find(rel);
+          if (found == source.held.end()) continue;
+          ++compared;
+          if (note.note != note.prov_original_pitch) {
+            ++moved;
+            EXPECT_TRUE(note.hasTransformHistory())
+                << "Blueprint " << static_cast<int>(test_case.blueprint_id) << " seed " << seed
+                << ": replayed note at " << note.start_tick << " moved with no record";
+          }
+          EXPECT_EQ(found->second.count(note.prov_original_pitch), 1u)
+              << "Blueprint " << static_cast<int>(test_case.blueprint_id) << " seed " << seed
+              << ": replayed note at " << note.start_tick << " names "
+              << static_cast<int>(note.prov_original_pitch)
+              << " as its original, which the cached statement never held";
+        }
+        if (is_source && !source.held.empty()) source.section = &section;
+      }
+    }
+  }
+
+  ASSERT_GT(compared, 0) << "no replayed onset lined up with its source statement";
+  EXPECT_GT(moved, 0) << "no replayed note moved, so the record was never asked for";
+}
+#endif
 
 TEST_F(MotifLockedCacheTest, EvolvingMotionHintRepeatsKeepFamilySimilarity) {
   params_.blueprint_id = 2;  // StoryPop: Evolving + repeated A sections with Ostinato hint

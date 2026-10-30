@@ -592,12 +592,15 @@ MidiSketchError midisketch_generate_with_vocal_from_json(MidiSketchHandle handle
  * @brief Regenerate vocal track from a JSON VocalConfig string.
  *
  * Keeps the same chord progression and structure, generates a new melody.
- * Accompaniment tracks are cleared (call generateAccompaniment() to regenerate).
+ * Under RhythmSync the motif is regenerated too (unless keep_motif) and the
+ * accompaniment tracks are cleared (call generateAccompaniment() to regenerate);
+ * other paradigms keep the accompaniment.
  *
- * @param handle MidiSketch handle
+ * @param handle MidiSketch handle with an initialized song
  * @param config_json JSON string with VocalConfig fields (or null for new seed only)
  * @param json_length Length of the JSON string (0 if config_json is null)
- * @return MIDISKETCH_OK on success
+ * @return MIDISKETCH_OK on success, MIDISKETCH_ERROR_INVALID_PARAM when nothing has
+ *         been generated on this handle yet
  */
 MidiSketchError midisketch_regenerate_vocal_from_json(MidiSketchHandle handle,
                                                       const char* config_json, size_t json_length);
@@ -637,6 +640,8 @@ MidiSketchError midisketch_regenerate_accompaniment_from_json(MidiSketchHandle h
  *
  * JSON format: {"config": {...SongConfig...}, "notes": [{...}, ...]}
  * Each note: {"start_tick": N, "duration": N, "pitch": N, "velocity": N}
+ * pitch is an internal C-major pitch (sounding = pitch + key, plus the
+ * modulation after the key change).
  *
  * @param handle MidiSketch handle
  * @param json JSON string with config and notes
@@ -651,6 +656,8 @@ MidiSketchError midisketch_set_vocal_notes_from_json(MidiSketchHandle handle, co
  *
  * JSON format: {"seed": N, "notes": [{...}, ...]}
  * Each note: {"start_tick": N, "duration": N, "pitch": N, "velocity": N}
+ * pitch is an internal C-major pitch (sounding = pitch + key, plus the
+ * modulation after the key change).
  * The returned pointer remains valid until the next call on the same thread.
  *
  * @param handle MidiSketch handle
@@ -661,10 +668,13 @@ const char* midisketch_get_melody_json(MidiSketchHandle handle);
 /**
  * @brief Restore a vocal melody previously returned by midisketch_get_melody_json().
  *
+ * Pitches are in the internal C-major space midisketch_get_melody_json() returns.
+ *
  * @param handle MidiSketch handle with an initialized song
  * @param json JSON string with seed and notes
  * @param json_length Length of the JSON string
- * @return MIDISKETCH_OK on success
+ * @return MIDISKETCH_OK on success, MIDISKETCH_ERROR_INVALID_PARAM when nothing has
+ *         been generated on this handle yet
  */
 MidiSketchError midisketch_set_melody_from_json(MidiSketchHandle handle, const char* json,
                                                 size_t json_length);

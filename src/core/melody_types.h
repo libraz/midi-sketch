@@ -25,14 +25,16 @@ enum class VocalProminence : uint8_t {
 };
 
 /**
- * @brief Vocal attitude determining harmonic expressiveness.
+ * @brief Vocal attitude: pitch-selection palette and pitch-bend expression.
  *
- * Clean=chord tones only, Expressive=tensions allowed, Raw=rule-breaking.
+ * The attitude only matters where a pitch is chosen from a candidate set (locked-rhythm and
+ * fallback paths) and in pitch-bend expression. Melody phrases built on the skeleton path pick
+ * pitches without it, so Clean and Expressive give the same notes there.
  */
 enum class VocalAttitude : uint8_t {
-  Clean = 0,       ///< Chord tones only, on-beat (safe)
-  Expressive = 1,  ///< Tensions, delayed resolution (colorful)
-  Raw = 2          ///< Non-chord tone landing, rule-breaking (edgy)
+  Clean = 0,       ///< Chord tones preferred where a pitch is chosen; no pitch-bend expression
+  Expressive = 1,  ///< Adds fallback tensions (7th/9th/11th) and pitch-bend expression
+  Raw = 2          ///< All scale tones as candidates, stronger bends and vibrato
 };
 
 /// @brief Rhythm grid type for note timing.
