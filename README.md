@@ -72,7 +72,7 @@ sketch.destroy();
 
 ## Output Tracks
 
-| Track | Channel | Program | Purpose |
+| Track | Channel | Default program | Purpose |
 |-------|---------|---------|---------|
 | Vocal | 0 | Piano | Melody |
 | Chord | 1 | E.Piano | Chords |
@@ -80,9 +80,11 @@ sketch.destroy();
 | Motif | 3 | Synth Lead | Background |
 | Arpeggio | 4 | Saw Lead | Arpeggio |
 | Aux | 5 | Warm Pad | Sub-melody |
-| Guitar | 6 | Clean Guitar | Harmonic accompaniment |
+| Guitar | 6 | Clean Guitar | Harmonic accompaniment (mood-dependent) |
 | Drums | 9 | - | GM Drums |
 | SE | 15 | - | Markers |
+
+Programs follow the mood, so the table lists defaults only. Ten moods have no guitar program and emit no Guitar track: EnergeticDance, Sentimental, Chill, DarkPop, Dramatic, ModernPop, ElectroPop, Synthwave, FutureBass and Trap.
 
 ## Documentation
 

@@ -73,7 +73,7 @@ sketch.destroy();
 
 ## 出力トラック
 
-| トラック | Ch | Program | 役割 |
+| トラック | Ch | 既定の Program | 役割 |
 |---------|-----|---------|------|
 | Vocal | 0 | Piano | メロディ |
 | Chord | 1 | E.Piano | コード |
@@ -81,9 +81,11 @@ sketch.destroy();
 | Motif | 3 | Synth Lead | 背景リフ |
 | Arpeggio | 4 | Saw Lead | アルペジオ |
 | Aux | 5 | Warm Pad | サブメロディ |
-| Guitar | 6 | Clean Guitar | 和声伴奏 |
+| Guitar | 6 | Clean Guitar | 和声伴奏 (ムード依存) |
 | Drums | 9 | — | GM準拠 |
 | SE | 15 | — | マーカー |
+
+Program はムードによって変わるため、表は既定値です。次の 10 ムードにはギターの音色が割り当てられておらず、Guitar トラックは出力されません: EnergeticDance、Sentimental、Chill、DarkPop、Dramatic、ModernPop、ElectroPop、Synthwave、FutureBass、Trap。
 
 ## ドキュメント
 
